@@ -10,6 +10,7 @@
 
 #include "MgdFixture.hpp"
 #include "NullDiffCompare.hpp"
+#include "NullDiffHostedPlugin.hpp"
 #include "NullDiffNativeLeg.hpp"
 
 /**
@@ -74,10 +75,12 @@
  * project with no plugin in it, which is the one way this tier could be turned
  * into a way to make a failing case pass.
  *
- * The corpus hosts no plugin today, so every case here is held to bit identity
- * and the external path is exercised by the hand-built cases at the bottom.
- * That is deliberate: #1893 brings the first plugin, and it should find a gate
- * to land in rather than a gate to widen.
+ * The corpus hosts plugins now (#2246), and they landed in the gate rather than
+ * widening it: every one of those cases is still held to bit identity, because
+ * the plugin they host is the corpus's own and does nothing that depends on how
+ * a render was framed (NullDiffHostedPlugin.hpp). The epsilon stays where it
+ * was written for -- a real plugin in a real project, which owes nobody a
+ * sample -- and the cases that could have claimed it do not.
  *
  * One value is refused rather than judged, in both places it could arrive: an
  * epsilon of positive infinity. It is not finite, so a rule written as "does
@@ -121,6 +124,16 @@ constexpr std::array<int, 3> kOtherBlockSizes{64, 96, 4096};
 /// that differed audibly. A second comparator would have been a second thing to
 /// keep honest.
 constexpr double kBitIdenticalDb = -std::numeric_limits<double>::infinity();
+
+/// The corpus's own plugins, as an installed scan (NullDiffHostedPlugin.hpp).
+///
+/// It is what makes a case that hosts one measurable here rather than reported
+/// as not gated: they are in the binary, where a real plugin would need the
+/// folder walk that turns a fast gate into a slow one. So a real project's
+/// plugin is absent by construction, skipped below, and named when it is.
+InstalledPlugins installedFrom(HostedScan& scan) {
+    return {.formats = &scan.formats, .knownPlugins = &scan.knownPlugins};
+}
 
 std::string join(const std::vector<std::string>& parts) {
     std::string joined;
@@ -191,6 +204,8 @@ std::string undeclaredDiagnostic(const Case& value, const NativeRender& rendered
 GateResult gate(const Case& value) {
     GateResult result;
 
+    HostedScan scan;
+
     const auto external = externalDevicesIn(value);
     const auto allowed = external.empty() ? kBitIdenticalDb : value.blockSizeEpsilonDb;
 
@@ -207,7 +222,7 @@ GateResult gate(const Case& value) {
 
     auto reference = value;
     reference.blockSize = kReferenceBlockSize;
-    const auto rendered = renderNative(reference);
+    const auto rendered = renderNative(reference, installedFrom(scan));
 
     if (!rendered.failure.empty()) {
         result.unmeasurable = "at " + std::to_string(kReferenceBlockSize) + ": " + rendered.failure;
@@ -225,7 +240,7 @@ GateResult gate(const Case& value) {
     // function of the timeline is not a function of anything the rest of this
     // file is asking about.
     {
-        const auto again = renderNative(reference);
+        const auto again = renderNative(reference, installedFrom(scan));
         if (!again.failure.empty()) {
             result.unmeasurable =
                 "at " + std::to_string(kReferenceBlockSize) + ", rendered again: " + again.failure;
@@ -255,7 +270,7 @@ GateResult gate(const Case& value) {
     for (const auto blockSize : kOtherBlockSizes) {
         auto other = value;
         other.blockSize = blockSize;
-        const auto second = renderNative(other);
+        const auto second = renderNative(other, installedFrom(scan));
 
         if (!second.failure.empty()) {
             result.unmeasurable = "at " + std::to_string(blockSize) + ": " + second.failure;
@@ -347,11 +362,11 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     // Four real projects are on it, and they arrived together with the projects
     // themselves (#2081). What they have in common is the one thing no case
     // above them has: a device MAGDA ships. The code-built corpus contains four
-    // devices and all four were written for it -- a gain, a mono gain, an
-    // impulse synth and a multi-out (NullDiffGain.hpp) -- so until a real
-    // project was gated, this claim had never been asked of a Poly Synth, an FM
-    // synth, a Drum Grid, a reverb, a limiter, a Clouds, a sidechain or a Faust
-    // device.
+    // devices written for it -- a gain, a mono gain, an impulse synth and a
+    // multi-out (NullDiffGain.hpp) -- and, since #2246, a hosted plugin also
+    // written for it. So until a real project was gated, this claim had never
+    // been asked of a Poly Synth, an FM synth, a Drum Grid, a reverb, a limiter,
+    // a Clouds, a sidechain or a Faust device.
     //
     // What was measured, at 64, 96 and 4096 against 512:
     //
@@ -385,6 +400,8 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     // depend on is the block size and not the process's history.
     const std::set<std::string> knownIrreproducible{};
 
+    HostedScan scan;
+
     std::vector<std::string> refusals;
     const auto projects = everyProject(refusals);
 
@@ -416,12 +433,11 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         if (value.tier == AudioTier::None)
             continue;
 
-        // And a project whose plugin nothing here has scanned (#2175). Every
-        // render in this file goes through the no-scan overload -- these are
-        // Catch2 tests over the model, with no engine beside them and nothing
-        // that could scan a plugin folder without turning a fast gate into a
-        // slow one -- so an external plugin is absent by construction and a
-        // passthrough would be bound in its place.
+        // And a project whose plugin nothing here has (#2175). The scan this
+        // file renders through holds the corpus's own plugins and nothing else:
+        // they are in the binary, where a real plugin would need the folder walk
+        // that turns a fast gate into a slow one. So a real project's plugin is
+        // absent by construction and a passthrough would be bound in its place.
         //
         // A passthrough is perfectly block-size invariant, which is what makes
         // this the one place the substitution has to be refused rather than
@@ -433,9 +449,11 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
         //
         // The epsilon these projects would buy (#2078) is not dead code waiting
         // for a use. It is what a machine with the plugins installed measures
-        // them within, and the day this gate is handed a scan it is the bound
-        // that stops the difference being absorbed.
-        if (const auto absent = absentPluginsIn(value, nullptr); !absent.empty()) {
+        // them within, and it is the bound that stops the difference being
+        // absorbed on the day one of them is gated here. The corpus's own
+        // hosted cases do not take it and do not need it: they get through this
+        // gate on bit identity like everything else (#2246).
+        if (const auto absent = absentPluginsIn(value, &scan.knownPlugins); !absent.empty()) {
             notRun.insert(value.name + " (" + join(absent) + ")");
             continue;
         }

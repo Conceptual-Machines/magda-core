@@ -383,6 +383,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES NullDiffMaterial.cpp)
     list(APPEND TEST_SOURCES NullDiffCompare.cpp)
     list(APPEND TEST_SOURCES NullDiffCorpus.cpp)
+    list(APPEND TEST_SOURCES NullDiffHostedPlugin.cpp)
     list(APPEND TEST_SOURCES NullDiffNativeLeg.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_compare.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_corpus.cpp)
@@ -701,6 +702,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         NullDiffMaterial.cpp
         NullDiffCompare.cpp
         NullDiffCorpus.cpp
+        NullDiffHostedPlugin.cpp
         NullDiffNativeLeg.cpp
         NullDiffTeLeg.cpp
         NullDiffRunner.cpp

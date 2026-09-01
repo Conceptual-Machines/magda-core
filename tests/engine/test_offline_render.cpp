@@ -116,6 +116,52 @@ class DecayDevice final : public EngineDevice {
     float level_ = 0.0f;
 };
 
+/// A pure delay that reports exactly what it delays by (#2246).
+///
+/// The one device shape that can say whether a render was compensated: what
+/// comes out is what went in, moved, so a render that took the latency back out
+/// is sample for sample the render of the same project without it, and one that
+/// did not is that render late.
+class LatentDevice final : public EngineDevice {
+  public:
+    explicit LatentDevice(int latencySamples) : latency_(latencySamples) {}
+
+    int latencySamples() const override {
+        return latency_;
+    }
+
+    void prepare(const RenderContext& context) override {
+        delay_.assign(static_cast<std::size_t>(std::max(1, latency_)) *
+                          static_cast<std::size_t>(std::max(1, context.numChannels)),
+                      0.0f);
+        channels_ = std::max(1, context.numChannels);
+        position_ = 0;
+    }
+
+    void process(DeviceBlock& block) override {
+        const auto channels = std::min(static_cast<int>(block.audio.getNumChannels()), channels_);
+
+        for (auto sample = 0; sample < block.block.numSamples; ++sample) {
+            for (auto channel = 0; channel < channels; ++channel) {
+                auto& stored = delay_[(static_cast<std::size_t>(position_) *
+                                       static_cast<std::size_t>(channels_)) +
+                                      static_cast<std::size_t>(channel)];
+                const auto input = block.audio.getSample(channel, sample);
+                block.audio.setSample(channel, sample, stored);
+                stored = input;
+            }
+
+            position_ = (position_ + 1) % std::max(1, latency_);
+        }
+    }
+
+  private:
+    int latency_ = 0;
+    int channels_ = 2;
+    int position_ = 0;
+    std::vector<float> delay_;
+};
+
 /// Everything a render produced, as one stream per channel, so two renders are
 /// comparable sample for sample however they were cut into blocks.
 class CollectingSink final : public OfflineRenderSink {
@@ -455,4 +501,66 @@ TEST_CASE("An offline render's block size is held to what the plan was prepared 
     // Cut to the prepared size rather than asserted against: the caller's block
     // size is a batching hint and the render is the same audio either way.
     CHECK(result.blocksRendered == static_cast<int>((result.samplesRendered + 127) / 128));
+}
+
+TEST_CASE("A render takes the plan's own latency back out", "[engine][offline]") {
+    // What a bounce owes: its first sample is the range's first sample. A plan
+    // whose devices report latency is that far behind the timeline, which is
+    // right during playback and wrong in a file -- a bounce that starts late
+    // drifts against every other bounce of the same project, and against the
+    // project itself the moment it is imported back in.
+    //
+    // Asserted as an identity rather than as an offset. A pure delay that is
+    // compensated renders what the same project renders without it, so the
+    // reference here is that project: nothing about the expected samples has to
+    // be written down, and a compensation that is off by one fails as loudly as
+    // one that is missing.
+    constexpr int kLatency = 333;
+
+    std::vector<float> reference;
+    {
+        Harness harness;
+        REQUIRE(harness.prepare(512).empty());
+
+        CollectingSink sink;
+        REQUIRE_FALSE(harness.render({0.0, 4.0, 0.0, 512}, sink).refused);
+        reference = sink.samples;
+    }
+
+    Harness harness(true);
+    harness.context = RenderContext{kSampleRate, 512, 2};
+
+    harness.source = std::make_unique<TimelineRamp>();
+    harness.source->prepare(harness.context);
+    harness.bindings.clipAudio[1] = harness.source.get();
+
+    LatentDevice latent(kLatency);
+    latent.prepare(harness.context);
+
+    for (const auto& op : harness.plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            harness.bindings.devices[op.key.deviceKey()] = &latent;
+
+    harness.valueMessages = magda::engine::resolvePlanValues(harness.plan, harness.tracks,
+                                                             harness.master, harness.values);
+    REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
+    REQUIRE(harness.executor.latencySamples() == kLatency);
+
+    CollectingSink sink;
+    const auto result = harness.render({0.0, 4.0, 0.0, 512}, sink);
+
+    CHECK_FALSE(result.refused);
+
+    // The same length as the range asked for, so the extra samples the render
+    // pulled to flush the delay went to the trim rather than into the file, and
+    // what the result reports is what the sink was handed.
+    CHECK(sink.samples.size() == reference.size());
+    CHECK(result.samplesRendered == static_cast<std::int64_t>(sink.samples.size()));
+    CHECK(result.blocksRendered == sink.blocks);
+
+    REQUIRE(sink.samples.size() == reference.size());
+    for (std::size_t sample = 0; sample < reference.size(); ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(sink.samples[sample] == approx(reference[sample]));
+    }
 }

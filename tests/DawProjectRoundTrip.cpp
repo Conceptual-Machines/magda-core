@@ -1,6 +1,7 @@
 #include "DawProjectRoundTrip.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -399,6 +400,88 @@ Loss multiOutRouting() {
             }};
 }
 
+/// Every top-level device of @p track, paired with the one of the same name on
+/// @p source. What the two device-level losses below both need.
+void forEachPairedDevice(TrackInfo& track, const TrackInfo& source,
+                         const std::function<void(DeviceInfo&, const DeviceInfo&)>& visit) {
+    for (auto& element : track.chain.fxChainElements) {
+        if (!isDevice(element))
+            continue;
+
+        auto& device = getDevice(element);
+
+        for (const auto& candidate : source.chain.fxChainElements) {
+            if (!isDevice(candidate) || getDevice(candidate).name != device.name)
+                continue;
+
+            visit(device, getDevice(candidate));
+            break;
+        }
+    }
+}
+
+/// A device's key input, which is a relationship rather than a property (#2246).
+Loss deviceSidechain() {
+    return {.field = "DeviceInfo::sidechain",
+            .reason = "DAWproject has no cross-track key routing. A device arrives as a plugin "
+                      "identity and a state blob, and which track feeds its sidechain is neither "
+                      "of those: it is a reference from a device to a track, which the format "
+                      "has nowhere to put. It comes back unrouted",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (device.sidechain.isActive() == saved.sidechain.isActive())
+                                    return;
+
+                                device.sidechain = saved.sidechain;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
+/// What a device's MIDI ports do, which is read off a live plugin (#2246).
+Loss deviceMidiPorts() {
+    return {.field = "DeviceInfo::producesMidi, DeviceInfo::midiInThru",
+            .reason = "a device's MIDI capabilities are what the live plugin reported and what "
+                      "the user chose to do with them, and the format carries neither: it names "
+                      "a plugin and hands over its state. They come back at the defaults, which "
+                      "is a plugin that emits no MIDI and a chain that passes its own through",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (device.producesMidi == saved.producesMidi &&
+                                    device.midiInThru == saved.midiInThru)
+                                    return;
+
+                                device.producesMidi = saved.producesMidi;
+                                device.midiInThru = saved.midiInThru;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
 const std::map<std::string, std::vector<Loss>>& lossTable() {
     static const std::map<std::string, std::vector<Loss>> table{
         {"fades.curves", {fades()}},
@@ -448,6 +531,13 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"rack.aux", {internalDevices()}},
         {"rack.mono", {internalDevices()}},
         {"rack.instrument", {internalDevices()}},
+        // The one hosted case with a rack in it (#2246). The rack goes the way
+        // every other rack goes, and it takes the plugin inside it along:
+        // there is no chain to put a device back into once the container it
+        // sat in has no representation.
+        {"plugin.narrow.slot", {internalDevices()}},
+        {"plugin.sidechain", {deviceSidechain()}},
+        {"plugin.instrument.midiout", {deviceMidiPorts()}},
         {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},
@@ -740,6 +830,74 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
     return claims.allClaimed(refusal);
 }
 
+/**
+ * @brief Put the devices that came back onto the ids they went out under
+ *        (#2246).
+ *
+ * The same rule tracks and clips live by, applied one level further in, and it
+ * arrived with the first case whose device survives the trip: a hosted plugin
+ * is carried by the format, so a case with one compiles a plan whose ops are
+ * keyed on a device id the importer chose. That is a renumbering rather than a
+ * loss, and the difference matters -- restoring the chain wholesale, the way a
+ * case of internal devices does, would put the exported plugin back too and
+ * stop comparing what the format actually carried.
+ *
+ * Unlike a track or a clip, a device that did not come back is not a refusal
+ * here. Most of them do not: MAGDA's own devices and its racks have no
+ * representation at all, and that is declared as a loss and restored from the
+ * original. What is refused is a device that came back under a name nothing
+ * went out under, or two under one name, which are the two ways a mapping could
+ * quietly put one device's id on another.
+ *
+ * Top-level chain devices only. It is where the corpus's hosted plugins sit,
+ * and the sections the format has no shape for arrive empty rather than
+ * renumbered.
+ */
+bool mapDeviceIds(Case& value, const Case& original, std::string& refusal) {
+    const auto mapTrack = [&refusal](TrackInfo& track, const TrackInfo& source) {
+        std::map<juce::String, DeviceId> byName;
+        for (const auto& element : source.chain.fxChainElements)
+            if (isDevice(element) &&
+                !byName.emplace(getDevice(element).name, getDevice(element).id).second) {
+                refusal = "two of this case's devices on track '" + source.name.toStdString() +
+                          "' share a name, so ids cannot be mapped back";
+                return false;
+            }
+
+        NameClaims<DeviceId> claims("device", std::move(byName));
+
+        for (auto& element : track.chain.fxChainElements) {
+            if (!isDevice(element))
+                continue;
+
+            auto& device = getDevice(element);
+            const auto id = claims.claim(device.name, refusal);
+            if (!id.has_value())
+                return false;
+
+            device.id = *id;
+        }
+
+        return true;
+    };
+
+    for (auto& track : value.tracks) {
+        const auto source =
+            std::find_if(original.tracks.begin(), original.tracks.end(),
+                         [&track](const TrackInfo& candidate) { return candidate.id == track.id; });
+
+        if (source == original.tracks.end()) {
+            refusal = "a track came back that nothing went out as";
+            return false;
+        }
+
+        if (!mapTrack(track, *source))
+            return false;
+    }
+
+    return mapTrack(value.master, original.master);
+}
+
 }  // namespace
 
 RoundTrip exportAndReimport(const Case& original, const juce::File& scratchDirectory) {
@@ -788,6 +946,9 @@ RoundTrip exportAndReimport(const Case& original, const juce::File& scratchDirec
     if (!takeTracks(imported, trackIds, result.value, result.refusal))
         return result;
     if (!takeClips(imported, trackIds, original, result.value, result.refusal))
+        return result;
+
+    if (!mapDeviceIds(result.value, original, result.refusal))
         return result;
 
     result.value.sources = pooledSourcesFor(result.value.clips, media, result.refusal);

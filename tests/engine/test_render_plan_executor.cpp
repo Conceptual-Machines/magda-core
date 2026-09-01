@@ -78,6 +78,12 @@ DeviceInfo makeEffect(DeviceId id) {
     device.id = id;
     device.name = "Effect " + juce::String(id);
     device.deviceType = DeviceType::Effect;
+
+    // What it is, rather than what the struct defaults to. DeviceInfo::format
+    // starts at VST3, and these stand for devices MAGDA runs: an external
+    // plugin is handed the bus and adapts its own channels, so the width rules
+    // below are asked of a device that has declared what it reads (#2246).
+    device.format = PluginFormat::Internal;
     return device;
 }
 
@@ -88,6 +94,7 @@ DeviceInfo makeInstrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    device.format = PluginFormat::Internal;
     return device;
 }
 

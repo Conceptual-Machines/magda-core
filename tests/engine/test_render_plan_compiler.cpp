@@ -38,6 +38,12 @@ DeviceInfo makeEffect(DeviceId id) {
     device.id = id;
     device.name = "Effect " + juce::String(id);
     device.deviceType = DeviceType::Effect;
+
+    // What it is, rather than what the struct defaults to. DeviceInfo::format
+    // starts at VST3, and these stand for devices MAGDA runs: an external
+    // plugin is handed the bus and adapts its own channels, so the width rules
+    // below are asked of a device that has declared what it reads (#2246).
+    device.format = PluginFormat::Internal;
     return device;
 }
 
@@ -48,6 +54,7 @@ DeviceInfo makeInstrument(DeviceId id) {
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    device.format = PluginFormat::Internal;
     return device;
 }
 
@@ -328,6 +335,27 @@ TEST_CASE("A device's channel counts reach the ports it is compiled to",
         // on both sides, not a narrower chain.
         CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) ==
               deviceOutput(plan, 7));
+    }
+
+    SECTION("an external plugin is handed the bus whatever it declares") {
+        // The one device the plan has no opinion about (#2246). A hosted plugin
+        // that reports one channel is still given both, because the fold and the
+        // spread either side of it are the fork's own arithmetic and the adapter
+        // reproduces them (EngineExternalDevice.cpp). Narrowing the port first
+        // would hand it the left channel and take the average nowhere.
+        auto hosted = makeMonoEffect(7);
+        hosted.format = PluginFormat::VST3;
+
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(hosted));
+
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+
+        const auto widths = widthsOf(plan, 7);
+        CHECK(widths.in == 2);
+        CHECK(widths.out == 2);
     }
 
     SECTION("a device wider than the bus is clamped to it") {
