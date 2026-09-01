@@ -143,6 +143,11 @@ class DeviceApi {
      * Values outside the parameter's range are rejected rather than clamped: a
      * silently clamped write reports success while doing something the caller
      * did not ask for.
+     *
+     * External-plugin parameters the user has not opted in under Configure
+     * Parameters are rejected: this facade is the programmatic surface, and
+     * the per-parameter opt-in is enforced here so no consumer routes around
+     * it. Internal devices accept writes on every parameter.
      */
     virtual bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float value) = 0;

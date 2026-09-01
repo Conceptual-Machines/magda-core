@@ -481,6 +481,8 @@ TEST_CASE("Parameter writes are range-checked rather than clamped", "[device-api
     DeviceInfo device;
     device.name = "Filter";
     device.pluginId = "test_filter";
+    // Internal, so the external-plugin opt-in gate stays out of this test's way.
+    device.format = PluginFormat::Internal;
     ParameterInfo cutoff;
     cutoff.paramIndex = 0;
     cutoff.name = "Cutoff";
@@ -507,6 +509,40 @@ TEST_CASE("Parameter writes are range-checked rather than clamped", "[device-api
 
     SECTION("unknown device is refused") {
         REQUIRE_FALSE(devices.setDeviceParameter(ChainNodePath{}, 0, 100.0f));
+    }
+
+    tracks.clearAllTracks();
+}
+
+TEST_CASE("External-plugin parameter writes require the user's opt-in", "[device-api][mutation]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Synth");
+
+    DeviceInfo device;
+    device.name = "External synth";
+    device.pluginId = "external_synth";
+    device.format = PluginFormat::VST3;
+    for (int i = 0; i < 2; ++i) {
+        ParameterInfo param;
+        param.paramIndex = i;
+        param.name = "Param " + juce::String(i);
+        param.minValue = 0.0f;
+        param.maxValue = 1.0f;
+        device.parameters.push_back(param);
+    }
+    // The user opted in only the first parameter under Configure Parameters.
+    device.aiSoundDesignerParameters = {0};
+    const auto deviceId = tracks.addDeviceToTrack(trackId, device);
+    const auto path = tracks.findDevicePath(deviceId);
+
+    DeviceApiLive devices;
+
+    SECTION("an opted-in parameter accepts the write") {
+        REQUIRE(devices.setDeviceParameter(path, 0, 0.5f));
+    }
+
+    SECTION("a parameter the user did not opt in is refused") {
+        REQUIRE_FALSE(devices.setDeviceParameter(path, 1, 0.5f));
     }
 
     tracks.clearAllTracks();

@@ -582,9 +582,10 @@ HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const R
     if (named == parameters.end())
         return notFound("parameter", parameterIndex);
 
-    // The same allowlist the in-app sound designer honours: the user decides
-    // per external-plugin parameter what an agent may touch, and the remote
-    // surface must not be the way around that decision.
+    // DeviceApi::setDeviceParameter enforces the user's per-parameter opt-in
+    // for every facade consumer; this pre-check only exists to classify the
+    // refusal as PermissionDenied with a useful message, which the facade's
+    // bare bool cannot convey (#2296).
     if (!named->aiAgentEnabled)
         return HandlerResult::fail(ErrorCode::PermissionDenied,
                                    "parameter " + juce::String(parameterIndex) +
