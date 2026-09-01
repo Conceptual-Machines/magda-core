@@ -1,6 +1,7 @@
 #include "remote_handlers.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <unordered_set>
 #include <utility>
@@ -488,6 +489,85 @@ HandlerResult devicesCatalog(MagdaApi& api, const juce::var&, const RequestConte
     for (const auto& entry : api.devices().getCatalog())
         items.push_back(toJson(makeDeviceCatalogEntryDto(entry)));
     return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    const auto* device = api.devices().getDevice(*path);
+    if (device == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    std::vector<juce::var> items;
+    for (const auto& parameter : makeDeviceParameterDtos(*device))
+        items.push_back(toJson(parameter));
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    const auto* device = api.devices().getDevice(*path);
+    if (device == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    const auto parameterIndex = readInt(input, "parameterIndex", -1);
+    const auto parameters = makeDeviceParameterDtos(*device);
+    const auto named = std::find_if(parameters.begin(), parameters.end(),
+                                    [parameterIndex](const DeviceParameterDto& parameter) {
+                                        return parameter.index == parameterIndex;
+                                    });
+    if (named == parameters.end())
+        return notFound("parameter", parameterIndex);
+
+    // The same allowlist the in-app sound designer honours: the user decides
+    // per external-plugin parameter what an agent may touch, and the remote
+    // surface must not be the way around that decision.
+    if (!named->aiAgentEnabled)
+        return HandlerResult::fail(ErrorCode::PermissionDenied,
+                                   "parameter " + juce::String(parameterIndex) +
+                                       " is not enabled for AI agent control; enable it under "
+                                       "Configure Parameters");
+
+    // Reject rather than clamp, for the same reason the facade does: a clamped
+    // write reports success while setting a value the caller did not ask for.
+    const auto value = static_cast<double>(input["value"]);
+    if (!std::isfinite(value) || value < named->minValue || value > named->maxValue)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "value " + juce::String(value) + " is outside [" +
+                                       juce::String(named->minValue) + ", " +
+                                       juce::String(named->maxValue) + "] " + named->unit);
+
+    if (!api.devices().setDeviceParameter(*path, parameterIndex, static_cast<float>(value)))
+        return HandlerResult::fail(ErrorCode::Conflict, "parameter write was rejected");
+
+    // Read the result back through the same projection listParameters uses, so
+    // the caller sees what the model now holds rather than what was sent.
+    const auto* updated = api.devices().getDevice(*path);
+    if (updated != nullptr) {
+        for (const auto& parameter : makeDeviceParameterDtos(*updated)) {
+            if (parameter.index == parameterIndex)
+                return HandlerResult::ok(toJson(parameter));
+        }
+    }
+    return HandlerResult::fail(ErrorCode::InternalError, "parameter vanished after write");
+}
+
+HandlerResult devicesOpenEditor(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    if (api.devices().getDevice(*path) == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+
+    const bool accepted = api.devices().openDeviceEditor(*path);
+    auto* object = new juce::DynamicObject();
+    object->setProperty("accepted", accepted);
+    // A window opening (or declining to) is not project content, so the
+    // revision has nothing to record.
+    return HandlerResult::unchanged(juce::var(object));
 }
 
 HandlerResult racksCreate(MagdaApi& api, const juce::var& input, const RequestContext&) {

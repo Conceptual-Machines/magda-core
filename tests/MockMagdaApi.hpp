@@ -37,6 +37,7 @@
 #include "magda/daw/api/undo_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
@@ -1156,8 +1157,9 @@ class MockDeviceApi : public DeviceApi {
         std::vector<DeviceParameter> parameters;
         for (const auto& info : device->parameters) {
             parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit,
-                                  info.minValue, info.maxValue, info.defaultValue,
-                                  info.currentValue});
+                                  info.minValue, info.maxValue,
+                                  ParameterUtils::modelToRealValue({info.defaultValue}, info),
+                                  ParameterUtils::modelToRealValue({info.currentValue}, info)});
         }
         return parameters;
     }
@@ -1201,18 +1203,32 @@ class MockDeviceApi : public DeviceApi {
         return true;
     }
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
-        const auto* device = getDevice(devicePath);
-        if (device == nullptr)
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
             return false;
-        for (const auto& info : device->parameters) {
+        for (auto& info : it->second.parameters) {
             if (info.paramIndex != paramIndex)
                 continue;
             if (value < info.minValue || value > info.maxValue)
                 return false;
-            parameterWrites.emplace_back(devicePath, paramIndex, value);
+            // The live manager updates the model synchronously — and stores the
+            // model-domain value, which for a configured external parameter is
+            // TE-native, not the display value the caller sent.
+            const auto model = ParameterUtils::realToModelValue(value, info);
+            info.currentValue = model.value;
+            parameterWrites.emplace_back(devicePath, paramIndex, model.value);
             return true;
         }
         return false;
+    }
+
+    std::vector<ChainNodePath> openedEditors;
+
+    bool openDeviceEditor(const ChainNodePath& devicePath) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        openedEditors.push_back(devicePath);
+        return true;
     }
 };
 

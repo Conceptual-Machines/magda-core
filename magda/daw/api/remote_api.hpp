@@ -202,6 +202,32 @@ struct DeviceDto {
     bool operator==(const DeviceDto&) const = default;
 };
 
+/**
+ * @brief One parameter of a live device, in real units (Hz, dB, %).
+ *
+ * `index` is the address `devices.setParameter` takes. The three booleans
+ * mirror the user's Configure Parameters customization: shown in the device
+ * UI, pinned to the mini mixer, and opted in to AI/agent control. Internal
+ * devices carry no per-parameter opt-in, so `aiAgentEnabled` is always true
+ * there; for external plugins it is exactly the subset the user ticked.
+ */
+struct DeviceParameterDto {
+    int index = -1;
+    juce::String stableId;
+    juce::String name;
+    juce::String unit;
+    double minValue = 0.0;
+    double maxValue = 1.0;
+    double defaultValue = 0.0;
+    double currentValue = 0.0;
+    double normalizedValue = 0.0;
+    bool visible = false;
+    bool miniMixer = false;
+    bool aiAgentEnabled = false;
+
+    bool operator==(const DeviceParameterDto&) const = default;
+};
+
 struct ChainDto {
     ChainId id = INVALID_CHAIN_ID;
     RackId rackId = INVALID_RACK_ID;
@@ -537,6 +563,7 @@ juce::var toJson(const ChainDto& dto);
 juce::var toJson(const RackDto& dto);
 juce::var toJson(const DeviceGraphDto& dto);
 juce::var toJson(const DeviceCatalogEntryDto& dto);
+juce::var toJson(const DeviceParameterDto& dto);
 juce::var toJson(const SelectionDto& dto);
 juce::var toJson(const TransportDto& dto);
 juce::var toJson(const SessionSlotDto& dto);
@@ -565,6 +592,7 @@ std::optional<RackDto> rackFromJson(const juce::var& json, Error& error);
 std::optional<DeviceGraphDto> deviceGraphFromJson(const juce::var& json, Error& error);
 std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var& json,
                                                                 Error& error);
+std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error);
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error);
 std::optional<TransportDto> transportFromJson(const juce::var& json, Error& error);
 std::optional<SessionDto> sessionFromJson(const juce::var& json, Error& error);
@@ -575,6 +603,7 @@ TrackDto makeTrackDto(const TrackInfo& track);
 ClipDto makeClipDto(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device);
 SelectionDto makeSelectionDto(MagdaApi& api);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);

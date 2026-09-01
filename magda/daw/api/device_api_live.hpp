@@ -21,6 +21,7 @@ class DeviceApiLive : public DeviceApi {
     bool moveDevice(const ChainNodePath& devicePath, int toIndex) override;
     bool setDeviceBypassed(const ChainNodePath& devicePath, bool bypassed) override;
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override;
+    bool openDeviceEditor(const ChainNodePath& devicePath) override;
 };
 
 }  // namespace magda

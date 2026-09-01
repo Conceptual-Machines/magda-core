@@ -1,6 +1,7 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -674,4 +675,161 @@ TEST_CASE("Concurrent change marks never lose the newest revision",
     REQUIRE(seen[0].topic == Topic::Meters);
     // Latest-value-wins has to hold under contention, not just single-threaded.
     REQUIRE(seen[0].revision == perThread * threadCount);
+}
+
+namespace {
+
+/// An external plugin with two parameters, only the first opted in to AI
+/// control — the shape devices.setParameter's allowlist gate cares about.
+DeviceInfo makeFilterDevice() {
+    DeviceInfo device;
+    device.id = 5;
+    device.name = "Filter";
+    device.format = PluginFormat::VST3;
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    device.parameters.emplace_back(1, "Drive", "%", 0.0f, 100.0f, 0.0f);
+    device.parameters[0].currentValue = 800.0f;
+    device.aiSoundDesignerParameters = {0};
+    return device;
+}
+
+juce::var pathInput(const ChainNodePath& path) {
+    return object({{"devicePath", toJson(makeDevicePathDto(path))}});
+}
+
+}  // namespace
+
+TEST_CASE("devices.listParameters returns the device's parameters", "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devices.listParameters", pathInput(path));
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    REQUIRE(items->size() == 2);
+    REQUIRE((*items)[0]["name"].toString() == "Cutoff");
+    REQUIRE(static_cast<bool>((*items)[0]["aiAgentEnabled"]));
+    REQUIRE_FALSE(static_cast<bool>((*items)[1]["aiAgentEnabled"]));
+    // A read burns no revision.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing =
+        run(service, "devices.listParameters", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameter writes an allowed parameter and echoes the model",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 1200.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<double>(response.result["currentValue"]) == 1200.0);
+    REQUIRE(api.devices_.parameterWrites.size() == 1);
+    REQUIRE(std::get<2>(api.devices_.parameterWrites.front()) == 1200.0f);
+}
+
+TEST_CASE("devices.setParameter refuses a parameter the user did not enable",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    // Drive exists but is not on the device's AI allowlist: the remote surface
+    // must refuse rather than bypass the in-app safeguard.
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 1);
+    input.getDynamicObject()->setProperty("value", 50.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "permission_denied");
+    REQUIRE(api.devices_.parameterWrites.empty());
+}
+
+TEST_CASE("devices.setParameter rejects an out-of-range value rather than clamping",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 99999.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.devices_.parameterWrites.empty());
+}
+
+TEST_CASE("devices.openEditor opens the editor without burning a revision",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    const auto response = run(service, "devices.openEditor", pathInput(path));
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<bool>(response.result["accepted"]));
+    REQUIRE(api.devices_.openedEditors.size() == 1);
+    // A window is not project content; the revision must not move.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+
+    const auto missing =
+        run(service, "devices.openEditor", pathInput(ChainNodePath::topLevelDevice(1, 99)));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameter converts display units to the model domain",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    DeviceInfo device;
+    device.id = 5;
+    device.format = PluginFormat::VST3;
+    ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
+    gain.teMinValue = 0.0f;
+    gain.teMaxValue = 1.0f;
+    gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    gain.currentValue = 0.5f;
+    device.parameters.push_back(gain);
+    device.aiSoundDesignerParameters = {0};
+    api.devices_.devices[path] = device;
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 12.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE(response.ok);
+    // The echo speaks display units; the model write is TE-native.
+    REQUIRE(std::abs(static_cast<double>(response.result["currentValue"]) - 12.0) < 1e-4);
+    REQUIRE(std::abs(static_cast<double>(response.result["normalizedValue"]) - 0.75) < 1e-6);
+    REQUIRE(api.devices_.parameterWrites.size() == 1);
+    REQUIRE(std::abs(std::get<2>(api.devices_.parameterWrites.front()) - 0.75f) < 1e-6f);
 }

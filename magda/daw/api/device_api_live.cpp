@@ -4,11 +4,14 @@
 #include <cmath>
 #include <memory>
 
+#include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../core/ParameterUtils.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "plugin_api_live.hpp"
 
 namespace magda {
@@ -163,8 +166,12 @@ std::vector<DeviceParameter> DeviceApiLive::getDeviceParameters(
     std::vector<DeviceParameter> parameters;
     parameters.reserve(device->parameters.size());
     for (const auto& info : device->parameters) {
+        // The model stores TE-native values for externals with a display-range
+        // override; this surface promises real units, so project.
         parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit, info.minValue,
-                              info.maxValue, info.defaultValue, info.currentValue});
+                              info.maxValue,
+                              ParameterUtils::modelToRealValue({info.defaultValue}, info),
+                              ParameterUtils::modelToRealValue({info.currentValue}, info)});
     }
     return parameters;
 }
@@ -240,8 +247,25 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (std::isnan(value) || value < match->minValue || value > match->maxValue)
         return false;
 
-    TrackManager::getInstance().setDeviceParameterValue(devicePath, paramIndex, value);
+    // The caller speaks display units; the model may store TE-native values
+    // (external plugin with a config display range), so convert before writing.
+    TrackManager::getInstance().setDeviceParameterValue(
+        devicePath, paramIndex, ParameterUtils::realToModelValue(value, *match));
     return true;
+}
+
+bool DeviceApiLive::openDeviceEditor(const ChainNodePath& devicePath) {
+    if (getDevice(devicePath) == nullptr)
+        return false;
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return false;
+    bridge->showPluginWindow(devicePath);
+    // showPluginWindow is best-effort — an analysis device or a plugin with no
+    // native editor shows nothing — so report what actually happened rather
+    // than that the request was heard.
+    return bridge->isPluginWindowOpen(devicePath);
 }
 
 }  // namespace magda
