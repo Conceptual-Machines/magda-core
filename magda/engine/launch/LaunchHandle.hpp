@@ -163,6 +163,24 @@ class LaunchHandle {
     /// what it followed.
     std::optional<BeatRange> lastPlayedRange() const;
 
+    /**
+     * @brief Blocks in which a loop was too short to be re-triggered fully.
+     *
+     * A handle reports one event per block, so a loop duration shorter than a
+     * block wraps fewer times than it should and the run carries on past where
+     * it was due to restart. The alternative is a third sub-range SplitStatus
+     * has nowhere to put, and the caller has nowhere to act on.
+     *
+     * Nothing a session clip can do reaches this: durations are bars and a
+     * block is milliseconds. It is counted rather than left silent for the
+     * reason TransportClock counts its own loop overflows, which is that a
+     * loop that quietly stopped looping is otherwise blamed on the audio
+     * device.
+     */
+    int loopRetriggerOverflows() const {
+        return loopRetriggerOverflows_;
+    }
+
   private:
     struct Pending {
         QueueState state = QueueState::playQueued;
@@ -193,6 +211,8 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;
+
+    int loopRetriggerOverflows_ = 0;
 };
 
 }  // namespace magda::engine

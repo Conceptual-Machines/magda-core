@@ -186,6 +186,12 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
         if (wrap < range.monotonic.end && (!event || wrap < *event)) {
             event = wrap;
             fromPending = false;
+
+            // A second wrap inside the same block is one this cannot report.
+            // Counted rather than swallowed: the run carries on past where it
+            // was due to restart, and nothing downstream can see that happen.
+            if (wrap + *loopBeats_ < range.monotonic.end)
+                ++loopRetriggerOverflows_;
         }
     }
 

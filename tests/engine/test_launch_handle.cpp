@@ -283,3 +283,87 @@ TEST_CASE("A stopped handle advancing changes nothing", "[launch]") {
     CHECK_FALSE(handle.playedRange().has_value());
     CHECK_FALSE(handle.lastPlayedRange().has_value());
 }
+
+TEST_CASE("A request and a loop wrap on the same beat resolve to the request", "[launch]") {
+    // The case that actually happens: a clip looping every four bars, stopped
+    // on the grid, so the stop is quantized to the very beat the wrap lands
+    // on. Both are due at once and the request is what the person asked for.
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(4.0);
+    handle.advance(block(0.0, 3.9));
+
+    handle.stop(4.0);
+    const auto status = handle.advance(block(3.9, 4.1));
+
+    REQUIRE(status.isSplit);
+    CHECK(status.playing1);
+    CHECK_FALSE(status.playing2);
+    CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
+
+    // And the wrap is moot rather than deferred: there is no run left to
+    // restart, so nothing is owed to the next block.
+    CHECK_FALSE(handle.queuedState().has_value());
+}
+
+TEST_CASE("A request losing to a wrap is late by one block and no more", "[launch]") {
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(4.0);
+    handle.advance(block(0.0, 3.99));
+
+    // Due at 4.01, which is after the wrap at 4.0 and inside the same block.
+    handle.stop(4.01);
+
+    const auto contested = handle.advance(block(3.99, 4.02));
+    CHECK(contested.isSplit);
+    CHECK(handle.playState() == LaunchHandle::PlayState::playing);
+    CHECK(handle.queuedState() == LaunchHandle::QueueState::stopQueued);
+
+    // Next block, at its very first sample rather than anywhere later.
+    const auto resolved = handle.advance(block(4.02, 4.05));
+    CHECK_FALSE(resolved.isSplit);
+    CHECK_FALSE(resolved.playing1);
+    CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
+}
+
+TEST_CASE("A deferred request cannot be starved by further wraps", "[launch]") {
+    // A loop short enough to put a wrap in every block. A request that lost
+    // once must not keep losing: once deferred it sits at or before the next
+    // block's start, and no wrap can be earlier than that.
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(0.01);
+    handle.advance(block(0.0, 0.005));
+
+    handle.stop(0.011);
+    handle.advance(block(0.005, 0.03));
+    handle.advance(block(0.03, 0.055));
+
+    CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
+    CHECK_FALSE(handle.queuedState().has_value());
+}
+
+TEST_CASE("A loop too short for a block says so rather than stopping quietly", "[launch]") {
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(0.01);
+
+    handle.advance(block(0.0, 0.005));
+    CHECK(handle.loopRetriggerOverflows() == 0);
+
+    // Ten durations inside one block, of which one can be reported.
+    handle.advance(block(0.005, 0.105));
+
+    CHECK(handle.loopRetriggerOverflows() == 1);
+
+    // Nothing a session clip can reach: durations are bars and a block is
+    // milliseconds. A one-beat loop is twenty blocks long and never counts.
+    LaunchHandle realistic;
+    realistic.play({});
+    realistic.setLooping(1.0);
+    for (auto beat = 0.0; beat < 8.0; beat += 0.025)
+        realistic.advance(block(beat, beat + 0.025));
+
+    CHECK(realistic.loopRetriggerOverflows() == 0);
+}
