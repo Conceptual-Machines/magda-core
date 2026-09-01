@@ -218,11 +218,19 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
     // same request a moment later.
     clock.advance(snapshot, context.sampleRate, 0);
 
-    // The latency goes on whichever span is last, so that the samples it flushes
+    // A request with nothing in it renders nothing, latency or not. The flush
+    // below exists to push the last of a range through the graph, and a range
+    // with no samples in it has nothing to push: rendering it anyway would run
+    // every bound device and ask the caller whether to continue, for blocks the
+    // sink is never handed, so an empty request could come back cancelled or
+    // leave a delay line holding something.
+    const auto flushSamples = rangeSamples > 0 || tailSamples > 0 ? latencySamples : 0;
+
+    // The flush goes on whichever span is last, so that the samples it produces
     // are the continuation of what came before them: with a tail, the graph is
     // still ringing out with the transport stopped, and without one the sources
     // play on past the range while the kept window ends where it was asked to.
-    renderSpan(rangeSamples + (tailSamples > 0 ? 0 : latencySamples));
+    renderSpan(rangeSamples + (tailSamples > 0 ? 0 : flushSamples));
 
     if (result.cancelled || tailSamples <= 0)
         return result;
@@ -241,7 +249,7 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
     snapshot.request.playing = false;
     snapshot.request.locate = false;
 
-    renderSpan(tailSamples + latencySamples);
+    renderSpan(tailSamples + flushSamples);
 
     return result;
 }

@@ -1,6 +1,7 @@
 #include "DawProjectRoundTrip.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <map>
 #include <optional>
@@ -400,8 +401,13 @@ Loss multiOutRouting() {
             }};
 }
 
-/// Every top-level device of @p track, paired with the one of the same name on
-/// @p source. What the two device-level losses below both need.
+/// Every top-level device of @p track, paired with the one it went out as.
+/// What the two device-level losses below both need.
+///
+/// By id, which is exact and which these can rely on: the trip has already put
+/// the surviving devices back onto the ids they went out under, by portable
+/// identity and occurrence, before any loss is restored. Pairing by name here
+/// would reintroduce the ambiguity that mapping exists to avoid.
 void forEachPairedDevice(TrackInfo& track, const TrackInfo& source,
                          const std::function<void(DeviceInfo&, const DeviceInfo&)>& visit) {
     for (auto& element : track.chain.fxChainElements) {
@@ -411,7 +417,7 @@ void forEachPairedDevice(TrackInfo& track, const TrackInfo& source,
         auto& device = getDevice(element);
 
         for (const auto& candidate : source.chain.fxChainElements) {
-            if (!isDevice(candidate) || getDevice(candidate).name != device.name)
+            if (!isDevice(candidate) || getDevice(candidate).id != device.id)
                 continue;
 
             visit(device, getDevice(candidate));
@@ -442,6 +448,52 @@ Loss deviceSidechain() {
                                     return;
 
                                 device.sidechain = saved.sidechain;
+                                restored = true;
+                            });
+                    }
+
+                return restored;
+            }};
+}
+
+/// The dry and wet levels in front of a hosted plugin, which are the host's own
+/// numbers and not the plugin's (#2246).
+Loss deviceWrapperMix() {
+    return {.field = "DeviceInfo::wrapperParameters",
+            .reason = "the pair of levels in front of an external plugin belongs to the host "
+                      "rather than to the plugin: the fork injects it, MAGDA persists it, and "
+                      "the plugin has never heard of it. DAWproject carries a device as an "
+                      "identity and a blob of its own state, and neither has anywhere to put a "
+                      "number the plugin did not author. It comes back empty, which the engine "
+                      "reads as the pair's own default of fully wet -- so a project saved at "
+                      "40% wet returns as one that is not",
+            .restore = [](Case& imported, const Case& original) {
+                const auto sameMix = [](const DeviceInfo& device, const DeviceInfo& saved) {
+                    if (device.wrapperParameters.size() != saved.wrapperParameters.size())
+                        return false;
+
+                    for (std::size_t index = 0; index < saved.wrapperParameters.size(); ++index)
+                        if (device.wrapperParameters[index].currentValue !=
+                            saved.wrapperParameters[index].currentValue)
+                            return false;
+
+                    return true;
+                };
+
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name)
+                            continue;
+
+                        forEachPairedDevice(
+                            track, source,
+                            [&restored, &sameMix](DeviceInfo& device, const DeviceInfo& saved) {
+                                if (sameMix(device, saved))
+                                    return;
+
+                                device.wrapperParameters = saved.wrapperParameters;
                                 restored = true;
                             });
                     }
@@ -536,6 +588,8 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         // there is no chain to put a device back into once the container it
         // sat in has no representation.
         {"plugin.narrow.slot", {internalDevices()}},
+        {"plugin.wetdry", {deviceWrapperMix()}},
+        {"plugin.wetdry.dry", {deviceWrapperMix()}},
         {"plugin.sidechain", {deviceSidechain()}},
         {"plugin.instrument.midiout", {deviceMidiPorts()}},
         {"multiout.pair", {internalDevices(), multiOutRouting()}},
@@ -831,6 +885,43 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
 }
 
 /**
+ * @brief The identity the format carries for a device, on either side of the
+ *        trip (#2246).
+ *
+ * The same preference the exporter writes its `deviceID` from -- a VST3's class
+ * id, then JUCE's own identifier string, then the file it was loaded from --
+ * which is what makes it comparable across the trip: the importer puts that one
+ * attribute back into all three fields, so a device asked this question before
+ * and after answers with the same string.
+ *
+ * Deliberately not the display name. A name is what a user typed and what a
+ * browser showed; two instances of one plugin on one chain share it, and a
+ * mapping keyed on it would have to refuse a project that is perfectly ordinary.
+ *
+ * Empty for a device the format could not identify at all, which is a device it
+ * did not carry either: nothing comes back for it, and the chain it sat in is
+ * restored from the original as a declared loss.
+ */
+juce::String portableIdentity(const DeviceInfo& device) {
+    if (device.vst3ClassId.isNotEmpty())
+        return device.vst3ClassId;
+    if (device.uniqueId.isNotEmpty())
+        return device.uniqueId;
+    return device.fileOrIdentifier;
+}
+
+/// Every top-level device of @p elements, in chain order.
+std::vector<const DeviceInfo*> topLevelDevices(const std::vector<ChainElement>& elements) {
+    std::vector<const DeviceInfo*> devices;
+
+    for (const auto& element : elements)
+        if (isDevice(element))
+            devices.push_back(&getDevice(element));
+
+    return devices;
+}
+
+/**
  * @brief Put the devices that came back onto the ids they went out under
  *        (#2246).
  *
@@ -842,12 +933,24 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
  * case of internal devices does, would put the exported plugin back too and
  * stop comparing what the format actually carried.
  *
+ * Matched by portable identity and occurrence rather than by name. Two copies of
+ * one plugin on one chain is an ordinary project, and a mapping that refused it
+ * would be writing a harness limitation into what the corpus is allowed to
+ * contain: so the nth device carrying an identity takes the id of the nth device
+ * that went out carrying it, in chain order, and the name is only ever printed.
+ *
+ * That keeps a reorder visible, which is the property this could have lost. Two
+ * instances of one plugin swapped are the same project and compile to the same
+ * plan; two different devices swapped keep their own ids and compile to a plan
+ * whose ops are in the other order, which the dump comparison reads straight
+ * off.
+ *
  * Unlike a track or a clip, a device that did not come back is not a refusal
  * here. Most of them do not: MAGDA's own devices and its racks have no
  * representation at all, and that is declared as a loss and restored from the
- * original. What is refused is a device that came back under a name nothing
- * went out under, or two under one name, which are the two ways a mapping could
- * quietly put one device's id on another.
+ * original. What is refused is a device that came back carrying an identity
+ * nothing went out under, or a further copy of one, which are the two ways a
+ * mapping could quietly put one device's id on another.
  *
  * Top-level chain devices only. It is where the corpus's hosted plugins sit,
  * and the sections the format has no shape for arrive empty rather than
@@ -855,27 +958,30 @@ bool takeClips(ProjectDocument& imported, const std::map<TrackId, TrackId>& trac
  */
 bool mapDeviceIds(Case& value, const Case& original, std::string& refusal) {
     const auto mapTrack = [&refusal](TrackInfo& track, const TrackInfo& source) {
-        std::map<juce::String, DeviceId> byName;
-        for (const auto& element : source.chain.fxChainElements)
-            if (isDevice(element) &&
-                !byName.emplace(getDevice(element).name, getDevice(element).id).second) {
-                refusal = "two of this case's devices on track '" + source.name.toStdString() +
-                          "' share a name, so ids cannot be mapped back";
-                return false;
-            }
-
-        NameClaims<DeviceId> claims("device", std::move(byName));
+        // The ids that went out, per identity, in chain order. A deque because
+        // matching is first come first served: the second instance of a plugin
+        // to come back is the second that went out.
+        std::map<juce::String, std::deque<DeviceId>> byIdentity;
+        for (const auto* device : topLevelDevices(source.chain.fxChainElements))
+            byIdentity[portableIdentity(*device)].push_back(device->id);
 
         for (auto& element : track.chain.fxChainElements) {
             if (!isDevice(element))
                 continue;
 
             auto& device = getDevice(element);
-            const auto id = claims.claim(device.name, refusal);
-            if (!id.has_value())
-                return false;
+            const auto identity = portableIdentity(device);
 
-            device.id = *id;
+            const auto found = byIdentity.find(identity);
+            if (found == byIdentity.end() || found->second.empty()) {
+                refusal = "a device came back on track '" + track.name.toStdString() + "' as '" +
+                          device.name.toStdString() + "' (" + identity.toStdString() +
+                          "), which nothing went out as";
+                return false;
+            }
+
+            device.id = found->second.front();
+            found->second.pop_front();
         }
 
         return true;

@@ -155,6 +155,10 @@ class LatentDevice final : public EngineDevice {
         }
     }
 
+    /// Blocks it was handed, which is how a render that produced nothing for the
+    /// sink can still be caught having run the graph.
+    int blocksProcessed = 0;
+
   private:
     int latency_ = 0;
     int channels_ = 2;
@@ -233,6 +237,28 @@ struct Harness {
     std::vector<std::unique_ptr<DecayDevice>> devices;
     DecayDevice* decay = nullptr;
 };
+
+/// A harness whose one device is @p latent, prepared and ready to render.
+///
+/// The plain Harness binds its own decaying device to every Device op, which is
+/// the wrong shape for a latency question: what these tests need is a device
+/// that reports one and delays by exactly it.
+void bindLatentDevice(Harness& harness, LatentDevice& latent) {
+    harness.context = RenderContext{kSampleRate, 512, 2};
+
+    harness.source = std::make_unique<TimelineRamp>();
+    harness.source->prepare(harness.context);
+    harness.bindings.clipAudio[1] = harness.source.get();
+
+    latent.prepare(harness.context);
+
+    for (const auto& op : harness.plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            harness.bindings.devices[op.key.deviceKey()] = &latent;
+
+    harness.valueMessages = magda::engine::resolvePlanValues(harness.plan, harness.tracks,
+                                                             harness.master, harness.values);
+}
 
 Catch::Approx approx(float value) {
     return Catch::Approx(value).margin(1e-6);
@@ -528,21 +554,9 @@ TEST_CASE("A render takes the plan's own latency back out", "[engine][offline]")
     }
 
     Harness harness(true);
-    harness.context = RenderContext{kSampleRate, 512, 2};
-
-    harness.source = std::make_unique<TimelineRamp>();
-    harness.source->prepare(harness.context);
-    harness.bindings.clipAudio[1] = harness.source.get();
-
     LatentDevice latent(kLatency);
-    latent.prepare(harness.context);
+    bindLatentDevice(harness, latent);
 
-    for (const auto& op : harness.plan.ops)
-        if (op.kind == magda::engine::OpKind::Device)
-            harness.bindings.devices[op.key.deviceKey()] = &latent;
-
-    harness.valueMessages = magda::engine::resolvePlanValues(harness.plan, harness.tracks,
-                                                             harness.master, harness.values);
     REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
     REQUIRE(harness.executor.latencySamples() == kLatency);
 
@@ -563,4 +577,28 @@ TEST_CASE("A render takes the plan's own latency back out", "[engine][offline]")
         INFO("sample " << sample);
         REQUIRE(sink.samples[sample] == approx(reference[sample]));
     }
+}
+
+TEST_CASE("An empty range renders nothing through a plan that reports latency",
+          "[engine][offline]") {
+    // The flush that takes a plan's latency back out is for pushing the last of
+    // a range through the graph, and a range with no samples in it has nothing
+    // to push. Rendering it anyway would run every bound device for blocks the
+    // sink is never handed, which is a side effect an empty request is not
+    // supposed to have: a device left holding something, and a caller that can
+    // be asked whether to continue a render that produced nothing.
+    Harness harness(true);
+    LatentDevice latent(333);
+    bindLatentDevice(harness, latent);
+
+    REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
+    REQUIRE(harness.executor.latencySamples() == 333);
+
+    CollectingSink sink;
+    const auto result = harness.render({4.0, 4.0, 0.0, 512}, sink);
+
+    CHECK_FALSE(result.refused);
+    CHECK(result.samplesRendered == 0);
+    CHECK(sink.blocks == 0);
+    CHECK(latent.blocksProcessed == 0);
 }
