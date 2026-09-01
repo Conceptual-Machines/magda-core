@@ -1,6 +1,7 @@
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -800,4 +801,35 @@ TEST_CASE("devices.openEditor opens the editor without burning a revision",
         run(service, "devices.openEditor", pathInput(ChainNodePath::topLevelDevice(1, 99)));
     REQUIRE_FALSE(missing.ok);
     REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("devices.setParameter converts display units to the model domain",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    DeviceInfo device;
+    device.id = 5;
+    device.format = PluginFormat::VST3;
+    ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
+    gain.teMinValue = 0.0f;
+    gain.teMaxValue = 1.0f;
+    gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    gain.currentValue = 0.5f;
+    device.parameters.push_back(gain);
+    device.aiSoundDesignerParameters = {0};
+    api.devices_.devices[path] = device;
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    input.getDynamicObject()->setProperty("parameterIndex", 0);
+    input.getDynamicObject()->setProperty("value", 12.0);
+    const auto response = run(service, "devices.setParameter", input);
+
+    REQUIRE(response.ok);
+    // The echo speaks display units; the model write is TE-native.
+    REQUIRE(std::abs(static_cast<double>(response.result["currentValue"]) - 12.0) < 1e-4);
+    REQUIRE(std::abs(static_cast<double>(response.result["normalizedValue"]) - 0.75) < 1e-6);
+    REQUIRE(api.devices_.parameterWrites.size() == 1);
+    REQUIRE(std::abs(std::get<2>(api.devices_.parameterWrites.front()) - 0.75f) < 1e-6f);
 }

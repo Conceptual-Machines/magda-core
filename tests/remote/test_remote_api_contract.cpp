@@ -528,6 +528,31 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
     requireRoundTrip(parameters[1], deviceParameterFromJson);
 }
 
+TEST_CASE("configured external parameters project model values into display units",
+          "[remote-api][contract]") {
+    // The realistic external-override shape: the plugin's TE parameter runs
+    // 0..1 and keeps storing TE-native values, while a saved config gave the
+    // parameter a real display range. The live display provider is what marks
+    // the model as TE-native (isDisplayMappedInternalValue requires its
+    // absence), same as ExternalPluginProcessor::getParameterInfo.
+    DeviceInfo device;
+    device.format = PluginFormat::VST3;
+    ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
+    gain.teMinValue = 0.0f;
+    gain.teMaxValue = 1.0f;
+    gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    gain.currentValue = 0.75f;  // model / TE domain
+    gain.defaultValue = 0.5f;   // model / TE domain
+    device.parameters.push_back(gain);
+
+    const auto parameters = makeDeviceParameterDtos(device);
+    REQUIRE(parameters.size() == 1);
+    // 0.75 of a -24..24 dB range reads +12 dB, not 0.75 dB.
+    REQUIRE(std::abs(parameters[0].currentValue - 12.0) < 1e-4);
+    REQUIRE(std::abs(parameters[0].normalizedValue - 0.75) < 1e-6);
+    REQUIRE(std::abs(parameters[0].defaultValue - 0.0) < 1e-4);
+}
+
 TEST_CASE("internal devices accept agent writes on every parameter", "[remote-api][contract]") {
     // Configure Parameters offers the AI opt-in only for external plugins, so
     // an internal device with no allowlist is fully controllable, not locked.

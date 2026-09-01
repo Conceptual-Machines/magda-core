@@ -37,6 +37,7 @@
 #include "magda/daw/api/undo_api.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipTypes.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 #include "magda/daw/core/TrackTypes.hpp"
 #include "magda/daw/core/TypeIds.hpp"
@@ -1156,8 +1157,9 @@ class MockDeviceApi : public DeviceApi {
         std::vector<DeviceParameter> parameters;
         for (const auto& info : device->parameters) {
             parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit,
-                                  info.minValue, info.maxValue, info.defaultValue,
-                                  info.currentValue});
+                                  info.minValue, info.maxValue,
+                                  ParameterUtils::modelToRealValue({info.defaultValue}, info),
+                                  ParameterUtils::modelToRealValue({info.currentValue}, info)});
         }
         return parameters;
     }
@@ -1209,10 +1211,12 @@ class MockDeviceApi : public DeviceApi {
                 continue;
             if (value < info.minValue || value > info.maxValue)
                 return false;
-            // The live manager updates the model synchronously, so a test that
-            // reads the parameter back sees the written value, as a client would.
-            info.currentValue = value;
-            parameterWrites.emplace_back(devicePath, paramIndex, value);
+            // The live manager updates the model synchronously — and stores the
+            // model-domain value, which for a configured external parameter is
+            // TE-native, not the display value the caller sent.
+            const auto model = ParameterUtils::realToModelValue(value, info);
+            info.currentValue = model.value;
+            parameterWrites.emplace_back(devicePath, paramIndex, model.value);
             return true;
         }
         return false;

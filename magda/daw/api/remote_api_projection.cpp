@@ -358,9 +358,14 @@ std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device
         dto.unit = info.unit;
         dto.minValue = info.minValue;
         dto.maxValue = info.maxValue;
-        dto.defaultValue = info.defaultValue;
-        dto.currentValue = info.currentValue;
-        dto.normalizedValue = ParameterUtils::realToNormalized(info.currentValue, info);
+        // currentValue/defaultValue are model values: for an external plugin
+        // whose saved config gave it a display range, they stay in TE's native
+        // domain while min/max describe real units. Project through the
+        // normalized domain so the wire always carries display units.
+        const auto normalized = ParameterUtils::modelToNormalizedValue({info.currentValue}, info);
+        dto.defaultValue = ParameterUtils::modelToRealValue({info.defaultValue}, info);
+        dto.currentValue = ParameterUtils::normalizedToReal(normalized.value, info);
+        dto.normalizedValue = normalized.value;
         dto.visible = contains(device.visibleParameters, position);
         dto.miniMixer = contains(device.miniMixerParameters, position);
         // Configure Parameters offers the AI opt-in only for external plugins;

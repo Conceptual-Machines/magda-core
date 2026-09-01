@@ -261,6 +261,15 @@ ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
     return ParameterNormalizedValue::clamped(model.value);
 }
 
+float modelToRealValue(ParameterModelValue model, const ParameterInfo& info) {
+    return normalizedToReal(modelToNormalizedValue(model, info).value, info);
+}
+
+ParameterModelValue realToModelValue(float real, const ParameterInfo& info) {
+    return normalizedToModelValue(ParameterNormalizedValue::clamped(realToNormalized(real, info)),
+                                  info);
+}
+
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
     if (infoMatchesTeRange(info))
         return model.value;

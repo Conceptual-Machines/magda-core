@@ -7,6 +7,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../core/ParameterUtils.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
@@ -165,8 +166,12 @@ std::vector<DeviceParameter> DeviceApiLive::getDeviceParameters(
     std::vector<DeviceParameter> parameters;
     parameters.reserve(device->parameters.size());
     for (const auto& info : device->parameters) {
+        // The model stores TE-native values for externals with a display-range
+        // override; this surface promises real units, so project.
         parameters.push_back({info.paramIndex, info.stableId, info.name, info.unit, info.minValue,
-                              info.maxValue, info.defaultValue, info.currentValue});
+                              info.maxValue,
+                              ParameterUtils::modelToRealValue({info.defaultValue}, info),
+                              ParameterUtils::modelToRealValue({info.currentValue}, info)});
     }
     return parameters;
 }
@@ -242,7 +247,10 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (std::isnan(value) || value < match->minValue || value > match->maxValue)
         return false;
 
-    TrackManager::getInstance().setDeviceParameterValue(devicePath, paramIndex, value);
+    // The caller speaks display units; the model may store TE-native values
+    // (external plugin with a config display range), so convert before writing.
+    TrackManager::getInstance().setDeviceParameterValue(
+        devicePath, paramIndex, ParameterUtils::realToModelValue(value, *match));
     return true;
 }
 
