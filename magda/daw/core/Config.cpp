@@ -187,6 +187,7 @@ void Config::save() {
     {
         auto* aiObj = new juce::DynamicObject();
         aiObj->setProperty("preset", toJuceString(aiPreset));
+        aiObj->setProperty("toolLoop", agentToolLoopEnabled);
 
         auto* agentsObj = new juce::DynamicObject();
         for (const auto& [role, profile] : agentInferenceConfigs) {
@@ -578,6 +579,8 @@ void Config::load() {
         auto aiVar = obj->getProperty("ai");
         if (auto* aiObj = aiVar.getDynamicObject()) {
             aiPreset = aiObj->getProperty("preset").toString().toStdString();
+            if (aiObj->hasProperty("toolLoop"))
+                agentToolLoopEnabled = static_cast<bool>(aiObj->getProperty("toolLoop"));
             auto agentsVar = aiObj->getProperty("agents");
             if (auto* agentsObj = agentsVar.getDynamicObject()) {
                 bool jsonHadController = false;
