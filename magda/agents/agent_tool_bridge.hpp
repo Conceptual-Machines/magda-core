@@ -78,6 +78,11 @@ class RemoteAgentToolExecutor : public ToolExecutor {
     /// process, so holding a reference is safe.
     const AgentSurface& surface_;
     remote::ScopeSet scopes_;
+    /// Unique per executor, and an executor lives for one agent run. Tool-call
+    /// ids are provider-generated and repeat across runs ("call_0"), while the
+    /// service caches writes by clientId + requestId — without this namespace a
+    /// later run's write could be answered from an earlier run's cache.
+    juce::String runNamespace_;
 };
 
 }  // namespace magda::agent

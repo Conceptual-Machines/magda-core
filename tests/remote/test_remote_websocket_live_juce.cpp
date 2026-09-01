@@ -128,6 +128,52 @@ class RemoteWebSocketLiveTest final : public juce::UnitTest {
             expect(TrackManager::getInstance().getTracks().size() == 1);
         }
 
+        beginTest("A grouping over the wire is one undoable step");
+        {
+            Fixture fixture;
+            const auto first = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Drums"}, {"type", "audio"}})))["result"]["id"]);
+            const auto second = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Bass"}, {"type", "audio"}})))["result"]["id"]);
+
+            juce::Array<juce::var> ids;
+            ids.add(first);
+            ids.add(second);
+            const auto reply = fixture.exchange(requestJson(
+                "tracks.group", object({{"trackIds", juce::var(ids)}, {"name", "Rhythm"}})));
+
+            expect(reply["error"].isVoid());
+            const auto groupId = static_cast<int>(reply["result"]["id"]);
+            expect(TrackManager::getInstance().getTrack(groupId) != nullptr);
+
+            // The grouping went through a command inside the request's
+            // compound; a handler that wrote through the facade would leave
+            // the compound empty and this undo with nothing to revert.
+            expect(UndoManager::getInstance().undo());
+            expect(TrackManager::getInstance().getTrack(groupId) == nullptr);
+            expect(TrackManager::getInstance().getTopLevelTracks().size() == 2);
+        }
+
+        beginTest("A move over the wire is one undoable step");
+        {
+            Fixture fixture;
+            const auto first = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Drums"}, {"type", "audio"}})))["result"]["id"]);
+            const auto second = static_cast<int>(fixture.exchange(requestJson(
+                "tracks.create", object({{"name", "Bass"}, {"type", "audio"}})))["result"]["id"]);
+
+            const auto reply = fixture.exchange(
+                requestJson("tracks.move", object({{"trackId", second}, {"position", 1}})));
+
+            expect(reply["error"].isVoid());
+            auto order = TrackManager::getInstance().getTopLevelTracks();
+            expect(order.size() == 2 && static_cast<int>(order[0]) == second);
+
+            expect(UndoManager::getInstance().undo());
+            order = TrackManager::getInstance().getTopLevelTracks();
+            expect(order.size() == 2 && static_cast<int>(order[0]) == first);
+        }
+
         beginTest("An edit made in the UI is visible to the next request");
         {
             Fixture fixture;

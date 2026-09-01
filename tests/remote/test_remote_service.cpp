@@ -1075,6 +1075,26 @@ TEST_CASE("clips.update refuses a groove template that does not exist",
     REQUIRE(api.undo_.executeCalls == 0);
 }
 
+TEST_CASE("clips.update with an unknown groove applies none of the patch",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    // The rename is valid on its own; the groove is not. A failed handler does
+    // not roll back the compound, so the groove has to be refused before the
+    // rename runs — otherwise the request fails after changing the project.
+    const auto response =
+        run(service, "clips.update",
+            object({{"clipId", 7}, {"name", "Hook"}, {"grooveTemplate", "No Such Groove"}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 0);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
 TEST_CASE("clips.transpose shifts every note and echoes the clip", "[remote][service][clips]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
@@ -1158,7 +1178,7 @@ TEST_CASE("Note operations refuse a clip that is not MIDI", "[remote][service][c
     REQUIRE(errorCodeOf(response) == "conflict");
 }
 
-TEST_CASE("tracks.group groups existing tracks under a new id", "[remote][service][tracks]") {
+TEST_CASE("tracks.group goes through the undo stack, not the facade", "[remote][service][tracks]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     api.tracks_.createTrack("Drums", TrackType::Media);
@@ -1167,22 +1187,25 @@ TEST_CASE("tracks.group groups existing tracks under a new id", "[remote][servic
     const auto second = api.tracks_.tracks[1].id;
     RemoteApiService service(api);
 
-    const auto response =
-        run(service, "tracks.group",
-            object({{"trackIds", integerArray({static_cast<int>(first), static_cast<int>(second)})},
-                    {"name", "Rhythm"}}));
+    run(service, "tracks.group",
+        object({{"trackIds", integerArray({static_cast<int>(first), static_cast<int>(second)})},
+                {"name", "Rhythm"}}));
 
-    REQUIRE(response.ok);
-    REQUIRE(static_cast<int>(response.result["id"]) != INVALID_TRACK_ID);
-    REQUIRE(api.tracks_.groupWrites.size() == 1);
+    // One command enqueued and no direct facade write: the grouping lands on
+    // the undo stack. The stub retains commands without executing them (they
+    // act on the real singletons), so the created id — and the success path —
+    // are asserted where the singletons are live, in the WebSocket live suite.
+    REQUIRE(api.undo_.executeCalls == 1);
+    REQUIRE(api.tracks_.groupWrites.empty());
 
     const auto missing = run(service, "tracks.group",
                              object({{"trackIds", integerArray({9999})}, {"name", "Ghost"}}));
     REQUIRE_FALSE(missing.ok);
     REQUIRE(errorCodeOf(missing) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 1);
 }
 
-TEST_CASE("tracks.move repositions a track", "[remote][service][tracks]") {
+TEST_CASE("tracks.move goes through the undo stack, not the facade", "[remote][service][tracks]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;
     api.tracks_.createTrack("Drums", TrackType::Media);
@@ -1193,7 +1216,8 @@ TEST_CASE("tracks.move repositions a track", "[remote][service][tracks]") {
         run(service, "tracks.move", object({{"trackId", static_cast<int>(id)}, {"position", 1}}));
 
     REQUIRE(response.ok);
-    REQUIRE(api.tracks_.moveWrites.size() == 1);
+    REQUIRE(api.undo_.executeCalls == 1);
+    REQUIRE(api.tracks_.moveWrites.empty());
 }
 
 TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
@@ -1274,6 +1298,10 @@ TEST_CASE("midi.send delivers a channel message to the named port", "[remote][se
     REQUIRE(api.midi_.sends.size() == 1);
     REQUIRE(api.midi_.sends.front().port == "Launchkey");
     REQUIRE(api.midi_.sends.front().msg.isNoteOn());
+    // Hardware delivery is not a project mutation: no revision bump, no undo
+    // step.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
 }
 
 TEST_CASE("midi.send refuses a length that contradicts the status byte",
@@ -1307,4 +1335,6 @@ TEST_CASE("midi.sendSysEx delivers the unframed payload", "[remote][service][mid
     REQUIRE(response.ok);
     REQUIRE(api.midi_.sends.size() == 1);
     REQUIRE(api.midi_.sends.front().msg.isSysEx());
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+    REQUIRE(api.undo_.executeCalls == 0);
 }

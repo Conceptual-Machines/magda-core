@@ -143,6 +143,31 @@ TEST_CASE("The executor's write mutates and reports the new revision", "[agent-b
     REQUIRE(api.project_.info.tempo == 132.0);
 }
 
+TEST_CASE("A reused tool-call id in a later run is not answered from cache",
+          "[agent-bridge][executor]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    remote::RemoteApiService service(api);
+    const auto& surface = agentSurface(AgentSurfaceId::Arrangement);
+
+    // Providers number tool calls per response, so two runs both open with
+    // "call_0". The service caches writes by clientId + requestId, and the
+    // surface's clientId never changes — only the executor's per-run namespace
+    // keeps the second write from replaying the first one's cached response.
+    RemoteAgentToolExecutor firstRun(service, surface);
+    const auto first =
+        firstRun.execute(requestFor("call_0", "project.setTempo", object({{"tempo", 120.0}})), {});
+    REQUIRE(first.success);
+    REQUIRE(api.project_.info.tempo == 120.0);
+
+    RemoteAgentToolExecutor secondRun(service, surface);
+    const auto second =
+        secondRun.execute(requestFor("call_0", "project.setTempo", object({{"tempo", 132.0}})), {});
+    REQUIRE(second.success);
+    REQUIRE(api.project_.info.tempo == 132.0);
+    REQUIRE(second.projectRevision == remote::INITIAL_REVISION + 2);
+}
+
 TEST_CASE("The executor refuses a call outside the surface allowlist", "[agent-bridge][executor]") {
     const MessageThreadRelaxation relaxation;
     MockMagdaApi api;

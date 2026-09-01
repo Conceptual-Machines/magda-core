@@ -1142,6 +1142,19 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
     if (current == nullptr)
         return notFound("clip", clipId);
 
+    // Validate the whole patch before mutating anything: a failed handler does
+    // not roll back the compound, so refusing the groove after applying an
+    // earlier field would leave the rename in place while reporting failure.
+    // An empty name clears the assignment; anything else must name a template
+    // that exists, or the clip would carry a groove that grooves nothing.
+    if (has(input, "grooveTemplate")) {
+        const auto templateName = input["grooveTemplate"].toString();
+        if (templateName.isNotEmpty() && !api.grooves().getTemplateNames().contains(templateName)) {
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "groove template '" + templateName + "' not found");
+        }
+    }
+
     // A patch, not a replace, following tracks.update: absent fields leave the
     // current value alone, and a patch restating current state mutates nothing.
     bool mutated = false;
@@ -1157,19 +1170,10 @@ HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestCo
             [enabled](auto& manager, ClipId id) { manager.setClipEnabled(id, enabled); });
         mutated = true;
     }
-    if (has(input, "grooveTemplate")) {
-        const auto templateName = input["grooveTemplate"].toString();
-        // An empty name clears the assignment; anything else must name a
-        // template that exists, or the clip would carry a groove that grooves
-        // nothing.
-        if (templateName.isNotEmpty() && !api.grooves().getTemplateNames().contains(templateName)) {
-            return HandlerResult::fail(ErrorCode::NotFound,
-                                       "groove template '" + templateName + "' not found");
-        }
-        if (current->grooveTemplate != templateName) {
-            runCommand<SetClipGrooveTemplateCommand>(api, clipId, templateName);
-            mutated = true;
-        }
+    if (has(input, "grooveTemplate") &&
+        current->grooveTemplate != input["grooveTemplate"].toString()) {
+        runCommand<SetClipGrooveTemplateCommand>(api, clipId, input["grooveTemplate"].toString());
+        mutated = true;
     }
 
     const auto* updated = api.clips().getClip(clipId);
@@ -1264,7 +1268,12 @@ HandlerResult tracksGroup(MagdaApi& api, const juce::var& input, const RequestCo
         trackIds.push_back(trackId);
     }
 
-    const auto groupId = api.tracks().groupTracks(trackIds, input["name"].toString());
+    // Through a command, not TrackApi::groupTracks: the facade setter mutates
+    // the manager directly, so the dispatcher's compound would close empty and
+    // the grouping could never be undone.
+    const auto groupId = runCommandAndRead<GroupTracksCommand>(
+        api, [](const GroupTracksCommand& command) { return command.getCreatedGroupId(); },
+        std::move(trackIds), input["name"].toString());
     if (groupId == INVALID_TRACK_ID)
         return HandlerResult::fail(ErrorCode::Conflict, "grouping was rejected");
     return HandlerResult::ok(idResult(groupId));
@@ -1274,7 +1283,7 @@ HandlerResult tracksMove(MagdaApi& api, const juce::var& input, const RequestCon
     const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
     if (api.tracks().getTrack(trackId) == nullptr)
         return notFound("track", trackId);
-    api.tracks().moveTrackToPosition(trackId, static_cast<int>(input["position"]));
+    runCommand<MoveTrackCommand>(api, trackId, static_cast<int>(input["position"]));
     return HandlerResult::ok(acceptedResult());
 }
 
@@ -1389,7 +1398,9 @@ HandlerResult midiSend(MagdaApi& api, const juce::var& input, const RequestConte
     if (!api.midi().sendMidi(input["port"].toString(), message))
         return HandlerResult::fail(ErrorCode::NotFound, "MIDI output '" + input["port"].toString() +
                                                             "' cannot be opened");
-    return HandlerResult::ok(acceptedResult());
+    // Delivered to hardware, but no project state changed: `unchanged` keeps
+    // the revision still, the undo stack clean, and change feeds quiet.
+    return HandlerResult::unchanged(acceptedResult());
 }
 
 HandlerResult midiSendSysEx(MagdaApi& api, const juce::var& input, const RequestContext&) {
@@ -1397,7 +1408,7 @@ HandlerResult midiSendSysEx(MagdaApi& api, const juce::var& input, const Request
     if (!api.midi().sendSysEx(input["port"].toString(), bytes.data(), bytes.size()))
         return HandlerResult::fail(ErrorCode::NotFound, "MIDI output '" + input["port"].toString() +
                                                             "' cannot be opened");
-    return HandlerResult::ok(acceptedResult());
+    return HandlerResult::unchanged(acceptedResult());
 }
 
 }  // namespace magda::remote::handlers

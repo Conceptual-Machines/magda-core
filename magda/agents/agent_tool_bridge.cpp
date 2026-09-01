@@ -59,7 +59,10 @@ remote::ScopeSet agentScopesForSurface(const AgentSurface& surface) {
 
 RemoteAgentToolExecutor::RemoteAgentToolExecutor(remote::RemoteApiService& service,
                                                  const AgentSurface& surface)
-    : service_(service), surface_(surface), scopes_(agentScopesForSurface(surface)) {}
+    : service_(service),
+      surface_(surface),
+      scopes_(agentScopesForSurface(surface)),
+      runNamespace_(juce::Uuid().toDashedString()) {}
 
 ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
                                             const CancellationToken& cancellation) {
@@ -88,7 +91,7 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
     context.clientId = "agent:" + juce::String(surface_.name);
     context.clientName = "magda-agent";
     context.transport = "in-app";
-    context.requestId = request.call.id;
+    context.requestId = runNamespace_ + "/" + request.call.id;
     // The runtime threads the revision it last observed; passing it through
     // gives agent writes the same optimistic concurrency a remote client gets.
     // Zero means the run has observed nothing yet and expects nothing.

@@ -100,8 +100,12 @@ std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
 
     const auto llmConfig = config.getAgentLLMConfig(magda::role::COMMAND);
     // The on-device command model is an intent tagger, not a tool-calling
-    // model; the DSL path is the one that knows how to drive it.
-    if (llmConfig.provider == magda::provider::FAST_INFERENCE)
+    // model; the DSL path is the one that knows how to drive it. The embedded
+    // llama client likewise refuses any request that carries tools, so
+    // starting the loop with it could only end in a model error — preflight
+    // both and let the DSL workflows take the request instead.
+    if (llmConfig.provider == magda::provider::FAST_INFERENCE ||
+        llmConfig.provider == magda::provider::LLAMA_LOCAL)
         return std::nullopt;
     auto client = magda::createLLMClient(llmConfig, "tool-loop");
     if (client == nullptr)
