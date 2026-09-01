@@ -114,6 +114,15 @@ class DeviceApi {
      */
     virtual bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float value) = 0;
+
+    /**
+     * @brief Open the device's plugin editor window in the MAGDA UI.
+     *
+     * Returns whether a window is actually open afterwards — false when the
+     * path does not resolve, when no engine is running (headless), or when
+     * the device has no native editor to show.
+     */
+    virtual bool openDeviceEditor(const ChainNodePath& devicePath) = 0;
 };
 
 }  // namespace magda

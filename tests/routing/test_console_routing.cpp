@@ -44,6 +44,9 @@ TEST_CASE("agent surface registry has distinct bounded capabilities", "[console_
     REQUIRE_FALSE(containsTool(automation, "session.launchClip"));
 
     REQUIRE(containsTool(device, "racks.setBypassed"));
+    REQUIRE(containsTool(device, "devices.listParameters"));
+    REQUIRE(containsTool(device, "devices.setParameter"));
+    REQUIRE(containsTool(device, "devices.openEditor"));
     REQUIRE_FALSE(containsTool(device, "tracks.update"));
 
     REQUIRE(master.runPolicy.maxMutations == 0);

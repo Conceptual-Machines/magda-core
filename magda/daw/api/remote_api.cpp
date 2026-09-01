@@ -329,6 +329,30 @@ const juce::var& deviceGraphSchema() {
     return value;
 }
 
+const juce::var& deviceParameterSchema() {
+    static const auto value = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "index":{"type":"integer","minimum":0},
+            "stableId":{"type":"string"},
+            "name":{"type":"string"},
+            "unit":{"type":"string"},
+            "minValue":{"type":"number"},
+            "maxValue":{"type":"number"},
+            "defaultValue":{"type":"number"},
+            "currentValue":{"type":"number"},
+            "normalizedValue":{"type":"number","minimum":0,"maximum":1},
+            "visible":{"type":"boolean"},
+            "miniMixer":{"type":"boolean"},
+            "aiAgentEnabled":{"type":"boolean"}
+        },
+        "required":["index","stableId","name","unit","minValue","maxValue","defaultValue",
+                    "currentValue","normalizedValue","visible","miniMixer","aiAgentEnabled"],
+        "additionalProperties":false
+    })json");
+    return value;
+}
+
 const juce::var& deviceCatalogEntrySchema() {
     static const auto value = parseSchema(R"json({
         "type":"object",
@@ -1083,6 +1107,23 @@ juce::var toJson(const DeviceCatalogEntryDto& dto) {
     return object;
 }
 
+juce::var toJson(const DeviceParameterDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("index", dto.index);
+    object->setProperty("stableId", dto.stableId);
+    object->setProperty("name", dto.name);
+    object->setProperty("unit", dto.unit);
+    object->setProperty("minValue", dto.minValue);
+    object->setProperty("maxValue", dto.maxValue);
+    object->setProperty("defaultValue", dto.defaultValue);
+    object->setProperty("currentValue", dto.currentValue);
+    object->setProperty("normalizedValue", dto.normalizedValue);
+    object->setProperty("visible", dto.visible);
+    object->setProperty("miniMixer", dto.miniMixer);
+    object->setProperty("aiAgentEnabled", dto.aiAgentEnabled);
+    return object;
+}
+
 juce::var toJson(const SelectionDto& dto) {
     auto object = new juce::DynamicObject();
     object->setProperty("trackId", nullableId(dto.trackId));
@@ -1345,6 +1386,25 @@ std::optional<DeviceCatalogEntryDto> deviceCatalogEntryFromJson(const juce::var&
     return dto;
 }
 
+std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json, Error& error) {
+    if (!prepareDecode(json, deviceParameterSchema(), error))
+        return std::nullopt;
+    DeviceParameterDto dto;
+    dto.index = readInt(json, "index");
+    dto.stableId = json["stableId"].toString();
+    dto.name = json["name"].toString();
+    dto.unit = json["unit"].toString();
+    dto.minValue = static_cast<double>(json["minValue"]);
+    dto.maxValue = static_cast<double>(json["maxValue"]);
+    dto.defaultValue = static_cast<double>(json["defaultValue"]);
+    dto.currentValue = static_cast<double>(json["currentValue"]);
+    dto.normalizedValue = static_cast<double>(json["normalizedValue"]);
+    dto.visible = static_cast<bool>(json["visible"]);
+    dto.miniMixer = static_cast<bool>(json["miniMixer"]);
+    dto.aiAgentEnabled = static_cast<bool>(json["aiAgentEnabled"]);
+    return dto;
+}
+
 std::optional<SelectionDto> selectionFromJson(const juce::var& json, Error& error) {
     if (!prepareDecode(json, selectionSchema(), error))
         return std::nullopt;
@@ -1563,6 +1623,40 @@ OperationRegistry::OperationRegistry() {
     // its `catalogId` from — so what this lists is exactly what can be asked for.
     add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
         &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    // Parameter discovery and direct control (#2274). Values are real units on
+    // both sides — discovery reports what a knob shows and setParameter takes
+    // the same number back — with `normalizedValue` alongside so a client can
+    // compose with automation.addPoint's 0..1 domain.
+    add("devices.listParameters",
+        "List a device's parameters, in real units, with customization flags",
+        OperationAccess::Read, &handlers::devicesListParameters, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        arraySchema(deviceParameterSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.setParameter", "Set one device parameter, in real units", OperationAccess::Write,
+        &handlers::devicesSetParameter, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "parameterIndex":{"type":"integer","minimum":0},
+                "value":{"type":"number"}
+            },
+            "required":["devicePath","parameterIndex","value"],"additionalProperties":false
+        })json"),
+        deviceParameterSchema());
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.openEditor", "Open a device's plugin editor window", OperationAccess::Write,
+        &handlers::devicesOpenEditor, operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     add("racks.create", "Create a top-level rack", OperationAccess::Write, &handlers::racksCreate,
         operationInputSchema(R"json({
             "type":"object",
@@ -1771,6 +1865,11 @@ OperationRegistry::OperationRegistry() {
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
+        {"devices.setParameter", Scope::Edit},
+        // Opening a plugin editor changes no project content, but it takes
+        // over part of the user's screen — an edit-grade intrusion, not
+        // something a read-only client should reach.
+        {"devices.openEditor", Scope::Edit},
         {"selection.set", Scope::Edit},
         {"automation.createLane", Scope::Edit},
         {"automation.addPoint", Scope::Edit},

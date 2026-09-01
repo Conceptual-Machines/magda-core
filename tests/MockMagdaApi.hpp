@@ -1201,18 +1201,30 @@ class MockDeviceApi : public DeviceApi {
         return true;
     }
     bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex, float value) override {
-        const auto* device = getDevice(devicePath);
-        if (device == nullptr)
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
             return false;
-        for (const auto& info : device->parameters) {
+        for (auto& info : it->second.parameters) {
             if (info.paramIndex != paramIndex)
                 continue;
             if (value < info.minValue || value > info.maxValue)
                 return false;
+            // The live manager updates the model synchronously, so a test that
+            // reads the parameter back sees the written value, as a client would.
+            info.currentValue = value;
             parameterWrites.emplace_back(devicePath, paramIndex, value);
             return true;
         }
         return false;
+    }
+
+    std::vector<ChainNodePath> openedEditors;
+
+    bool openDeviceEditor(const ChainNodePath& devicePath) override {
+        if (getDevice(devicePath) == nullptr)
+            return false;
+        openedEditors.push_back(devicePath);
+        return true;
     }
 };
 

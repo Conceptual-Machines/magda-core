@@ -4,11 +4,13 @@
 #include <cmath>
 #include <memory>
 
+#include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
+#include "../engine/AudioEngine.hpp"
 #include "plugin_api_live.hpp"
 
 namespace magda {
@@ -242,6 +244,20 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
 
     TrackManager::getInstance().setDeviceParameterValue(devicePath, paramIndex, value);
     return true;
+}
+
+bool DeviceApiLive::openDeviceEditor(const ChainNodePath& devicePath) {
+    if (getDevice(devicePath) == nullptr)
+        return false;
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
+    if (bridge == nullptr)
+        return false;
+    bridge->showPluginWindow(devicePath);
+    // showPluginWindow is best-effort — an analysis device or a plugin with no
+    // native editor shows nothing — so report what actually happened rather
+    // than that the request was heard.
+    return bridge->isPluginWindowOpen(devicePath);
 }
 
 }  // namespace magda

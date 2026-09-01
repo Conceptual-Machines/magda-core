@@ -152,12 +152,15 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
          .name = "device",
          .responsibility = "Device topology, racks, presets, parameters, and sound design.",
          .promptFragments = {"Operate only on the focused device or its containing rack.",
-                             "Parameter and preset mutation are advisory until corresponding "
-                             "Remote API tools exist."},
+                             "List parameters before writing; only parameters the user enabled "
+                             "for AI control accept writes.",
+                             "Preset mutation is advisory until a corresponding Remote API tool "
+                             "exists."},
          .contextProviders = {Provider::ProjectRevision, Provider::ActiveView, Provider::Selection,
                               Provider::TrackSummaries, Provider::DeviceSummaries,
                               Provider::Conversation},
          .toolAllowlist = {"project.get", "tracks.list", "tracks.get", "devices.list",
+                           "devices.listParameters", "devices.setParameter", "devices.openEditor",
                            "racks.create", "racks.remove", "racks.setBypassed", "selection.get",
                            "selection.set"},
          .runPolicy = {.maxSteps = 8, .maxMutations = 5, .approveMutations = true},

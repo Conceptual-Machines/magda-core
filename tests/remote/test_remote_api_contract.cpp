@@ -40,6 +40,9 @@ TEST_CASE("Remote API registry is versioned, discoverable, and unique", "[remote
     REQUIRE(registry.find("system.describe") != nullptr);
     REQUIRE(registry.find("project.get") != nullptr);
     REQUIRE(registry.find("devices.list") != nullptr);
+    REQUIRE(registry.find("devices.listParameters") != nullptr);
+    REQUIRE(registry.find("devices.setParameter") != nullptr);
+    REQUIRE(registry.find("devices.openEditor") != nullptr);
     REQUIRE(registry.find("session.launchClip") != nullptr);
     REQUIRE(registry.find("automation.addPoint") != nullptr);
     REQUIRE(registry.find("does.not.exist") == nullptr);
@@ -487,6 +490,56 @@ TEST_CASE("devices.catalog lists addable devices without their file locations",
         fields.insert(property.name.toString());
     REQUIRE(fields == std::set<juce::String>{"catalogId", "name", "manufacturer", "category",
                                              "description", "format", "type", "instrument"});
+}
+
+TEST_CASE("devices.listParameters projects real units and customization flags",
+          "[remote-api][contract]") {
+    DeviceInfo device;
+    device.format = PluginFormat::VST3;
+    device.parameters.emplace_back(0, "Cutoff", "Hz", 20.0f, 20000.0f, 800.0f);
+    device.parameters.emplace_back(1, "Resonance", "%", 0.0f, 100.0f, 10.0f);
+    device.parameters[0].stableId = "cutoff";
+    device.parameters[0].currentValue = 800.0f;
+    device.parameters[1].currentValue = 25.0f;
+    device.visibleParameters = {0, 1};
+    device.miniMixerParameters = {1};
+    device.aiSoundDesignerParameters = {1};
+
+    const auto parameters = makeDeviceParameterDtos(device);
+    REQUIRE(parameters.size() == 2);
+
+    REQUIRE(parameters[0].index == 0);
+    REQUIRE(parameters[0].stableId == "cutoff");
+    REQUIRE(parameters[0].name == "Cutoff");
+    REQUIRE(parameters[0].unit == "Hz");
+    REQUIRE(parameters[0].minValue == 20.0);
+    REQUIRE(parameters[0].maxValue == 20000.0);
+    REQUIRE(parameters[0].currentValue == 800.0);
+    REQUIRE(parameters[0].visible);
+    REQUIRE_FALSE(parameters[0].miniMixer);
+
+    // The user ticked only Resonance for AI control.
+    REQUIRE_FALSE(parameters[0].aiAgentEnabled);
+    REQUIRE(parameters[1].aiAgentEnabled);
+    REQUIRE(parameters[1].miniMixer);
+    REQUIRE(std::abs(parameters[1].normalizedValue - 0.25) < 1e-6);
+
+    requireRoundTrip(parameters[0], deviceParameterFromJson);
+    requireRoundTrip(parameters[1], deviceParameterFromJson);
+}
+
+TEST_CASE("internal devices accept agent writes on every parameter", "[remote-api][contract]") {
+    // Configure Parameters offers the AI opt-in only for external plugins, so
+    // an internal device with no allowlist is fully controllable, not locked.
+    DeviceInfo device;
+    device.format = PluginFormat::Internal;
+    device.parameters.emplace_back(0, "Drive", "", 0.0f, 1.0f, 0.5f);
+    device.parameters.emplace_back(1, "Tone", "", 0.0f, 1.0f, 0.5f);
+
+    const auto parameters = makeDeviceParameterDtos(device);
+    REQUIRE(parameters.size() == 2);
+    for (const auto& parameter : parameters)
+        REQUIRE(parameter.aiAgentEnabled);
 }
 
 TEST_CASE("devices.list addresses colliding fx and post-fx device ids",

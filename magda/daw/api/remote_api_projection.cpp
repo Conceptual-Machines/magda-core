@@ -4,6 +4,7 @@
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
+#include "../core/ParameterUtils.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../project/ProjectInfo.hpp"
@@ -336,6 +337,39 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
     dto.type = deviceTypeName(entry.type);
     dto.instrument = entry.isInstrument;
     return dto;
+}
+
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device) {
+    const auto contains = [](const std::vector<int>& positions, int position) {
+        return std::find(positions.begin(), positions.end(), position) != positions.end();
+    };
+    // The customization lists key on position in `parameters`, while the wire
+    // `index` is `paramIndex` — the address parameter writes take. The two are
+    // normally equal, but only the position indexes the user's selections.
+    std::vector<DeviceParameterDto> dtos;
+    dtos.reserve(device.parameters.size());
+    for (size_t i = 0; i < device.parameters.size(); ++i) {
+        const auto& info = device.parameters[i];
+        const auto position = static_cast<int>(i);
+        DeviceParameterDto dto;
+        dto.index = info.paramIndex >= 0 ? info.paramIndex : position;
+        dto.stableId = info.stableId;
+        dto.name = info.name;
+        dto.unit = info.unit;
+        dto.minValue = info.minValue;
+        dto.maxValue = info.maxValue;
+        dto.defaultValue = info.defaultValue;
+        dto.currentValue = info.currentValue;
+        dto.normalizedValue = ParameterUtils::realToNormalized(info.currentValue, info);
+        dto.visible = contains(device.visibleParameters, position);
+        dto.miniMixer = contains(device.miniMixerParameters, position);
+        // Configure Parameters offers the AI opt-in only for external plugins;
+        // internal devices accept agent writes on every parameter.
+        dto.aiAgentEnabled = device.format == PluginFormat::Internal ||
+                             contains(device.aiSoundDesignerParameters, position);
+        dtos.push_back(std::move(dto));
+    }
+    return dtos;
 }
 
 SelectionDto makeSelectionDto(MagdaApi& api) {
