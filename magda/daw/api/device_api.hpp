@@ -56,6 +56,23 @@ struct DeviceParameter {
 };
 
 /**
+ * @brief Detection-data overrides for one parameter.
+ *
+ * The same fields Configure Parameters' AI-Detect writes: display unit,
+ * scale, display range, and discrete choice labels. Present fields replace
+ * the saved value; absent fields keep it. `index` is a position in
+ * `DeviceInfo::parameters`.
+ */
+struct DeviceParameterOverride {
+    int index = -1;
+    std::optional<juce::String> unit;
+    std::optional<ParameterScale> scale;
+    std::optional<float> minValue;
+    std::optional<float> maxValue;
+    std::optional<std::vector<juce::String>> choices;
+};
+
+/**
  * @brief A partial update to a device's saved parameter customization.
  *
  * Each present field replaces that selection wholesale — an empty vector
@@ -67,6 +84,7 @@ struct DeviceParameterConfigUpdate {
     std::optional<std::vector<int>> miniMixerParameters;
     std::optional<std::vector<int>> aiAgentParameters;
     std::optional<juce::String> aiPrompt;
+    std::optional<std::vector<DeviceParameterOverride>> parameterOverrides;
 };
 
 /**

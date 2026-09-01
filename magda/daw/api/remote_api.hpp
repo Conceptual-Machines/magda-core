@@ -10,6 +10,7 @@
 
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
+#include "../core/ParameterInfo.hpp"
 #include "../core/TypeIds.hpp"
 #include "remote_scopes.hpp"
 
@@ -221,6 +222,8 @@ struct DeviceParameterDto {
     double defaultValue = 0.0;
     double currentValue = 0.0;
     double normalizedValue = 0.0;
+    ParameterScale scale = ParameterScale::Linear;  // serialized as the store's wire strings
+    std::vector<juce::String> choices;  // labels for discrete parameters; empty otherwise
     bool visible = false;
     bool miniMixer = false;
     bool aiAgentEnabled = false;

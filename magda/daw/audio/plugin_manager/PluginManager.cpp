@@ -165,12 +165,14 @@ PluginManager::PluginManager(te::Engine& engine, te::Edit& edit, TrackController
 
 PluginManager::SyncedDeviceMap::iterator PluginManager::findSyncedDevice(
     const ChainNodePath& devicePath) {
-    return syncedDevices_.find(devicePath);
+    // Entries are keyed by the canonical spelling; the model layer accepts
+    // both spellings of a top-level device, so lookups must too (#2288).
+    return syncedDevices_.find(devicePath.normalized());
 }
 
 PluginManager::SyncedDeviceMap::const_iterator PluginManager::findSyncedDevice(
     const ChainNodePath& devicePath) const {
-    return syncedDevices_.find(devicePath);
+    return syncedDevices_.find(devicePath.normalized());
 }
 
 void PluginManager::prepareForChainElementMove(const ChainNodePath& sourceElementPath,
@@ -231,7 +233,15 @@ te::Plugin::Ptr PluginManager::getPlugin(const ChainNodePath& devicePath) const 
 DeviceProcessor* PluginManager::getDeviceProcessor(const ChainNodePath& devicePath) const {
     juce::ScopedLock lock(pluginLock_);
     auto it = findSyncedDevice(devicePath);
-    return it != syncedDevices_.end() ? it->second.processor.get() : nullptr;
+    if (it == syncedDevices_.end())
+        return nullptr;
+    if (it->second.processor == nullptr) {
+        // The entry exists but async load failed or is still pending: every
+        // host parameter write to this device is currently being dropped.
+        DBG("PluginManager: device " << devicePath.getDeviceId()
+                                     << " has no processor (load failed or pending)");
+    }
+    return it->second.processor.get();
 }
 
 DeviceId PluginManager::getDeviceIdForPlugin(te::Plugin* plugin) const {

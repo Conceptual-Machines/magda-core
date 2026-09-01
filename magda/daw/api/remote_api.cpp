@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "../core/PluginParameterConfigStore.hpp"
 #include "remote_handlers.hpp"
 
 namespace magda::remote {
@@ -342,12 +343,16 @@ const juce::var& deviceParameterSchema() {
             "defaultValue":{"type":"number"},
             "currentValue":{"type":"number"},
             "normalizedValue":{"type":"number","minimum":0,"maximum":1},
+            "scale":{"type":"string",
+                     "enum":["linear","logarithmic","exponential","discrete","boolean","fader_db"]},
+            "choices":{"type":"array","items":{"type":"string"}},
             "visible":{"type":"boolean"},
             "miniMixer":{"type":"boolean"},
             "aiAgentEnabled":{"type":"boolean"}
         },
         "required":["index","stableId","name","unit","minValue","maxValue","defaultValue",
-                    "currentValue","normalizedValue","visible","miniMixer","aiAgentEnabled"],
+                    "currentValue","normalizedValue","scale","choices","visible","miniMixer",
+                    "aiAgentEnabled"],
         "additionalProperties":false
     })json");
     return value;
@@ -1118,6 +1123,11 @@ juce::var toJson(const DeviceParameterDto& dto) {
     object->setProperty("defaultValue", dto.defaultValue);
     object->setProperty("currentValue", dto.currentValue);
     object->setProperty("normalizedValue", dto.normalizedValue);
+    object->setProperty("scale", PluginParameterConfigStore::scaleToString(dto.scale));
+    juce::Array<juce::var> choices;
+    for (const auto& choice : dto.choices)
+        choices.add(choice);
+    object->setProperty("choices", choices);
     object->setProperty("visible", dto.visible);
     object->setProperty("miniMixer", dto.miniMixer);
     object->setProperty("aiAgentEnabled", dto.aiAgentEnabled);
@@ -1399,6 +1409,11 @@ std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json,
     dto.defaultValue = static_cast<double>(json["defaultValue"]);
     dto.currentValue = static_cast<double>(json["currentValue"]);
     dto.normalizedValue = static_cast<double>(json["normalizedValue"]);
+    dto.scale = PluginParameterConfigStore::scaleFromString(json["scale"].toString());
+    if (const auto* choices = json["choices"].getArray()) {
+        for (const auto& choice : *choices)
+            dto.choices.push_back(choice.toString());
+    }
     dto.visible = static_cast<bool>(json["visible"]);
     dto.miniMixer = static_cast<bool>(json["miniMixer"]);
     dto.aiAgentEnabled = static_cast<bool>(json["aiAgentEnabled"]);
@@ -1623,6 +1638,46 @@ OperationRegistry::OperationRegistry() {
     // its `catalogId` from — so what this lists is exactly what can be asked for.
     add("devices.catalog", "List devices that can be added, by catalogue id", OperationAccess::Read,
         &handlers::devicesCatalog, emptyObjectSchema(), arraySchema(deviceCatalogEntrySchema()));
+    add("devices.add", "Add a device from the catalogue to a track's FX chain or a rack chain",
+        OperationAccess::Write, &handlers::devicesAdd, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "parentPath":{},
+                "catalogId":{"type":"string","minLength":1},
+                "index":{"type":"integer","minimum":-1}
+            },
+            "required":["catalogId"],"additionalProperties":false
+        })json"),
+        parseSchema(R"json({
+            "type":"object",
+            "properties":{"id":{"type":"integer","minimum":0},"devicePath":{}},
+            "required":["id","devicePath"],"additionalProperties":false
+        })json"));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "parentPath", devicePathSchema());
+    operations_.back().outputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.remove", "Remove a device", OperationAccess::Write, &handlers::devicesRemove,
+        operationInputSchema(R"json({
+            "type":"object","properties":{"devicePath":{}},
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
+    add("devices.move", "Move a device within its chain", OperationAccess::Write,
+        &handlers::devicesMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "toIndex":{"type":"integer","minimum":0}
+            },
+            "required":["devicePath","toIndex"],"additionalProperties":false
+        })json"),
+        okResult);
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     // Parameter discovery and direct control (#2274). Values are real units on
     // both sides — discovery reports what a knob shows and setParameter takes
     // the same number back — with `normalizedValue` alongside so a client can
@@ -1659,7 +1714,20 @@ OperationRegistry::OperationRegistry() {
                 "visibleParameters":{"type":"array","items":{"type":"integer","minimum":0}},
                 "miniMixerParameters":{"type":"array","items":{"type":"integer","minimum":0}},
                 "aiAgentParameters":{"type":"array","items":{"type":"integer","minimum":0}},
-                "aiPrompt":{"type":"string"}
+                "aiPrompt":{"type":"string"},
+                "parameterOverrides":{"type":"array","items":{
+                    "type":"object",
+                    "properties":{
+                        "index":{"type":"integer","minimum":0},
+                        "unit":{"type":"string"},
+                        "scale":{"type":"string","enum":["linear","logarithmic","exponential",
+                                                          "discrete","boolean","fader_db"]},
+                        "minValue":{"type":"number"},
+                        "maxValue":{"type":"number"},
+                        "choices":{"type":"array","items":{"type":"string"}}
+                    },
+                    "required":["index"],"additionalProperties":false
+                }}
             },
             "required":["devicePath"],"additionalProperties":false
         })json"),
@@ -1882,6 +1950,9 @@ OperationRegistry::OperationRegistry() {
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
+        {"devices.add", Scope::Edit},
+        {"devices.remove", Scope::Edit},
+        {"devices.move", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
         {"devices.setParameterConfig", Scope::Edit},
         // Opening a plugin editor changes no project content, but it takes

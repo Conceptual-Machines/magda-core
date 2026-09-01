@@ -274,6 +274,17 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
     if (!inRange(update.visibleParameters) || !inRange(update.miniMixerParameters) ||
         !inRange(update.aiAgentParameters))
         return false;
+    if (update.parameterOverrides) {
+        for (const auto& override_ : *update.parameterOverrides) {
+            if (override_.index < 0 || override_.index >= count)
+                return false;
+            const auto& info = device->parameters[static_cast<size_t>(override_.index)];
+            const auto effectiveMin = override_.minValue.value_or(info.minValue);
+            const auto effectiveMax = override_.maxValue.value_or(info.maxValue);
+            if (effectiveMin >= effectiveMax)
+                return false;
+        }
+    }
 
     // Start from the device's own parameters so every one has an entry, then
     // overlay whatever was saved — a legacy file listing three indices must
@@ -300,6 +311,28 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
     applySelection(update.aiAgentParameters, &PluginParameterConfigEntry::aiAgent);
     if (update.aiPrompt)
         config.aiPrompt = *update.aiPrompt;
+    if (update.parameterOverrides) {
+        for (const auto& override_ : *update.parameterOverrides) {
+            auto& entry = config.entries[static_cast<size_t>(override_.index)];
+            if (override_.unit)
+                entry.unit = *override_.unit;
+            if (override_.scale)
+                entry.scale = *override_.scale;
+            if (override_.minValue)
+                entry.rangeMin = *override_.minValue;
+            if (override_.maxValue)
+                entry.rangeMax = *override_.maxValue;
+            // A new display range moves the anchor the way a fresh AI-Detect
+            // would: to its midpoint.
+            if (override_.minValue || override_.maxValue) {
+                const auto low = entry.rangeMin.value_or(0.0f);
+                const auto high = entry.rangeMax.value_or(1.0f);
+                entry.rangeCenter = (low + high) * 0.5f;
+            }
+            if (override_.choices)
+                entry.choices = *override_.choices;
+        }
+    }
 
     if (!PluginParameterConfigStore::save(uniqueId, config))
         return false;

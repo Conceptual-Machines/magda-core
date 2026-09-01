@@ -160,6 +160,7 @@ const std::vector<AgentSurface>& registeredAgentSurfaces() {
                               Provider::TrackSummaries, Provider::DeviceSummaries,
                               Provider::Conversation},
          .toolAllowlist = {"project.get", "tracks.list", "tracks.get", "devices.list",
+                           "devices.catalog", "devices.add", "devices.remove", "devices.move",
                            "devices.listParameters", "devices.setParameter",
                            "devices.setParameterConfig", "devices.openEditor", "racks.create",
                            "racks.remove", "racks.setBypassed", "selection.get", "selection.set"},

@@ -52,6 +52,12 @@ struct PluginParameterConfig {
  */
 namespace PluginParameterConfigStore {
 
+/// The wire/XML name of a parameter scale ("linear", "logarithmic",
+/// "exponential", "discrete", "boolean", "fader_db"). One owner for the
+/// vocabulary shared by the config XML and the remote API.
+juce::String scaleToString(ParameterScale scale);
+ParameterScale scaleFromString(const juce::String& name);
+
 /// The config file for `uniqueId`, whether or not it exists yet.
 juce::File configFileFor(const juce::String& uniqueId);
 

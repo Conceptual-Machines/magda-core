@@ -110,3 +110,23 @@ TEST_CASE("An invalid path is never handed to a drop handler", "[ui][drag][chain
 
     REQUIRE_FALSE(readChainNodePathFromDragInfo(*info.getDynamicObject()).has_value());
 }
+
+TEST_CASE("normalized collapses the step spelling of a top-level device", "[chain][path]") {
+    // The model accepts both spellings of a top-level FX device; map keys are
+    // canonical. normalized() is what lets an engine lookup accept either.
+    magda::ChainNodePath stepSpelling;
+    stepSpelling.trackId = 3;
+    stepSpelling.steps.push_back({magda::ChainStepType::Device, 7});
+
+    REQUIRE(stepSpelling.normalized() == magda::ChainNodePath::topLevelDevice(3, 7));
+
+    // Canonical, nested, sectioned, and track-level paths pass through.
+    const auto canonical = magda::ChainNodePath::topLevelDevice(3, 7);
+    REQUIRE(canonical.normalized() == canonical);
+    const auto nested = magda::ChainNodePath::chainDevice(3, 1, 2, 7);
+    REQUIRE(nested.normalized() == nested);
+    const auto postFx = magda::ChainNodePath::postFxDevice(3, 7);
+    REQUIRE(postFx.normalized() == postFx);
+    const auto track = magda::ChainNodePath::trackLevel(3);
+    REQUIRE(track.normalized() == track);
+}

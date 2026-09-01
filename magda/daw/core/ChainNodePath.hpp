@@ -343,6 +343,21 @@ struct ChainNodePath {
         return extendedWith({ChainStepType::Device, d});
     }
 
+    /**
+     * @brief The canonical spelling of this address.
+     *
+     * A top-level FX device can be written two ways — `topLevelDeviceId` on
+     * the root, or a single Device step — and the model layer accepts both.
+     * Map keys must not: this collapses the step spelling onto the
+     * `topLevelDevice` form and leaves every other path untouched.
+     */
+    ChainNodePath normalized() const {
+        if (topLevelDeviceId == INVALID_DEVICE_ID && !isTrackLevel && steps.size() == 1 &&
+            steps.front().type == ChainStepType::Device)
+            return topLevelDevice(trackId, steps.front().id);
+        return *this;
+    }
+
     // Get the parent path (without the last step)
     ChainNodePath parent() const {
         ChainNodePath p = *this;

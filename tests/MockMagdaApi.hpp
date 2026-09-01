@@ -1244,6 +1244,16 @@ class MockDeviceApi : public DeviceApi {
                     return false;
             }
         }
+        if (update.parameterOverrides) {
+            for (const auto& override_ : *update.parameterOverrides) {
+                if (override_.index < 0 || override_.index >= count)
+                    return false;
+                const auto& info = device.parameters[static_cast<size_t>(override_.index)];
+                if (override_.minValue.value_or(info.minValue) >=
+                    override_.maxValue.value_or(info.maxValue))
+                    return false;
+            }
+        }
         if (update.visibleParameters)
             device.visibleParameters = *update.visibleParameters;
         if (update.miniMixerParameters)
@@ -1252,6 +1262,21 @@ class MockDeviceApi : public DeviceApi {
             device.aiSoundDesignerParameters = *update.aiAgentParameters;
         if (update.aiPrompt)
             device.aiSoundDesignerPrompt = *update.aiPrompt;
+        if (update.parameterOverrides) {
+            for (const auto& override_ : *update.parameterOverrides) {
+                auto& info = device.parameters[static_cast<size_t>(override_.index)];
+                if (override_.unit)
+                    info.unit = *override_.unit;
+                if (override_.scale)
+                    info.scale = *override_.scale;
+                if (override_.minValue)
+                    info.minValue = *override_.minValue;
+                if (override_.maxValue)
+                    info.maxValue = *override_.maxValue;
+                if (override_.choices)
+                    info.choices = *override_.choices;
+            }
+        }
         configUpdates.emplace_back(devicePath, update);
         return true;
     }

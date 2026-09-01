@@ -10,38 +10,6 @@
 namespace magda::PluginParameterConfigStore {
 namespace {
 
-juce::String scaleToXmlString(ParameterScale scale) {
-    switch (scale) {
-        case ParameterScale::Linear:
-            return "linear";
-        case ParameterScale::Logarithmic:
-            return "logarithmic";
-        case ParameterScale::Exponential:
-            return "exponential";
-        case ParameterScale::Discrete:
-            return "discrete";
-        case ParameterScale::Boolean:
-            return "boolean";
-        case ParameterScale::FaderDB:
-            return "fader_db";
-    }
-    return "linear";
-}
-
-ParameterScale xmlStringToScale(const juce::String& str) {
-    if (str == "logarithmic")
-        return ParameterScale::Logarithmic;
-    if (str == "exponential")
-        return ParameterScale::Exponential;
-    if (str == "discrete")
-        return ParameterScale::Discrete;
-    if (str == "boolean")
-        return ParameterScale::Boolean;
-    if (str == "fader_db")
-        return ParameterScale::FaderDB;
-    return ParameterScale::Linear;
-}
-
 /// The id a live device's config is filed under. Older devices carry only a
 /// pluginId, so it is the fallback rather than an error.
 juce::String configIdFor(const DeviceInfo& device) {
@@ -78,6 +46,38 @@ bool refreshFlatParameterConfig(const juce::String& uniqueId,
 
 }  // namespace
 
+juce::String scaleToString(ParameterScale scale) {
+    switch (scale) {
+        case ParameterScale::Linear:
+            return "linear";
+        case ParameterScale::Logarithmic:
+            return "logarithmic";
+        case ParameterScale::Exponential:
+            return "exponential";
+        case ParameterScale::Discrete:
+            return "discrete";
+        case ParameterScale::Boolean:
+            return "boolean";
+        case ParameterScale::FaderDB:
+            return "fader_db";
+    }
+    return "linear";
+}
+
+ParameterScale scaleFromString(const juce::String& name) {
+    if (name == "logarithmic")
+        return ParameterScale::Logarithmic;
+    if (name == "exponential")
+        return ParameterScale::Exponential;
+    if (name == "discrete")
+        return ParameterScale::Discrete;
+    if (name == "boolean")
+        return ParameterScale::Boolean;
+    if (name == "fader_db")
+        return ParameterScale::FaderDB;
+    return ParameterScale::Linear;
+}
+
 juce::File configFileFor(const juce::String& uniqueId) {
     return paths::pluginConfigsDir().getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") +
                                                   ".xml");
@@ -113,7 +113,7 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
             if (paramElem->hasAttribute("unit"))
                 entry.unit = paramElem->getStringAttribute("unit");
             if (paramElem->hasAttribute("scale"))
-                entry.scale = xmlStringToScale(paramElem->getStringAttribute("scale"));
+                entry.scale = scaleFromString(paramElem->getStringAttribute("scale"));
             if (paramElem->hasAttribute("min"))
                 entry.rangeMin = static_cast<float>(paramElem->getDoubleAttribute("min"));
             if (paramElem->hasAttribute("max"))
@@ -172,7 +172,7 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
         if (entry.unit)
             paramElem->setAttribute("unit", *entry.unit);
         if (entry.scale)
-            paramElem->setAttribute("scale", scaleToXmlString(*entry.scale));
+            paramElem->setAttribute("scale", scaleToString(*entry.scale));
         if (entry.rangeMin)
             paramElem->setAttribute("min", static_cast<double>(*entry.rangeMin));
         if (entry.rangeMax)
