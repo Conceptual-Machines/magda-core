@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "../core/PluginParameterConfigStore.hpp"
 #include "remote_handlers.hpp"
 
 namespace magda::remote {
@@ -1122,7 +1123,7 @@ juce::var toJson(const DeviceParameterDto& dto) {
     object->setProperty("defaultValue", dto.defaultValue);
     object->setProperty("currentValue", dto.currentValue);
     object->setProperty("normalizedValue", dto.normalizedValue);
-    object->setProperty("scale", dto.scale);
+    object->setProperty("scale", PluginParameterConfigStore::scaleToString(dto.scale));
     juce::Array<juce::var> choices;
     for (const auto& choice : dto.choices)
         choices.add(choice);
@@ -1408,7 +1409,7 @@ std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json,
     dto.defaultValue = static_cast<double>(json["defaultValue"]);
     dto.currentValue = static_cast<double>(json["currentValue"]);
     dto.normalizedValue = static_cast<double>(json["normalizedValue"]);
-    dto.scale = json["scale"].toString();
+    dto.scale = PluginParameterConfigStore::scaleFromString(json["scale"].toString());
     if (const auto* choices = json["choices"].getArray()) {
         for (const auto& choice : *choices)
             dto.choices.push_back(choice.toString());

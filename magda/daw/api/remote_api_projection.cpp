@@ -367,7 +367,7 @@ std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device
         dto.defaultValue = ParameterUtils::modelToRealValue({info.defaultValue}, info);
         dto.currentValue = ParameterUtils::normalizedToReal(normalized.value, info);
         dto.normalizedValue = normalized.value;
-        dto.scale = PluginParameterConfigStore::scaleToString(info.scale);
+        dto.scale = info.scale;
         dto.choices = info.choices;
         dto.visible = contains(device.visibleParameters, position);
         dto.miniMixer = contains(device.miniMixerParameters, position);

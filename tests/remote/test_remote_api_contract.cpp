@@ -529,10 +529,10 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
     REQUIRE(std::abs(parameters[1].normalizedValue - 0.25) < 1e-6);
 
     // A discrete parameter is interpretable, not just a number in a range.
-    REQUIRE(parameters[0].scale == "logarithmic");
-    REQUIRE(parameters[1].scale == "linear");
+    REQUIRE(parameters[0].scale == ParameterScale::Logarithmic);
+    REQUIRE(parameters[1].scale == ParameterScale::Linear);
     REQUIRE(parameters[1].choices.empty());
-    REQUIRE(parameters[2].scale == "discrete");
+    REQUIRE(parameters[2].scale == ParameterScale::Discrete);
     REQUIRE(parameters[2].choices == std::vector<juce::String>{"LP", "BP", "HP"});
 
     requireRoundTrip(parameters[0], deviceParameterFromJson);
