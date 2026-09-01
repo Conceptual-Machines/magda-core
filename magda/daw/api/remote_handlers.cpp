@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -553,6 +554,80 @@ HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const R
         }
     }
     return HandlerResult::fail(ErrorCode::InternalError, "parameter vanished after write");
+}
+
+HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
+                                        const RequestContext&) {
+    const auto path = toChainNodePath(devicePathFromJson(input["devicePath"]));
+    if (!path)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, "devicePath does not resolve");
+    const auto* device = api.devices().getDevice(*path);
+    if (device == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    if (device->format == PluginFormat::Internal)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "internal devices have no saved parameter customization; "
+                                   "their parameters already accept agent writes");
+
+    // The wire indices are the ones devices.listParameters reports, which are
+    // paramIndex when set; the customization lists key on position. Translate
+    // so the two operations speak the same addresses.
+    std::unordered_map<int, int> positionByWireIndex;
+    for (size_t i = 0; i < device->parameters.size(); ++i) {
+        const auto& info = device->parameters[i];
+        const auto position = static_cast<int>(i);
+        positionByWireIndex.emplace(info.paramIndex >= 0 ? info.paramIndex : position, position);
+    }
+
+    DeviceParameterConfigUpdate update;
+    juce::String badIndex;
+    const auto readSelection = [&](const char* name) -> std::optional<std::vector<int>> {
+        if (!has(input, name))
+            return std::nullopt;
+        std::vector<int> positions;
+        if (const auto* array = input[name].getArray()) {
+            for (const auto& item : *array) {
+                const auto wireIndex = static_cast<int>(item);
+                const auto found = positionByWireIndex.find(wireIndex);
+                if (found == positionByWireIndex.end()) {
+                    badIndex =
+                        juce::String(name) + " names unknown parameter " + juce::String(wireIndex);
+                    return std::nullopt;
+                }
+                positions.push_back(found->second);
+            }
+        }
+        return positions;
+    };
+    update.visibleParameters = readSelection("visibleParameters");
+    if (badIndex.isNotEmpty())
+        return HandlerResult::fail(ErrorCode::ValidationFailed, badIndex);
+    update.miniMixerParameters = readSelection("miniMixerParameters");
+    if (badIndex.isNotEmpty())
+        return HandlerResult::fail(ErrorCode::ValidationFailed, badIndex);
+    update.aiAgentParameters = readSelection("aiAgentParameters");
+    if (badIndex.isNotEmpty())
+        return HandlerResult::fail(ErrorCode::ValidationFailed, badIndex);
+    if (has(input, "aiPrompt"))
+        update.aiPrompt = input["aiPrompt"].toString();
+
+    if (!update.visibleParameters && !update.miniMixerParameters && !update.aiAgentParameters &&
+        !update.aiPrompt)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "nothing to update: provide at least one of "
+                                   "visibleParameters, miniMixerParameters, aiAgentParameters, "
+                                   "aiPrompt");
+
+    if (!api.devices().setDeviceParameterConfig(*path, update))
+        return HandlerResult::fail(ErrorCode::InternalError, "parameter config write failed");
+
+    const auto* updated = api.devices().getDevice(*path);
+    if (updated == nullptr)
+        return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
+    std::vector<juce::var> items;
+    for (const auto& parameter : makeDeviceParameterDtos(*updated))
+        items.push_back(toJson(parameter));
+    return HandlerResult::ok(toJsonArray(items));
 }
 
 HandlerResult devicesOpenEditor(MagdaApi& api, const juce::var& input, const RequestContext&) {

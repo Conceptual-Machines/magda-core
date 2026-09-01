@@ -8,6 +8,7 @@
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/ParameterUtils.hpp"
+#include "../core/PluginParameterConfigStore.hpp"
 #include "../core/TrackCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
@@ -251,6 +252,58 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     // (external plugin with a config display range), so convert before writing.
     TrackManager::getInstance().setDeviceParameterValue(
         devicePath, paramIndex, ParameterUtils::realToModelValue(value, *match));
+    return true;
+}
+
+bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                             const DeviceParameterConfigUpdate& update) {
+    const auto* device = getDevice(devicePath);
+    if (device == nullptr)
+        return false;
+    if (device->format == PluginFormat::Internal)
+        return false;
+    const auto uniqueId = device->uniqueId.isNotEmpty() ? device->uniqueId : device->pluginId;
+    if (uniqueId.isEmpty())
+        return false;
+
+    const auto count = static_cast<int>(device->parameters.size());
+    const auto inRange = [count](const std::optional<std::vector<int>>& indices) {
+        return !indices || std::all_of(indices->begin(), indices->end(),
+                                       [count](int index) { return index >= 0 && index < count; });
+    };
+    if (!inRange(update.visibleParameters) || !inRange(update.miniMixerParameters) ||
+        !inRange(update.aiAgentParameters))
+        return false;
+
+    // Start from the device's own parameters so every one has an entry, then
+    // overlay whatever was saved — a legacy file listing three indices must
+    // not shrink the plugin to three configurable parameters.
+    auto config = PluginParameterConfigStore::fromDevice(*device);
+    if (const auto saved = PluginParameterConfigStore::load(uniqueId)) {
+        config.aiPrompt = saved->aiPrompt;
+        for (const auto& entry : saved->entries) {
+            if (entry.index >= 0 && entry.index < count)
+                config.entries[static_cast<size_t>(entry.index)] = entry;
+        }
+    }
+
+    const auto applySelection = [&config](const std::optional<std::vector<int>>& indices,
+                                          bool PluginParameterConfigEntry::*flag) {
+        if (!indices)
+            return;
+        for (auto& entry : config.entries)
+            entry.*flag =
+                std::find(indices->begin(), indices->end(), entry.index) != indices->end();
+    };
+    applySelection(update.visibleParameters, &PluginParameterConfigEntry::visible);
+    applySelection(update.miniMixerParameters, &PluginParameterConfigEntry::miniMixer);
+    applySelection(update.aiAgentParameters, &PluginParameterConfigEntry::aiAgent);
+    if (update.aiPrompt)
+        config.aiPrompt = *update.aiPrompt;
+
+    if (!PluginParameterConfigStore::save(uniqueId, config))
+        return false;
+    PluginParameterConfigStore::refreshLiveDevices(uniqueId);
     return true;
 }
 

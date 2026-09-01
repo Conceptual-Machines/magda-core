@@ -75,17 +75,6 @@ class ParameterConfigDialog : public juce::Component,
     static void showForPlugin(const juce::String& uniqueId, const juce::String& pluginName,
                               juce::Component* parent);
 
-    // Load saved parameter configuration and apply to DeviceInfo
-    static bool applyConfigToDevice(const juce::String& uniqueId, magda::DeviceInfo& device);
-
-    // True when an external plugin has at least one parameter explicitly
-    // selected for the generic AI sound designer.
-    static bool hasAiSoundDesignerParameters(const juce::String& uniqueId);
-
-#ifdef MAGDA_ENABLE_TEST_HOOKS
-    static void refreshLiveDevicesForParameterConfigForTest(const juce::String& uniqueId);
-#endif
-
   private:
     juce::String pluginName_;
     juce::String pluginUniqueId_;  // For saving/loading parameter configuration

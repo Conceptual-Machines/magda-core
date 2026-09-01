@@ -1222,6 +1222,40 @@ class MockDeviceApi : public DeviceApi {
         return false;
     }
 
+    // Mirrors the live semantics: each provided list replaces that selection
+    // on the stored device, exactly what refreshLiveDevices would produce.
+    std::vector<std::pair<ChainNodePath, DeviceParameterConfigUpdate>> configUpdates;
+
+    bool setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                  const DeviceParameterConfigUpdate& update) override {
+        const auto it = devices.find(devicePath);
+        if (it == devices.end())
+            return false;
+        auto& device = it->second;
+        if (device.format == PluginFormat::Internal)
+            return false;
+        const auto count = static_cast<int>(device.parameters.size());
+        for (const auto* indices :
+             {&update.visibleParameters, &update.miniMixerParameters, &update.aiAgentParameters}) {
+            if (!indices->has_value())
+                continue;
+            for (const int index : **indices) {
+                if (index < 0 || index >= count)
+                    return false;
+            }
+        }
+        if (update.visibleParameters)
+            device.visibleParameters = *update.visibleParameters;
+        if (update.miniMixerParameters)
+            device.miniMixerParameters = *update.miniMixerParameters;
+        if (update.aiAgentParameters)
+            device.aiSoundDesignerParameters = *update.aiAgentParameters;
+        if (update.aiPrompt)
+            device.aiSoundDesignerPrompt = *update.aiPrompt;
+        configUpdates.emplace_back(devicePath, update);
+        return true;
+    }
+
     std::vector<ChainNodePath> openedEditors;
 
     bool openDeviceEditor(const ChainNodePath& devicePath) override {

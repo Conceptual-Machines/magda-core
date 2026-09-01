@@ -264,6 +264,7 @@ set(TEST_SOURCES
     remote/test_remote_websocket_server.cpp
     remote/test_remote_api_host.cpp
     devices/test_device_api.cpp
+    devices/test_plugin_parameter_config_store.cpp
     # Rack and chain addressing at depth through the facade (issue #1993)
     remote/test_track_api_nested_racks.cpp
     automation/test_automation_api_surface.cpp

@@ -803,6 +803,68 @@ TEST_CASE("devices.openEditor opens the editor without burning a revision",
     REQUIRE(errorCodeOf(missing) == "not_found");
 }
 
+TEST_CASE("devices.setParameterConfig updates the customization and echoes the parameters",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    RemoteApiService service(api);
+
+    auto input = pathInput(path);
+    juce::Array<juce::var> aiSelection;
+    aiSelection.add(0);
+    aiSelection.add(1);
+    input.getDynamicObject()->setProperty("aiAgentParameters", aiSelection);
+    input.getDynamicObject()->setProperty("aiPrompt", "Deep bass");
+    const auto response = run(service, "devices.setParameterConfig", input);
+
+    REQUIRE(response.ok);
+    const auto* items = response.result.getArray();
+    REQUIRE(items != nullptr);
+    REQUIRE(items->size() == 2);
+    // Both parameters are now agent-controllable, and the device holds the
+    // update — the next setParameter on Drive must succeed.
+    REQUIRE(static_cast<bool>((*items)[1]["aiAgentEnabled"]));
+    const auto& device = api.devices_.devices.at(path);
+    REQUIRE(device.aiSoundDesignerParameters == std::vector<int>{0, 1});
+    REQUIRE(device.aiSoundDesignerPrompt == "Deep bass");
+    REQUIRE(api.devices_.configUpdates.size() == 1);
+}
+
+TEST_CASE("devices.setParameterConfig refuses unknown indices and internal devices",
+          "[remote][service][devices]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    const auto path = ChainNodePath::topLevelDevice(1, 5);
+    api.devices_.devices[path] = makeFilterDevice();
+    const auto internalPath = ChainNodePath::topLevelDevice(1, 6);
+    auto internalDevice = makeFilterDevice();
+    internalDevice.format = PluginFormat::Internal;
+    api.devices_.devices[internalPath] = internalDevice;
+    RemoteApiService service(api);
+
+    auto unknownIndex = pathInput(path);
+    juce::Array<juce::var> selection;
+    selection.add(7);
+    unknownIndex.getDynamicObject()->setProperty("aiAgentParameters", selection);
+    const auto badIndex = run(service, "devices.setParameterConfig", unknownIndex);
+    REQUIRE_FALSE(badIndex.ok);
+    REQUIRE(errorCodeOf(badIndex) == "validation_failed");
+
+    const auto empty = run(service, "devices.setParameterConfig", pathInput(path));
+    REQUIRE_FALSE(empty.ok);
+    REQUIRE(errorCodeOf(empty) == "validation_failed");
+
+    auto internalInput = pathInput(internalPath);
+    internalInput.getDynamicObject()->setProperty("aiAgentParameters", juce::Array<juce::var>());
+    const auto internalResponse = run(service, "devices.setParameterConfig", internalInput);
+    REQUIRE_FALSE(internalResponse.ok);
+    REQUIRE(errorCodeOf(internalResponse) == "validation_failed");
+
+    REQUIRE(api.devices_.configUpdates.empty());
+}
+
 TEST_CASE("devices.setParameter converts display units to the model domain",
           "[remote][service][devices]") {
     const MessageThreadRelaxation relaxation;

@@ -17,6 +17,7 @@ target_sources(magda_daw PRIVATE
     LLMClientProvider.cpp
     MixAnalysisService.cpp
     SessionViewState.cpp
+    PluginParameterConfigStore.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
     TrackManagerDevices.cpp

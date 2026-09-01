@@ -1649,6 +1649,23 @@ OperationRegistry::OperationRegistry() {
         deviceParameterSchema());
     operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
         "devicePath", devicePathSchema());
+    add("devices.setParameterConfig",
+        "Update a device's saved parameter customization: the visible / mini-mixer / AI-agent "
+        "selections and the per-plugin AI prompt",
+        OperationAccess::Write, &handlers::devicesSetParameterConfig, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "devicePath":{},
+                "visibleParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "miniMixerParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "aiAgentParameters":{"type":"array","items":{"type":"integer","minimum":0}},
+                "aiPrompt":{"type":"string"}
+            },
+            "required":["devicePath"],"additionalProperties":false
+        })json"),
+        arraySchema(deviceParameterSchema()));
+    operations_.back().inputSchema["properties"].getDynamicObject()->setProperty(
+        "devicePath", devicePathSchema());
     add("devices.openEditor", "Open a device's plugin editor window", OperationAccess::Write,
         &handlers::devicesOpenEditor, operationInputSchema(R"json({
             "type":"object","properties":{"devicePath":{}},
@@ -1866,6 +1883,7 @@ OperationRegistry::OperationRegistry() {
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
         {"devices.setParameter", Scope::Edit},
+        {"devices.setParameterConfig", Scope::Edit},
         // Opening a plugin editor changes no project content, but it takes
         // over part of the user's screen — an edit-grade intrusion, not
         // something a read-only client should reach.

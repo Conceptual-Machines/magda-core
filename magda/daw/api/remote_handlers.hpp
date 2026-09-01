@@ -51,6 +51,7 @@ HandlerResult devicesList(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesCatalog(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesListParameters(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesSetParameter(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult devicesSetParameterConfig(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult devicesOpenEditor(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult racksRemove(MagdaApi&, const juce::var&, const RequestContext&);
