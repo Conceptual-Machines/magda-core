@@ -75,9 +75,14 @@ struct SplitStatus {
 
     bool isSplit = false;
 
-    /// The timeline beat the current run of playing began at, for whichever
-    /// sub-ranges are playing. What a source subtracts to know how far into
-    /// the clip it is.
+    /// The run's origin in this block's own cycle of the timeline, for
+    /// whichever sub-ranges are playing. What a source subtracts from the beat
+    /// it is handed to know how far into the material it is.
+    ///
+    /// Virtual rather than historical: once the timeline has wrapped, the beat
+    /// the run really started on is no longer in the cycle the block belongs
+    /// to, so this is projected forward from monotonic elapsed instead. It can
+    /// therefore sit before the block, or before zero.
     std::optional<double> playStartTime1;
     std::optional<double> playStartTime2;
 };
@@ -199,6 +204,9 @@ class LaunchHandle {
 
     /// Carry the current run through @p piece without changing state.
     void extendRun(const SyncRange& piece);
+
+    /// The run's origin expressed in @p piece's own cycle of the timeline.
+    double virtualStart(const SyncRange& piece) const;
 
     /// Apply whatever the block ran into, at the instant it ran into it.
     void applyEvent(bool fromPending, double timelineBeat, double monotonicBeat);

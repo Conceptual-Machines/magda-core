@@ -387,3 +387,72 @@ TEST_CASE("A loop too short for a block says so rather than stopping quietly", "
 
     CHECK(realistic.loopRetriggerOverflows() == 0);
 }
+
+TEST_CASE("A wrap landing on a block's first sample is not skipped twice", "[launch]") {
+    // The half-open boundary, from the loop's side. The block ending at the
+    // wrap does not contain it, so the block starting there has to, and a
+    // handle that rounded up again would skip every block-aligned wrap.
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(2.0);
+
+    const auto before = handle.advance(block(0.0, 2.0));
+    CHECK_FALSE(before.isSplit);
+    CHECK(handle.playedRange()->length() == Approx(2.0));
+
+    const auto status = handle.advance(block(2.0, 3.0));
+
+    // No split: the wrap is on the first sample, so the whole block belongs to
+    // the new run and a split would report an empty half.
+    CHECK_FALSE(status.isSplit);
+    CHECK(status.playing1);
+    REQUIRE(status.playStartTime1.has_value());
+    CHECK(*status.playStartTime1 == Approx(2.0));
+    CHECK(handle.playedRange()->length() == Approx(1.0));
+
+    // And it keeps wrapping rather than having lost the phase.
+    handle.advance(block(3.0, 4.0));
+    handle.advance(block(4.0, 5.0));
+    CHECK(handle.playedRange()->length() == Approx(1.0));
+}
+
+TEST_CASE("A backward nudge cannot take a run before it started", "[launch]") {
+    LaunchHandle handle;
+    handle.play({});
+    handle.advance(block(0.0, 2.0));
+
+    SECTION("within the run it shifts the origin") {
+        handle.nudge(-0.5);
+        CHECK(handle.playedRange()->length() == Approx(1.5));
+    }
+
+    SECTION("past the start it clamps rather than inverting") {
+        handle.nudge(-3.0);
+
+        const auto played = *handle.playedRange();
+        CHECK(played.length() == Approx(0.0));
+        CHECK(played.start <= played.end);
+        CHECK(handle.playState() == LaunchHandle::PlayState::playing);
+
+        // The loop origin came with it: a run of zero length whose next wrap
+        // was already behind it would fire immediately and for ever.
+        CHECK(handle.playedMonotonicRange()->length() == Approx(0.0));
+    }
+}
+
+TEST_CASE("playStartTime survives the timeline wrapping under it", "[launch]") {
+    LaunchHandle handle;
+    handle.play({});
+    handle.advance(SyncRange{BeatRange{6.0, 8.0}, BeatRange{6.0, 8.0}});
+
+    // The loop takes the timeline back to zero. The run began at beat 6, which
+    // is no longer a beat in the cycle this block belongs to.
+    const auto status = handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{8.0, 10.0}});
+
+    REQUIRE(status.playStartTime1.has_value());
+
+    // What a source actually computes: where it is in the material. Two beats
+    // in, because that is how long the run has been going.
+    CHECK(status.range1.start - *status.playStartTime1 == Approx(2.0));
+    CHECK(*status.playStartTime1 == Approx(-2.0));
+}

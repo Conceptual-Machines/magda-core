@@ -1,5 +1,6 @@
 #include "launch/LaunchHandle.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace magda::engine {
@@ -18,6 +19,20 @@ double project(const BeatRange& from, const BeatRange& to, double value) {
 }
 
 }  // namespace
+
+double LaunchHandle::virtualStart(const SyncRange& piece) const {
+    // Where the run would have begun on the timeline as it stands now, which
+    // is not where it did begin once the timeline has wrapped or been located
+    // since. A source works out how far into the material it is by subtracting
+    // this from the block it was handed, so the two have to be in the same
+    // cycle of the timeline; the beat the run actually started on stops being
+    // in any cycle the moment the loop takes it back.
+    //
+    // Derived from monotonic elapsed, which is the one quantity that survives
+    // the wrap. It may sit before the block or before zero, and that is what it
+    // means: the run began that far back.
+    return piece.timeline.start - (piece.monotonic.start - playedMonotonic_->start);
+}
 
 std::optional<LaunchHandle::QueueState> LaunchHandle::queuedState() const {
     if (!pending_)
@@ -69,11 +84,16 @@ void LaunchHandle::nudge(double beats) {
     // The origin moves, not the end: the played length is what a source reads
     // its position from, so shifting where the run began is what moves the
     // playhead through the material without interrupting the run.
-    if (played_)
-        played_->start -= beats;
+    if (!played_ || !playedMonotonic_)
+        return;
 
-    if (playedMonotonic_)
-        playedMonotonic_->start -= beats;
+    // Backwards only as far as the run has got. Further would put the origin
+    // in the future, which is a run of negative length and a loop whose next
+    // wrap has already passed; a handle cannot be nudged to before it started.
+    const auto effective = std::max(beats, -played_->length());
+
+    played_->start -= effective;
+    playedMonotonic_->start -= effective;
 }
 
 std::optional<BeatRange> LaunchHandle::playedRange() const {
@@ -185,9 +205,17 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
     if (!event && playState_ == PlayState::playing && loopBeats_ && playedMonotonic_) {
         const auto origin = playedMonotonic_->start;
         const auto elapsed = range.monotonic.start - origin;
-        auto wrap = origin + (std::floor(elapsed / *loopBeats_) + 1.0) * *loopBeats_;
 
-        while (wrap <= range.monotonic.start)
+        // The first wrap at or after this block begins, which is ceil rather
+        // than floor-plus-one: a wrap due exactly on the first sample was
+        // passed over by the previous block, whose range ended before it, and
+        // rounding up again here would skip it a second time and every
+        // block-aligned wrap after it. Never the origin itself, which is where
+        // the run started rather than somewhere it repeats.
+        const auto turns = std::max(1.0, std::ceil(elapsed / *loopBeats_));
+        auto wrap = origin + turns * *loopBeats_;
+
+        while (wrap < range.monotonic.start)
             wrap += *loopBeats_;
 
         if (wrap < range.monotonic.end) {
@@ -204,8 +232,8 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
 
     if (!event) {
         if (playState_ == PlayState::playing) {
+            status.playStartTime1 = virtualStart(range);
             extendRun(range);
-            status.playStartTime1 = played_->start;
         }
 
         return status;
@@ -222,8 +250,8 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
         status.playing2 = status.playing1;
 
         if (playState_ == PlayState::playing) {
+            status.playStartTime1 = virtualStart(range);
             extendRun(range);
-            status.playStartTime1 = played_->start;
         }
 
         return status;
@@ -237,8 +265,8 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
                            BeatRange{*event, range.monotonic.end}};
 
     if (playState_ == PlayState::playing) {
+        status.playStartTime1 = virtualStart(first);
         extendRun(first);
-        status.playStartTime1 = played_->start;
     }
 
     applyEvent(fromPending, second.timeline.start, second.monotonic.start);
@@ -246,8 +274,8 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
     status.playing2 = playState_ == PlayState::playing;
 
     if (playState_ == PlayState::playing) {
+        status.playStartTime2 = virtualStart(second);
         extendRun(second);
-        status.playStartTime2 = played_->start;
     }
 
     status.isSplit = true;
