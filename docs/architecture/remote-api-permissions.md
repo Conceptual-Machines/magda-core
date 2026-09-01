@@ -53,10 +53,10 @@ Five words, shared by both transports. An operation requires exactly one.
 | Scope | Covers |
 | --- | --- |
 | `read` | Every read operation, and subscribing to any topic. Every client has this — it is what being admitted means. |
-| `edit` | Project content: tempo, time signature, tracks, clips, notes, devices, racks, automation, and the user's selection. Device parameter writes and opening plugin editor windows are edits too. |
+| `edit` | Project content: tempo, time signature, tracks, clips, notes, devices, racks, grooves, automation, and the user's selection. Device parameter writes, focused-macro writes, and opening plugin editor windows are edits too. |
 | `transport` | The timeline: play, stop, record-arm, loop, seek. |
 | `session` | Launching and stopping session clips and scenes. |
-| `hardware-midi` | Physical MIDI ports, including SysEx. |
+| `hardware-midi` | Physical MIDI ports: `midi.send` and `midi.sendSysEx`. |
 
 The split is by what a user would regret, not by which manager the code calls.
 Driving the transport is separate from editing because a remote that only starts
@@ -68,13 +68,14 @@ changes no project content and does not move the playhead.
 user is looking at and what their next keystroke acts on, which is not something
 a read-only client should reach.
 
-**`hardware-midi` has no operations yet.** The registry exposes no hardware MIDI
-surface. The scope is declared now because grants are persisted: a word invented
-later would read as "not granted" on every existing client — the correct answer,
-but only if the word already exists when those grants are written. It also gives
-the settings UI a stable place to show the permission before there is anything
-behind it. When a MIDI-out or SysEx operation lands, it declares this scope and
-the enforcement already works.
+**`hardware-midi` gates `midi.send` and `midi.sendSysEx`** (#2297). The scope
+was declared before any operation required it, because grants are persisted: a
+word invented later would read as "not granted" on every existing client — the
+correct answer, but only if the word already exists when those grants are
+written. That bet paid out exactly as designed: when these operations landed,
+every existing grant read as "not granted" and the enforcement already worked.
+`midi.listOutputPorts` is a plain read — port names reveal hardware, not
+project content, and a client that may send needs to know where.
 
 ### Where the mapping lives
 

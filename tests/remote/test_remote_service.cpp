@@ -992,3 +992,319 @@ TEST_CASE("devices.setParameterConfig applies detection overrides", "[remote][se
     REQUIRE(errorCodeOf(refused) == "validation_failed");
     REQUIRE(api.devices_.configUpdates.size() == 1);
 }
+
+// ===========================================================================
+// Content operations (#2297): clips.update / transpose / quantize / sliceNotes,
+// tracks.group / move, grooves, focused macros, hardware MIDI out
+// ===========================================================================
+
+namespace {
+
+/// A MIDI clip with two notes, seeded into the mock under `clipId`.
+void seedMidiClip(MockMagdaApi& api, ClipId clipId) {
+    ClipInfo clip;
+    clip.id = clipId;
+    clip.name = "Riff";
+    MidiNote first;
+    first.startBeat = 0.1;
+    first.noteNumber = 60;
+    first.lengthBeats = 0.9;
+    MidiNote second;
+    second.startBeat = 1.6;
+    second.noteNumber = 64;
+    second.lengthBeats = 1.0;
+    clip.midiNotes = {first, second};
+    api.clips_.clips[clipId] = clip;
+}
+
+juce::var integerArray(std::initializer_list<int> values) {
+    juce::Array<juce::var> array;
+    for (const auto value : values)
+        array.add(value);
+    return array;
+}
+
+}  // namespace
+
+TEST_CASE("clips.update patches name, enabled, and groove as one undo step",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    api.grooves_.names.add("Swing 16");
+    RemoteApiService service(api);
+
+    const auto response = run(
+        service, "clips.update",
+        object(
+            {{"clipId", 7}, {"name", "Hook"}, {"enabled", false}, {"grooveTemplate", "Swing 16"}}));
+
+    REQUIRE(response.ok);
+    // Three field changes, three commands, one compound for the request.
+    REQUIRE(api.undo_.executeCalls == 3);
+    REQUIRE(api.undo_.maxCompoundDepth == 1);
+    REQUIRE(service.currentRevision() == INITIAL_REVISION + 1);
+}
+
+TEST_CASE("clips.update restating current state mutates nothing", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response = run(service, "clips.update", object({{"clipId", 7}, {"name", "Riff"}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.undo_.executeCalls == 0);
+    // A no-op patch must not advance the revision.
+    REQUIRE(service.currentRevision() == INITIAL_REVISION);
+}
+
+TEST_CASE("clips.update refuses a groove template that does not exist",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.update", object({{"clipId", 7}, {"grooveTemplate", "No Such Groove"}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "not_found");
+    REQUIRE(api.undo_.executeCalls == 0);
+}
+
+TEST_CASE("clips.transpose shifts every note and echoes the clip", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.transpose", object({{"clipId", 7}, {"semitones", 5}}));
+
+    REQUIRE(response.ok);
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    REQUIRE(static_cast<int>((*notes)[0]["note"]) == 65);
+    REQUIRE(static_cast<int>((*notes)[1]["note"]) == 69);
+}
+
+TEST_CASE("clips.quantize defaults to every note and snaps to the grid",
+          "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.quantize", object({{"clipId", 7}, {"gridResolution", 0.5}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.clips_.quantizeCalls.size() == 1);
+    REQUIRE(api.clips_.quantizeCalls.front().noteIndices == std::vector<size_t>{0, 1});
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    REQUIRE(static_cast<double>((*notes)[0]["startBeat"]) == 0.0);
+    REQUIRE(static_cast<double>((*notes)[1]["startBeat"]) == 1.5);
+}
+
+TEST_CASE("clips.quantize refuses an index that names no note", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response = run(
+        service, "clips.quantize",
+        object({{"clipId", 7}, {"gridResolution", 0.5}, {"noteIndices", integerArray({0, 9})}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.clips_.quantizeCalls.empty());
+}
+
+TEST_CASE("clips.sliceNotes subdivides the addressed notes", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    seedMidiClip(api, 7);
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.sliceNotes",
+            object({{"clipId", 7}, {"subdivisions", 2}, {"noteIndices", integerArray({1})}}));
+
+    REQUIRE(response.ok);
+    const auto* notes = response.result["notes"].getArray();
+    REQUIRE(notes != nullptr);
+    // One untouched note plus one sliced into two.
+    REQUIRE(notes->size() == 3);
+}
+
+TEST_CASE("Note operations refuse a clip that is not MIDI", "[remote][service][clips]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    ClipInfo audio;
+    audio.id = 9;
+    audio.content = AudioClipModel{};
+    api.clips_.clips[9] = audio;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "clips.transpose", object({{"clipId", 9}, {"semitones", 2}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+}
+
+TEST_CASE("tracks.group groups existing tracks under a new id", "[remote][service][tracks]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.createTrack("Drums", TrackType::Media);
+    api.tracks_.createTrack("Bass", TrackType::Media);
+    const auto first = api.tracks_.tracks[0].id;
+    const auto second = api.tracks_.tracks[1].id;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "tracks.group",
+            object({{"trackIds", integerArray({static_cast<int>(first), static_cast<int>(second)})},
+                    {"name", "Rhythm"}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(static_cast<int>(response.result["id"]) != INVALID_TRACK_ID);
+    REQUIRE(api.tracks_.groupWrites.size() == 1);
+
+    const auto missing = run(service, "tracks.group",
+                             object({{"trackIds", integerArray({9999})}, {"name", "Ghost"}}));
+    REQUIRE_FALSE(missing.ok);
+    REQUIRE(errorCodeOf(missing) == "not_found");
+}
+
+TEST_CASE("tracks.move repositions a track", "[remote][service][tracks]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.tracks_.createTrack("Drums", TrackType::Media);
+    const auto id = api.tracks_.tracks[0].id;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "tracks.move", object({{"trackId", static_cast<int>(id)}, {"position", 1}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.tracks_.moveWrites.size() == 1);
+}
+
+TEST_CASE("grooves.upsert then grooves.list round-trips the template name",
+          "[remote][service][grooves]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    juce::Array<juce::var> lateness;
+    lateness.add(0.0);
+    lateness.add(0.25);
+    const auto upsert = run(service, "grooves.upsert",
+                            object({{"name", "Swing 8"},
+                                    {"notesPerBeat", 2},
+                                    {"latenessProportions", juce::var(lateness)}}));
+    REQUIRE(upsert.ok);
+
+    const auto list = run(service, "grooves.list", emptyInput());
+    REQUIRE(list.ok);
+    const auto* names = list.result.getArray();
+    REQUIRE(names != nullptr);
+    REQUIRE(names->size() == 1);
+    REQUIRE((*names)[0].toString() == "Swing 8");
+}
+
+TEST_CASE("focused.get answers safely with nothing focused", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.get", emptyInput());
+
+    REQUIRE(response.ok);
+    REQUIRE_FALSE(static_cast<bool>(response.result["hasFocus"]));
+    REQUIRE(response.result["macros"].getArray()->isEmpty());
+}
+
+TEST_CASE("focused.setMacro writes the focused device's macro", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.focused_.focused = true;
+    api.focused_.focusedName = "Poly Synth";
+    api.focused_.macroNames = {"Cutoff"};
+    api.focused_.macroValues = {0.25f};
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.setMacro", object({{"index", 0}, {"value", 0.75}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.focused_.macroWrites.size() == 1);
+    REQUIRE(api.focused_.macroWrites.front().idx == 0);
+    REQUIRE(api.focused_.macroWrites.front().value == 0.75f);
+    REQUIRE(response.result["name"].toString() == "Poly Synth");
+}
+
+TEST_CASE("focused.setMacro refuses when nothing is focused", "[remote][service][focused]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response = run(service, "focused.setMacro", object({{"index", 0}, {"value", 0.5}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "conflict");
+    REQUIRE(api.focused_.macroWrites.empty());
+}
+
+TEST_CASE("midi.send delivers a channel message to the named port", "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    const auto response =
+        run(service, "midi.send",
+            object({{"port", "Launchkey"}, {"bytes", integerArray({0x90, 60, 100})}}));
+
+    REQUIRE(response.ok);
+    REQUIRE(api.midi_.sends.size() == 1);
+    REQUIRE(api.midi_.sends.front().port == "Launchkey");
+    REQUIRE(api.midi_.sends.front().msg.isNoteOn());
+}
+
+TEST_CASE("midi.send refuses a length that contradicts the status byte",
+          "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    RemoteApiService service(api);
+
+    // A note-on promises three bytes; sending two would make MidiMessage
+    // assert rather than refuse.
+    const auto response = run(service, "midi.send",
+                              object({{"port", "Launchkey"}, {"bytes", integerArray({0x90, 60})}}));
+
+    REQUIRE_FALSE(response.ok);
+    REQUIRE(errorCodeOf(response) == "validation_failed");
+    REQUIRE(api.midi_.sends.empty());
+}
+
+TEST_CASE("midi.sendSysEx delivers the unframed payload", "[remote][service][midi]") {
+    const MessageThreadRelaxation relaxation;
+    MockMagdaApi api;
+    api.midi_.outputPortNames = {"Launchkey"};
+    RemoteApiService service(api);
+
+    const auto ports = run(service, "midi.listOutputPorts", emptyInput());
+    REQUIRE(ports.ok);
+    REQUIRE(ports.result.getArray()->size() == 1);
+
+    const auto response = run(service, "midi.sendSysEx",
+                              object({{"port", "Launchkey"}, {"bytes", integerArray({1, 2, 3})}}));
+    REQUIRE(response.ok);
+    REQUIRE(api.midi_.sends.size() == 1);
+    REQUIRE(api.midi_.sends.front().msg.isSysEx());
+}

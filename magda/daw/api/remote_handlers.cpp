@@ -12,6 +12,7 @@
 #include "../core/AutomationTypes.hpp"
 #include "../core/ClipCommands.hpp"
 #include "../core/ClipInfo.hpp"
+#include "../core/ClipPropertyCommands.hpp"
 #include "../core/ControlTarget.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/MidiNoteCommands.hpp"
@@ -24,7 +25,10 @@
 #include "automation_api.hpp"
 #include "clip_api.hpp"
 #include "device_api.hpp"
+#include "focused_api.hpp"
+#include "groove_api.hpp"
 #include "magda_api.hpp"
+#include "midi_api.hpp"
 #include "project_api.hpp"
 #include "selection_api.hpp"
 #include "session_api.hpp"
@@ -1083,6 +1087,317 @@ HandlerResult automationClearLane(MagdaApi& api, const juce::var& input, const R
     if (cleared == nullptr)
         return notFound("automation lane", laneId);
     return HandlerResult::ok(toJson(makeAutomationLaneDto(*cleared)));
+}
+
+// ===========================================================================
+// Clip content editing (#2297)
+// ===========================================================================
+
+namespace {
+
+/// Note indices for a clip-scoped note operation: the given list validated
+/// against the clip, or every note when the field is absent. Nullopt with
+/// `error` set when an index names nothing.
+std::optional<std::vector<size_t>> resolveNoteIndices(const ClipInfo& clip, const juce::var& input,
+                                                      juce::String& error) {
+    std::vector<size_t> indices;
+    if (!has(input, "noteIndices")) {
+        indices.resize(clip.midiNotes.size());
+        for (size_t i = 0; i < indices.size(); ++i)
+            indices[i] = i;
+        return indices;
+    }
+    for (const auto& item : *input["noteIndices"].getArray()) {
+        const auto index = static_cast<int>(item);
+        if (index < 0 || static_cast<size_t>(index) >= clip.midiNotes.size()) {
+            error = "noteIndices names unknown note " + juce::String(index);
+            return std::nullopt;
+        }
+        indices.push_back(static_cast<size_t>(index));
+    }
+    return indices;
+}
+
+/// The clip named by `clipId`, required to be MIDI. Sets `failure` when it is
+/// missing or not MIDI.
+const ClipInfo* midiClipOrFail(MagdaApi& api, ClipId clipId, HandlerResult& failure) {
+    const auto* clip = api.clips().getClip(clipId);
+    if (clip == nullptr) {
+        failure = notFound("clip", clipId);
+        return nullptr;
+    }
+    if (!clip->isMidi()) {
+        failure = HandlerResult::fail(ErrorCode::Conflict,
+                                      "clip " + juce::String(clipId) + " is not MIDI");
+        return nullptr;
+    }
+    return clip;
+}
+
+}  // namespace
+
+HandlerResult clipsUpdate(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
+    const auto* current = api.clips().getClip(clipId);
+    if (current == nullptr)
+        return notFound("clip", clipId);
+
+    // A patch, not a replace, following tracks.update: absent fields leave the
+    // current value alone, and a patch restating current state mutates nothing.
+    bool mutated = false;
+
+    if (has(input, "name") && current->name != input["name"].toString()) {
+        runCommand<SetClipNameCommand>(api, clipId, input["name"].toString());
+        mutated = true;
+    }
+    if (has(input, "enabled") && current->enabled != readBool(input, "enabled")) {
+        const bool enabled = readBool(input, "enabled");
+        runCommand<SetClipPropertyCommand>(
+            api, clipId, enabled ? juce::String("Enable Clip") : juce::String("Disable Clip"),
+            [enabled](auto& manager, ClipId id) { manager.setClipEnabled(id, enabled); });
+        mutated = true;
+    }
+    if (has(input, "grooveTemplate")) {
+        const auto templateName = input["grooveTemplate"].toString();
+        // An empty name clears the assignment; anything else must name a
+        // template that exists, or the clip would carry a groove that grooves
+        // nothing.
+        if (templateName.isNotEmpty() && !api.grooves().getTemplateNames().contains(templateName)) {
+            return HandlerResult::fail(ErrorCode::NotFound,
+                                       "groove template '" + templateName + "' not found");
+        }
+        if (current->grooveTemplate != templateName) {
+            runCommand<SetClipGrooveTemplateCommand>(api, clipId, templateName);
+            mutated = true;
+        }
+    }
+
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    auto payload = toJson(makeClipDto(*updated));
+    return mutated ? HandlerResult::ok(std::move(payload))
+                   : HandlerResult::unchanged(std::move(payload));
+}
+
+HandlerResult clipsTranspose(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
+    HandlerResult failure = HandlerResult::fail(ErrorCode::InternalError, "unreachable");
+    const auto* clip = midiClipOrFail(api, clipId, failure);
+    if (clip == nullptr)
+        return failure;
+    if (clip->midiNotes.empty())
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    if (!api.clips().transposeMidiClip(clipId, static_cast<int>(input["semitones"])))
+        return HandlerResult::fail(ErrorCode::Conflict, "transpose was rejected");
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
+HandlerResult clipsQuantize(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
+    HandlerResult failure = HandlerResult::fail(ErrorCode::InternalError, "unreachable");
+    const auto* clip = midiClipOrFail(api, clipId, failure);
+    if (clip == nullptr)
+        return failure;
+
+    juce::String indexError;
+    const auto indices = resolveNoteIndices(*clip, input, indexError);
+    if (!indices)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, indexError);
+    if (indices->empty())
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    auto mode = MidiNoteQuantizeMode::StartAndLength;
+    if (has(input, "mode")) {
+        const auto name = input["mode"].toString();
+        if (name == "start")
+            mode = MidiNoteQuantizeMode::StartOnly;
+        else if (name == "length")
+            mode = MidiNoteQuantizeMode::LengthOnly;
+    }
+
+    if (!api.clips().quantizeMidiNotes(clipId, *indices,
+                                       static_cast<double>(input["gridResolution"]), mode))
+        return HandlerResult::fail(ErrorCode::Conflict, "quantize was rejected");
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
+HandlerResult clipsSliceNotes(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto clipId = static_cast<ClipId>(static_cast<int>(input["clipId"]));
+    HandlerResult failure = HandlerResult::fail(ErrorCode::InternalError, "unreachable");
+    const auto* clip = midiClipOrFail(api, clipId, failure);
+    if (clip == nullptr)
+        return failure;
+
+    juce::String indexError;
+    const auto indices = resolveNoteIndices(*clip, input, indexError);
+    if (!indices)
+        return HandlerResult::fail(ErrorCode::ValidationFailed, indexError);
+    if (indices->empty())
+        return HandlerResult::unchanged(toJson(makeClipDto(*clip)));
+
+    if (!api.clips().sliceMidiNotes(clipId, *indices, static_cast<int>(input["subdivisions"])))
+        return HandlerResult::fail(ErrorCode::Conflict, "slice was rejected");
+    const auto* updated = api.clips().getClip(clipId);
+    if (updated == nullptr)
+        return notFound("clip", clipId);
+    return HandlerResult::ok(toJson(makeClipDto(*updated)));
+}
+
+// ===========================================================================
+// Track grouping and ordering (#2297)
+// ===========================================================================
+
+HandlerResult tracksGroup(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    std::vector<TrackId> trackIds;
+    for (const auto& item : *input["trackIds"].getArray()) {
+        const auto trackId = static_cast<TrackId>(static_cast<int>(item));
+        if (api.tracks().getTrack(trackId) == nullptr)
+            return notFound("track", trackId);
+        trackIds.push_back(trackId);
+    }
+
+    const auto groupId = api.tracks().groupTracks(trackIds, input["name"].toString());
+    if (groupId == INVALID_TRACK_ID)
+        return HandlerResult::fail(ErrorCode::Conflict, "grouping was rejected");
+    return HandlerResult::ok(idResult(groupId));
+}
+
+HandlerResult tracksMove(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto trackId = static_cast<TrackId>(static_cast<int>(input["trackId"]));
+    if (api.tracks().getTrack(trackId) == nullptr)
+        return notFound("track", trackId);
+    api.tracks().moveTrackToPosition(trackId, static_cast<int>(input["position"]));
+    return HandlerResult::ok(acceptedResult());
+}
+
+// ===========================================================================
+// Grooves (#2297)
+// ===========================================================================
+
+HandlerResult groovesList(MagdaApi& api, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> items;
+    for (const auto& name : api.grooves().getTemplateNames())
+        items.push_back(name);
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult groovesUpsert(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    std::vector<float> lateness;
+    for (const auto& item : *input["latenessProportions"].getArray())
+        lateness.push_back(static_cast<float>(static_cast<double>(item)));
+
+    if (!api.grooves().upsertTemplate(input["name"].toString(),
+                                      static_cast<int>(input["notesPerBeat"]),
+                                      readBool(input, "parameterized", true), lateness))
+        return HandlerResult::fail(ErrorCode::Conflict, "groove template was rejected");
+    return HandlerResult::ok(acceptedResult());
+}
+
+// ===========================================================================
+// Focused device macros (#2297)
+// ===========================================================================
+
+namespace {
+
+constexpr int FOCUSED_MACRO_COUNT = 16;
+
+juce::var focusedResult(MagdaApi& api) {
+    auto& focused = api.focused();
+    auto* result = new juce::DynamicObject();
+    const bool hasFocus = focused.hasFocus();
+    result->setProperty("hasFocus", hasFocus);
+    result->setProperty("name", focused.getFocusedName());
+    juce::Array<juce::var> macros;
+    if (hasFocus) {
+        for (int i = 0; i < FOCUSED_MACRO_COUNT; ++i) {
+            auto* macro = new juce::DynamicObject();
+            macro->setProperty("index", i);
+            macro->setProperty("name", focused.getMacroName(i));
+            macro->setProperty("value", focused.getMacroValue(i));
+            macros.add(macro);
+        }
+    }
+    result->setProperty("macros", macros);
+    return result;
+}
+
+}  // namespace
+
+HandlerResult focusedGet(MagdaApi& api, const juce::var&, const RequestContext&) {
+    return HandlerResult::ok(focusedResult(api));
+}
+
+HandlerResult focusedSetMacro(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    // setMacroValue is a silent no-op without focus; refusing is the honest
+    // answer over a wire where the caller cannot see the panel.
+    if (!api.focused().hasFocus())
+        return HandlerResult::fail(ErrorCode::Conflict, "no device or rack is focused");
+    api.focused().setMacroValue(static_cast<int>(input["index"]),
+                                static_cast<float>(static_cast<double>(input["value"])));
+    return HandlerResult::ok(focusedResult(api));
+}
+
+HandlerResult focusedCycleDevice(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    api.focused().cycleDevice(static_cast<int>(input["direction"]));
+    return HandlerResult::ok(focusedResult(api));
+}
+
+// ===========================================================================
+// Hardware MIDI out (#2297) — the first operations behind `hardware-midi`
+// ===========================================================================
+
+namespace {
+
+std::vector<juce::uint8> readByteArray(const juce::var& value) {
+    std::vector<juce::uint8> bytes;
+    for (const auto& item : *value.getArray())
+        bytes.push_back(static_cast<juce::uint8>(static_cast<int>(item)));
+    return bytes;
+}
+
+}  // namespace
+
+HandlerResult midiListOutputPorts(MagdaApi& api, const juce::var&, const RequestContext&) {
+    std::vector<juce::var> items;
+    for (const auto& name : api.midi().getOutputPortNames())
+        items.push_back(name);
+    return HandlerResult::ok(toJsonArray(items));
+}
+
+HandlerResult midiSend(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto bytes = readByteArray(input["bytes"]);
+    // A channel message only: the schema caps the length at 3 and the status
+    // byte range excludes SysEx framing, but the length still has to match what
+    // the status byte promises — juce::MidiMessage asserts on malformed data
+    // rather than rejecting it.
+    const int expected = juce::MidiMessage::getMessageLengthFromFirstByte(bytes.front());
+    if (static_cast<int>(bytes.size()) != expected)
+        return HandlerResult::fail(ErrorCode::ValidationFailed,
+                                   "status byte " + juce::String(bytes.front()) + " expects " +
+                                       juce::String(expected) + " bytes, got " +
+                                       juce::String(static_cast<int>(bytes.size())));
+
+    const juce::MidiMessage message(bytes.data(), static_cast<int>(bytes.size()));
+    if (!api.midi().sendMidi(input["port"].toString(), message))
+        return HandlerResult::fail(ErrorCode::NotFound, "MIDI output '" + input["port"].toString() +
+                                                            "' cannot be opened");
+    return HandlerResult::ok(acceptedResult());
+}
+
+HandlerResult midiSendSysEx(MagdaApi& api, const juce::var& input, const RequestContext&) {
+    const auto bytes = readByteArray(input["bytes"]);
+    if (!api.midi().sendSysEx(input["port"].toString(), bytes.data(), bytes.size()))
+        return HandlerResult::fail(ErrorCode::NotFound, "MIDI output '" + input["port"].toString() +
+                                                            "' cannot be opened");
+    return HandlerResult::ok(acceptedResult());
 }
 
 }  // namespace magda::remote::handlers
