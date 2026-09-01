@@ -569,6 +569,10 @@ void AudioBridge::deviceParameterChanged(const ChainNodePath& devicePath, int pa
     // A single device parameter changed - sync only that parameter to processor
     auto* processor = getDeviceProcessor(devicePath);
     if (!processor) {
+        // The model updated and the caller was told ok, but nothing reached
+        // the engine. Say so rather than dropping the write silently (#2288).
+        DBG("AudioBridge: dropping parameter change for device " << devicePath.getDeviceId()
+                                                                 << " - no processor");
         return;
     }
 
