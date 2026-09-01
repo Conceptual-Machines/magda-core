@@ -348,7 +348,78 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
         std::sort(track.audio.begin(), track.audio.end(), byStart);
         std::sort(track.midi.begin(), track.midi.end(), byStart);
 
-        if (!track.audio.empty() || !track.midi.empty())
+        // The slots, each compiled as its own single-clip lane at the origin.
+        //
+        // Recursing rather than repeating: a session clip and an arrangement clip
+        // are the same material and have to sound the same, so the one that is
+        // dragged from a slot onto the timeline cannot go through a second
+        // implementation of fades, warp and events. What a slot changes is where
+        // the material sits, which is nowhere, so the placement is normalised and
+        // everything else is asked of the same compile the arrangement uses.
+        //
+        // Off the audio thread, on the publishing side, so a compile per slot
+        // costs a publish rather than a block.
+        for (const auto& clip : lane.session) {
+            const auto label = clipLabel(lane.trackId, clip.id);
+
+            if (clip.trackId != lane.trackId) {
+                snapshot.diagnostics.push_back(label + "belongs to track " +
+                                               std::to_string(clip.trackId) +
+                                               ", it is not played on this lane");
+                continue;
+            }
+            if (clip.view != ClipView::Session) {
+                snapshot.diagnostics.push_back(
+                    label + "is an arrangement clip in a session lane, it is not played here");
+                continue;
+            }
+            if (clip.sceneIndex < 0) {
+                snapshot.diagnostics.push_back(label + "is a session clip in no scene");
+                continue;
+            }
+            if (!clip.enabled)
+                continue;
+
+            // Nothing writes a session clip's placement: the scene index is its
+            // position and the beat is leftover. Normalised rather than trusted,
+            // so a slot always compiles from the origin whatever is in the field.
+            auto normalised = clip;
+            normalised.view = ClipView::Arrangement;
+            normalised.setPlacementBeats(0.0, clip.placement.lengthBeats);
+
+            ClipLane slotLane;
+            slotLane.trackId = lane.trackId;
+            slotLane.clips.push_back(normalised);
+
+            auto compiled = compileClipSnapshot({slotLane}, sources, tempoMap, grooves);
+
+            for (auto& diagnostic : compiled.diagnostics)
+                snapshot.diagnostics.push_back(std::move(diagnostic));
+
+            if (compiled.tracks.empty())
+                continue;
+
+            SessionSlotPlayback slot;
+            slot.sceneIndex = clip.sceneIndex;
+            slot.lengthBeats = clip.placement.lengthBeats;
+            slot.audio = std::move(compiled.tracks.front().audio);
+            slot.midi = std::move(compiled.tracks.front().midi);
+
+            if (slot.audio.empty() && slot.midi.empty())
+                continue;
+
+            track.session.push_back(std::move(slot));
+        }
+
+        std::sort(track.session.begin(), track.session.end(),
+                  [](const SessionSlotPlayback& a, const SessionSlotPlayback& b) {
+                      return a.sceneIndex < b.sceneIndex;
+                  });
+
+        // A track earns an entry by having something to play, in either view. A
+        // session-only track is a real one: nothing is in its arrangement and
+        // its slots are still waiting to be launched.
+        if (!track.audio.empty() || !track.midi.empty() || !track.session.empty())
             snapshot.tracks.push_back(std::move(track));
     }
 

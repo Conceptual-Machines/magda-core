@@ -13,4 +13,13 @@ const TrackClipPlayback* ClipSnapshot::find(TrackId trackId) const {
     return &*it;
 }
 
+const SessionSlotPlayback* TrackClipPlayback::slot(int sceneIndex) const {
+    const auto it = std::lower_bound(
+        session.begin(), session.end(), sceneIndex,
+        [](const SessionSlotPlayback& slot, int index) { return slot.sceneIndex < index; });
+    if (it == session.end() || it->sceneIndex != sceneIndex)
+        return nullptr;
+    return &*it;
+}
+
 }  // namespace magda::engine

@@ -32,6 +32,11 @@ struct PlanBindings {
     std::unordered_map<TrackId, EngineAudioSource*> clipAudio;
     std::unordered_map<TrackId, EngineMidiSource*> clipMidi;
 
+    /// The session's sources, one per track: the source consults the track's
+    /// launch handles and renders whichever slot is playing (#2301).
+    std::unordered_map<TrackId, EngineAudioSource*> sessionAudio;
+    std::unordered_map<TrackId, EngineMidiSource*> sessionMidi;
+
     /// Live hardware input feeding a track (AudioInput / MidiInput ops).
     std::unordered_map<TrackId, EngineAudioSource*> audioInputs;
     std::unordered_map<TrackId, EngineMidiSource*> midiInputs;

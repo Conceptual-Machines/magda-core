@@ -109,6 +109,27 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
     return removed;
 }
 
+/// Handles whose slot the model no longer names.
+///
+/// Keyed by slot and retained by track, because that is the identity the live
+/// plan carries: the session op is per track, so what the plan says is which
+/// tracks still have a session, and every slot on a track that is gone goes
+/// with it. A slot emptied while its track remains reaches here as that track's
+/// own slots changing rather than as a plan edit.
+std::size_t eraseUnnamedSlots(std::map<SlotKey, std::unique_ptr<LaunchHandle>>& map,
+                              const std::set<TrackId>& tracks) {
+    std::size_t removed = 0;
+    for (auto entry = map.begin(); entry != map.end();) {
+        if (tracks.contains(entry->first.trackId)) {
+            ++entry;
+            continue;
+        }
+        entry = map.erase(entry);
+        ++removed;
+    }
+    return removed;
+}
+
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
@@ -119,6 +140,8 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         prepareAll(devices_, context);
         prepareAll(clipAudio_, context);
         prepareAll(clipMidi_, context);
+        prepareAll(sessionAudio_, context);
+        prepareAll(sessionMidi_, context);
         prepareAll(audioInputs_, context);
         prepareAll(midiInputs_, context);
     }
@@ -150,6 +173,20 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipMidiSource(id);
                     }))
                     bindings.clipMidi[trackId] = source;
+                break;
+
+            case OpKind::SessionAudio:
+                if (auto* source = realiseOne(sessionAudio_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionAudioSource(id);
+                    }))
+                    bindings.sessionAudio[trackId] = source;
+                break;
+
+            case OpKind::SessionMidi:
+                if (auto* source = realiseOne(sessionMidi_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionMidiSource(id);
+                    }))
+                    bindings.sessionMidi[trackId] = source;
                 break;
 
             case OpKind::AudioInput:
@@ -228,6 +265,8 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
             case OpKind::ClipMidi:
             case OpKind::AudioInput:
             case OpKind::MidiInput:
+            case OpKind::SessionAudio:
+            case OpKind::SessionMidi:
                 keep.tracks.insert(op.key.trackId);
                 break;
             case OpKind::Meter:
@@ -246,8 +285,9 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
 
     std::size_t removed =
         eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
-        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-        eraseUnnamed(midiInputs_, keep.tracks);
+        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
+        eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
+        eraseUnnamed(midiInputs_, keep.tracks) + eraseUnnamedSlots(handles_, keep.tracks);
 
     for (auto entry = meters_.begin(); entry != meters_.end();) {
         if (isNamed(entry->first, keep)) {
@@ -299,14 +339,27 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     return ids;
 }
 
+LaunchHandle& RuntimeStateStore::handle(const SlotKey& key) {
+    auto& slot = handles_[key];
+    if (slot == nullptr)
+        slot = std::make_unique<LaunchHandle>();
+    return *slot;
+}
+
+LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
+    const auto it = handles_.find(key);
+    return it == handles_.end() ? nullptr : it->second.get();
+}
+
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
     const auto found = valueTaps_.find(key);
     return found == valueTaps_.end() ? nullptr : found->second.get();
 }
 
 std::size_t RuntimeStateStore::size() const {
-    return devices_.size() + clipAudio_.size() + clipMidi_.size() + audioInputs_.size() +
-           midiInputs_.size() + meters_.size() + valueTaps_.size();
+    return devices_.size() + clipAudio_.size() + clipMidi_.size() + sessionAudio_.size() +
+           sessionMidi_.size() + handles_.size() + audioInputs_.size() + midiInputs_.size() +
+           meters_.size() + valueTaps_.size();
 }
 
 }  // namespace magda::engine
