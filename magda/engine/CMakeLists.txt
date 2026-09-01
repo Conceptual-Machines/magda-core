@@ -103,6 +103,8 @@ add_library(magda_engine STATIC
     tap/LevelTap.hpp
     tap/SampleRing.hpp
     tap/ValueTap.hpp
+    launch/LaunchHandle.cpp
+    launch/LaunchHandle.hpp
     transport/TempoMap.cpp
     transport/TransportClock.cpp
     transport/ClickGenerator.cpp
@@ -186,7 +188,8 @@ endforeach()
 # engine's own headers.
 
 set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
-    "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/")
+    "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/"
+    "launch/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

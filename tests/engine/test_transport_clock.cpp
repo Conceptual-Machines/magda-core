@@ -423,3 +423,99 @@ TEST_CASE("A loop too short to render is reported, not silently dropped",
         CHECK(next.segments[0].block.startBeat == approx(0.0));
     }
 }
+
+TEST_CASE("The monotonic beat counts what was rolled through, not where the cursor is",
+          "[engine][transport][clock][monotonic]") {
+    // The third face of the instant (#2300). Beats say where the material is,
+    // seconds say how much audio went by, and this says how much musical time
+    // the transport has actually run through. A queued launch names a position
+    // in this domain because it is the only one a loop cannot take back.
+    TransportClock clock;
+
+    SECTION("it advances with the timeline while nothing wraps") {
+        const auto snapshot = playing(0.0);
+        const auto block = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 2);
+
+        REQUIRE(block.segments.size() == 1);
+        CHECK(block.segments[0].block.startMonotonicBeat == approx(0.0));
+        CHECK(block.segments[0].block.endMonotonicBeat == approx(2.0));
+        CHECK(clock.monotonicBeat() == approx(2.0));
+    }
+
+    SECTION("a loop wrap takes the timeline back and leaves this alone") {
+        auto snapshot = playing(0.0);
+        snapshot.loop = {true, 0.0, 2.0};
+
+        // Five beats of playing through a two-beat loop. The cursor has been
+        // round twice and is a beat into its third pass; this has counted
+        // every beat of it. Five rather than six so the cursor lands inside
+        // the loop rather than exactly on its end, which is where a wrap has
+        // been decided but not yet taken.
+        for (auto i = 0; i < 5; ++i)
+            advance(clock, snapshot, static_cast<int>(kSamplesPerBeat));
+
+        CHECK(clock.positionBeats() == approx(1.0));
+        CHECK(clock.monotonicBeat() == approx(5.0));
+    }
+
+    SECTION("it never goes backwards across a wrap inside one callback") {
+        auto snapshot = playing(0.0);
+        snapshot.loop = {true, 0.0, 1.0};
+
+        // A callback long enough to wrap: the timeline segments run 0->1 then
+        // 0->..., and the monotonic ones have to run on end to end.
+        const auto block = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 2);
+        REQUIRE(block.segments.size() >= 2);
+
+        auto previous = -1.0;
+        for (const auto& segment : block.segments) {
+            CHECK(segment.block.startMonotonicBeat >= previous);
+            CHECK(segment.block.endMonotonicBeat >= segment.block.startMonotonicBeat);
+            previous = segment.block.endMonotonicBeat;
+        }
+
+        CHECK(clock.monotonicBeat() == approx(2.0));
+    }
+
+    SECTION("a locate moves the cursor and does not rewind this") {
+        advance(clock, playing(8.0, 1), static_cast<int>(kSamplesPerBeat));
+        CHECK(clock.monotonicBeat() == approx(1.0));
+
+        // Back to the top of the timeline, which is a jump the cursor takes
+        // and this does not: a launch queued for two beats from now must not
+        // be satisfied by somebody seeking.
+        advance(clock, playing(0.0, 2), static_cast<int>(kSamplesPerBeat));
+
+        CHECK(clock.positionBeats() == approx(1.0));
+        CHECK(clock.monotonicBeat() == approx(2.0));
+    }
+
+    SECTION("a stopped block does not advance it") {
+        advance(clock, playing(0.0, 1), static_cast<int>(kSamplesPerBeat));
+        const auto rolled = clock.monotonicBeat();
+
+        const auto block = advance(clock, halt(2), 512);
+        REQUIRE(block.segments.size() == 1);
+
+        CHECK(block.segments[0].block.startMonotonicBeat == approx(rolled));
+        CHECK(block.segments[0].block.endMonotonicBeat == approx(rolled));
+        CHECK(clock.monotonicBeat() == approx(rolled));
+    }
+
+    SECTION("it does not depend on how the callbacks were cut") {
+        TransportClock whole, pieces;
+        const auto snapshot = playing(0.0);
+
+        for (auto i = 0; i < 100; ++i)
+            advance(whole, snapshot, 512);
+
+        for (auto i = 0; i < 100; ++i) {
+            advance(pieces, snapshot, 128);
+            advance(pieces, snapshot, 64);
+            advance(pieces, snapshot, 256);
+            advance(pieces, snapshot, 64);
+        }
+
+        CHECK(whole.monotonicBeat() == approx(pieces.monotonicBeat()));
+    }
+}

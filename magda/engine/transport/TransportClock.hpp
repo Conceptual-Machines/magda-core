@@ -76,6 +76,13 @@ class TransportClock {
         return playingPublic_.load(std::memory_order_relaxed);
     }
 
+    /// Musical time the transport has rolled through since the clock began,
+    /// in beats that never go backwards. Audio thread, and the domain a
+    /// queued launch names its position in (#2300).
+    double monotonicBeat() const {
+        return monotonicBeat_;
+    }
+
     /**
      * @brief Callbacks in which a loop was too short to be honoured.
      *
@@ -142,6 +149,12 @@ class TransportClock {
 
     /// Whether the next block continues the last one.
     bool continuous_ = false;
+
+    /// Musical time rolled through since the clock began, never decreasing.
+    /// Accumulated from what each playing segment covered rather than derived
+    /// from the cursor, which is the only way it survives the wraps and
+    /// locates that move the cursor backwards.
+    double monotonicBeat_ = 0.0;
 
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};
