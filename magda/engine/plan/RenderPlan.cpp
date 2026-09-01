@@ -39,6 +39,10 @@ int arityOf(OpKind kind) {
             return 1;
         case OpKind::ModSource:
             return 2;  // the source's audio at this tap's point, the source's MIDI
+        case OpKind::InsertSend:
+            return 2;  // what leaves the machine: audio, MIDI
+        case OpKind::InsertReturn:
+            return 0;  // what comes back is a source, like a live input
     }
     return -1;
 }
@@ -79,6 +83,10 @@ const char* toString(OpKind kind) {
             return "ModSource";
         case OpKind::Output:
             return "Output";
+        case OpKind::InsertSend:
+            return "InsertSend";
+        case OpKind::InsertReturn:
+            return "InsertReturn";
     }
     return "?";
 }
@@ -131,6 +139,10 @@ const char* toString(OpRole role) {
             return "sendTap";
         case OpRole::ModulationTap:
             return "modulationTap";
+        case OpRole::InsertSend:
+            return "insertSend";
+        case OpRole::InsertReturn:
+            return "insertReturn";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
         case OpRole::MixInputDelay:
@@ -364,7 +376,11 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
 
         // Two sinks and no others: the hardware output, and the tap that hands
         // a track's signal to the modulation system. Everything else produces.
-        const bool sink = op.kind == OpKind::Output || op.kind == OpKind::ModSource;
+        // An insert's send is a sink for the same reason the hardware output is:
+        // what it writes leaves the machine, so nothing downstream reads it and
+        // an op with no outputs is exactly what it is.
+        const bool sink = op.kind == OpKind::Output || op.kind == OpKind::ModSource ||
+                          op.kind == OpKind::InsertSend;
         if (op.outputs.empty() != sink)
             problems.push_back(label + (op.outputs.empty() ? "no output port"
                                                            : "is a sink and must have no ports"));

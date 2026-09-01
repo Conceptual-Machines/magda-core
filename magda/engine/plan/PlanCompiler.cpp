@@ -237,6 +237,7 @@ class Compiler {
     ChainSignal emitElements(const std::vector<ChainElement>& elements, const ChainSite& site,
                              ChainSignal signal);
     ChainSignal emitDevice(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
+    ChainSignal emitInsert(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
     ChainSignal emitRack(const RackInfo& rack, const ChainSite& site, ChainSignal signal);
     ChainSignal emitPadRack(const DeviceInfo& device, const ChainSite& site, ChainSignal signal);
 
@@ -622,8 +623,107 @@ std::vector<PortRef> Compiler::alignInputs(const OpKey& key, OpKind kind,
     return inputs;
 }
 
+/**
+ * @brief A hardware insert: a send op, a return op, and the outside world
+ *        between them (#2245).
+ *
+ * Two ops rather than a device with special cases, which is the difference
+ * #1893 asked for. The incumbent recognises an insert by where it sits in a
+ * chain and wires it accordingly; the plan already has ops that consume a
+ * signal and ops that produce one, and an insert is one of each.
+ *
+ * What that buys is the alignment. The return op declares the round trip when
+ * the plan is prepared, exactly as a device declares its latency, and the same
+ * pass compensates it: a chain with an insert in it lines up with a chain
+ * without one because nothing here knows what an insert is. There is no
+ * insert-shaped code in the latency pass and there is not meant to be.
+ *
+ * A half configured insert is reported rather than guessed at. An end with a
+ * type and no device named it is an insert somebody started and did not finish,
+ * and an end with no type at all is a signal that carries on past it untouched:
+ * either way the diagnostic is what makes the difference visible instead of the
+ * chain quietly going somewhere or quietly going nowhere.
+ */
+ChainSignal Compiler::emitInsert(const DeviceInfo& device, const ChainSite& site,
+                                 ChainSignal signal) {
+    const auto& config = device.insert;
+
+    const auto where = [&] {
+        return "insert " + std::to_string(device.id) + " on track " + std::to_string(site.trackId);
+    };
+
+    const auto named = [&](InsertConfig::Endpoint type, const juce::String& name, const char* end) {
+        if (type == InsertConfig::Endpoint::None || name.isNotEmpty())
+            return;
+
+        diagnose(where() + ": the " + end + " names no hardware device, so nothing " +
+                 (std::string(end) == "send" ? "leaves the machine" : "comes back"));
+    };
+
+    named(config.sendType, config.sendDevice, "send");
+    named(config.returnType, config.returnDevice, "return");
+
+    OpKey key{site.trackId,       site.rackId, site.chainId, device.id,
+              OpRole::InsertSend, 0,           site.segment};
+
+    // The send, which is a sink: what it writes leaves the machine, so it
+    // declares no output and nothing downstream reads it. Both inputs are
+    // always present as slots and either may be unconnected, because the two
+    // configurations that matter differ in exactly that -- an external effect
+    // sends audio and no MIDI, an external instrument the reverse -- and a
+    // variadic arity would make which slot is which a question about the
+    // configuration rather than about the op.
+    const auto audioOut =
+        config.sendType == InsertConfig::Endpoint::Audio ? signal.audio : noInput();
+    const auto midiOut = config.sendType == InsertConfig::Endpoint::MIDI ? signal.midi : noInput();
+    addOp(OpKind::InsertSend, key, alignInputs(key, OpKind::InsertSend, {audioOut, midiOut}), {});
+
+    // And the return, which is a source. Its ports are declared from what the
+    // insert says comes back rather than from what it was sent: an external
+    // instrument is fed MIDI and answers with audio, so the two ends are not
+    // the same shape and never were.
+    ChainSignal out = signal;
+
+    if (config.returnType == InsertConfig::Endpoint::None) {
+        // A send with nothing coming back. The chain carries on with what it
+        // had, which is the failure that leaves a person still hearing their
+        // track, and the diagnostic is what stops that reading as an insert
+        // that worked.
+        if (config.sendType != InsertConfig::Endpoint::None)
+            diagnose(where() +
+                     ": sends but declares no return, so the chain carries on with the signal it "
+                     "already had and nothing the hardware did is heard");
+
+        return out;
+    }
+
+    std::vector<PortDesc> outputs;
+    const bool returnsAudio = config.returnType == InsertConfig::Endpoint::Audio;
+    outputs.push_back(returnsAudio ? PortDesc{SignalKind::Audio, 2} : PortDesc{SignalKind::Midi});
+
+    key.role = OpRole::InsertReturn;
+    const auto returnOp = addOp(OpKind::InsertReturn, key, {}, std::move(outputs));
+
+    // What comes back replaces what went out, for the end it came back on. The
+    // other end of the chain is untouched: an external instrument is handed the
+    // chain's MIDI and answers with audio, and the MIDI carries on past it the
+    // way it carries on past any instrument.
+    if (returnsAudio)
+        out.audio = PortRef{returnOp, 0};
+    else
+        out.midi = PortRef{returnOp, 0};
+
+    return out;
+}
+
 ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site,
                                  ChainSignal signal) {
+    // An insert is not a device in the plan (#2245). Ahead of the bypass check
+    // below because bypass means the same thing for both and is handled the
+    // same way: the pair is simply not emitted, and the chain flows past.
+    if (device.insert.isActive() && !device.bypassed)
+        return emitInsert(device, site, signal);
+
     // A multi-out instrument declares a port for every pair it has past the
     // main one, opened or not, so that a port's position is its pair number and
     // the device never has to ask what is being listened to. Which of them a

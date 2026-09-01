@@ -3042,3 +3042,103 @@ TEST_CASE("Saved automation targets keep the flag that makes a track path valid"
     automation.clearAll();
     tracks.clearAllTracks();
 }
+
+TEST_CASE("A hardware insert's send and return roundtrip", "[project][serialization][insert]") {
+    // What an insert is has to survive a save (#2245). It used to live only
+    // inside a te::InsertPlugin's ValueTree, so the only thing that knew what an
+    // insert sent to was the fork; the native engine compiles a send op and a
+    // return op from the model, and the model is what a project writes down.
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Outboard", TrackType::Media);
+
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "External FX";
+    device.pluginId = "insert";
+    device.deviceType = DeviceType::Effect;
+    device.insert.sendType = InsertConfig::Endpoint::Audio;
+    device.insert.returnType = InsertConfig::Endpoint::Audio;
+    device.insert.sendDevice = "Out 3-4";
+    device.insert.returnDevice = "In 3-4";
+
+    // Negative on purpose. An interface reports its own buffering and knows
+    // nothing about the converter and the cable past it, so a person with a
+    // loopback corrects in both directions and a field that clamped would lose
+    // half of what they measured.
+    device.insert.manualAdjustMs = -2.5;
+
+    TrackManager::getInstance().addDeviceToTrack(trackId, device);
+
+    ProjectInfo info;
+    info.name = "Inserts";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    REQUIRE(magda::isDevice(track->chain.fxChainElements.front()));
+
+    const auto& restored = magda::getDevice(track->chain.fxChainElements.front()).insert;
+    CHECK(restored.sendType == InsertConfig::Endpoint::Audio);
+    CHECK(restored.returnType == InsertConfig::Endpoint::Audio);
+    CHECK(restored.sendDevice == "Out 3-4");
+    CHECK(restored.returnDevice == "In 3-4");
+    CHECK(restored.manualAdjustMs == Approx(-2.5));
+    CHECK(restored.isActive());
+}
+
+TEST_CASE("A device that is not an insert writes no insert block",
+          "[project][serialization][insert]") {
+    // The mirror, and it is what keeps the field from costing every project in
+    // the corpus a block it has no use for: an insert is the only device that
+    // has one, and isActive() is what says so without anything having to know a
+    // plugin id.
+    ProjectTestFixture fixture;
+
+    auto trackId = TrackManager::getInstance().createTrack("Ordinary", TrackType::Media);
+
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "Reverb";
+    device.deviceType = DeviceType::Effect;
+    TrackManager::getInstance().addDeviceToTrack(trackId, device);
+
+    ProjectInfo info;
+    info.name = "No Inserts";
+    info.tempo = 120.0;
+
+    auto json = ProjectSerializer::serializeProject(info);
+    auto* rootObj = json.getDynamicObject();
+    REQUIRE(rootObj != nullptr);
+
+    auto* tracks = rootObj->getProperty("tracks").getArray();
+    REQUIRE(tracks != nullptr);
+    REQUIRE_FALSE(tracks->isEmpty());
+
+    auto* trackObj = tracks->getReference(0).getDynamicObject();
+    REQUIRE(trackObj != nullptr);
+    auto* elements = trackObj->getProperty("chainElements").getArray();
+    REQUIRE(elements != nullptr);
+    REQUIRE_FALSE(elements->isEmpty());
+
+    auto* deviceObj =
+        elements->getReference(0).getDynamicObject()->getProperty("device").getDynamicObject();
+    REQUIRE(deviceObj != nullptr);
+    CHECK_FALSE(deviceObj->hasProperty("insert"));
+
+    // And a project with no block loads as a device that is not an insert,
+    // which is every project saved before this existed.
+    ProjectInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeProject(json, loaded));
+
+    const auto* track = TrackManager::getInstance().getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    CHECK_FALSE(magda::getDevice(track->chain.fxChainElements.front()).insert.isActive());
+}

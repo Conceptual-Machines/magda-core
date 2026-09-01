@@ -24,6 +24,7 @@
 #include "plugins/DrumGridPlugin.hpp"
 #include "plugins/FaustPlugin.hpp"
 #include "plugins/InsertCapturePlugin.hpp"
+#include "plugins/InsertConfigBridge.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -2415,6 +2416,43 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
         // routed. So never wrap it, even though it presents as an instrument.
         const bool isExternalInsert =
             daw::audio::internalPluginHasTag(device.pluginId, "external-insert");
+
+        // What this insert sends to and gets back from (#2245), in whichever
+        // direction the two representations need it.
+        //
+        // A project that carries the config is the authority and it is written
+        // onto the plugin, because the model is what the native engine compiles
+        // a send op and a return op from and what the fork plays has to be the
+        // same insert.
+        //
+        // A project saved before the model carried any of this is the other
+        // way round, and getting that way round wrong is the whole difficulty:
+        // its routing exists only in the ValueTree the plugin just restored, so
+        // a model left inactive would make the compiler emit an ordinary Device
+        // op for an insert -- for every project anybody already has. So the
+        // restored plugin is read back into the model here, which is the moment
+        // it has finished restoring and the last moment before anything asks
+        // the model what this device is.
+        if (isExternalInsert) {
+            if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin.get())) {
+                const auto restored = daw::audio::insertConfigOf(*insert);
+
+                switch (daw::audio::insertSyncDirectionFor(device.insert, restored)) {
+                    case daw::audio::InsertSyncDirection::ToPlugin:
+                        daw::audio::applyInsertConfig(*insert, device.insert);
+                        break;
+
+                    case daw::audio::InsertSyncDirection::ToModel:
+                        if (auto* stored =
+                                TrackManager::getInstance().getDeviceInChainByPath(devicePath))
+                            stored->insert = restored;
+                        break;
+
+                    case daw::audio::InsertSyncDirection::Neither:
+                        break;
+                }
+            }
+        }
         if (device.isInstrument && !isExternalInsert) {
             // Detect multi-output capability.
             //

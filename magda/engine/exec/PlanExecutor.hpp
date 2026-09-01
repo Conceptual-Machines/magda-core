@@ -571,6 +571,11 @@ class PlanExecutor {
 
     // Bindings resolved per op, so the audio thread never hashes anything.
     std::vector<EngineDevice*> deviceForOp_;
+
+    /// The outside world behind each InsertSend and InsertReturn op (#2245).
+    /// Both halves of one insert hold the same pointer, because a round trip is
+    /// one object.
+    std::vector<EngineInsert*> insertForOp_;
     std::vector<EngineAudioSource*> audioSourceForOp_;
     std::vector<EngineMidiSource*> midiSourceForOp_;
 

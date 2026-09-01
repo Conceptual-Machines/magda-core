@@ -565,6 +565,16 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Sidechain
+    if (device.insert.isActive()) {
+        auto* insertObj = new juce::DynamicObject();
+        insertObj->setProperty("sendType", static_cast<int>(device.insert.sendType));
+        insertObj->setProperty("returnType", static_cast<int>(device.insert.returnType));
+        insertObj->setProperty("sendDevice", device.insert.sendDevice);
+        insertObj->setProperty("returnDevice", device.insert.returnDevice);
+        insertObj->setProperty("manualAdjustMs", device.insert.manualAdjustMs);
+        obj->setProperty("insert", juce::var(insertObj));
+    }
+
     if (device.sidechain.isActive()) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(device.sidechain.type));
@@ -796,6 +806,18 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     // Sidechain
+    auto insertVar = obj->getProperty("insert");
+    if (insertVar.isObject()) {
+        auto* insertObj = insertVar.getDynamicObject();
+        outDevice.insert.sendType = static_cast<InsertConfig::Endpoint>(
+            static_cast<int>(insertObj->getProperty("sendType")));
+        outDevice.insert.returnType = static_cast<InsertConfig::Endpoint>(
+            static_cast<int>(insertObj->getProperty("returnType")));
+        outDevice.insert.sendDevice = insertObj->getProperty("sendDevice").toString();
+        outDevice.insert.returnDevice = insertObj->getProperty("returnDevice").toString();
+        outDevice.insert.manualAdjustMs = insertObj->getProperty("manualAdjustMs");
+    }
+
     auto sidechainVar = obj->getProperty("sidechain");
     if (sidechainVar.isObject()) {
         auto* scObj = sidechainVar.getDynamicObject();

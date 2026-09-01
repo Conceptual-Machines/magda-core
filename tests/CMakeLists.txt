@@ -319,6 +319,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The note-range gate a pad chain needs (#2200).
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
+    list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_diff.cpp)
     # Rack nesting, recursion and op-key identity (#2137). Reaches the parameter
     # table as well as the plan, because the nearest-scope rule the two resolve
@@ -582,6 +583,7 @@ target_sources(magda_juce_tests PRIVATE
     devices/test_drum_grid_serialization_juce.cpp
     devices/test_sampler_relocate_juce.cpp
     devices/test_device_services_juce.cpp
+    devices/test_insert_config_bridge_juce.cpp
     devices/test_device_param_schema_juce.cpp
     # pluginState v1 -> v2 over the legacy corpus (#2079). Here rather than in
     # magda_tests because the conversion reads the values off a live plugin.

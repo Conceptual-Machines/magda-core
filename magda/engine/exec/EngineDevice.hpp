@@ -193,4 +193,95 @@ class EngineMidiSource {
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
 };
 
+/**
+ * @brief One hardware insert: what leaves the machine, and what comes back
+ *        (#2245).
+ *
+ * The outside world, as the engine is allowed to see it. An insert is a send op
+ * and a return op in the plan, and both of them resolve to one of these: the
+ * send hands over what is leaving, the return is asked for what arrived, and
+ * how those reach an interface is the host's business exactly as a live input's
+ * is.
+ *
+ * One object rather than a source and a sink, because a round trip is one
+ * thing. The latency below is a property of the pair -- what left, coming back
+ * -- and an implementation that had to correlate a separately bound sink with a
+ * separately bound source would be rebuilding the pairing the plan already did.
+ *
+ * ## The offline case
+ *
+ * A bounce cannot run the outside world faster than real time, so it either
+ * runs at real time or plays back a capture, and the incumbent does the latter.
+ * Nothing about that is here, and that is the seam rather than a gap: an
+ * implementation that returns captured samples and one that returns what an
+ * interface just handed it satisfy the same two calls, and which one a render
+ * binds is what decides. Same shape as the location-transparent device op
+ * (#1893), for the same reason.
+ *
+ * What this interface deliberately does not have is a notion of an
+ * implementation that is present but unfit to render -- a capture taken at
+ * another sample rate, one with a gap in it. Nothing here could enforce such a
+ * state: the executor binds a pointer and calls it, so a "check me first" flag
+ * would be a rule some caller has to remember, and the render that forgot would
+ * be wrong with nothing downstream able to see it. A capture that cannot be
+ * replayed must therefore fail to be constructed rather than fail to be valid,
+ * which is a decision for whatever owns captures (#2279) and is why none of it
+ * is here.
+ */
+class EngineInsert {
+  public:
+    virtual ~EngineInsert() = default;
+
+    virtual void prepare(const RenderContext&) {}
+
+    /// Drop anything in flight. Called off the audio thread.
+    virtual void reset() {}
+
+    /**
+     * @brief The round trip, in samples, as this insert measures it.
+     *
+     * Asked when a plan is prepared, beside every device's, and compensated by
+     * the same pass: an insert reporting a round trip is a latency on an edge,
+     * and the graph aligns it against everything else arriving where it lands.
+     * That is what makes a chain with an insert in it line up with a chain
+     * without one, and it is why this is not an insert-shaped special case.
+     *
+     * The user's manual correction is included here rather than applied
+     * somewhere above, because it is part of the same number: the interface
+     * reports its own buffering and knows nothing about the converter and the
+     * cable past it, so what an insert measures and what a person measured with
+     * a loopback are one figure by the time anything compensates for it.
+     */
+    virtual int latencySamples() const {
+        return 0;
+    }
+
+    /**
+     * @brief What is leaving the machine this block.
+     *
+     * Independent of @ref receive within one block, and deliberately: what comes
+     * back now is what left several blocks ago, so there is no ordering between
+     * the two and the plan declares none. The scheduler is free to run them on
+     * different threads, which means an implementation must not carry state
+     * from one to the other inside a block.
+     *
+     *
+     * Either may be empty, which is an insert with no send of that kind: an
+     * external effect sends audio and no MIDI, an external instrument the
+     * reverse. Called on the audio thread.
+     */
+    virtual void send(const BlockInfo&, juce::dsp::AudioBlock<const float> audio,
+                      const juce::MidiBuffer& midi) = 0;
+
+    /**
+     * @brief What came back.
+     *
+     * @p audio arrives uncleared and must be filled completely, like an audio
+     * source's; @p midi arrives cleared. An insert with no return of that kind
+     * is not asked for it.
+     */
+    virtual void receive(const BlockInfo&, juce::dsp::AudioBlock<float> audio,
+                         juce::MidiBuffer& midi) = 0;
+};
+
 }  // namespace magda::engine
