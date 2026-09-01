@@ -221,6 +221,9 @@ struct DeviceParameterDto {
     double defaultValue = 0.0;
     double currentValue = 0.0;
     double normalizedValue = 0.0;
+    juce::String
+        scale;  // "linear" | "logarithmic" | "exponential" | "discrete" | "boolean" | "fader_db"
+    std::vector<juce::String> choices;  // labels for discrete parameters; empty otherwise
     bool visible = false;
     bool miniMixer = false;
     bool aiAgentEnabled = false;

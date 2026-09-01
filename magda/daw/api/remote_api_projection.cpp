@@ -5,6 +5,7 @@
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
 #include "../core/ParameterUtils.hpp"
+#include "../core/PluginParameterConfigStore.hpp"
 #include "../core/RackInfo.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../project/ProjectInfo.hpp"
@@ -366,6 +367,8 @@ std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device
         dto.defaultValue = ParameterUtils::modelToRealValue({info.defaultValue}, info);
         dto.currentValue = ParameterUtils::normalizedToReal(normalized.value, info);
         dto.normalizedValue = normalized.value;
+        dto.scale = PluginParameterConfigStore::scaleToString(info.scale);
+        dto.choices = info.choices;
         dto.visible = contains(device.visibleParameters, position);
         dto.miniMixer = contains(device.miniMixerParameters, position);
         // Configure Parameters offers the AI opt-in only for external plugins;

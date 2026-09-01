@@ -342,12 +342,16 @@ const juce::var& deviceParameterSchema() {
             "defaultValue":{"type":"number"},
             "currentValue":{"type":"number"},
             "normalizedValue":{"type":"number","minimum":0,"maximum":1},
+            "scale":{"type":"string",
+                     "enum":["linear","logarithmic","exponential","discrete","boolean","fader_db"]},
+            "choices":{"type":"array","items":{"type":"string"}},
             "visible":{"type":"boolean"},
             "miniMixer":{"type":"boolean"},
             "aiAgentEnabled":{"type":"boolean"}
         },
         "required":["index","stableId","name","unit","minValue","maxValue","defaultValue",
-                    "currentValue","normalizedValue","visible","miniMixer","aiAgentEnabled"],
+                    "currentValue","normalizedValue","scale","choices","visible","miniMixer",
+                    "aiAgentEnabled"],
         "additionalProperties":false
     })json");
     return value;
@@ -1118,6 +1122,11 @@ juce::var toJson(const DeviceParameterDto& dto) {
     object->setProperty("defaultValue", dto.defaultValue);
     object->setProperty("currentValue", dto.currentValue);
     object->setProperty("normalizedValue", dto.normalizedValue);
+    object->setProperty("scale", dto.scale);
+    juce::Array<juce::var> choices;
+    for (const auto& choice : dto.choices)
+        choices.add(choice);
+    object->setProperty("choices", choices);
     object->setProperty("visible", dto.visible);
     object->setProperty("miniMixer", dto.miniMixer);
     object->setProperty("aiAgentEnabled", dto.aiAgentEnabled);
@@ -1399,6 +1408,11 @@ std::optional<DeviceParameterDto> deviceParameterFromJson(const juce::var& json,
     dto.defaultValue = static_cast<double>(json["defaultValue"]);
     dto.currentValue = static_cast<double>(json["currentValue"]);
     dto.normalizedValue = static_cast<double>(json["normalizedValue"]);
+    dto.scale = json["scale"].toString();
+    if (const auto* choices = json["choices"].getArray()) {
+        for (const auto& choice : *choices)
+            dto.choices.push_back(choice.toString());
+    }
     dto.visible = static_cast<bool>(json["visible"]);
     dto.miniMixer = static_cast<bool>(json["miniMixer"]);
     dto.aiAgentEnabled = static_cast<bool>(json["aiAgentEnabled"]);
