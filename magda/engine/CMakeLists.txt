@@ -113,8 +113,6 @@ add_library(magda_engine STATIC
     analysis/TransientDetector.cpp
     analysis/TransientDetector.hpp
     io/AudioFileReader.cpp
-    io/CapturedInsert.cpp
-    io/CapturedInsert.hpp
     io/SourceLoopInfo.cpp
     io/SourceLoopInfo.hpp
     io/PrefetchStream.cpp

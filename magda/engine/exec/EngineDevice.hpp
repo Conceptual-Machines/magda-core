@@ -212,10 +212,21 @@ class EngineMidiSource {
  *
  * A bounce cannot run the outside world faster than real time, so it either
  * runs at real time or plays back a capture, and the incumbent does the latter.
- * Nothing about that is here: an implementation that returns captured samples
- * and one that returns what an interface just handed it satisfy the same two
- * calls, and which one a render binds is what decides. That is the same seam
- * the location-transparent device op has (#1893), and for the same reason.
+ * Nothing about that is here, and that is the seam rather than a gap: an
+ * implementation that returns captured samples and one that returns what an
+ * interface just handed it satisfy the same two calls, and which one a render
+ * binds is what decides. Same shape as the location-transparent device op
+ * (#1893), for the same reason.
+ *
+ * What this interface deliberately does not have is a notion of an
+ * implementation that is present but unfit to render -- a capture taken at
+ * another sample rate, one with a gap in it. Nothing here could enforce such a
+ * state: the executor binds a pointer and calls it, so a "check me first" flag
+ * would be a rule some caller has to remember, and the render that forgot would
+ * be wrong with nothing downstream able to see it. A capture that cannot be
+ * replayed must therefore fail to be constructed rather than fail to be valid,
+ * which is a decision for whatever owns captures (#2279) and is why none of it
+ * is here.
  */
 class EngineInsert {
   public:
