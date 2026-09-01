@@ -10,9 +10,9 @@
 #include "../common/SvgButton.hpp"
 #include "../common/TextSlider.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
-#include "ui/dialogs/ParameterConfigDialog.hpp"
 
 namespace magda {
 
@@ -140,7 +140,7 @@ void MiniChainRow::resolveParams() {
     if (devInfo == nullptr)
         return;
     if (devInfo->uniqueId.isNotEmpty())
-        daw::ui::ParameterConfigDialog::applyConfigToDevice(devInfo->uniqueId, *devInfo);
+        magda::PluginParameterConfigStore::applyToDevice(devInfo->uniqueId, *devInfo);
     const auto path = devicePath_;
 
     auto addParamSlider = [&](const ParameterInfo& paramInfo) {

@@ -22,6 +22,7 @@
 #include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/PluginAlias.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -831,7 +832,7 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
     // Internal devices with a registered agent and external plugins with an
     // explicit AI parameter selection can expose/hide the Sound Designer.
     if (magda::isSoundDesignSupported(plugin.uniqueId) ||
-        ParameterConfigDialog::hasAiSoundDesignerParameters(plugin.uniqueId)) {
+        magda::PluginParameterConfigStore::hasAiSoundDesignerParameters(plugin.uniqueId)) {
         menu.addItem(
             12, "AI Sound Designer", true,
             magda::PluginPreferences::getInstance().aiSoundDesignerEnabled(pluginIdentifier));

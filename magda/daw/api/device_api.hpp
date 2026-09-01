@@ -56,6 +56,20 @@ struct DeviceParameter {
 };
 
 /**
+ * @brief A partial update to a device's saved parameter customization.
+ *
+ * Each present field replaces that selection wholesale — an empty vector
+ * clears it; an absent field leaves the saved selection alone. Indices are
+ * positions in `DeviceInfo::parameters`.
+ */
+struct DeviceParameterConfigUpdate {
+    std::optional<std::vector<int>> visibleParameters;
+    std::optional<std::vector<int>> miniMixerParameters;
+    std::optional<std::vector<int>> aiAgentParameters;
+    std::optional<juce::String> aiPrompt;
+};
+
+/**
  * @brief Device discovery and inspection, addressed by `ChainNodePath`.
  *
  * Live devices are named by path rather than by `DeviceId`, because a device id
@@ -114,6 +128,19 @@ class DeviceApi {
      */
     virtual bool setDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float value) = 0;
+
+    /**
+     * @brief Update the plugin's saved parameter customization and persist it.
+     *
+     * Writes the same per-plugin store Configure Parameters writes, then
+     * re-applies it to every live instance, so the change outlives the
+     * session. External plugins only: internal devices have no saved
+     * customization and their parameters already accept agent writes. False
+     * when the path does not resolve, the device is internal or carries no
+     * config id, or an index is out of range.
+     */
+    virtual bool setDeviceParameterConfig(const ChainNodePath& devicePath,
+                                          const DeviceParameterConfigUpdate& update) = 0;
 
     /**
      * @brief Open the device's plugin editor window in the MAGDA UI.

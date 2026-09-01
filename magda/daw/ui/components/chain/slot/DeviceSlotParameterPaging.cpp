@@ -3,11 +3,11 @@
 #include <utility>
 
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/TrackManager.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
 #include "slot/DeviceSlotTraits.hpp"
-#include "ui/dialogs/ParameterConfigDialog.hpp"
 
 namespace magda::daw::ui {
 
@@ -74,7 +74,7 @@ bool applyDeviceSlotSavedParameterConfig(magda::DeviceInfo& device,
         return false;
 
     magda::DeviceInfo tempDevice = device;
-    if (!ParameterConfigDialog::applyConfigToDevice(tempDevice.uniqueId, tempDevice))
+    if (!magda::PluginParameterConfigStore::applyToDevice(tempDevice.uniqueId, tempDevice))
         return false;
 
     if (!tempDevice.visibleParameters.empty()) {
