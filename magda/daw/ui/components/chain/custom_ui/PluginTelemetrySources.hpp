@@ -173,7 +173,8 @@ class NimbusPluginTelemetrySource final : public NimbusTelemetrySource {
 
   private:
     daw::audio::MutableCloudsPlugin* plugin() const {
-        return dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin_.get());
+        return daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MutableCloudsPlugin>(
+            plugin_.get());
     }
 
     te::Plugin::Ptr plugin_;

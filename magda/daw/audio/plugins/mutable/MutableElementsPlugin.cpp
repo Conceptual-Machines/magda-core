@@ -6,14 +6,12 @@
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable).
 // Compiled with -DTEST (set on the magda_mutable target) so stmlib uses its
-// portable code paths. Walled behind the pimpl so this is the only TU in
-// magda_daw that sees the eurorack headers.
+// portable code paths. Walled behind the pimpl so this is the only TU in the
+// base device pack that sees the eurorack headers.
 #include "elements/dsp/dsp.h"
 #include "elements/dsp/part.h"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 namespace {
 
@@ -59,6 +57,51 @@ const std::array<Desc, MutableElementsPlugin::kNumParams> kDescs = {{
     {"level", "Level", 0.0f, Kind::Level},
     {"velAmp", "Vel>Amp", 1.0f, Kind::Normalised},
 }};
+
+/// One slot's metadata, from the descriptor table. The ids, order and display
+/// ranges are pinned to what the retired host-native plugin registered,
+/// because projects store parameter values in the model in display units
+/// against these ranges and address the slots by index.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    if (index < 0 || index >= MutableElementsPlugin::kNumParams)
+        return info;
+
+    const auto& d = kDescs[static_cast<size_t>(index)];
+    info.paramIndex = index;
+    info.stableId = d.id;
+    info.name = d.name;
+    info.defaultValue = d.def;
+
+    switch (d.kind) {
+        case Kind::Normalised:
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+        case Kind::Pitch:
+            info.unit = "st";
+            info.minValue = -24.0f;
+            info.maxValue = 24.0f;
+            break;
+        case Kind::Fine:
+            info.unit = "ct";
+            info.minValue = -100.0f;
+            info.maxValue = 100.0f;
+            break;
+        case Kind::Level:
+            // The retired host-native plugin's NormalisableRange carried skew
+            // 4, which JUCE applies as real = min + span * normalized^(1/skew).
+            info.unit = "dB";
+            info.scale = ParameterScale::Exponential;
+            info.skewFactor = 0.25f;
+            info.minValue = -60.0f;
+            info.maxValue = 12.0f;
+            break;
+    }
+
+    return info;
+}
 
 }  // namespace
 
@@ -206,71 +249,55 @@ struct MutableElementsPlugin::Impl {
 //==============================================================================
 const char* MutableElementsPlugin::xmlTypeName = "magda_elements";
 
-MutableElementsPlugin::MutableElementsPlugin(const te::PluginCreationInfo& info)
-    : Plugin(info), impl_(std::make_unique<Impl>()) {
-    auto* um = getUndoManager();
-
-    for (int i = 0; i < kNumParams; ++i) {
-        const auto& d = kDescs[static_cast<size_t>(i)];
-        values_[static_cast<size_t>(i)].referTo(state, juce::Identifier(d.id), um, d.def);
-
-        switch (d.kind) {
-            case Kind::Normalised:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 1.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v * 100.0f)) + "%"; },
-                    [](const juce::String& s) { return s.getFloatValue() / 100.0f; });
-                break;
-            case Kind::Pitch:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-24.0f, 24.0f, 0.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)) + " st"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Fine:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-100.0f, 100.0f, 0.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)) + " ct"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Level:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-60.0f, 12.0f, 0.0f, 4.0f},
-                    [](float v) { return juce::String(v, 1) + " dB"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-        }
-
-        params_[static_cast<size_t>(i)]->attachToCurrentValue(values_[static_cast<size_t>(i)]);
+MutableElementsPlugin::MutableElementsPlugin() : impl_(std::make_unique<Impl>()) {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
     }
 }
 
-MutableElementsPlugin::~MutableElementsPlugin() {
-    notifyListenersOfDeletion();
-    for (auto& p : params_)
-        if (p != nullptr)
-            p->detachFromCurrentValue();
+MutableElementsPlugin::~MutableElementsPlugin() = default;
+
+ParameterInfo MutableElementsPlugin::parameterInfo(int index) const {
+    return slotInfo(index);
 }
 
-void MutableElementsPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate;
+float MutableElementsPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
+}
+
+void MutableElementsPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float MutableElementsPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
+}
+
+void MutableElementsPlugin::prepare(const DevicePrepareContext& context) {
+    sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
 }
-
-void MutableElementsPlugin::deinitialise() {}
 
 void MutableElementsPlugin::reset() {
     impl_->resetVoice();
 }
 
-void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (fc.destBuffer == nullptr)
+void MutableElementsPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
     // Pull current parameter values and push them into the DSP patch (block rate).
     float v[kNumParams];
     for (int i = 0; i < kNumParams; ++i)
-        v[i] = params_[static_cast<size_t>(i)]->getCurrentValue();
+        v[i] = displayValue(i);
 
     auto* p = impl_->patch();
     p->exciter_envelope_shape = v[kContour];
@@ -297,10 +324,10 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     const float transpose = v[kPitch] + v[kFine] * 0.01f;
     const float velToAmp = v[kVelAmp];
 
-    auto* destL = fc.destBuffer->getWritePointer(0, fc.bufferStartSample);
-    float* destR = fc.destBuffer->getNumChannels() > 1
-                       ? fc.destBuffer->getWritePointer(1, fc.bufferStartSample)
-                       : nullptr;
+    auto& buffer = *context.audio;
+    const int start = context.startSample;
+    auto* destL = buffer.getWritePointer(0, start);
+    float* destR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1, start) : nullptr;
 
     // Split the block at each MIDI event so note timing lands at the right
     // sample, generating each segment with the performance state up to it.
@@ -313,14 +340,15 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         pos = upto;
     };
 
-    if (fc.bufferForMidiMessages != nullptr) {
-        for (auto& m : *fc.bufferForMidiMessages) {
+    if (context.midi != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
+            const auto& m = context.midi->message(eventIndex);
             const bool isPanic = m.isController() &&
                                  (m.getControllerNumber() == 120 || m.getControllerNumber() == 123);
             if (!m.isNoteOn() && !m.isNoteOff() && !isPanic)
                 continue;
-            int evPos = juce::jlimit(0, fc.bufferNumSamples - 1,
-                                     juce::roundToInt(m.getTimeStamp() * sampleRate_));
+            const int evPos = juce::jlimit(0, context.numSamples - 1,
+                                           juce::roundToInt(m.getTimeStamp() * sampleRate_));
             renderTo(evPos);
             if (isPanic)
                 impl_->allNotesOff();  // CC120/123: release any stuck gate
@@ -330,19 +358,10 @@ void MutableElementsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
                 impl_->noteOff(m.getNoteNumber());
         }
     }
-    renderTo(fc.bufferNumSamples);
+    renderTo(context.numSamples);
 
     const float gain = juce::Decibels::decibelsToGain(v[kLevel]);
-    fc.destBuffer->applyGain(fc.bufferStartSample, fc.bufferNumSamples, gain);
-}
-
-void MutableElementsPlugin::restorePluginStateFromValueTree(const juce::ValueTree& vt) {
-    for (int i = 0; i < kNumParams; ++i) {
-        if (auto prop = vt.getPropertyPointer(juce::Identifier(kDescs[static_cast<size_t>(i)].id)))
-            values_[static_cast<size_t>(i)] = static_cast<float>(*prop);
-    }
-    for (auto p : getAutomatableParameters())
-        p->updateFromAttachedValue();
+    buffer.applyGain(start, context.numSamples, gain);
 }
 
 }  // namespace magda::daw::audio

@@ -295,7 +295,11 @@ double TracktionMagdaDevicePlugin::getLatencySeconds() {
 }
 
 double TracktionMagdaDevicePlugin::getTailLength() const {
-    return properties_.tailLengthSeconds;
+    // Live, not cached: most devices' tails are fixed for their lifetime, but
+    // the convolution's is the length of whatever impulse response is loaded,
+    // and a render that trusted the construction-time snapshot would cut the
+    // reverb at the last note.
+    return device_->properties().tailLengthSeconds;
 }
 
 te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int slotIndex) const {

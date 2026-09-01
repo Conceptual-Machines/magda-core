@@ -1,59 +1,107 @@
 #include "plugins/MagdaConvolutionPlugin.hpp"
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <algorithm>
 #include <cmath>
 #include <memory>
 
 namespace magda::daw::audio {
 
-namespace te = tracktion::engine;
-
 namespace {
 
 // The device's own state property names. `irFileData`, `name`, `normalise` and
 // `trimSilence` deliberately match the retired Tracktion device's, which is how
 // a migrated project keeps its impulse response (core/LegacyDeviceAliases.cpp).
-const juce::Identifier kGainProp("gain");
-const juce::Identifier kLowCutProp("lowCut");
-const juce::Identifier kHighCutProp("highCut");
-const juce::Identifier kMixProp("mix");
-const juce::Identifier kFilterQProp("filterQ");
+const juce::Identifier kNameProp("name");
+const juce::Identifier kNormaliseProp("normalise");
+const juce::Identifier kTrimSilenceProp("trimSilence");
+const juce::Identifier kIrFileDataProp("irFileData");
 
 constexpr float kMinFrequency = 10.0f;
 constexpr float kMaxFrequency = 20000.0f;
 constexpr float kSmoothingSeconds = 0.01f;
 
-/// Cutoff range, mapped so that a normalised value is affine in log2 of the
-/// frequency. That is exactly the mapping the retired device got from storing a
-/// MIDI note number over the same 10 Hz - 20 kHz span, so saved automation and
-/// macro positions mean the same frequency after the migration.
-juce::NormalisableRange<float> frequencyRange() {
-    return {kMinFrequency, kMaxFrequency,
-            [](float start, float end, float normalised) {
-                return start * std::pow(end / start, normalised);
-            },
-            [](float start, float end, float value) {
-                return std::log(juce::jmax(start, value) / start) / std::log(end / start);
-            },
-            [](float start, float end, float value) { return juce::jlimit(start, end, value); }};
+/// The formats an IR can arrive in. The retired device read through the
+/// engine's format manager; the basic JUCE set (WAV, AIFF, FLAC, OGG, and the
+/// OS codecs where present) is the same list for the files an IR actually is,
+/// and stays engine-neutral.
+juce::AudioFormatManager& irFormats() {
+    static juce::AudioFormatManager formats;
+    [[maybe_unused]] static const bool registered = [] {
+        formats.registerBasicFormats();
+        return true;
+    }();
+    return formats;
 }
 
-juce::NormalisableRange<float> gainRange() {
-    juce::NormalisableRange<float> range{-12.0f, 6.0f};
-    range.setSkewForCentre(0.0f);
-    return range;
-}
+/// One slot's metadata. The ids, order and normalised curves are pinned to
+/// what the retired host-native plugin registered, because projects store
+/// parameter values in the model in display units against these ranges and
+/// saved automation addresses the normalised positions.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    info.paramIndex = index;
 
-juce::String frequencyToString(float hz) {
-    if (hz >= 1000.0f)
-        return juce::String(hz / 1000.0f, 2) + " kHz";
-    return juce::String(juce::roundToInt(hz)) + " Hz";
-}
+    switch (index) {
+        case MagdaConvolutionPlugin::kGain:
+            info.stableId = "gain";
+            info.name = "Gain";
+            info.unit = "dB";
+            // The retired range was {-12, 6} with setSkewForCentre(0): JUCE
+            // applies real = min + span * normalized^(1/skew), and unity at
+            // centre needs normalized^k = 2/3 at 0.5, so k = ln(2/3)/ln(1/2).
+            info.scale = ParameterScale::Exponential;
+            info.skewFactor = 0.5849625f;
+            info.minValue = -12.0f;
+            info.maxValue = 6.0f;
+            info.defaultValue = 0.0f;
+            break;
 
-float frequencyFromString(const juce::String& text) {
-    const auto trimmed = text.trim().toLowerCase();
-    const auto number = trimmed.retainCharacters("0123456789.-").getFloatValue();
-    return trimmed.contains("k") ? number * 1000.0f : number;
+        case MagdaConvolutionPlugin::kLowCut:
+            info.stableId = "lowCut";
+            info.name = "Low Cut";
+            info.unit = "Hz";
+            // Affine in log2 of the frequency, exactly the curve the retired
+            // device got from storing a MIDI note number over the same span.
+            info.scale = ParameterScale::Logarithmic;
+            info.minValue = kMinFrequency;
+            info.maxValue = kMaxFrequency;
+            info.defaultValue = kMinFrequency;
+            break;
+
+        case MagdaConvolutionPlugin::kHighCut:
+            info.stableId = "highCut";
+            info.name = "High Cut";
+            info.unit = "Hz";
+            info.scale = ParameterScale::Logarithmic;
+            info.minValue = kMinFrequency;
+            info.maxValue = kMaxFrequency;
+            info.defaultValue = kMaxFrequency;
+            break;
+
+        case MagdaConvolutionPlugin::kMix:
+            info.stableId = "mix";
+            info.name = "Mix";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 1.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case MagdaConvolutionPlugin::kFilterQ:
+            info.stableId = "filterQ";
+            info.name = "Filter Q";
+            info.minValue = 0.1f;
+            info.maxValue = 14.0f;
+            info.defaultValue = 1.0f / juce::MathConstants<float>::sqrt2;
+            break;
+
+        default:
+            break;
+    }
+
+    return info;
 }
 
 /// The retired device's mix law, kept so a given Mix position sounds the same:
@@ -74,54 +122,38 @@ WetDryGain wetDryFor(float mix) {
 //==============================================================================
 const char* MagdaConvolutionPlugin::xmlTypeName = "magda_convolution";
 
-MagdaConvolutionPlugin::MagdaConvolutionPlugin(const te::PluginCreationInfo& info) : Plugin(info) {
-    auto* um = getUndoManager();
-
-    irName.referTo(state, te::IDs::name, um);
-    normalise.referTo(state, te::IDs::normalise, um, true);
-    trimSilence.referTo(state, te::IDs::trimSilence, um, false);
-
-    gainValue.referTo(state, kGainProp, um, 0.0f);
-    lowCutValue.referTo(state, kLowCutProp, um, kMinFrequency);
-    highCutValue.referTo(state, kHighCutProp, um, kMaxFrequency);
-    mixValue.referTo(state, kMixProp, um, 1.0f);
-    filterQValue.referTo(state, kFilterQProp, um, 1.0f / juce::MathConstants<float>::sqrt2);
-
-    gainParam = addParam(
-        "gain", TRANS("Gain"), gainRange(),
-        [](float value) { return juce::Decibels::toString(value); },
-        [](const juce::String& s) { return s.getFloatValue(); });
-    gainParam->attachToCurrentValue(gainValue);
-
-    lowCutParam = addParam("lowCut", TRANS("Low Cut"), frequencyRange(), frequencyToString,
-                           frequencyFromString);
-    lowCutParam->attachToCurrentValue(lowCutValue);
-
-    highCutParam = addParam("highCut", TRANS("High Cut"), frequencyRange(), frequencyToString,
-                            frequencyFromString);
-    highCutParam->attachToCurrentValue(highCutValue);
-
-    mixParam = addParam(
-        "mix", TRANS("Mix"), {0.0f, 1.0f, 0.0f},
-        [](float value) { return juce::String(juce::roundToInt(value * 100.0f)) + "%"; },
-        [](const juce::String& s) { return s.getFloatValue() / 100.0f; });
-    mixParam->attachToCurrentValue(mixValue);
-
-    filterQParam = addParam(
-        "filterQ", TRANS("Filter Q"), {0.1f, 14.0f, 0.0f},
-        [](float value) { return juce::String(value, 2); },
-        [](const juce::String& s) { return s.getFloatValue(); });
-    filterQParam->attachToCurrentValue(filterQValue);
-
-    loadImpulseResponseFromState();
+MagdaConvolutionPlugin::MagdaConvolutionPlugin() {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
+    }
 }
 
-MagdaConvolutionPlugin::~MagdaConvolutionPlugin() {
-    notifyListenersOfDeletion();
+MagdaConvolutionPlugin::~MagdaConvolutionPlugin() = default;
 
-    for (auto& param : {gainParam, lowCutParam, highCutParam, mixParam, filterQParam})
-        if (param != nullptr)
-            param->detachFromCurrentValue();
+ParameterInfo MagdaConvolutionPlugin::parameterInfo(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return {};
+    return slotInfo(index);
+}
+
+float MagdaConvolutionPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
+}
+
+void MagdaConvolutionPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float MagdaConvolutionPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
 }
 
 //==============================================================================
@@ -138,9 +170,7 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t 
         return false;
 
     auto stream = std::make_unique<juce::MemoryInputStream>(sourceData, sourceDataSize, false);
-    auto& formats = engine.getAudioFileFormatManager().readFormatManager;
-
-    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(std::move(stream)));
+    std::unique_ptr<juce::AudioFormatReader> reader(irFormats().createReaderFor(std::move(stream)));
     if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples == 0)
         return false;
 
@@ -166,73 +196,64 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t 
     if (!writer->writeFromAudioSampleBuffer(buffer, 0, buffer.getNumSamples()))
         return false;
 
-    writer.reset();  // flush before the block is moved into the state
+    writer.reset();  // flush before the block is moved into the device state
 
-    state.setProperty(te::IDs::irFileData, juce::var(std::move(encoded)), getUndoManager());
+    irData_ = std::move(encoded);
+    loadImpulseResponseFromData();
     return true;
 }
 
-//==============================================================================
-double MagdaConvolutionPlugin::getLatencySeconds() {
-    // Zero, by construction: the convolution is built in JUCE's default
-    // configuration, which is uniform partitioned and zero latency, so every
-    // engine it installs reports a latency of zero. Reading the live engine
-    // back instead would race the audio thread's pointer swap for a number that
-    // cannot change. Anything that gives the device latency - a fixed-latency
-    // engine - has to update this too.
-    return 0.0;
-}
+void MagdaConvolutionPlugin::prepare(const DevicePrepareContext& context) {
+    sampleRate_ = context.sampleRate;
 
-double MagdaConvolutionPlugin::getTailLength() const {
-    // A convolution rings for exactly the length of its impulse response, plus
-    // the filters' own short decay. Declaring it is what lets an offline render
-    // or a freeze keep the reverb's tail instead of cutting it at the last note.
-    return irLengthSeconds_.load(std::memory_order_relaxed);
-}
-
-void MagdaConvolutionPlugin::initialise(const te::PluginInitialisationInfo& info) {
     juce::dsp::ProcessSpec spec;
-    spec.sampleRate = info.sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32>(info.blockSizeSamples);
+    spec.sampleRate = context.sampleRate;
+    spec.maximumBlockSize = static_cast<juce::uint32>(std::max(1, context.maximumBlockSize));
     spec.numChannels = 2;
     chain_.prepare(spec);
 
-    lowCutSmoother_.setTargetValue(lowCutParam->getCurrentValue());
-    highCutSmoother_.setTargetValue(highCutParam->getCurrentValue());
-    gainSmoother_.setTargetValue(gainParam->getCurrentValue());
-    filterQSmoother_.setTargetValue(filterQParam->getCurrentValue());
+    dryBuffer_.setSize(2, std::max(1, context.maximumBlockSize));
 
-    const auto levels = wetDryFor(mixParam->getCurrentValue());
+    lowCutSmoother_.setTargetValue(displayValue(kLowCut));
+    highCutSmoother_.setTargetValue(displayValue(kHighCut));
+    gainSmoother_.setTargetValue(displayValue(kGain));
+    filterQSmoother_.setTargetValue(displayValue(kFilterQ));
+
+    const auto levels = wetDryFor(displayValue(kMix));
     wetSmoother_.setTargetValue(levels.wet);
     drySmoother_.setTargetValue(levels.dry);
 
     for (auto* smoother : {&lowCutSmoother_, &highCutSmoother_, &gainSmoother_, &filterQSmoother_,
                            &wetSmoother_, &drySmoother_})
-        smoother->reset(info.sampleRate, kSmoothingSeconds);
+        smoother->reset(context.sampleRate, kSmoothingSeconds);
 }
-
-void MagdaConvolutionPlugin::deinitialise() {}
 
 void MagdaConvolutionPlugin::reset() {
     chain_.reset();
 }
 
-void MagdaConvolutionPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (fc.destBuffer == nullptr || fc.bufferNumSamples <= 0)
+void MagdaConvolutionPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
-    lowCutSmoother_.setTargetValue(lowCutParam->getCurrentValue());
-    highCutSmoother_.setTargetValue(highCutParam->getCurrentValue());
-    gainSmoother_.setTargetValue(gainParam->getCurrentValue());
-    filterQSmoother_.setTargetValue(filterQParam->getCurrentValue());
+    auto& buffer = *context.audio;
+    const int start = context.startSample;
+    const int numSamples = context.numSamples;
 
-    const auto levels = wetDryFor(mixParam->getCurrentValue());
+    lowCutSmoother_.setTargetValue(displayValue(kLowCut));
+    highCutSmoother_.setTargetValue(displayValue(kHighCut));
+    gainSmoother_.setTargetValue(displayValue(kGain));
+    filterQSmoother_.setTargetValue(displayValue(kFilterQ));
+
+    const auto levels = wetDryFor(displayValue(kMix));
     wetSmoother_.setTargetValue(levels.wet);
     drySmoother_.setTargetValue(levels.dry);
 
-    // The dry copy has to be taken before the chain writes over destBuffer.
-    // AudioScratchBuffer is a pooled buffer, so this does not allocate.
-    te::AudioScratchBuffer dry(*fc.destBuffer);
+    // The dry copy has to be taken before the chain writes over the buffer.
+    // dryBuffer_ was sized in prepare(), so this does not allocate.
+    const int numChannels = std::min(buffer.getNumChannels(), dryBuffer_.getNumChannels());
+    for (int channel = 0; channel < numChannels; ++channel)
+        dryBuffer_.copyFrom(channel, 0, buffer, channel, start, numSamples);
 
     auto& highPass = chain_.get<kHighPass>().state;
     auto& lowPass = chain_.get<kLowPass>().state;
@@ -241,93 +262,93 @@ void MagdaConvolutionPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     const bool smoothing = gainSmoother_.isSmoothing() || lowCutSmoother_.isSmoothing() ||
                            highCutSmoother_.isSmoothing() || filterQSmoother_.isSmoothing();
 
-    const auto updateCoefficients = [&](int numSamples) {
-        const auto q = filterQSmoother_.skip(numSamples);
+    const auto updateCoefficients = [&](int samplesThisTime) {
+        const auto q = filterQSmoother_.skip(samplesThisTime);
         *highPass = juce::dsp::IIR::ArrayCoefficients<float>::makeHighPass(
-            sampleRate, lowCutSmoother_.skip(numSamples), q);
+            sampleRate_, lowCutSmoother_.skip(samplesThisTime), q);
         *lowPass = juce::dsp::IIR::ArrayCoefficients<float>::makeLowPass(
-            sampleRate, highCutSmoother_.skip(numSamples), q);
-        gain.setGainLinear(juce::Decibels::decibelsToGain(gainSmoother_.skip(numSamples)));
+            sampleRate_, highCutSmoother_.skip(samplesThisTime), q);
+        gain.setGainLinear(juce::Decibels::decibelsToGain(gainSmoother_.skip(samplesThisTime)));
     };
 
     if (smoothing) {
         // Re-derive the coefficients every 32 samples so a moving control does
         // not step; the convolution itself is unaffected by the sub-blocking.
         constexpr int kControlBlock = 32;
-        for (int done = 0; done < fc.bufferNumSamples;) {
-            const int numThisTime = std::min(kControlBlock, fc.bufferNumSamples - done);
+        for (int done = 0; done < numSamples;) {
+            const int numThisTime = std::min(kControlBlock, numSamples - done);
             updateCoefficients(numThisTime);
 
-            auto block = juce::dsp::AudioBlock<float>(*fc.destBuffer)
-                             .getSubBlock(static_cast<size_t>(fc.bufferStartSample + done),
-                                          static_cast<size_t>(numThisTime));
-            juce::dsp::ProcessContextReplacing<float> context(block);
-            chain_.process(context);
+            auto block = juce::dsp::AudioBlock<float>(buffer).getSubBlock(
+                static_cast<size_t>(start + done), static_cast<size_t>(numThisTime));
+            juce::dsp::ProcessContextReplacing<float> processContext(block);
+            chain_.process(processContext);
 
             done += numThisTime;
         }
     } else {
-        updateCoefficients(fc.bufferNumSamples);
+        updateCoefficients(numSamples);
 
-        auto block = juce::dsp::AudioBlock<float>(*fc.destBuffer)
-                         .getSubBlock(static_cast<size_t>(fc.bufferStartSample),
-                                      static_cast<size_t>(fc.bufferNumSamples));
-        juce::dsp::ProcessContextReplacing<float> context(block);
-        chain_.process(context);
+        auto block = juce::dsp::AudioBlock<float>(buffer).getSubBlock(
+            static_cast<size_t>(start), static_cast<size_t>(numSamples));
+        juce::dsp::ProcessContextReplacing<float> processContext(block);
+        chain_.process(processContext);
     }
 
     // Gain has to be applied over the render region, not from sample zero: a
     // SmoothedValue advances once across the whole buffer it is handed, so the
     // views below keep it in step with the samples actually being rendered.
-    juce::AudioBuffer<float> wetRegion(fc.destBuffer->getArrayOfWritePointers(),
-                                       fc.destBuffer->getNumChannels(), fc.bufferStartSample,
-                                       fc.bufferNumSamples);
-    wetSmoother_.applyGain(wetRegion, fc.bufferNumSamples);
+    juce::AudioBuffer<float> wetRegion(buffer.getArrayOfWritePointers(), buffer.getNumChannels(),
+                                       start, numSamples);
+    wetSmoother_.applyGain(wetRegion, numSamples);
 
     // Fully wet needs no dry pass, and the smoother is parked at zero there.
     if (drySmoother_.getCurrentValue() > 0.0f || drySmoother_.getTargetValue() > 0.0f) {
-        const int numChannels =
-            std::min(fc.destBuffer->getNumChannels(), dry.buffer.getNumChannels());
-
-        juce::AudioBuffer<float> dryRegion(dry.buffer.getArrayOfWritePointers(), numChannels,
-                                           fc.bufferStartSample, fc.bufferNumSamples);
-        drySmoother_.applyGain(dryRegion, fc.bufferNumSamples);
+        juce::AudioBuffer<float> dryRegion(dryBuffer_.getArrayOfWritePointers(), numChannels, 0,
+                                           numSamples);
+        drySmoother_.applyGain(dryRegion, numSamples);
 
         for (int channel = 0; channel < numChannels; ++channel)
-            fc.destBuffer->addFrom(channel, fc.bufferStartSample, dry.buffer, channel,
-                                   fc.bufferStartSample, fc.bufferNumSamples);
+            buffer.addFrom(channel, start, dryBuffer_, channel, 0, numSamples);
     }
 }
 
 //==============================================================================
-void MagdaConvolutionPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    te::copyPropertiesToCachedValues(v, gainValue, lowCutValue, highCutValue, mixValue,
-                                     filterQValue, normalise, trimSilence);
+void MagdaConvolutionPlugin::flushState(juce::ValueTree& state) {
+    state.setProperty(kNameProp, irName_, nullptr);
+    state.setProperty(kNormaliseProp, normalise_, nullptr);
+    state.setProperty(kTrimSilenceProp, trimSilence_, nullptr);
 
-    auto* um = getUndoManager();
-    if (const auto* name = v.getPropertyPointer(te::IDs::name))
-        state.setProperty(te::IDs::name, *name, um);
-
-    if (const auto* irFileData = v.getProperty(te::IDs::irFileData).getBinaryData())
-        state.setProperty(te::IDs::irFileData, juce::var(juce::MemoryBlock(*irFileData)), um);
-
-    for (auto* param : getAutomatableParameters())
-        param->updateFromAttachedValue();
+    if (irData_.getSize() > 0)
+        state.setProperty(kIrFileDataProp, juce::var(irData_), nullptr);
+    else
+        state.removeProperty(kIrFileDataProp, nullptr);
 }
 
-void MagdaConvolutionPlugin::loadImpulseResponseFromState() {
-    const auto* irFileData = state.getProperty(te::IDs::irFileData).getBinaryData();
-    if (irFileData == nullptr || irFileData->getSize() == 0) {
+void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {
+    if (const auto* name = state.getPropertyPointer(kNameProp))
+        irName_ = name->toString();
+    if (const auto* normalise = state.getPropertyPointer(kNormaliseProp))
+        normalise_ = static_cast<bool>(*normalise);
+    if (const auto* trimSilence = state.getPropertyPointer(kTrimSilenceProp))
+        trimSilence_ = static_cast<bool>(*trimSilence);
+
+    if (const auto* irFileData = state.getProperty(kIrFileDataProp).getBinaryData()) {
+        irData_ = *irFileData;
+        loadImpulseResponseFromData();
+    }
+}
+
+void MagdaConvolutionPlugin::loadImpulseResponseFromData() {
+    if (irData_.getSize() == 0) {
         irLengthSeconds_.store(0.0, std::memory_order_relaxed);
         return;
     }
 
-    // Read through the engine's format manager rather than assuming FLAC: the
-    // blob is whatever encoded the IR when it was stored.
-    auto stream = std::make_unique<juce::MemoryInputStream>(*irFileData, false);
-    auto& formats = engine.getAudioFileFormatManager().readFormatManager;
-
-    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(std::move(stream)));
+    // Read through a format manager rather than assuming FLAC: the blob is
+    // whatever encoded the IR when it was stored.
+    auto stream = std::make_unique<juce::MemoryInputStream>(irData_, false);
+    std::unique_ptr<juce::AudioFormatReader> reader(irFormats().createReaderFor(std::move(stream)));
     if (reader == nullptr || reader->numChannels == 0 || reader->lengthInSamples == 0)
         return;
 
@@ -344,18 +365,9 @@ void MagdaConvolutionPlugin::loadImpulseResponseFromState() {
         std::move(buffer), reader->sampleRate,
         reader->numChannels > 1 ? juce::dsp::Convolution::Stereo::yes
                                 : juce::dsp::Convolution::Stereo::no,
-        trimSilence.get() ? juce::dsp::Convolution::Trim::yes : juce::dsp::Convolution::Trim::no,
-        normalise.get() ? juce::dsp::Convolution::Normalise::yes
-                        : juce::dsp::Convolution::Normalise::no);
-}
-
-void MagdaConvolutionPlugin::valueTreePropertyChanged(juce::ValueTree& v,
-                                                      const juce::Identifier& id) {
-    if (v == state &&
-        (id == te::IDs::irFileData || id == te::IDs::normalise || id == te::IDs::trimSilence))
-        loadImpulseResponseFromState();
-
-    Plugin::valueTreePropertyChanged(v, id);
+        trimSilence_ ? juce::dsp::Convolution::Trim::yes : juce::dsp::Convolution::Trim::no,
+        normalise_ ? juce::dsp::Convolution::Normalise::yes
+                   : juce::dsp::Convolution::Normalise::no);
 }
 
 }  // namespace magda::daw::audio

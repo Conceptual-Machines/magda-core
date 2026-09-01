@@ -1977,7 +1977,8 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
         return false;
     }
-    auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get());
+    auto* ir = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaConvolutionPlugin>(
+        plugin.get());
     if (ir == nullptr) {
         DBG("IR load: plugin is not a convolution device, type: " << plugin->getName());
         return false;
@@ -1987,7 +1988,7 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         return false;
     }
 
-    ir->irName = file.getFileNameWithoutExtension();
+    ir->setIrName(file.getFileNameWithoutExtension());
     if (impulseResponseUI_ != nullptr)
         impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
 
@@ -2253,7 +2254,8 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     }
     if (nimbusUI_ != nullptr) {
         std::shared_ptr<NimbusTelemetrySource> source;
-        if (dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()) != nullptr) {
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MutableCloudsPlugin>(
+                plugin.get()) != nullptr) {
             if (nimbusTelemetry_ == nullptr)
                 nimbusTelemetry_ = std::make_shared<NimbusPluginTelemetrySource>(plugin);
             source = nimbusTelemetry_;
@@ -2431,8 +2433,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         impulseResponseUI_->updateFromParameters(device.parameters);
 
         auto plugin = getLivePlugin();
-        if (auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get()))
-            impulseResponseUI_->setIRName(ir->irName.get());
+        if (const auto* ir =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaConvolutionPlugin>(
+                    plugin.get()))
+            impulseResponseUI_->setIRName(ir->irName());
     }
 }
 

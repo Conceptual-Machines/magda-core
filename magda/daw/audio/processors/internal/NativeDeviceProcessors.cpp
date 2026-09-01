@@ -20,16 +20,16 @@ MagdaSamplerProcessor::MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr 
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
 
 MutableElementsProcessor::MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 MutableRingsProcessor::MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 MutableCloudsProcessor::MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 MagdaConvolutionProcessor::MagdaConvolutionProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 SidechainProcessor::SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}

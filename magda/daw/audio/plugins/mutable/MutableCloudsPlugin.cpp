@@ -6,14 +6,12 @@
 #include <cstring>
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable),
-// compiled with -DTEST. Walled behind the pimpl so this is the only TU in
-// magda_daw that sees the eurorack headers.
+// compiled with -DTEST. Walled behind the pimpl so this is the only TU in the
+// base device pack that sees the eurorack headers.
 #include "clouds/dsp/frame.h"
 #include "clouds/dsp/granular_processor.h"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 namespace {
 
@@ -118,6 +116,52 @@ const std::array<Desc, MutableCloudsPlugin::kNumParams> kDescs = {{
     {"freeze", "Freeze", 0.0f, Kind::Freeze},
 }};
 
+/// One slot's metadata, from the descriptor table. The ids, order and display
+/// ranges are pinned to what the retired host-native plugin registered,
+/// because projects store parameter values in the model in display units
+/// against these ranges and address the slots by index.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    if (index < 0 || index >= MutableCloudsPlugin::kNumParams)
+        return info;
+
+    const auto& d = kDescs[static_cast<size_t>(index)];
+    info.paramIndex = index;
+    info.stableId = d.id;
+    info.name = d.name;
+    info.defaultValue = d.def;
+
+    switch (d.kind) {
+        case Kind::Normalised:
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+        case Kind::Pitch:
+            info.unit = "st";
+            info.minValue = -24.0f;
+            info.maxValue = 24.0f;
+            break;
+        case Kind::Mode:
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = static_cast<float>(kNumModes - 1);
+            info.choices = {kModeNames, kModeNames + kNumModes};
+            break;
+        case Kind::Freeze:
+            // Boolean, and not modulatable, which is also what the old
+            // processor inferred from the two-state host parameter.
+            info.scale = ParameterScale::Boolean;
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.choices = {"Off", "On"};
+            info.modulatable = false;
+            break;
+    }
+
+    return info;
+}
+
 }  // namespace
 
 //==============================================================================
@@ -216,80 +260,56 @@ struct MutableCloudsPlugin::Impl {
 //==============================================================================
 const char* MutableCloudsPlugin::xmlTypeName = "magda_clouds";
 
-MutableCloudsPlugin::MutableCloudsPlugin(const te::PluginCreationInfo& info)
-    : Plugin(info), impl_(std::make_unique<Impl>()) {
-    auto* um = getUndoManager();
-
-    for (int i = 0; i < kNumParams; ++i) {
-        const auto& d = kDescs[static_cast<size_t>(i)];
-        values_[static_cast<size_t>(i)].referTo(state, juce::Identifier(d.id), um, d.def);
-
-        switch (d.kind) {
-            case Kind::Normalised:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 1.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v * 100.0f)) + "%"; },
-                    [](const juce::String& s) { return s.getFloatValue() / 100.0f; });
-                break;
-            case Kind::Pitch:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-24.0f, 24.0f, 0.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)) + " st"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Mode:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, static_cast<float>(kNumModes - 1), 1.0f},
-                    [](float v) {
-                        return juce::String(
-                            kModeNames[juce::jlimit(0, kNumModes - 1, juce::roundToInt(v))]);
-                    },
-                    [](const juce::String& s) {
-                        for (int k = 0; k < kNumModes; ++k)
-                            if (s.equalsIgnoreCase(kModeNames[k]))
-                                return static_cast<float>(k);
-                        return s.getFloatValue();
-                    });
-                break;
-            case Kind::Freeze:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 1.0f, 1.0f},
-                    [](float v) { return v > 0.5f ? juce::String("On") : juce::String("Off"); },
-                    [](const juce::String& s) { return s.equalsIgnoreCase("on") ? 1.0f : 0.0f; });
-                break;
-        }
-
-        params_[static_cast<size_t>(i)]->attachToCurrentValue(values_[static_cast<size_t>(i)]);
+MutableCloudsPlugin::MutableCloudsPlugin() : impl_(std::make_unique<Impl>()) {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
     }
 }
 
-MutableCloudsPlugin::~MutableCloudsPlugin() {
-    notifyListenersOfDeletion();
-    for (auto& p : params_)
-        if (p != nullptr)
-            p->detachFromCurrentValue();
+MutableCloudsPlugin::~MutableCloudsPlugin() = default;
+
+ParameterInfo MutableCloudsPlugin::parameterInfo(int index) const {
+    return slotInfo(index);
 }
 
-void MutableCloudsPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate;
+float MutableCloudsPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
+}
+
+void MutableCloudsPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float MutableCloudsPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
+}
+
+void MutableCloudsPlugin::prepare(const DevicePrepareContext& context) {
+    sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
     envBucketLen_ =
         juce::jmax(1, static_cast<int>(kBufferSeconds * sampleRate_ / kEnvelopeBuckets));
 }
 
-void MutableCloudsPlugin::deinitialise() {}
-
 void MutableCloudsPlugin::reset() {
     impl_->reset();
 }
 
-void MutableCloudsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (fc.destBuffer == nullptr)
+void MutableCloudsPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
     float v[kNumParams];
     for (int i = 0; i < kNumParams; ++i)
-        v[i] = params_[static_cast<size_t>(i)]->getCurrentValue();
+        v[i] = displayValue(i);
 
     impl_->setMode(juce::jlimit(0, kNumModes - 1, juce::roundToInt(v[kMode])));
 
@@ -307,14 +327,14 @@ void MutableCloudsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     p->trigger = false;
     p->gate = false;
 
-    auto* destL = fc.destBuffer->getWritePointer(0, fc.bufferStartSample);
-    float* destR = fc.destBuffer->getNumChannels() > 1
-                       ? fc.destBuffer->getWritePointer(1, fc.bufferStartSample)
-                       : nullptr;
+    auto& buffer = *context.audio;
+    const int start = context.startSample;
+    auto* destL = buffer.getWritePointer(0, start);
+    float* destR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1, start) : nullptr;
 
     // Tap the dry input into a decimated peak envelope; the faceplate uses its
     // recent level to drive the ambient grain-cloud liveliness.
-    for (int i = 0; i < fc.bufferNumSamples; ++i) {
+    for (int i = 0; i < context.numSamples; ++i) {
         const float s = destR != nullptr ? 0.5f * (destL[i] + destR[i]) : destL[i];
         envPeak_ = juce::jmax(envPeak_, std::abs(s));
         if (++envCount_ >= envBucketLen_) {
@@ -324,16 +344,7 @@ void MutableCloudsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         }
     }
 
-    impl_->process(destL, destR, fc.bufferNumSamples);
-}
-
-void MutableCloudsPlugin::restorePluginStateFromValueTree(const juce::ValueTree& vt) {
-    for (int i = 0; i < kNumParams; ++i) {
-        if (auto prop = vt.getPropertyPointer(juce::Identifier(kDescs[static_cast<size_t>(i)].id)))
-            values_[static_cast<size_t>(i)] = static_cast<float>(*prop);
-    }
-    for (auto p : getAutomatableParameters())
-        p->updateFromAttachedValue();
+    impl_->process(destL, destR, context.numSamples);
 }
 
 }  // namespace magda::daw::audio

@@ -408,7 +408,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kConvolutionLoadAliases,
          .loadAliasCount = static_cast<int>(std::size(kConvolutionLoadAliases)),
-         .matchesPlugin = matches<MagdaConvolutionPlugin>,
+         .matchesPlugin = matchesDevice<MagdaConvolutionPlugin>,
          .createProcessor = makeProcessor<MagdaConvolutionProcessor>,
          .showInBrowser = true,
          .tags = kConvolutionTags,
@@ -416,7 +416,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          // The impulse response lives in the device state, so a restore has to
          // rebuild the plugin from it rather than from a fresh tree.
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<MagdaConvolutionPlugin>});
+         .createDevice = createDevice<MagdaConvolutionPlugin>});
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
                    .browserCategory = "Custom DSP",
@@ -493,14 +493,14 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .description = "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike "
                         "exciter into a modal + string resonator and stereo space).",
          .createMode = InternalPluginCreateMode::FreshValueTree,
-         .matchesPlugin = matches<MutableElementsPlugin>,
+         .matchesPlugin = matchesDevice<MutableElementsPlugin>,
          .createProcessor = makeProcessor<MutableElementsProcessor>,
          .showInBrowser = true,
          .isInstrument = true,
          .tags = kMutableElementsTags,
          .tagCount = static_cast<int>(std::size(kMutableElementsTags)),
          .createInSession = createFreshValueTreePlugin,
-         .createPlugin = createPlugin<MutableElementsPlugin>});
+         .createDevice = createDevice<MutableElementsPlugin>});
     add(registry, {.pluginId = MutableRingsPlugin::xmlTypeName,
                    .displayName = "Halo",
                    .browserCategory = "Synth",
@@ -521,13 +521,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Mutable Instruments Clouds port: granular texture processor "
                                   "(granular / stretch / looping-delay / spectral) with freeze.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matches<MutableCloudsPlugin>,
+                   .matchesPlugin = matchesDevice<MutableCloudsPlugin>,
                    .createProcessor = makeProcessor<MutableCloudsProcessor>,
                    .showInBrowser = true,
                    .tags = kMutableCloudsTags,
                    .tagCount = static_cast<int>(std::size(kMutableCloudsTags)),
                    .createInSession = createFreshValueTreePlugin,
-                   .createPlugin = createPlugin<MutableCloudsPlugin>});
+                   .createDevice = createDevice<MutableCloudsPlugin>});
 }
 
 void registerInfrastructureDevices(InternalPluginRegistry& registry) {
