@@ -1,12 +1,17 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <algorithm>
+#include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cstring>
+#include <functional>
+#include <future>
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
@@ -14,6 +19,7 @@
 #include "magda/daw/audio/Vst3Preset.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
+#include "magda/daw/audio/plugins/engine/DeviceControl.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "magda/daw/audio/plugins/engine/PluginAssignments.hpp"
@@ -249,6 +255,11 @@ class StubPlugin final : public juce::AudioPluginInstance {
     };
 
     void getStateInformation(juce::MemoryBlock& destination) override {
+        // What a real plugin spends time doing here, and what a test needs in
+        // order to see two readers inside it at once if anything let them be.
+        if (whileDescribingItself)
+            whileDescribingItself();
+
         if (throwsSavingState)
             throw std::runtime_error("plugin state handler failed");
 
@@ -355,6 +366,10 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     /// And some throw describing themselves rather than reading a description.
     bool throwsSavingState = false;
+
+    /// Run inside getStateInformation, for a test that has something to observe
+    /// about when a read is in progress.
+    std::function<void()> whileDescribingItself;
 
     /// And some have nothing beyond their parameters to describe.
     bool savesNothing = false;
@@ -486,6 +501,84 @@ magda::engine::RenderContext contextFor(int channels = 2, int blockSize = 64) {
 
 /// A device whose parameters are the fork's list: the wrapper pair at zero and
 /// one, then the plugin's automatable parameters.
+/**
+ * @brief Ask @p plane for a capture and wait for the answer (#2270).
+ *
+ * Every answer arrives on the plane's executor, which is not this thread, so a
+ * test that read its result straight after the call would be reading it before
+ * it was written. Waiting for it here is what a host with something else to do
+ * would not have to do, and what a test that has nothing else to do must.
+ */
+adapter::CaptureOutcome capture(adapter::DeviceControlPlane& plane, magda::engine::DeviceKey key) {
+    std::promise<adapter::CaptureOutcome> answer;
+    auto answered = answer.get_future();
+
+    plane.captureState(
+        key, [&answer](adapter::CaptureOutcome outcome) { answer.set_value(std::move(outcome)); });
+
+    return answered.get();
+}
+
+/// A registry over one device, which is what a runtime hands a plane (#2270).
+///
+/// It owns the device, the way a runtime owns the ones it runs, and hands out a
+/// lease rather than a pointer: what keeps a device alive through a capture is
+/// the lease, so this can let go of its own copy mid-operation and the capture
+/// carries on with the plugin it was already reading.
+class OneDeviceRegistry final : public adapter::DeviceRegistry {
+  public:
+    /// @p asked counts the lookups, for the cases about whether there should
+    /// have been one. It belongs to the test rather than to this object,
+    /// because the case that cares is the one where this object is gone.
+    OneDeviceRegistry(magda::engine::DeviceKey key,
+                      std::shared_ptr<adapter::EngineExternalDevice> device,
+                      std::atomic<int>* asked = nullptr)
+        : key_(key), device_(std::move(device)), asked_(asked) {}
+
+    std::shared_ptr<adapter::EngineExternalDevice> find(
+        magda::engine::DeviceKey key) const override {
+        if (asked_ != nullptr)
+            ++(*asked_);
+
+        return key == key_ ? device_ : nullptr;
+    }
+
+    /// Let go of the device while keeping the registry, which is the state a
+    /// chain edit leaves behind: the runtime is still there and the device is
+    /// not its any more.
+    void release() {
+        device_.reset();
+    }
+
+  private:
+    magda::engine::DeviceKey key_;
+    std::shared_ptr<adapter::EngineExternalDevice> device_;
+    std::atomic<int>* asked_ = nullptr;
+};
+
+/// A registry with nothing in it.
+class EmptyRegistry final : public adapter::DeviceRegistry {
+  public:
+    std::shared_ptr<adapter::EngineExternalDevice> find(magda::engine::DeviceKey) const override {
+        return nullptr;
+    }
+};
+
+/// The device an adaptation produced, owned the way a runtime owns one.
+///
+/// The factory hands back the base type by unique_ptr, and what a registry
+/// lends out is a lease on the external device underneath it, so the cast and
+/// the change of ownership happen once here rather than in every case.
+std::shared_ptr<adapter::EngineExternalDevice> ownedExternalDevice(
+    adapter::ExternalDeviceResult& result) {
+    auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
+    if (external == nullptr)
+        return nullptr;
+
+    result.device.release();
+    return std::shared_ptr<adapter::EngineExternalDevice>(external);
+}
+
 magda::DeviceInfo externalDevice() {
     magda::DeviceInfo device;
     device.id = 7;
@@ -1944,10 +2037,11 @@ TEST_CASE("A save leaves a non-VST3 device's portable records alone", "[engine][
     CHECK(model.vst3Preset == "what the project was imported with");
 }
 
-TEST_CASE("A save reads the instance the adapter is holding", "[engine][external][state]") {
-    // The seam a host saves through: the adapter owns the instance, and
-    // EngineExternalDevice::instance() is how anything that is not rendering
-    // reaches it.
+TEST_CASE("A save reads the plugin through the device that owns it", "[engine][external][state]") {
+    // The seam a host saves through (#2270). The adapter owns the instance and
+    // nothing else can reach it: a save asks the device for what its plugin
+    // holds, which is what makes the read and the blocks around it two things
+    // one object is serialising rather than two callers observing a convention.
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
     auto* raw = plugin.get();
 
@@ -1961,7 +2055,10 @@ TEST_CASE("A save reads the instance the adapter is holding", "[engine][external
 
     auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get());
     REQUIRE(external != nullptr);
-    REQUIRE(captureInto(external->instance(), model));
+
+    const auto snapshot = external->captureState();
+    REQUIRE(snapshot.has_value());
+    magda::applyCapturedPluginState(model, *snapshot);
 
     auto reopened = std::make_unique<StubPlugin>(2, 2, 0);
     auto* reopenedRaw = reopened.get();
@@ -2466,4 +2563,418 @@ TEST_CASE("A runtime torn down before dispatch is never called back", "[engine][
         juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
 
     CHECK_FALSE(called);
+}
+
+// =============================================================================
+// The control plane (#2270)
+// =============================================================================
+
+TEST_CASE("A capture through the control plane answers with what the plugin holds",
+          "[engine][external][control]") {
+    // The endpoint a host asks rather than the instance it used to be handed.
+    // What it answers with is data: a snapshot that outlives the call, which is
+    // what lets the caller check between reading and writing, and what a plugin
+    // in another process could send back at all.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // Moved after the device was built, the way a knob moved during a session
+    // is: what a capture is for is the difference between what the project
+    // holds and what the plugin holds now.
+    raw->tone->setValue(0.4f);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto answered = capture(plane, key);
+    REQUIRE(answered.ok());
+    CHECK(answered.failure().isEmpty());
+
+    magda::applyCapturedPluginState(model, answered.snapshot());
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.4f));
+}
+
+TEST_CASE("A key with no device bound is a failure rather than an empty state",
+          "[engine][external][control]") {
+    // The two are different findings and one reads like the other: a slot whose
+    // plugin has not arrived, against a plugin that answered with nothing. A
+    // caller told the second would write that nothing into the project and lose
+    // the patch the slot is about to load.
+    const auto registry = std::make_shared<const EmptyRegistry>();
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto answered = capture(plane, {magda::ChainSegment::PostFx, 12});
+    CHECK_FALSE(answered.ok());
+    CHECK(answered.failure().contains("no plugin is bound"));
+
+    // And it says which slot, because a host with a project's worth of devices
+    // is holding a failure that has to name one of them.
+    CHECK(answered.failure().contains("12"));
+}
+
+TEST_CASE("A plugin that will not describe itself is a failure with a reason",
+          "[engine][external][control]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+    raw->throwsSavingState = true;
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto answered = capture(plane, {magda::ChainSegment::Fx, model.id});
+    CHECK_FALSE(answered.ok());
+    CHECK(answered.failure().contains("could not describe itself"));
+}
+
+TEST_CASE("A snapshot is written onto the assignment it was read from",
+          "[engine][external][control]") {
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "what the plugin was holding";
+
+    auto model = externalDevice();
+    CHECK(adapter::commitCapturedState(request, snapshot, [&model](magda::engine::DeviceKey asked) {
+        return asked.deviceId == model.id ? &model : nullptr;
+    }));
+    CHECK(model.pluginState == "what the plugin was holding");
+}
+
+TEST_CASE("A snapshot read from an assignment that has been replaced is not written",
+          "[engine][external][control]") {
+    // The reason a capture is two steps with only data between them. Between
+    // asking a plugin what it holds and writing that down, the slot can have
+    // been given a different plugin -- and the patch of the one that answered
+    // would land on the one that did not.
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+    assignments.replaceAssignment(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "the plugin that used to be in this slot";
+
+    auto model = externalDevice();
+    model.pluginState = "what the slot holds now";
+
+    CHECK_FALSE(adapter::commitCapturedState(
+        request, snapshot, [&model](magda::engine::DeviceKey) { return &model; }));
+    CHECK(model.pluginState == "what the slot holds now");
+}
+
+TEST_CASE("A snapshot outliving the runtime that read it is not written",
+          "[engine][external][control]") {
+    // The other way a commit arrives too late, and the one an out-of-process
+    // capture will meet first: the project was closed while the answer was in
+    // flight. There is nothing to write onto and nobody waiting to hear it.
+    adapter::AssignmentRequest request;
+    {
+        adapter::PluginAssignments assignments;
+        assignments.replaceAssignment({magda::ChainSegment::Fx, 7});
+        request = assignments.request({magda::ChainSegment::Fx, 7});
+        CHECK(request.isStillWanted());
+    }
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "read before the project closed";
+
+    auto model = externalDevice();
+    CHECK_FALSE(adapter::commitCapturedState(
+        request, snapshot, [&model](magda::engine::DeviceKey) { return &model; }));
+    CHECK(model.pluginState.isEmpty());
+}
+
+TEST_CASE("A snapshot is written onto the device its own token names",
+          "[engine][external][control]") {
+    // The half a token check does not do on its own. Validating one device and
+    // writing another would pass every test above it and still put one plugin's
+    // patch onto another's slot, so the device is resolved here from the
+    // request's own key rather than handed in beside it: what was checked and
+    // what is written are the same device by construction.
+    adapter::PluginAssignments assignments;
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    assignments.replaceAssignment(key);
+
+    const auto request = assignments.request(key);
+
+    magda::ExternalPluginSnapshot snapshot;
+    snapshot.pluginState = "what the plugin was holding";
+
+    auto onTheSlot = externalDevice();
+    auto somewhereElse = externalDevice();
+    somewhereElse.id = 9;
+
+    std::vector<magda::engine::DeviceKey> asked;
+    CHECK(adapter::commitCapturedState(
+        request, snapshot, [&](magda::engine::DeviceKey key) -> magda::DeviceInfo* {
+            asked.push_back(key);
+            return key.deviceId == onTheSlot.id ? &onTheSlot : &somewhereElse;
+        }));
+
+    REQUIRE(asked.size() == 1);
+    CHECK(asked.front() == key);
+    CHECK(onTheSlot.pluginState == "what the plugin was holding");
+    CHECK(somewhereElse.pluginState.isEmpty());
+}
+
+TEST_CASE("A capture runs and answers on the plane's executor", "[engine][external][control]") {
+    // Asked from any thread, run on one. That is the whole of the execution
+    // contract: a caller does not have to be anywhere in particular, and what
+    // it gets back arrives on the thread the control side of a device is
+    // allowed to be on -- which is where it is entitled to write a project's
+    // model from, whichever thread asked and whichever process answered.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(executor, registry);
+
+    std::promise<bool> onTheExecutor;
+    auto answered = onTheExecutor.get_future();
+
+    // Asked from a thread that is neither the executor's nor this one, which is
+    // the case the endpoint used to refuse and now simply serves.
+    std::thread worker([&] {
+        plane.captureState({magda::ChainSegment::Fx, model.id},
+                           [&executor, &onTheExecutor](adapter::CaptureOutcome outcome) {
+                               onTheExecutor.set_value(outcome.ok() && executor->isCurrent());
+                           });
+    });
+    worker.join();
+
+    CHECK(answered.get());
+}
+
+TEST_CASE("A capture asked for on the executor is queued behind what asked for it",
+          "[engine][external][control]") {
+    // Never inline, and that is the rule rather than a missed optimisation: an
+    // operation that has suspended a plugin and asks for a capture must not
+    // have the capture run inside it. It would resume the plugin and let audio
+    // back in halfway through the first transaction, which is what the executor
+    // is for (ControlExecutor.hpp).
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(executor, registry);
+
+    std::atomic<bool> answered{false};
+    std::promise<bool> answeredInside;
+    auto asked = answeredInside.get_future();
+
+    executor->run([&](adapter::ExecutionState) {
+        plane.captureState(
+            {magda::ChainSegment::Fx, model.id},
+            [&answered](adapter::CaptureOutcome outcome) { answered = outcome.ok(); });
+
+        // Read after captureState returned and while this work is still the one
+        // running: an answer here would be a second transaction inside this one.
+        answeredInside.set_value(answered.load());
+    });
+
+    CHECK_FALSE(asked.get());
+
+    // And it arrives in its turn, which is the other half.
+    std::promise<void> drained;
+    auto emptied = drained.get_future();
+    executor->run([&drained](adapter::ExecutionState) { drained.set_value(); });
+    emptied.wait();
+
+    CHECK(answered);
+}
+
+TEST_CASE("A device let go of mid-capture is still the one being read",
+          "[engine][external][control]") {
+    // What the lease is for, and what holding the registry alive never proved.
+    // A registry can carry on while a device leaves it -- a chain edited, a
+    // slot emptied -- and a capture that had been handed a bare pointer would
+    // be reading a plugin that had gone. So find() hands over the device rather
+    // than pointing at it, and the operation holds it until it is finished.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    auto registry = std::make_shared<OneDeviceRegistry>(key, external);
+
+    // From here the registry is the only owner, so what happens next is the
+    // device being destroyed rather than merely unregistered.
+    std::weak_ptr<adapter::EngineExternalDevice> watch = external;
+    external.reset();
+
+    // Let go of halfway through describing itself, which is the moment a bare
+    // pointer would become stale in.
+    raw->whileDescribingItself = [&registry] { registry->release(); };
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    adapter::LocalDeviceControlPlane plane(executor, registry);
+
+    const auto answered = capture(plane, key);
+    CHECK(answered.ok());
+
+    // And once the operation is over, so is the lease. Drained by asking for
+    // one more thing, because the work holding it is destroyed at the end of
+    // its own turn rather than when its callback fired.
+    std::promise<void> drained;
+    auto emptied = drained.get_future();
+    REQUIRE(executor->run([&drained](adapter::ExecutionState) { drained.set_value(); }));
+    emptied.wait();
+
+    CHECK(watch.expired());
+}
+
+TEST_CASE("A capture queued before its registry went is answered rather than run",
+          "[engine][external][control]") {
+    // The hazard of being genuinely asynchronous. Between queueing a capture
+    // and running it, the project can close -- and what finds a device is a
+    // registry the runtime owns, so asking one whose runtime has gone is
+    // reaching into something that has been deleted rather than being told
+    // there is no device.
+    //
+    // So the plane holds the registry weakly and takes it before it asks
+    // anything, which is the relationship a token standing beside a lookup
+    // could not have had. The same shape the asynchronous load path uses for
+    // the same problem (PluginAssignments.hpp).
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    auto executor = std::make_shared<adapter::SerialControlThread>();
+    // Counted outside the registry, because the point of this case is that the
+    // registry is gone by the time the question is asked.
+    std::atomic<int> asked{0};
+    auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external, &asked);
+
+    adapter::LocalDeviceControlPlane plane(executor, registry);
+
+    // The worker is held while the capture is queued behind it, so the project
+    // can be closed in between the way a person would close it.
+    std::promise<void> holdingOn;
+    std::shared_future<void> release = holdingOn.get_future();
+    std::promise<void> started;
+    auto running = started.get_future();
+
+    REQUIRE(executor->run([&started, release](adapter::ExecutionState) {
+        started.set_value();
+        release.wait();
+    }));
+    running.wait();
+
+    std::promise<adapter::CaptureOutcome> answered;
+    auto answer = answered.get_future();
+    REQUIRE(plane.captureState(
+        {magda::ChainSegment::Fx, model.id},
+        [&answered](adapter::CaptureOutcome outcome) { answered.set_value(std::move(outcome)); }));
+
+    registry.reset();
+    holdingOn.set_value();
+
+    const auto outcome = answer.get();
+    CHECK_FALSE(outcome.ok());
+    CHECK(outcome.failure().contains("is gone"));
+    CHECK(asked == 0);
+}
+
+TEST_CASE("Two captures of one device do not overlap", "[engine][external][control]") {
+    // The rule the executor exists for. A capture suspends the plugin and
+    // resumes it afterwards, so two of them overlapping would have the first to
+    // finish resuming it while the second was still reading -- and the next
+    // block let straight back into a plugin halfway through describing itself.
+    //
+    // A headless host has whatever threads it has, and four of them ask at once
+    // here. What makes that safe is not a thread check but the executor: one
+    // piece of control work at a time, for every operation and not only this
+    // one. The stub counts how many readers are inside it at once.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    std::atomic<int> inside{0};
+    std::atomic<int> mostAtOnce{0};
+    raw->whileDescribingItself = [&inside, &mostAtOnce] {
+        const auto now = ++inside;
+        auto highest = mostAtOnce.load();
+        while (now > highest && !mostAtOnce.compare_exchange_weak(highest, now)) {
+        }
+
+        // Long enough that a second reader arriving unserialised would be seen
+        // rather than missed by luck.
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        --inside;
+    };
+
+    const auto registry = std::make_shared<const OneDeviceRegistry>(
+        magda::engine::DeviceKey{magda::ChainSegment::Fx, model.id}, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    std::atomic<int> taken{0};
+    std::vector<std::thread> askers;
+    for (int index = 0; index < 4; ++index)
+        askers.emplace_back([&plane, &taken, &model] {
+            if (capture(plane, {magda::ChainSegment::Fx, model.id}).ok())
+                ++taken;
+        });
+
+    for (auto& asker : askers)
+        asker.join();
+
+    CHECK(taken == 4);
+    CHECK(mostAtOnce == 1);
 }
