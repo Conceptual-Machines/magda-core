@@ -15,7 +15,7 @@ namespace {
 /// clip ending exactly on a block boundary contributes nothing to the block
 /// that starts there.
 bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
-    return span.startSeconds < block.seconds.end && span.endSeconds > block.seconds.start;
+    return span.seconds.start < block.seconds.end && span.seconds.end > block.seconds.start;
 }
 
 }  // namespace
@@ -60,7 +60,7 @@ void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const 
         // the break a track pays for its whole tail on every callback, all
         // session, and the cost grows with the length of the arrangement rather
         // than with what is playing.
-        if (clip.span.startSeconds >= block.seconds.end)
+        if (clip.span.seconds.start >= block.seconds.end)
             break;
 
         if (!reachesInto(clip.span, block))

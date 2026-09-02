@@ -80,10 +80,8 @@ RenderContext context() {
 
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * 2.0;
-    span.endBeat = end * 2.0;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * 2.0, end * 2.0};
+    span.seconds = {start, end};
     return span;
 }
 

@@ -270,10 +270,8 @@ class OpenEverything final : public magda::engine::AudioFileReaderFactory {
 std::shared_ptr<const magda::engine::ClipSnapshot> clipsOver(TrackId trackId, double startSeconds,
                                                              double endSeconds) {
     magda::engine::SnapshotSpan span;
-    span.startSeconds = startSeconds;
-    span.endSeconds = endSeconds;
-    span.startBeat = startSeconds * 2.0;
-    span.endBeat = endSeconds * 2.0;
+    span.seconds = {startSeconds, endSeconds};
+    span.beats = {startSeconds * 2.0, endSeconds * 2.0};
 
     magda::engine::AudioEventPlayback event;
     event.eventId = 1;

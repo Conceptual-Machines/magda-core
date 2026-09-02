@@ -40,8 +40,8 @@ const char* curveName(FadeCurve curve) {
 }
 
 std::string spanText(const SnapshotSpan& span) {
-    return fixed(span.startBeat, 3) + ".." + fixed(span.endBeat, 3) + "b " +
-           fixed(span.startSeconds, 3) + ".." + fixed(span.endSeconds, 3) + "s";
+    return fixed(span.beats.start, 3) + ".." + fixed(span.beats.end, 3) + "b " +
+           fixed(span.seconds.start, 3) + ".." + fixed(span.seconds.end, 3) + "s";
 }
 
 void dumpHoles(std::ostringstream& out, const std::vector<SnapshotSpan>& holes) {

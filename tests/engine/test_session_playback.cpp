@@ -161,10 +161,8 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
 /// A span from its beats, with the seconds face 120 bpm gives it.
 SnapshotSpan beats(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start;
-    span.endBeat = end;
-    span.startSeconds = start * kSecondsPerBeat;
-    span.endSeconds = end * kSecondsPerBeat;
+    span.beats = {start, end};
+    span.seconds = {start * kSecondsPerBeat, end * kSecondsPerBeat};
     return span;
 }
 

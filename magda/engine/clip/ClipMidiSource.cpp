@@ -12,7 +12,7 @@ namespace {
 /// Whether a span reaches into a beat range. Half open at both ends, so a clip
 /// ending exactly where a block begins contributes nothing to it.
 bool reachesInto(const SnapshotSpan& span, double startBeat, double endBeat) {
-    return span.startBeat < endBeat && span.endBeat > startBeat;
+    return span.beats.start < endBeat && span.beats.end > startBeat;
 }
 
 /// How many notes the source may hold at once before its owed note-offs alone
@@ -106,9 +106,10 @@ void ClipMidiSource::endClip(juce::MidiBuffer& out, int sample, ClipId clipId) {
 }
 
 bool ClipMidiSource::inHole(const MidiClipPlayback& clip, double beat) {
-    return std::any_of(
-        clip.silenced.begin(), clip.silenced.end(),
-        [beat](const SnapshotSpan& hole) { return beat >= hole.startBeat && beat < hole.endBeat; });
+    return std::any_of(clip.silenced.begin(), clip.silenced.end(),
+                       [beat](const SnapshotSpan& hole) {
+                           return beat >= hole.beats.start && beat < hole.beats.end;
+                       });
 }
 
 void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
@@ -234,7 +235,7 @@ void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFold
 void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                                 const MidiClipPlayback& clip, double from, double to, bool jumped) {
     MidiFoldPass passes[kMaxFoldPassesPerBlock];
-    const auto count = foldBlock(clip.fold, from, to, clip.span.endBeat, passes);
+    const auto count = foldBlock(clip.fold, from, to, clip.span.beats.end, passes);
 
     if (count == kMaxFoldPassesPerBlock)
         overflowed_.fetch_add(1, std::memory_order_relaxed);
@@ -359,7 +360,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
     for (const auto& clip : clips) {
         // Sorted by where they start, so once one begins at or after the end of
         // this lane, so does everything behind it.
-        if (clip.span.startBeat >= laneTo)
+        if (clip.span.beats.start >= laneTo)
             break;
 
         if (!reachesInto(clip.span, laneFrom, laneTo)) {
@@ -368,8 +369,8 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
             continue;
         }
 
-        const auto from = std::max(laneFrom, clip.span.startBeat);
-        const auto to = std::min(laneTo, clip.span.endBeat);
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        const auto to = std::min(laneTo, clip.span.beats.end);
         if (to <= from)
             continue;
 
@@ -379,7 +380,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // launch is the same discontinuity (SessionPlayback.hpp).
         if (!block.continuous) {
             MidiFoldPass passes[kMaxFoldPassesPerBlock];
-            if (foldBlock(clip.fold, from, to, clip.span.endBeat, passes) > 0)
+            if (foldBlock(clip.fold, from, to, clip.span.beats.end, passes) > 0)
                 chaseClip(out, block, clip, passes[0], from);
         }
 
@@ -389,8 +390,8 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // notes end. Nothing here reads a loop as a length, which is why turning
         // looping off does not shorten a clip the way MidiClip::disableLooping
         // does.
-        if (clip.span.endBeat > from && clip.span.endBeat <= to)
-            endClip(out, block.sampleForBeat(clip.span.endBeat), clip.clipId);
+        if (clip.span.beats.end > from && clip.span.beats.end <= to)
+            endClip(out, block.sampleForBeat(clip.span.beats.end), clip.clipId);
     }
 }
 
@@ -402,8 +403,8 @@ void ClipMidiSource::expectLane(juce::MidiBuffer& out, const BlockInfo& block,
             continue;
 
         MidiFoldPass passes[kMaxFoldPassesPerBlock];
-        const auto from = std::max(laneFrom, clip.span.startBeat);
-        if (foldBlock(clip.fold, from, laneTo, clip.span.endBeat, passes) == 0)
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        if (foldBlock(clip.fold, from, laneTo, clip.span.beats.end, passes) == 0)
             continue;
 
         gatherSounding(clip, passes[0], from);

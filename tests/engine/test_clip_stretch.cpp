@@ -191,10 +191,8 @@ class CountingStretcher final : public magda::engine::ClipStretcher {
 
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * kBeatsPerSecond;
-    span.endBeat = end * kBeatsPerSecond;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * kBeatsPerSecond, end * kBeatsPerSecond};
+    span.seconds = {start, end};
     return span;
 }
 
@@ -300,7 +298,7 @@ struct Rig {
             const auto* event = eventOf(entry.clipId, entry.eventId);
             REQUIRE(event != nullptr);
 
-            const auto at = std::max(blockTime(next_), event->span.startSeconds);
+            const auto at = std::max(blockTime(next_), event->span.seconds.start);
             const auto position =
                 magda::engine::readingPositionAt(*clip, *event, at, beatAt(at), kSampleRate);
             const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;

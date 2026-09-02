@@ -157,10 +157,8 @@ Catch::Approx approx(float value) {
 /// audio path reads them: a source is handed seconds (ClipPlacement.hpp).
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * 2.0;
-    span.endBeat = end * 2.0;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * 2.0, end * 2.0};
+    span.seconds = {start, end};
     return span;
 }
 
@@ -266,7 +264,7 @@ struct Rig {
             REQUIRE(event != nullptr);
             entry.stream->seek(magda::engine::sourceSampleAt(
                 magda::engine::placementFor(*event, kSampleRate),
-                std::max(blockTime(next_), event->span.startSeconds), kSampleRate));
+                std::max(blockTime(next_), event->span.seconds.start), kSampleRate));
         }
 
         advance(lead + 1);
