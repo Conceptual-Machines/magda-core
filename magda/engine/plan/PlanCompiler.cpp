@@ -1296,16 +1296,13 @@ void Compiler::emitTrack(const TrackInfo& track) {
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
 
-        // The session's own source, beside the arrangement's rather than
-        // instead of it. Emitted for every track that carries clips, on the
-        // same terms as the arrangement above and for the same reason: whether
-        // a track has clips in it is a property of the snapshot, not of the
-        // plan, so a clip put into a scene must no more recompile a plan than
-        // one dropped on the timeline does (#2301).
+        // The session's own source, beside the arrangement's. Emitted for every
+        // clip-carrying track on the same terms: whether a track has clips is a
+        // property of the snapshot, so putting a clip in a scene must no more
+        // recompile a plan than dropping one on the timeline (#2301).
         //
         // Arrangement first, session second, and fixed: a mix sums in compiled
-        // order, so the order these two go in is what makes the parallel
-        // executor's output bit-identical to the serial one.
+        // order.
         const OpKey sessionKey{track.id,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
                                INVALID_DEVICE_ID, OpRole::SessionAudio, 0};
         audioSources.push_back(

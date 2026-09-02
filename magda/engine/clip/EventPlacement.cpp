@@ -57,9 +57,9 @@ double constantRate(const AudioEventPlayback& event) {
  */
 double warpExtentSecondsOf(const AudioEventPlayback& event) {
     if (usesBeatFace(event))
-        return event.span.lengthBeats() * 60.0 / event.interpBpm;
+        return event.span.beats.length() * 60.0 / event.interpBpm;
 
-    return event.span.lengthSeconds() * constantRate(event);
+    return event.span.seconds.length() * constantRate(event);
 }
 
 /// Source seconds the event reads, which is the stretch a mirrored read turns
@@ -222,7 +222,7 @@ ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleR
     // because the map already answers reverse and looping and a second
     // derivation of either could disagree with it.
     if (!event.warp.empty())
-        return ClipPlacement{event.span.startSeconds, event.span.endSeconds,
+        return ClipPlacement{event.span.seconds,
                              static_cast<std::int64_t>(std::llround(
                                  warpedReadingSample(event, 0.0, sourceRate, deviceSampleRate)))};
 
@@ -251,9 +251,8 @@ ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleR
     // what the callback consumes one of per output sample.
     const auto scale = sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0;
 
-    return ClipPlacement{
-        event.span.startSeconds, event.span.endSeconds,
-        static_cast<std::int64_t>(std::llround(static_cast<double>(anchor) * scale))};
+    return ClipPlacement{event.span.seconds, static_cast<std::int64_t>(std::llround(
+                                                 static_cast<double>(anchor) * scale))};
 }
 
 double readingRateOf(const AudioEventPlayback& event) {
@@ -265,8 +264,8 @@ double readingRateOf(const AudioEventPlayback& event) {
         // are both already resolved here, and their ratio is the tempo it sits
         // under. A ramp inside the span averages out, which is what an average
         // is for.
-        const auto beats = event.span.lengthBeats();
-        const auto seconds = event.span.lengthSeconds();
+        const auto beats = event.span.beats.length();
+        const auto seconds = event.span.seconds.length();
 
         rate = beats > 0.0 && seconds > 0.0 ? (beats * 60.0 / seconds) / event.interpBpm : 1.0;
     }
@@ -323,15 +322,15 @@ double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback
     double elapsed = 0.0;
 
     if (usesBeatFace(event)) {
-        const auto at = ramped(clip, beat, clip.span.startBeat, clip.span.endBeat, clip.fadeInBeats,
-                               clip.fadeOutBeats);
+        const auto at = ramped(clip, beat, clip.span.beats.start, clip.span.beats.end,
+                               clip.fadeInBeats, clip.fadeOutBeats);
 
-        elapsed = (at - event.span.startBeat) * 60.0 / event.interpBpm;
+        elapsed = (at - event.span.beats.start) * 60.0 / event.interpBpm;
     } else {
-        const auto at = ramped(clip, seconds, clip.span.startSeconds, clip.span.endSeconds,
+        const auto at = ramped(clip, seconds, clip.span.seconds.start, clip.span.seconds.end,
                                clip.fadeInSeconds, clip.fadeOutSeconds);
 
-        elapsed = (at - event.span.startSeconds) * constantRate(event);
+        elapsed = (at - event.span.seconds.start) * constantRate(event);
     }
 
     if (!event.warp.empty())

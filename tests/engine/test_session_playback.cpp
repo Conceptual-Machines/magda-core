@@ -18,18 +18,16 @@
 #include "exec/RuntimeStateStore.hpp"
 #include "io/SourceReaders.hpp"
 #include "launch/SessionLauncher.hpp"
+#include "transport/TransportClock.hpp"
 
 /**
  * A launched slot sounding (#2301), on the audio thread.
  *
- * The claim under test is that a slot is the arrangement's own playback over a
- * block whose beat axis has moved onto the run's origin: the same material
- * plays, at the sample the launch landed on rather than at the callback
- * boundary, and it stops at the sample the stop landed on.
+ * A slot plays the arrangement's own material over a block moved onto the run's
+ * origin, starting and stopping at the sample the event landed on.
  *
- * Everything rolls, and nothing here advances a handle by hand: the launcher
- * does it once per block, before anything renders, which is the property the
- * two sources depend on and one of the cases below.
+ * Everything rolls, and nothing advances a handle by hand: the launcher does it
+ * once per block, before anything renders.
  */
 
 using Catch::Approx;
@@ -120,19 +118,22 @@ RenderContext context() {
     return RenderContext{kSampleRate, kBlockSize, 2};
 }
 
-/// The block at @p index of a transport rolling from zero. The monotonic face
-/// is the beat face here, because nothing in these cases loops or locates.
+/// The block at @p index of a transport rolling from zero. The monotonic faces
+/// are the timeline faces here, because nothing in these cases loops or
+/// locates; the ones that do build their own blocks.
 BlockInfo blockAt(int index, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
     block.playing = true;
     block.continuous = continuous;
-    block.startBeat = index * kBeatsPerBlock;
-    block.endBeat = (index + 1) * kBeatsPerBlock;
-    block.startSeconds = block.startBeat * kSecondsPerBeat;
-    block.endSeconds = block.endBeat * kSecondsPerBeat;
-    block.startMonotonicBeat = block.startBeat;
-    block.endMonotonicBeat = block.endBeat;
+    block.beats.start = index * kBeatsPerBlock;
+    block.beats.end = (index + 1) * kBeatsPerBlock;
+    block.seconds.start = block.beats.start * kSecondsPerBeat;
+    block.seconds.end = block.beats.end * kSecondsPerBeat;
+    block.monotonicBeats.start = block.beats.start;
+    block.monotonicBeats.end = block.beats.end;
+    block.monotonicSeconds.start = block.seconds.start;
+    block.monotonicSeconds.end = block.seconds.end;
     return block;
 }
 
@@ -145,12 +146,14 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
     block.numSamples = kBlockSize;
     block.playing = true;
     block.continuous = continuous;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + (kBlockSize / kSampleRate);
-    block.startBeat = map.timeToBeat(block.startSeconds);
-    block.endBeat = map.timeToBeat(block.endSeconds);
-    block.startMonotonicBeat = block.startBeat;
-    block.endMonotonicBeat = block.endBeat;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + (kBlockSize / kSampleRate);
+    block.beats.start = map.timeToBeat(block.seconds.start);
+    block.beats.end = map.timeToBeat(block.seconds.end);
+    block.monotonicBeats.start = block.beats.start;
+    block.monotonicBeats.end = block.beats.end;
+    block.monotonicSeconds.start = block.seconds.start;
+    block.monotonicSeconds.end = block.seconds.end;
     block.tempo = &map;
     return block;
 }
@@ -158,10 +161,8 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
 /// A span from its beats, with the seconds face 120 bpm gives it.
 SnapshotSpan beats(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start;
-    span.endBeat = end;
-    span.startSeconds = start * kSecondsPerBeat;
-    span.endSeconds = end * kSecondsPerBeat;
+    span.beats = {start, end};
+    span.seconds = {start * kSecondsPerBeat, end * kSecondsPerBeat};
     return span;
 }
 
@@ -183,13 +184,8 @@ AudioClipPlayback clipOver(magda::ClipId id, SnapshotSpan span) {
     return clip;
 }
 
-/**
- * @brief One track's session, its handle and its readers, wired up.
- *
- * The handle is owned here rather than by a store, because what a store does
- * with handles is a separate question with its own cases below. What this rig
- * insists on is the ordering: the launcher advances, then the sources render.
- */
+/// One track's session, its handle and its readers. The handle is owned here;
+/// what a store does with handles has its own cases below.
 struct AudioRig {
     AudioRig() {
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
@@ -381,25 +377,66 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
           "[engine][clip][session]") {
     const auto block = blockAt(40);  // timeline beat 10, seconds 5
 
-    magda::engine::BeatRange whole{block.startBeat, block.endBeat};
-    const auto material = magda::engine::materialBlock(block, whole, block.startBeat);
+    magda::engine::BeatRange whole{block.beats.start, block.beats.end};
+    const auto material = magda::engine::materialBlock(
+        block, whole, magda::engine::RunOrigin{block.beats.start, block.seconds.start});
 
     // Beat zero of the material, at the seconds beat zero has.
-    CHECK(material.startBeat == Approx(0.0));
-    CHECK(material.endBeat == Approx(kBeatsPerBlock));
-    CHECK(material.startSeconds == Approx(0.0));
-    CHECK(material.endSeconds == Approx(kBeatsPerBlock * kSecondsPerBeat));
+    CHECK(material.beats.start == Approx(0.0));
+    CHECK(material.beats.end == Approx(kBeatsPerBlock));
+    CHECK(material.seconds.start == Approx(0.0));
+    CHECK(material.seconds.end == Approx(kBeatsPerBlock * kSecondsPerBeat));
 
-    // The samples did not move, which is what lets a MIDI event keep writing
-    // into the callback's own buffer: a material beat resolves to the sample
-    // the timeline beat it came from would have resolved to.
+    // The samples did not move, so a MIDI event still writes into the
+    // callback's own buffer.
     CHECK(material.numSamples == block.numSamples);
     for (const auto beat : {0.0, 0.1, 0.2})
-        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.startBeat + beat));
+        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.beats.start + beat));
 
     // A run that began here is not continuous with the last block, whatever the
     // transport was doing.
     CHECK_FALSE(material.continuous);
+
+    // Both faces of the block agree with the axes it was given, which is what
+    // every reader asks it for first.
+    CHECK(material.beatAtTime(material.seconds.start) == Approx(material.beats.start));
+    CHECK(material.beatAtTime(material.seconds.end) == Approx(material.beats.end));
+}
+
+TEST_CASE("A session block answers about beats through the map, not its own line",
+          "[engine][clip][session]") {
+    // 120 held to beat 4, which is two seconds in, then 60. Two changes at the
+    // one beat, which is how a step is written rather than a ramp to it
+    // (TempoMap.hpp). A block ending on the step, so anything asked about past
+    // its end is asked across it.
+    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {4.0, 120.0, 0.0f}, {4.0, 60.0, 0.0f}},
+                                      {{0.0, 4, 4}});
+    const auto block = blockOnMap(map, 2.0 - (kBlockSize / kSampleRate));
+
+    const magda::engine::RunOrigin origin{block.beats.start, block.seconds.start};
+    const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
+    const auto material = magda::engine::materialBlock(block, whole, origin);
+
+    // The map comes with the block, and the shift it was moved by comes with
+    // it too, which is what keeps the map answerable here.
+    CHECK(material.tempo == &map);
+    CHECK(material.runOrigin == origin);
+
+    // A cell boundary past the end of the block, which is where ClipVoice reads
+    // (RenderContext.hpp): the grid is anchored to the event rather than to the
+    // block, so a cell runs on past it.
+    const auto beyond = material.seconds.end + 0.05;
+    const auto expected = map.timeToBeat(beyond + origin.seconds) - origin.beat;
+
+    CHECK(material.beatAtTime(beyond) == Approx(expected));
+
+    // And that is not what this block's own two ends say, which is the whole
+    // point: they carry the slope it happened to have before the step.
+    const auto straightLine =
+        material.beats.start +
+        ((beyond - material.seconds.start) / material.seconds.length()) * material.beats.length();
+
+    CHECK(straightLine != Approx(expected));
 }
 
 TEST_CASE("A run already under way is continuous with the block before it",
@@ -407,11 +444,13 @@ TEST_CASE("A run already under way is continuous with the block before it",
     const auto block = blockAt(40);
 
     // The run began four blocks ago, so this block is one beat into it.
-    const auto origin = block.startBeat - 1.0;
-    const magda::engine::BeatRange whole{block.startBeat, block.endBeat};
+    const magda::engine::RunOrigin origin{block.beats.start - 1.0,
+                                          block.seconds.start - kSecondsPerBeat};
+    const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(block, whole, origin);
 
-    CHECK(material.startBeat == Approx(1.0));
+    CHECK(material.beats.start == Approx(1.0));
+    CHECK(material.seconds.start == Approx(kSecondsPerBeat));
     CHECK(material.continuous);
 }
 
@@ -436,9 +475,8 @@ TEST_CASE("A launched slot plays its material from the origin", "[engine][clip][
     rig.give(1, 4.0, std::make_unique<CountingReader>());
     rig.publish();
 
-    // Launched well down the timeline. A slot has no position, so where the
-    // transport happens to be must not reach the material: sample n of the
-    // file is what block one of the run plays.
+    // Launched well down the timeline: a slot has no position, so where the
+    // transport is must not reach the material.
     rig.roll(0, 39);
     rig.handle.play(std::nullopt);
     rig.render(40);
@@ -496,8 +534,7 @@ TEST_CASE("A stop quantized inside a block ends on its beat", "[engine][clip][se
 
 TEST_CASE("The arrangement and the session are different sections of one track",
           "[engine][clip][session]") {
-    // A source with no handles plays the arrangement and nothing else, which is
-    // what makes the two ops on a track independent rather than alternatives.
+    // A source with no handles plays the arrangement and nothing else.
     AudioRig rig;
     rig.give(1, 4.0, std::make_unique<ConstantReader>());
     rig.publish();
@@ -534,16 +571,15 @@ TEST_CASE("A handle is advanced once per block however many sources read it",
     magda::engine::advanceLaunchHandles(feed, blockAt(0));
     magda::engine::advanceLaunchHandles(feed, blockAt(1));
 
-    // Two blocks of a quarter beat each. A handle a source advanced for itself
-    // would have been moved twice as far, and a slot's audio and MIDI would
-    // then be reading different parts of the material.
+    // Two blocks of a quarter beat each. Advanced per source it would have
+    // moved twice as far, and a slot's audio and MIDI would disagree.
     const auto played = handle.playedRange();
     REQUIRE(played.has_value());
     CHECK(played->length() == Approx(2 * kBeatsPerBlock));
 
     // And what the sources read is what that last advance said.
-    CHECK(handle.blockStatus().playing1);
-    CHECK(handle.blockStatus().range1.start == Approx(kBeatsPerBlock));
+    CHECK(handle.blockStatus().beforeEvent.playing());
+    CHECK(handle.blockStatus().beforeEvent.range.start == Approx(kBeatsPerBlock));
 }
 
 TEST_CASE("A slot with no handle in the table is silent rather than wrong",
@@ -552,8 +588,8 @@ TEST_CASE("A slot with no handle in the table is silent rather than wrong",
     rig.give(1, 4.0, std::make_unique<ConstantReader>());
     rig.publish();
 
-    // The table catches up with the snapshot on its own schedule, so a slot can
-    // exist with nothing to launch it.
+    // The table catches up on its own schedule, so a slot can exist with
+    // nothing to launch it.
     rig.handles.publish(std::make_shared<const LaunchHandleTable>());
     rig.handle.play(std::nullopt);
 
@@ -576,9 +612,8 @@ TEST_CASE("A launched slot plays its MIDI from the origin", "[engine][clip][sess
     const auto ons = rig.noteOns();
     REQUIRE(ons.size() == 1);
 
-    // The note is at beat zero of the material, so it lands on the first sample
-    // of the block the launch fired in and nowhere near beat zero of the
-    // timeline, which is nine beats behind.
+    // Beat zero of the material, so it lands on the first sample of the block
+    // the launch fired in, not nine beats back at beat zero of the timeline.
     CHECK(ons.front().block == 40);
     CHECK(ons.front().sample == 0);
     CHECK(ons.front().message.getNoteNumber() == 60);
@@ -598,8 +633,8 @@ TEST_CASE("Stopping a slot ends the notes it started", "[engine][clip][session][
     rig.roll(0, 2);
     REQUIRE(rig.noteOns().size() == 1);
 
-    // Half a beat in, and the note has three and a half to run. Nothing in the
-    // material ends it: the stop is what owes the note-off.
+    // Half a beat in, with three and a half to run: nothing in the material
+    // ends it, so the stop owes the note-off.
     rig.handle.stop(std::nullopt);
     rig.roll(3, 6);
 
@@ -624,8 +659,7 @@ TEST_CASE("A slot nobody launched plays no MIDI", "[engine][clip][session][midi]
 
 namespace {
 
-/// A factory that builds nothing. Handles are the engine's own state, so a
-/// store makes them whatever the host declines.
+/// A factory that builds nothing: handles are the engine's own state.
 class NoFactory final : public magda::engine::RuntimeStateFactory {};
 
 ClipSnapshot snapshotWithSlots(std::vector<int> scenes) {
@@ -661,9 +695,8 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     CHECK(first->find(SlotKey{kTrack, 1}) != nullptr);
     CHECK(first->find(SlotKey{kTrack, 9}) == nullptr);
 
-    // Playing, and then an unrelated clip edit republishes the snapshot. The
-    // handle has to be the same object: a new one would come up stopped, at the
-    // beginning, and the clip would restart under a gesture nobody made.
+    // An unrelated clip edit republishes the snapshot. The handle has to be the
+    // same object, or the clip restarts under a gesture nobody made.
     auto* playing = first->find(SlotKey{kTrack, 1});
     playing->play(std::nullopt);
     playing->advance(magda::engine::syncRangeFor(blockAt(0)));
@@ -671,18 +704,16 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
 
     const auto second = store.publishHandles(snapshotWithSlots({0, 1, 2}), feed);
 
-    // The same slots and the same handles, so nothing was swapped: a clip edit
-    // that did not touch the session must not make the callback wait.
+    // Same slots, same handles: a clip edit that did not touch the session must
+    // not make the callback wait.
     CHECK(second == first);
     CHECK(second->find(SlotKey{kTrack, 1}) == playing);
     CHECK(playing->playState() == LaunchHandle::PlayState::playing);
 }
 
 TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][clip][session]") {
-    // Emptying a slot and filling it again is two clip edits and no structural
-    // one, so nothing but the publish itself is in a position to retire the
-    // handle. Left to a plan publish, the new clip would come up already
-    // playing, at the old one's loop phase and played range.
+    // Two clip edits and no structural one, so only the publish itself can
+    // retire the handle. Left to a plan publish the new clip comes up playing.
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
@@ -713,7 +744,8 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
     // the material beat back through the tempo map instead would hand the block
     // a seconds span half its sample span in a section at half the tempo, and
     // the next block would ask for a position this one had already read past.
-    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {8.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}},
+                                      {{0.0, 4, 4}});
 
     AudioRig rig;
     rig.give(1, 4.0, std::make_unique<CountingReader>());
@@ -738,4 +770,173 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
 
     rig.renderBlock(blockOnMap(map, launchSeconds + (2 * kBlockSize / kSampleRate)));
     CHECK(rig.at(0) == Approx(2 * kBlockSize));
+}
+
+// =============================================================================
+// The clocks that do not go back
+// =============================================================================
+
+namespace {
+
+/// 120 bpm to beat 4 and 60 bpm from there: #2324's shape. Two changes at the
+/// one beat, because a single change ramps to its bpm rather than stepping to
+/// it and the halves either side of beat 4 are the whole point (TempoMap.hpp).
+magda::engine::TempoMap steppedTempo() {
+    return magda::engine::TempoMap({{0.0, 120.0, 0.0f}, {4.0, 120.0, 0.0f}, {4.0, 60.0, 0.0f}},
+                                   {{0.0, 4, 4}});
+}
+
+/// Playing from @p fromBeat on @p map, with the metronome off.
+magda::engine::TransportSnapshot rollingFrom(const magda::engine::TempoMap& map, double fromBeat,
+                                             std::uint64_t generation = 1) {
+    magda::engine::TransportSnapshot snapshot;
+    snapshot.tempo = map;
+    snapshot.request.generation = generation;
+    snapshot.request.playing = true;
+    snapshot.request.positionBeat = fromBeat;
+    return snapshot;
+}
+
+/// One callback, cut into blocks by the clock. The rig's buffer holds the last
+/// segment rendered.
+void callback(AudioRig& rig, magda::engine::TransportClock& clock,
+              const magda::engine::TransportSnapshot& snapshot) {
+    for (const auto& segment : clock.advance(snapshot, kSampleRate, kBlockSize))
+        rig.renderBlock(segment.block);
+}
+
+}  // namespace
+
+TEST_CASE("A slot launched where a block would step tempo starts at its own first sample",
+          "[engine][clip][session]") {
+    // The launch and the tempo step want the same instant inside one callback.
+    // Uncut, the block spans the step, and the launcher names the split in
+    // monotonic beats and projects it onto the timeline and the seconds axes
+    // separately, each a straight line across the block (LaunchHandle.cpp).
+    // Those two lines disagree across a jump: beat 4 projects to 2.020833 s
+    // where the map puts it at 2, so the run's origin is not one instant and
+    // material second zero sits a fiftieth of a beat past material beat zero.
+    //
+    // What that costs is the head of the clip. The transport cuts the block at
+    // the step instead, which leaves one tempo inside it and both projections
+    // exact (TempoMap::nextTempoStepAfter).
+    const auto map = steppedTempo();  // 120 to beat 4, then 60
+
+    // Half a block before the step, so both the step and the launch fall inside
+    // the callback rather than on its edge.
+    auto snapshot = rollingFrom(map, 4.0 - (kBeatsPerBlock / 2.0));
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<CountingReader>());
+    rig.publish();
+
+    magda::engine::TransportClock clock;
+
+    // Monotonic beat 0.125 is timeline beat 4: the step itself.
+    rig.handle.play(kBeatsPerBlock / 2.0);
+
+    callback(rig, clock, snapshot);
+
+    // The buffer holds the last segment, which is the one the run begins on, so
+    // its samples are the material's own from the first. CountingReader reads
+    // sample n back as n, so a clip that skipped its head would say so here.
+    CHECK(rig.at(0) == Approx(0.0f));
+    CHECK(rig.at(1000) == Approx(1000.0f));
+    CHECK(rig.at(2999) == Approx(2999.0f));
+}
+
+TEST_CASE("A launched slot plays straight through a loop wrap", "[engine][clip][session]") {
+    // #2324's own example. The loop is beats 4 to 8 at 60 bpm, everything
+    // before beat 4 is at 120, and a slot launched at beat 7 has one second of
+    // material behind it at the wrap. Through the map that reads as half a
+    // second: the virtual origin projects to beat 3, in the 120 bpm half.
+    const auto map = steppedTempo();
+
+    auto snapshot = rollingFrom(map, 4.0);
+    snapshot.loop = {true, 4.0, 8.0};
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<CountingReader>());
+    rig.publish();
+
+    magda::engine::TransportClock clock;
+
+    // Beat 4 to beat 7 at 60 bpm: three seconds, and a block is an eighth of
+    // one. Nothing is launched yet.
+    constexpr auto kBlocksPerSecond = static_cast<int>(kSampleRate) / kBlockSize;
+    for (auto i = 0; i < 3 * kBlocksPerSecond; ++i)
+        callback(rig, clock, snapshot);
+
+    REQUIRE(rig.peak() == 0.0f);
+
+    // Launched on the next block, which is beat 7, and played to the loop end.
+    rig.handle.play(std::nullopt);
+    for (auto i = 0; i < kBlocksPerSecond; ++i)
+        callback(rig, clock, snapshot);
+
+    CHECK(rig.at(0) == Approx(static_cast<float>(kSampleRate) - kBlockSize));
+
+    // Over the wrap: the timeline went back four beats and the run did not.
+    callback(rig, clock, snapshot);
+    CHECK(rig.at(0) == Approx(static_cast<float>(kSampleRate)));
+
+    callback(rig, clock, snapshot);
+    CHECK(rig.at(0) == Approx(static_cast<float>(kSampleRate) + kBlockSize));
+}
+
+TEST_CASE("A launched slot keeps its place across a locate", "[engine][clip][session]") {
+    // A slot is not on the timeline, so moving the cursor is not moving it.
+    const auto map = steppedTempo();
+    auto snapshot = rollingFrom(map, 4.0);
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<CountingReader>());
+    rig.publish();
+
+    magda::engine::TransportClock clock;
+
+    rig.handle.play(std::nullopt);
+
+    constexpr auto kRunBlocks = 4;
+    for (auto i = 0; i < kRunBlocks; ++i)
+        callback(rig, clock, snapshot);
+
+    CHECK(rig.at(0) == Approx((kRunBlocks - 1) * kBlockSize));
+
+    // A locate to the top of the project, across the tempo step.
+    callback(rig, clock, rollingFrom(map, 0.0, 2));
+
+    CHECK(rig.at(0) == Approx(kRunBlocks * kBlockSize));
+}
+
+TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][session]") {
+    // What makes a scene one event rather than N. Beats alone would put a
+    // scene's MIDI in the right bar and its audio somewhere else.
+    LaunchHandle leader;
+    LaunchHandle follower;
+
+    leader.play(std::nullopt);
+    for (auto i = 0; i < 4; ++i)
+        leader.advance(magda::engine::syncRangeFor(blockAt(i)));
+
+    // Three blocks in, and joining rather than starting.
+    follower.playSynced(leader, std::nullopt);
+    follower.advance(magda::engine::syncRangeFor(blockAt(4)));
+    leader.advance(magda::engine::syncRangeFor(blockAt(4)));
+
+    REQUIRE(leader.playedMonotonicRange().has_value());
+    REQUIRE(follower.playedMonotonicRange().has_value());
+    REQUIRE(leader.playedMonotonicSecondsRange().has_value());
+    REQUIRE(follower.playedMonotonicSecondsRange().has_value());
+
+    CHECK(follower.playedMonotonicRange()->start == Approx(leader.playedMonotonicRange()->start));
+    CHECK(follower.playedMonotonicRange()->end == Approx(leader.playedMonotonicRange()->end));
+    CHECK(follower.playedMonotonicSecondsRange()->start ==
+          Approx(leader.playedMonotonicSecondsRange()->start));
+    CHECK(follower.playedMonotonicSecondsRange()->end ==
+          Approx(leader.playedMonotonicSecondsRange()->end));
+
+    // And the same origin to whatever renders them, on both axes.
+    REQUIRE(follower.blockStatus().beforeEvent.origin.has_value());
+    CHECK(*follower.blockStatus().beforeEvent.origin == *leader.blockStatus().beforeEvent.origin);
 }

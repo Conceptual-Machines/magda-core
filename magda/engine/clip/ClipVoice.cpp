@@ -44,7 +44,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     // the same cells, so the stretcher is handed the same input in the same
     // order both times and gives back the same samples.
     const auto eventStartSample =
-        static_cast<std::int64_t>(std::llround(event.span.startSeconds * sampleRate_));
+        static_cast<std::int64_t>(std::llround(event.span.seconds.start * sampleRate_));
     const auto windowStartSample =
         static_cast<std::int64_t>(std::llround(windowStart * sampleRate_));
 
@@ -154,7 +154,7 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSa
     if (!(length > 0.0) || block.numSamples <= 0)
         return;
 
-    const auto blockSeconds = block.endSeconds - block.startSeconds;
+    const auto blockSeconds = block.seconds.end - block.seconds.start;
     if (!(blockSeconds > 0.0))
         return;
 
@@ -171,7 +171,7 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSa
     const auto channels = region.getNumChannels();
 
     for (auto sample = from; sample < to; ++sample) {
-        const auto seconds = block.startSeconds + sample * secondsPerSample;
+        const auto seconds = block.seconds.start + sample * secondsPerSample;
         const auto progress = static_cast<float>((seconds - startSeconds) / length);
         const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
 
@@ -207,9 +207,9 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // audible, narrowed to the event's own stretch of it. The silences inside
     // are not part of this, because they mute material that goes on running.
     const auto windowStart =
-        std::max({block.startSeconds, clip.span.startSeconds, event.span.startSeconds});
+        std::max({block.seconds.start, clip.span.seconds.start, event.span.seconds.start});
     const auto windowEnd =
-        std::min({block.endSeconds, clip.span.endSeconds, event.span.endSeconds});
+        std::min({block.seconds.end, clip.span.seconds.end, event.span.seconds.end});
     if (windowEnd <= windowStart)
         return nothing();
 
@@ -295,8 +295,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
-        const auto holeStart = std::max(hole.startSeconds, windowStart);
-        const auto holeEnd = std::min(hole.endSeconds, windowEnd);
+        const auto holeStart = std::max(hole.seconds.start, windowStart);
+        const auto holeEnd = std::min(hole.seconds.end, windowEnd);
         if (holeEnd <= holeStart)
             continue;
 
@@ -340,12 +340,12 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // gain curve on top of that would fade an edge that was never meant to be
     // quiet.
     if (clip.fadeInBehaviour == 0)
-        applyFade(region, first, block, clip.span.startSeconds,
-                  clip.span.startSeconds + clip.fadeInSeconds, clip.fadeInCurve, true);
+        applyFade(region, first, block, clip.span.seconds.start,
+                  clip.span.seconds.start + clip.fadeInSeconds, clip.fadeInCurve, true);
 
     if (clip.fadeOutBehaviour == 0)
-        applyFade(region, first, block, clip.span.endSeconds - clip.fadeOutSeconds,
-                  clip.span.endSeconds, clip.fadeOutCurve, false);
+        applyFade(region, first, block, clip.span.seconds.end - clip.fadeOutSeconds,
+                  clip.span.seconds.end, clip.fadeOutCurve, false);
 
     // Volume and gain summed, panned the way the incumbent pans a clip: linear,
     // and hotter on one side rather than quieter on the other. Not a law with a
@@ -383,7 +383,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // has to: clamping it to the block would make the same clip come out
     // differently at 128 samples a block and at 1024, and an offline render at
     // one size disagree with playback at another.
-    const auto beginsAtItsOwnStart = windowStart <= event.span.startSeconds + (0.5 / sampleRate_);
+    const auto beginsAtItsOwnStart = windowStart <= event.span.seconds.start + (0.5 / sampleRate_);
 
     if (!sounded_ || !block.continuous) {
         if (beginsAtItsOwnStart)

@@ -121,12 +121,12 @@ float laneValueFromRateType(int rateType) {
 
 double modBarPosition(const BlockInfo& block, const ModTiming& timing) {
     if (block.tempo != nullptr) {
-        const auto grid = block.tempo->barsAndBeatsAt(block.startBeat);
+        const auto grid = block.tempo->barsAndBeatsAt(block.beats.start);
         return grid.bar + grid.beat / std::max(grid.numerator, 1);
     }
 
     const auto barBeats = 4.0 * timing.numerator / timing.denominator;
-    return block.startBeat / std::max(barBeats, 1.0e-6);
+    return block.beats.start / std::max(barBeats, 1.0e-6);
 }
 
 ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
@@ -137,8 +137,8 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
     if (block.tempo != nullptr) {
-        const auto signature = block.tempo->barsAndBeatsAt(block.startBeat);
-        timing.bpm = block.tempo->bpmAt(block.startBeat);
+        const auto signature = block.tempo->barsAndBeatsAt(block.beats.start);
+        timing.bpm = block.tempo->bpmAt(block.beats.start);
         timing.numerator = signature.numerator;
         timing.denominator = signature.denominator;
     }
@@ -199,7 +199,7 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     if (settings.sync == ModSync::Transport) {
         state.cycles = settings.tempoSync
                            ? modBarPosition(block, timing) / barFractionOf(settings.rate.rateType)
-                           : block.startSeconds * hz;
+                           : block.seconds.start * hz;
     }
 
     const double cycles = state.cycles;

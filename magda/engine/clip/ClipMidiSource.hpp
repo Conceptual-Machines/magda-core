@@ -61,17 +61,13 @@
  *
  * ## The two sections
  *
- * As on the audio side (ClipAudioSource.hpp), one class plays the arrangement
- * and the session, and a handle feed at construction is what says which. A slot
- * is compiled at the origin, so playing one is this same lane walk over a block
- * whose beat axis has been moved onto the run's origin (SessionPlayback.hpp);
- * the sample a beat lands on is unchanged by that move, which is what lets the
- * emission go on writing into the callback's own buffer.
+ * As on the audio side, one class plays both, chosen by the handle feed at
+ * construction. A slot is the same lane walk over a block on the run's own axes
+ * (SessionPlayback.hpp); the sample a beat lands on is unchanged, so emission
+ * still writes into the callback's own buffer.
  *
- * The invariant above gains one more way a note ends, and it is the session's:
- * a slot that is not playing at the end of a block owes an off for everything
- * it started. Stopping a clip is not a hole and not a snapshot swap, so nothing
- * already here would have covered it.
+ * That adds a sixth way a note ends: a slot not playing at the end of a block
+ * owes an off for everything it started.
  */
 
 namespace magda::engine {
@@ -84,8 +80,7 @@ class ClipMidiSource final : public EngineMidiSource {
     ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips);
 
     /// The session's source for @p trackId, positioned by @p handles rather
-    /// than by the timeline. @p handles outlives it and is shared with every
-    /// other track.
+    /// than by the timeline. @p handles outlives it.
     ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles);
 
     void prepare(const RenderContext& context) override;
@@ -169,25 +164,14 @@ class ClipMidiSource final : public EngineMidiSource {
     void renderClip(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
                     double from, double to, bool jumped);
 
-    /**
-     * @brief Play the part of @p clips that falls between @p from and @p to.
-     *
-     * One lane over one block, which for the arrangement is the track's clips
-     * over the block itself and for the session is one slot's clips over the
-     * block moved onto that slot's origin. Everything below this is the same
-     * for both, which is the point of it.
-     */
+    /// Play the part of @p clips between @p from and @p to. One lane over one
+    /// block: the track's clips for the arrangement, a slot's for the session.
     void playLane(juce::MidiBuffer& out, const BlockInfo& block,
                   const std::vector<MidiClipPlayback>& clips, double from, double to);
 
-    /**
-     * @brief What @p clips say should be sounding here, into @p expected.
-     *
-     * The first half of the snapshot-swap reconcile: a pitch the wrong clip is
-     * holding is handed over as it is found, and everything the new snapshot
-     * agrees about is marked. Split from the sweep because the session has
-     * several lanes to mark before anything may be ended.
-     */
+    /// What @p clips say should be sounding here, into @p expected, handing over
+    /// any pitch the wrong clip holds. Split from the sweep because the session
+    /// has several lanes to mark before anything may be ended.
     void expectLane(juce::MidiBuffer& out, const BlockInfo& block,
                     const std::vector<MidiClipPlayback>& clips, double from, double to,
                     NoteMask& expected);
@@ -198,8 +182,8 @@ class ClipMidiSource final : public EngineMidiSource {
     /// Every note one slot started, ended at @p sample. What a stop owes.
     void endSlot(juce::MidiBuffer& out, int sample, const SessionSlotPlayback& slot);
 
-    /// The session's blocks: what a launched slot plays, and what a stopped one
-    /// still owes. Returns false when no handles have been published yet.
+    /// What a launched slot plays and what a stopped one owes. False when no
+    /// handles have been published yet.
     bool renderSession(juce::MidiBuffer& out, const BlockInfo& block,
                        const TrackClipPlayback& track, bool reconcile);
 
@@ -210,8 +194,7 @@ class ClipMidiSource final : public EngineMidiSource {
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
 
-    /// The section, and where a slot's position comes from. Null is the
-    /// arrangement, which needs no handles because the timeline is its handle.
+    /// The section. Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
 
     ActiveNoteList active_;

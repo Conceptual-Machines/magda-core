@@ -85,8 +85,8 @@ ResolvedParams resolved(const ParamTable& table) {
     magda::engine::BlockInfo block;
     block.numSamples = 64;
     block.playing = true;
-    block.startBeat = 0.0;
-    block.endBeat = 1.0;
+    block.beats.start = 0.0;
+    block.beats.end = 1.0;
 
     ResolvedParams values;
     values.prepare(table.size());

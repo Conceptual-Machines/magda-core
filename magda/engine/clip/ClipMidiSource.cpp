@@ -12,7 +12,7 @@ namespace {
 /// Whether a span reaches into a beat range. Half open at both ends, so a clip
 /// ending exactly where a block begins contributes nothing to it.
 bool reachesInto(const SnapshotSpan& span, double startBeat, double endBeat) {
-    return span.startBeat < endBeat && span.endBeat > startBeat;
+    return span.beats.start < endBeat && span.beats.end > startBeat;
 }
 
 /// How many notes the source may hold at once before its owed note-offs alone
@@ -106,9 +106,10 @@ void ClipMidiSource::endClip(juce::MidiBuffer& out, int sample, ClipId clipId) {
 }
 
 bool ClipMidiSource::inHole(const MidiClipPlayback& clip, double beat) {
-    return std::any_of(
-        clip.silenced.begin(), clip.silenced.end(),
-        [beat](const SnapshotSpan& hole) { return beat >= hole.startBeat && beat < hole.endBeat; });
+    return std::any_of(clip.silenced.begin(), clip.silenced.end(),
+                       [beat](const SnapshotSpan& hole) {
+                           return beat >= hole.beats.start && beat < hole.beats.end;
+                       });
 }
 
 void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
@@ -234,7 +235,7 @@ void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFold
 void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                                 const MidiClipPlayback& clip, double from, double to, bool jumped) {
     MidiFoldPass passes[kMaxFoldPassesPerBlock];
-    const auto count = foldBlock(clip.fold, from, to, clip.span.endBeat, passes);
+    const auto count = foldBlock(clip.fold, from, to, clip.span.beats.end, passes);
 
     if (count == kMaxFoldPassesPerBlock)
         overflowed_.fetch_add(1, std::memory_order_relaxed);
@@ -359,7 +360,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
     for (const auto& clip : clips) {
         // Sorted by where they start, so once one begins at or after the end of
         // this lane, so does everything behind it.
-        if (clip.span.startBeat >= laneTo)
+        if (clip.span.beats.start >= laneTo)
             break;
 
         if (!reachesInto(clip.span, laneFrom, laneTo)) {
@@ -368,20 +369,18 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
             continue;
         }
 
-        const auto from = std::max(laneFrom, clip.span.startBeat);
-        const auto to = std::min(laneTo, clip.span.endBeat);
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        const auto to = std::min(laneTo, clip.span.beats.end);
         if (to <= from)
             continue;
 
         // Locating into the middle of a clip has to leave every controller at
         // the value its curve is at and strike the notes the instant is inside,
         // or seeking into a sustained pad is silence until the next note. A
-        // launch is the same discontinuity from the material's point of view,
-        // which is what the block's own continuity already says
-        // (SessionPlayback.hpp).
+        // launch is the same discontinuity (SessionPlayback.hpp).
         if (!block.continuous) {
             MidiFoldPass passes[kMaxFoldPassesPerBlock];
-            if (foldBlock(clip.fold, from, to, clip.span.endBeat, passes) > 0)
+            if (foldBlock(clip.fold, from, to, clip.span.beats.end, passes) > 0)
                 chaseClip(out, block, clip, passes[0], from);
         }
 
@@ -391,8 +390,8 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // notes end. Nothing here reads a loop as a length, which is why turning
         // looping off does not shorten a clip the way MidiClip::disableLooping
         // does.
-        if (clip.span.endBeat > from && clip.span.endBeat <= to)
-            endClip(out, block.sampleForBeat(clip.span.endBeat), clip.clipId);
+        if (clip.span.beats.end > from && clip.span.beats.end <= to)
+            endClip(out, block.sampleForBeat(clip.span.beats.end), clip.clipId);
     }
 }
 
@@ -404,8 +403,8 @@ void ClipMidiSource::expectLane(juce::MidiBuffer& out, const BlockInfo& block,
             continue;
 
         MidiFoldPass passes[kMaxFoldPassesPerBlock];
-        const auto from = std::max(laneFrom, clip.span.startBeat);
-        if (foldBlock(clip.fold, from, laneTo, clip.span.endBeat, passes) == 0)
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        if (foldBlock(clip.fold, from, laneTo, clip.span.beats.end, passes) == 0)
             continue;
 
         gatherSounding(clip, passes[0], from);
@@ -457,28 +456,27 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
     if (!handles)
         return false;
 
-    // Whichever sub-ranges of this block the slot was playing, on the material's
-    // own axis. The block itself rather than a piece of it, because a MIDI event
-    // is placed at a sample of the callback: what the sub-range decides is which
-    // events are emitted, not where they land (SessionPlayback.hpp).
+    // The whole block rather than a piece of it: a MIDI event is placed at a
+    // sample of the callback, so the sub-range decides which events are emitted
+    // and not where they land (SessionPlayback.hpp).
     const auto eachPlaying = [&block](const SplitStatus& status, const auto& fn) {
-        if (status.playing1 && status.playStartTime1) {
-            const auto origin = *status.playStartTime1;
-            fn(materialBlock(block, status.range1, origin), status.range1.start - origin,
-               status.range1.end - origin);
-        }
+        const auto play = [&](const BlockPiece& piece) {
+            if (!piece.origin)
+                return;
 
-        if (status.isSplit && status.playing2 && status.playStartTime2) {
-            const auto origin = *status.playStartTime2;
-            fn(materialBlock(block, status.range2, origin), status.range2.start - origin,
-               status.range2.end - origin);
-        }
+            fn(materialBlock(block, piece.range, *piece.origin),
+               piece.range.start - piece.origin->beat, piece.range.end - piece.origin->beat);
+        };
+
+        play(status.beforeEvent);
+
+        if (status.afterEvent)
+            play(*status.afterEvent);
     };
 
     if (reconcile) {
-        // Every lane marked before anything is ended. A session has one lane per
-        // playing slot rather than the arrangement's single one, and a sweep run
-        // per lane would end the notes of the slot walked after it.
+        // Every lane marked before anything is ended: a sweep per lane would end
+        // the notes of the slot walked after it.
         NoteMask expected;
 
         forEachSlot(*handles.get(), track,
@@ -497,18 +495,14 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
                         playLane(out, material, slot.midi, from, to);
                     });
 
-                    // The session's own way for a note to end. A slot that is not playing
-                    // when the block finishes owes an off for everything it started, at the
-                    // sample it stopped on: a stop is not a hole, not a snapshot swap and
-                    // not the end of a span, so nothing else here would have covered it.
+                    // The session's own way for a note to end: a stop is not a hole,
+                    // not a snapshot swap and not the end of a span.
                     //
-                    // Unconditional rather than edge-triggered. A slot that was already
-                    // stopped holds nothing, so this costs a walk of the active list and
-                    // emits nothing, and it needs no memory of the previous block to be
-                    // right after a plan swap or a snapshot swap.
-                    const auto playingAtEnd = status.isSplit ? status.playing2 : status.playing1;
-                    if (!playingAtEnd)
-                        endSlot(out, status.isSplit ? splitSample(block, status) : 0, slot);
+                    // Unconditional rather than edge-triggered. An already stopped
+                    // slot holds nothing, so this emits nothing and needs no memory
+                    // of the previous block.
+                    if (!status.playingAtEnd())
+                        endSlot(out, status.afterEvent ? splitSample(block, status) : 0, slot);
                 });
 
     return true;
@@ -572,11 +566,11 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     if (swapped) {
         NoteMask expected;
-        expectLane(out, block, track->midi, block.startBeat, block.endBeat, expected);
+        expectLane(out, block, track->midi, block.beats.start, block.beats.end, expected);
         endUnexpected(out, expected);
     }
 
-    playLane(out, block, track->midi, block.startBeat, block.endBeat);
+    playLane(out, block, track->midi, block.beats.start, block.beats.end);
     lastSnapshot_ = live;
 }
 

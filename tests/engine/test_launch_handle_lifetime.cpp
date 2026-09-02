@@ -9,11 +9,8 @@
  * @file test_launch_handle_lifetime.cpp
  * @brief Which slot handles survive a publish, and which do not (#2301).
  *
- * A handle is per slot and a slot is a clip, so what says a slot exists is the
- * snapshot rather than a walk over tracks, and a clip edit deliberately does
- * not compile a plan. Their whole lifetime is therefore publishHandles(): made,
- * kept and retired there and nowhere else, and these are the cases that say a
- * slot emptied and refilled comes back new rather than carrying the run it had.
+ * A slot is a clip, so the snapshot says what exists and publishHandles() is a
+ * handle's whole lifetime: made, kept and retired there and nowhere else.
  */
 
 using namespace magda;
@@ -39,11 +36,11 @@ ClipSnapshot snapshotWithScenes(const std::vector<int>& scenes, TrackId trackId 
     return snapshot;
 }
 
-/// A handle three bars into a run, so a handle that was reused rather than
-/// remade is visible rather than merely equal.
+/// A handle part way into a run, so a reused one is visible rather than equal.
 void launch(LaunchHandle& handle) {
     handle.play({});
-    handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{0.0, 2.0}});
+    handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{0.0, 2.0}, SecondsRange{0.0, 1.0},
+                             SecondsRange{0.0, 1.0}});
     REQUIRE(handle.playState() == LaunchHandle::PlayState::playing);
 }
 
@@ -62,8 +59,8 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     launch(*first);
 
     SECTION("a snapshot that still names it keeps the handle it had") {
-        // The whole point of keeping one: an edit somewhere else in the project
-        // republishes the snapshot, and a clip that is playing goes on playing.
+        // An edit elsewhere republishes the snapshot, and a playing clip goes
+        // on playing.
         store.publishHandles(snapshotWithScenes({0, 2}), feed);
 
         auto* kept = store.findHandle(SlotKey{kTrack, 0});
@@ -79,11 +76,9 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     }
 
     SECTION("a slot emptied and refilled comes back new") {
-        // The bug this rule exists for, and the reason retirement is here
-        // rather than at a plan publish: emptying a slot and filling it again
-        // is two clip edits and no structural one, so nothing else would have
-        // run in between and the new clip would come up already playing, three
-        // bars into a run it never started.
+        // Why retirement is here rather than at a plan publish: emptying and
+        // refilling is two clip edits and no structural one, so the new clip
+        // would come up already playing.
         store.publishHandles(snapshotWithScenes({2}), feed);
         CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
 
@@ -113,10 +108,9 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
 }
 
 TEST_CASE("A plan publish is not what retires a handle", "[engine][session][launch]") {
-    // Runtime state is retired against what the model holds, and a slot is not
-    // in that walk: it is a clip. A structural edit that has lost the track
-    // must not take a handle the live table still points a session source at,
-    // because the source would be left with a pointer to nothing.
+    // Runtime state is retired against what the model holds and a slot is not
+    // in that walk. A structural edit that lost the track must not take a
+    // handle the live table still points a session source at.
     NoFactory factory;
     RuntimeStateStore store(factory);
     LaunchHandleFeed feed;

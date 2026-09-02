@@ -9,6 +9,7 @@
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TypeIds.hpp"
+#include "transport/TimeDomains.hpp"
 
 /**
  * @file ClipSnapshot.hpp
@@ -50,19 +51,14 @@ namespace magda::engine {
  * The seconds are what the ends actually are: a beat span occupies different
  * wall-clock seconds depending on where it sits on the tempo curve, so the two
  * ends are converted separately rather than a length being scaled.
+ *
+ * Two typed ranges rather than four doubles, for the reason TimeDomains.hpp
+ * gives: what goes wrong is a value from one domain arriving where the other
+ * was meant, and nothing at the call site tells them apart.
  */
 struct SnapshotSpan {
-    double startBeat = 0.0;
-    double endBeat = 0.0;
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
-
-    double lengthBeats() const {
-        return endBeat - startBeat;
-    }
-    double lengthSeconds() const {
-        return endSeconds - startSeconds;
-    }
+    BeatRange beats;
+    SecondsRange seconds;
 };
 
 /**

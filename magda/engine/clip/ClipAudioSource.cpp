@@ -15,7 +15,7 @@ namespace {
 /// clip ending exactly on a block boundary contributes nothing to the block
 /// that starts there.
 bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
-    return span.startSeconds < block.endSeconds && span.endSeconds > block.startSeconds;
+    return span.seconds.start < block.seconds.end && span.seconds.end > block.seconds.start;
 }
 
 }  // namespace
@@ -60,7 +60,7 @@ void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const 
         // the break a track pays for its whole tail on every callback, all
         // session, and the cost grows with the length of the arrangement rather
         // than with what is playing.
-        if (clip.span.startSeconds >= block.endSeconds)
+        if (clip.span.seconds.start >= block.seconds.end)
             break;
 
         if (!reachesInto(clip.span, block))
@@ -103,29 +103,25 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
         return;
 
     // The status is the launcher's, worked out before anything rendered
-    // (SessionLauncher.hpp). Reading it rather than advancing the handle is
-    // what lets this source and the MIDI one see the same block.
+    // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
     forEachSlot(
         *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
-            const auto play = [&](const BeatRange& range, const std::optional<double>& playStart,
-                                  int offset, int count) {
-                if (count <= 0 || !playStart)
+            const auto play = [&](const BlockPiece& piece, int offset, int count) {
+                if (count <= 0 || !piece.origin)
                     return;
 
-                gather(slot.audio, materialSubBlock(block, range, *playStart, count), offset,
-                       streams, sounding, soundingCount);
+                gather(slot.audio, materialSubBlock(block, piece.range, *piece.origin, count),
+                       offset, streams, sounding, soundingCount);
             };
 
-            // Where the launch or the stop landed. What is on the far side of
-            // it is simply not rendered: the ramp across that boundary, and the
-            // one between a track's session and its arrangement, are #2302's.
+            // What is on the far side of the event is not rendered. The ramp
+            // across that boundary is #2302's.
             const auto split = splitSample(block, status);
 
-            if (status.playing1)
-                play(status.range1, status.playStartTime1, 0, split);
+            play(status.beforeEvent, 0, split);
 
-            if (status.isSplit && status.playing2)
-                play(status.range2, status.playStartTime2, split, block.numSamples - split);
+            if (status.afterEvent)
+                play(*status.afterEvent, split, block.numSamples - split);
         });
 }
 
@@ -149,10 +145,8 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             voice.release();
     };
 
-    // Held to what the caller actually provided as well as to what the block
-    // claims. The session hands its voices sub-blocks of this one, so a length
-    // the buffer does not have is not a short block, it is somebody else's
-    // memory.
+    // Held to what the caller provided as well as to what the block claims: the
+    // session hands its voices sub-blocks of this one.
     auto lane = block;
     lane.numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
 

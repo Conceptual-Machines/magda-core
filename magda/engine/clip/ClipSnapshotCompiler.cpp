@@ -27,12 +27,10 @@ FadeCurve curveFrom(int stored, bool& valid) {
 
 SnapshotSpan spanFromBeats(double startBeat, double endBeat, const TempoMap& tempoMap) {
     SnapshotSpan span;
-    span.startBeat = startBeat;
-    span.endBeat = endBeat;
+    span.beats = {startBeat, endBeat};
     // Both ends converted, never a length scaled: a beat span occupies
     // different seconds depending on where it sits on the tempo curve.
-    span.startSeconds = tempoMap.beatToTime(startBeat);
-    span.endSeconds = tempoMap.beatToTime(endBeat);
+    span.seconds = {tempoMap.beatToTime(startBeat), tempoMap.beatToTime(endBeat)};
     return span;
 }
 
@@ -185,8 +183,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             // audio thread has no tempo map to convert them with. Off the ends
             // of the audible span rather than of the placement, because that is
             // what a fade shapes (ClipVoice.hpp).
-            audio.fadeInBeats = tempoMap.timeToBeat(span.startSeconds + fadeIn) - span.startBeat;
-            audio.fadeOutBeats = span.endBeat - tempoMap.timeToBeat(span.endSeconds - fadeOut);
+            audio.fadeInBeats = tempoMap.timeToBeat(span.seconds.start + fadeIn) - span.beats.start;
+            audio.fadeOutBeats = span.beats.end - tempoMap.timeToBeat(span.seconds.end - fadeOut);
 
             // The clip's edges are the primary event's edges, so they carry its
             // curves. A curve that is not one is reported once, below, where
@@ -341,8 +339,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
         // have to produce one snapshot, and a lane is held in whatever order
         // the model happens to keep it.
         const auto byStart = [](const auto& a, const auto& b) {
-            if (a.span.startBeat != b.span.startBeat)
-                return a.span.startBeat < b.span.startBeat;
+            if (a.span.beats.start != b.span.beats.start)
+                return a.span.beats.start < b.span.beats.start;
             return a.clipId < b.clipId;
         };
         std::sort(track.audio.begin(), track.audio.end(), byStart);

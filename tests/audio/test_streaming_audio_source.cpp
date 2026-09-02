@@ -73,10 +73,10 @@ BlockInfo blockFrom(double startSeconds, int numSamples = kBlockSize, bool conti
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + numSamples / kSampleRate;
-    block.startBeat = startSeconds * 2.0;  // 120 bpm, which nothing here depends on
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + numSamples / kSampleRate;
+    block.beats.start = startSeconds * 2.0;  // 120 bpm, which nothing here depends on
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -95,7 +95,7 @@ struct Fixture {
     /// whoever schedules a clip does: the first block at a position nobody
     /// mentioned has to seek, and a seek costs a block of silence.
     void cue(const BlockInfo& block) {
-        stream.seek(source.sourceSampleAt(std::max(block.startSeconds, placement.startSeconds)));
+        stream.seek(source.sourceSampleAt(std::max(block.seconds.start, placement.seconds.start)));
     }
 
     /// Cue, let a callback take the cue up, read ahead, and render: what a
@@ -130,7 +130,7 @@ struct Fixture {
 
 TEST_CASE("A clip plays the part of the block it covers", "[engine][io][clip]") {
     // Two seconds of timeline, playing the file from its tenth sample.
-    const ClipPlacement placement{1.0, 3.0, 10};
+    const ClipPlacement placement{{1.0, 3.0}, 10};
 
     SECTION("nothing before it starts") {
         Fixture fixture(placement);
@@ -182,7 +182,7 @@ TEST_CASE("A clip plays the part of the block it covers", "[engine][io][clip]") 
 }
 
 TEST_CASE("A clip plays in step with the timeline it is placed on", "[engine][io][clip]") {
-    const ClipPlacement placement{0.0, 10.0, 0};
+    const ClipPlacement placement{{0.0, 10.0}, 0};
     Fixture fixture(placement);
 
     // Block after block, the file advances one sample per sample and never
@@ -202,7 +202,7 @@ TEST_CASE("A clip plays in step with the timeline it is placed on", "[engine][io
 }
 
 TEST_CASE("A jump is a seek, and needs nothing said about it", "[engine][io][clip]") {
-    const ClipPlacement placement{0.0, 10.0, 0};
+    const ClipPlacement placement{{0.0, 10.0}, 0};
     Fixture fixture(placement);
 
     for (auto block = 0; block < 4; ++block)
@@ -245,13 +245,13 @@ TEST_CASE("A jump is a seek, and needs nothing said about it", "[engine][io][cli
 }
 
 TEST_CASE("A clip renders nothing while the transport is stopped", "[engine][io][clip]") {
-    const ClipPlacement placement{0.0, 10.0, 0};
+    const ClipPlacement placement{{0.0, 10.0}, 0};
     Fixture fixture(placement);
 
     auto stopped = blockFrom(1.0);
     stopped.playing = false;
-    stopped.endSeconds = stopped.startSeconds;
-    stopped.endBeat = stopped.startBeat;
+    stopped.seconds.end = stopped.seconds.start;
+    stopped.beats.end = stopped.beats.start;
 
     fixture.render(stopped);
 
@@ -326,7 +326,7 @@ TEST_CASE("A file at another rate plays wrong, not broken", "[engine][io][clip]"
     };
 
     PrefetchStream stream(std::make_unique<MismatchedReader>(), context(), {256, 8});
-    StreamingAudioSource source(stream, ClipPlacement{0.0, 10.0, 0});
+    StreamingAudioSource source(stream, ClipPlacement{{0.0, 10.0}, 0});
     source.prepare(context());
 
     juce::AudioBuffer<float> output(2, kBlockSize);
@@ -354,7 +354,7 @@ TEST_CASE("A clip cued before it starts plays without a gap", "[engine][io][pref
     // The case cueing exists for: a clip that has not started, on a transport
     // that is already rolling. Nothing reads this stream yet, so nothing would
     // notice a cue at all if the source did not offer one every block.
-    const ClipPlacement placement{5.0, 10.0, 0};
+    const ClipPlacement placement{{5.0, 10.0}, 0};
     Fixture fixture(placement);
 
     const auto target = fixture.source.sourceSampleAt(5.0);
@@ -381,7 +381,7 @@ TEST_CASE("Cueing a stream that is sounding does not interrupt it", "[engine][io
     // while the end of it is still playing. One reader cannot be in two places,
     // so what this owes is that playback is not damaged by being asked. The
     // cue waits; it does not abandon the material still going out.
-    const ClipPlacement placement{0.0, 10.0, 0};
+    const ClipPlacement placement{{0.0, 10.0}, 0};
     Fixture fixture(placement);
 
     for (auto block = 0; block < 4; ++block)
@@ -420,7 +420,7 @@ TEST_CASE("A clip rolling past the end of its file is not sounding", "[engine][i
     // Five thousand samples of material under a placement that runs for a
     // second. Past the material the source still asks every block, because the
     // clip is still placed there, and every ask comes back with nothing.
-    const ClipPlacement placement{0.0, 1.0, 0};
+    const ClipPlacement placement{{0.0, 1.0}, 0};
     Fixture fixture(placement, 5000);
 
     for (auto block = 0; block < 100; ++block)

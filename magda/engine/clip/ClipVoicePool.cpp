@@ -16,7 +16,7 @@ namespace {
 /// Whether a span reaches into the window at all. Half-open, like every other
 /// span comparison here: a clip ending exactly where the window starts is over.
 bool reachesInto(const SnapshotSpan& span, double windowStart, double windowEnd) {
-    return span.startSeconds < windowEnd && span.endSeconds > windowStart;
+    return span.seconds.start < windowEnd && span.seconds.end > windowStart;
 }
 
 /**
@@ -32,12 +32,12 @@ bool reachesInto(const SnapshotSpan& span, double windowStart, double windowEnd)
  * either way.
  */
 double beatNear(const AudioEventPlayback& event, double seconds) {
-    const auto span = event.span.lengthSeconds();
+    const auto span = event.span.seconds.length();
     if (!(span > 0.0))
-        return event.span.startBeat;
+        return event.span.beats.start;
 
-    const auto through = (seconds - event.span.startSeconds) / span;
-    return event.span.startBeat + through * event.span.lengthBeats();
+    const auto through = (seconds - event.span.seconds.start) / span;
+    return event.span.beats.start + through * event.span.beats.length();
 }
 
 /// One entry that wants a stream, and what decides whether it gets one.
@@ -46,8 +46,7 @@ struct Candidate {
     EventId eventId = INVALID_EVENT_ID;
     const AudioClipPlayback* clip = nullptr;
     const AudioEventPlayback* event = nullptr;
-    double startSeconds = 0.0;
-    double endSeconds = 0.0;
+    SecondsRange seconds;
 
     /// Whether the transport is inside it right now. A clip that is sounding
     /// keeps its reader ahead of one that has not started, because taking a
@@ -55,10 +54,8 @@ struct Candidate {
     /// pointed it at the next one yet.
     bool sounding = false;
 
-    /// Where playback will pick this up, which is what the reader is pointed
-    /// at. Its own first sample for a clip that has not started and for every
-    /// session slot; where the cursor already is for a clip the transport is
-    /// standing inside.
+    /// Where the reader is pointed: the entry's own first sample, or where the
+    /// cursor already is for a clip the transport is standing inside.
     double cueSeconds = 0.0;
 };
 
@@ -87,8 +84,8 @@ int peakConcurrent(const std::vector<Candidate>& candidates, double windowStart,
     edges.reserve(candidates.size() * 2);
 
     for (const auto& candidate : candidates) {
-        const auto from = std::max(candidate.startSeconds, windowStart);
-        const auto to = std::min(candidate.endSeconds, windowEnd);
+        const auto from = std::max(candidate.seconds.start, windowStart);
+        const auto to = std::min(candidate.seconds.end, windowEnd);
         if (to <= from)
             continue;
 
@@ -147,7 +144,7 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
     std::vector<double> keptEnds;
     keptEnds.reserve(static_cast<std::size_t>(kept));
     for (auto index = 0; index < kept; ++index)
-        keptEnds.push_back(candidates[static_cast<std::size_t>(index)].endSeconds + blockSeconds);
+        keptEnds.push_back(candidates[static_cast<std::size_t>(index)].seconds.end + blockSeconds);
 
     std::sort(keptEnds.begin(), keptEnds.end());
 
@@ -162,15 +159,15 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
         const auto& dropped = candidates[index];
 
         // Sorted by start, so the first one past the bridge ends the walk.
-        if (dropped.startSeconds >= bridgeEnd)
+        if (dropped.seconds.start >= bridgeEnd)
             break;
 
-        while (keptEnded < keptEnds.size() && keptEnds[keptEnded] <= dropped.startSeconds)
+        while (keptEnded < keptEnds.size() && keptEnds[keptEnded] <= dropped.seconds.start)
             ++keptEnded;
 
         countedEnds.erase(
             countedEnds.begin(),
-            std::upper_bound(countedEnds.begin(), countedEnds.end(), dropped.startSeconds));
+            std::upper_bound(countedEnds.begin(), countedEnds.end(), dropped.seconds.start));
 
         const auto live =
             static_cast<int>(keptEnds.size() - keptEnded) + static_cast<int>(countedEnds.size());
@@ -179,7 +176,7 @@ int unbridgedAmong(const std::vector<Candidate>& candidates, int kept, double wi
 
         ++unbridged;
 
-        const auto end = dropped.endSeconds + blockSeconds;
+        const auto end = dropped.seconds.end + blockSeconds;
         countedEnds.insert(std::upper_bound(countedEnds.begin(), countedEnds.end(), end), end);
     }
 
@@ -269,7 +266,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // pointed is below and depends on where the transport is, so storing that
     // instead would make a clip the transport is moving through look different
     // on every round and republish a table for it every ten milliseconds.
-    reader.cueSamples = cueFor(clip, event, event.span.startSeconds, reader);
+    reader.cueSamples = cueFor(clip, event, event.span.seconds.start, reader);
 
     auto file = files_.open(event.filePath);
     if (file == nullptr)
@@ -335,10 +332,10 @@ void ClipVoicePool::service() {
                         if (!reachesInto(event.span, windowStart, windowEnd))
                             continue;
 
-                        candidates.push_back(Candidate{
-                            clip.clipId, event.eventId, &clip, &event, event.span.startSeconds,
-                            event.span.endSeconds, event.span.startSeconds <= windowStart,
-                            std::max(windowStart, event.span.startSeconds)});
+                        candidates.push_back(
+                            Candidate{clip.clipId, event.eventId, &clip, &event, event.span.seconds,
+                                      event.span.seconds.start <= windowStart,
+                                      std::max(windowStart, event.span.seconds.start)});
                     }
                 }
 
@@ -359,8 +356,8 @@ void ClipVoicePool::service() {
                           [](const Candidate& a, const Candidate& b) {
                               if (a.sounding != b.sounding)
                                   return a.sounding;
-                              if (a.startSeconds != b.startSeconds)
-                                  return a.startSeconds < b.startSeconds;
+                              if (a.seconds.start != b.seconds.start)
+                                  return a.seconds.start < b.seconds.start;
                               if (a.clipId != b.clipId)
                                   return a.clipId < b.clipId;
                               return a.eventId < b.eventId;
@@ -372,43 +369,26 @@ void ClipVoicePool::service() {
                     candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
                 }
 
-                // Every slot, on every round, whatever the transport is doing.
-                // A slot has no position on the timeline, so there is no window
-                // it comes into and no moment it is due: a launch can arrive on
-                // any block and the material has to already be open when it
-                // does (#2301). What that costs is one open file per slot for
-                // as long as the project holds it, which is what a launcher is.
+                // Every slot, every round: a slot has no position, so there is
+                // no window it comes into and a launch can arrive on any block
+                // (#2301). Cued at its own origin and never moved, so the
+                // launch costs no seek. A slot stopped part way and relaunched
+                // does seek; the cue that avoids it is #2305's.
                 //
-                // Cued at the slot's own origin and never moved, which is what
-                // makes the launch itself cost no seek: a run begins at beat
-                // zero of the material and the reader is already there. A slot
-                // stopped part way through and launched again does seek, and
-                // the cue that would avoid it belongs with the request that
-                // knows a launch is coming, which is #2305's.
-                //
-                // Their own budget, taken after the arrangement's rather than
-                // out of it. The two are not competing for the same thing: the
-                // arrangement's is a window that clips rotate through as the
-                // transport passes them, and a slot never gets passed, so a
-                // shared budget would give the same slots readers for ever and
-                // leave the ones behind them permanently silent rather than
-                // merely late. Separate, a track's session cannot starve its
-                // timeline and its timeline cannot starve its session.
+                // Its own budget, taken after the arrangement's rather than out
+                // of it (kMaxSessionReadersPerTrack).
                 slots.clear();
 
                 for (const auto& slot : track.session)
                     for (const auto& clip : slot.audio)
                         for (const auto& event : clip.events)
                             slots.push_back(Candidate{clip.clipId, event.eventId, &clip, &event,
-                                                      windowStart, windowStart, true,
-                                                      event.span.startSeconds});
+                                                      SecondsRange{windowStart, windowStart}, true,
+                                                      event.span.seconds.start});
 
-                // In scene order, which is the order the snapshot holds them
-                // in, so which slots a project past the budget keeps is a
-                // property of the project rather than of a walk. Past it they
-                // are counted: a slot with no reader is a launch that plays
-                // nothing, and silence nobody counted is indistinguishable from
-                // material that was not there.
+                // In scene order, so which slots a project past the budget
+                // keeps is a property of the project. The rest are counted: a
+                // slot with no reader is a launch that plays nothing.
                 if (slots.size() > static_cast<std::size_t>(kMaxSessionReadersPerTrack)) {
                     unprovisioned += static_cast<int>(slots.size()) - kMaxSessionReadersPerTrack;
                     slots.resize(static_cast<std::size_t>(kMaxSessionReadersPerTrack));
@@ -461,7 +441,7 @@ void ClipVoicePool::service() {
                         // playing cannot be pointed elsewhere and the next read
                         // corrects it anyway, at the cost of a seek.
                         if (const auto cue =
-                                cueFor(*candidate.clip, event, event.span.startSeconds, reuse);
+                                cueFor(*candidate.clip, event, event.span.seconds.start, reuse);
                             reuse.cueSamples != cue) {
                             if (reuse.stream != nullptr && !candidate.sounding)
                                 reuse.stream->seek(cue);

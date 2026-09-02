@@ -112,18 +112,18 @@ TEST_CASE("A clip on its own compiles to its placement, in both domains", "[engi
     const auto* clip = audioClip(snapshot, 1);
     REQUIRE(clip != nullptr);
 
-    CHECK(clip->span.startBeat == Approx(4.0));
-    CHECK(clip->span.endBeat == Approx(12.0));
-    CHECK(clip->span.startSeconds == Approx(2.0));
-    CHECK(clip->span.endSeconds == Approx(6.0));
+    CHECK(clip->span.beats.start == Approx(4.0));
+    CHECK(clip->span.beats.end == Approx(12.0));
+    CHECK(clip->span.seconds.start == Approx(2.0));
+    CHECK(clip->span.seconds.end == Approx(6.0));
     CHECK(clip->silenced.empty());
 
     REQUIRE(clip->events.size() == 1);
     const auto& event = clip->events.front();
     CHECK(event.sourceId == kSource);
     CHECK(event.sourceSampleRate == Approx(48000.0));
-    CHECK(event.span.startSeconds == Approx(2.0));
-    CHECK(event.span.endSeconds == Approx(6.0));
+    CHECK(event.span.seconds.start == Approx(2.0));
+    CHECK(event.span.seconds.end == Approx(6.0));
 }
 
 TEST_CASE("The seconds come from the tempo map, and say which one", "[engine][clip]") {
@@ -133,11 +133,11 @@ TEST_CASE("The seconds come from the tempo map, and say which one", "[engine][cl
     const auto atSixty = compile({makeAudioClip(1, 4.0, 8.0)}, slow);
     const auto atOneTwenty = compile({makeAudioClip(1, 4.0, 8.0)}, fast);
 
-    CHECK(audioClip(atSixty, 1)->span.startSeconds == Approx(4.0));
-    CHECK(audioClip(atOneTwenty, 1)->span.startSeconds == Approx(2.0));
+    CHECK(audioClip(atSixty, 1)->span.seconds.start == Approx(4.0));
+    CHECK(audioClip(atOneTwenty, 1)->span.seconds.start == Approx(2.0));
 
     // The beats did not move, only what they are worth.
-    CHECK(audioClip(atSixty, 1)->span.startBeat == Approx(4.0));
+    CHECK(audioClip(atSixty, 1)->span.beats.start == Approx(4.0));
     CHECK(atSixty.tempoFingerprint != atOneTwenty.tempoFingerprint);
     CHECK(atSixty.tempoFingerprint == slow.fingerprint());
 }
@@ -163,9 +163,9 @@ TEST_CASE("A covered clip plays what the lane leaves it", "[engine][clip]") {
         const auto snapshot = compile({under, over}, makeTempoMap());
         const auto* clip = audioClip(snapshot, 1);
         REQUIRE(clip != nullptr);
-        CHECK(clip->span.startBeat == Approx(0.0));
-        CHECK(clip->span.endBeat == Approx(4.0));
-        CHECK(clip->span.endSeconds == Approx(2.0));
+        CHECK(clip->span.beats.start == Approx(0.0));
+        CHECK(clip->span.beats.end == Approx(4.0));
+        CHECK(clip->span.seconds.end == Approx(2.0));
         CHECK(clip->silenced.empty());
     }
 
@@ -177,19 +177,19 @@ TEST_CASE("A covered clip plays what the lane leaves it", "[engine][clip]") {
         const auto snapshot = compile({under, over}, makeTempoMap());
         const auto* clip = audioClip(snapshot, 1);
         REQUIRE(clip != nullptr);
-        CHECK(clip->span.startBeat == Approx(0.0));
-        CHECK(clip->span.endBeat == Approx(16.0));
+        CHECK(clip->span.beats.start == Approx(0.0));
+        CHECK(clip->span.beats.end == Approx(16.0));
         REQUIRE(clip->silenced.size() == 1);
-        CHECK(clip->silenced.front().startBeat == Approx(4.0));
-        CHECK(clip->silenced.front().endBeat == Approx(8.0));
-        CHECK(clip->silenced.front().startSeconds == Approx(2.0));
-        CHECK(clip->silenced.front().endSeconds == Approx(4.0));
+        CHECK(clip->silenced.front().beats.start == Approx(4.0));
+        CHECK(clip->silenced.front().beats.end == Approx(8.0));
+        CHECK(clip->silenced.front().seconds.start == Approx(2.0));
+        CHECK(clip->silenced.front().seconds.end == Approx(4.0));
 
         // The event is NOT cropped with it: the anchor is heard at the event's
         // own start, and moving that would move every read derived from it.
         REQUIRE(clip->events.size() == 1);
-        CHECK(clip->events.front().span.startBeat == Approx(0.0));
-        CHECK(clip->events.front().span.endBeat == Approx(16.0));
+        CHECK(clip->events.front().span.beats.start == Approx(0.0));
+        CHECK(clip->events.front().span.beats.end == Approx(16.0));
     }
 
     SECTION("play-through leaves both clips whole") {
@@ -199,8 +199,8 @@ TEST_CASE("A covered clip plays what the lane leaves it", "[engine][clip]") {
         under.overlapPlaysBoth = true;  // either side asking is enough
 
         const auto snapshot = compile({under, over}, makeTempoMap());
-        CHECK(audioClip(snapshot, 1)->span.endBeat == Approx(8.0));
-        CHECK(audioClip(snapshot, 2)->span.startBeat == Approx(4.0));
+        CHECK(audioClip(snapshot, 1)->span.beats.end == Approx(8.0));
+        CHECK(audioClip(snapshot, 2)->span.beats.start == Approx(4.0));
     }
 }
 
@@ -252,8 +252,8 @@ TEST_CASE("Both halves of a crossfade agree across a tempo change", "[engine][cl
     CHECK(overlapSeconds != Approx(4.0 * 60.0 / 60.0));
 
     // And it agrees with the spans it sits inside.
-    CHECK(audioClip(snapshot, 2)->span.startSeconds == Approx(tempoMap.beatToTime(6.0)));
-    CHECK(audioClip(snapshot, 1)->span.endSeconds == Approx(tempoMap.beatToTime(10.0)));
+    CHECK(audioClip(snapshot, 2)->span.seconds.start == Approx(tempoMap.beatToTime(6.0)));
+    CHECK(audioClip(snapshot, 1)->span.seconds.end == Approx(tempoMap.beatToTime(10.0)));
 }
 
 TEST_CASE("Fades that outrun their clip are scaled to fit it", "[engine][clip]") {
@@ -318,8 +318,8 @@ TEST_CASE("A clip that does not belong to the lane cannot cover one that does", 
         const auto snapshot = compile({arrangement, session}, makeTempoMap());
         const auto* clip = audioClip(snapshot, 1);
         REQUIRE(clip != nullptr);
-        CHECK(clip->span.startBeat == Approx(0.0));
-        CHECK(clip->span.endBeat == Approx(8.0));
+        CHECK(clip->span.beats.start == Approx(0.0));
+        CHECK(clip->span.beats.end == Approx(8.0));
         CHECK(clip->silenced.empty());
         CHECK(snapshot.diagnostics.size() == 1);
     }
@@ -333,7 +333,7 @@ TEST_CASE("A clip that does not belong to the lane cannot cover one that does", 
         const auto snapshot = compile({mine, stranger}, makeTempoMap());
         const auto* clip = audioClip(snapshot, 1);
         REQUIRE(clip != nullptr);
-        CHECK(clip->span.endBeat == Approx(16.0));
+        CHECK(clip->span.beats.end == Approx(16.0));
         // The hole it would have punched is not there.
         CHECK(clip->silenced.empty());
         CHECK(snapshot.diagnostics.size() == 1);
@@ -507,8 +507,8 @@ TEST_CASE("A MIDI clip covered in the middle keeps the hole", "[engine][clip]") 
     const auto& covered = track->midi.front();
     CHECK(covered.clipId == 1);
     REQUIRE(covered.silenced.size() == 1);
-    CHECK(covered.silenced.front().startBeat == Approx(4.0));
-    CHECK(covered.silenced.front().endBeat == Approx(8.0));
+    CHECK(covered.silenced.front().beats.start == Approx(4.0));
+    CHECK(covered.silenced.front().beats.end == Approx(8.0));
 }
 
 TEST_CASE("Compiling is deterministic whatever order the lane is held in", "[engine][clip]") {
@@ -646,8 +646,8 @@ TEST_CASE("A session slot is compiled at the origin, whatever its placement says
     CHECK(slot->lengthBeats == Catch::Approx(8.0));
 
     REQUIRE(slot->audio.size() == 1);
-    CHECK(slot->audio.front().span.startBeat == Catch::Approx(0.0));
-    CHECK(slot->audio.front().span.endBeat == Catch::Approx(8.0));
+    CHECK(slot->audio.front().span.beats.start == Catch::Approx(0.0));
+    CHECK(slot->audio.front().span.beats.end == Catch::Approx(8.0));
 }
 
 TEST_CASE("A session slot compiles through the arrangement's own path", "[engine][clip][session]") {
@@ -670,12 +670,12 @@ TEST_CASE("A session slot compiles through the arrangement's own path", "[engine
     const auto& fromSlot = slot->audio.front();
     const auto& fromLane = asClip.tracks.front().audio.front();
 
-    CHECK(fromSlot.span.startBeat == Catch::Approx(fromLane.span.startBeat));
-    CHECK(fromSlot.span.endBeat == Catch::Approx(fromLane.span.endBeat));
+    CHECK(fromSlot.span.beats.start == Catch::Approx(fromLane.span.beats.start));
+    CHECK(fromSlot.span.beats.end == Catch::Approx(fromLane.span.beats.end));
     CHECK(fromSlot.events.size() == fromLane.events.size());
     REQUIRE(!fromSlot.events.empty());
-    CHECK(fromSlot.events.front().span.startSeconds ==
-          Catch::Approx(fromLane.events.front().span.startSeconds));
+    CHECK(fromSlot.events.front().span.seconds.start ==
+          Catch::Approx(fromLane.events.front().span.seconds.start));
 }
 
 TEST_CASE("Slots are found by scene and kept in scene order", "[engine][clip][session]") {

@@ -90,7 +90,7 @@ void ClickGenerator::render(const TempoMap& tempo, const ClickSettings& click,
 
     // A stopped block covers no beats, so this walks nothing and the metronome
     // falls silent without being told to.
-    for (auto tick = tempo.tickAtOrAfter(block.startBeat); tick.beat < block.endBeat;
+    for (auto tick = tempo.tickAtOrAfter(block.beats.start); tick.beat < block.beats.end;
          tick = tempo.tickAtOrAfter(tick.nextBeat)) {
         const auto offset = block.sampleForBeat(tick.beat);
         trigger(click.emphasiseBars && tick.startsBar);

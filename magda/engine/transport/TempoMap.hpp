@@ -136,6 +136,27 @@ class TempoMap {
     BeatTick tickAtOrAfter(double beat) const;
 
     /**
+     * @brief The first section boundary strictly after @p beat, or infinity.
+     *
+     * A section is the stretch this map is linear over, which is what makes
+     * both conversions a multiply. What asks is the transport, which ends a
+     * segment there and never hands out a block that spans one.
+     *
+     * That cut is what makes the rest of the engine's arithmetic true. Inside a
+     * block every position is worked out on a straight line between its two
+     * ends: where a launch lands, where a note goes, which instant a run began
+     * on (exec/RenderContext.hpp). Within one section that line is the map;
+     * across a boundary it is a guess, and the block's two faces stop naming
+     * one instant.
+     *
+     * Every boundary, not only the steps a tempo track spells out. A ramp is
+     * baked into constant-tempo sections, and between two of them the slope
+     * changes as surely as it does at a step: over a steep one, a beat the map
+     * puts at sample 256 of a block lands at sample 93 on its line.
+     */
+    double nextSectionBoundaryAfter(double beat) const;
+
+    /**
      * @brief Identity of the tempo track this was baked from.
      *
      * Two maps with the same fingerprint place every beat identically. The

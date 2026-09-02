@@ -689,8 +689,8 @@ struct Block {
         buffer.clear();
         info.numSamples = context.maxBlockSize;
         info.playing = true;
-        info.endSeconds = context.maxBlockSize / context.sampleRate;
-        info.endBeat = info.endSeconds * 2.0;
+        info.seconds.end = context.maxBlockSize / context.sampleRate;
+        info.beats.end = info.seconds.end * 2.0;
     }
 
     void fill(float value) {
@@ -977,10 +977,10 @@ TEST_CASE("The plugin is told where the transport is", "[engine][external]") {
 
     ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
     Block block(context, 2);
-    block.info.startBeat = 7.0;  // the second beat of the third bar, in 3/4
-    block.info.endBeat = 7.5;
-    block.info.startSeconds = tempo.beatToTime(7.0);
-    block.info.endSeconds = tempo.beatToTime(7.5);
+    block.info.beats.start = 7.0;  // the second beat of the third bar, in 3/4
+    block.info.beats.end = 7.5;
+    block.info.seconds.start = tempo.beatToTime(7.0);
+    block.info.seconds.end = tempo.beatToTime(7.5);
     block.info.tempo = &tempo;
 
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));

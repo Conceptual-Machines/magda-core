@@ -44,10 +44,8 @@ Catch::Approx approx(double value, double margin = 1e-4) {
 
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * kBeatsPerSecond;
-    span.endBeat = end * kBeatsPerSecond;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * kBeatsPerSecond, end * kBeatsPerSecond};
+    span.seconds = {start, end};
     return span;
 }
 
@@ -104,7 +102,7 @@ AudioClipPlayback warpedClip(std::int64_t anchor = 0,
 
 /// Where the clip is reading, @p elapsed timeline seconds into itself.
 double readingAt(const AudioClipPlayback& clip, double elapsed) {
-    const auto at = clip.span.startSeconds + elapsed;
+    const auto at = clip.span.seconds.start + elapsed;
     return magda::engine::readingPositionAt(clip, clip.events.front(), at, beatAt(at), kSampleRate);
 }
 

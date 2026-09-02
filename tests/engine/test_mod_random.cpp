@@ -342,14 +342,14 @@ TEST_CASE("A synced walk steps on the bar grid", "[engine][mod][random]") {
     // them at one rate step together however playback got there. Block one bar
     // in and the phase is at the top of a step.
     BlockInfo block = blockOf(64);
-    block.startBeat = 4.0;
-    block.endBeat = 4.0 + (64.0 / kSampleRate) * 2.0;
+    block.beats.start = 4.0;
+    block.beats.end = 4.0 + (64.0 / kSampleRate) * 2.0;
 
     step(state, settings, block);
     CHECK(state.phase == approx(0.0f));
 
     // Halfway through the next bar is halfway through the step.
-    block.startBeat = 6.0;
+    block.beats.start = 6.0;
     step(state, settings, block);
     CHECK(state.phase == approx(0.5f));
 }

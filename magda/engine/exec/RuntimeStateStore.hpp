@@ -140,10 +140,8 @@ struct RuntimeStateIds {
     std::set<TrackId> tracks;
 };
 
-// Launch handles are deliberately not here. A slot is a clip, so what exists is
-// answered by the snapshot rather than by a walk over tracks, and a clip edit
-// does not compile a plan: their lifetime follows publishHandles() instead
-// (#2301).
+// Launch handles are deliberately not here: a slot is a clip, so what exists is
+// answered by the snapshot and their lifetime follows publishHandles() (#2301).
 
 /**
  * @brief Every device and track the model holds, nested racks included.
@@ -244,24 +242,17 @@ class RuntimeStateStore {
      * @brief Make a handle for every slot @p clips names, publish them, and
      *        retire the ones the snapshot has stopped naming.
      *
-     * On the publishing thread, beside the snapshot the slots came out of, and
-     * the whole of a handle's lifetime: made for a slot that has none, kept for
-     * a slot that already had one, destroyed for a slot that is gone. Nothing
-     * else creates or retires them, which is why there is no ask-for-one here.
+     * On the publishing thread, and the whole of a handle's lifetime: nothing
+     * else creates or retires them.
      *
      * All three in one call because they cannot be separated. A clip edit does
      * not compile a plan, so releaseDeleted() would not run between a slot
      * being emptied and refilled, and the refilled slot would come up already
-     * playing, at the old one's loop phase and played range. And retiring is
-     * only safe on the far side of the publish, which is what waits for the
-     * block the callback is in.
+     * playing. And retiring is only safe on the far side of the publish, which
+     * waits for the block the callback is in.
      *
-     * Nothing is swapped, and nothing retired, when the slots have not moved. A
-     * clip dragged across the timeline republishes its snapshot at gesture
-     * speed with the same slots every time, and a table that says what the live
-     * one says is a wait for nothing.
-     *
-     * What comes back is what is live, for a caller that wants to look at it.
+     * Nothing is swapped, and nothing retired, when the slots have not moved: a
+     * drag republishes the snapshot at gesture speed with the same slots.
      */
     std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
                                                             LaunchHandleFeed& feed);
@@ -292,14 +283,12 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> sessionMidi_;
 
-    /// One per slot rather than per track, because a slot's state has to
-    /// survive another slot playing in between: launch scene 0, then scene 1,
-    /// then scene 0 again, and the first slot's loop phase and played range are
-    /// still its own. Made and retired by publishHandles() alone (#2301).
+    /// One per slot rather than per track: a slot's loop phase and played range
+    /// have to survive another slot playing in between. Made and retired by
+    /// publishHandles() alone (#2301).
     std::map<SlotKey, std::unique_ptr<LaunchHandle>> handles_;
 
-    /// What was last published, which is what the audio thread can name. Held
-    /// so a publish that changes nothing can be recognised and skipped.
+    /// What was last published, so a publish that changes nothing is skipped.
     std::shared_ptr<const LaunchHandleTable> publishedHandles_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;
