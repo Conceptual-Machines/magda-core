@@ -314,9 +314,11 @@ void ClipVoicePool::service() {
     auto overSubscribed = 0;
     auto unbridged = 0;
     auto unreadable = 0;
+    auto unprovisioned = 0;
 
     Streams wanted;
     std::vector<Candidate> candidates;
+    std::vector<Candidate> slots;
 
     {
         const std::lock_guard<std::mutex> guard(streamsLock_);
@@ -339,31 +341,6 @@ void ClipVoicePool::service() {
                             std::max(windowStart, event.span.startSeconds)});
                     }
                 }
-
-                // Every slot, on every round, whatever the transport is doing.
-                // A slot has no position on the timeline, so there is no window
-                // it comes into and no moment it is due: a launch can arrive on
-                // any block and the material has to already be open when it
-                // does (#2301). What that costs is one open file per slot for
-                // as long as the project holds it, which is what a launcher is.
-                //
-                // Cued at the slot's own origin and never moved, which is what
-                // makes the launch itself cost no seek: a run begins at beat
-                // zero of the material and the reader is already there. A slot
-                // stopped part way through and launched again does seek, and
-                // the cue that would avoid it belongs with the request that
-                // knows a launch is coming, which is #2305's.
-                //
-                // Ranked as sounding, because a slot is always about to be. It
-                // still sorts behind an arrangement clip the transport is
-                // actually inside: those started earlier, and this stands at
-                // the window's own start.
-                for (const auto& slot : track.session)
-                    for (const auto& clip : slot.audio)
-                        for (const auto& event : clip.events)
-                            candidates.push_back(Candidate{clip.clipId, event.eventId, &clip,
-                                                           &event, windowStart, windowStart, true,
-                                                           event.span.startSeconds});
 
                 // What this track is being asked to sound at once, which is the
                 // only count worth reporting. How many clips are in the window
@@ -394,6 +371,50 @@ void ClipVoicePool::service() {
                         unbridgedAmong(candidates, kMaxReadersPerTrack, windowStart, blockSeconds);
                     candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
                 }
+
+                // Every slot, on every round, whatever the transport is doing.
+                // A slot has no position on the timeline, so there is no window
+                // it comes into and no moment it is due: a launch can arrive on
+                // any block and the material has to already be open when it
+                // does (#2301). What that costs is one open file per slot for
+                // as long as the project holds it, which is what a launcher is.
+                //
+                // Cued at the slot's own origin and never moved, which is what
+                // makes the launch itself cost no seek: a run begins at beat
+                // zero of the material and the reader is already there. A slot
+                // stopped part way through and launched again does seek, and
+                // the cue that would avoid it belongs with the request that
+                // knows a launch is coming, which is #2305's.
+                //
+                // Their own budget, taken after the arrangement's rather than
+                // out of it. The two are not competing for the same thing: the
+                // arrangement's is a window that clips rotate through as the
+                // transport passes them, and a slot never gets passed, so a
+                // shared budget would give the same slots readers for ever and
+                // leave the ones behind them permanently silent rather than
+                // merely late. Separate, a track's session cannot starve its
+                // timeline and its timeline cannot starve its session.
+                slots.clear();
+
+                for (const auto& slot : track.session)
+                    for (const auto& clip : slot.audio)
+                        for (const auto& event : clip.events)
+                            slots.push_back(Candidate{clip.clipId, event.eventId, &clip, &event,
+                                                      windowStart, windowStart, true,
+                                                      event.span.startSeconds});
+
+                // In scene order, which is the order the snapshot holds them
+                // in, so which slots a project past the budget keeps is a
+                // property of the project rather than of a walk. Past it they
+                // are counted: a slot with no reader is a launch that plays
+                // nothing, and silence nobody counted is indistinguishable from
+                // material that was not there.
+                if (slots.size() > static_cast<std::size_t>(kMaxSessionReadersPerTrack)) {
+                    unprovisioned += static_cast<int>(slots.size()) - kMaxSessionReadersPerTrack;
+                    slots.resize(static_cast<std::size_t>(kMaxSessionReadersPerTrack));
+                }
+
+                candidates.insert(candidates.end(), slots.begin(), slots.end());
 
                 for (const auto& candidate : candidates) {
                     const Key key{track.trackId, candidate.clipId, candidate.eventId};
@@ -502,6 +523,7 @@ void ClipVoicePool::service() {
     overSubscribed_.store(overSubscribed, std::memory_order_relaxed);
     unbridged_.store(unbridged, std::memory_order_relaxed);
     unreadableFiles_.store(unreadable, std::memory_order_relaxed);
+    unprovisionedSlots_.store(unprovisioned, std::memory_order_relaxed);
 }
 
 ClipVoiceThread::ClipVoiceThread(ClipVoicePool& pool)

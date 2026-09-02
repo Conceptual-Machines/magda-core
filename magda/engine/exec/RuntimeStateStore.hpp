@@ -138,22 +138,12 @@ class RuntimeStateFactory {
 struct RuntimeStateIds {
     std::set<DeviceKey> devices;
     std::set<TrackId> tracks;
-
-    /**
-     * @brief Every session slot the model holds, when the caller knows them.
-     *
-     * Absent rather than empty when it does not. Slots are clips, and the walk
-     * that answers what exists is handed tracks, so a caller with no snapshot
-     * to hand cannot name them; absent means "keep by track", which leaks a
-     * handle rather than retiring one something may still be holding.
-     *
-     * Track granularity is not enough on its own. A slot emptied while its
-     * track remains would keep its handle for ever, so the next clip put in
-     * that scene would inherit the old one's play state, loop phase and played
-     * range (#2301).
-     */
-    std::optional<std::set<SlotKey>> slots;
 };
+
+// Launch handles are deliberately not here. A slot is a clip, so what exists is
+// answered by the snapshot rather than by a walk over tracks, and a clip edit
+// does not compile a plan: their lifetime follows publishHandles() instead
+// (#2301).
 
 /**
  * @brief Every device and track the model holds, nested racks included.
@@ -163,16 +153,6 @@ struct RuntimeStateIds {
  */
 RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
                                        const TrackInfo& master);
-
-/**
- * @brief The same, with the session slots @p clips says exist.
- *
- * The snapshot rather than the model because that is what enumerates slots, and
- * because it is what a handle would be made for: a slot the snapshot does not
- * carry has nothing to launch.
- */
-RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
-                                       const TrackInfo& master, const ClipSnapshot& clips);
 
 /**
  * @brief The runtime objects behind a plan's leaf ops, owned across swaps.
@@ -261,35 +241,32 @@ class RuntimeStateStore {
     ValueTap* valueTap(const ParamKey& key) const;
 
     /**
-     * @brief Make a handle for every slot @p clips names and publish them.
+     * @brief Make a handle for every slot @p clips names, publish them, and
+     *        retire the ones the snapshot has stopped naming.
      *
-     * On the publishing thread, beside the snapshot the slots came out of: a
-     * handle is made for a slot that has none and kept for a slot that already
-     * had one, which is what makes a clip edit leave a playing slot alone.
+     * On the publishing thread, beside the snapshot the slots came out of, and
+     * the whole of a handle's lifetime: made for a slot that has none, kept for
+     * a slot that already had one, destroyed for a slot that is gone. Nothing
+     * else creates or retires them, which is why there is no ask-for-one here.
      *
-     * The publish happens here rather than at the caller because what is
-     * published is also the keep set eviction may not waive: a handle the audio
-     * thread can name must outlive any model reading that has lost its slot.
-     * Splitting the two would make that depend on the caller publishing exactly
-     * what it was handed.
+     * All three in one call because they cannot be separated. A clip edit does
+     * not compile a plan, so releaseDeleted() would not run between a slot
+     * being emptied and refilled, and the refilled slot would come up already
+     * playing, at the old one's loop phase and played range. And retiring is
+     * only safe on the far side of the publish, which is what waits for the
+     * block the callback is in.
      *
-     * Nothing is swapped when the slots have not moved. A publish waits for the
-     * block the callback is in, and a clip dragged across the timeline
-     * republishes its snapshot at gesture speed with the same slots every time;
-     * a table that says what the live one says is a wait for nothing.
+     * Nothing is swapped, and nothing retired, when the slots have not moved. A
+     * clip dragged across the timeline republishes its snapshot at gesture
+     * speed with the same slots every time, and a table that says what the live
+     * one says is a wait for nothing.
      *
      * What comes back is what is live, for a caller that wants to look at it.
      */
     std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
                                                             LaunchHandleFeed& feed);
 
-    /// The handle for one slot, made on first ask. Unlike a device or a tap
-    /// there is no factory to decline: a handle is the engine's own state
-    /// rather than something the host builds, so a slot the model names always
-    /// has one.
-    LaunchHandle& handle(const SlotKey& key);
-
-    /// The handle for one slot, or null if nothing has asked for it yet.
+    /// The handle for one slot, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
     /// Objects currently owned, for tests and diagnostics.
@@ -318,13 +295,11 @@ class RuntimeStateStore {
     /// One per slot rather than per track, because a slot's state has to
     /// survive another slot playing in between: launch scene 0, then scene 1,
     /// then scene 0 again, and the first slot's loop phase and played range are
-    /// still its own. Retired by the same rule as everything else here, which
-    /// is the model no longer naming the slot (#2301).
+    /// still its own. Made and retired by publishHandles() alone (#2301).
     std::map<SlotKey, std::unique_ptr<LaunchHandle>> handles_;
 
-    /// The table the caller was last given to publish, which is what the audio
-    /// thread can name. Held so eviction has the keep set that cannot be
-    /// waived, the way the live plan is for everything else here.
+    /// What was last published, which is what the audio thread can name. Held
+    /// so a publish that changes nothing can be recognised and skipped.
     std::shared_ptr<const LaunchHandleTable> publishedHandles_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;

@@ -110,46 +110,6 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
     return removed;
 }
 
-/// Handles the model no longer names.
-///
-/// By slot when the caller knew the slots, and by track when it did not. The
-/// live plan cannot help here the way it helps everything else: the session op
-/// is per track, so it says which tracks still have a session and nothing about
-/// which scenes are filled.
-///
-/// Track granularity alone is not a leak, it is stale state that is observable.
-/// A slot emptied while its track remains would keep its handle for ever, and
-/// the next clip dropped into that scene would come up already playing, at the
-/// old one's loop phase and played range (#2301).
-///
-/// @p reachable is the published handle table, and it is to handles what the
-/// live plan is to everything else: the set the audio thread can name right
-/// now, which no model reading may waive. It is a separate argument because a
-/// handle is not in the plan at all -- a table is published with the clips
-/// rather than with a plan, so a caller's model IDs can have lost a slot the
-/// live table still points a session source at.
-std::size_t eraseUnnamedSlots(std::map<SlotKey, std::unique_ptr<LaunchHandle>>& map,
-                              const std::set<TrackId>& tracks,
-                              const std::optional<std::set<SlotKey>>& slots,
-                              const LaunchHandleTable* reachable) {
-    std::size_t removed = 0;
-    for (auto entry = map.begin(); entry != map.end();) {
-        // Both, rather than the slots alone. A snapshot publishes on its own
-        // schedule, so the one in hand can still name slots on a track the
-        // model has since deleted; the track is what settles that, and the
-        // slots only narrow it further.
-        const auto named =
-            tracks.contains(entry->first.trackId) && (!slots || slots->contains(entry->first));
-        if (named || (reachable != nullptr && reachable->find(entry->first) != nullptr)) {
-            ++entry;
-            continue;
-        }
-        entry = map.erase(entry);
-        ++removed;
-    }
-    return removed;
-}
-
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
@@ -307,8 +267,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
         eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
         eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-        eraseUnnamed(midiInputs_, keep.tracks) +
-        eraseUnnamedSlots(handles_, keep.tracks, keep.slots, publishedHandles_.get());
+        eraseUnnamed(midiInputs_, keep.tracks);
 
     for (auto entry = meters_.begin(); entry != meters_.end();) {
         if (isNamed(entry->first, keep)) {
@@ -367,7 +326,12 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
     for (const auto& track : clips.tracks)
         for (const auto& slot : track.session) {
             const SlotKey key{track.trackId, slot.sceneIndex};
-            table->entries.push_back(LaunchHandleTable::Entry{key, &handle(key)});
+
+            auto& made = handles_[key];
+            if (made == nullptr)
+                made = std::make_unique<LaunchHandle>();
+
+            table->entries.push_back(LaunchHandleTable::Entry{key, made.get()});
         }
 
     // A snapshot already holds its tracks by id and its slots by scene, so this
@@ -379,22 +343,28 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
 
     // The same slots pointing at the same handles: a clip edit that did not
     // touch the session. Swapping would cost the callback a wait and change
-    // nothing it can see.
+    // nothing it can see, and nothing has been dropped to retire.
     if (publishedHandles_ != nullptr && publishedHandles_->entries == table->entries)
         return publishedHandles_;
 
-    // Remembered before it is published, not after: from here on it is what the
-    // audio thread can name, and therefore the keep set eviction may not waive.
     publishedHandles_ = table;
-    feed.publish(table);
-    return table;
-}
 
-LaunchHandle& RuntimeStateStore::handle(const SlotKey& key) {
-    auto& slot = handles_[key];
-    if (slot == nullptr)
-        slot = std::make_unique<LaunchHandle>();
-    return *slot;
+    // This is the swap, and it waits for the block the callback is in. After it
+    // returns, a handle the previous table named and this one does not is
+    // unreachable from the audio thread.
+    feed.publish(table);
+
+    // So it can go, here, on this thread. Retiring is the same call as
+    // publishing because the two cannot be separated: a slot emptied and
+    // refilled has to come back new, and the only thing that knows a slot was
+    // emptied is the snapshot that stopped naming it. A plan publish would not
+    // do, because a clip edit deliberately does not compile a plan, so an
+    // emptied slot refilled before the next structural edit would inherit the
+    // old handle's play state, loop phase and played range.
+    std::erase_if(handles_,
+                  [&table](const auto& entry) { return table->find(entry.first) == nullptr; });
+
+    return table;
 }
 
 LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
@@ -411,22 +381,6 @@ std::size_t RuntimeStateStore::size() const {
     return devices_.size() + clipAudio_.size() + clipMidi_.size() + sessionAudio_.size() +
            sessionMidi_.size() + handles_.size() + audioInputs_.size() + midiInputs_.size() +
            meters_.size() + valueTaps_.size();
-}
-
-RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
-                                       const TrackInfo& master, const ClipSnapshot& clips) {
-    auto ids = collectRuntimeStateIds(tracks, master);
-
-    // Empty is a real answer here and absent is not: a project whose every slot
-    // was emptied names no slots, and every handle should go. Set the container
-    // first so it is present even when nothing fills it.
-    ids.slots.emplace();
-
-    for (const auto& track : clips.tracks)
-        for (const auto& slot : track.session)
-            ids.slots->insert(SlotKey{track.trackId, slot.sceneIndex});
-
-    return ids;
 }
 
 }  // namespace magda::engine

@@ -136,6 +136,25 @@ BlockInfo blockAt(int index, bool continuous = true) {
     return block;
 }
 
+/// The block covering @p startSeconds, on @p map rather than at one tempo. The
+/// two faces are derived through the one map, the way the transport derives
+/// them (RenderContext.hpp).
+BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
+                     bool continuous = true) {
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = continuous;
+    block.startSeconds = startSeconds;
+    block.endSeconds = startSeconds + (kBlockSize / kSampleRate);
+    block.startBeat = map.timeToBeat(block.startSeconds);
+    block.endBeat = map.timeToBeat(block.endSeconds);
+    block.startMonotonicBeat = block.startBeat;
+    block.endMonotonicBeat = block.endBeat;
+    block.tempo = &map;
+    return block;
+}
+
 /// A span from its beats, with the seconds face 120 bpm gives it.
 SnapshotSpan beats(double start, double end) {
     SnapshotSpan span;
@@ -208,8 +227,12 @@ struct AudioRig {
 
     /// Roll one block: the launcher first, then the source, as the session does.
     void render(int index, bool continuous = true) {
+        renderBlock(blockAt(index, continuous));
+    }
+
+    /// The same, for a block a case assembled itself.
+    void renderBlock(const BlockInfo& block) {
         fill();
-        const auto block = blockAt(index, continuous);
         magda::engine::advanceLaunchHandles(handles, block);
         source.render(block, juce::dsp::AudioBlock<float>(output));
     }
@@ -655,28 +678,64 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     CHECK(playing->playState() == LaunchHandle::PlayState::playing);
 }
 
-TEST_CASE("A published handle is kept whatever the model IDs have lost",
-          "[engine][clip][session]") {
+TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][clip][session]") {
+    // Emptying a slot and filling it again is two clip edits and no structural
+    // one, so nothing but the publish itself is in a position to retire the
+    // handle. Left to a plan publish, the new clip would come up already
+    // playing, at the old one's loop phase and played range.
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
 
-    const auto table = store.publishHandles(snapshotWithSlots({0, 1}), feed);
-    REQUIRE(table->entries.size() == 2);
-    const auto before = store.size();
+    store.publishHandles(snapshotWithSlots({0, 1}), feed);
 
-    // The model has lost the track outright, which would ordinarily retire
-    // everything on it. The audio thread can still reach these two through the
-    // table that was published, so they stay until a table without them is.
-    magda::engine::RuntimeStateIds ids;
-    ids.slots.emplace();
+    auto* playing = store.findHandle(SlotKey{kTrack, 0});
+    REQUIRE(playing != nullptr);
+    playing->play(std::nullopt);
+    playing->advance(magda::engine::syncRangeFor(blockAt(0)));
+    REQUIRE(playing->playState() == LaunchHandle::PlayState::playing);
 
-    const magda::engine::RenderPlan empty;
-    CHECK(store.releaseDeleted(empty, ids, nullptr) == 0);
-    CHECK(store.size() == before);
+    store.publishHandles(snapshotWithSlots({1}), feed);
+    CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
 
-    // A table that no longer names them is what lets them go, and publishing it
-    // is what waits for the callback to be out of the block it was in.
-    store.publishHandles(ClipSnapshot{}, feed);
-    CHECK(store.releaseDeleted(empty, ids, nullptr) == 2);
+    store.publishHandles(snapshotWithSlots({0, 1}), feed);
+
+    auto* refilled = store.findHandle(SlotKey{kTrack, 0});
+    REQUIRE(refilled != nullptr);
+    CHECK(refilled->playState() == LaunchHandle::PlayState::stopped);
+}
+
+TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
+          "[engine][clip][session]") {
+    // A slot is compiled at the origin, so its beats are the origin's beats.
+    // Its seconds are not the origin's seconds: they are how long the run has
+    // been going, because that is what a reader consumes material at. Putting
+    // the material beat back through the tempo map instead would hand the block
+    // a seconds span half its sample span in a section at half the tempo, and
+    // the next block would ask for a position this one had already read past.
+    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<CountingReader>());
+    rig.publish();
+
+    // Beat 8 is four seconds in, and everything from there runs at half the
+    // tempo the slot was compiled at.
+    const auto launchSeconds = map.beatToTime(12.0);
+
+    rig.renderBlock(blockOnMap(map, launchSeconds - (kBlockSize / kSampleRate), false));
+    rig.handle.play(std::nullopt);
+
+    rig.renderBlock(blockOnMap(map, launchSeconds));
+    CHECK(rig.at(0) == Approx(0.0f));
+    CHECK(rig.at(kBlockSize - 1) == Approx(kBlockSize - 1));
+
+    // One block on, and one block further into the file. Under a conversion
+    // through the origin's tempo this would be sample 3000, and half the block
+    // would sound twice.
+    rig.renderBlock(blockOnMap(map, launchSeconds + (kBlockSize / kSampleRate)));
+    CHECK(rig.at(0) == Approx(kBlockSize));
+
+    rig.renderBlock(blockOnMap(map, launchSeconds + (2 * kBlockSize / kSampleRate)));
+    CHECK(rig.at(0) == Approx(2 * kBlockSize));
 }

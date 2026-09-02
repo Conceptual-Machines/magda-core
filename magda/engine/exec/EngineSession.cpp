@@ -147,8 +147,12 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     // and a handle nobody has launched is silent; a snapshot that arrives first
     // would name a slot with no handle behind it, which is a launch the block
     // in between cannot honour.
-    if (clips != nullptr)
-        store_.publishHandles(*clips, handles_);
+    //
+    // A null snapshot is a project with nothing in it rather than a publish to
+    // skip: leaving the previous table live would keep handles for slots the
+    // engine no longer knows about, and an empty one is what says so.
+    static const ClipSnapshot kNothing;
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_);
 
     clips_.publish(std::move(clips));
 }

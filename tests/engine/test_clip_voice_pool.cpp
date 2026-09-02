@@ -907,11 +907,12 @@ TEST_CASE("Every session slot has a reader, wherever the transport is",
     }
 }
 
-TEST_CASE("A clip that is sounding keeps its reader ahead of a slot",
+TEST_CASE("The session's readers are its own, not a share of the arrangement's",
           "[engine][clip][pool][session]") {
-    // Slots rank as sounding, because a slot is always about to be, but not
-    // ahead of a clip the transport is actually inside: taking a stream off a
-    // clip mid-note is the one thing worse than a launch that seeks.
+    // Two budgets, because the two are not the same kind of thing: an
+    // arrangement reader is a window the transport moves through, and a slot is
+    // never passed. A track playing its timeline and holding a session gets
+    // both, and neither starves the other.
     TestFiles files;
     PrefetchThread reader;
     ClipVoicePool pool(files, reader, context());
@@ -927,4 +928,38 @@ TEST_CASE("A clip that is sounding keeps its reader ahead of a slot",
     CHECK(files.opens == 2);
     CHECK(pool.unbridged() == 0);
     CHECK(pool.overSubscribed() == 0);
+    CHECK(pool.unprovisionedSlots() == 0);
+}
+
+TEST_CASE("A session past its budget says which slots have no reader",
+          "[engine][clip][pool][session]") {
+    // The failure a shared budget would have hidden. A slot is never passed by
+    // the transport, so one that loses is not late, it is silent for as long as
+    // the project holds it, and the count is the only thing that says so.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    std::vector<magda::ClipId> ids;
+    for (auto id = 0; id < magda::engine::kMaxSessionReadersPerTrack + 3; ++id)
+        ids.push_back(static_cast<magda::ClipId>(100 + id));
+
+    pool.setSnapshot(sessionSnapshotOf(ids));
+    pool.setPosition(0.0);
+    pool.service();
+
+    CHECK(pool.streamCount() ==
+          static_cast<std::size_t>(magda::engine::kMaxSessionReadersPerTrack));
+    CHECK(pool.unprovisionedSlots() == 3);
+
+    // And the arrangement still gets its own: a full session must not cost a
+    // track the clip it is playing.
+    ClipSnapshot snapshot = *sessionSnapshotOf(ids);
+    snapshot.tracks.front().audio.push_back(clipAt(1, 0.0, 10.0));
+    pool.setSnapshot(std::make_shared<const ClipSnapshot>(std::move(snapshot)));
+    pool.service();
+
+    CHECK(pool.streamCount() ==
+          static_cast<std::size_t>(magda::engine::kMaxSessionReadersPerTrack) + 1);
+    CHECK(pool.unprovisionedSlots() == 3);
 }

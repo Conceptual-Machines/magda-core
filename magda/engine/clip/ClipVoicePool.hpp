@@ -101,6 +101,31 @@ constexpr double kReadAheadBridgeSeconds = 0.1;
  */
 constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
 
+/**
+ * @brief Session slots one track may have standing by.
+ *
+ * Its own budget rather than a share of the one above, because the two are not
+ * the same kind of thing. An arrangement reader is a window the transport moves
+ * through, so a clip that has been passed hands its reader to the one behind
+ * it and a crowded lane costs read-ahead rather than silence. A slot is never
+ * passed: it has no position, so it holds its reader for as long as the project
+ * holds the slot. Sharing the budget would give the first slots readers for
+ * ever and leave the ones behind them permanently silent, which is a different
+ * failure from being late (#2301).
+ *
+ * The same number, for the same reason it is that number: each of these is an
+ * open file and a chunk pool, a quarter of a megabyte at the default settings,
+ * so a track with a full session costs eight megabytes and one with no session
+ * costs nothing. It is a ceiling on standing cost rather than on how many
+ * scenes a project may have, and slots past it are reported
+ * (@ref ClipVoicePool::unprovisionedSlots) rather than quietly silent.
+ *
+ * It is an interim. Once a launch is a request rather than a poke at a handle
+ * (#2305), what is worth provisioning is what is playing or queued, and a
+ * standing reader per slot stops being the answer.
+ */
+constexpr int kMaxSessionReadersPerTrack = kMaxReadersPerTrack;
+
 class ClipVoicePool {
   public:
     /**
@@ -258,6 +283,21 @@ class ClipVoicePool {
     }
 
     /**
+     * @brief Session slots the budget could not reach, in the last round.
+     *
+     * Slots past kMaxSessionReadersPerTrack on some track, which is a launch
+     * that will play nothing. Unlike @ref unbridged this is not a matter of
+     * being late: nothing the transport does brings such a slot into reach, so
+     * it is silent until the project has fewer of them.
+     *
+     * A gauge rather than a tally, like the others: it falls back to zero when
+     * the session fits again.
+     */
+    int unprovisionedSlots() const {
+        return unprovisionedSlots_.load(std::memory_order_relaxed);
+    }
+
+    /**
      * @brief Tables handed to the audio thread since this pool was made.
      *
      * Every one of them made a callback finish its block before the swap could
@@ -369,6 +409,7 @@ class ClipVoicePool {
 
     std::atomic<int> overSubscribed_{0};
     std::atomic<int> unbridged_{0};
+    std::atomic<int> unprovisionedSlots_{0};
     std::atomic<int> unreadableFiles_{0};
     std::atomic<int> tablesPublished_{0};
 };

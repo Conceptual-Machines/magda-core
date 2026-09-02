@@ -24,17 +24,35 @@
 namespace magda::engine {
 
 /**
- * @brief The seconds face of @p beat, through @p block's own tempo map.
+ * @brief Where @p beat is on the project's seconds axis.
  *
- * A slot's material sits at the origin, so its seconds are the map's seconds
- * there rather than the ones under the cursor. Without a map the block's own
- * two ends are the only slope there is, which is exact at a constant tempo and
- * is what a hand-assembled block gets.
+ * Through the block's own map, because what is asked about is usually outside
+ * the block: the beat a run began on can be far behind the cursor, or before
+ * zero. Without a map the block's own two ends are the only slope there is,
+ * which is exact at a constant tempo and is what a hand-assembled block gets.
  */
 inline double timeOfBeat(const BlockInfo& block, double beat) {
     if (block.tempo != nullptr)
         return block.tempo->beatToTime(beat);
 
+    const auto span = block.endBeat - block.startBeat;
+    if (!(span > 0.0))
+        return block.startSeconds;
+
+    return block.startSeconds +
+           (((beat - block.startBeat) / span) * (block.endSeconds - block.startSeconds));
+}
+
+/**
+ * @brief The same, for a beat known to be inside @p block.
+ *
+ * The block's own line rather than the map, deliberately. A block is short
+ * enough that the two agree to well under a sample, and this one is the line
+ * `sampleForBeat` and `sampleForTime` are already drawn on: a sub-range's
+ * seconds and its sample count have to be two views of one stretch, or a reader
+ * consumes a different amount of material than the block renders.
+ */
+inline double secondsWithin(const BlockInfo& block, double beat) {
     const auto span = block.endBeat - block.startBeat;
     if (!(span > 0.0))
         return block.startSeconds;
@@ -61,21 +79,47 @@ inline bool runsOn(const BlockInfo& block, const BeatRange& range, double playSt
  * @brief @p block on the axis of a run that began at @p playStart.
  *
  * The same samples of the same callback, the same seconds of buffer, a
- * different stretch of material underneath: only the beats move. Everything
- * derived from the block's own two ends therefore keeps working, which is what
- * lets a caller ask this block where a material beat lands in the output and
- * get the sample the timeline beat would have landed on.
+ * different stretch of material underneath. Everything derived from the block's
+ * own two ends therefore keeps working, which is what lets a caller ask this
+ * block where a material beat lands in the output and get the sample the
+ * timeline beat would have landed on.
+ *
+ * ## Two faces, moved differently
+ *
+ * The beat face is the material's own beat: the timeline beat less the run's
+ * origin, which is what an auto tempo or warped event is read against.
+ *
+ * The seconds face is how long the run has been going, which is what an event
+ * played at its file's own speed is read against, and it is a subtraction
+ * rather than a conversion for a reason. Putting the material beat back through
+ * the tempo map would give the seconds that beat occupies **at the origin**,
+ * and a slot launched where the tempo differs would then be handed a block
+ * whose seconds span disagreed with its sample count: the reader would consume
+ * a block's worth of material and the next block would ask for a position it
+ * had already passed, which repeats the difference. Elapsed keeps the two
+ * views of one stretch equal by construction.
+ *
+ * Both faces come out identical under a constant tempo, which is where the
+ * distinction is invisible and where it would have been discovered late.
+ *
+ * The remaining approximation is the compile's rather than this: a slot's spans
+ * and fades were resolved at the origin's tempo (ClipSnapshot.hpp), so under a
+ * tempo curve a slot's audible length in seconds is the origin's answer. What
+ * it takes to make a slot follow the tempo it is launched into is a compile
+ * question and belongs with the rest of the launcher's behaviour (#2306).
  *
  * @p range is the sub-range of the block the run is playing, and all it decides
  * here is @ref runsOn: the block is the whole block, and bounding the emission
  * to the sub-range is the caller's.
  */
 inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, double playStart) {
+    const auto origin = timeOfBeat(block, playStart);
+
     auto material = block;
     material.startBeat = block.startBeat - playStart;
     material.endBeat = block.endBeat - playStart;
-    material.startSeconds = timeOfBeat(block, material.startBeat);
-    material.endSeconds = timeOfBeat(block, material.endBeat);
+    material.startSeconds = block.startSeconds - origin;
+    material.endSeconds = block.endSeconds - origin;
     material.continuous = runsOn(block, range, playStart);
     return material;
 }
@@ -85,16 +129,20 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, d
  *
  * For a reader that is handed a sub-block of the output rather than the whole
  * of it, which is the audio side: the sample arithmetic then lands inside the
- * piece it was given instead of inside the callback.
+ * piece it was given instead of inside the callback. The ends go through the
+ * block's own line for the reason @ref secondsWithin gives, which is the same
+ * line @p count was measured on.
  */
 inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range, double playStart,
                                   int count) {
+    const auto origin = timeOfBeat(block, playStart);
+
     auto material = block;
     material.numSamples = count;
     material.startBeat = range.start - playStart;
     material.endBeat = range.end - playStart;
-    material.startSeconds = timeOfBeat(block, material.startBeat);
-    material.endSeconds = timeOfBeat(block, material.endBeat);
+    material.startSeconds = secondsWithin(block, range.start) - origin;
+    material.endSeconds = secondsWithin(block, range.end) - origin;
     material.continuous = runsOn(block, range, playStart);
     return material;
 }
