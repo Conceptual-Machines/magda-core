@@ -17,8 +17,8 @@ namespace magda::daw::ui {
  * The Arpeggiator is a MagdaDevice (#2299), so this UI is written against the
  * model: slot values arrive through updateFromParameters(), slot edits leave
  * through onParameterChanged. The device pointer stays for what is not a slot -
- * the ramp-cycles / quantize / hard-angle settings the faceplate writes
- * directly, and the play-step atomics the sweep animation reads.
+ * the ramp-cycles / quantize / hard-angle settings it publishes as model
+ * document patches, and the play-step atomics the sweep animation reads.
  */
 class ArpeggiatorUI : public juce::Component, private juce::Timer {
   public:
@@ -30,11 +30,12 @@ class ArpeggiatorUI : public juce::Component, private juce::Timer {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
-    /// Fired after a non-slot setting (ramp cycles, quantize, subdivision,
-    /// hard angle) is written to the device, so the owner can capture the
-    /// device state into the model: the write alone reaches only the live
-    /// wrapper instance, not the project or the native engine.
-    std::function<void()> onSettingsEdited;
+    /// Fired when a non-slot setting (ramp cycles, quantize, subdivision,
+    /// hard angle) is edited, carrying ALL the settings as properties in the
+    /// device's own state vocabulary (ArpeggiatorPlugin::SettingIDs). The UI
+    /// does not write the device: the owner patches the model's state
+    /// document, and the projection updates the live device (#2317).
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -43,6 +44,9 @@ class ArpeggiatorUI : public juce::Component, private juce::Timer {
     void resized() override;
 
   private:
+    // Mirror of the curve display's hard-angle toggle, so settingsEdited() can
+    // publish the full settings set from the controls alone.
+    bool hardAngle_ = false;
     daw::audio::ArpeggiatorPlugin* plugin_ = nullptr;
 
     // Left column

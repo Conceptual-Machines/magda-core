@@ -1897,6 +1897,97 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
     }
 }
 
+namespace {
+
+/// Push an internal device's state document into its running plugin, if it has
+/// one. The projection direction: the model already holds the document, the
+/// engine adapter is told to match it.
+void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
+                                  const juce::String& docText, const juce::String& deviceType) {
+    if (audioEngine == nullptr)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (bridge == nullptr)
+        return;
+    auto plugin = bridge->getPlugin(devicePath);
+    if (plugin == nullptr)
+        return;
+
+    namespace ta = daw::audio::tracktion_adapter;
+    auto tree = ta::devicePluginTreeFromState(docText);
+    if (!tree.isValid()) {
+        // An empty snapshot is still a state: "nothing authored". Project a
+        // bare typed tree so a device whose contract reads absence as none (a
+        // convolution's impulse response) actually unloads, rather than the
+        // model saying the edit was undone while the engine keeps playing it.
+        tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
+        tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
+    }
+    plugin->restorePluginStateFromValueTree(tree);
+}
+
+}  // namespace
+
+bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
+                                             const std::function<void(device_state::Doc&)>& patch) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
+        return false;
+    if (device_state::isFutureDeviceState(device->pluginState))
+        return false;
+
+    device_state::Doc doc;
+    if (auto decoded = device_state::decode(device->pluginState))
+        doc = std::move(*decoded);
+    doc.deviceType = device->pluginId;
+
+    // A pre-#2317 document still carries the retired duplicate parameter
+    // record, and encode() writes whatever is in `params`. The record was
+    // consumed by the load-time hydration; writing it back here would leave a
+    // second persisted authority alive in every path that never passes through
+    // a Tracktion capture (preset saves, native-only sessions), free to
+    // hydrate stale values on the next load. This edit is the moment the
+    // document goes canonical.
+    doc.params.clear();
+    doc.paramsAreDisplayDomain = false;
+
+    patch(doc);
+
+    device->pluginState = device_state::encode(doc);
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
+
+bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
+                                          const juce::String& docText) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
+        return false;
+    // Same contract as updateDeviceAuthoredState: state this build cannot read
+    // must not be replaced blind.
+    if (device_state::isFutureDeviceState(device->pluginState))
+        return false;
+
+    // Canonicalize at the WRITE BOUNDARY, not per mutation path: a snapshot
+    // taken from a pre-#2317 document still carries the retired parameter
+    // record, and an undo that put it back verbatim would recreate the second
+    // authority the edit itself just eliminated. Anything decode refuses -
+    // legacy engine XML, an empty string - passes through unchanged; only a
+    // readable v2 document is stripped.
+    auto canonical = docText;
+    if (auto decoded = device_state::decode(docText)) {
+        decoded->params.clear();
+        decoded->paramsAreDisplayDomain = false;
+        canonical = device_state::encode(*decoded);
+    }
+
+    device->pluginState = canonical;
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
+
 bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                                      const DeviceInfo& presetDevice) {
     auto* live = getDeviceInChainByPath(devicePath);
@@ -1943,15 +2034,13 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                     if (live->pluginState.isNotEmpty()) {
                         applyExternalPluginChunk(plugin.get(), live->pluginState);
                         if (auto* proc = bridge->getDeviceProcessor(devicePath))
-                            proc->populateParameters(*live);
+                            proc->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
                     }
                 } else {
                     namespace ta = daw::audio::tracktion_adapter;
                     auto savedState = ta::devicePluginTreeFromState(live->pluginState);
-                    if (savedState.isValid()) {
+                    if (savedState.isValid())
                         plugin->restorePluginStateFromValueTree(savedState);
-                        ta::applyDeviceStateParameters(*plugin, live->pluginState);
-                    }
                 }
             }
         }

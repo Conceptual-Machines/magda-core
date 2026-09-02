@@ -452,8 +452,10 @@ void PluginManager::captureAllPluginStates() {
             if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
                 captureDrumGridPads(devicePath, *drumGrid);
             captureVst3Info(*devInfo, capturedExt);
+            // Model-first: save never copies an internal device's parameter
+            // values back off the engine (#2317).
             if (sd.processor != nullptr)
-                sd.processor->populateParameters(*devInfo);
+                sd.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
         }
     }
 
@@ -492,7 +494,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
         captureDrumGridPads(devicePath, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
-        it->second.processor->populateParameters(*devInfo);
+        it->second.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
 }
 
 void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {
@@ -583,10 +585,8 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plug
     } else if (plugin != nullptr) {
         namespace ta = daw::audio::tracktion_adapter;
         auto savedState = ta::devicePluginTreeFromState(devInfo->pluginState);
-        if (savedState.isValid()) {
+        if (savedState.isValid())
             plugin->restorePluginStateFromValueTree(savedState);
-            ta::applyDeviceStateParameters(*plugin, devInfo->pluginState);
-        }
     }
 }
 

@@ -6,7 +6,6 @@
 #include "TracktionHelpers.hpp"
 #include "core/DeviceState.hpp"
 #include "core/LegacyDeviceAliases.hpp"
-#include "core/ParameterUtils.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
@@ -138,39 +137,6 @@ juce::ValueTree legacyPluginTree(const juce::String& savedState) {
 
 }  // namespace
 
-/// The device behind the host adapter, when @p plugin is an internal-registry
-/// device that has crossed to MagdaDevice. Null for legacy plugins and for the
-/// compiled pack (whose parameters were always normalised, docs included).
-///
-/// Documents for these devices carry parameter values in the DEVICE'S DISPLAY
-/// DOMAIN, declared by the document's `paramsDomain` marker. The wrapper's
-/// parameters are normalised [0,1] slots, so capture and apply convert at this
-/// boundary.
-const MagdaDevice* displayDomainDeviceFor(te::Plugin& plugin, const juce::String& deviceType) {
-    auto* adapter = dynamic_cast<TracktionMagdaDevicePlugin*>(&plugin);
-    if (adapter == nullptr || findInternalPluginSpec(deviceType) == nullptr)
-        return nullptr;
-    return &adapter->device();
-}
-
-/// Whether an UNMARKED document for @p deviceType holds display-domain values.
-///
-/// A document without the `paramsDomain` marker predates it, so its values are
-/// in whatever range the capturing parameter ran in. For the devices that
-/// crossed to the wrapper in #2312 that can only be the retired plugin's
-/// display range - they were never behind the wrapper before the marker
-/// existed. For everything that was already wrapped on the target branch (Test
-/// Tone, Sidechain, the runtime Faust device, the analyzers) an unmarked
-/// document is normalised and must apply raw.
-bool unmarkedDocIsDisplayDomain(const juce::String& deviceType) {
-    static constexpr const char* kPortedWithMarker[] = {
-        "magda_rings",       "magda_elements", "magda_clouds",
-        "magda_convolution", "magda_strum",    "arpeggiator",
-    };
-    return std::any_of(std::begin(kPortedWithMarker), std::end(kPortedWithMarker),
-                       [&deviceType](const char* id) { return deviceType == id; });
-}
-
 juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState) {
     // State from a newer schema was refused at load, so the live plugin holds
     // defaults rather than what the project actually says. Capturing over it
@@ -187,7 +153,6 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
     doc.deviceType = canonicalDeviceType(plugin.state.getProperty(te::IDs::type).toString());
 
     const auto& params = plugin.getAutomatableParameters();
-    doc.params.reserve(static_cast<size_t>(params.size()));
 
     // Three Tracktion parameters store under a property spelled differently
     // from their paramID; the spellings are frozen because released TE projects
@@ -199,20 +164,15 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
         {"damping", "damp"},             // Reverb
     };
 
+    // The document carries NO parameter values (#2317): `DeviceInfo::parameters`
+    // is the sole persisted authority for automatable parameters, in the
+    // device's display domain. The live parameter list is still walked so the
+    // engine's per-parameter properties are filtered out of the root below -
+    // they are exactly the engine-shaped state the document exists to exclude.
     juce::StringArray parameterProperties;
-    const auto* displayDevice = displayDomainDeviceFor(plugin, doc.deviceType);
-    doc.paramsAreDisplayDomain = displayDevice != nullptr;
-
-    for (int i = 0; i < params.size(); ++i) {
-        auto* param = params[i];
+    for (auto* param : params) {
         if (param == nullptr)
             continue;
-        // Base value, never the modulated value: a modulated read would bake the
-        // current LFO position into the saved patch.
-        float value = param->getCurrentBaseValue();
-        if (displayDevice != nullptr)
-            value = ParameterUtils::normalizedToReal(value, displayDevice->parameterInfo(i));
-        doc.params.push_back({i, param->paramID, value});
         parameterProperties.add(param->paramID);
         for (const auto& [paramID, property] : kParamPropertySpellings)
             if (param->paramID == paramID)
@@ -241,66 +201,6 @@ juce::ValueTree devicePluginTreeFromState(const juce::String& savedState) {
     applyNode(doc->root, tree);
     adoptCanonicalPluginType(tree);
     return tree;
-}
-
-void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedState) {
-    const auto doc = ds::decode(savedState);
-    if (!doc || doc->params.empty())
-        return;
-
-    const auto& params = plugin.getAutomatableParameters();
-    const auto* displayDevice = displayDomainDeviceFor(plugin, doc->deviceType);
-
-    bool convertFromDisplay = false;
-    if (displayDevice != nullptr) {
-        if (doc->paramsAreDisplayDomain || unmarkedDocIsDisplayDomain(doc->deviceType)) {
-            convertFromDisplay = true;
-        } else {
-            // Devices that were already wrapped before the marker existed have
-            // TWO unmarked eras: 0.19 documents captured from the host-native
-            // plugins hold display values, target-branch documents captured
-            // from the wrapper hold normalised ones. No provenance survives in
-            // the document, but the values discriminate safely in one
-            // direction: anything outside [0, 1] can only be display-domain.
-            // A 0.19 sidechain document always carries one (its release
-            // defaults to 15 ms). The residue - a document whose every value
-            // sits inside [0, 1] - is read as normalised, which is exact for
-            // slots whose display range IS the unit interval and the
-            // target-branch form for the rest.
-            for (const auto& saved : doc->params) {
-                if (saved.value < -1.0e-4f || saved.value > 1.0f + 1.0e-4f) {
-                    convertFromDisplay = true;
-                    break;
-                }
-            }
-        }
-    }
-
-    for (const auto& saved : doc->params) {
-        te::AutomatableParameter* param = nullptr;
-
-        // Frozen index first; the stable id re-seats a value if a device ever
-        // has to renumber (see DeviceParamSchema.hpp).
-        if (saved.index >= 0 && saved.index < params.size())
-            if (auto* candidate = params[saved.index];
-                candidate != nullptr && (saved.id.isEmpty() || candidate->paramID == saved.id))
-                param = candidate;
-
-        if (param == nullptr && saved.id.isNotEmpty())
-            for (auto* candidate : params)
-                if (candidate != nullptr && candidate->paramID == saved.id) {
-                    param = candidate;
-                    break;
-                }
-
-        if (param != nullptr) {
-            float value = saved.value;
-            if (convertFromDisplay)
-                value = ParameterUtils::realToNormalized(
-                    value, displayDevice->parameterInfo(params.indexOf(param)));
-            param->setParameterFromHost(value, juce::sendNotificationSync);
-        }
-    }
 }
 
 std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(

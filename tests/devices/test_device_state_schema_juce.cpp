@@ -9,9 +9,9 @@
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
-#include "magda/daw/audio/plugins/SidechainPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "magda/daw/audio/processors/base/MagdaDeviceProcessor.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/ParameterUtils.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
@@ -71,8 +71,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
 
         testCaptureShape(*edit);
         testRoundTrip(*edit);
-        testDisplayDomainDocsRestore(*edit);
-        testParametersReseatByIdWhenIndexMoves(*edit);
+        testModelParametersRestoreThroughWrapper(*edit);
         testNestedDeviceSurvives(*edit);
         testBinaryPropertySurvives(*edit);
         testFutureStateIsNotOverwritten(*edit);
@@ -104,13 +103,22 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
 
         expectEquals(doc->version, ds::kSchemaVersion);
         expectEquals(doc->deviceType, juce::String(audio::ArpeggiatorPlugin::xmlTypeName));
-        expect(!doc->params.empty(), "no parameters captured");
+
+        // #2317: the document carries NO parameter record. DeviceInfo::parameters
+        // is the sole persisted authority for automatable parameters.
+        expect(doc->params.empty(), "capture wrote a duplicate parameter record");
 
         // Engine-owned plugin-state facts must not survive into the document:
         // MAGDA owns each of them in DeviceInfo.
         for (const auto* engineOwned : {"id", "type", "enabled", "process", "windowX"})
             expect(!doc->root.props.contains(juce::Identifier(engineOwned)),
                    juce::String("engine-owned property leaked into the document: ") + engineOwned);
+
+        // The engine's per-parameter properties must not sneak back in as root
+        // props now that the parameter record is gone.
+        for (auto* param : plugin->getAutomatableParameters())
+            expect(!doc->root.props.contains(juce::Identifier(param->paramID)),
+                   "engine parameter property leaked into the document: " + param->paramID);
 
         plugin->deleteFromParent();
     }
@@ -124,8 +132,9 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (sourceArp == nullptr)
             return;
 
-        // Non-parameter property (no automatable parameter mirrors it) plus a
-        // parameter, so both halves of the document are exercised.
+        // Authored (non-parameter) settings: the document's whole payload
+        // since #2317. The parameter is moved too, to prove it does NOT travel
+        // through the document.
         sourceArp->quantizeSub = 8;
         sourceArp->hardAngle = true;
         if (auto gate = source->getAutomatableParameterByID("gate"))
@@ -143,7 +152,6 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         expect(restored != nullptr);
         if (restored == nullptr)
             return;
-        ta::applyDeviceStateParameters(*restored, state);
 
         auto* restoredArp = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(restored.get());
         expect(restoredArp != nullptr);
@@ -152,22 +160,24 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             expect(restoredArp->hardAngle.load());
         }
 
+        // The moved parameter did NOT come back from the document - parameters
+        // restore from DeviceInfo::parameters alone (seated by
+        // syncFromDeviceInfo; the model-authority test below covers it).
         if (auto gate = restored->getAutomatableParameterByID("gate"))
-            expectWithinAbsoluteError(gate->getCurrentBaseValue(), 0.42f, 0.001f);
+            expect(std::abs(gate->getCurrentBaseValue() - 0.42f) > 0.001f,
+                   "a parameter value travelled through the state document");
         else
             expect(false, "restored plugin lost its 'gate' parameter");
 
         restored->deleteFromParent();
     }
 
-    // Documents for the devices that crossed to MagdaDevice carry parameter
-    // values in the device's display domain - which is what every document
-    // captured from the retired display-ranged plugins already held. A released
-    // project's arpeggiator doc says "fixed velocity 100", and applying it to
-    // the wrapper's normalised slot has to land on 100, not clamp to the top of
-    // [0,1] (#2312 review).
-    void testDisplayDomainDocsRestore(te::Edit& edit) {
-        beginTest("A display-domain document restores through the wrapper unclamped");
+    // DeviceInfo::parameters is the sole restore source for automatable
+    // parameters (#2317), in display units. Restoring means seating the model
+    // array through the processor; the wrapper's normalised slots receive the
+    // converted values, and a recapture writes no parameter record back.
+    void testModelParametersRestoreThroughWrapper(te::Edit& edit) {
+        beginTest("Model parameters restore through the wrapper in display units");
 
         auto plugin = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
         expect(plugin != nullptr);
@@ -181,11 +191,23 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             return;
         }
 
-        ds::Doc doc;
-        doc.deviceType = audio::ArpeggiatorPlugin::xmlTypeName;
-        doc.params.push_back({audio::ArpeggiatorPlugin::kFixedVel, "fixedvel", 100.0f});
-        doc.params.push_back({audio::ArpeggiatorPlugin::kGate, "gate", 0.8f});
-        ta::applyDeviceStateParameters(*plugin, ds::encode(doc));
+        magda::MagdaDeviceProcessor processor(9001, plugin);
+        magda::DeviceInfo info;
+        info.format = magda::PluginFormat::Internal;
+        info.pluginId = audio::ArpeggiatorPlugin::xmlTypeName;
+        processor.populateParameters(info, magda::DeviceProcessor::ValueSource::Engine);
+
+        auto* fixedVel = info.findParameterByIndex(audio::ArpeggiatorPlugin::kFixedVel);
+        auto* gate = info.findParameterByIndex(audio::ArpeggiatorPlugin::kGate);
+        expect(fixedVel != nullptr && gate != nullptr);
+        if (fixedVel == nullptr || gate == nullptr) {
+            plugin->deleteFromParent();
+            return;
+        }
+        fixedVel->currentValue = 100.0f;  // display units: a velocity, not a fraction
+        gate->currentValue = 0.8f;
+
+        processor.syncFromDeviceInfo(info);
 
         const auto displayOf = [&](int slot, const char* id) {
             auto param = plugin->getAutomatableParameterByID(id);
@@ -198,137 +220,19 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
                                   100.0f, 0.5f);
         expectWithinAbsoluteError(displayOf(audio::ArpeggiatorPlugin::kGate, "gate"), 0.8f, 0.005f);
 
-        // And the capture side writes display values back, marked as such, so
-        // the document is stable across a save/load cycle.
+        // Save writes no second copy of what the model just seated...
         const auto recaptured = ds::decode(ta::captureInternalDeviceState(*plugin, {}));
         expect(recaptured.has_value());
-        if (recaptured) {
-            expect(recaptured->paramsAreDisplayDomain,
-                   "wrapper capture did not mark the parameter domain");
-            for (const auto& saved : recaptured->params)
-                if (saved.id == "fixedvel")
-                    expectWithinAbsoluteError(saved.value, 100.0f, 0.5f);
-        }
+        if (recaptured)
+            expect(recaptured->params.empty(), "recapture wrote a duplicate parameter record");
 
-        plugin->deleteFromParent();
-
-        beginTest("An unmarked normalised document applies raw to an already-wrapped device");
-
-        // The sidechain was behind the wrapper before the domain marker
-        // existed, so its unmarked v2 documents hold normalised values and must
-        // not be reinterpreted as display: a normalised attack of 0.5 means
-        // half the knob (~25 ms), not 0.5 ms.
-        auto sidechain = createPlugin(edit, audio::SidechainPlugin::xmlTypeName);
-        expect(sidechain != nullptr);
-        if (sidechain == nullptr)
-            return;
-
-        ds::Doc sidechainDoc;
-        sidechainDoc.deviceType = audio::SidechainPlugin::xmlTypeName;
-        sidechainDoc.params.push_back({audio::SidechainPlugin::kAttackParamIndex, "attack", 0.5f});
-        expect(!ds::decode(ds::encode(sidechainDoc))->paramsAreDisplayDomain);
-        ta::applyDeviceStateParameters(*sidechain, ds::encode(sidechainDoc));
-
-        if (auto attack = sidechain->getAutomatableParameterByID("attack"))
-            expectWithinAbsoluteError(attack->getCurrentBaseValue(), 0.5f, 0.001f);
-        else
-            expect(false, "sidechain lost its 'attack' parameter");
-
-        beginTest("A v0.19 display-domain sidechain document still restores in ms");
-
-        // The other unmarked era: captured from the host-native sidechain,
-        // whose parameters ran in display ranges. The release value of 15 ms is
-        // what discriminates it - nothing normalised can sit outside [0, 1].
-        auto* sidechainDevice = ta::deviceFromPlugin<audio::SidechainPlugin>(sidechain.get());
-        expect(sidechainDevice != nullptr);
-        if (sidechainDevice == nullptr) {
-            sidechain->deleteFromParent();
-            return;
-        }
-
-        ds::Doc releasedDoc;
-        releasedDoc.deviceType = audio::SidechainPlugin::xmlTypeName;
-        releasedDoc.params.push_back({audio::SidechainPlugin::kGainParamIndex, "gain", 0.8f});
-        releasedDoc.params.push_back({audio::SidechainPlugin::kAttackParamIndex, "attack", 1.0f});
-        releasedDoc.params.push_back(
-            {audio::SidechainPlugin::kReleaseParamIndex, "release", 15.0f});
-        expect(!ds::decode(ds::encode(releasedDoc))->paramsAreDisplayDomain);
-        ta::applyDeviceStateParameters(*sidechain, ds::encode(releasedDoc));
-
-        const auto sidechainDisplay = [&](int slot, const char* id) {
-            auto param = sidechain->getAutomatableParameterByID(id);
-            expect(param != nullptr);
-            return param != nullptr
-                       ? magda::ParameterUtils::normalizedToReal(
-                             param->getCurrentBaseValue(), sidechainDevice->parameterInfo(slot))
-                       : -1.0f;
-        };
-        expectWithinAbsoluteError(
-            sidechainDisplay(audio::SidechainPlugin::kReleaseParamIndex, "release"), 15.0f, 0.1f);
-        expectWithinAbsoluteError(
-            sidechainDisplay(audio::SidechainPlugin::kAttackParamIndex, "attack"), 1.0f, 0.05f);
-        expectWithinAbsoluteError(sidechainDisplay(audio::SidechainPlugin::kGainParamIndex, "gain"),
-                                  0.8f, 0.005f);
-
-        sidechain->deleteFromParent();
-    }
-
-    // The frozen index is authoritative, and the stable id is what re-seats a
-    // value if a device ever renumbers its parameters. Round-trip tests always
-    // have the two agree, so drive them apart deliberately here.
-    void testParametersReseatByIdWhenIndexMoves(te::Edit& edit) {
-        beginTest("A saved parameter follows its id when the index no longer matches");
-
-        auto plugin = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
-        expect(plugin != nullptr);
-        if (plugin == nullptr)
-            return;
-
-        const auto& params = plugin->getAutomatableParameters();
-        expect(params.size() >= 2, "need two parameters to swap between");
-        if (params.size() < 2) {
-            plugin->deleteFromParent();
-            return;
-        }
-
-        auto gatePtr = plugin->getAutomatableParameterByID("gate");
-        expect(gatePtr != nullptr, "arpeggiator lost its 'gate' parameter");
-        if (gatePtr == nullptr) {
-            plugin->deleteFromParent();
-            return;
-        }
-        auto* gate = gatePtr.get();
-
-        const int gateIndex = params.indexOf(gate);
-        expect(gateIndex >= 0);
-        // Any in-range index that is not gate's own, so the id has to override.
-        const int wrongIndex = gateIndex == 0 ? 1 : 0;
-
-        ds::Doc doc;
-        doc.deviceType = audio::ArpeggiatorPlugin::xmlTypeName;
-        doc.params.push_back({wrongIndex, "gate", 0.31f});
-        // Also prove an out-of-range index (a parameter removed since the save)
-        // still re-seats rather than being dropped or misapplied.
-        doc.params.push_back({params.size() + 5, "gate", 0.77f});
-
-        ta::applyDeviceStateParameters(*plugin, ds::encode(doc));
-
-        // Doc values are display-domain for wrapper devices, so read the
-        // restored value back through the same conversion.
-        auto* gateDevice = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(plugin.get());
-        expect(gateDevice != nullptr);
-        if (gateDevice != nullptr)
-            expectWithinAbsoluteError(
-                magda::ParameterUtils::normalizedToReal(
-                    gate->getCurrentBaseValue(),
-                    gateDevice->parameterInfo(audio::ArpeggiatorPlugin::kGate)),
-                0.77f, 0.001f);
-
-        auto* other = params[wrongIndex];
-        expect(other != nullptr);
-        if (other != nullptr && other != gate)
-            expect(std::abs(other->getCurrentBaseValue() - 0.31f) > 0.001f,
-                   "the value landed on the parameter the stale index pointed at");
+        // ...and the model-first refresh keeps the model's values rather
+        // than reading them back off the engine.
+        processor.populateParameters(info, magda::DeviceProcessor::ValueSource::Model);
+        auto* refreshed = info.findParameterByIndex(audio::ArpeggiatorPlugin::kFixedVel);
+        expect(refreshed != nullptr);
+        if (refreshed != nullptr)
+            expectWithinAbsoluteError(refreshed->currentValue, 100.0f, 0.001f);
 
         plugin->deleteFromParent();
     }
@@ -379,6 +283,10 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         // The IR device keeps its audio in a binary property. JUCE's JSON writer
         // has no binary case, so an untagged encode emits unquoted base64 and the
         // document stops parsing entirely - the device would lose all its state.
+        // A neutral property name: `irFileData` itself is owned exactly by the
+        // device since the absent-means-none contract (flushState removes it
+        // when no IR is held), so a blob parked there behind the device's back
+        // no longer survives - any other binary property still does.
         auto plugin = createPlugin(edit, audio::MagdaConvolutionPlugin::xmlTypeName);
         expect(plugin != nullptr);
         if (plugin == nullptr)
@@ -389,7 +297,8 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             const auto byte = static_cast<char>(i & 0xff);
             payload.append(&byte, 1);
         }
-        plugin->state.setProperty(te::IDs::irFileData, juce::var(payload), nullptr);
+        static const juce::Identifier kBlobProp("testBinaryBlob");
+        plugin->state.setProperty(kBlobProp, juce::var(payload), nullptr);
 
         const auto state = ta::captureInternalDeviceState(*plugin, {});
         plugin->deleteFromParent();
@@ -399,14 +308,15 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (!doc)
             return;
 
-        const auto* captured = doc->root.props["irFileData"].getBinaryData();
+        const auto* captured = doc->root.props["testBinaryBlob"].getBinaryData();
         expect(captured != nullptr, "binary property did not decode as binary");
         if (captured != nullptr)
             expect(*captured == payload, "binary property changed through the round-trip");
 
         auto restoredTree = ta::devicePluginTreeFromState(state);
         expect(restoredTree.isValid());
-        const auto* restoredBlock = restoredTree.getProperty(te::IDs::irFileData).getBinaryData();
+        const auto* restoredBlock =
+            restoredTree.getProperty(juce::Identifier("testBinaryBlob")).getBinaryData();
         expect(restoredBlock != nullptr, "restored tree lost the binary property");
         if (restoredBlock != nullptr)
             expect(*restoredBlock == payload, "restored binary property does not match");

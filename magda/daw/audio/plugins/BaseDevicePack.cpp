@@ -133,10 +133,7 @@ te::Plugin::Ptr restoreSavedPlugin(te::Edit& edit, const juce::String& savedPlug
         return {};
     }
 
-    auto plugin = edit.getPluginCache().createNewPlugin(savedState);
-    if (plugin != nullptr)
-        tracktion_adapter::applyDeviceStateParameters(*plugin, savedPluginState);
-    return plugin;
+    return edit.getPluginCache().createNewPlugin(savedState);
 }
 
 DevicePluginPtr createTracktionPlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,

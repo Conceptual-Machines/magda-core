@@ -15,8 +15,11 @@
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "magda/daw/audio/processors/CompiledFaustProcessor.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/DrumGridPads.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/project/ProjectManager.hpp"
@@ -212,7 +215,10 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expectEquals(built.grid->getPluginDeviceId(chain->index, 0), voiceId,
                      "The pad plugin must carry the model device's id");
 
-        // Tweak a knob, then save the way a project save does.
+        // Tweak a knob the way the app does since #2317: the model's device is
+        // the parameter authority, the plugin follows. populateParameters here
+        // stands in for the UI's model write; the state document deliberately
+        // carries no parameter record any more.
         auto* bodyPitch = kick->getAutomatableParameterByID("magda_kick_body_pitch").get();
         expect(bodyPitch != nullptr, "Kick must expose the body_pitch host parameter");
         if (bodyPitch == nullptr)
@@ -223,7 +229,14 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expect(voiceDevice != nullptr, "The pad's device must be in the model");
         if (voiceDevice == nullptr)
             return;
+        magda::CompiledFaustProcessor(voiceId, kick)
+            .populateParameters(*voiceDevice, magda::DeviceProcessor::ValueSource::Engine);
         capturePadDevice(*built.grid, *voiceDevice);
+
+        const auto capturedDoc = magda::device_state::decode(voiceDevice->pluginState);
+        expect(capturedDoc.has_value(), "captured pad state must be a v2 document");
+        if (capturedDoc)
+            expect(capturedDoc->params.empty(), "pad capture wrote a duplicate parameter record");
 
         DrumGridPlugin* restored = nullptr;
         auto restoredPlugin = rebuildFromModel(built, &restored);
@@ -246,12 +259,20 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expectEquals(restoredKick->getPluginType(), juce::String("magda_kick"),
                      "Reloaded pad voice must still be the compiled kick");
 
+        // What registerRackPluginProcessor does for a rebuilt pad: seat the
+        // model's parameter values on the fresh plugin. The document alone
+        // must NOT have restored them.
         auto* restoredParam =
             restoredKick->getAutomatableParameterByID("magda_kick_body_pitch").get();
         expect(restoredParam != nullptr, "Reloaded kick must expose the body_pitch parameter");
-        if (restoredParam != nullptr)
-            expectWithinAbsoluteError(restoredParam->getCurrentBaseValue(), 0.85f, 1.0e-4f,
-                                      "Tweaked kick parameter must survive the reload");
+        if (restoredParam == nullptr)
+            return;
+        expect(std::abs(restoredParam->getCurrentBaseValue() - 0.85f) > 1.0e-4f,
+               "a parameter value travelled through the pad's state document");
+
+        magda::CompiledFaustProcessor(voiceId, restoredKick).syncFromDeviceInfo(*voiceDevice);
+        expectWithinAbsoluteError(restoredParam->getCurrentBaseValue(), 0.85f, 1.0e-4f,
+                                  "Tweaked kick parameter must survive the reload");
 
         expectEquals(restored->getPluginDeviceId(restoredChain->index, 0), voiceId,
                      "Pad voice device id must survive the reload");
@@ -512,11 +533,40 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
             return;
         }
 
-        if (auto* bodyPitch =
-                chain->plugins[0]->getAutomatableParameterByID("magda_kick_body_pitch").get())
-            bodyPitch->setParameterFromHost(0.85f, juce::sendNotificationSync);
+        // Tweak the knob through the MODEL, the only write path since #2317:
+        // save no longer reads parameter values back off the engine, so a
+        // direct engine write would be invisible to the project.
+        auto bodyPitchParam =
+            chain->plugins[0]->getAutomatableParameterByID("magda_kick_body_pitch");
+        expect(bodyPitchParam != nullptr, "Kick must expose the body_pitch host parameter");
+        auto* padChainInfo = tm.getPadChain(devicePath, padIndex);
+        expect(padChainInfo != nullptr && !padChainInfo->elements.empty(),
+               "Kick pad chain must be in the model");
+        if (bodyPitchParam == nullptr || padChainInfo == nullptr ||
+            padChainInfo->elements.empty()) {
+            tm.clearAllTracks();
+            tm.setAudioEngine(nullptr);
+            return;
+        }
+        const int slot =
+            chain->plugins[0]->getAutomatableParameters().indexOf(bodyPitchParam.get());
+        const auto padDevicePath = magda::TrackManager::padChainPath(devicePath, padIndex)
+                                       .withDevice(magda::getDevice(padChainInfo->elements[0]).id);
+        auto* padDevInfo = tm.getDeviceInChainByPath(padDevicePath);
+        const auto* slotInfo =
+            padDevInfo != nullptr ? padDevInfo->findParameterByIndex(slot) : nullptr;
+        expect(slotInfo != nullptr, "Pad device must carry the body_pitch parameter in the model");
+        if (slotInfo == nullptr) {
+            tm.clearAllTracks();
+            tm.setAudioEngine(nullptr);
+            return;
+        }
+        tm.setDeviceParameterValue(padDevicePath, slot,
+                                   magda::ParameterUtils::normalizedToReal(0.85f, *slotInfo));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
 
-        // Project save: capture plugin state into the model.
+        // Project save: capture the authored state into the model. Parameter
+        // values are already there - the model write above IS the edit.
         bridge->captureAllPluginStates();
 
         auto* devInfo = tm.getDeviceInChainByPath(devicePath);
@@ -620,9 +670,31 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         auto* chain = drumGrid->getChainForNote(midiNote);
         expect(chain != nullptr, "Kick pad chain must exist before save");
         if (chain != nullptr && !chain->plugins.empty() && chain->plugins[0] != nullptr) {
-            if (auto* bodyPitch =
-                    chain->plugins[0]->getAutomatableParameterByID("magda_kick_body_pitch").get())
-                bodyPitch->setParameterFromHost(0.85f, juce::sendNotificationSync);
+            // Through the MODEL, the only write path since #2317 (see
+            // testModelReloadRestoresCompiledDrumPads).
+            auto bodyPitchParam =
+                chain->plugins[0]->getAutomatableParameterByID("magda_kick_body_pitch");
+            auto* padChainInfo = tm.getPadChain(devicePath, padIndex);
+            if (bodyPitchParam != nullptr && padChainInfo != nullptr &&
+                !padChainInfo->elements.empty()) {
+                const int slot =
+                    chain->plugins[0]->getAutomatableParameters().indexOf(bodyPitchParam.get());
+                const auto padDevicePath =
+                    magda::TrackManager::padChainPath(devicePath, padIndex)
+                        .withDevice(magda::getDevice(padChainInfo->elements[0]).id);
+                auto* padDevInfo = tm.getDeviceInChainByPath(padDevicePath);
+                const auto* slotInfo =
+                    padDevInfo != nullptr ? padDevInfo->findParameterByIndex(slot) : nullptr;
+                expect(slotInfo != nullptr,
+                       "Pad device must carry the body_pitch parameter in the model");
+                if (slotInfo != nullptr)
+                    tm.setDeviceParameterValue(
+                        padDevicePath, slot,
+                        magda::ParameterUtils::normalizedToReal(0.85f, *slotInfo));
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+            } else {
+                expect(false, "Kick pad chain and parameter must be resolvable");
+            }
         }
 
         // Save the way ProjectManager does: capture states, then serialize.

@@ -270,15 +270,22 @@ const MigrationTable& shippedMigrations() {
     return table();
 }
 
-const ParamIndexMigration* findMigration(const DeviceInfo& device, const MigrationTable& table) {
+const ParamIndexMigration* findMigrationForSavedCount(const juce::String& deviceType,
+                                                      int savedParamCount,
+                                                      const MigrationTable& table) {
     for (const auto& migration : table) {
-        if (device.pluginId != migration.deviceType)
+        if (deviceType != migration.deviceType)
             continue;
-        if (static_cast<int>(device.parameters.size()) != migration.savedParamCount)
+        if (savedParamCount != migration.savedParamCount)
             continue;  // a different order, or already migrated
         return &migration;
     }
     return nullptr;
+}
+
+const ParamIndexMigration* findMigration(const DeviceInfo& device, const MigrationTable& table) {
+    return findMigrationForSavedCount(device.pluginId, static_cast<int>(device.parameters.size()),
+                                      table);
 }
 
 std::optional<int> migratedParamIndex(const ParamIndexMigration& migration, int savedIndex) {
