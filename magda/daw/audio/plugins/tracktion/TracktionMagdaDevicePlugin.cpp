@@ -169,6 +169,12 @@ juce::String TracktionMagdaDevicePlugin::getSelectableDescription() {
 }
 
 void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& info) {
+    // Parameters first, same rule as reset(): a device that seeds smoothing
+    // state from its parameters in prepare() -- the convolution parks its
+    // wet/dry smoothers on the current mix -- would otherwise read whatever it
+    // was constructed with and audibly ramp to the real values over the first
+    // block.
+    syncParametersToDevice();
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,

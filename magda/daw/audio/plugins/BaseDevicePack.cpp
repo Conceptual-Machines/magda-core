@@ -335,13 +335,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<ArpeggiatorPlugin>,
+         .matchesPlugin = matchesDevice<ArpeggiatorPlugin>,
          .createProcessor = makeProcessor<ArpeggiatorProcessor>,
          .showInBrowser = true,
          .tags = kArpeggiatorTags,
          .tagCount = static_cast<int>(std::size(kArpeggiatorTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<ArpeggiatorPlugin>});
+         .createDevice = createDevice<ArpeggiatorPlugin>});
     add(registry, {.pluginId = MidiStrumPlugin::xmlTypeName,
                    .displayName = "Strum",
                    .browserCategory = "MIDI",

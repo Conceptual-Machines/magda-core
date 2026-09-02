@@ -340,6 +340,9 @@ set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_
 
 set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/RampCurve.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.hpp"

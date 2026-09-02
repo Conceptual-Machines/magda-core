@@ -14,12 +14,7 @@ namespace magda {
 // =============================================================================
 
 ArpeggiatorProcessor::ArpeggiatorProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-void ArpeggiatorProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
-    // Depth (5) and skew (6) default to bipolar; all others unipolar
-    info.bipolarModulation = (index == 5 || index == 6);
-}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // StrumProcessor

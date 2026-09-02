@@ -2,119 +2,174 @@
 
 #include <algorithm>
 
-#include "transport/StepClock.hpp"
+#include "transport/RampCurve.hpp"
 
 namespace magda::daw::audio {
 
 const char* ArpeggiatorPlugin::xmlTypeName = "arpeggiator";
 
-// ValueTree property IDs
+// ValueTree property IDs for the non-parameter settings. The spellings are the
+// retired host-native plugin's, so saved projects keep them.
 namespace ArpIDs {
-static const juce::Identifier pattern("arpPattern");
-static const juce::Identifier rate("arpRate");
-static const juce::Identifier octaveRange("arpOctaves");
-static const juce::Identifier gate("arpGate");
-static const juce::Identifier swing("arpSwing");
-static const juce::Identifier ramp("arpRamp");
-static const juce::Identifier skew("arpSkew");
-static const juce::Identifier latch("arpLatch");
-static const juce::Identifier velocityMode("arpVelMode");
-static const juce::Identifier fixedVelocity("arpFixedVel");
 static const juce::Identifier rampCycles("arpRampCycles");
 static const juce::Identifier quantize("arpQuantize");
 static const juce::Identifier quantizeSub("arpQuantizeSub");
 static const juce::Identifier hardAngle("arpHardAngle");
 }  // namespace ArpIDs
 
-ArpeggiatorPlugin::ArpeggiatorPlugin(const te::PluginCreationInfo& info) : MidiDevicePlugin(info) {
-    auto um = getUndoManager();
-    pattern.referTo(state, ArpIDs::pattern, um, 0);
-    rate.referTo(state, ArpIDs::rate, um, 4);  // Eighth note
-    octaveRange.referTo(state, ArpIDs::octaveRange, um, 1);
-    gate.referTo(state, ArpIDs::gate, um, 0.8f);
-    swing.referTo(state, ArpIDs::swing, um, 0.0f);
-    ramp.referTo(state, ArpIDs::ramp, um, 0.0f);
-    skew.referTo(state, ArpIDs::skew, um, 0.0f);
-    rampCycles.referTo(state, ArpIDs::rampCycles, um, 1);
-    latch.referTo(state, ArpIDs::latch, um, false);
-    velocityMode.referTo(state, ArpIDs::velocityMode, um, 0);
-    fixedVelocity.referTo(state, ArpIDs::fixedVelocity, um, 100);
-    quantize.referTo(state, ArpIDs::quantize, um, 0.0f);
-    quantizeSub.referTo(state, ArpIDs::quantizeSub, um, 16);
-    hardAngle.referTo(state, ArpIDs::hardAngle, um, false);
+namespace {
 
-    // Register automatable parameters so macros can link to them
-    patternParam = addParam("pattern", "Pattern", {0.0f, 5.0f, 1.0f});
-    rateParam = addParam("rate", "Rate", {0.0f, 9.0f, 1.0f});
-    octavesParam = addParam("octaves", "Octaves", {1.0f, 4.0f, 1.0f});
-    gateParam = addParam("gate", "Gate", {0.01f, 1.0f});
-    swingParam = addParam("swing", "Swing", {0.0f, 1.0f});
-    rampParam = addParam("ramp", "Timing Depth", {-1.0f, 1.0f});
-    skewParam = addParam("skew", "Timing Skew", {-1.0f, 1.0f});
-    latchParam = addParam("latch", "Latch", {0.0f, 1.0f, 1.0f});
-    velModeParam = addParam("velmode", "Velocity Mode", {0.0f, 2.0f, 1.0f});
-    fixedVelParam = addParam("fixedvel", "Fixed Velocity", {1.0f, 127.0f, 1.0f});
+/// One slot's metadata. The ids, order and display ranges are pinned to what
+/// the retired host-native plugin registered, because saved links address the
+/// slots by index and projects store parameter values in display units.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    info.paramIndex = index;
 
-    // Initialize automatable params from CachedValues
-    patternParam->setParameterFromHost(static_cast<float>(pattern.get()),
-                                       juce::dontSendNotification);
-    rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
-    octavesParam->setParameterFromHost(static_cast<float>(octaveRange.get()),
-                                       juce::dontSendNotification);
-    gateParam->setParameterFromHost(gate.get(), juce::dontSendNotification);
-    swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
-    rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
-    skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
-    latchParam->setParameterFromHost(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
-    velModeParam->setParameterFromHost(static_cast<float>(velocityMode.get()),
-                                       juce::dontSendNotification);
-    fixedVelParam->setParameterFromHost(static_cast<float>(fixedVelocity.get()),
-                                        juce::dontSendNotification);
+    switch (index) {
+        case ArpeggiatorPlugin::kPattern:
+            info.stableId = "pattern";
+            info.name = "Pattern";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = 5.0f;
+            info.defaultValue = 0.0f;
+            info.choices = {"Up", "Down", "Up/Down", "Down/Up", "Random", "As Played"};
+            break;
 
-    // Listen for CachedValue changes (from UI) to sync to AutomatableParams
-    state.addListener(&paramSyncListener_);
+        case ArpeggiatorPlugin::kRate:
+            info.stableId = "rate";
+            info.name = "Rate";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = 9.0f;
+            info.defaultValue = 4.0f;  // 1/8
+            info.choices = {"1/4D", "1/4",   "1/4T", "1/8D",  "1/8",
+                            "1/8T", "1/16D", "1/16", "1/16T", "1/32"};
+            break;
+
+        case ArpeggiatorPlugin::kOctaves:
+            info.stableId = "octaves";
+            info.name = "Octaves";
+            info.minValue = 1.0f;
+            info.maxValue = 4.0f;
+            info.defaultValue = 1.0f;
+            break;
+
+        case ArpeggiatorPlugin::kGate:
+            info.stableId = "gate";
+            info.name = "Gate";
+            info.minValue = 0.01f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.8f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case ArpeggiatorPlugin::kSwing:
+            info.stableId = "swing";
+            info.name = "Swing";
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.displayFormat = DisplayFormat::Percent;
+            break;
+
+        case ArpeggiatorPlugin::kRamp:
+            info.stableId = "ramp";
+            info.name = "Timing Depth";
+            info.minValue = -1.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.bipolarModulation = true;
+            break;
+
+        case ArpeggiatorPlugin::kSkew:
+            info.stableId = "skew";
+            info.name = "Timing Skew";
+            info.minValue = -1.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.bipolarModulation = true;
+            break;
+
+        case ArpeggiatorPlugin::kLatch:
+            info.stableId = "latch";
+            info.name = "Latch";
+            info.scale = ParameterScale::Boolean;
+            info.minValue = 0.0f;
+            info.maxValue = 1.0f;
+            info.defaultValue = 0.0f;
+            info.choices = {"Off", "On"};
+            info.modulatable = false;
+            break;
+
+        case ArpeggiatorPlugin::kVelMode:
+            info.stableId = "velmode";
+            info.name = "Velocity Mode";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = 2.0f;
+            info.defaultValue = 0.0f;
+            info.choices = {"Original", "Fixed", "Accent"};
+            break;
+
+        case ArpeggiatorPlugin::kFixedVel:
+            info.stableId = "fixedvel";
+            info.name = "Fixed Velocity";
+            info.minValue = 1.0f;
+            info.maxValue = 127.0f;
+            info.defaultValue = 100.0f;
+            break;
+
+        default:
+            break;
+    }
+
+    return info;
 }
 
-ArpeggiatorPlugin::~ArpeggiatorPlugin() {
-    state.removeListener(&paramSyncListener_);
-    notifyListenersOfDeletion();
+}  // namespace
+
+ArpeggiatorPlugin::ArpeggiatorPlugin() {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
+    }
 }
 
-void ArpeggiatorPlugin::syncParamFromProperty(const juce::Identifier& property) {
-    // Push CachedValue changes to AutomatableParam base values
-    if (property == ArpIDs::pattern && patternParam)
-        patternParam->setParameterFromHost(static_cast<float>(pattern.get()),
-                                           juce::dontSendNotification);
-    else if (property == ArpIDs::rate && rateParam)
-        rateParam->setParameterFromHost(static_cast<float>(rate.get()), juce::dontSendNotification);
-    else if (property == ArpIDs::octaveRange && octavesParam)
-        octavesParam->setParameterFromHost(static_cast<float>(octaveRange.get()),
-                                           juce::dontSendNotification);
-    else if (property == ArpIDs::gate && gateParam)
-        gateParam->setParameterFromHost(gate.get(), juce::dontSendNotification);
-    else if (property == ArpIDs::swing && swingParam)
-        swingParam->setParameterFromHost(swing.get(), juce::dontSendNotification);
-    else if (property == ArpIDs::ramp && rampParam)
-        rampParam->setParameterFromHost(ramp.get(), juce::dontSendNotification);
-    else if (property == ArpIDs::skew && skewParam)
-        skewParam->setParameterFromHost(skew.get(), juce::dontSendNotification);
-    else if (property == ArpIDs::latch && latchParam)
-        latchParam->setParameterFromHost(latch.get() ? 1.0f : 0.0f, juce::dontSendNotification);
-    else if (property == ArpIDs::velocityMode && velModeParam)
-        velModeParam->setParameterFromHost(static_cast<float>(velocityMode.get()),
-                                           juce::dontSendNotification);
-    else if (property == ArpIDs::fixedVelocity && fixedVelParam)
-        fixedVelParam->setParameterFromHost(static_cast<float>(fixedVelocity.get()),
-                                            juce::dontSendNotification);
+ArpeggiatorPlugin::~ArpeggiatorPlugin() = default;
+
+ParameterInfo ArpeggiatorPlugin::parameterInfo(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return {};
+    return slotInfo(index);
 }
 
-void ArpeggiatorPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    MidiDevicePlugin::initialise(info);
-    resetArpState();
+float ArpeggiatorPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
 }
 
-void ArpeggiatorPlugin::deinitialise() {
-    MidiDevicePlugin::deinitialise();
+void ArpeggiatorPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float ArpeggiatorPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
+}
+
+int ArpeggiatorPlugin::displayIndex(int index) const {
+    return juce::roundToInt(displayValue(index));
+}
+
+void ArpeggiatorPlugin::prepare(const DevicePrepareContext& context) {
+    MidiMagdaDevice::prepare(context);
     resetArpState();
 }
 
@@ -123,10 +178,22 @@ void ArpeggiatorPlugin::reset() {
     clearHeldNotes();
 }
 
-void ArpeggiatorPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
-    tracktion::copyPropertiesToCachedValues(v, pattern, rate, octaveRange, gate, swing, ramp, skew,
-                                            latch, velocityMode, fixedVelocity, quantize,
-                                            quantizeSub, hardAngle);
+void ArpeggiatorPlugin::flushState(juce::ValueTree& state) {
+    state.setProperty(ArpIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(ArpIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(ArpIDs::quantizeSub, quantizeSub.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(ArpIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
+}
+
+void ArpeggiatorPlugin::restoreState(const juce::ValueTree& state) {
+    if (const auto* value = state.getPropertyPointer(ArpIDs::rampCycles))
+        rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
+    if (const auto* value = state.getPropertyPointer(ArpIDs::quantize))
+        quantize.store(static_cast<float>(*value), std::memory_order_relaxed);
+    if (const auto* value = state.getPropertyPointer(ArpIDs::quantizeSub))
+        quantizeSub.store(static_cast<int>(*value), std::memory_order_relaxed);
+    if (const auto* value = state.getPropertyPointer(ArpIDs::hardAngle))
+        hardAngle.store(static_cast<bool>(*value), std::memory_order_relaxed);
 }
 
 // =============================================================================
@@ -161,7 +228,7 @@ double ArpeggiatorPlugin::rateToBeats(Rate r) {
 }
 
 double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool hardAngle) {
-    return StepClock::applyRampCurve(t, depth, skew, hardAngle);
+    return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
 void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
@@ -196,9 +263,9 @@ void ArpeggiatorPlugin::clearHeldNotes() {
     nextOrder_ = 0;
 }
 
-void ArpeggiatorPlugin::sendAllNotesOff(te::MidiMessageArray& midi) {
+void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
     if (lastPlayedNote_ >= 0) {
-        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), 0.0, te::MPESourceID{});
+        midi.addEvent({juce::MidiMessage::noteOff(1, lastPlayedNote_), 0});
         lastPlayedNote_ = -1;
         clearMidiOutDisplay();
     }
@@ -222,10 +289,8 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
     if (heldCount_ == 0)
         return seq;
 
-    auto pat = static_cast<Pattern>(
-        juce::roundToInt(patternParam ? patternParam->getCurrentValue() : pattern.get()));
-    int octaves = juce::jlimit(
-        1, 4, juce::roundToInt(octavesParam ? octavesParam->getCurrentValue() : octaveRange.get()));
+    auto pat = static_cast<Pattern>(displayIndex(kPattern));
+    int octaves = juce::jlimit(1, 4, displayIndex(kOctaves));
 
     // Copy held notes for sorting
     std::array<HeldNote, MAX_HELD> sorted{};
@@ -291,18 +356,19 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
 // Audio thread
 // =============================================================================
 
-void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.bufferForMidiMessages)
+void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
+    if (context.midi == nullptr || context.numSamples <= 0)
         return;
 
-    if (!isEnabled())
-        return;
-
-    auto& midi = *fc.bufferForMidiMessages;
-    bool isLatched = latchParam ? latchParam->getCurrentValue() >= 0.5f : latch.get();
+    auto& midi = *context.midi;
+    const bool isLatched = displayValue(kLatch) >= 0.5f;
 
     // --- 1. Capture incoming MIDI ---
-    for (const auto& msg : midi) {
+    // Over the block's incoming events only: sendAllNotesOff() appends to the
+    // same buffer mid-loop, and the arp must not re-consume its own output.
+    const int incomingCount = midi.size();
+    for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
+        const auto& msg = midi.message(eventIndex);
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
 
@@ -346,12 +412,12 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     midi.clear();
 
     // --- 3. Handle transport transitions ---
-    // Note: TE briefly toggles isPlaying at loop boundaries, so we only
+    // Note: the host briefly toggles isPlaying at loop boundaries, so we only
     // reset the arp on a genuine stop (isPlaying goes false). On start we
     // just update the flag — the step counter continues from where it was.
-    if (fc.isPlaying && !wasPlaying_) {
+    if (context.isPlaying && !wasPlaying_) {
         wasPlaying_ = true;
-    } else if (!fc.isPlaying && wasPlaying_) {
+    } else if (!context.isPlaying && wasPlaying_) {
         sendAllNotesOff(midi);
         clearHeldNotes();
         resetArpState();
@@ -360,7 +426,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     }
 
     // --- 4. No held notes, or no MIDI input while transport is stopped? ---
-    if (heldCount_ == 0 || (!fc.isPlaying && physicallyHeldCount_ <= 0)) {
+    if (heldCount_ == 0 || (!context.isPlaying && physicallyHeldCount_ <= 0)) {
         sendAllNotesOff(midi);
         freeRunSamples_ = 0.0;
         return;
@@ -369,18 +435,17 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // --- 5. Get beat positions ---
     double blockStartBeat, blockEndBeat;
 
-    if (fc.isPlaying) {
+    if (context.isPlaying && context.tempoMap != nullptr) {
         // Use transport position
-        auto& tempoSeq = edit.tempoSequence;
-        blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
-        blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
+        blockStartBeat = context.tempoMap->beatsAtSeconds(context.timelineStartSeconds);
+        blockEndBeat = context.tempoMap->beatsAtSeconds(context.timelineEndSeconds);
     } else {
-        // Free-running clock — get tempo from edit position 0
-        auto& tempoSeq = edit.tempoSequence;
-        double bpm = tempoSeq.getBpmAt(tracktion::TimePosition());
+        // Free-running clock — get tempo from timeline position 0
+        const double bpm =
+            context.tempoMap != nullptr ? context.tempoMap->bpmAtSeconds(0.0) : 120.0;
         double beatsPerSample = bpm / (60.0 * sampleRate_);
         blockStartBeat = freeRunSamples_ * beatsPerSample;
-        freeRunSamples_ += fc.bufferNumSamples;
+        freeRunSamples_ += context.numSamples;
         blockEndBeat = freeRunSamples_ * beatsPerSample;
     }
 
@@ -392,28 +457,18 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (seq.length == 0)
         return;
 
-    // Read from automatable params (includes macro modulation) with CachedValue fallbacks
-    auto pat = static_cast<Pattern>(
-        juce::roundToInt(patternParam ? patternParam->getCurrentValue() : pattern.get()));
-    auto currentRate =
-        static_cast<Rate>(juce::roundToInt(rateParam ? rateParam->getCurrentValue() : rate.get()));
+    auto pat = static_cast<Pattern>(displayIndex(kPattern));
+    auto currentRate = static_cast<Rate>(displayIndex(kRate));
     double stepBeats = rateToBeats(currentRate);
-    float gateVal =
-        juce::jlimit(0.01f, 1.0f, gateParam ? gateParam->getCurrentValue() : gate.get());
-    float swingVal =
-        juce::jlimit(0.0f, 1.0f, swingParam ? swingParam->getCurrentValue() : swing.get());
-    float rampVal =
-        juce::jlimit(-1.0f, 1.0f, rampParam ? rampParam->getCurrentValue() : ramp.get());
-    float skewVal =
-        juce::jlimit(-1.0f, 1.0f, skewParam ? skewParam->getCurrentValue() : skew.get());
-    auto velMode = static_cast<VelocityMode>(
-        juce::roundToInt(velModeParam ? velModeParam->getCurrentValue() : velocityMode.get()));
-    int fixedVel = juce::jlimit(
-        1, 127,
-        juce::roundToInt(fixedVelParam ? fixedVelParam->getCurrentValue() : fixedVelocity.get()));
-    float quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.get());
-    int quantizeSubVal = juce::jlimit(16, 512, quantizeSub.get());
-    bool hardAngleVal = hardAngle.get();
+    float gateVal = juce::jlimit(0.01f, 1.0f, displayValue(kGate));
+    float swingVal = juce::jlimit(0.0f, 1.0f, displayValue(kSwing));
+    float rampVal = juce::jlimit(-1.0f, 1.0f, displayValue(kRamp));
+    float skewVal = juce::jlimit(-1.0f, 1.0f, displayValue(kSkew));
+    auto velMode = static_cast<VelocityMode>(displayIndex(kVelMode));
+    int fixedVel = juce::jlimit(1, 127, displayIndex(kFixedVel));
+    float quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.load(std::memory_order_relaxed));
+    int quantizeSubVal = juce::jlimit(16, 512, quantizeSub.load(std::memory_order_relaxed));
+    bool hardAngleVal = hardAngle.load(std::memory_order_relaxed);
 
     // Cycle length in beats (one full pass through the sequence)
     double cycleBeats = seq.length * stepBeats;
@@ -432,25 +487,28 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         double cycleStart = arpOriginBeat_ + cycle * cycleBeats;
 
         if (std::abs(rampVal) > 0.001f && seq.length > 1) {
-            int cyc = juce::jlimit(1, 8, rampCycles.get());
+            int cyc = juce::jlimit(1, 8, rampCycles.load(std::memory_order_relaxed));
             double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
             double tCurved =
-                StepClock::applyRampCurveWithCycles(tLinear, rampVal, skewVal, cyc, hardAngleVal);
+                ramp_curve::applyRampCurveWithCycles(tLinear, rampVal, skewVal, cyc, hardAngleVal);
             return cycleStart + tCurved * cycleBeats;
         }
         return cycleStart + stepInCycle * stepBeats;
     };
 
-    // Block duration in seconds (for MIDI timestamp conversion — TE uses seconds, not samples)
-    double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
+    // Block duration in seconds (MIDI timestamps stay in seconds, not samples)
+    double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
+
+    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock) {
+        message.setTimeStamp(timeInBlock);
+        midi.addEvent({std::move(message), 0});
+    };
 
     // --- 7. Emit pending note-off from previous block ---
     if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
         lastPlayedNote_ >= 0) {
         double frac = (lastNoteOffBeat_ - blockStartBeat) / (blockEndBeat - blockStartBeat);
-        double timeInBlock = frac * blockDurationSecs;
-        midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
-                            te::MPESourceID{});
+        addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), frac * blockDurationSecs);
         lastPlayedNote_ = -1;
         lastNoteOffBeat_ = -1.0;
         clearMidiOutDisplay();
@@ -483,8 +541,7 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
             // Note-off for previous note
             if (lastPlayedNote_ >= 0) {
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
-                                    te::MPESourceID{});
+                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock);
                 lastPlayedNote_ = -1;
             }
 
@@ -507,9 +564,9 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             }
 
             // Note-on
-            midi.addMidiMessage(
+            addTimedMessage(
                 juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
-                timeInBlock, te::MPESourceID{});
+                timeInBlock);
 
             lastPlayedNote_ = note.noteNumber;
             lastPlayedVelocity_ = vel;
@@ -519,9 +576,8 @@ void ArpeggiatorPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             double noteOffBeat = swungBeat + stepBeats * static_cast<double>(gateVal);
             if (noteOffBeat < blockEndBeat) {
                 double offFrac = (noteOffBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
-                double offTimeInBlock = offFrac * blockDurationSecs;
-                midi.addMidiMessage(juce::MidiMessage::noteOff(1, note.noteNumber), offTimeInBlock,
-                                    te::MPESourceID{});
+                addTimedMessage(juce::MidiMessage::noteOff(1, note.noteNumber),
+                                offFrac * blockDurationSecs);
                 lastPlayedNote_ = -1;
                 lastNoteOffBeat_ = -1.0;
                 clearMidiOutDisplay();

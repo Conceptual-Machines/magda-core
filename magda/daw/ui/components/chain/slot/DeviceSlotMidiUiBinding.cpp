@@ -39,7 +39,9 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
     }
 
     if (auto* arpeggiatorUI = customUI.getArpeggiatorUI()) {
-        if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get()))
+        if (auto* arp =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::ArpeggiatorPlugin>(
+                    plugin.get()))
             arpeggiatorUI->setArpeggiator(arp);
     }
 

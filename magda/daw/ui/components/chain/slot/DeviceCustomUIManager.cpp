@@ -822,6 +822,9 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         sidechainUI_->updateFromParameters(device.parameters);
     if (strumUI_ && device.pluginId.equalsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName))
         strumUI_->updateFromParameters(device.parameters);
+    if (arpeggiatorUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
+        arpeggiatorUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
@@ -934,13 +937,17 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
 
     if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
+        forwardParameterChanges(*arpeggiatorUI_, callbacks);
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
-            if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+            if (auto* arp =
+                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::ArpeggiatorPlugin>(
+                        plugin.get())) {
                 arpeggiatorUI_->setArpeggiator(arp);
                 arpPlugin_ = arp;
             }
         }
+        update(device);
         return true;
     }
 

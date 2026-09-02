@@ -2,6 +2,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+#include <vector>
+
 #include "audio/plugins/ArpeggiatorPlugin.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
@@ -10,14 +13,22 @@
 
 namespace magda::daw::ui {
 
-class ArpeggiatorUI : public juce::Component,
-                      private juce::ValueTree::Listener,
-                      private juce::Timer {
+/**
+ * The Arpeggiator is a MagdaDevice (#2299), so this UI is written against the
+ * model: slot values arrive through updateFromParameters(), slot edits leave
+ * through onParameterChanged. The device pointer stays for what is not a slot -
+ * the ramp-cycles / quantize / hard-angle settings the faceplate writes
+ * directly, and the play-step atomics the sweep animation reads.
+ */
+class ArpeggiatorUI : public juce::Component, private juce::Timer {
   public:
     ArpeggiatorUI();
     ~ArpeggiatorUI() override;
 
-    void setArpeggiator(daw::audio::ArpeggiatorPlugin* plugin);
+    void setArpeggiator(daw::audio::ArpeggiatorPlugin* device);
+    void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
+
+    std::function<void(int paramIndex, float value)> onParameterChanged;
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -27,7 +38,6 @@ class ArpeggiatorUI : public juce::Component,
 
   private:
     daw::audio::ArpeggiatorPlugin* plugin_ = nullptr;
-    juce::ValueTree watchedState_;
 
     // Left column
     juce::Label patternLabel_;
@@ -63,15 +73,13 @@ class ArpeggiatorUI : public juce::Component,
 
     int topSectionBottom_ = 0;  // Y boundary between two-column section and full-width RAMP
 
-    void syncFromPlugin();
+    void sendChange(int paramIndex, float value);
+    void syncSettingsFromDevice();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
 
-    // ValueTree::Listener — sync UI when plugin state changes externally
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
-
-    // Timer — poll automatable param values for modulated curve display
+    // Timer — poll modulated values and the play step for the curve display
     void timerCallback() override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArpeggiatorUI)

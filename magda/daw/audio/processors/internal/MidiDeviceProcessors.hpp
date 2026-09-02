@@ -44,12 +44,9 @@ class StrumProcessor : public MagdaDeviceProcessor {
  * - 8: Velocity Mode (discrete 0-2)
  * - 9: Fixed Velocity (1-127)
  */
-class ArpeggiatorProcessor : public AutomatablePluginProcessor {
+class ArpeggiatorProcessor : public MagdaDeviceProcessor {
   public:
     ArpeggiatorProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-  protected:
-    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**

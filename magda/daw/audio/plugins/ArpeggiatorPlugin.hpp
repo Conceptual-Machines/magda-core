@@ -1,21 +1,29 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 
-#include "plugins/MidiDevicePlugin.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/MidiMagdaDevice.hpp"
 
 namespace magda::daw::audio {
 
 /**
- * @brief MIDI arpeggiator plugin that transforms held notes into rhythmic patterns.
+ * @brief MIDI arpeggiator device that transforms held notes into rhythmic patterns.
  *
  * Placed on a track's FX chain before a synth. Captures incoming MIDI note-on/off
  * events, clears the MIDI buffer, and outputs arpeggiated notes synced to the
- * edit's tempo. All processing happens on the audio thread.
+ * block's tempo map. All processing happens on the audio thread.
+ *
+ * A MagdaDevice since #2299: one scheduler hosted by whichever engine is
+ * running it. The slot ids, order and display ranges are the ones the retired
+ * host-native plugin registered. The ramp-cycles / quantize / hard-angle
+ * settings were never parameters - they persist as device state under the
+ * retired property names and the faceplate writes them directly.
  */
-class ArpeggiatorPlugin : public MidiDevicePlugin {
+class ArpeggiatorPlugin : public MidiMagdaDevice {
   public:
-    ArpeggiatorPlugin(const te::PluginCreationInfo& info);
+    ArpeggiatorPlugin();
     ~ArpeggiatorPlugin() override;
 
     static const char* getPluginName() {
@@ -39,49 +47,50 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
     };
     enum class VelocityMode { Original = 0, Fixed, Accent };
 
-    // --- te::Plugin overrides ---
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Arp";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    /// FROZEN slot order - saved links address these by index.
+    enum ParamIndex {
+        kPattern = 0,
+        kRate,
+        kOctaves,
+        kGate,
+        kSwing,
+        kRamp,  // -1..1: bezier depth (perpendicular bow)
+        kSkew,  // -1..1: control-point position offset from centre
+        kLatch,
+        kVelMode,
+        kFixedVel,
+        kNumParams
+    };
+
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Arp",
+            .takesMidiInput = true,
+        };
     }
 
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    int parameterCount() const override {
+        return kNumParams;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
-    // --- Parameter access for UI (CachedValues for persistence) ---
-    juce::CachedValue<int> pattern;
-    juce::CachedValue<int> rate;
-    juce::CachedValue<int> octaveRange;
-    juce::CachedValue<float> gate;
-    juce::CachedValue<float> swing;
-    juce::CachedValue<float> ramp;      // -1.0 to 1.0: bezier depth (perpendicular bow)
-    juce::CachedValue<float> skew;      // -1.0 to 1.0: control-point position offset from centre
-    juce::CachedValue<int> rampCycles;  // 1-8: curve repetitions within one arp cycle
-    juce::CachedValue<bool> latch;
-    juce::CachedValue<int> velocityMode;
-    juce::CachedValue<int> fixedVelocity;
-    juce::CachedValue<float> quantize;
-    juce::CachedValue<int> quantizeSub;
-    juce::CachedValue<bool> hardAngle;
-
-    // --- Automatable parameters (for macro/mod linking) ---
-    te::AutomatableParameter::Ptr patternParam, rateParam, octavesParam;
-    te::AutomatableParameter::Ptr gateParam, swingParam;
-    te::AutomatableParameter::Ptr rampParam, skewParam;
-    te::AutomatableParameter::Ptr latchParam, velModeParam, fixedVelParam;
+    // --- Non-parameter settings (persisted device state, written by the UI) ---
+    // Atomics: the faceplate writes on the message thread while process() reads.
+    std::atomic<int> rampCycles{1};      // 1-8: curve repetitions within one arp cycle
+    std::atomic<float> quantize{0.0f};   // 0..1: pull warped steps toward a regular grid
+    std::atomic<int> quantizeSub{16};    // grid subdivisions for quantize
+    std::atomic<bool> hardAngle{false};  // sharp-cornered ramp curve
 
     /** Quadratic bezier timing curve. Control point at (skew, skew+depth) in graph space.
      *  skew=0.5, depth=0  → linear.
@@ -127,25 +136,21 @@ class ArpeggiatorPlugin : public MidiDevicePlugin {
     // Random
     juce::Random arpRandom_;
 
-    // Helper to sync CachedValue changes to AutomatableParams
-    void syncParamFromProperty(const juce::Identifier& property);
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+    int displayIndex(int index) const;
 
-    // Inner listener to forward ValueTree changes
-    struct ParamSyncListener : public juce::ValueTree::Listener {
-        ArpeggiatorPlugin& owner;
-        explicit ParamSyncListener(ArpeggiatorPlugin& o) : owner(o) {}
-        void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier& p) override {
-            owner.syncParamFromProperty(p);
-        }
-    };
-    ParamSyncListener paramSyncListener_{*this};
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
     void addHeldNote(int noteNumber, int velocity);
     void removeHeldNote(int noteNumber);
     void clearHeldNotes();
-    void sendAllNotesOff(te::MidiMessageArray& midi);
+    void sendAllNotesOff(DeviceMidiBuffer& midi);
     void resetArpState();
 
     struct ExpandedSequence {

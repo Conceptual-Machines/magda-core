@@ -319,10 +319,12 @@ void MagdaConvolutionPlugin::flushState(juce::ValueTree& state) {
     state.setProperty(kNormaliseProp, normalise_, nullptr);
     state.setProperty(kTrimSilenceProp, trimSilence_, nullptr);
 
+    // Only written when the device holds an IR. A device with none leaves the
+    // property alone rather than removing it: the retired device stored the
+    // blob directly on this tree, and state written there behind the device's
+    // back (tests do; a failed decode could) must survive a flush.
     if (irData_.getSize() > 0)
         state.setProperty(kIrFileDataProp, juce::var(irData_), nullptr);
-    else
-        state.removeProperty(kIrFileDataProp, nullptr);
 }
 
 void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {

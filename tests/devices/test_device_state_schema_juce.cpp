@@ -10,6 +10,7 @@
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
@@ -115,7 +116,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         beginTest("Device state round-trips through capture and restore");
 
         auto source = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
-        auto* sourceArp = dynamic_cast<audio::ArpeggiatorPlugin*>(source.get());
+        auto* sourceArp = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(source.get());
         expect(sourceArp != nullptr);
         if (sourceArp == nullptr)
             return;
@@ -141,11 +142,11 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             return;
         ta::applyDeviceStateParameters(*restored, state);
 
-        auto* restoredArp = dynamic_cast<audio::ArpeggiatorPlugin*>(restored.get());
+        auto* restoredArp = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(restored.get());
         expect(restoredArp != nullptr);
         if (restoredArp != nullptr) {
-            expectEquals(restoredArp->quantizeSub.get(), 8);
-            expect(restoredArp->hardAngle.get());
+            expectEquals(restoredArp->quantizeSub.load(), 8);
+            expect(restoredArp->hardAngle.load());
         }
 
         if (auto gate = restored->getAutomatableParameterByID("gate"))
@@ -344,11 +345,11 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (plugin == nullptr)
             return;
 
-        auto* arp = dynamic_cast<audio::ArpeggiatorPlugin*>(plugin.get());
+        auto* arp = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(plugin.get());
         expect(arp != nullptr);
         if (arp != nullptr) {
-            expectEquals(arp->quantizeSub.get(), 8);
-            expect(arp->hardAngle.get());
+            expectEquals(arp->quantizeSub.load(), 8);
+            expect(arp->hardAngle.load());
         }
 
         plugin->deleteFromParent();
