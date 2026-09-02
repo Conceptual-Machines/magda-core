@@ -348,13 +348,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .description = "Curve-shaped strum: turns a held chord into a strum / roll / "
                                   "arpeggio for any instrument.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .matchesPlugin = matches<MidiStrumPlugin>,
+                   .matchesPlugin = matchesDevice<MidiStrumPlugin>,
                    .createProcessor = makeProcessor<StrumProcessor>,
                    .showInBrowser = true,
                    .tags = kStrumTags,
                    .tagCount = static_cast<int>(std::size(kStrumTags)),
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<MidiStrumPlugin>});
+                   .createDevice = createDevice<MidiStrumPlugin>});
     add(registry,
         {.pluginId = StepSequencerPlugin::xmlTypeName,
          .displayName = "Step Sequencer",

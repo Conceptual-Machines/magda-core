@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
 #include <vector>
 
 #include "audio/plugins/MidiStrumPlugin.hpp"
@@ -18,13 +19,20 @@ namespace magda::daw::ui {
  * the tick strip at the bottom of the Arpeggiator's Time Bend curve. The strum's
  * timing is a fixed shape preset, so there is no draggable curve editor - the
  * strip is purely a visualisation of the selected preset + cycles.
+ *
+ * Strum is a MagdaDevice (#2299), so this UI is written against the model like
+ * HaloUI: values arrive through updateFromParameters(), edits leave through
+ * onParameterChanged, and the onset preview is computed by the device's pure
+ * static helper. No plugin pointer, no state watching.
  */
-class StrumUI : public juce::Component, private juce::ValueTree::Listener {
+class StrumUI : public juce::Component {
   public:
     StrumUI();
     ~StrumUI() override;
 
-    void setPlugin(daw::audio::MidiStrumPlugin* plugin);
+    void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
+
+    std::function<void(int paramIndex, float value)> onParameterChanged;
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -43,8 +51,12 @@ class StrumUI : public juce::Component, private juce::ValueTree::Listener {
         std::vector<float> onsets_;
     };
 
-    daw::audio::MidiStrumPlugin* plugin_ = nullptr;
-    juce::ValueTree watchedState_;
+    // Cached display values (updateFromParameters is the writer), so the
+    // enable/preview logic can read them without a device.
+    int trigger_ = 0;
+    int shape_ = 1;
+    int cycles_ = 0;
+    int loopSync_ = 0;
 
     juce::Label triggerLabel_;
     juce::ComboBox triggerCombo_;
@@ -64,15 +76,12 @@ class StrumUI : public juce::Component, private juce::ValueTree::Listener {
     juce::Label vizLabel_;
     OnsetStrip onsetStrip_;
 
-    void syncFromPlugin();
+    void sendChange(int paramIndex, float value);
     void refreshOnsets();
     void updateLoopControls();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
-
-    // ValueTree::Listener — resync UI when plugin state changes externally.
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(StrumUI)
 };

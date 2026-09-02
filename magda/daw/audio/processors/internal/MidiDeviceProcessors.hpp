@@ -1,6 +1,7 @@
 #pragma once
 
 #include "processors/base/AutomatablePluginProcessor.hpp"
+#include "processors/base/MagdaDeviceProcessor.hpp"
 
 namespace magda {
 
@@ -18,19 +19,13 @@ class StepSequencerPlugin;
  *
  * Exposes the strum scheduler's parameters so macros can target them, and
  * labels the discrete ones for the generic device UI.
- * - 0: Trigger (Chord / Sync)
- * - 1: Order (Up / Down / Up-Down / As Played)
- * - 2: Shape (8 curve presets)
- * - 3: Cycles (1-8)
- * - 4: Strum Length (ms)
- * - 5: Sync Interval (ms)
+ *
+ * Strum is a MagdaDevice (#2299), so the chain holds the host's wrapper and
+ * the display metadata (choices, units) comes from the device's own slots.
  */
-class StrumProcessor : public AutomatablePluginProcessor {
+class StrumProcessor : public MagdaDeviceProcessor {
   public:
     StrumProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-  protected:
-    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**

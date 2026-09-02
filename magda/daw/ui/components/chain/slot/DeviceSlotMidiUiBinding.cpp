@@ -6,6 +6,7 @@
 #include "audio/plugins/MidiStrumPlugin.hpp"
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
@@ -42,11 +43,13 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
             arpeggiatorUI->setArpeggiator(arp);
     }
 
-    if (auto* strumUI = customUI.getStrumUI()) {
-        if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
-            strumUI->setPlugin(strum);
+    if (customUI.getStrumUI() != nullptr) {
+        // Strum is a MagdaDevice (#2299): the UI reads the model, so only the
+        // note-strip binding needs the live device, through the host adapter.
+        if (auto* strum =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiStrumPlugin>(
+                    plugin.get()))
             customUI.bindStrumPlugin(strum);
-        }
     }
 
     if (auto* stepSequencerUI = customUI.getStepSequencerUI()) {

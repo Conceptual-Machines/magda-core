@@ -820,6 +820,8 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         nimbusUI_->updateFromParameters(device.parameters);
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromParameters(device.parameters);
+    if (strumUI_ && device.pluginId.equalsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName))
+        strumUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
@@ -915,7 +917,8 @@ bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
 }
 
 bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
-                                                juce::Component& parent) {
+                                                juce::Component& parent,
+                                                const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();
         parent.addAndMakeVisible(*chordEngineUI_);
@@ -943,13 +946,13 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
 
     if (device.pluginId.containsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName)) {
         strumUI_ = std::make_unique<StrumUI>();
+        forwardParameterChanges(*strumUI_, callbacks);
         parent.addAndMakeVisible(*strumUI_);
-        if (auto plugin = getLivePlugin()) {
-            if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
-                strumUI_->setPlugin(strum);
-                strumPlugin_ = strum;
-            }
-        }
+        if (auto plugin = getLivePlugin())
+            strumPlugin_ =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiStrumPlugin>(
+                    plugin.get());
+        update(device);
         return true;
     }
 
@@ -2094,7 +2097,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (daw::audio::internalPluginHasTag(device.pluginId, "external-insert")) {
         createExternalInsertUI(device, *parent);
-    } else if (!createMidiUtilityUI(device, *parent)) {
+    } else if (!createMidiUtilityUI(device, *parent, uiCallbacks)) {
         createAnalyzerUI(device, *parent);
     }
 }

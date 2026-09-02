@@ -30,6 +30,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiDevicePlugin.hpp"
 #include "plugins/MidiInThruSync.hpp"
+#include "plugins/MidiMagdaDevice.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -86,6 +87,10 @@ const char* pluginFormatText(PluginFormat format) {
 bool pluginProducesMidi(te::Plugin& plugin) {
     if (auto* processor = plugin.getWrappedAudioProcessor())
         return processor->producesMidi() || processor->isMidiEffect();
+
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiMagdaDevice>(&plugin) !=
+        nullptr)
+        return true;
 
     return dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr;
 }
