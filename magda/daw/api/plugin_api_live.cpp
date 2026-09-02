@@ -11,8 +11,10 @@
 #include "../audio/plugins/IFaustEditorModel.hpp"
 #include "../audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "../audio/plugins/StepSequencerPlugin.hpp"
+#include "../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../core/ParameterUtils.hpp"
 #include "../core/PresetManager.hpp"
+#include "../core/StepPatternCommands.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/aliases/ParamNameNormalize.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -36,6 +38,14 @@ std::vector<DeviceInfo> toDeviceInfo(const juce::Array<juce::PluginDescription>&
         plugins.push_back(std::move(plugin));
     }
     return plugins;
+}
+
+/// A device's parameter in its display domain, or @p fallback when the model
+/// has no entry for that slot yet.
+float deviceParameterValue(const DeviceInfo& device, int index, float fallback) {
+    if (index < 0 || index >= static_cast<int>(device.parameters.size()))
+        return fallback;
+    return device.parameters[static_cast<size_t>(index)].currentValue;
 }
 
 AudioBridge* getAudioBridge() {
@@ -103,35 +113,51 @@ std::vector<DeviceInfo> PluginApiLive::getAllExternalPlugins() const {
 
 std::optional<SequencerRuntimeContext> PluginApiLive::getStepSequencerContext(
     const ChainNodePath& path) const {
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr)
+    // The model, not the live device: the pattern and the slot values are what
+    // the model holds (#2313/#2317), and an agent can ask about a sequencer on
+    // a track the engine has not instantiated.
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(path);
+    if (device == nullptr || !device->pluginId.equalsIgnoreCase("stepsequencer"))
         return std::nullopt;
 
+    using Seq = daw::audio::StepSequencerPlugin;
     return SequencerRuntimeContext{
-        .numSteps = sequencer->numSteps.get(),
-        .rate = sequencer->rate.get(),
-        .swing = sequencer->swing.get(),
-        .gateLength = sequencer->gateLength.get(),
+        .numSteps = step_pattern::monoPatternOf(device->pluginState).playingLength(),
+        .rate = juce::roundToInt(deviceParameterValue(*device, Seq::kRate, 7.0f)),
+        .swing = deviceParameterValue(*device, Seq::kSwing, 0.0f),
+        .gateLength = deviceParameterValue(*device, Seq::kGateLength, 0.8f),
     };
 }
 
 std::optional<SequencerRuntimeContext> PluginApiLive::getPolySequencerContext(
     const ChainNodePath& path) const {
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr)
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(path);
+    if (device == nullptr || !device->pluginId.equalsIgnoreCase("polystepsequencer"))
         return std::nullopt;
 
+    using Seq = daw::audio::PolyStepSequencerPlugin;
     SequencerRuntimeContext context{
-        .numSteps = sequencer->numSteps.get(),
-        .rate = sequencer->rate.get(),
-        .swing = sequencer->swing.get(),
-        .gateLength = sequencer->gateLength.get(),
-        .viewMode = sequencer->viewMode.get(),
+        .numSteps = step_pattern::polyPatternOf(device->pluginState).playingLength(),
+        .rate = juce::roundToInt(deviceParameterValue(*device, Seq::kRate, 7.0f)),
+        .swing = deviceParameterValue(*device, Seq::kSwing, 0.0f),
+        .gateLength = deviceParameterValue(*device, Seq::kGateLength, 0.8f),
     };
+
+    if (auto doc = device_state::decode(device->pluginState)) {
+        if (const auto* mode = doc->root.props.getVarPointer(Seq::SettingIDs::viewMode))
+            context.viewMode = mode->toString();
+    }
+
+    // The drum grid this sequencer plays into names its lanes, so an agent can
+    // write "kick" rather than note 36. The chain is still the engine's to
+    // walk: the model has no ordering of a rack's inner plugins.
+    auto* bridge = getAudioBridge();
+    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
+    auto* sequencer = daw::audio::tracktion_adapter::deviceFromPlugin<Seq>(plugin.get()) != nullptr
+                          ? plugin.get()
+                          : nullptr;
+    if (sequencer == nullptr)
+        return context;
 
     auto* track = sequencer->getOwnerTrack();
     if (track == nullptr)
@@ -187,47 +213,43 @@ juce::String PluginApiLive::applyStepSequencerPattern(const ChainNodePath& path,
     if (device == nullptr || !device->pluginId.equalsIgnoreCase("stepsequencer"))
         return "(target device is not a Step Sequencer)";
 
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr)
-        return "(could not resolve live Step Sequencer)";
+    using Seq = daw::audio::StepSequencerPlugin;
 
-    auto* undoManager = sequencer->getUndoManager();
-    if (pattern.numSteps >= 1)
-        sequencer->state.setProperty("seqNumSteps", pattern.numSteps, undoManager);
+    // Rate, swing and gate are slots, so they go through the model's parameter
+    // write path; the pattern is authored state, so it goes through the model's
+    // undoable pattern edit (#2313). Neither touches the live device directly.
     if (pattern.rate >= 0)
-        sequencer->state.setProperty("seqRate", pattern.rate, undoManager);
+        trackManager.setDeviceParameterValue(path, Seq::kRate, static_cast<float>(pattern.rate));
     if (pattern.swing >= 0.0f)
-        sequencer->state.setProperty("seqSwing", pattern.swing, undoManager);
+        trackManager.setDeviceParameterValue(path, Seq::kSwing, pattern.swing);
     if (pattern.gateLength >= 0.0f)
-        sequencer->state.setProperty("seqGateLength", pattern.gateLength, undoManager);
-
-    const int numStepsToClear =
-        juce::jlimit(1, daw::audio::StepSequencerPlugin::MAX_STEPS,
-                     pattern.numSteps >= 1 ? pattern.numSteps : sequencer->numSteps.get());
-    for (int i = 0; i < numStepsToClear; ++i)
-        sequencer->clearStep(i);
+        trackManager.setDeviceParameterValue(path, Seq::kGateLength, pattern.gateLength);
 
     int stepsWritten = 0;
-    for (const auto& step : pattern.steps) {
-        if (step.index < 0 || step.index >= daw::audio::StepSequencerPlugin::MAX_STEPS)
-            continue;
-        sequencer->setStepGate(step.index, step.gate);
-        if (step.noteNumber != 60)
-            sequencer->setStepNote(step.index, step.noteNumber);
-        if (step.octaveShift != 0)
-            sequencer->setStepOctaveShift(step.index, step.octaveShift);
-        if (step.accent)
-            sequencer->setStepAccent(step.index, true);
-        if (step.glide)
-            sequencer->setStepGlide(step.index, true);
-        if (step.tie)
-            sequencer->setStepTie(step.index, true);
-        ++stepsWritten;
-    }
+    editMonoStepPattern(path, "Apply Step Pattern", [&](step_pattern::MonoPattern& target) {
+        if (pattern.numSteps >= 1)
+            target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
 
-    bridge->getPluginManager().capturePluginState(path);
+        // The incoming pattern is the whole pattern: steps it does not mention
+        // are rests, not leftovers from what was there before.
+        const int playing = target.playingLength();
+        for (int i = 0; i < playing; ++i)
+            target.steps[static_cast<size_t>(i)] = Seq::Step{};
+
+        for (const auto& step : pattern.steps) {
+            if (step.index < 0 || step.index >= Seq::MAX_STEPS)
+                continue;
+            auto& written = target.steps[static_cast<size_t>(step.index)];
+            written.noteNumber = juce::jlimit(0, 127, step.noteNumber);
+            written.octaveShift = juce::jlimit(-2, 2, step.octaveShift);
+            written.gate = step.gate;
+            written.accent = step.accent;
+            written.glide = step.glide;
+            written.tie = step.tie;
+            ++stepsWritten;
+        }
+    });
+
     if (pattern.description.isNotEmpty())
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);
     return "applied " + juce::String(stepsWritten) + " step(s) to " + device->name;
@@ -240,48 +262,49 @@ juce::String PluginApiLive::applyPolySequencerPattern(const ChainNodePath& path,
     if (device == nullptr || !device->pluginId.equalsIgnoreCase("polystepsequencer"))
         return "(target device is not a Poly Step Sequencer)";
 
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr)
-        return "(could not resolve live Poly Step Sequencer)";
+    using Seq = daw::audio::PolyStepSequencerPlugin;
 
-    auto* undoManager = sequencer->getUndoManager();
-    if (pattern.numSteps >= 1)
-        sequencer->state.setProperty("seqNumSteps", pattern.numSteps, undoManager);
     if (pattern.rate >= 0)
-        sequencer->state.setProperty("seqRate", pattern.rate, undoManager);
+        trackManager.setDeviceParameterValue(path, Seq::kRate, static_cast<float>(pattern.rate));
     if (pattern.swing >= 0.0f)
-        sequencer->state.setProperty("seqSwing", pattern.swing, undoManager);
+        trackManager.setDeviceParameterValue(path, Seq::kSwing, pattern.swing);
     if (pattern.gateLength >= 0.0f)
-        sequencer->state.setProperty("seqGateLength", pattern.gateLength, undoManager);
-
-    const int numStepsToClear =
-        juce::jlimit(1, daw::audio::PolyStepSequencerPlugin::MAX_STEPS,
-                     pattern.numSteps >= 1 ? pattern.numSteps : sequencer->numSteps.get());
-    for (int i = 0; i < numStepsToClear; ++i)
-        sequencer->clearStep(i);
+        trackManager.setDeviceParameterValue(path, Seq::kGateLength, pattern.gateLength);
 
     int stepsWritten = 0;
     int notesWritten = 0;
-    for (const auto& step : pattern.steps) {
-        if (step.index < 0 || step.index >= daw::audio::PolyStepSequencerPlugin::MAX_STEPS)
-            continue;
-        sequencer->setStepGate(step.index, step.gate);
-        if (step.tie)
-            sequencer->setStepTie(step.index, true);
-        if (step.probability < 1.0f)
-            sequencer->setStepProbability(step.index, step.probability);
-        if (step.velocity != 100)
-            sequencer->setStepVelocity(step.index, step.velocity);
-        for (const auto& note : step.notes) {
-            sequencer->addStepNote(step.index, note.noteNumber, note.velocityOverride);
-            ++notesWritten;
-        }
-        ++stepsWritten;
-    }
+    editPolyStepPattern(path, "Apply Poly Step Pattern", [&](step_pattern::PolyPattern& target) {
+        if (pattern.numSteps >= 1)
+            target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
 
-    bridge->getPluginManager().capturePluginState(path);
+        // The incoming pattern is the whole pattern: steps it does not mention
+        // are rests, not leftovers from what was there before.
+        const int playing = target.playingLength();
+        for (int i = 0; i < playing; ++i)
+            target.steps[static_cast<size_t>(i)] = Seq::Step{};
+
+        for (const auto& step : pattern.steps) {
+            if (step.index < 0 || step.index >= Seq::MAX_STEPS)
+                continue;
+            auto& written = target.steps[static_cast<size_t>(step.index)];
+            written.gate = step.gate;
+            written.tie = step.tie;
+            written.probability = juce::jlimit(0.0f, 1.0f, step.probability);
+            written.velocity = juce::jlimit(1, 127, step.velocity);
+            written.noteCount = 0;
+            for (const auto& note : step.notes) {
+                if (written.noteCount >= Seq::MAX_NOTES_PER_STEP)
+                    break;
+                auto& target_note = written.notes[static_cast<size_t>(written.noteCount)];
+                target_note.noteNumber = juce::jlimit(0, 127, note.noteNumber);
+                target_note.velocity = juce::jlimit(0, 127, note.velocityOverride);
+                ++written.noteCount;
+                ++notesWritten;
+            }
+            ++stepsWritten;
+        }
+    });
+
     if (pattern.description.isNotEmpty())
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);
     return "applied " + juce::String(stepsWritten) + " step(s), " + juce::String(notesWritten) +

@@ -16,7 +16,8 @@ namespace magda::daw::audio {
  * audio through, not a synth) is what DeviceProperties defaults already say,
  * so each device declares its own properties() and nothing here.
  *
- * The retired base is deleted when the last of its subclasses crosses (#2299).
+ * The retired base is gone: the step sequencers were its last two subclasses,
+ * and they crossed in #2313.
  */
 class MidiMagdaDevice : public MagdaDevice {
   public:

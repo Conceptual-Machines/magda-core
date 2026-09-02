@@ -1,8 +1,8 @@
-#include "transport/StepClock.hpp"
+#include "sequencer/StepClock.hpp"
 
 #include "transport/RampCurve.hpp"
 
-namespace magda::daw::audio {
+namespace magda::daw::audio::sequencer {
 
 StepClock::StepClock() = default;
 
@@ -17,6 +17,7 @@ void StepClock::reset() {
     running_ = false;
     beatOffset_ = 0.0;
     lastBlockEndBeat_ = 0.0;
+    pendingCount_ = 0;
 }
 
 double StepClock::rateToBeats(Rate r) {
@@ -91,35 +92,34 @@ int StepClock::advanceStep(int current, int numSteps, Direction dir) {
     }
 }
 
-int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
-                            Direction direction, float swing, int numSteps, StepEvent* events,
-                            int maxEvents, float rampDepth, float rampSkew, int rampCycles,
-                            bool hardAngle, float quantizeAmount, int quantizeSub) {
+int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction direction, float swing,
+                            int numSteps, StepEvent* events, int maxEvents, float rampDepth,
+                            float rampSkew, int rampCycles, bool hardAngle, float quantizeAmount,
+                            int quantizeSub) {
     if (numSteps <= 0 || maxEvents <= 0)
         return 0;
 
     // --- Handle transport transitions ---
-    if (fc.isPlaying && !wasPlaying_) {
+    if (timing.isPlaying && !wasPlaying_) {
         reset();
         wasPlaying_ = true;
         running_ = true;
-    } else if (!fc.isPlaying && wasPlaying_) {
+    } else if (!timing.isPlaying && wasPlaying_) {
         reset();
         return 0;
     }
 
     // Only run when transport is playing
-    if (!fc.isPlaying) {
+    if (!timing.isPlaying) {
         running_ = false;
         return 0;
     }
 
     running_ = true;
 
-    // --- Get beat positions for this block ---
-    auto& tempoSeq = edit.tempoSequence;
-    double blockStartBeat = tempoSeq.toBeats(fc.editTime.getStart()).inBeats();
-    double blockEndBeat = tempoSeq.toBeats(fc.editTime.getEnd()).inBeats();
+    // --- Beat positions for this block, as the caller's engine resolved them ---
+    double blockStartBeat = timing.startBeat;
+    double blockEndBeat = timing.endBeat;
 
     if (blockEndBeat <= blockStartBeat)
         return 0;
@@ -136,7 +136,7 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
 
     double stepBeats = rateToBeats(rate);
     double cycleBeats = stepBeats * numSteps;
-    double blockDurationSecs = static_cast<double>(fc.bufferNumSamples) / sampleRate_;
+    double blockDurationSecs = static_cast<double>(timing.numSamples) / sampleRate_;
     bool hasRamp = std::abs(rampDepth) > 0.001f && numSteps > 1;
 
     // Helper: compute the warped duration for a given step in the cycle
@@ -201,6 +201,30 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     // --- Emit step events within this block ---
     int eventCount = 0;
 
+    // Write one event, clamping a position the block has already passed to its
+    // start rather than losing the step.
+    auto emit = [&](int stepIndex, double beatPosition) {
+        const double clamped = std::max(beatPosition, blockStartBeat);
+        const double frac = (clamped - blockStartBeat) / (blockEndBeat - blockStartBeat);
+        events[eventCount] = {.stepIndex = stepIndex,
+                              .beatPosition = clamped,
+                              .timeInBlock = frac * blockDurationSecs};
+        ++eventCount;
+    };
+
+    // Steps a previous block scheduled past its own end (swing, quantize) fire
+    // in the block that contains them.
+    int stillPending = 0;
+    for (int i = 0; i < pendingCount_; ++i) {
+        const auto& step = pending_[static_cast<size_t>(i)];
+        if (step.beat >= blockEndBeat) {
+            pending_[static_cast<size_t>(stillPending++)] = step;
+        } else if (eventCount < maxEvents) {
+            emit(step.stepIndex, step.beat);
+        }
+    }
+    pendingCount_ = stillPending;
+
     while (nextStepBeat_ < blockEndBeat && eventCount < maxEvents) {
         // Apply swing to odd ticks
         double swungBeat = nextStepBeat_;
@@ -214,13 +238,11 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
             swungBeat += (snapped - swungBeat) * static_cast<double>(quantizeAmount);
         }
 
-        if (swungBeat >= blockStartBeat && swungBeat < blockEndBeat) {
-            double frac = (swungBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
-            double timeInBlock = frac * blockDurationSecs;
-
-            events[eventCount] = {
-                .stepIndex = sequenceStep_, .beatPosition = swungBeat, .timeInBlock = timeInBlock};
-            ++eventCount;
+        if (swungBeat < blockEndBeat) {
+            emit(sequenceStep_, swungBeat);
+        } else if (pendingCount_ < kMaxPending) {
+            // Swung past this block: hold it for the block that contains it.
+            pending_[static_cast<size_t>(pendingCount_++)] = {sequenceStep_, swungBeat};
         }
 
         // Advance to next step
@@ -235,4 +257,4 @@ int StepClock::processBlock(const te::PluginRenderContext& fc, te::Edit& edit, R
     return eventCount;
 }
 
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::sequencer

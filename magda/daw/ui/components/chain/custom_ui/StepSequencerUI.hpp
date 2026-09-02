@@ -2,7 +2,12 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <functional>
+#include <vector>
+
 #include "audio/plugins/StepSequencerPlugin.hpp"
+#include "core/ParameterInfo.hpp"
+#include "core/StepPatternCommands.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -24,15 +29,38 @@ namespace magda::daw::ui {
  * Click a step to select it, then click a keyboard key to assign pitch.
  * Use < > arrows to shift the keyboard range up/down by one octave.
  * Click accent/glide toggles directly.
+ *
+ * Written against the model (#2299/#2313): slot values arrive through
+ * updateFromParameters() and leave through onParameterChanged, the pattern
+ * arrives through setPattern() and every edit to it leaves through
+ * onPatternEdited as one undoable command. The device pointer stays for what
+ * only the running device knows - the play step and the step recorder.
  */
-class StepSequencerUI : public juce::Component,
-                        private juce::ValueTree::Listener,
-                        private juce::Timer {
+class StepSequencerUI : public juce::Component, private juce::Timer {
   public:
     StepSequencerUI();
     ~StepSequencerUI() override;
 
-    void setPlugin(daw::audio::StepSequencerPlugin* plugin);
+    void setSequencer(daw::audio::StepSequencerPlugin* device);
+
+    void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
+
+    /// The pattern the model holds. Redrawing follows; nothing is sent back.
+    void setPattern(const step_pattern::MonoPattern& pattern);
+
+    std::function<void(int paramIndex, float value)> onParameterChanged;
+
+    /// Fired when a non-slot setting (ramp cycles, quantize, subdivision, hard
+    /// angle) is edited, carrying ALL of them in the device's own state
+    /// vocabulary (StepSequencerPlugin::SettingIDs). The owner patches the
+    /// model's document; the projection updates the live device (#2317).
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
+
+    /// Fired for every pattern edit. The owner runs the change over the model's
+    /// current pattern and commits it as one undoable step (#2313).
+    std::function<void(const juce::String& description,
+                       std::function<void(step_pattern::MonoPattern&)>, magda::StepPatternGesture)>
+        onPatternEdited;
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -44,8 +72,11 @@ class StepSequencerUI : public juce::Component,
     void mouseUp(const juce::MouseEvent& e) override;
 
   private:
-    daw::audio::StepSequencerPlugin* plugin_ = nullptr;
-    juce::ValueTree watchedState_;
+    daw::audio::StepSequencerPlugin* device_ = nullptr;
+    step_pattern::MonoPattern pattern_;
+    // Mirror of the curve display's hard-angle toggle, so settingsEdited() can
+    // publish the full settings set from the controls alone.
+    bool hardAngle_ = false;
 
     // --- Controls ---
     juce::Label rateLabel_;
@@ -126,13 +157,17 @@ class StepSequencerUI : public juce::Component,
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
 
-    void syncFromPlugin();
+    void sendChange(int paramIndex, float value);
+    void settingsEdited();
+    void syncSettingsFromDevice();
 
-    // ValueTree::Listener
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
-    void valueTreeChildAdded(juce::ValueTree& parentTree, juce::ValueTree& child) override;
-    void valueTreeChildRemoved(juce::ValueTree& parentTree, juce::ValueTree& child,
-                               int indexFromWhichChildWasRemoved) override;
+    /// Run @p edit over the model's pattern as one undoable step.
+    void editPattern(const juce::String& description,
+                     std::function<void(step_pattern::MonoPattern&)> edit,
+                     magda::StepPatternGesture gesture = magda::StepPatternGesture::Discrete);
+
+    /// Notes the device's step recorder captured, committed to the model.
+    void drainRecordedSteps();
 
     // Timer — poll playback position
     void timerCallback() override;

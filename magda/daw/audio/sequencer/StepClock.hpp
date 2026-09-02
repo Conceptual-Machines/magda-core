@@ -1,11 +1,10 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
-#include <tracktion_engine/tracktion_engine.h>
 
-namespace magda::daw::audio {
+#include <array>
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio::sequencer {
 
 /**
  * @brief Tempo-synced step clock used by MIDI sequencer devices.
@@ -19,6 +18,10 @@ namespace te = tracktion::engine;
  *
  * Used by composition — each MIDI device that needs step-based timing owns a StepClock
  * and calls processBlock() each audio buffer to get the steps that fire within that block.
+ *
+ * Engine-neutral since #2313: the block's musical extent arrives as a
+ * BlockTiming, so the clock never asks a host for a tempo sequence and both
+ * engines' devices drive the same code.
  */
 class StepClock {
   public:
@@ -38,6 +41,21 @@ class StepClock {
 
     // --- Direction modes ---
     enum class Direction { Forward = 0, Reverse, PingPong, Random };
+
+    /**
+     * @brief One block's musical extent, as the caller's engine resolved it.
+     *
+     * The device converts its own host's block into this: beats at the block's
+     * start and end, whether the transport is running, and the block length in
+     * samples (which, with the clock's sample rate, gives an event's offset in
+     * seconds).
+     */
+    struct BlockTiming {
+        double startBeat = 0.0;
+        double endBeat = 0.0;
+        bool isPlaying = false;
+        int numSamples = 0;
+    };
 
     // --- Step event emitted by processBlock ---
     struct StepEvent {
@@ -59,8 +77,7 @@ class StepClock {
     /**
      * @brief Process one audio block and return step events that fire within it.
      *
-     * @param fc          Plugin render context (provides editTime, isPlaying, etc.)
-     * @param edit        The edit (for tempo sequence)
+     * @param timing      The block's musical extent and transport state
      * @param rate        Current rate division
      * @param direction   Current direction mode
      * @param swing       Swing amount 0-1
@@ -69,11 +86,10 @@ class StepClock {
      * @param maxEvents   Maximum events to write
      * @return            Number of events written
      */
-    int processBlock(const te::PluginRenderContext& fc, te::Edit& edit, Rate rate,
-                     Direction direction, float swing, int numSteps, StepEvent* events,
-                     int maxEvents, float rampDepth = 0.0f, float rampSkew = 0.0f,
-                     int rampCycles = 1, bool hardAngle = false, float quantizeAmount = 0.0f,
-                     int quantizeSub = 16);
+    int processBlock(const BlockTiming& timing, Rate rate, Direction direction, float swing,
+                     int numSteps, StepEvent* events, int maxEvents, float rampDepth = 0.0f,
+                     float rampSkew = 0.0f, int rampCycles = 1, bool hardAngle = false,
+                     float quantizeAmount = 0.0f, int quantizeSub = 16);
 
     /** Current step index within the sequence (for UI display). */
     int getCurrentStep() const {
@@ -131,8 +147,22 @@ class StepClock {
     // Random
     juce::Random random_;
 
+    // Steps whose swung or quantized position landed beyond the block that
+    // scheduled them. Swing offsets a tick by up to half a step, which at a
+    // typical block size is several blocks away; before #2313 such a tick was
+    // simply not emitted, so any swing above a few percent silently dropped
+    // half the pattern. They are held here and emitted by the block that
+    // actually contains them.
+    struct PendingStep {
+        int stepIndex = 0;
+        double beat = 0.0;
+    };
+    static constexpr int kMaxPending = 8;
+    std::array<PendingStep, kMaxPending> pending_{};
+    int pendingCount_ = 0;
+
     /** Advance step index based on direction. */
     int advanceStep(int current, int numSteps, Direction dir);
 };
 
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::sequencer
