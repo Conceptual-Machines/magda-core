@@ -2,10 +2,12 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <vector>
 
+#include "clip/ClipSnapshot.hpp"
 #include "exec/PlanBindings.hpp"
 #include "launch/LaunchHandle.hpp"
 #include "plan/RenderPlan.hpp"
@@ -135,6 +137,21 @@ class RuntimeStateFactory {
 struct RuntimeStateIds {
     std::set<DeviceKey> devices;
     std::set<TrackId> tracks;
+
+    /**
+     * @brief Every session slot the model holds, when the caller knows them.
+     *
+     * Absent rather than empty when it does not. Slots are clips, and the walk
+     * that answers what exists is handed tracks, so a caller with no snapshot
+     * to hand cannot name them; absent means "keep by track", which leaks a
+     * handle rather than retiring one something may still be holding.
+     *
+     * Track granularity is not enough on its own. A slot emptied while its
+     * track remains would keep its handle for ever, so the next clip put in
+     * that scene would inherit the old one's play state, loop phase and played
+     * range (#2301).
+     */
+    std::optional<std::set<SlotKey>> slots;
 };
 
 /**
@@ -145,6 +162,16 @@ struct RuntimeStateIds {
  */
 RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
                                        const TrackInfo& master);
+
+/**
+ * @brief The same, with the session slots @p clips says exist.
+ *
+ * The snapshot rather than the model because that is what enumerates slots, and
+ * because it is what a handle would be made for: a slot the snapshot does not
+ * carry has nothing to launch.
+ */
+RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
+                                       const TrackInfo& master, const ClipSnapshot& clips);
 
 /**
  * @brief The runtime objects behind a plan's leaf ops, owned across swaps.

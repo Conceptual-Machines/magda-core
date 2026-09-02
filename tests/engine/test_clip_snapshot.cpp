@@ -80,7 +80,7 @@ ClipSnapshot compile(std::vector<ClipInfo> clips, const TempoMap& tempoMap) {
 const std::string kGoldenDump =
     "magda-clip-snapshot v1\n"
     "tempo=a95350905fc122eb tracks=1\n"
-    "track 1 audio=2 midi=1\n"
+    "track 1 audio=2 midi=1 session=0\n"
     "  audio clip=1 span=0.000..8.000b 0.000..4.000s fade=0.000/1.000 curve=lin/lin "
     "behaviour=0/0 gain=0.0 pan=0.00 launch=256\n"
     "    event 1 src=7 file=loop.wav rate=48000 span=0.000..8.000b 0.000..4.000s anchor=0 "
@@ -747,4 +747,42 @@ TEST_CASE("A track carrying both views keeps them apart", "[engine][clip][sessio
     REQUIRE(track.slot(0)->audio.size() == 1);
     CHECK(track.slot(0)->audio.front().clipId == 2);
     CHECK(snapshot.diagnostics.empty());
+}
+
+TEST_CASE("A session slot is in the dump, in the arrangement's own detail",
+          "[engine][clip][session]") {
+    // The dump is the snapshot's canonical surface, so a session slot has to be
+    // in it at the same detail an arrangement clip is. Printing only the count
+    // would let two materially different session snapshots compare identical,
+    // which is the one thing this file exists to prevent.
+    const auto snapshot = compileSession({makeSessionClip(1, 3, 18.5, 8.0)}, makeTempoMap());
+    const auto text = dumpClipSnapshot(snapshot);
+
+    INFO(text);
+
+    CHECK(text.find("track 1 audio=0 midi=0 session=1") != std::string::npos);
+    CHECK(text.find("slot scene=3 length=8.000b audio=1 midi=0") != std::string::npos);
+
+    // The slot's own material, not just its header: the clip, its span at the
+    // origin, and the event underneath it with the source it reads.
+    CHECK(text.find("audio clip=1 span=0.000..8.000b") != std::string::npos);
+    CHECK(text.find("event 1 src=7 file=loop.wav") != std::string::npos);
+
+    CHECK(text.find("/tmp/") == std::string::npos);
+}
+
+TEST_CASE("Two session snapshots that differ do not dump alike", "[engine][clip][session]") {
+    const auto tempoMap = makeTempoMap();
+
+    const auto inScene0 =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 0, 0.0, 8.0)}, tempoMap));
+    const auto inScene4 =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 4, 0.0, 8.0)}, tempoMap));
+    const auto shorter =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 0, 0.0, 4.0)}, tempoMap));
+
+    // The same clip in a different slot, and the same slot at a different
+    // length. Both were invisible before the dump carried the session.
+    CHECK(inScene0 != inScene4);
+    CHECK(inScene0 != shorter);
 }

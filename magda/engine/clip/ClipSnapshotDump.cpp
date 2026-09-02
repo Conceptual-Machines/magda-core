@@ -160,11 +160,24 @@ std::string dumpClipSnapshot(const ClipSnapshot& snapshot) {
 
     for (const auto& track : snapshot.tracks) {
         out << "track " << track.trackId << " audio=" << track.audio.size()
-            << " midi=" << track.midi.size() << "\n";
+            << " midi=" << track.midi.size() << " session=" << track.session.size() << "\n";
         for (const auto& clip : track.audio)
             dumpAudioClip(out, clip);
         for (const auto& clip : track.midi)
             dumpMidiClip(out, clip);
+
+        // The session, in the same detail as the arrangement. A dump that
+        // printed only the counts would let two materially different session
+        // snapshots compare identical, which is the one thing this file exists
+        // to prevent (#2301).
+        for (const auto& slot : track.session) {
+            out << "  slot scene=" << slot.sceneIndex << " length=" << fixed(slot.lengthBeats, 3)
+                << "b audio=" << slot.audio.size() << " midi=" << slot.midi.size() << "\n";
+            for (const auto& clip : slot.audio)
+                dumpAudioClip(out, clip);
+            for (const auto& clip : slot.midi)
+                dumpMidiClip(out, clip);
+        }
     }
 
     for (const auto& diagnostic : snapshot.diagnostics)
