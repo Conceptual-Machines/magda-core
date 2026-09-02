@@ -54,8 +54,8 @@ struct Block {
         buffer.clear();
         info.numSamples = context.maxBlockSize;
         info.playing = true;
-        info.endSeconds = context.maxBlockSize / context.sampleRate;
-        info.endBeat = info.endSeconds * 2.0;
+        info.seconds.end = context.maxBlockSize / context.sampleRate;
+        info.beats.end = info.seconds.end * 2.0;
     }
 
     magda::engine::DeviceBlock deviceBlock() {

@@ -58,8 +58,8 @@ BlockInfo blockAt(std::int64_t timelineSample, int numSamples) {
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = static_cast<double>(timelineSample) / kSamplesPerBeat;
-    block.endBeat = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
+    block.beats.start = static_cast<double>(timelineSample) / kSamplesPerBeat;
+    block.beats.end = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
     block.continuous = timelineSample > 0;
     return block;
 }

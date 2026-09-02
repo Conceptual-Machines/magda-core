@@ -73,10 +73,10 @@ BlockInfo blockFrom(double startSeconds, int numSamples = kBlockSize, bool conti
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + numSamples / kSampleRate;
-    block.startBeat = startSeconds * 2.0;  // 120 bpm, which nothing here depends on
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + numSamples / kSampleRate;
+    block.beats.start = startSeconds * 2.0;  // 120 bpm, which nothing here depends on
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -95,7 +95,7 @@ struct Fixture {
     /// whoever schedules a clip does: the first block at a position nobody
     /// mentioned has to seek, and a seek costs a block of silence.
     void cue(const BlockInfo& block) {
-        stream.seek(source.sourceSampleAt(std::max(block.startSeconds, placement.startSeconds)));
+        stream.seek(source.sourceSampleAt(std::max(block.seconds.start, placement.startSeconds)));
     }
 
     /// Cue, let a callback take the cue up, read ahead, and render: what a
@@ -250,8 +250,8 @@ TEST_CASE("A clip renders nothing while the transport is stopped", "[engine][io]
 
     auto stopped = blockFrom(1.0);
     stopped.playing = false;
-    stopped.endSeconds = stopped.startSeconds;
-    stopped.endBeat = stopped.startBeat;
+    stopped.seconds.end = stopped.seconds.start;
+    stopped.beats.end = stopped.beats.start;
 
     fixture.render(stopped);
 

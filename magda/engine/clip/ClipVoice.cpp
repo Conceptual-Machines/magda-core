@@ -154,7 +154,7 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSa
     if (!(length > 0.0) || block.numSamples <= 0)
         return;
 
-    const auto blockSeconds = block.endSeconds - block.startSeconds;
+    const auto blockSeconds = block.seconds.end - block.seconds.start;
     if (!(blockSeconds > 0.0))
         return;
 
@@ -171,7 +171,7 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSa
     const auto channels = region.getNumChannels();
 
     for (auto sample = from; sample < to; ++sample) {
-        const auto seconds = block.startSeconds + sample * secondsPerSample;
+        const auto seconds = block.seconds.start + sample * secondsPerSample;
         const auto progress = static_cast<float>((seconds - startSeconds) / length);
         const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
 
@@ -207,9 +207,9 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // audible, narrowed to the event's own stretch of it. The silences inside
     // are not part of this, because they mute material that goes on running.
     const auto windowStart =
-        std::max({block.startSeconds, clip.span.startSeconds, event.span.startSeconds});
+        std::max({block.seconds.start, clip.span.startSeconds, event.span.startSeconds});
     const auto windowEnd =
-        std::min({block.endSeconds, clip.span.endSeconds, event.span.endSeconds});
+        std::min({block.seconds.end, clip.span.endSeconds, event.span.endSeconds});
     if (windowEnd <= windowStart)
         return nothing();
 

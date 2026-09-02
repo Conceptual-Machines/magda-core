@@ -19,22 +19,18 @@ using Catch::Approx;
 
 namespace {
 
-/// Half a second a beat, which is 120 bpm and the tempo every case here runs
-/// at unless it says otherwise.
+/// 120 bpm, the tempo every case here runs at.
 constexpr double kSecondsPerBeat = 0.5;
 
-/// One block, in all four faces, with the timeline and the monotonic clocks
-/// running together. The two only diverge when something wraps the timeline,
-/// which the loop cases below do on purpose.
+/// One block, in all four faces, with the timeline and monotonic clocks running
+/// together. They diverge only when something wraps the timeline.
 SyncRange block(double from, double to) {
     return SyncRange{BeatRange{from, to}, BeatRange{from, to},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat}};
 }
 
-/// A block the timeline has wrapped under: it covers @p from to @p to on the
-/// timeline and @p monotonicFrom to @p monotonicTo on the clocks that do not
-/// go back.
+/// A block the timeline has wrapped under.
 SyncRange wrapped(double from, double to, double monotonicFrom, double monotonicTo) {
     return SyncRange{BeatRange{from, to}, BeatRange{monotonicFrom, monotonicTo},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
@@ -52,8 +48,8 @@ TEST_CASE("A handle starts stopped and having played nothing", "[launch]") {
 
     const auto status = handle.advance(block(0.0, 1.0));
 
-    CHECK_FALSE(status.isSplit);
-    CHECK_FALSE(status.playing1);
+    CHECK_FALSE(status.afterEvent.has_value());
+    CHECK_FALSE(status.beforeEvent.playing());
 }
 
 TEST_CASE("An unquantized launch takes the whole block", "[launch]") {
@@ -64,10 +60,10 @@ TEST_CASE("An unquantized launch takes the whole block", "[launch]") {
 
     const auto status = handle.advance(block(0.0, 1.0));
 
-    CHECK_FALSE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK(status.range1 == BeatRange{0.0, 1.0});
-    CHECK(status.playStartTime1 == Approx(0.0));
+    CHECK_FALSE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK(status.beforeEvent.range == BeatRange{0.0, 1.0});
+    CHECK(status.beforeEvent.origin->beat == Approx(0.0));
     CHECK(handle.playState() == LaunchHandle::PlayState::playing);
     CHECK_FALSE(handle.queuedState().has_value());
 }
@@ -78,20 +74,18 @@ TEST_CASE("A launch quantized inside a block splits it at the beat", "[launch]")
 
     // Nothing yet: the block ends before the launch beat.
     const auto before = handle.advance(block(0.0, 2.0));
-    CHECK_FALSE(before.isSplit);
-    CHECK_FALSE(before.playing1);
+    CHECK_FALSE(before.afterEvent.has_value());
+    CHECK_FALSE(before.beforeEvent.playing());
     CHECK(handle.queuedState() == LaunchHandle::QueueState::playQueued);
 
     const auto status = handle.advance(block(2.0, 3.0));
 
-    REQUIRE(status.isSplit);
-    CHECK_FALSE(status.playing1);
-    CHECK(status.playing2);
-    CHECK(status.range1 == BeatRange{2.0, 2.5});
-    CHECK(status.range2 == BeatRange{2.5, 3.0});
-    CHECK_FALSE(status.playStartTime1.has_value());
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(2.5));
+    REQUIRE(status.afterEvent.has_value());
+    CHECK_FALSE(status.beforeEvent.playing());
+    CHECK(status.afterEvent->playing());
+    CHECK(status.beforeEvent.range == BeatRange{2.0, 2.5});
+    CHECK(status.afterEvent->range == BeatRange{2.5, 3.0});
+    CHECK(status.afterEvent->origin->beat == Approx(2.5));
 }
 
 TEST_CASE("A launch on a block boundary is not split and not counted twice", "[launch]") {
@@ -102,14 +96,14 @@ TEST_CASE("A launch on a block boundary is not split and not counted twice", "[l
 
     // The range is half open, so beat 2.0 belongs to the next block and this
     // one does not launch.
-    CHECK_FALSE(first.isSplit);
-    CHECK_FALSE(first.playing1);
+    CHECK_FALSE(first.afterEvent.has_value());
+    CHECK_FALSE(first.beforeEvent.playing());
 
     const auto second = handle.advance(block(2.0, 4.0));
 
-    CHECK_FALSE(second.isSplit);
-    CHECK(second.playing1);
-    CHECK(second.range1 == BeatRange{2.0, 4.0});
+    CHECK_FALSE(second.afterEvent.has_value());
+    CHECK(second.beforeEvent.playing());
+    CHECK(second.beforeEvent.range == BeatRange{2.0, 4.0});
     REQUIRE(handle.playedRange().has_value());
     CHECK(handle.playedRange()->length() == Approx(2.0));
 }
@@ -122,11 +116,11 @@ TEST_CASE("A quantized stop splits the block it lands in", "[launch]") {
     handle.stop(5.5);
     const auto status = handle.advance(block(4.0, 6.0));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK_FALSE(status.playing2);
-    CHECK(status.range1 == BeatRange{4.0, 5.5});
-    CHECK(status.range2 == BeatRange{5.5, 6.0});
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK_FALSE(status.afterEvent->playing());
+    CHECK(status.beforeEvent.range == BeatRange{4.0, 5.5});
+    CHECK(status.afterEvent->range == BeatRange{5.5, 6.0});
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
     CHECK_FALSE(handle.playedRange().has_value());
 
@@ -160,9 +154,9 @@ TEST_CASE("A later request replaces one that has not fired", "[launch]") {
 
     const auto status = handle.advance(block(3.0, 5.0));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing2);
-    CHECK(status.range2 == BeatRange{4.0, 5.0});
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.afterEvent->playing());
+    CHECK(status.afterEvent->range == BeatRange{4.0, 5.0});
 }
 
 TEST_CASE("The played range keeps increasing across a timeline wrap", "[launch]") {
@@ -190,13 +184,13 @@ TEST_CASE("A queued launch fires on the monotonic beat, not the timeline one", "
     // happens: a queued position is a monotonic one. A handle that resolved
     // against the timeline would wait for ever here.
     const auto first = handle.advance(wrapped(6.0, 8.0, 6.0, 8.0));
-    CHECK_FALSE(first.playing1);
+    CHECK_FALSE(first.beforeEvent.playing());
 
     const auto second = handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
-    REQUIRE(second.isSplit);
-    CHECK(second.playing2);
-    CHECK(second.range2 == BeatRange{1.0, 2.0});
+    REQUIRE(second.afterEvent.has_value());
+    CHECK(second.afterEvent->playing());
+    CHECK(second.afterEvent->range == BeatRange{1.0, 2.0});
 }
 
 TEST_CASE("Looping re-triggers the run at the duration", "[launch]") {
@@ -211,15 +205,15 @@ TEST_CASE("Looping re-triggers the run at the duration", "[launch]") {
 
     const auto status = handle.advance(block(1.0, 3.0));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK(status.playing2);
-    CHECK(status.range1 == BeatRange{1.0, 2.0});
-    CHECK(status.range2 == BeatRange{2.0, 3.0});
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK(status.afterEvent->playing());
+    CHECK(status.beforeEvent.range == BeatRange{1.0, 2.0});
+    CHECK(status.afterEvent->range == BeatRange{2.0, 3.0});
 
     // The run restarted at the wrap rather than carrying on through it.
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(2.0));
+    REQUIRE(status.afterEvent->origin.has_value());
+    CHECK(status.afterEvent->origin->beat == Approx(2.0));
     CHECK(handle.playedRange()->length() == Approx(1.0));
 }
 
@@ -232,10 +226,10 @@ TEST_CASE("A queued stop beats a loop wrap later in the same block", "[launch]")
     handle.stop(3.5);
     const auto status = handle.advance(block(3.0, 5.0));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK_FALSE(status.playing2);
-    CHECK(status.range1 == BeatRange{3.0, 3.5});
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK_FALSE(status.afterEvent->playing());
+    CHECK(status.beforeEvent.range == BeatRange{3.0, 3.5});
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
 }
 
@@ -268,10 +262,10 @@ TEST_CASE("A scene launch starts every handle on the same beat", "[launch]") {
     const auto statusA = a.advance(block(3.0, 5.0));
     const auto statusB = b.advance(block(3.0, 5.0));
 
-    REQUIRE(statusA.isSplit);
-    REQUIRE(statusB.isSplit);
-    CHECK(statusA.range2.start == Approx(statusB.range2.start));
-    CHECK(*statusA.playStartTime2 == Approx(*statusB.playStartTime2));
+    REQUIRE(statusA.afterEvent.has_value());
+    REQUIRE(statusB.afterEvent.has_value());
+    CHECK(statusA.afterEvent->range.start == Approx(statusB.afterEvent->range.start));
+    CHECK(statusA.afterEvent->origin->beat == Approx(statusB.afterEvent->origin->beat));
 }
 
 TEST_CASE("Nudge moves the playhead without ending the run", "[launch]") {
@@ -291,8 +285,8 @@ TEST_CASE("A stopped handle advancing changes nothing", "[launch]") {
 
     for (auto beat = 0.0; beat < 8.0; beat += 1.0) {
         const auto status = handle.advance(block(beat, beat + 1.0));
-        CHECK_FALSE(status.playing1);
-        CHECK_FALSE(status.isSplit);
+        CHECK_FALSE(status.beforeEvent.playing());
+        CHECK_FALSE(status.afterEvent.has_value());
     }
 
     CHECK_FALSE(handle.playedRange().has_value());
@@ -311,9 +305,9 @@ TEST_CASE("A request and a loop wrap on the same beat resolve to the request", "
     handle.stop(4.0);
     const auto status = handle.advance(block(3.9, 4.1));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK_FALSE(status.playing2);
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK_FALSE(status.afterEvent->playing());
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
 
     // And the wrap is moot rather than deferred: there is no run left to
@@ -334,13 +328,13 @@ TEST_CASE("A wrap never displaces a quantized request", "[launch]") {
     handle.stop(12.0);
     const auto status = handle.advance(block(11.98, 12.01));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing1);
-    CHECK_FALSE(status.playing2);
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    CHECK_FALSE(status.afterEvent->playing());
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
 
     // On the bar, to the sample, rather than a block late.
-    CHECK(status.range2.start == Approx(12.0));
+    CHECK(status.afterEvent->range.start == Approx(12.0));
 }
 
 TEST_CASE("A re-trigger lands on its own beat, not on the wrap before it", "[launch]") {
@@ -352,13 +346,13 @@ TEST_CASE("A re-trigger lands on its own beat, not on the wrap before it", "[lau
     handle.play(12.0);
     const auto status = handle.advance(block(11.98, 12.01));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.playing2);
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.afterEvent->playing());
 
     // The run's origin is the beat that was asked for. The wrap at 11.99 would
     // have put it there 0.01 beats early and kept the drift alive.
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(12.0));
+    REQUIRE(status.afterEvent->origin.has_value());
+    CHECK(status.afterEvent->origin->beat == Approx(12.0));
     CHECK(handle.playedRange()->start == Approx(12.0));
 }
 
@@ -373,8 +367,8 @@ TEST_CASE("A request fires on its beat however often the loop wraps", "[launch]"
     handle.stop(0.011);
     const auto status = handle.advance(block(0.005, 0.03));
 
-    REQUIRE(status.isSplit);
-    CHECK(status.range2.start == Approx(0.011));
+    REQUIRE(status.afterEvent.has_value());
+    CHECK(status.afterEvent->range.start == Approx(0.011));
     CHECK(handle.playState() == LaunchHandle::PlayState::stopped);
     CHECK_FALSE(handle.queuedState().has_value());
 }
@@ -412,17 +406,17 @@ TEST_CASE("A wrap landing on a block's first sample is not skipped twice", "[lau
     handle.setLooping(2.0);
 
     const auto before = handle.advance(block(0.0, 2.0));
-    CHECK_FALSE(before.isSplit);
+    CHECK_FALSE(before.afterEvent.has_value());
     CHECK(handle.playedRange()->length() == Approx(2.0));
 
     const auto status = handle.advance(block(2.0, 3.0));
 
     // No split: the wrap is on the first sample, so the whole block belongs to
     // the new run and a split would report an empty half.
-    CHECK_FALSE(status.isSplit);
-    CHECK(status.playing1);
-    REQUIRE(status.playStartTime1.has_value());
-    CHECK(*status.playStartTime1 == Approx(2.0));
+    CHECK_FALSE(status.afterEvent.has_value());
+    CHECK(status.beforeEvent.playing());
+    REQUIRE(status.beforeEvent.origin.has_value());
+    CHECK(status.beforeEvent.origin->beat == Approx(2.0));
     CHECK(handle.playedRange()->length() == Approx(1.0));
 
     // And it keeps wrapping rather than having lost the phase.
@@ -464,10 +458,10 @@ TEST_CASE("playStartTime survives the timeline wrapping under it", "[launch]") {
     // is no longer a beat in the cycle this block belongs to.
     const auto status = handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
-    REQUIRE(status.playStartTime1.has_value());
+    REQUIRE(status.beforeEvent.origin.has_value());
 
     // What a source actually computes: where it is in the material. Two beats
     // in, because that is how long the run has been going.
-    CHECK(status.range1.start - *status.playStartTime1 == Approx(2.0));
-    CHECK(*status.playStartTime1 == Approx(-2.0));
+    CHECK(status.beforeEvent.range.start - status.beforeEvent.origin->beat == Approx(2.0));
+    CHECK(status.beforeEvent.origin->beat == Approx(-2.0));
 }

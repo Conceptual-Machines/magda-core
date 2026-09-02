@@ -92,8 +92,8 @@ magda::engine::BlockInfo blockAt(double startBeat, int numSamples = 64, double b
     magda::engine::BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = startBeat;
-    block.endBeat = startBeat + beats;
+    block.beats.start = startBeat;
+    block.beats.end = startBeat + beats;
     return block;
 }
 

@@ -104,25 +104,19 @@ constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
 /**
  * @brief Session slots one track may have standing by.
  *
- * Its own budget rather than a share of the one above, because the two are not
- * the same kind of thing. An arrangement reader is a window the transport moves
- * through, so a clip that has been passed hands its reader to the one behind
- * it and a crowded lane costs read-ahead rather than silence. A slot is never
- * passed: it has no position, so it holds its reader for as long as the project
- * holds the slot. Sharing the budget would give the first slots readers for
- * ever and leave the ones behind them permanently silent, which is a different
- * failure from being late (#2301).
+ * Its own budget, not a share of the one above. An arrangement reader is a
+ * window the transport moves through, so a passed clip hands its reader on and
+ * a crowded lane costs read-ahead. A slot is never passed, so sharing would
+ * leave the slots behind the first 32 permanently silent rather than late
+ * (#2301).
  *
- * The same number, for the same reason it is that number: each of these is an
- * open file and a chunk pool, a quarter of a megabyte at the default settings,
- * so a track with a full session costs eight megabytes and one with no session
- * costs nothing. It is a ceiling on standing cost rather than on how many
- * scenes a project may have, and slots past it are reported
- * (@ref ClipVoicePool::unprovisionedSlots) rather than quietly silent.
+ * A ceiling on standing cost, not on how many scenes a project may have: each
+ * reader is an open file and a chunk pool, a quarter of a megabyte at the
+ * default settings. Slots past it are reported
+ * (@ref ClipVoicePool::unprovisionedSlots).
  *
- * It is an interim. Once a launch is a request rather than a poke at a handle
- * (#2305), what is worth provisioning is what is playing or queued, and a
- * standing reader per slot stops being the answer.
+ * Interim: once a launch is a request (#2305), what is worth provisioning is
+ * what is playing or queued.
  */
 constexpr int kMaxSessionReadersPerTrack = kMaxReadersPerTrack;
 
@@ -285,13 +279,10 @@ class ClipVoicePool {
     /**
      * @brief Session slots the budget could not reach, in the last round.
      *
-     * Slots past kMaxSessionReadersPerTrack on some track, which is a launch
-     * that will play nothing. Unlike @ref unbridged this is not a matter of
-     * being late: nothing the transport does brings such a slot into reach, so
-     * it is silent until the project has fewer of them.
+     * A launch that will play nothing. Unlike @ref unbridged this is not
+     * lateness: nothing the transport does brings such a slot into reach.
      *
-     * A gauge rather than a tally, like the others: it falls back to zero when
-     * the session fits again.
+     * A gauge rather than a tally, like the others.
      */
     int unprovisionedSlots() const {
         return unprovisionedSlots_.load(std::memory_order_relaxed);

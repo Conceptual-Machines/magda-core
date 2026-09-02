@@ -26,8 +26,8 @@ void StreamingAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<
     // The part of the block the clip covers, as samples of it. Half-open at
     // both ends, so a clip ending exactly on a block boundary contributes
     // nothing to the block that starts there.
-    const auto first = block.sampleForTime(std::max(block.startSeconds, placement_.startSeconds));
-    const auto last = block.sampleForTime(std::min(block.endSeconds, placement_.endSeconds));
+    const auto first = block.sampleForTime(std::max(block.seconds.start, placement_.startSeconds));
+    const auto last = block.sampleForTime(std::min(block.seconds.end, placement_.endSeconds));
     const auto count = last - first;
 
     if (count <= 0)
@@ -37,7 +37,7 @@ void StreamingAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<
     // from where the last block left off, so a jump needs nothing said about
     // it: the stream sees a position it was not expecting and seeks, which is
     // the same path a loop wrap takes.
-    const auto sourceStart = sourceSampleAt(std::max(block.startSeconds, placement_.startSeconds));
+    const auto sourceStart = sourceSampleAt(std::max(block.seconds.start, placement_.startSeconds));
 
     stream_.read(sourceStart,
                  out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)),

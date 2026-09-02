@@ -55,10 +55,8 @@ struct Candidate {
     /// pointed it at the next one yet.
     bool sounding = false;
 
-    /// Where playback will pick this up, which is what the reader is pointed
-    /// at. Its own first sample for a clip that has not started and for every
-    /// session slot; where the cursor already is for a clip the transport is
-    /// standing inside.
+    /// Where the reader is pointed: the entry's own first sample, or where the
+    /// cursor already is for a clip the transport is standing inside.
     double cueSeconds = 0.0;
 };
 
@@ -372,28 +370,14 @@ void ClipVoicePool::service() {
                     candidates.resize(static_cast<std::size_t>(kMaxReadersPerTrack));
                 }
 
-                // Every slot, on every round, whatever the transport is doing.
-                // A slot has no position on the timeline, so there is no window
-                // it comes into and no moment it is due: a launch can arrive on
-                // any block and the material has to already be open when it
-                // does (#2301). What that costs is one open file per slot for
-                // as long as the project holds it, which is what a launcher is.
+                // Every slot, every round: a slot has no position, so there is
+                // no window it comes into and a launch can arrive on any block
+                // (#2301). Cued at its own origin and never moved, so the
+                // launch costs no seek. A slot stopped part way and relaunched
+                // does seek; the cue that avoids it is #2305's.
                 //
-                // Cued at the slot's own origin and never moved, which is what
-                // makes the launch itself cost no seek: a run begins at beat
-                // zero of the material and the reader is already there. A slot
-                // stopped part way through and launched again does seek, and
-                // the cue that would avoid it belongs with the request that
-                // knows a launch is coming, which is #2305's.
-                //
-                // Their own budget, taken after the arrangement's rather than
-                // out of it. The two are not competing for the same thing: the
-                // arrangement's is a window that clips rotate through as the
-                // transport passes them, and a slot never gets passed, so a
-                // shared budget would give the same slots readers for ever and
-                // leave the ones behind them permanently silent rather than
-                // merely late. Separate, a track's session cannot starve its
-                // timeline and its timeline cannot starve its session.
+                // Its own budget, taken after the arrangement's rather than out
+                // of it (kMaxSessionReadersPerTrack).
                 slots.clear();
 
                 for (const auto& slot : track.session)
@@ -403,12 +387,9 @@ void ClipVoicePool::service() {
                                                       windowStart, windowStart, true,
                                                       event.span.startSeconds});
 
-                // In scene order, which is the order the snapshot holds them
-                // in, so which slots a project past the budget keeps is a
-                // property of the project rather than of a walk. Past it they
-                // are counted: a slot with no reader is a launch that plays
-                // nothing, and silence nobody counted is indistinguishable from
-                // material that was not there.
+                // In scene order, so which slots a project past the budget
+                // keeps is a property of the project. The rest are counted: a
+                // slot with no reader is a launch that plays nothing.
                 if (slots.size() > static_cast<std::size_t>(kMaxSessionReadersPerTrack)) {
                     unprovisioned += static_cast<int>(slots.size()) - kMaxSessionReadersPerTrack;
                     slots.resize(static_cast<std::size_t>(kMaxSessionReadersPerTrack));

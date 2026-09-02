@@ -58,10 +58,11 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
   public:
     void setBlock(const magda::engine::BlockInfo& block, double sampleRate) {
         playing_.store(block.playing, std::memory_order_relaxed);
-        timeSeconds_.store(block.startSeconds, std::memory_order_relaxed);
-        timeSamples_.store(static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate)),
-                           std::memory_order_relaxed);
-        ppqPosition_.store(block.startBeat, std::memory_order_relaxed);
+        timeSeconds_.store(block.seconds.start, std::memory_order_relaxed);
+        timeSamples_.store(
+            static_cast<std::int64_t>(std::llround(block.seconds.start * sampleRate)),
+            std::memory_order_relaxed);
+        ppqPosition_.store(block.beats.start, std::memory_order_relaxed);
 
         if (block.tempo == nullptr) {
             // A caller assembling a block by hand: the defaults are what the
@@ -70,14 +71,14 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
             bpm_.store(kDefaultBpm, std::memory_order_relaxed);
             numerator_.store(4, std::memory_order_relaxed);
             denominator_.store(4, std::memory_order_relaxed);
-            ppqOfBarStart_.store(std::floor(block.startBeat / 4.0) * 4.0,
+            ppqOfBarStart_.store(std::floor(block.beats.start / 4.0) * 4.0,
                                  std::memory_order_relaxed);
             return;
         }
 
-        bpm_.store(block.tempo->bpmAt(block.startBeat), std::memory_order_relaxed);
+        bpm_.store(block.tempo->bpmAt(block.beats.start), std::memory_order_relaxed);
 
-        const auto position = block.tempo->barsAndBeatsAt(block.startBeat);
+        const auto position = block.tempo->barsAndBeatsAt(block.beats.start);
         numerator_.store(position.numerator, std::memory_order_relaxed);
         denominator_.store(position.denominator, std::memory_order_relaxed);
 
@@ -86,7 +87,7 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
         // denominator is not four: three eighths into a 6/8 bar is one and a
         // half quarter notes, not three.
         const auto quartersPerBeat = 4.0 / std::max(1, position.denominator);
-        ppqOfBarStart_.store(block.startBeat - (position.beat * quartersPerBeat),
+        ppqOfBarStart_.store(block.beats.start - (position.beat * quartersPerBeat),
                              std::memory_order_relaxed);
     }
 

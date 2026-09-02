@@ -81,10 +81,10 @@ BlockInfo blockAt(double startBeat, double beats, int numSamples, double bpm = 1
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = startBeat;
-    block.endBeat = startBeat + beats;
-    block.startSeconds = startBeat * 60.0 / bpm;
-    block.endSeconds = block.endBeat * 60.0 / bpm;
+    block.beats.start = startBeat;
+    block.beats.end = startBeat + beats;
+    block.seconds.start = startBeat * 60.0 / bpm;
+    block.seconds.end = block.beats.end * 60.0 / bpm;
     return block;
 }
 

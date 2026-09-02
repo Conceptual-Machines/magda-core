@@ -190,8 +190,8 @@ class Rig {
     void stop(int blockIndex, Recorder& into) {
         auto block = blockAt(blockIndex, true);
         block.playing = false;
-        block.endBeat = block.startBeat;
-        block.endSeconds = block.startSeconds;
+        block.beats.end = block.beats.start;
+        block.seconds.end = block.seconds.start;
 
         juce::MidiBuffer buffer;
         source_.render(block, buffer);
@@ -204,10 +204,10 @@ class Rig {
         block.numSamples = kBlockSize;
         block.playing = true;
         block.continuous = continuous;
-        block.startBeat = index * kBeatsPerBlock;
-        block.endBeat = (index + 1) * kBeatsPerBlock;
-        block.startSeconds = block.startBeat * 0.5;
-        block.endSeconds = block.endBeat * 0.5;
+        block.beats.start = index * kBeatsPerBlock;
+        block.beats.end = (index + 1) * kBeatsPerBlock;
+        block.seconds.start = block.beats.start * 0.5;
+        block.seconds.end = block.beats.end * 0.5;
         return block;
     }
 
