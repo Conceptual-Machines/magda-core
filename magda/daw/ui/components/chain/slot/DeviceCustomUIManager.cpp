@@ -938,6 +938,15 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
     if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
         forwardParameterChanges(*arpeggiatorUI_, callbacks);
+        // Non-slot settings live in the device state, so an edit has to be
+        // captured into the model: that is what persists it, dirties the
+        // project, and hands the native engine's device the new values.
+        arpeggiatorUI_->onSettingsEdited = [this] {
+            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+            auto* bridge = audioEngine != nullptr ? audioEngine->getAudioBridge() : nullptr;
+            if (bridge != nullptr)
+                bridge->getPluginManager().capturePluginState(devicePath_);
+        };
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
             if (auto* arp =

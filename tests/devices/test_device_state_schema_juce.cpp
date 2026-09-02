@@ -12,6 +12,7 @@
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 // Engine-neutral internal device state (#1887): capture writes a MAGDA document,
@@ -69,6 +70,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
 
         testCaptureShape(*edit);
         testRoundTrip(*edit);
+        testDisplayDomainDocsRestore(*edit);
         testParametersReseatByIdWhenIndexMoves(*edit);
         testNestedDeviceSurvives(*edit);
         testBinaryPropertySurvives(*edit);
@@ -157,6 +159,57 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         restored->deleteFromParent();
     }
 
+    // Documents for the devices that crossed to MagdaDevice carry parameter
+    // values in the device's display domain - which is what every document
+    // captured from the retired display-ranged plugins already held. A released
+    // project's arpeggiator doc says "fixed velocity 100", and applying it to
+    // the wrapper's normalised slot has to land on 100, not clamp to the top of
+    // [0,1] (#2312 review).
+    void testDisplayDomainDocsRestore(te::Edit& edit) {
+        beginTest("A display-domain document restores through the wrapper unclamped");
+
+        auto plugin = createPlugin(edit, audio::ArpeggiatorPlugin::xmlTypeName);
+        expect(plugin != nullptr);
+        if (plugin == nullptr)
+            return;
+
+        auto* device = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(plugin.get());
+        expect(device != nullptr);
+        if (device == nullptr) {
+            plugin->deleteFromParent();
+            return;
+        }
+
+        ds::Doc doc;
+        doc.deviceType = audio::ArpeggiatorPlugin::xmlTypeName;
+        doc.params.push_back({audio::ArpeggiatorPlugin::kFixedVel, "fixedvel", 100.0f});
+        doc.params.push_back({audio::ArpeggiatorPlugin::kGate, "gate", 0.8f});
+        ta::applyDeviceStateParameters(*plugin, ds::encode(doc));
+
+        const auto displayOf = [&](int slot, const char* id) {
+            auto param = plugin->getAutomatableParameterByID(id);
+            expect(param != nullptr);
+            return param != nullptr ? magda::ParameterUtils::normalizedToReal(
+                                          param->getCurrentBaseValue(), device->parameterInfo(slot))
+                                    : -1.0f;
+        };
+        expectWithinAbsoluteError(displayOf(audio::ArpeggiatorPlugin::kFixedVel, "fixedvel"),
+                                  100.0f, 0.5f);
+        expectWithinAbsoluteError(displayOf(audio::ArpeggiatorPlugin::kGate, "gate"), 0.8f, 0.005f);
+
+        // And the capture side writes display values back, so the document is
+        // stable across a save/load cycle.
+        const auto recaptured = ds::decode(ta::captureInternalDeviceState(*plugin, {}));
+        expect(recaptured.has_value());
+        if (recaptured) {
+            for (const auto& saved : recaptured->params)
+                if (saved.id == "fixedvel")
+                    expectWithinAbsoluteError(saved.value, 100.0f, 0.5f);
+        }
+
+        plugin->deleteFromParent();
+    }
+
     // The frozen index is authoritative, and the stable id is what re-seats a
     // value if a device ever renumbers its parameters. Round-trip tests always
     // have the two agree, so drive them apart deliberately here.
@@ -197,7 +250,16 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
 
         ta::applyDeviceStateParameters(*plugin, ds::encode(doc));
 
-        expectWithinAbsoluteError(gate->getCurrentBaseValue(), 0.77f, 0.001f);
+        // Doc values are display-domain for wrapper devices, so read the
+        // restored value back through the same conversion.
+        auto* gateDevice = ta::deviceFromPlugin<audio::ArpeggiatorPlugin>(plugin.get());
+        expect(gateDevice != nullptr);
+        if (gateDevice != nullptr)
+            expectWithinAbsoluteError(
+                magda::ParameterUtils::normalizedToReal(
+                    gate->getCurrentBaseValue(),
+                    gateDevice->parameterInfo(audio::ArpeggiatorPlugin::kGate)),
+                0.77f, 0.001f);
 
         auto* other = params[wrongIndex];
         expect(other != nullptr);

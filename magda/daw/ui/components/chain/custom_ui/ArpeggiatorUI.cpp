@@ -123,8 +123,10 @@ ArpeggiatorUI::ArpeggiatorUI() {
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
+        if (plugin_) {
             plugin_->rampCycles.store(juce::roundToInt(value), std::memory_order_relaxed);
+            settingsEdited();
+        }
     };
 
     setupLabel(quantizeLabel_, "Q");
@@ -134,8 +136,10 @@ ArpeggiatorUI::ArpeggiatorUI() {
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
     quantizeSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
+        if (plugin_) {
             plugin_->quantize.store(static_cast<float>(value), std::memory_order_relaxed);
+            settingsEdited();
+        }
     };
 
     setupLabel(quantizeSubLabel_, "SUB");
@@ -144,13 +148,17 @@ ArpeggiatorUI::ArpeggiatorUI() {
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     quantizeSubSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
+        if (plugin_) {
             plugin_->quantizeSub.store(juce::roundToInt(value), std::memory_order_relaxed);
+            settingsEdited();
+        }
     };
 
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        if (plugin_)
+        if (plugin_) {
             plugin_->hardAngle.store(hardAngle, std::memory_order_relaxed);
+            settingsEdited();
+        }
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -187,6 +195,11 @@ ArpeggiatorUI::~ArpeggiatorUI() {
 void ArpeggiatorUI::sendChange(int paramIndex, float value) {
     if (onParameterChanged)
         onParameterChanged(paramIndex, value);
+}
+
+void ArpeggiatorUI::settingsEdited() {
+    if (onSettingsEdited)
+        onSettingsEdited();
 }
 
 void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* device) {
@@ -258,14 +271,10 @@ void ArpeggiatorUI::timerCallback() {
     if (plugin_ == nullptr)
         return;
 
-    // Modulated values: the host pushes the modulated slot positions into the
-    // device every block, so its parameter mirror includes macro modulation.
-    const auto slotDisplay = [this](int slot) {
-        return magda::ParameterUtils::normalizedToReal(plugin_->parameterValue(slot),
-                                                       plugin_->parameterInfo(slot));
-    };
-    const float depth = slotDisplay(Arp::kRamp);
-    const float skew = slotDisplay(Arp::kSkew);
+    // Modulated values, via the atomics process() publishes each block: the
+    // parameter mirror itself is audio-thread-owned and not safe to read here.
+    const float depth = plugin_->displayedRamp_.load(std::memory_order_relaxed);
+    const float skew = plugin_->displayedSkew_.load(std::memory_order_relaxed);
 
     rampCurveDisplay_.setValues(depth, skew);
     depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);

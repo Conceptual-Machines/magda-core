@@ -30,6 +30,12 @@ class ArpeggiatorUI : public juce::Component, private juce::Timer {
 
     std::function<void(int paramIndex, float value)> onParameterChanged;
 
+    /// Fired after a non-slot setting (ramp cycles, quantize, subdivision,
+    /// hard angle) is written to the device, so the owner can capture the
+    /// device state into the model: the write alone reaches only the live
+    /// wrapper instance, not the project or the native engine.
+    std::function<void()> onSettingsEdited;
+
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
     void lookAndFeelChanged() override;
@@ -74,6 +80,7 @@ class ArpeggiatorUI : public juce::Component, private juce::Timer {
     int topSectionBottom_ = 0;  // Y boundary between two-column section and full-width RAMP
 
     void sendChange(int paramIndex, float value);
+    void settingsEdited();
     void syncSettingsFromDevice();
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupCombo(juce::ComboBox& combo);

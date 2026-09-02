@@ -6,6 +6,7 @@
 #include "TracktionHelpers.hpp"
 #include "core/DeviceState.hpp"
 #include "core/LegacyDeviceAliases.hpp"
+#include "core/ParameterUtils.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
@@ -137,6 +138,22 @@ juce::ValueTree legacyPluginTree(const juce::String& savedState) {
 
 }  // namespace
 
+/// The device behind the host adapter, when @p plugin is an internal-registry
+/// device that has crossed to MagdaDevice. Null for legacy plugins and for the
+/// compiled pack (whose parameters were always normalised, docs included).
+///
+/// Documents for these devices carry parameter values in the DEVICE'S DISPLAY
+/// DOMAIN. That is what every document captured from the retired host-native
+/// plugins already holds - their automatable parameters ran in display ranges -
+/// so released projects restore unchanged. The wrapper's parameters are
+/// normalised [0,1] slots, so capture and apply convert at this boundary.
+const MagdaDevice* displayDomainDeviceFor(te::Plugin& plugin, const juce::String& deviceType) {
+    auto* adapter = dynamic_cast<TracktionMagdaDevicePlugin*>(&plugin);
+    if (adapter == nullptr || findInternalPluginSpec(deviceType) == nullptr)
+        return nullptr;
+    return &adapter->device();
+}
+
 juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState) {
     // State from a newer schema was refused at load, so the live plugin holds
     // defaults rather than what the project actually says. Capturing over it
@@ -166,13 +183,18 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
     };
 
     juce::StringArray parameterProperties;
+    const auto* displayDevice = displayDomainDeviceFor(plugin, doc.deviceType);
+
     for (int i = 0; i < params.size(); ++i) {
         auto* param = params[i];
         if (param == nullptr)
             continue;
         // Base value, never the modulated value: a modulated read would bake the
         // current LFO position into the saved patch.
-        doc.params.push_back({i, param->paramID, param->getCurrentBaseValue()});
+        float value = param->getCurrentBaseValue();
+        if (displayDevice != nullptr)
+            value = ParameterUtils::normalizedToReal(value, displayDevice->parameterInfo(i));
+        doc.params.push_back({i, param->paramID, value});
         parameterProperties.add(param->paramID);
         for (const auto& [paramID, property] : kParamPropertySpellings)
             if (param->paramID == paramID)
@@ -209,6 +231,7 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
         return;
 
     const auto& params = plugin.getAutomatableParameters();
+    const auto* displayDevice = displayDomainDeviceFor(plugin, doc->deviceType);
 
     for (const auto& saved : doc->params) {
         te::AutomatableParameter* param = nullptr;
@@ -227,8 +250,13 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
                     break;
                 }
 
-        if (param != nullptr)
-            param->setParameterFromHost(saved.value, juce::sendNotificationSync);
+        if (param != nullptr) {
+            float value = saved.value;
+            if (displayDevice != nullptr)
+                value = ParameterUtils::realToNormalized(
+                    value, displayDevice->parameterInfo(params.indexOf(param)));
+            param->setParameterFromHost(value, juce::sendNotificationSync);
+        }
     }
 }
 

@@ -6,8 +6,11 @@
 #include "LegacyCorpus.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/plugins/DeviceServices.hpp"
+#include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/ParameterUtils.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/project/serialization/ProjectSerializer.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
@@ -94,9 +97,25 @@ std::vector<LegacyDevice> collectLegacyDevices() {
 }
 
 std::vector<float> parameterValues(te::Plugin& plugin) {
+    // In the same domain the document stores: devices behind the host adapter
+    // capture DISPLAY values (their normalised slots converted through the
+    // device's ParameterInfo), everything else captures the parameter's own
+    // range directly.
+    const auto* adapter =
+        dynamic_cast<magda::daw::audio::tracktion_adapter::TracktionMagdaDevicePlugin*>(&plugin);
+    const bool internalWrapper = adapter != nullptr && magda::daw::audio::findInternalPluginSpec(
+                                                           plugin.getPluginType()) != nullptr;
+
     std::vector<float> values;
-    for (auto* param : plugin.getAutomatableParameters())
-        values.push_back(param != nullptr ? param->getCurrentValue() : 0.0f);
+    const auto& params = plugin.getAutomatableParameters();
+    for (int i = 0; i < params.size(); ++i) {
+        auto* param = params[i];
+        float value = param != nullptr ? param->getCurrentValue() : 0.0f;
+        if (param != nullptr && internalWrapper)
+            value =
+                magda::ParameterUtils::normalizedToReal(value, adapter->device().parameterInfo(i));
+        values.push_back(value);
+    }
     return values;
 }
 

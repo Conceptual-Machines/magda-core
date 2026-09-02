@@ -103,6 +103,12 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     std::atomic<int> currentPlayStep_{-1};
     std::atomic<int> currentSeqLength_{0};
 
+    /** Modulated Time Bend position for the UI curve display, refreshed every
+     *  block. The parameter mirror itself is audio-thread-owned, so the 30 Hz
+     *  UI timer reads these instead of racing it. */
+    std::atomic<float> displayedRamp_{0.0f};
+    std::atomic<float> displayedSkew_{0.0f};
+
   private:
     // --- Audio-thread state ---
     static constexpr int MAX_HELD = 32;

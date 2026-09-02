@@ -360,6 +360,11 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     if (context.midi == nullptr || context.numSamples <= 0)
         return;
 
+    // The host pushed the modulated slot positions before this call; publish
+    // the Time Bend pair for the UI curve display (see displayedRamp_).
+    displayedRamp_.store(displayValue(kRamp), std::memory_order_relaxed);
+    displayedSkew_.store(displayValue(kSkew), std::memory_order_relaxed);
+
     auto& midi = *context.midi;
     const bool isLatched = displayValue(kLatch) >= 0.5f;
 
