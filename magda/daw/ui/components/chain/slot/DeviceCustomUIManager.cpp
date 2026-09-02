@@ -413,7 +413,7 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
     }
 
     if (auto processor = magda::createDeviceProcessorForPlugin(device.id, plugin, device.pluginId))
-        processor->populateParameters(device);
+        processor->populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
 
     return device;
 }

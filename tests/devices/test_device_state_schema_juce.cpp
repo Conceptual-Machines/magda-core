@@ -195,7 +195,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         magda::DeviceInfo info;
         info.format = magda::PluginFormat::Internal;
         info.pluginId = audio::ArpeggiatorPlugin::xmlTypeName;
-        processor.populateParameters(info);
+        processor.populateParameters(info, magda::DeviceProcessor::ValueSource::Engine);
 
         auto* fixedVel = info.findParameterByIndex(audio::ArpeggiatorPlugin::kFixedVel);
         auto* gate = info.findParameterByIndex(audio::ArpeggiatorPlugin::kGate);
@@ -226,9 +226,9 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (recaptured)
             expect(recaptured->params.empty(), "recapture wrote a duplicate parameter record");
 
-        // ...and the model-first metadata refresh keeps the model's values
-        // rather than reading them back off the engine.
-        processor.populateParametersModelFirst(info);
+        // ...and the model-first refresh keeps the model's values rather
+        // than reading them back off the engine.
+        processor.populateParameters(info, magda::DeviceProcessor::ValueSource::Model);
         auto* refreshed = info.findParameterByIndex(audio::ArpeggiatorPlugin::kFixedVel);
         expect(refreshed != nullptr);
         if (refreshed != nullptr)

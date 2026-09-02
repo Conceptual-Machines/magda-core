@@ -1999,7 +1999,7 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                     if (live->pluginState.isNotEmpty()) {
                         applyExternalPluginChunk(plugin.get(), live->pluginState);
                         if (auto* proc = bridge->getDeviceProcessor(devicePath))
-                            proc->populateParameters(*live);
+                            proc->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
                     }
                 } else {
                     namespace ta = daw::audio::tracktion_adapter;

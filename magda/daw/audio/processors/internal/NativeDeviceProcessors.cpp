@@ -139,7 +139,7 @@ ParameterInfo FaustProcessor::getParameterInfo(int index) const {
     return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
 }
 
-void FaustProcessor::populateParameters(DeviceInfo& info) const {
+void FaustProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     auto* faust =
         daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin_.get());
@@ -228,7 +228,7 @@ ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
     return daw::audio::paramInfoFromSlot(faust->getPool().slot(index));
 }
 
-void FaustInstrumentProcessor::populateParameters(DeviceInfo& info) const {
+void FaustInstrumentProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
     if (faust == nullptr)

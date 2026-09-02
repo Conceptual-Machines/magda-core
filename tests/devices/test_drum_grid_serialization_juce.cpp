@@ -229,7 +229,8 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
         expect(voiceDevice != nullptr, "The pad's device must be in the model");
         if (voiceDevice == nullptr)
             return;
-        magda::CompiledFaustProcessor(voiceId, kick).populateParameters(*voiceDevice);
+        magda::CompiledFaustProcessor(voiceId, kick)
+            .populateParameters(*voiceDevice, magda::DeviceProcessor::ValueSource::Engine);
         capturePadDevice(*built.grid, *voiceDevice);
 
         const auto capturedDoc = magda::device_state::decode(voiceDevice->pluginState);

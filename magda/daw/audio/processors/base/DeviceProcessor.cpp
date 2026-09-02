@@ -45,7 +45,7 @@ juce::String DeviceProcessor::formatParameterValue(int index, float normalizedVa
     return cachedParams_[index]->valueToString(normalizedValue);
 }
 
-void DeviceProcessor::populateParameters(DeviceInfo& info) const {
+void DeviceProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     int count = getParameterCount();
     for (int i = 0; i < count; ++i) {
@@ -94,14 +94,14 @@ bool DeviceProcessor::isDeltaSolo() const {
     return plugin_ && plugin_->isDeltaSoloEnabled();
 }
 
-void DeviceProcessor::populateParametersModelFirst(DeviceInfo& info) const {
-    if (info.format != PluginFormat::Internal) {
-        populateParameters(info);
+void DeviceProcessor::populateParameters(DeviceInfo& info, ValueSource source) const {
+    if (source == ValueSource::Engine || info.format != PluginFormat::Internal) {
+        populateParametersFromEngine(info);
         return;
     }
 
     const auto model = std::move(info.parameters);
-    populateParameters(info);
+    populateParametersFromEngine(info);
 
     auto sameParameter = [](const ParameterInfo& kept, const ParameterInfo& fresh) {
         if (kept.paramIndex != fresh.paramIndex)

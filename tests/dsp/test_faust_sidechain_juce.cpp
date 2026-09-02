@@ -120,7 +120,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         magda::DeviceInfo device;
         device.canSidechain = false;
         magda::FaustProcessor processor(1929, plugin);
-        processor.populateParameters(device);
+        processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
         expect(device.canSidechain, "DeviceInfo should expose the live DSP capability");
 
         constexpr int kBlockSize = 64;
@@ -196,7 +196,7 @@ class FaustSidechainTest final : public juce::UnitTest {
         expectEquals(inputs.size(), 2);
 
         device.canSidechain = true;
-        processor.populateParameters(device);
+        processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
         expect(!device.canSidechain, "DeviceInfo should remove the stale capability");
 
         beginTest("A recompile is visible on the host's own parameters");

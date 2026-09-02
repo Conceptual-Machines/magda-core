@@ -52,7 +52,7 @@ ParameterInfo MagdaDeviceProcessor::getParameterInfo(int index) const {
     return info;
 }
 
-void MagdaDeviceProcessor::populateParameters(DeviceInfo& info) const {
+void MagdaDeviceProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     const int count = getParameterCount();
     for (int index = 0; index < count; ++index)

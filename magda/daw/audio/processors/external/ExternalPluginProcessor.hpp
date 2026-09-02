@@ -25,7 +25,7 @@ class ExternalPluginProcessor : public DeviceProcessor, public te::AutomatablePa
     std::vector<juce::String> getParameterNames() const override;
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
+    void populateParametersFromEngine(DeviceInfo& info) const override;
 
     void syncFromDeviceInfo(const DeviceInfo& info) override;
 

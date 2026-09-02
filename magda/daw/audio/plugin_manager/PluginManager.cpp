@@ -455,7 +455,7 @@ void PluginManager::captureAllPluginStates() {
             // Model-first: save never copies an internal device's parameter
             // values back off the engine (#2317).
             if (sd.processor != nullptr)
-                sd.processor->populateParametersModelFirst(*devInfo);
+                sd.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
         }
     }
 
@@ -494,7 +494,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
         captureDrumGridPads(devicePath, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);
     if (it->second.processor)
-        it->second.processor->populateParametersModelFirst(*devInfo);
+        it->second.processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
 }
 
 void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGridPath) {

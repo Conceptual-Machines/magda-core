@@ -1319,7 +1319,7 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
             // Populate parameters on the DeviceInfo
             if (processor) {
                 if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-                    processor->populateParameters(*devInfo);
+                    processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Engine);
 
                     updateDeviceCapabilityFlags(*devInfo, *plugin);
                     AutoAliasGenerator::regenerateForDevice(devicePath);
@@ -2227,7 +2227,7 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // per-param displayText, etc.). Model-first: an internal device's
         // restored values stay the model's, never read back off the engine.
         if (canonical != nullptr)
-            processor->populateParametersModelFirst(*canonical);
+            processor->populateParameters(*canonical, DeviceProcessor::ValueSource::Model);
         AutoAliasGenerator::regenerateForDevice(devicePath);
 
         juce::ScopedLock lock(pluginLock_);
@@ -2253,7 +2253,7 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
 
     DeviceId sidechainToClear = INVALID_DEVICE_ID;
     if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
-        processor->populateParametersModelFirst(*devInfo);
+        processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
         sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
     }
     if (sidechainToClear != INVALID_DEVICE_ID)
@@ -2390,7 +2390,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             // DeviceInfo (see comment in registerRackPluginProcessor).
             DeviceId sidechainToClear = INVALID_DEVICE_ID;
             if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
-                processor->populateParametersModelFirst(*devInfo);
+                processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
                 sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
             }
 
@@ -2818,7 +2818,8 @@ void PluginManager::captureDrumGridPads(const ChainNodePath& drumGridPath,
                         TrackManager::padChainPath(drumGridPath, chain->index).withDevice(deviceId);
                     if (auto padIt = findSyncedDevice(padPath);
                         padIt != syncedDevices_.end() && padIt->second.processor != nullptr)
-                        padIt->second.processor->populateParametersModelFirst(padDevice);
+                        padIt->second.processor->populateParameters(
+                            padDevice, DeviceProcessor::ValueSource::Model);
                 }
                 break;
             }

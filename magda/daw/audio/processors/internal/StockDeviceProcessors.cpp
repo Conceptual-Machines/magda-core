@@ -293,7 +293,7 @@ ParameterInfo UtilityProcessor::getParameterInfo(int index) const {
     return info;
 }
 
-void UtilityProcessor::populateParameters(DeviceInfo& info) const {
+void UtilityProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     for (int i = 0; i < getParameterCount(); ++i) {
         info.parameters.push_back(getParameterInfo(i));
