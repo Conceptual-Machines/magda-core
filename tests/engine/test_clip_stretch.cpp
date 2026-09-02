@@ -206,10 +206,10 @@ BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + kBlockSize / kSampleRate;
-    block.startBeat = startSeconds * kBeatsPerSecond;
-    block.endBeat = block.endSeconds * kBeatsPerSecond;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + kBlockSize / kSampleRate;
+    block.beats.start = startSeconds * kBeatsPerSecond;
+    block.beats.end = block.seconds.end * kBeatsPerSecond;
     block.continuous = continuous;
     return block;
 }

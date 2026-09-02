@@ -20,8 +20,8 @@ BlockInfo blockFrom(double startBeat, int numSamples) {
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = startBeat;
-    block.endBeat = startBeat + numSamples / kSamplesPerBeat;
+    block.beats.start = startBeat;
+    block.beats.end = startBeat + numSamples / kSamplesPerBeat;
     block.continuous = true;
     return block;
 }
@@ -84,7 +84,7 @@ TEST_CASE("The metronome sounds where the beat is", "[engine][transport][click]"
     SECTION("not at all while stopped") {
         auto block = blockFrom(0.0, kBlockSize);
         block.playing = false;
-        block.endBeat = block.startBeat;
+        block.beats.end = block.beats.start;
 
         fixture.render(block);
         CHECK(firstSounding(fixture.output) == -1);

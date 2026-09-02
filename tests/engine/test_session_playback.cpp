@@ -129,14 +129,14 @@ BlockInfo blockAt(int index, bool continuous = true) {
     block.numSamples = kBlockSize;
     block.playing = true;
     block.continuous = continuous;
-    block.startBeat = index * kBeatsPerBlock;
-    block.endBeat = (index + 1) * kBeatsPerBlock;
-    block.startSeconds = block.startBeat * kSecondsPerBeat;
-    block.endSeconds = block.endBeat * kSecondsPerBeat;
-    block.startMonotonicBeat = block.startBeat;
-    block.endMonotonicBeat = block.endBeat;
-    block.startMonotonicSeconds = block.startSeconds;
-    block.endMonotonicSeconds = block.endSeconds;
+    block.beats.start = index * kBeatsPerBlock;
+    block.beats.end = (index + 1) * kBeatsPerBlock;
+    block.seconds.start = block.beats.start * kSecondsPerBeat;
+    block.seconds.end = block.beats.end * kSecondsPerBeat;
+    block.monotonicBeats.start = block.beats.start;
+    block.monotonicBeats.end = block.beats.end;
+    block.monotonicSeconds.start = block.seconds.start;
+    block.monotonicSeconds.end = block.seconds.end;
     return block;
 }
 
@@ -149,14 +149,14 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
     block.numSamples = kBlockSize;
     block.playing = true;
     block.continuous = continuous;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + (kBlockSize / kSampleRate);
-    block.startBeat = map.timeToBeat(block.startSeconds);
-    block.endBeat = map.timeToBeat(block.endSeconds);
-    block.startMonotonicBeat = block.startBeat;
-    block.endMonotonicBeat = block.endBeat;
-    block.startMonotonicSeconds = block.startSeconds;
-    block.endMonotonicSeconds = block.endSeconds;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + (kBlockSize / kSampleRate);
+    block.beats.start = map.timeToBeat(block.seconds.start);
+    block.beats.end = map.timeToBeat(block.seconds.end);
+    block.monotonicBeats.start = block.beats.start;
+    block.monotonicBeats.end = block.beats.end;
+    block.monotonicSeconds.start = block.seconds.start;
+    block.monotonicSeconds.end = block.seconds.end;
     block.tempo = &map;
     return block;
 }
@@ -387,22 +387,22 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
           "[engine][clip][session]") {
     const auto block = blockAt(40);  // timeline beat 10, seconds 5
 
-    magda::engine::BeatRange whole{block.startBeat, block.endBeat};
-    const auto material =
-        magda::engine::materialBlock(block, whole, block.startBeat, block.startSeconds);
+    magda::engine::BeatRange whole{block.beats.start, block.beats.end};
+    const auto material = magda::engine::materialBlock(
+        block, whole, magda::engine::RunOrigin{block.beats.start, block.seconds.start});
 
     // Beat zero of the material, at the seconds beat zero has.
-    CHECK(material.startBeat == Approx(0.0));
-    CHECK(material.endBeat == Approx(kBeatsPerBlock));
-    CHECK(material.startSeconds == Approx(0.0));
-    CHECK(material.endSeconds == Approx(kBeatsPerBlock * kSecondsPerBeat));
+    CHECK(material.beats.start == Approx(0.0));
+    CHECK(material.beats.end == Approx(kBeatsPerBlock));
+    CHECK(material.seconds.start == Approx(0.0));
+    CHECK(material.seconds.end == Approx(kBeatsPerBlock * kSecondsPerBeat));
 
     // The samples did not move, which is what lets a MIDI event keep writing
     // into the callback's own buffer: a material beat resolves to the sample
     // the timeline beat it came from would have resolved to.
     CHECK(material.numSamples == block.numSamples);
     for (const auto beat : {0.0, 0.1, 0.2})
-        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.startBeat + beat));
+        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.beats.start + beat));
 
     // A run that began here is not continuous with the last block, whatever the
     // transport was doing.
@@ -412,8 +412,8 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
     // different amounts, so the map would answer about the timeline. What is
     // left is the block's own line, which is the material's own line.
     CHECK(material.tempo == nullptr);
-    CHECK(material.beatAtTime(material.startSeconds) == Approx(material.startBeat));
-    CHECK(material.beatAtTime(material.endSeconds) == Approx(material.endBeat));
+    CHECK(material.beatAtTime(material.seconds.start) == Approx(material.beats.start));
+    CHECK(material.beatAtTime(material.seconds.end) == Approx(material.beats.end));
 }
 
 TEST_CASE("A run already under way is continuous with the block before it",
@@ -421,13 +421,13 @@ TEST_CASE("A run already under way is continuous with the block before it",
     const auto block = blockAt(40);
 
     // The run began four blocks ago, so this block is one beat into it.
-    const auto origin = block.startBeat - 1.0;
-    const auto originSeconds = block.startSeconds - kSecondsPerBeat;
-    const magda::engine::BeatRange whole{block.startBeat, block.endBeat};
-    const auto material = magda::engine::materialBlock(block, whole, origin, originSeconds);
+    const magda::engine::RunOrigin origin{block.beats.start - 1.0,
+                                          block.seconds.start - kSecondsPerBeat};
+    const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
+    const auto material = magda::engine::materialBlock(block, whole, origin);
 
-    CHECK(material.startBeat == Approx(1.0));
-    CHECK(material.startSeconds == Approx(kSecondsPerBeat));
+    CHECK(material.beats.start == Approx(1.0));
+    CHECK(material.seconds.start == Approx(kSecondsPerBeat));
     CHECK(material.continuous);
 }
 
@@ -891,7 +891,8 @@ TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][sessio
           Approx(leader.playedMonotonicSecondsRange()->end));
 
     // And they report the same origin to whatever renders them, on both axes.
-    CHECK(*follower.blockStatus().playStartTime1 == Approx(*leader.blockStatus().playStartTime1));
-    CHECK(*follower.blockStatus().playStartSeconds1 ==
-          Approx(*leader.blockStatus().playStartSeconds1));
+    // One value rather than two, so agreeing in beats and not in seconds is
+    // not a state this can be in.
+    REQUIRE(follower.blockStatus().origin1.has_value());
+    CHECK(*follower.blockStatus().origin1 == *leader.blockStatus().origin1);
 }

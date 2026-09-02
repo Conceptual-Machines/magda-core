@@ -172,10 +172,10 @@ BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + kBlockSize / kSampleRate;
-    block.startBeat = startSeconds * 2.0;
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + kBlockSize / kSampleRate;
+    block.beats.start = startSeconds * 2.0;
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -366,8 +366,8 @@ TEST_CASE("A track plays the clips the snapshot placed on it", "[engine][clip][v
 
         auto stopped = blockFrom(blockTime(200));
         stopped.playing = false;
-        stopped.endSeconds = stopped.startSeconds;
-        stopped.endBeat = stopped.startBeat;
+        stopped.seconds.end = stopped.seconds.start;
+        stopped.beats.end = stopped.beats.start;
         rig.render(stopped);
 
         for (auto sample = 0; sample < kBlockSize; ++sample)

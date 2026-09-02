@@ -279,8 +279,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
 
     if (!event) {
         if (playState_ == PlayState::playing) {
-            status.playStartTime1 = virtualStart(range);
-            status.playStartSeconds1 = virtualStartSeconds(range);
+            status.origin1 = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
             extendRun(range);
         }
 
@@ -299,8 +298,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
         status.playing2 = status.playing1;
 
         if (playState_ == PlayState::playing) {
-            status.playStartTime1 = virtualStart(range);
-            status.playStartSeconds1 = virtualStartSeconds(range);
+            status.origin1 = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
             extendRun(range);
         }
 
@@ -326,8 +324,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
                            SecondsRange{splitMonotonicSeconds, range.monotonicSeconds.end}};
 
     if (playState_ == PlayState::playing) {
-        status.playStartTime1 = virtualStart(first);
-        status.playStartSeconds1 = virtualStartSeconds(first);
+        status.origin1 = RunOrigin{virtualStart(first), virtualStartSeconds(first)};
         extendRun(first);
     }
 
@@ -337,8 +334,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     status.playing2 = playState_ == PlayState::playing;
 
     if (playState_ == PlayState::playing) {
-        status.playStartTime2 = virtualStart(second);
-        status.playStartSeconds2 = virtualStartSeconds(second);
+        status.origin2 = RunOrigin{virtualStart(second), virtualStartSeconds(second)};
         extendRun(second);
     }
 

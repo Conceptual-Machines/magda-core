@@ -462,18 +462,19 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
     // is placed at a sample of the callback: what the sub-range decides is which
     // events are emitted, not where they land (SessionPlayback.hpp).
     const auto eachPlaying = [&block](const SplitStatus& status, const auto& fn) {
-        if (status.playing1 && status.playStartTime1 && status.playStartSeconds1) {
-            const auto origin = *status.playStartTime1;
-            fn(materialBlock(block, status.range1, origin, *status.playStartSeconds1),
-               status.range1.start - origin, status.range1.end - origin);
-        }
+        const auto play = [&](const BeatRange& range, const std::optional<RunOrigin>& origin) {
+            if (!origin)
+                return;
 
-        if (status.isSplit && status.playing2 && status.playStartTime2 &&
-            status.playStartSeconds2) {
-            const auto origin = *status.playStartTime2;
-            fn(materialBlock(block, status.range2, origin, *status.playStartSeconds2),
-               status.range2.start - origin, status.range2.end - origin);
-        }
+            fn(materialBlock(block, range, *origin), range.start - origin->beat,
+               range.end - origin->beat);
+        };
+
+        if (status.playing1)
+            play(status.range1, status.origin1);
+
+        if (status.isSplit && status.playing2)
+            play(status.range2, status.origin2);
     };
 
     if (reconcile) {
@@ -573,11 +574,11 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     if (swapped) {
         NoteMask expected;
-        expectLane(out, block, track->midi, block.startBeat, block.endBeat, expected);
+        expectLane(out, block, track->midi, block.beats.start, block.beats.end, expected);
         endUnexpected(out, expected);
     }
 
-    playLane(out, block, track->midi, block.startBeat, block.endBeat);
+    playLane(out, block, track->midi, block.beats.start, block.beats.end);
     lastSnapshot_ = live;
 }
 

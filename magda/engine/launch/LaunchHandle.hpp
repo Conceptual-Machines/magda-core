@@ -4,6 +4,7 @@
 #include <tuple>
 
 #include "core/TypeIds.hpp"
+#include "transport/TimeDomains.hpp"
 
 /**
  * @file LaunchHandle.hpp
@@ -46,41 +47,6 @@ struct SlotKey {
     }
 };
 
-/// A stretch of beats. Half open: a block ending at 4.0 and one starting there
-/// do not both contain beat 4.
-struct BeatRange {
-    double start = 0.0;
-    double end = 0.0;
-
-    double length() const {
-        return end - start;
-    }
-
-    bool empty() const {
-        return end <= start;
-    }
-
-    bool operator==(const BeatRange&) const = default;
-};
-
-/// A stretch of seconds. Half open like BeatRange, and a separate type for the
-/// reason this file exists: a beat and a second are different domains, and the
-/// bug this guards against is one being passed where the other was meant.
-struct SecondsRange {
-    double start = 0.0;
-    double end = 0.0;
-
-    double length() const {
-        return end - start;
-    }
-
-    bool empty() const {
-        return end <= start;
-    }
-
-    bool operator==(const SecondsRange&) const = default;
-};
-
 /**
  * @brief One block, as the launcher sees it.
  *
@@ -117,6 +83,21 @@ struct SyncPoint {
 };
 
 /**
+ * @brief Where a run began, in the two domains a source reads it against.
+ *
+ * Together because they are one instant. A source positions beat-domain
+ * material against the first and seconds-domain material against the second,
+ * and a run whose two faces came from different instants would put a clip's
+ * notes and its samples in different places.
+ */
+struct RunOrigin {
+    double beat = 0.0;
+    double seconds = 0.0;
+
+    bool operator==(const RunOrigin&) const = default;
+};
+
+/**
  * @brief What one block was, once the handle has been advanced over it.
  *
  * Two sub-ranges rather than one play state, because a launch is quantized to
@@ -137,28 +118,24 @@ struct SplitStatus {
 
     bool isSplit = false;
 
-    /// The run's origin in this block's own cycle of the timeline, for
-    /// whichever sub-ranges are playing. What a source subtracts from the beat
-    /// it is handed to know how far into the material it is.
+    /// Where the run playing each sub-range began, on both of the block's own
+    /// axes. What a source subtracts from the beat and the seconds it is handed
+    /// to know how far into the material it is.
     ///
-    /// Virtual rather than historical: once the timeline has wrapped, the beat
-    /// the run really started on is no longer in the cycle the block belongs
-    /// to, so this is projected forward from monotonic elapsed instead. It can
-    /// therefore sit before the block, or before zero.
-    std::optional<double> playStartTime1;
-    std::optional<double> playStartTime2;
-
-    /// The same origin on the block's own seconds axis, for a source that
-    /// subtracts it from the seconds it is handed.
+    /// Virtual rather than historical: once the timeline has wrapped, the
+    /// instant the run really started on is no longer in the cycle the block
+    /// belongs to, so each face is projected forward from its own monotonic
+    /// domain instead. Either can therefore sit before the block, or before
+    /// zero.
     ///
-    /// The second face rather than a conversion of the first. Both are
-    /// projections of one origin into this block, but each is projected from
-    /// its own monotonic domain: converting the beat one through a tempo map
-    /// would answer where that beat sits rather than how long the run has been
-    /// going, and the two differ by every tempo change in between and by every
-    /// wrap the projection crossed (#2324).
-    std::optional<double> playStartSeconds1;
-    std::optional<double> playStartSeconds2;
+    /// Two faces in one value, and never one converted into the other: a tempo
+    /// map would answer where the beat sits rather than how long the run has
+    /// been going, and the two differ by every tempo change in between and by
+    /// every wrap the projection crossed (#2324). One optional rather than two,
+    /// so a caller cannot be handed a run with an origin in one domain and none
+    /// in the other.
+    std::optional<RunOrigin> origin1;
+    std::optional<RunOrigin> origin2;
 };
 
 class LaunchHandle {

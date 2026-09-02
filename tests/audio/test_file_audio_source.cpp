@@ -71,10 +71,10 @@ BlockInfo blockFrom(double startSeconds, int numSamples = kBlockSize, bool conti
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + numSamples / kSampleRate;
-    block.startBeat = startSeconds * 2.0;
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + numSamples / kSampleRate;
+    block.beats.start = startSeconds * 2.0;
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -225,7 +225,7 @@ TEST_CASE("An offline source renders nothing while the transport is stopped",
     juce::AudioBuffer<float> buffer(2, kBlockSize);
     auto block = blockFrom(1.0);
     block.playing = false;
-    block.endSeconds = block.startSeconds;
+    block.seconds.end = block.seconds.start;
 
     source.render(block, juce::dsp::AudioBlock<float>(buffer));
 

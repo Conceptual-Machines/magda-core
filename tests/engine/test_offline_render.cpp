@@ -75,7 +75,7 @@ class TimelineRamp final : public EngineAudioSource {
         if (!block.playing)
             return;
 
-        const auto start = std::llround(block.startSeconds * sampleRate_);
+        const auto start = std::llround(block.seconds.start * sampleRate_);
         for (auto sample = 0; sample < block.numSamples; ++sample) {
             const auto value = static_cast<float>((start + sample) % 251) * (1.0f / 251.0f);
             for (std::size_t channel = 0; channel < out.getNumChannels(); ++channel)
@@ -93,7 +93,7 @@ class DecayDevice final : public EngineDevice {
   public:
     void process(DeviceBlock& block) override {
         ++blocksProcessed;
-        startBeats.push_back(block.block.startBeat);
+        startBeats.push_back(block.block.beats.start);
         for (auto sample = 0; sample < block.block.numSamples; ++sample) {
             for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel) {
                 level_ = std::max(

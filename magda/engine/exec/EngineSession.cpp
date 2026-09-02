@@ -203,7 +203,7 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         // pool's window starts here, and a clip inside it has until the next
         // round to be given a reader.
         if (voices_ != nullptr)
-            voices_->setPosition(segment.block.startSeconds);
+            voices_->setPosition(segment.block.seconds.start);
 
         // Before the plan, and over every handle rather than the ones this plan
         // happens to render. A handle is a state machine that has to see each

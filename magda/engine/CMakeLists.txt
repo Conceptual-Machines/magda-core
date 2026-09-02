@@ -113,6 +113,7 @@ add_library(magda_engine STATIC
     transport/ClickGenerator.cpp
     transport/TempoMap.hpp
     transport/TransportState.hpp
+    transport/TimeDomains.hpp
     transport/TransportClock.hpp
     transport/ClickGenerator.hpp
     analysis/TransientDetector.cpp

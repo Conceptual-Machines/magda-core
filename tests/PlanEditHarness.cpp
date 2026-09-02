@@ -294,8 +294,8 @@ void Harness::render(int blocks) {
         engine::BlockInfo info;
         info.numSamples = kBlockSize;
         info.playing = true;
-        info.startBeat = static_cast<double>(timeline_) / kSampleRate;
-        info.endBeat = static_cast<double>(timeline_ + kBlockSize) / kSampleRate;
+        info.beats.start = static_cast<double>(timeline_) / kSampleRate;
+        info.beats.end = static_cast<double>(timeline_ + kBlockSize) / kSampleRate;
         info.continuous = timeline_ > 0;
 
         output_.clear();

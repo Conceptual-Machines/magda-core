@@ -104,7 +104,7 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
     if (settings.sync == ModSync::Transport && !noise) {
         state.cycles = settings.tempoSync
                            ? modBarPosition(block, timing) / barFractionOf(settings.rate.rateType)
-                           : block.startSeconds * hz;
+                           : block.seconds.start * hz;
     }
 
     const float raw = wrapPhase(static_cast<float>(state.cycles - std::floor(state.cycles)));

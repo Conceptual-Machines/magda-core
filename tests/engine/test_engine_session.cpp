@@ -1009,8 +1009,8 @@ TEST_CASE("A callback the loop wraps inside renders as two blocks",
     // them covers the wrap, which is the point: an op is never handed a block
     // whose timeline jumps in the middle.
     CHECK(before.numSamples + after.numSamples == kBlockSize);
-    CHECK(before.endBeat == Catch::Approx(1.0).margin(1e-9));
-    CHECK(after.startBeat == Catch::Approx(0.0).margin(1e-9));
+    CHECK(before.beats.end == Catch::Approx(1.0).margin(1e-9));
+    CHECK(after.beats.start == Catch::Approx(0.0).margin(1e-9));
     CHECK(before.continuous);
     CHECK(!after.continuous);
 }

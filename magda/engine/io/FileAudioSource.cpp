@@ -22,14 +22,14 @@ void FileAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     // both ends, so a clip ending exactly on a block boundary contributes
     // nothing to the block that starts there. Identical to the streaming
     // source, because it is the same clip in the same place.
-    const auto first = block.sampleForTime(std::max(block.startSeconds, placement_.startSeconds));
-    const auto last = block.sampleForTime(std::min(block.endSeconds, placement_.endSeconds));
+    const auto first = block.sampleForTime(std::max(block.seconds.start, placement_.startSeconds));
+    const auto last = block.sampleForTime(std::min(block.seconds.end, placement_.endSeconds));
     const auto count = last - first;
 
     if (count <= 0)
         return;
 
-    const auto sourceStart = sourceSampleAt(std::max(block.startSeconds, placement_.startSeconds));
+    const auto sourceStart = sourceSampleAt(std::max(block.seconds.start, placement_.startSeconds));
 
     // Past the end of the file is silence rather than a short block: the clip
     // says how long it is and a file that ran out inside it is a file that ran

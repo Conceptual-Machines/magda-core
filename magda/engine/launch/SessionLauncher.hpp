@@ -125,10 +125,7 @@ class LaunchHandleFeed {
  * how far into its material it has got in (RenderContext.hpp).
  */
 inline SyncRange syncRangeFor(const BlockInfo& block) {
-    return SyncRange{BeatRange{block.startBeat, block.endBeat},
-                     BeatRange{block.startMonotonicBeat, block.endMonotonicBeat},
-                     SecondsRange{block.startSeconds, block.endSeconds},
-                     SecondsRange{block.startMonotonicSeconds, block.endMonotonicSeconds}};
+    return SyncRange{block.beats, block.monotonicBeats, block.seconds, block.monotonicSeconds};
 }
 
 /**

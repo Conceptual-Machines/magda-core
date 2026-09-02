@@ -15,7 +15,7 @@ namespace {
 /// clip ending exactly on a block boundary contributes nothing to the block
 /// that starts there.
 bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
-    return span.startSeconds < block.endSeconds && span.endSeconds > block.startSeconds;
+    return span.startSeconds < block.seconds.end && span.endSeconds > block.seconds.start;
 }
 
 }  // namespace
@@ -60,7 +60,7 @@ void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const 
         // the break a track pays for its whole tail on every callback, all
         // session, and the cost grows with the length of the arrangement rather
         // than with what is playing.
-        if (clip.span.startSeconds >= block.endSeconds)
+        if (clip.span.startSeconds >= block.seconds.end)
             break;
 
         if (!reachesInto(clip.span, block))
@@ -107,15 +107,13 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
     // what lets this source and the MIDI one see the same block.
     forEachSlot(
         *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
-            const auto play = [&](const BeatRange& range, const std::optional<double>& playStart,
-                                  const std::optional<double>& playStartSeconds, int offset,
-                                  int count) {
-                if (count <= 0 || !playStart || !playStartSeconds)
+            const auto play = [&](const BeatRange& range, const std::optional<RunOrigin>& origin,
+                                  int offset, int count) {
+                if (count <= 0 || !origin)
                     return;
 
-                gather(slot.audio,
-                       materialSubBlock(block, range, *playStart, *playStartSeconds, count), offset,
-                       streams, sounding, soundingCount);
+                gather(slot.audio, materialSubBlock(block, range, *origin, count), offset, streams,
+                       sounding, soundingCount);
             };
 
             // Where the launch or the stop landed. What is on the far side of
@@ -124,11 +122,10 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
             const auto split = splitSample(block, status);
 
             if (status.playing1)
-                play(status.range1, status.playStartTime1, status.playStartSeconds1, 0, split);
+                play(status.range1, status.origin1, 0, split);
 
             if (status.isSplit && status.playing2)
-                play(status.range2, status.playStartTime2, status.playStartSeconds2, split,
-                     block.numSamples - split);
+                play(status.range2, status.origin2, split, block.numSamples - split);
         });
 }
 

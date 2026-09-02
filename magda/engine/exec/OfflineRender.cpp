@@ -191,7 +191,7 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 // waits for the disk, which is exactly what it is allowed to
                 // do and playback is not.
                 if (voices != nullptr) {
-                    voices->setPosition(segment.block.startSeconds);
+                    voices->setPosition(segment.block.seconds.start);
                     voices->service();
                     voices->fillNow();
                 }

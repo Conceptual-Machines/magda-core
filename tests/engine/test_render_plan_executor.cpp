@@ -46,8 +46,8 @@ BlockInfo blockAt(std::int64_t timelineSample, int numSamples, bool continuous =
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = static_cast<double>(timelineSample) / kSamplesPerBeat;
-    block.endBeat = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
+    block.beats.start = static_cast<double>(timelineSample) / kSamplesPerBeat;
+    block.beats.end = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
     block.continuous = continuous;
     return block;
 }
@@ -55,7 +55,7 @@ BlockInfo blockAt(std::int64_t timelineSample, int numSamples, bool continuous =
 /// Where a block starts, back in samples. What a real source does with the
 /// clip's own mapping, done here with the fixture's.
 std::int64_t timelineSampleOf(const BlockInfo& block) {
-    return std::llround(block.startBeat * kSamplesPerBeat);
+    return std::llround(block.beats.start * kSamplesPerBeat);
 }
 
 TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Media) {

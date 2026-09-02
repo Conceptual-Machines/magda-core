@@ -31,12 +31,12 @@ namespace magda::engine {
  * consumes a different amount of material than the block renders.
  */
 inline double secondsWithin(const BlockInfo& block, double beat) {
-    const auto span = block.endBeat - block.startBeat;
+    const auto span = block.beats.end - block.beats.start;
     if (!(span > 0.0))
-        return block.startSeconds;
+        return block.seconds.start;
 
-    return block.startSeconds +
-           (((beat - block.startBeat) / span) * (block.endSeconds - block.startSeconds));
+    return block.seconds.start +
+           (((beat - block.beats.start) / span) * (block.seconds.end - block.seconds.start));
 }
 
 /**
@@ -49,8 +49,8 @@ inline double secondsWithin(const BlockInfo& block, double beat) {
  * nothing to take it out, and would leave a MIDI clip unchased at its own first
  * beat.
  */
-inline bool runsOn(const BlockInfo& block, const BeatRange& range, double playStart) {
-    return block.continuous && (range.start - playStart) > 0.0;
+inline bool runsOn(const BlockInfo& block, const BeatRange& range, const RunOrigin& origin) {
+    return block.continuous && (range.start - origin.beat) > 0.0;
 }
 
 /**
@@ -90,14 +90,13 @@ inline bool runsOn(const BlockInfo& block, const BeatRange& range, double playSt
  * here is @ref runsOn: the block is the whole block, and bounding the emission
  * to the sub-range is the caller's.
  */
-inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, double playStart,
-                               double playStartSeconds) {
+inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
+                               const RunOrigin& origin) {
     auto material = block;
-    material.startBeat = block.startBeat - playStart;
-    material.endBeat = block.endBeat - playStart;
-    material.startSeconds = block.startSeconds - playStartSeconds;
-    material.endSeconds = block.endSeconds - playStartSeconds;
-    material.continuous = runsOn(block, range, playStart);
+    material.beats = BeatRange{block.beats.start - origin.beat, block.beats.end - origin.beat};
+    material.seconds =
+        SecondsRange{block.seconds.start - origin.seconds, block.seconds.end - origin.seconds};
+    material.continuous = runsOn(block, range, origin);
 
     // The project's map is not this block's map any more. Both of its axes have
     // moved, and by different amounts, so asking the map where a material
@@ -119,15 +118,14 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, d
  * block's own line for the reason @ref secondsWithin gives, which is the same
  * line @p count was measured on.
  */
-inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range, double playStart,
-                                  double playStartSeconds, int count) {
+inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range,
+                                  const RunOrigin& origin, int count) {
     auto material = block;
     material.numSamples = count;
-    material.startBeat = range.start - playStart;
-    material.endBeat = range.end - playStart;
-    material.startSeconds = secondsWithin(block, range.start) - playStartSeconds;
-    material.endSeconds = secondsWithin(block, range.end) - playStartSeconds;
-    material.continuous = runsOn(block, range, playStart);
+    material.beats = BeatRange{range.start - origin.beat, range.end - origin.beat};
+    material.seconds = SecondsRange{secondsWithin(block, range.start) - origin.seconds,
+                                    secondsWithin(block, range.end) - origin.seconds};
+    material.continuous = runsOn(block, range, origin);
     material.tempo = nullptr;  // see materialBlock
     return material;
 }

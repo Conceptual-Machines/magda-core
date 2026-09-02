@@ -67,7 +67,7 @@ TEST_CASE("An unquantized launch takes the whole block", "[launch]") {
     CHECK_FALSE(status.isSplit);
     CHECK(status.playing1);
     CHECK(status.range1 == BeatRange{0.0, 1.0});
-    CHECK(status.playStartTime1 == Approx(0.0));
+    CHECK(status.origin1->beat == Approx(0.0));
     CHECK(handle.playState() == LaunchHandle::PlayState::playing);
     CHECK_FALSE(handle.queuedState().has_value());
 }
@@ -89,9 +89,9 @@ TEST_CASE("A launch quantized inside a block splits it at the beat", "[launch]")
     CHECK(status.playing2);
     CHECK(status.range1 == BeatRange{2.0, 2.5});
     CHECK(status.range2 == BeatRange{2.5, 3.0});
-    CHECK_FALSE(status.playStartTime1.has_value());
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(2.5));
+    CHECK_FALSE(status.origin1.has_value());
+    REQUIRE(status.origin2.has_value());
+    CHECK(status.origin2->beat == Approx(2.5));
 }
 
 TEST_CASE("A launch on a block boundary is not split and not counted twice", "[launch]") {
@@ -218,8 +218,8 @@ TEST_CASE("Looping re-triggers the run at the duration", "[launch]") {
     CHECK(status.range2 == BeatRange{2.0, 3.0});
 
     // The run restarted at the wrap rather than carrying on through it.
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(2.0));
+    REQUIRE(status.origin2.has_value());
+    CHECK(status.origin2->beat == Approx(2.0));
     CHECK(handle.playedRange()->length() == Approx(1.0));
 }
 
@@ -271,7 +271,7 @@ TEST_CASE("A scene launch starts every handle on the same beat", "[launch]") {
     REQUIRE(statusA.isSplit);
     REQUIRE(statusB.isSplit);
     CHECK(statusA.range2.start == Approx(statusB.range2.start));
-    CHECK(*statusA.playStartTime2 == Approx(*statusB.playStartTime2));
+    CHECK(statusA.origin2->beat == Approx(statusB.origin2->beat));
 }
 
 TEST_CASE("Nudge moves the playhead without ending the run", "[launch]") {
@@ -357,8 +357,8 @@ TEST_CASE("A re-trigger lands on its own beat, not on the wrap before it", "[lau
 
     // The run's origin is the beat that was asked for. The wrap at 11.99 would
     // have put it there 0.01 beats early and kept the drift alive.
-    REQUIRE(status.playStartTime2.has_value());
-    CHECK(*status.playStartTime2 == Approx(12.0));
+    REQUIRE(status.origin2.has_value());
+    CHECK(status.origin2->beat == Approx(12.0));
     CHECK(handle.playedRange()->start == Approx(12.0));
 }
 
@@ -421,8 +421,8 @@ TEST_CASE("A wrap landing on a block's first sample is not skipped twice", "[lau
     // the new run and a split would report an empty half.
     CHECK_FALSE(status.isSplit);
     CHECK(status.playing1);
-    REQUIRE(status.playStartTime1.has_value());
-    CHECK(*status.playStartTime1 == Approx(2.0));
+    REQUIRE(status.origin1.has_value());
+    CHECK(status.origin1->beat == Approx(2.0));
     CHECK(handle.playedRange()->length() == Approx(1.0));
 
     // And it keeps wrapping rather than having lost the phase.
@@ -464,10 +464,10 @@ TEST_CASE("playStartTime survives the timeline wrapping under it", "[launch]") {
     // is no longer a beat in the cycle this block belongs to.
     const auto status = handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
-    REQUIRE(status.playStartTime1.has_value());
+    REQUIRE(status.origin1.has_value());
 
     // What a source actually computes: where it is in the material. Two beats
     // in, because that is how long the run has been going.
-    CHECK(status.range1.start - *status.playStartTime1 == Approx(2.0));
-    CHECK(*status.playStartTime1 == Approx(-2.0));
+    CHECK(status.range1.start - status.origin1->beat == Approx(2.0));
+    CHECK(status.origin1->beat == Approx(-2.0));
 }
