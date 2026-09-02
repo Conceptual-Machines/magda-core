@@ -71,19 +71,6 @@ ParamDomain resolveDomain(const DeviceInfo& device, const ds::Doc& doc,
     return ParamDomain::Display;
 }
 
-/// The saved root as the tree `MagdaDevice::restoreState()` takes - same shape
-/// the native engine's device factory builds (`EngineDeviceFactory.cpp`).
-juce::ValueTree treeFromNode(const ds::Node& node) {
-    juce::ValueTree tree(node.type.isNotEmpty() ? juce::Identifier(node.type)
-                                                : juce::Identifier("PLUGIN"));
-    for (int i = 0; i < node.props.size(); ++i)
-        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
-    for (const auto& child : node.children)
-        if (child.type.isNotEmpty())
-            tree.appendChild(treeFromNode(child), nullptr);
-    return tree;
-}
-
 /// A throwaway SDK device for the parameter metadata a normalised value needs
 /// to become a display one. Restored from the document's own root first, for
 /// the devices whose parameter set depends on it (the runtime Faust device
@@ -106,7 +93,7 @@ std::unique_ptr<MagdaDevice> metadataDevice(const juce::String& pluginId, const 
 
     auto device = create();
     if (device != nullptr) {
-        auto tree = treeFromNode(doc.root);
+        auto tree = ds::toValueTree(doc.root);
         tree.setProperty(juce::Identifier("type"), doc.deviceType, nullptr);
         device->restoreState(tree);
     }

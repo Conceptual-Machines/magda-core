@@ -54,18 +54,6 @@ std::unique_ptr<MagdaDevice> createSdkDevice(const juce::String& pluginId) {
     return {};
 }
 
-/// The saved node, as the tree MagdaDevice::restoreState() takes.
-juce::ValueTree treeFromNode(const magda::device_state::Node& node) {
-    juce::ValueTree tree(node.type.isNotEmpty() ? juce::Identifier(node.type)
-                                                : juce::Identifier("PLUGIN"));
-    for (int i = 0; i < node.props.size(); ++i)
-        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
-    for (const auto& child : node.children)
-        if (child.type.isNotEmpty())
-            tree.appendChild(treeFromNode(child), nullptr);
-    return tree;
-}
-
 /// Hand the device whatever the project saved for it.
 ///
 /// Parameters are not this: the plan's value layer resolves every one of them
@@ -83,7 +71,7 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
     if (!doc)
         return;
 
-    auto tree = treeFromNode(doc->root);
+    auto tree = magda::device_state::toValueTree(doc->root);
     tree.setProperty(typeProperty(), doc->deviceType, nullptr);
     device.restoreState(tree);
 }

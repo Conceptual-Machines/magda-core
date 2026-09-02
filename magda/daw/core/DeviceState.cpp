@@ -234,4 +234,15 @@ void forEachNode(const Node& root, const std::function<void(const Node&)>& visit
         forEachNode(child, visit);
 }
 
+juce::ValueTree toValueTree(const Node& node) {
+    juce::ValueTree tree(node.type.isNotEmpty() ? juce::Identifier(node.type)
+                                                : juce::Identifier("PLUGIN"));
+    for (int i = 0; i < node.props.size(); ++i)
+        tree.setProperty(node.props.getName(i), node.props.getValueAt(i), nullptr);
+    for (const auto& child : node.children)
+        if (child.type.isNotEmpty())
+            tree.appendChild(toValueTree(child), nullptr);
+    return tree;
+}
+
 }  // namespace magda::device_state

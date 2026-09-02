@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_core/juce_core.h>
+#include <juce_data_structures/juce_data_structures.h>
 
 #include <functional>
 #include <optional>
@@ -123,5 +124,15 @@ bool isFutureDeviceState(const juce::String& text);
 
 /// Depth-first walk over `root` and all descendants, root first.
 void forEachNode(const Node& root, const std::function<void(const Node&)>& visit);
+
+/**
+ * A node as the plain ValueTree `MagdaDevice::restoreState()` takes. The
+ * document root has no element name of its own, so it (and any nameless
+ * descendant's shell) becomes "PLUGIN"; nameless children are skipped, the
+ * same rule `decode` applies on the way in. Every consumer of a document -
+ * the native engine's device factory, the load-time hydration - builds the
+ * restore tree through here, so a device sees one shape whoever asks.
+ */
+juce::ValueTree toValueTree(const Node& node);
 
 }  // namespace magda::device_state
