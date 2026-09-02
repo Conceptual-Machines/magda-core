@@ -47,6 +47,36 @@ struct SecondsRange {
 };
 
 /**
+ * @brief One instant inside a block, in every domain the engine names it in.
+ *
+ * Built from one coordinate and one only: the sample. Every face below is
+ * derived from it through the tempo map, so the five of them are one instant
+ * rather than five answers that happen to be near each other.
+ *
+ * That is the whole point of the type. The domains are related by the map,
+ * which is not a straight line, and projecting an instant onto each axis
+ * separately gives a set of faces no single moment has: over a steep ramp the
+ * beat face and the seconds face of one "instant" can be 163 samples apart.
+ * Anything built from those faces inherits the gap, and a run whose origin has
+ * it starts its material somewhere it was never placed (#2330).
+ *
+ * The sample is canonical because it is the one coordinate that is not a
+ * matter of interpretation: it is what plays.
+ */
+struct BlockInstant {
+    /// Offset within the block. What actually sounds at this instant.
+    int sample = 0;
+
+    double timelineBeat = 0.0;
+    double timelineSeconds = 0.0;
+
+    /// The faces that never go back, which is what a queued launch is named in
+    /// and what a run's elapsed material is measured in (#2324).
+    double monotonicBeat = 0.0;
+    double monotonicSeconds = 0.0;
+};
+
+/**
  * @brief Where a run began, in the two domains a source reads it against.
  *
  * One value, because a run whose faces came from different instants would put a

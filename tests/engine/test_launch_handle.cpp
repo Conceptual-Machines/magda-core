@@ -22,19 +22,30 @@ namespace {
 /// 120 bpm, the tempo every case here runs at.
 constexpr double kSecondsPerBeat = 0.5;
 
+constexpr double kSampleRate = 48000.0;
+
+/// How many samples a stretch of beats is at that tempo. A block carries its
+/// sample count because an instant inside it is named in samples: that is the
+/// one coordinate every other is derived from (#2330).
+constexpr int samplesFor(double beats) {
+    return static_cast<int>(beats * kSecondsPerBeat * kSampleRate);
+}
+
 /// One block, in all four faces, with the timeline and monotonic clocks running
 /// together. They diverge only when something wraps the timeline.
 SyncRange block(double from, double to) {
     return SyncRange{BeatRange{from, to}, BeatRange{from, to},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
-                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat}};
+                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
+                     samplesFor(to - from)};
 }
 
 /// A block the timeline has wrapped under.
 SyncRange wrapped(double from, double to, double monotonicFrom, double monotonicTo) {
     return SyncRange{BeatRange{from, to}, BeatRange{monotonicFrom, monotonicTo},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
-                     SecondsRange{monotonicFrom * kSecondsPerBeat, monotonicTo * kSecondsPerBeat}};
+                     SecondsRange{monotonicFrom * kSecondsPerBeat, monotonicTo * kSecondsPerBeat},
+                     samplesFor(monotonicTo - monotonicFrom)};
 }
 
 }  // namespace
