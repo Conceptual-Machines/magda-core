@@ -34,6 +34,7 @@
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/PadCommands.hpp"
@@ -412,7 +413,7 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
     }
 
     if (auto processor = magda::createDeviceProcessorForPlugin(device.id, plugin, device.pluginId))
-        processor->populateParameters(device);
+        processor->populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
 
     return device;
 }
@@ -820,6 +821,11 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         nimbusUI_->updateFromParameters(device.parameters);
     if (sidechainUI_ && device.pluginId.equalsIgnoreCase(daw::audio::SidechainPlugin::xmlTypeName))
         sidechainUI_->updateFromParameters(device.parameters);
+    if (strumUI_ && device.pluginId.equalsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName))
+        strumUI_->updateFromParameters(device.parameters);
+    if (arpeggiatorUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
+        arpeggiatorUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
@@ -915,7 +921,8 @@ bool DeviceCustomUIManager::createAnalyzerUI(const magda::DeviceInfo& device,
 }
 
 bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
-                                                juce::Component& parent) {
+                                                juce::Component& parent,
+                                                const Callbacks& callbacks) {
     if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();
         parent.addAndMakeVisible(*chordEngineUI_);
@@ -931,25 +938,43 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
 
     if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
+        forwardParameterChanges(*arpeggiatorUI_, callbacks);
+        // Non-slot settings are authored state: the edit patches the MODEL's
+        // state document, and the projection updates the live device (#2317).
+        // The model is what autosave writes and what both engines build from,
+        // so the edit also dirties the project.
+        arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
+            auto& tm = magda::TrackManager::getInstance();
+            const bool changed = tm.updateDeviceAuthoredState(
+                devicePath_, [&settings](magda::device_state::Doc& doc) {
+                    for (int i = 0; i < settings.size(); ++i)
+                        doc.root.props.set(settings.getName(i), settings.getValueAt(i));
+                });
+            if (changed)
+                ProjectManager::getInstance().markDirty();
+        };
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
-            if (auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(plugin.get())) {
+            if (auto* arp =
+                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::ArpeggiatorPlugin>(
+                        plugin.get())) {
                 arpeggiatorUI_->setArpeggiator(arp);
                 arpPlugin_ = arp;
             }
         }
+        update(device);
         return true;
     }
 
     if (device.pluginId.containsIgnoreCase(daw::audio::MidiStrumPlugin::xmlTypeName)) {
         strumUI_ = std::make_unique<StrumUI>();
+        forwardParameterChanges(*strumUI_, callbacks);
         parent.addAndMakeVisible(*strumUI_);
-        if (auto plugin = getLivePlugin()) {
-            if (auto* strum = dynamic_cast<daw::audio::MidiStrumPlugin*>(plugin.get())) {
-                strumUI_->setPlugin(strum);
-                strumPlugin_ = strum;
-            }
-        }
+        if (auto plugin = getLivePlugin())
+            strumPlugin_ =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiStrumPlugin>(
+                    plugin.get());
+        update(device);
         return true;
     }
 
@@ -1962,37 +1987,37 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         return false;
     }
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (audioEngine == nullptr) {
-        DBG("IR load: no audio engine");
-        return false;
-    }
-    auto* bridge = audioEngine->getAudioBridge();
-    if (bridge == nullptr) {
-        DBG("IR load: no audio bridge");
-        return false;
-    }
-    auto plugin = getLivePlugin();
-    if (!plugin) {
-        DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
-        return false;
-    }
-    auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get());
-    if (ir == nullptr) {
-        DBG("IR load: plugin is not a convolution device, type: " << plugin->getName());
-        return false;
-    }
-    if (!ir->loadImpulseResponse(file)) {
-        DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
+    juce::MemoryBlock raw;
+    if (!file.loadFileAsData(raw)) {
+        DBG("IR load: could not read: " << file.getFullPathName());
         return false;
     }
 
-    ir->irName = file.getFileNameWithoutExtension();
+    // Encode up front so an unreadable file is refused before anything is
+    // committed. The command then writes the blob into the MODEL's state
+    // document and the projection reloads the live convolution from it -
+    // the same route a project load takes (#2317). Undoable: the previous
+    // document, previous IR included, comes back as one snapshot.
+    juce::MemoryBlock encoded;
+    if (!daw::audio::MagdaConvolutionPlugin::encodeImpulseResponse(raw.getData(), raw.getSize(),
+                                                                   encoded)) {
+        DBG("IR load: not readable as audio: " << file.getFullPathName());
+        return false;
+    }
+
+    auto command = std::make_unique<magda::LoadImpulseResponseCommand>(
+        devicePath_, file.getFileNameWithoutExtension(), std::move(encoded));
+    // Refused BEFORE it reaches the UndoManager: executeCommand records even a
+    // command whose execute() declines, which would leave a no-op undo step
+    // and a false success here.
+    if (!command->canExecute()) {
+        DBG("IR load: refused (future-schema state or not a convolution device)");
+        return false;
+    }
+    magda::UndoManager::getInstance().executeCommand(std::move(command));
+
     if (impulseResponseUI_ != nullptr)
         impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-
-    // Capture plugin state so the IR persists in the project.
-    bridge->getPluginManager().capturePluginState(devicePath_);
     return true;
 }
 
@@ -2093,7 +2118,7 @@ void DeviceCustomUIManager::create(const magda::DeviceInfo& device, juce::Compon
         // handled by helper
     } else if (daw::audio::internalPluginHasTag(device.pluginId, "external-insert")) {
         createExternalInsertUI(device, *parent);
-    } else if (!createMidiUtilityUI(device, *parent)) {
+    } else if (!createMidiUtilityUI(device, *parent, uiCallbacks)) {
         createAnalyzerUI(device, *parent);
     }
 }
@@ -2253,7 +2278,8 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     }
     if (nimbusUI_ != nullptr) {
         std::shared_ptr<NimbusTelemetrySource> source;
-        if (dynamic_cast<daw::audio::MutableCloudsPlugin*>(plugin.get()) != nullptr) {
+        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MutableCloudsPlugin>(
+                plugin.get()) != nullptr) {
             if (nimbusTelemetry_ == nullptr)
                 nimbusTelemetry_ = std::make_shared<NimbusPluginTelemetrySource>(plugin);
             source = nimbusTelemetry_;
@@ -2431,8 +2457,10 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         impulseResponseUI_->updateFromParameters(device.parameters);
 
         auto plugin = getLivePlugin();
-        if (auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(plugin.get()))
-            impulseResponseUI_->setIRName(ir->irName.get());
+        if (const auto* ir =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaConvolutionPlugin>(
+                    plugin.get()))
+            impulseResponseUI_->setIRName(ir->irName());
     }
 }
 

@@ -133,10 +133,7 @@ te::Plugin::Ptr restoreSavedPlugin(te::Edit& edit, const juce::String& savedPlug
         return {};
     }
 
-    auto plugin = edit.getPluginCache().createNewPlugin(savedState);
-    if (plugin != nullptr)
-        tracktion_adapter::applyDeviceStateParameters(*plugin, savedPluginState);
-    return plugin;
+    return edit.getPluginCache().createNewPlugin(savedState);
 }
 
 DevicePluginPtr createTracktionPlugin(const InternalPluginSpec& spec, DeviceSessionKey sessionKey,
@@ -335,26 +332,26 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI arpeggiator for rhythmic note patterns and held-note motion.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<ArpeggiatorPlugin>,
+         .matchesPlugin = matchesDevice<ArpeggiatorPlugin>,
          .createProcessor = makeProcessor<ArpeggiatorProcessor>,
          .showInBrowser = true,
          .tags = kArpeggiatorTags,
          .tagCount = static_cast<int>(std::size(kArpeggiatorTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<ArpeggiatorPlugin>});
+         .createDevice = createDevice<ArpeggiatorPlugin>});
     add(registry, {.pluginId = MidiStrumPlugin::xmlTypeName,
                    .displayName = "Strum",
                    .browserCategory = "MIDI",
                    .description = "Curve-shaped strum: turns a held chord into a strum / roll / "
                                   "arpeggio for any instrument.",
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-                   .matchesPlugin = matches<MidiStrumPlugin>,
+                   .matchesPlugin = matchesDevice<MidiStrumPlugin>,
                    .createProcessor = makeProcessor<StrumProcessor>,
                    .showInBrowser = true,
                    .tags = kStrumTags,
                    .tagCount = static_cast<int>(std::size(kStrumTags)),
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<MidiStrumPlugin>});
+                   .createDevice = createDevice<MidiStrumPlugin>});
     add(registry,
         {.pluginId = StepSequencerPlugin::xmlTypeName,
          .displayName = "Step Sequencer",
@@ -408,7 +405,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kConvolutionLoadAliases,
          .loadAliasCount = static_cast<int>(std::size(kConvolutionLoadAliases)),
-         .matchesPlugin = matches<MagdaConvolutionPlugin>,
+         .matchesPlugin = matchesDevice<MagdaConvolutionPlugin>,
          .createProcessor = makeProcessor<MagdaConvolutionProcessor>,
          .showInBrowser = true,
          .tags = kConvolutionTags,
@@ -416,7 +413,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          // The impulse response lives in the device state, so a restore has to
          // rebuild the plugin from it rather than from a fresh tree.
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<MagdaConvolutionPlugin>});
+         .createDevice = createDevice<MagdaConvolutionPlugin>});
     add(registry, {.pluginId = FaustPlugin::xmlTypeName,
                    .displayName = "Faust",
                    .browserCategory = "Custom DSP",
@@ -493,41 +490,41 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .description = "Mutable Instruments Elements port: modal-synthesis voice (bow/blow/strike "
                         "exciter into a modal + string resonator and stereo space).",
          .createMode = InternalPluginCreateMode::FreshValueTree,
-         .matchesPlugin = matches<MutableElementsPlugin>,
+         .matchesPlugin = matchesDevice<MutableElementsPlugin>,
          .createProcessor = makeProcessor<MutableElementsProcessor>,
          .showInBrowser = true,
          .isInstrument = true,
          .tags = kMutableElementsTags,
          .tagCount = static_cast<int>(std::size(kMutableElementsTags)),
          .createInSession = createFreshValueTreePlugin,
-         .createPlugin = createPlugin<MutableElementsPlugin>});
+         .createDevice = createDevice<MutableElementsPlugin>});
     add(registry, {.pluginId = MutableRingsPlugin::xmlTypeName,
                    .displayName = "Halo",
                    .browserCategory = "Synth",
                    .description = "Mutable Instruments Rings port: polyphonic resonator (modal / "
                                   "sympathetic / inharmonic / FM models) excited by MIDI.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matches<MutableRingsPlugin>,
+                   .matchesPlugin = matchesDevice<MutableRingsPlugin>,
                    .createProcessor = makeProcessor<MutableRingsProcessor>,
                    .showInBrowser = true,
                    .isInstrument = true,
                    .tags = kMutableRingsTags,
                    .tagCount = static_cast<int>(std::size(kMutableRingsTags)),
                    .createInSession = createFreshValueTreePlugin,
-                   .createPlugin = createPlugin<MutableRingsPlugin>});
+                   .createDevice = createDevice<MutableRingsPlugin>});
     add(registry, {.pluginId = MutableCloudsPlugin::xmlTypeName,
                    .displayName = "Nimbus",
                    .browserCategory = "Texture",
                    .description = "Mutable Instruments Clouds port: granular texture processor "
                                   "(granular / stretch / looping-delay / spectral) with freeze.",
                    .createMode = InternalPluginCreateMode::FreshValueTree,
-                   .matchesPlugin = matches<MutableCloudsPlugin>,
+                   .matchesPlugin = matchesDevice<MutableCloudsPlugin>,
                    .createProcessor = makeProcessor<MutableCloudsProcessor>,
                    .showInBrowser = true,
                    .tags = kMutableCloudsTags,
                    .tagCount = static_cast<int>(std::size(kMutableCloudsTags)),
                    .createInSession = createFreshValueTreePlugin,
-                   .createPlugin = createPlugin<MutableCloudsPlugin>});
+                   .createDevice = createDevice<MutableCloudsPlugin>});
 }
 
 void registerInfrastructureDevices(InternalPluginRegistry& registry) {

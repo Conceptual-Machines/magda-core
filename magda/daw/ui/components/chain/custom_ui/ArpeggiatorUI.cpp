@@ -25,8 +25,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     patternCombo_.addItem("Random", 5);
     patternCombo_.addItem("As Played", 6);
     patternCombo_.onChange = [this] {
-        if (plugin_)
-            plugin_->pattern = patternCombo_.getSelectedId() - 1;
+        sendChange(Arp::kPattern, static_cast<float>(patternCombo_.getSelectedId() - 1));
     };
 
     static const char* rateNames[] = {"1/4.", "1/4",   "1/4T", "1/8.",  "1/8",
@@ -40,8 +39,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     });
     rateSlider_.setValueParser([](const juce::String&) { return 1.0; });
     rateSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rate = juce::roundToInt(value);
+        sendChange(Arp::kRate, static_cast<float>(juce::roundToInt(value)));
     };
 
     setupLabel(octavesLabel_, "OCTAVES");
@@ -49,8 +47,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     octavesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     octavesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     octavesSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->octaveRange = juce::roundToInt(value);
+        sendChange(Arp::kOctaves, static_cast<float>(juce::roundToInt(value)));
     };
 
     setupLabel(latchLabel_, "LATCH");
@@ -63,11 +60,9 @@ ArpeggiatorUI::ArpeggiatorUI() {
     latchButton_.setColour(juce::TextButton::textColourOffId, DarkTheme::getSecondaryTextColour());
     latchButton_.setColour(juce::TextButton::textColourOnId, DarkTheme::getTextColour());
     latchButton_.onClick = [this] {
-        if (plugin_) {
-            bool on = latchButton_.getToggleState();
-            plugin_->latch = on;
-            latchButton_.setButtonText(on ? "ON" : "OFF");
-        }
+        const bool on = latchButton_.getToggleState();
+        latchButton_.setButtonText(on ? "ON" : "OFF");
+        sendChange(Arp::kLatch, on ? 1.0f : 0.0f);
     };
     addAndMakeVisible(latchButton_);
     setupLabel(rampLabel_, "TIME BEND");
@@ -83,8 +78,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     gateSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     gateSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->gate = static_cast<float>(value);
+        sendChange(Arp::kGate, static_cast<float>(value));
     };
 
     setupLabel(swingLabel_, "SWING");
@@ -94,16 +88,13 @@ ArpeggiatorUI::ArpeggiatorUI() {
     swingSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
     swingSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->swing = static_cast<float>(value);
+        sendChange(Arp::kSwing, static_cast<float>(value));
     };
 
     rampCurveDisplay_.setMouseCursor(juce::MouseCursor::CrosshairCursor);
     rampCurveDisplay_.onCurveChanged = [this](float depth, float sk) {
-        if (plugin_) {
-            plugin_->ramp = depth;
-            plugin_->skew = sk;
-        }
+        sendChange(Arp::kRamp, depth);
+        sendChange(Arp::kSkew, sk);
         depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
         skewSlider_.setValue(static_cast<double>(sk), juce::dontSendNotification);
     };
@@ -114,8 +105,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     depthSlider_.setValueFormatter([](double v) { return juce::String(v, 2); });
     depthSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     depthSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->ramp = static_cast<float>(value);
+        sendChange(Arp::kRamp, static_cast<float>(value));
         rampCurveDisplay_.setValues(static_cast<float>(value), rampCurveDisplay_.getSkew());
     };
 
@@ -124,8 +114,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     skewSlider_.setValueFormatter([](double v) { return juce::String(v, 2); });
     skewSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     skewSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->skew = static_cast<float>(value);
+        sendChange(Arp::kSkew, static_cast<float>(value));
         rampCurveDisplay_.setValues(rampCurveDisplay_.getDepth(), static_cast<float>(value));
     };
 
@@ -133,10 +122,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->rampCycles = juce::roundToInt(value);
-    };
+    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     setupLabel(quantizeLabel_, "Q");
     setupSlider(quantizeSlider_, 0.0, 1.0, 0.01);
@@ -144,24 +130,18 @@ ArpeggiatorUI::ArpeggiatorUI() {
         [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
-    quantizeSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantize = static_cast<float>(value);
-    };
+    quantizeSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     setupLabel(quantizeSubLabel_, "SUB");
     setupSlider(quantizeSubSlider_, 16, 512, 16);
     quantizeSubSlider_.setValueFormatter(
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    quantizeSubSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->quantizeSub = juce::roundToInt(value);
-    };
+    quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        if (plugin_)
-            plugin_->hardAngle = hardAngle;
+        hardAngle_ = hardAngle;
+        settingsEdited();
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -170,13 +150,11 @@ ArpeggiatorUI::ArpeggiatorUI() {
     velModeCombo_.addItem("Fixed", 2);
     velModeCombo_.addItem("Accent", 3);
     velModeCombo_.onChange = [this] {
-        if (plugin_) {
-            plugin_->velocityMode = velModeCombo_.getSelectedId() - 1;
-            bool showFixed = static_cast<Arp::VelocityMode>(plugin_->velocityMode.get()) ==
-                             Arp::VelocityMode::Fixed;
-            fixedVelSlider_.setEnabled(showFixed);
-            fixedVelSlider_.setAlpha(showFixed ? 1.0f : 0.3f);
-        }
+        const int mode = velModeCombo_.getSelectedId() - 1;
+        sendChange(Arp::kVelMode, static_cast<float>(mode));
+        const bool showFixed = static_cast<Arp::VelocityMode>(mode) == Arp::VelocityMode::Fixed;
+        fixedVelSlider_.setEnabled(showFixed);
+        fixedVelSlider_.setAlpha(showFixed ? 1.0f : 0.3f);
     };
 
     setupLabel(fixedVelLabel_, "FIXED VEL");
@@ -184,8 +162,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     fixedVelSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     fixedVelSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     fixedVelSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->fixedVelocity = juce::roundToInt(value);
+        sendChange(Arp::kFixedVel, static_cast<float>(juce::roundToInt(value)));
     };
     fixedVelSlider_.setEnabled(false);
     fixedVelSlider_.setAlpha(0.3f);
@@ -193,78 +170,106 @@ ArpeggiatorUI::ArpeggiatorUI() {
 
 ArpeggiatorUI::~ArpeggiatorUI() {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
     latchButton_.setLookAndFeel(nullptr);
     patternCombo_.setLookAndFeel(nullptr);
     velModeCombo_.setLookAndFeel(nullptr);
 }
 
-void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* plugin) {
+void ArpeggiatorUI::sendChange(int paramIndex, float value) {
+    if (onParameterChanged)
+        onParameterChanged(paramIndex, value);
+}
+
+void ArpeggiatorUI::settingsEdited() {
+    if (!onSettingsEdited)
+        return;
+
+    // The full settings set, from the controls, in the device's own state
+    // vocabulary. The owner patches these onto the model's document; the
+    // device itself is updated by the projection, not by this UI.
+    using IDs = daw::audio::ArpeggiatorPlugin::SettingIDs;
+    juce::NamedValueSet settings;
+    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
+    settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
+    settings.set(IDs::hardAngle, hardAngle_);
+    onSettingsEdited(settings);
+}
+
+void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* device) {
     stopTimer();
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
+    plugin_ = device;
 
-    plugin_ = plugin;
-
-    if (plugin_) {
-        watchedState_ = plugin_->state;
-        watchedState_.addListener(this);
-        syncFromPlugin();
+    if (plugin_ != nullptr) {
+        syncSettingsFromDevice();
         startTimerHz(30);
     }
 }
 
-void ArpeggiatorUI::syncFromPlugin() {
-    if (!plugin_)
+void ArpeggiatorUI::syncSettingsFromDevice() {
+    if (plugin_ == nullptr)
         return;
 
-    patternCombo_.setSelectedId(plugin_->pattern.get() + 1, juce::dontSendNotification);
-    rateSlider_.setValue(static_cast<double>(plugin_->rate.get()), juce::dontSendNotification);
-    octavesSlider_.setValue(static_cast<double>(plugin_->octaveRange.get()),
+    cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.load(std::memory_order_relaxed)),
+                           juce::dontSendNotification);
+    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.load(std::memory_order_relaxed)),
+                             juce::dontSendNotification);
+    quantizeSubSlider_.setValue(
+        static_cast<double>(plugin_->quantizeSub.load(std::memory_order_relaxed)),
+        juce::dontSendNotification);
+    hardAngle_ = plugin_->hardAngle.load(std::memory_order_relaxed);
+    rampCurveDisplay_.setHardAngle(hardAngle_);
+}
+
+void ArpeggiatorUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    const auto display = [&params](int index, float fallback) {
+        return index < static_cast<int>(params.size())
+                   ? params[static_cast<size_t>(index)].currentValue
+                   : fallback;
+    };
+
+    patternCombo_.setSelectedId(juce::roundToInt(display(Arp::kPattern, 0.0f)) + 1,
+                                juce::dontSendNotification);
+    rateSlider_.setValue(static_cast<double>(display(Arp::kRate, 4.0f)),
+                         juce::dontSendNotification);
+    octavesSlider_.setValue(static_cast<double>(display(Arp::kOctaves, 1.0f)),
                             juce::dontSendNotification);
 
-    bool latched = plugin_->latch.get();
+    const bool latched = display(Arp::kLatch, 0.0f) >= 0.5f;
     latchButton_.setToggleState(latched, juce::dontSendNotification);
     latchButton_.setButtonText(latched ? "ON" : "OFF");
 
-    gateSlider_.setValue(static_cast<double>(plugin_->gate.get()), juce::dontSendNotification);
-    swingSlider_.setValue(static_cast<double>(plugin_->swing.get()), juce::dontSendNotification);
-    rampCurveDisplay_.setValues(plugin_->ramp.get(), plugin_->skew.get());
-    depthSlider_.setValue(static_cast<double>(plugin_->ramp.get()), juce::dontSendNotification);
-    skewSlider_.setValue(static_cast<double>(plugin_->skew.get()), juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(plugin_->rampCycles.get()),
-                           juce::dontSendNotification);
-    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.get());
-    quantizeSlider_.setValue(static_cast<double>(plugin_->quantize.get()),
-                             juce::dontSendNotification);
-    quantizeSubSlider_.setValue(static_cast<double>(plugin_->quantizeSub.get()),
-                                juce::dontSendNotification);
-    velModeCombo_.setSelectedId(plugin_->velocityMode.get() + 1, juce::dontSendNotification);
-    fixedVelSlider_.setValue(static_cast<double>(plugin_->fixedVelocity.get()),
+    gateSlider_.setValue(static_cast<double>(display(Arp::kGate, 0.8f)),
+                         juce::dontSendNotification);
+    swingSlider_.setValue(static_cast<double>(display(Arp::kSwing, 0.0f)),
+                          juce::dontSendNotification);
+
+    const float depth = display(Arp::kRamp, 0.0f);
+    const float skew = display(Arp::kSkew, 0.0f);
+    rampCurveDisplay_.setValues(depth, skew);
+    depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
+    skewSlider_.setValue(static_cast<double>(skew), juce::dontSendNotification);
+
+    const int velMode = juce::roundToInt(display(Arp::kVelMode, 0.0f));
+    velModeCombo_.setSelectedId(velMode + 1, juce::dontSendNotification);
+    fixedVelSlider_.setValue(static_cast<double>(display(Arp::kFixedVel, 100.0f)),
                              juce::dontSendNotification);
 
-    bool showFixed =
-        static_cast<Arp::VelocityMode>(plugin_->velocityMode.get()) == Arp::VelocityMode::Fixed;
+    const bool showFixed = static_cast<Arp::VelocityMode>(velMode) == Arp::VelocityMode::Fixed;
     fixedVelSlider_.setEnabled(showFixed);
     fixedVelSlider_.setAlpha(showFixed ? 1.0f : 0.3f);
-}
 
-void ArpeggiatorUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) {
-    // Any property change — resync all values
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
+    syncSettingsFromDevice();
 }
 
 void ArpeggiatorUI::timerCallback() {
-    if (!plugin_)
+    if (plugin_ == nullptr)
         return;
 
-    // Read modulated values from AutomatableParams (includes macro modulation)
-    float depth = plugin_->rampParam ? plugin_->rampParam->getCurrentValue() : plugin_->ramp.get();
-    float skew = plugin_->skewParam ? plugin_->skewParam->getCurrentValue() : plugin_->skew.get();
+    // Modulated values, via the atomics process() publishes each block: the
+    // parameter mirror itself is audio-thread-owned and not safe to read here.
+    const float depth = plugin_->displayedRamp_.load(std::memory_order_relaxed);
+    const float skew = plugin_->displayedSkew_.load(std::memory_order_relaxed);
 
     rampCurveDisplay_.setValues(depth, skew);
     depthSlider_.setValue(static_cast<double>(depth), juce::dontSendNotification);
@@ -275,7 +280,8 @@ void ArpeggiatorUI::timerCallback() {
     int len = plugin_->currentSeqLength_.load(std::memory_order_relaxed);
     if (len > 0)
         rampCurveDisplay_.setNumTicks(len);
-    int cycles = juce::jlimit(1, std::max(1, len), plugin_->rampCycles.get());
+    int cycles =
+        juce::jlimit(1, std::max(1, len), plugin_->rampCycles.load(std::memory_order_relaxed));
     float pos = (step >= 0 && len > 0) ? static_cast<float>(step) / static_cast<float>(len) : -1.0f;
     rampCurveDisplay_.setPlaybackPosition(pos, cycles);
 }
@@ -403,18 +409,18 @@ void ArpeggiatorUI::lookAndFeelChanged() {
 }
 
 std::vector<LinkableTextSlider*> ArpeggiatorUI::getLinkableSliders() {
-    // Pre-set param indices to match AutomatableParameter registration order:
+    // Pre-set param indices to match the device's slot order:
     // 0=pattern, 1=rate, 2=octaves, 3=gate, 4=swing, 5=ramp, 6=skew, 7=latch, 8=velMode, 9=fixedVel
     // setupCustomUILinking() will use these indices (via getParamIndex()) instead of vector
     // position.
     magda::ChainNodePath dummy;
-    rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 1, dummy);
-    octavesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 2, dummy);
-    gateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 4, dummy);
-    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 5, dummy);
-    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
-    fixedVelSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 9, dummy);
+    rateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kRate, dummy);
+    octavesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kOctaves, dummy);
+    gateSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kGate, dummy);
+    swingSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kSwing, dummy);
+    depthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kRamp, dummy);
+    skewSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kSkew, dummy);
+    fixedVelSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Arp::kFixedVel, dummy);
     return {&rateSlider_,  &octavesSlider_, &gateSlider_,    &swingSlider_,
             &depthSlider_, &skewSlider_,    &fixedVelSlider_};
 }

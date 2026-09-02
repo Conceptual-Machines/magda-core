@@ -1,0 +1,54 @@
+#pragma once
+
+#include <atomic>
+
+#include "plugins/MagdaDevice.hpp"
+
+namespace magda::daw::audio {
+
+/**
+ * @brief Base class for MIDI-FX MagdaDevices (arpeggiator, strum, step
+ *        sequencers).
+ *
+ * The engine-neutral counterpart of the retired host-native MidiDevicePlugin
+ * base: shared MIDI output note tracking for the UI note strip, and the
+ * note-off helper. The retired base's plugin identity (takes MIDI, passes
+ * audio through, not a synth) is what DeviceProperties defaults already say,
+ * so each device declares its own properties() and nothing here.
+ *
+ * The retired base is deleted when the last of its subclasses crosses (#2299).
+ */
+class MidiMagdaDevice : public MagdaDevice {
+  public:
+    // --- MIDI output note data for UI note strip ---
+    // Written on audio thread, read on UI thread
+    std::atomic<int> midiOutNote_{-1};
+    std::atomic<int> midiOutVelocity_{0};
+
+  protected:
+    double sampleRate_ = 44100.0;
+
+    void prepare(const DevicePrepareContext& context) override {
+        sampleRate_ = context.sampleRate;
+    }
+
+    /** Send note-off for the given note (channel 1, like the retired base). */
+    static void sendNoteOff(DeviceMidiBuffer& midi, int noteNumber) {
+        if (noteNumber >= 0)
+            midi.addEvent({juce::MidiMessage::noteOff(1, noteNumber), 0});
+    }
+
+    /** Clear the MIDI output note display (no note playing). */
+    void clearMidiOutDisplay() {
+        midiOutNote_.store(-1, std::memory_order_relaxed);
+        midiOutVelocity_.store(0, std::memory_order_relaxed);
+    }
+
+    /** Update the MIDI output note display with a new note. */
+    void setMidiOutDisplay(int noteNumber, int velocity) {
+        midiOutNote_.store(noteNumber, std::memory_order_relaxed);
+        midiOutVelocity_.store(velocity, std::memory_order_relaxed);
+    }
+};
+
+}  // namespace magda::daw::audio

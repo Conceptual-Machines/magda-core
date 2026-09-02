@@ -5,23 +5,121 @@
 #include <cstring>
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable),
-// compiled with -DTEST. Walled behind the pimpl so this is the only TU in
-// magda_daw that sees the eurorack headers.
+// compiled with -DTEST. Walled behind the pimpl so this is the only TU in the
+// base device pack that sees the eurorack headers.
 #include "rings/dsp/dsp.h"
 #include "rings/dsp/part.h"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 namespace {
 
 constexpr int kBlock = static_cast<int>(rings::kMaxBlockSize);  // 24
 const float kInternalRate = rings::kSampleRate;                 // 48 kHz (runtime const)
 
-const char* const kModelNames[] = {"Modal", "Sympathetic", "String",
-                                   "FM",    "Sym Quant",   "String+Verb"};
 constexpr int kNumModels = 6;
+
+/// One slot's metadata. The ids, order and display ranges are pinned to what
+/// the retired host-native plugin registered, because projects store parameter
+/// values in the model in display units against these ranges and address the
+/// slots by index.
+ParameterInfo slotInfo(int index) {
+    ParameterInfo info;
+    info.paramIndex = index;
+
+    const auto normalised = [&info](const char* id, const char* name, float def) {
+        info.stableId = id;
+        info.name = name;
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.defaultValue = def;
+        info.displayFormat = DisplayFormat::Percent;
+    };
+
+    switch (index) {
+        case MutableRingsPlugin::kStructure:
+            normalised("structure", "Structure", 0.25f);
+            break;
+
+        case MutableRingsPlugin::kBrightness:
+            normalised("brightness", "Brightness", 0.5f);
+            break;
+
+        case MutableRingsPlugin::kDamping:
+            normalised("damping", "Damping", 0.5f);
+            break;
+
+        case MutableRingsPlugin::kPosition:
+            normalised("position", "Position", 0.25f);
+            break;
+
+        case MutableRingsPlugin::kModel:
+            info.stableId = "model";
+            info.name = "Model";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = static_cast<float>(kNumModels - 1);
+            info.defaultValue = 0.0f;
+            info.choices = {"Modal", "Sympathetic", "String", "FM", "Sym Quant", "String+Verb"};
+            break;
+
+        case MutableRingsPlugin::kPolyphony:
+            info.stableId = "polyphony";
+            info.name = "Polyphony";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = 2.0f;
+            info.defaultValue = 1.0f;  // index 1 -> 2 voices
+            info.choices = {"1", "2", "4"};
+            break;
+
+        case MutableRingsPlugin::kChord:
+            info.stableId = "chord";
+            info.name = "Chord";
+            info.scale = ParameterScale::Discrete;
+            info.minValue = 0.0f;
+            info.maxValue = 10.0f;
+            info.defaultValue = 0.0f;
+            info.choices = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"};
+            break;
+
+        case MutableRingsPlugin::kPitch:
+            info.stableId = "pitch";
+            info.name = "Pitch";
+            info.unit = "st";
+            info.minValue = -24.0f;
+            info.maxValue = 24.0f;
+            info.defaultValue = 0.0f;
+            break;
+
+        case MutableRingsPlugin::kFine:
+            info.stableId = "fine";
+            info.name = "Fine";
+            info.unit = "ct";
+            info.minValue = -100.0f;
+            info.maxValue = 100.0f;
+            info.defaultValue = 0.0f;
+            break;
+
+        case MutableRingsPlugin::kLevel:
+            info.stableId = "level";
+            info.name = "Level";
+            info.unit = "dB";
+            // The retired host-native plugin's NormalisableRange carried skew
+            // 4, which JUCE applies as real = min + span * normalized^(1/skew).
+            info.scale = ParameterScale::Exponential;
+            info.skewFactor = 0.25f;
+            info.minValue = -60.0f;
+            info.maxValue = 12.0f;
+            info.defaultValue = 0.0f;
+            break;
+
+        default:
+            break;
+    }
+
+    return info;
+}
 
 // 4-point, 3rd-order Hermite (Catmull-Rom) interpolation between x[1] and x[2].
 inline float cubic(const float* x, float t) {
@@ -31,27 +129,6 @@ inline float cubic(const float* x, float t) {
     const float d = x[1];
     return ((a * t + b) * t + c) * t + d;
 }
-
-enum class Kind { Normalised, Model, Polyphony, Chord, Pitch, Fine, Level };
-struct Desc {
-    const char* id;
-    const char* name;
-    float def;
-    Kind kind;
-};
-
-const std::array<Desc, MutableRingsPlugin::kNumParams> kDescs = {{
-    {"structure", "Structure", 0.25f, Kind::Normalised},
-    {"brightness", "Brightness", 0.5f, Kind::Normalised},
-    {"damping", "Damping", 0.5f, Kind::Normalised},
-    {"position", "Position", 0.25f, Kind::Normalised},
-    {"model", "Model", 0.0f, Kind::Model},
-    {"polyphony", "Polyphony", 1.0f, Kind::Polyphony},  // index 1 -> 2 voices
-    {"chord", "Chord", 0.0f, Kind::Chord},
-    {"pitch", "Pitch", 0.0f, Kind::Pitch},
-    {"fine", "Fine", 0.0f, Kind::Fine},
-    {"level", "Level", 0.0f, Kind::Level},
-}};
 
 }  // namespace
 
@@ -177,118 +254,69 @@ struct MutableRingsPlugin::Impl {
 //==============================================================================
 const char* MutableRingsPlugin::xmlTypeName = "magda_rings";
 
-MutableRingsPlugin::MutableRingsPlugin(const te::PluginCreationInfo& info)
-    : Plugin(info), impl_(std::make_unique<Impl>()) {
-    auto* um = getUndoManager();
-
-    for (int i = 0; i < kNumParams; ++i) {
-        const auto& d = kDescs[static_cast<size_t>(i)];
-        values_[static_cast<size_t>(i)].referTo(state, juce::Identifier(d.id), um, d.def);
-
-        switch (d.kind) {
-            case Kind::Normalised:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 1.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v * 100.0f)) + "%"; },
-                    [](const juce::String& s) { return s.getFloatValue() / 100.0f; });
-                break;
-            case Kind::Model:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, static_cast<float>(kNumModels - 1), 1.0f},
-                    [](float v) {
-                        int idx = juce::jlimit(0, kNumModels - 1, juce::roundToInt(v));
-                        return juce::String(kModelNames[idx]);
-                    },
-                    [](const juce::String& s) {
-                        for (int k = 0; k < kNumModels; ++k)
-                            if (s.equalsIgnoreCase(kModelNames[k]))
-                                return static_cast<float>(k);
-                        return s.getFloatValue();
-                    });
-                break;
-            case Kind::Polyphony:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 2.0f, 1.0f},
-                    [](float v) {
-                        return juce::String(1 << juce::jlimit(0, 2, juce::roundToInt(v)));
-                    },
-                    [](const juce::String& s) {
-                        int voices = s.getIntValue();
-                        return voices >= 4 ? 2.0f : voices >= 2 ? 1.0f : 0.0f;
-                    });
-                break;
-            case Kind::Chord:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {0.0f, 10.0f, 1.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)); },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Pitch:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-24.0f, 24.0f, 0.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)) + " st"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Fine:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-100.0f, 100.0f, 0.0f},
-                    [](float v) { return juce::String(juce::roundToInt(v)) + " ct"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-            case Kind::Level:
-                params_[static_cast<size_t>(i)] = addParam(
-                    d.id, d.name, {-60.0f, 12.0f, 0.0f, 4.0f},
-                    [](float v) { return juce::String(v, 1) + " dB"; },
-                    [](const juce::String& s) { return s.getFloatValue(); });
-                break;
-        }
-
-        params_[static_cast<size_t>(i)]->attachToCurrentValue(values_[static_cast<size_t>(i)]);
+MutableRingsPlugin::MutableRingsPlugin() : impl_(std::make_unique<Impl>()) {
+    for (int index = 0; index < kNumParams; ++index) {
+        const auto info = slotInfo(index);
+        domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
+        values_[static_cast<size_t>(index)] =
+            ParameterUtils::realToNormalized(info.defaultValue, info);
     }
 }
 
-MutableRingsPlugin::~MutableRingsPlugin() {
-    notifyListenersOfDeletion();
-    for (auto& p : params_)
-        if (p != nullptr)
-            p->detachFromCurrentValue();
+MutableRingsPlugin::~MutableRingsPlugin() = default;
+
+ParameterInfo MutableRingsPlugin::parameterInfo(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return {};
+    return slotInfo(index);
 }
 
-void MutableRingsPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate;
+float MutableRingsPlugin::parameterValue(int index) const {
+    if (index < 0 || index >= kNumParams)
+        return 0.0f;
+    return values_[static_cast<size_t>(index)];
+}
+
+void MutableRingsPlugin::setParameterValue(int index, float value) {
+    if (index < 0 || index >= kNumParams)
+        return;
+    values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+}
+
+float MutableRingsPlugin::displayValue(int index) const {
+    return ParameterUtils::normalizedToReal(values_[static_cast<size_t>(index)],
+                                            domains_[static_cast<size_t>(index)]);
+}
+
+void MutableRingsPlugin::prepare(const DevicePrepareContext& context) {
+    sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
 }
-
-void MutableRingsPlugin::deinitialise() {}
 
 void MutableRingsPlugin::reset() {
     impl_->resetVoice();
 }
 
-void MutableRingsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (fc.destBuffer == nullptr)
+void MutableRingsPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
-    float v[kNumParams];
-    for (int i = 0; i < kNumParams; ++i)
-        v[i] = params_[static_cast<size_t>(i)]->getCurrentValue();
-
     rings::Patch patch;
-    patch.structure = v[kStructure];
-    patch.brightness = v[kBrightness];
-    patch.damping = v[kDamping];
-    patch.position = v[kPosition];
+    patch.structure = displayValue(kStructure);
+    patch.brightness = displayValue(kBrightness);
+    patch.damping = displayValue(kDamping);
+    patch.position = displayValue(kPosition);
 
-    const int model = juce::jlimit(0, kNumModels - 1, juce::roundToInt(v[kModel]));
-    const int polyphony = 1 << juce::jlimit(0, 2, juce::roundToInt(v[kPolyphony]));  // 1 / 2 / 4
-    const int chord = juce::jlimit(0, 10, juce::roundToInt(v[kChord]));
-    const float transpose = v[kPitch] + v[kFine] * 0.01f;
+    const int model = juce::jlimit(0, kNumModels - 1, juce::roundToInt(displayValue(kModel)));
+    const int polyphony = 1 << juce::jlimit(0, 2, juce::roundToInt(displayValue(kPolyphony)));
+    const int chord = juce::jlimit(0, 10, juce::roundToInt(displayValue(kChord)));
+    const float transpose = displayValue(kPitch) + displayValue(kFine) * 0.01f;
     impl_->configure(patch, model, polyphony, chord, transpose);
 
-    auto* destL = fc.destBuffer->getWritePointer(0, fc.bufferStartSample);
-    float* destR = fc.destBuffer->getNumChannels() > 1
-                       ? fc.destBuffer->getWritePointer(1, fc.bufferStartSample)
-                       : nullptr;
+    auto& buffer = *context.audio;
+    const int start = context.startSample;
+    auto* destL = buffer.getWritePointer(0, start);
+    float* destR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1, start) : nullptr;
 
     int pos = 0;
     auto renderTo = [&](int upto) {
@@ -298,29 +326,21 @@ void MutableRingsPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         pos = upto;
     };
 
-    if (fc.bufferForMidiMessages != nullptr) {
-        for (auto& m : *fc.bufferForMidiMessages) {
+    if (context.midi != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
+            const auto& m = context.midi->message(eventIndex);
             if (!m.isNoteOn() || m.getVelocity() == 0)
                 continue;  // Rings has no note-off gate; resonators decay via Damping
-            int evPos = juce::jlimit(0, fc.bufferNumSamples - 1,
-                                     juce::roundToInt(m.getTimeStamp() * sampleRate_));
+            const int evPos = juce::jlimit(0, context.numSamples - 1,
+                                           juce::roundToInt(m.getTimeStamp() * sampleRate_));
             renderTo(evPos);
             impl_->noteOn(m.getNoteNumber());
         }
     }
-    renderTo(fc.bufferNumSamples);
+    renderTo(context.numSamples);
 
-    const float gain = juce::Decibels::decibelsToGain(v[kLevel]);
-    fc.destBuffer->applyGain(fc.bufferStartSample, fc.bufferNumSamples, gain);
-}
-
-void MutableRingsPlugin::restorePluginStateFromValueTree(const juce::ValueTree& vt) {
-    for (int i = 0; i < kNumParams; ++i) {
-        if (auto prop = vt.getPropertyPointer(juce::Identifier(kDescs[static_cast<size_t>(i)].id)))
-            values_[static_cast<size_t>(i)] = static_cast<float>(*prop);
-    }
-    for (auto p : getAutomatableParameters())
-        p->updateFromAttachedValue();
+    const float gain = juce::Decibels::decibelsToGain(displayValue(kLevel));
+    buffer.applyGain(start, context.numSamples, gain);
 }
 
 }  // namespace magda::daw::audio

@@ -92,7 +92,7 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
     return info;
 }
 
-void ExternalPluginProcessor::populateParameters(DeviceInfo& info) const {
+void ExternalPluginProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     info.wrapperParameters.clear();
 

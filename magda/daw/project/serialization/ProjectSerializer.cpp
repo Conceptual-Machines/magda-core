@@ -8,6 +8,7 @@
 #include <set>
 #include <unordered_set>
 
+#include "../../audio/plugins/DeviceStateHydration.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
@@ -395,6 +396,13 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         pad_paths::migrateLegacyPadPaths(outData.tracks, outData.masterTrack.get(),
                                          outData.automationLanes);
 
+        // Then the retired duplicate parameter record (#2317): hydrate what
+        // the model's parameter array is missing out of the old document's
+        // `params`, once, before either engine projection is built. After the
+        // aliases and index migrations so ids and indices are current.
+        daw::audio::device_state_hydration::hydrateStagedProject(
+            outData.tracks, outData.masterTrack.get(), outData.info.version);
+
         // Parameter aliases (UserProject layer -- opaque pass-through to AliasRegistry)
         if (obj->hasProperty("paramAliases"))
             outData.info.paramAliases = obj->getProperty("paramAliases");
@@ -724,6 +732,10 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
     // Then the pad addresses saved before pad ownership was a step type (#2219).
     pad_paths::migrateLegacyPadPaths(stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr,
                                      stagedAutomation);
+
+    // Then the retired duplicate parameter record (#2317), same as loadAndStage.
+    daw::audio::device_state_hydration::hydrateStagedProject(
+        stagedTracks, hasMasterTrack ? &stagedMasterTrack : nullptr, outInfo.version);
 
     // Stage 2: All components validated successfully - now commit to managers atomically
     installStagedSources(stagedSources, stagedLegacySources, stagedClips);

@@ -256,7 +256,8 @@ class DeviceCustomUIManager {
     bool createDrumGridUI(const magda::DeviceInfo& device, juce::Component& parent,
                           const Callbacks& callbacks);
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);
-    bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent);
+    bool createMidiUtilityUI(const magda::DeviceInfo& device, juce::Component& parent,
+                             const Callbacks& callbacks);
     void createExternalInsertUI(const magda::DeviceInfo& device, juce::Component& parent);
     bool createFourOscUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);

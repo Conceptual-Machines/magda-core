@@ -39,6 +39,7 @@ target_sources(magda_daw PRIVATE
     UndoManager.cpp
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
+    DeviceStateCommands.cpp
     TrackCommands.cpp
     PadCommands.cpp
     TrackPropertyCommands.cpp

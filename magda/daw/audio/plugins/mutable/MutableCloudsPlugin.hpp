@@ -1,15 +1,13 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <memory>
 
 #include "audio/analysis/AudioTapBuffer.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
-
-namespace te = tracktion::engine;
 
 //==============================================================================
 /**
@@ -24,10 +22,15 @@ namespace te = tracktion::engine;
  *
  * This is an audio-in effect (not a synth) - it processes the track signal in
  * place.
+ *
+ * A MagdaDevice since #2299: one DSP hosted by whichever engine is running it.
+ * The slot ids, order and display ranges are the ones the retired host-native
+ * plugin used, because projects address the parameters by index and store
+ * their values in display units.
  */
-class MutableCloudsPlugin : public te::Plugin {
+class MutableCloudsPlugin : public MagdaDevice {
   public:
-    explicit MutableCloudsPlugin(const te::PluginCreationInfo&);
+    MutableCloudsPlugin();
     ~MutableCloudsPlugin() override;
 
     //==============================================================================
@@ -51,39 +54,26 @@ class MutableCloudsPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Nimbus";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
-    }
-
     //==============================================================================
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Nimbus",
+            .tailLengthSeconds = 2.0,  // diffuser/reverb + grain tail
+        };
+    }
+
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    void process(DeviceProcessContext& context) override;
 
-    bool takesMidiInput() override {
-        return false;
+    int parameterCount() const override {
+        return kNumParams;
     }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 2.0;  // diffuser/reverb + grain tail
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
     // Live input-envelope tap for the faceplate's grain-buffer view: one decimated
     // peak per bucket, ~8s of history across kEnvelopeBuckets buckets.
@@ -94,11 +84,16 @@ class MutableCloudsPlugin : public te::Plugin {
     }
 
   private:
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+
     struct Impl;
     std::unique_ptr<Impl> impl_;
 
-    std::array<te::AutomatableParameter::Ptr, kNumParams> params_;
-    std::array<juce::CachedValue<float>, kNumParams> values_;
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
 

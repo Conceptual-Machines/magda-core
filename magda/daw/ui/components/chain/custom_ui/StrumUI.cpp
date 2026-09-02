@@ -58,10 +58,9 @@ StrumUI::StrumUI() {
     triggerCombo_.addItem("Chord", 1);
     triggerCombo_.addItem("Loop", 2);
     triggerCombo_.onChange = [this] {
-        if (plugin_) {
-            plugin_->trigger = triggerCombo_.getSelectedId() - 1;
-            updateLoopControls();
-        }
+        trigger_ = triggerCombo_.getSelectedId() - 1;
+        sendChange(Strum::kTrigger, static_cast<float>(trigger_));
+        updateLoopControls();
     };
 
     setupLabel(orderLabel_, "ORDER");
@@ -71,8 +70,7 @@ StrumUI::StrumUI() {
     orderCombo_.addItem("Up/Down", 3);
     orderCombo_.addItem("As Played", 4);
     orderCombo_.onChange = [this] {
-        if (plugin_)
-            plugin_->order = orderCombo_.getSelectedId() - 1;
+        sendChange(Strum::kOrder, static_cast<float>(orderCombo_.getSelectedId() - 1));
     };
 
     setupLabel(shapeLabel_, "SHAPE");
@@ -82,10 +80,9 @@ StrumUI::StrumUI() {
     for (int i = 0; i < 8; ++i)
         shapeCombo_.addItem(shapeNames[i], i + 1);
     shapeCombo_.onChange = [this] {
-        if (plugin_) {
-            plugin_->shape = shapeCombo_.getSelectedId() - 1;
-            refreshOnsets();
-        }
+        shape_ = shapeCombo_.getSelectedId() - 1;
+        sendChange(Strum::kShape, static_cast<float>(shape_));
+        refreshOnsets();
     };
 
     setupLabel(cyclesLabel_, "CYCLES");
@@ -93,10 +90,9 @@ StrumUI::StrumUI() {
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
     cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->cycles = juce::roundToInt(value) - 1;  // display 1..8 -> stored 0..7
-            refreshOnsets();
-        }
+        cycles_ = juce::roundToInt(value) - 1;  // display 1..8 -> stored 0..7
+        sendChange(Strum::kCycles, static_cast<float>(cycles_));
+        refreshOnsets();
     };
 
     setupLabel(lengthLabel_, "LENGTH");
@@ -106,8 +102,7 @@ StrumUI::StrumUI() {
     lengthSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("ms", "").trim().getDoubleValue(); });
     lengthSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->strumLength = static_cast<float>(value);
+        sendChange(Strum::kStrumLength, static_cast<float>(value));
     };
 
     setupLabel(loopModeLabel_, "LOOP BY");
@@ -115,10 +110,9 @@ StrumUI::StrumUI() {
     loopModeCombo_.addItem("Time", 1);
     loopModeCombo_.addItem("Beat", 2);
     loopModeCombo_.onChange = [this] {
-        if (plugin_) {
-            plugin_->loopSync = loopModeCombo_.getSelectedId() - 1;
-            updateLoopControls();
-        }
+        loopSync_ = loopModeCombo_.getSelectedId() - 1;
+        sendChange(Strum::kLoopSync, static_cast<float>(loopSync_));
+        updateLoopControls();
     };
 
     setupLabel(loopLabel_, "LOOP");
@@ -128,8 +122,7 @@ StrumUI::StrumUI() {
     syncSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("ms", "").trim().getDoubleValue(); });
     syncSlider_.onValueChanged = [this](double value) {
-        if (plugin_)
-            plugin_->syncInterval = static_cast<float>(value);
+        sendChange(Strum::kSyncInterval, static_cast<float>(value));
     };
 
     setupCombo(loopRateCombo_);
@@ -137,18 +130,18 @@ StrumUI::StrumUI() {
     for (int i = 0; i < 8; ++i)
         loopRateCombo_.addItem(rateNames[i], i + 1);
     loopRateCombo_.onChange = [this] {
-        if (plugin_)
-            plugin_->loopRate = loopRateCombo_.getSelectedId() - 1;
+        sendChange(Strum::kLoopRate, static_cast<float>(loopRateCombo_.getSelectedId() - 1));
     };
 
     setupLabel(vizLabel_, "ONSETS");
     onsetStrip_.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(onsetStrip_);
+
+    updateLoopControls();
+    refreshOnsets();
 }
 
 StrumUI::~StrumUI() {
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
     triggerCombo_.setLookAndFeel(nullptr);
     orderCombo_.setLookAndFeel(nullptr);
     shapeCombo_.setLookAndFeel(nullptr);
@@ -156,49 +149,46 @@ StrumUI::~StrumUI() {
     loopRateCombo_.setLookAndFeel(nullptr);
 }
 
-void StrumUI::setPlugin(daw::audio::MidiStrumPlugin* plugin) {
-    if (watchedState_.isValid())
-        watchedState_.removeListener(this);
-
-    plugin_ = plugin;
-
-    if (plugin_) {
-        watchedState_ = plugin_->state;
-        watchedState_.addListener(this);
-        syncFromPlugin();
-    }
+void StrumUI::sendChange(int paramIndex, float value) {
+    if (onParameterChanged)
+        onParameterChanged(paramIndex, value);
 }
 
-void StrumUI::syncFromPlugin() {
-    if (!plugin_)
-        return;
+void StrumUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    const auto display = [&params](int index, float fallback) {
+        return index < static_cast<int>(params.size())
+                   ? params[static_cast<size_t>(index)].currentValue
+                   : fallback;
+    };
 
-    triggerCombo_.setSelectedId(plugin_->trigger.get() + 1, juce::dontSendNotification);
-    orderCombo_.setSelectedId(plugin_->order.get() + 1, juce::dontSendNotification);
-    shapeCombo_.setSelectedId(plugin_->shape.get() + 1, juce::dontSendNotification);
-    cyclesSlider_.setValue(static_cast<double>(plugin_->cycles.get() + 1),
+    trigger_ = juce::roundToInt(display(Strum::kTrigger, 0.0f));
+    shape_ = juce::roundToInt(display(Strum::kShape, 1.0f));
+    cycles_ = juce::roundToInt(display(Strum::kCycles, 0.0f));
+    loopSync_ = juce::roundToInt(display(Strum::kLoopSync, 0.0f));
+
+    triggerCombo_.setSelectedId(trigger_ + 1, juce::dontSendNotification);
+    orderCombo_.setSelectedId(juce::roundToInt(display(Strum::kOrder, 0.0f)) + 1,
+                              juce::dontSendNotification);
+    shapeCombo_.setSelectedId(shape_ + 1, juce::dontSendNotification);
+    cyclesSlider_.setValue(static_cast<double>(cycles_ + 1), juce::dontSendNotification);
+    lengthSlider_.setValue(static_cast<double>(display(Strum::kStrumLength, 90.0f)),
                            juce::dontSendNotification);
-    lengthSlider_.setValue(static_cast<double>(plugin_->strumLength.get()),
-                           juce::dontSendNotification);
-    loopModeCombo_.setSelectedId(plugin_->loopSync.get() + 1, juce::dontSendNotification);
-    loopRateCombo_.setSelectedId(plugin_->loopRate.get() + 1, juce::dontSendNotification);
-    syncSlider_.setValue(static_cast<double>(plugin_->syncInterval.get()),
+    loopModeCombo_.setSelectedId(loopSync_ + 1, juce::dontSendNotification);
+    loopRateCombo_.setSelectedId(juce::roundToInt(display(Strum::kLoopRate, 2.0f)) + 1,
+                                 juce::dontSendNotification);
+    syncSlider_.setValue(static_cast<double>(display(Strum::kSyncInterval, 500.0f)),
                          juce::dontSendNotification);
     updateLoopControls();
     refreshOnsets();
 }
 
 void StrumUI::refreshOnsets() {
-    if (plugin_)
-        onsetStrip_.setOnsets(plugin_->curveOnsetPreview(PREVIEW_TICKS));
+    onsetStrip_.setOnsets(Strum::curveOnsetPreview(shape_, cycles_, PREVIEW_TICKS));
 }
 
 void StrumUI::updateLoopControls() {
-    if (!plugin_)
-        return;
-    const bool loop = static_cast<Strum::Trigger>(plugin_->trigger.get()) == Strum::Trigger::Loop;
-    const bool beat =
-        static_cast<Strum::LoopSync>(plugin_->loopSync.get()) == Strum::LoopSync::Beat;
+    const bool loop = static_cast<Strum::Trigger>(trigger_) == Strum::Trigger::Loop;
+    const bool beat = static_cast<Strum::LoopSync>(loopSync_) == Strum::LoopSync::Beat;
 
     // The loop controls only matter in Loop mode; grey them out otherwise.
     loopModeCombo_.setEnabled(loop);
@@ -214,13 +204,6 @@ void StrumUI::updateLoopControls() {
     loopRateCombo_.setVisible(beat);
     loopRateCombo_.setEnabled(loop);
     loopRateCombo_.setAlpha(loop ? 1.0f : 0.3f);
-}
-
-void StrumUI::valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier&) {
-    juce::MessageManager::callAsync([safeThis = juce::Component::SafePointer(this)] {
-        if (safeThis)
-            safeThis->syncFromPlugin();
-    });
 }
 
 void StrumUI::paint(juce::Graphics&) {
@@ -315,9 +298,9 @@ std::vector<LinkableTextSlider*> StrumUI::getLinkableSliders() {
     // 4=loopsync, 5=looprate, 6=strumlength, 7=syncinterval. Only the sliders are
     // macro-linkable; the combos (trigger/order/shape/loop-mode/loop-rate) are not.
     magda::ChainNodePath dummy;
-    cyclesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 3, dummy);
-    lengthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 6, dummy);
-    syncSlider_.setLinkContext(magda::INVALID_DEVICE_ID, 7, dummy);
+    cyclesSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Strum::kCycles, dummy);
+    lengthSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Strum::kStrumLength, dummy);
+    syncSlider_.setLinkContext(magda::INVALID_DEVICE_ID, Strum::kSyncInterval, dummy);
     return {&cyclesSlider_, &lengthSlider_, &syncSlider_};
 }
 

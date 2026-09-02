@@ -64,7 +64,7 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
     return info;
 }
 
-void CompiledFaustProcessor::populateParameters(DeviceInfo& info) const {
+void CompiledFaustProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
     const auto* host = compiledDevice(plugin_.get());
     if (host == nullptr)

@@ -276,6 +276,8 @@ set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceSessionKey.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/IFaustEditorModel.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceStateHydration.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/InternalPluginRegistry.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
@@ -340,10 +342,18 @@ set_source_files_properties(${_magda_device_dsp_sources} PROPERTIES HEADER_FILE_
 
 set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/analysis/AudioTapBuffer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/transport/RampCurve.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ArpeggiatorPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/AnalysisTapPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustMetadataParser.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaConvolutionPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiMagdaDevice.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiStrumPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/MidiStrumPlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/OscilloscopePlugin.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/FaustParamInfo.cpp"
@@ -364,6 +374,12 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledEffect.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableCloudsPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableElementsPlugin.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/mutable/MutableRingsPlugin.hpp"
 )
 # Devices that are MagdaDevice implementations: one DSP, hosted by whichever
 # engine is running it (#2192). Instruments share MagdaCompiledPolyInstrument,

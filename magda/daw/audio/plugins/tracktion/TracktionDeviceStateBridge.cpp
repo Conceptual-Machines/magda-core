@@ -153,7 +153,6 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
     doc.deviceType = canonicalDeviceType(plugin.state.getProperty(te::IDs::type).toString());
 
     const auto& params = plugin.getAutomatableParameters();
-    doc.params.reserve(static_cast<size_t>(params.size()));
 
     // Three Tracktion parameters store under a property spelled differently
     // from their paramID; the spellings are frozen because released TE projects
@@ -165,14 +164,15 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
         {"damping", "damp"},             // Reverb
     };
 
+    // The document carries NO parameter values (#2317): `DeviceInfo::parameters`
+    // is the sole persisted authority for automatable parameters, in the
+    // device's display domain. The live parameter list is still walked so the
+    // engine's per-parameter properties are filtered out of the root below -
+    // they are exactly the engine-shaped state the document exists to exclude.
     juce::StringArray parameterProperties;
-    for (int i = 0; i < params.size(); ++i) {
-        auto* param = params[i];
+    for (auto* param : params) {
         if (param == nullptr)
             continue;
-        // Base value, never the modulated value: a modulated read would bake the
-        // current LFO position into the saved patch.
-        doc.params.push_back({i, param->paramID, param->getCurrentBaseValue()});
         parameterProperties.add(param->paramID);
         for (const auto& [paramID, property] : kParamPropertySpellings)
             if (param->paramID == paramID)
@@ -201,35 +201,6 @@ juce::ValueTree devicePluginTreeFromState(const juce::String& savedState) {
     applyNode(doc->root, tree);
     adoptCanonicalPluginType(tree);
     return tree;
-}
-
-void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedState) {
-    const auto doc = ds::decode(savedState);
-    if (!doc || doc->params.empty())
-        return;
-
-    const auto& params = plugin.getAutomatableParameters();
-
-    for (const auto& saved : doc->params) {
-        te::AutomatableParameter* param = nullptr;
-
-        // Frozen index first; the stable id re-seats a value if a device ever
-        // has to renumber (see DeviceParamSchema.hpp).
-        if (saved.index >= 0 && saved.index < params.size())
-            if (auto* candidate = params[saved.index];
-                candidate != nullptr && (saved.id.isEmpty() || candidate->paramID == saved.id))
-                param = candidate;
-
-        if (param == nullptr && saved.id.isNotEmpty())
-            for (auto* candidate : params)
-                if (candidate != nullptr && candidate->paramID == saved.id) {
-                    param = candidate;
-                    break;
-                }
-
-        if (param != nullptr)
-            param->setParameterFromHost(saved.value, juce::sendNotificationSync);
-    }
 }
 
 std::vector<magda::legacy_devices::RetiredSlotValue> adoptRetiredNestedPluginTree(

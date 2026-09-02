@@ -48,10 +48,8 @@ inline daw::audio::DrumGridPlugin::PadPluginFactory padPluginFactory(
         // every internal device: a sampler is built fresh and reads its sample
         // path out of the tree it is restored with.
         if (plugin != nullptr && device.pluginState.isNotEmpty()) {
-            if (auto saved = ta::devicePluginTreeFromState(device.pluginState); saved.isValid()) {
+            if (auto saved = ta::devicePluginTreeFromState(device.pluginState); saved.isValid())
                 plugin->restorePluginStateFromValueTree(saved);
-                ta::applyDeviceStateParameters(*plugin, device.pluginState);
-            }
         }
 
         return plugin;

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 
+#include "../audio/plugins/DeviceStateHydration.hpp"
 #include "../media_db/MediaDbContext.hpp"
 #include "../media_db/PresetDbIndexer.hpp"
 #include "../project/serialization/ProjectSerializer.hpp"
@@ -146,9 +147,12 @@ bool writePresetFile(const juce::File& target, const juce::String& kind, const j
     return true;
 }
 
-// Parse a preset file, validate the envelope, and return the payload.
+// Parse a preset file, validate the envelope, and return the payload. The
+// envelope's magdaVersion travels out so a load can resolve the domain of a
+// pre-#2317 parameter record by the build that wrote it.
 bool readPresetFile(const juce::File& source, const juce::String& expectedKind,
-                    juce::var& outPayload, juce::String& outError) {
+                    juce::var& outPayload, juce::String& outError,
+                    juce::String* outVersion = nullptr) {
     if (!source.existsAsFile()) {
         outError = "Preset file not found: " + source.getFullPathName();
         return false;
@@ -169,6 +173,8 @@ bool readPresetFile(const juce::File& source, const juce::String& expectedKind,
     }
 
     outPayload = obj->getProperty("payload");
+    if (outVersion != nullptr)
+        *outVersion = obj->getProperty("magdaVersion").toString();
     return true;
 }
 
@@ -238,7 +244,8 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
     auto source =
         getChainsDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindChain, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindChain, payload, lastError_, &savedVersion))
         return false;
 
     if (!payload.isObject()) {
@@ -264,6 +271,9 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
     }
     legacy_devices::migrateRetiredDevicesInChain(outChainElements);
     device_param_migrations::migrateChainPreset(outChainElements);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::hydrateChainElements(outChainElements,
+                                    hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
@@ -344,7 +354,8 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
     auto source =
         getRacksDirectory().getChildFile(sanitizeRelativePath(presetName) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindRack, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindRack, payload, lastError_, &savedVersion))
         return false;
 
     if (!ProjectSerializer::deserializeRackInfo(payload, outRack)) {
@@ -353,6 +364,8 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
     }
     legacy_devices::migrateRetiredDevicesInRack(outRack);
     device_param_migrations::migrateRackPreset(outRack);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::hydrateRack(outRack, hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
@@ -400,7 +413,8 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     auto source = getDevicePluginDirectory(pluginFolder)
                       .getChildFile(sanitizeRelativePath(presetRelativePath) + kPresetExtension);
     juce::var payload;
-    if (!readPresetFile(source, kKindDevice, payload, lastError_))
+    juce::String savedVersion;
+    if (!readPresetFile(source, kKindDevice, payload, lastError_, &savedVersion))
         return false;
 
     if (!ProjectSerializer::deserializeDeviceInfo(payload, outDevice)) {
@@ -409,6 +423,9 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     }
     legacy_devices::migrateRetiredDevice(outDevice);
     device_param_migrations::migrateDevicePreset(outDevice);
+    namespace hydration = daw::audio::device_state_hydration;
+    hydration::hydrateParametersFromDeviceState(
+        outDevice, hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 

@@ -3,6 +3,7 @@
 #include <optional>
 
 #include "processors/base/AutomatablePluginProcessor.hpp"
+#include "processors/base/MagdaDeviceProcessor.hpp"
 
 namespace magda {
 
@@ -43,25 +44,32 @@ class MagdaSamplerProcessor : public AutomatablePluginProcessor {
 /**
  * @brief Processor for the native Mutable Instruments Elements synth.
  *
- * Parameters are addressed by index off the plugin's automatable parameters.
+ * Elements is a MagdaDevice (#2299), so the chain holds the host's wrapper
+ * and the display metadata comes from the device's own slots.
  */
-class MutableElementsProcessor : public AutomatablePluginProcessor {
+class MutableElementsProcessor : public MagdaDeviceProcessor {
   public:
     MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
 /**
  * @brief Processor for the native Mutable Instruments Rings resonator.
+ *
+ * Rings is a MagdaDevice (#2299), so the chain holds the host's wrapper and
+ * the display metadata comes from the device's own slots.
  */
-class MutableRingsProcessor : public AutomatablePluginProcessor {
+class MutableRingsProcessor : public MagdaDeviceProcessor {
   public:
     MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
 /**
  * @brief Processor for the native Mutable Instruments Clouds granular FX.
+ *
+ * Clouds is a MagdaDevice (#2299), so the chain holds the host's wrapper and
+ * the display metadata comes from the device's own slots.
  */
-class MutableCloudsProcessor : public AutomatablePluginProcessor {
+class MutableCloudsProcessor : public MagdaDeviceProcessor {
   public:
     MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
@@ -69,12 +77,12 @@ class MutableCloudsProcessor : public AutomatablePluginProcessor {
 /**
  * @brief Processor for the native convolution device (IR Reverb).
  *
- * Parameters are addressed by index off the plugin's automatable parameters:
- * gain, low cut, high cut, mix, filter Q. The impulse response itself is not a
+ * The device is a MagdaDevice (#2299): gain, low cut, high cut, mix and
+ * filter Q come from its slots. The impulse response itself is not a
  * parameter - it lives in the device's state and is loaded through the
  * `impulseResponseLoadFile` device command.
  */
-class MagdaConvolutionProcessor : public AutomatablePluginProcessor {
+class MagdaConvolutionProcessor : public MagdaDeviceProcessor {
   public:
     MagdaConvolutionProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
@@ -121,7 +129,7 @@ class FaustProcessor : public DeviceProcessor {
 
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
+    void populateParametersFromEngine(DeviceInfo& info) const override;
 
     void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;
@@ -139,7 +147,7 @@ class FaustInstrumentProcessor : public DeviceProcessor {
 
     int getParameterCount() const override;
     ParameterInfo getParameterInfo(int index) const override;
-    void populateParameters(DeviceInfo& info) const override;
+    void populateParametersFromEngine(DeviceInfo& info) const override;
 
     void setParameterByIndex(int paramIndex, float value) override;
     float getParameterByIndex(int paramIndex) const;

@@ -30,6 +30,7 @@
 #include "plugins/MidiChordEnginePlugin.hpp"
 #include "plugins/MidiDevicePlugin.hpp"
 #include "plugins/MidiInThruSync.hpp"
+#include "plugins/MidiMagdaDevice.hpp"
 #include "plugins/MidiReceivePlugin.hpp"
 #include "plugins/SidechainMonitorPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
@@ -86,6 +87,10 @@ const char* pluginFormatText(PluginFormat format) {
 bool pluginProducesMidi(te::Plugin& plugin) {
     if (auto* processor = plugin.getWrappedAudioProcessor())
         return processor->producesMidi() || processor->isMidiEffect();
+
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiMagdaDevice>(&plugin) !=
+        nullptr)
+        return true;
 
     return dynamic_cast<daw::audio::MidiDevicePlugin*>(&plugin) != nullptr;
 }
@@ -280,13 +285,10 @@ bool savedPluginStateMatchesRequestedType(const juce::ValueTree& savedState,
 // leaving just the baseline.
 void restoreDeviceStateWithChunkOverlay(DeviceProcessor& processor, const te::Plugin::Ptr& plugin,
                                         const DeviceInfo& device) {
-    // Internal devices: seat the v2 document's frozen parameter values first, so
-    // a device state that arrived without a matching DeviceInfo::parameters array
-    // (a preset, an imported chain) still restores. syncFromDeviceInfo then has
-    // the last word, keeping the model the authority for anything it does carry.
-    if (plugin != nullptr && device.format == PluginFormat::Internal)
-        daw::audio::tracktion_adapter::applyDeviceStateParameters(*plugin, device.pluginState);
-
+    // Internal devices restore their parameters from DeviceInfo::parameters
+    // alone (#2317): a document that arrived without a matching array (an old
+    // preset, an imported chain) had it hydrated at load by the model-side
+    // migration, so there is no second record to seat first.
     processor.syncFromDeviceInfo(device);
     // DAWproject-imported VST3s carry their state as a .vstpreset (vst3Preset)
     // rather than MAGDA's TE chunk; apply it as the authoritative overlay too.
@@ -1317,7 +1319,7 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
             // Populate parameters on the DeviceInfo
             if (processor) {
                 if (auto* devInfo = getDeviceInfoForPath(devicePath)) {
-                    processor->populateParameters(*devInfo);
+                    processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Engine);
 
                     updateDeviceCapabilityFlags(*devInfo, *plugin);
                     AutoAliasGenerator::regenerateForDevice(devicePath);
@@ -2138,10 +2140,8 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
         // with its sample and one inside a rack came back empty.
         if (plugin != nullptr && ps.isNotEmpty()) {
             namespace ta = daw::audio::tracktion_adapter;
-            if (auto savedState = ta::devicePluginTreeFromState(ps); savedState.isValid()) {
+            if (auto savedState = ta::devicePluginTreeFromState(ps); savedState.isValid())
                 plugin->restorePluginStateFromValueTree(savedState);
-                ta::applyDeviceStateParameters(*plugin, ps);
-            }
         }
     } else {
         // External plugin. Which installed plugin the saved device meant is one
@@ -2224,9 +2224,10 @@ void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
         // Populate processor-owned fields directly into the canonical
         // DeviceInfo. Snapshotting into a temp and copying only `.parameters`
         // back loses any other processor-populated field (wrapperParameters,
-        // per-param displayText, etc.).
+        // per-param displayText, etc.). Model-first: an internal device's
+        // restored values stay the model's, never read back off the engine.
         if (canonical != nullptr)
-            processor->populateParameters(*canonical);
+            processor->populateParameters(*canonical, DeviceProcessor::ValueSource::Model);
         AutoAliasGenerator::regenerateForDevice(devicePath);
 
         juce::ScopedLock lock(pluginLock_);
@@ -2252,7 +2253,7 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
 
     DeviceId sidechainToClear = INVALID_DEVICE_ID;
     if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
-        processor->populateParameters(*devInfo);
+        processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
         sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
     }
     if (sidechainToClear != INVALID_DEVICE_ID)
@@ -2389,7 +2390,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             // DeviceInfo (see comment in registerRackPluginProcessor).
             DeviceId sidechainToClear = INVALID_DEVICE_ID;
             if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
-                processor->populateParameters(*devInfo);
+                processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);
                 sidechainToClear = clearStaleFaustAudioSidechain(*devInfo, plugin.get());
             }
 
@@ -2622,11 +2623,8 @@ te::Plugin::Ptr PluginManager::createInternalPlugin(const juce::String& xmlTypeN
         auto savedState =
             daw::audio::tracktion_adapter::devicePluginTreeFromState(savedPluginState);
         if (savedState.isValid() && savedPluginStateMatchesRequestedType(savedState, xmlTypeName)) {
-            if (auto plugin = edit_.getPluginCache().createNewPlugin(savedState)) {
-                daw::audio::tracktion_adapter::applyDeviceStateParameters(*plugin,
-                                                                          savedPluginState);
+            if (auto plugin = edit_.getPluginCache().createNewPlugin(savedState))
                 return plugin;
-            }
         }
     }
 
@@ -2810,17 +2808,18 @@ void PluginManager::captureDrumGridPads(const ChainNodePath& drumGridPath,
                             *plugin, padDevice.pluginState);
                 }
 
-                // And its parameters, as every other captured device gets. The
-                // model's values are seated back onto the plugin when it is
-                // rebuilt, so leaving them at what creation reported would put
-                // the defaults over what the patch just saved.
+                // And its parameter METADATA, as every other captured device
+                // gets - model-first, so an internal pad's values are never
+                // read back off the engine at save (#2317). An external pad
+                // still mirrors its chunk.
                 {
                     juce::ScopedLock lock(pluginLock_);
                     const auto padPath =
                         TrackManager::padChainPath(drumGridPath, chain->index).withDevice(deviceId);
                     if (auto padIt = findSyncedDevice(padPath);
                         padIt != syncedDevices_.end() && padIt->second.processor != nullptr)
-                        padIt->second.processor->populateParameters(padDevice);
+                        padIt->second.processor->populateParameters(
+                            padDevice, DeviceProcessor::ValueSource::Model);
                 }
                 break;
             }

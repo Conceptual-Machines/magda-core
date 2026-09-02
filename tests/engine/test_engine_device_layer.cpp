@@ -11,6 +11,7 @@
 #include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/PlanExecutor.hpp"
+#include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
@@ -638,4 +639,71 @@ process = *(0.25), *(0.25);
 
     CHECK(faust->getDspSource().contains("*(0.25)"));
     CHECK(faust->getDspName() == juce::String("Saved patch"));
+}
+
+TEST_CASE("an engine-built arpeggiator gets the settings the model saved",
+          "[engine][devices][2299]") {
+    // Ramp cycles / quantize / hard angle are device state, not parameters, so
+    // the only way they reach a native render is through the model's saved
+    // document. The faceplate edit path captures into DeviceInfo.pluginState;
+    // this pins the other half: a device built from that state actually holds
+    // the values.
+    magda::device_state::Doc doc;
+    doc.deviceType = "arpeggiator";
+    doc.root.props.set("arpRampCycles", 5);
+    doc.root.props.set("arpQuantize", 0.75f);
+    doc.root.props.set("arpQuantizeSub", 32);
+    doc.root.props.set("arpHardAngle", true);
+
+    magda::DeviceInfo model;
+    model.pluginId = "arpeggiator";
+    model.pluginState = magda::device_state::encode(doc);
+    REQUIRE(model.pluginState.isNotEmpty());
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
+    REQUIRE(arp != nullptr);
+
+    CHECK(arp->rampCycles.load() == 5);
+    CHECK(arp->quantize.load() == Catch::Approx(0.75f));
+    CHECK(arp->quantizeSub.load() == 32);
+    CHECK(arp->hardAngle.load());
+}
+
+TEST_CASE("the Rings resonator renders through the engine's device op", "[engine][devices][2299]") {
+    // The first hand-written device to cross for #2299. What earns it a named
+    // case next to the generic sweep above is its shape: a MIDI-excited synth
+    // with no note-off gate, whose voice keeps ringing after the strum -- the
+    // sweep proves the factory builds it, not that MIDI reaches the exciter.
+    magda::DeviceInfo model;
+    model.pluginId = "magda_rings";
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    const auto context = contextFor();
+    device->prepare(context);
+
+    Block silent(context);
+    auto silentBlock = silent.deviceBlock();
+    device->process(silentBlock);
+    CHECK(peakOf(silent.buffer) == 0.0f);
+
+    Block struck(context);
+    struck.midi.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), 0);
+    auto struckBlock = struck.deviceBlock();
+    device->process(struckBlock);
+    CHECK(peakOf(struck.buffer) > 0.0f);
+
+    // Rings has no gate: the resonator decays per its Damping control, so the
+    // block after the strum still carries the tail.
+    Block ringing(context);
+    auto ringingBlock = ringing.deviceBlock();
+    device->process(ringingBlock);
+    CHECK(peakOf(ringing.buffer) > 0.0f);
 }

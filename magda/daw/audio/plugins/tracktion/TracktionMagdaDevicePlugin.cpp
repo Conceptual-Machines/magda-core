@@ -169,6 +169,12 @@ juce::String TracktionMagdaDevicePlugin::getSelectableDescription() {
 }
 
 void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& info) {
+    // Parameters first, same rule as reset(): a device that seeds smoothing
+    // state from its parameters in prepare() -- the convolution parks its
+    // wet/dry smoothers on the current mix -- would otherwise read whatever it
+    // was constructed with and audibly ramp to the real values over the first
+    // block.
+    syncParametersToDevice();
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,
@@ -295,7 +301,11 @@ double TracktionMagdaDevicePlugin::getLatencySeconds() {
 }
 
 double TracktionMagdaDevicePlugin::getTailLength() const {
-    return properties_.tailLengthSeconds;
+    // Live, not cached: most devices' tails are fixed for their lifetime, but
+    // the convolution's is the length of whatever impulse response is loaded,
+    // and a render that trusted the construction-time snapshot would cut the
+    // reverb at the last note.
+    return device_->properties().tailLengthSeconds;
 }
 
 te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int slotIndex) const {

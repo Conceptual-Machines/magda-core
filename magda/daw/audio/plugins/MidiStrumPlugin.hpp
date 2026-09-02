@@ -4,7 +4,8 @@
 #include <cstdint>
 #include <vector>
 
-#include "plugins/MidiDevicePlugin.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/MidiMagdaDevice.hpp"
 
 namespace magda::daw::audio {
 
@@ -23,10 +24,14 @@ namespace magda::daw::audio {
  * (Loop mode) - unlike the old in-instrument path's fixed 6 ms gate, which only
  * worked because struck/plucked voices decay on their own. The Loop interval is
  * either a free millisecond value or tempo-locked to a beat division.
+ *
+ * A MagdaDevice since #2299: one scheduler hosted by whichever engine is
+ * running it. The slot ids, order and display ranges are the ones the retired
+ * host-native plugin registered.
  */
-class MidiStrumPlugin : public MidiDevicePlugin {
+class MidiStrumPlugin : public MidiMagdaDevice {
   public:
-    MidiStrumPlugin(const te::PluginCreationInfo& info);
+    MidiStrumPlugin();
     ~MidiStrumPlugin() override;
 
     static const char* getPluginName() {
@@ -42,38 +47,45 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     // Beat divisions for tempo-locked Loop mode (index order == UI/param order).
     static double loopRateToBeats(int rateIndex);
     static constexpr int kNumLoopRates = 8;
+    static constexpr int kNumShapes = 8;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Strum";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    /// FROZEN slot order - saved links address these by index.
+    enum ParamIndex {
+        kTrigger = 0,
+        kOrder,
+        kShape,
+        kCycles,  // 0..7 -> 1..8 mini-strums
+        kLoopSync,
+        kLoopRate,
+        kStrumLength,   // ms
+        kSyncInterval,  // ms (Time mode loop interval)
+        kNumParams
+    };
+
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Strum",
+            .takesMidiInput = true,
+        };
     }
 
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
     void reset() override;
-    void applyToBuffer(const te::PluginRenderContext&) override;
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    void process(DeviceProcessContext& context) override;
+
+    int parameterCount() const override {
+        return kNumParams;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
     /// UI viz helper: normalized onset times [0,1] for `count` evenly-spaced
-    /// notes, using the current Shape preset and Cycles. Computed fresh (its own
-    /// local LUT, not the audio-thread `lut_`) so it is safe to call from the
-    /// message thread.
-    std::vector<float> curveOnsetPreview(int count) const;
-
-    // CachedValues (persistence) + AutomatableParameters (macro/mod linking).
-    juce::CachedValue<int> trigger, order, shape, cycles, loopSync, loopRate;
-    juce::CachedValue<float> strumLength, syncInterval;
-    te::AutomatableParameter::Ptr triggerParam, orderParam, shapeParam, cyclesParam;
-    te::AutomatableParameter::Ptr loopSyncParam, loopRateParam;
-    te::AutomatableParameter::Ptr strumLengthParam, syncIntervalParam;
+    /// notes with the given Shape preset and Cycles index. Pure (its own local
+    /// LUT), so the message thread can call it without touching the device.
+    static std::vector<float> curveOnsetPreview(int shapeIndex, int cyclesIndex, int count);
 
   private:
     struct Held {
@@ -92,13 +104,21 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     void scheduleReleaseAll();  // queue note-offs for everything sounding (at clock_)
     void resetStrumState();
     // Loop re-strum interval in samples: either the free ms value or a tempo-
-    // locked beat division (read from the edit's tempo at the block position).
-    int loopIntervalSamples(const te::PluginRenderContext& fc) const;
-    float controlValue(te::AutomatableParameter* p, const juce::CachedValue<float>& cv) const;
-    int controlIndex(te::AutomatableParameter* p, const juce::CachedValue<int>& cv) const;
+    // locked beat division (read from the block's tempo map).
+    int loopIntervalSamples(const DeviceProcessContext& context) const;
+
+    /// The parameter's display-domain value, converted through the cached
+    /// domain rather than a freshly built ParameterInfo: this runs per block on
+    /// the audio thread, and a ParameterInfo carries strings that allocate.
+    float displayValue(int index) const;
+    int displayIndex(int index) const;
+
+    std::array<float, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     std::vector<Held> held_;
     std::vector<Pending> pending_;
+    std::vector<Pending> due_;       // scratch for the per-block emit pass
     std::vector<int> sounding_;      // notes we have emitted note-on for, awaiting release
     std::int64_t clock_ = 0;         // absolute sample counter
     std::int64_t noteOrder_ = 0;     // play-order stamp for As-Played ordering
@@ -107,16 +127,6 @@ class MidiStrumPlugin : public MidiDevicePlugin {
     int lutShape_ = -1;              // shape index the LUT was built for
     std::array<float, 1024> lut_{};  // current strum curve, sampled
     bool wasPlaying_ = false;        // transport state last block (stop -> flush)
-
-    void syncParamFromProperty(const juce::Identifier& property);
-    struct ParamSyncListener : public juce::ValueTree::Listener {
-        MidiStrumPlugin& owner;
-        explicit ParamSyncListener(MidiStrumPlugin& o) : owner(o) {}
-        void valueTreePropertyChanged(juce::ValueTree&, const juce::Identifier& p) override {
-            owner.syncParamFromProperty(p);
-        }
-    };
-    ParamSyncListener paramSyncListener_{*this};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiStrumPlugin)
 };

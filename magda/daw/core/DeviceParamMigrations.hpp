@@ -94,6 +94,20 @@ inline const ParamIndexMigration* findMigration(const DeviceInfo& device) {
     return findMigration(device, shippedMigrations());
 }
 
+/// The migration that applies to a saved parameter record carrying
+/// @p savedParamCount entries for @p deviceType, or null. For state that
+/// arrives WITHOUT a model parameter array - an old preset's document, an
+/// imported chain - where the count identifying the saved order is the
+/// record's own length rather than `DeviceInfo::parameters.size()`.
+const ParamIndexMigration* findMigrationForSavedCount(const juce::String& deviceType,
+                                                      int savedParamCount,
+                                                      const MigrationTable& table);
+
+inline const ParamIndexMigration* findMigrationForSavedCount(const juce::String& deviceType,
+                                                             int savedParamCount) {
+    return findMigrationForSavedCount(deviceType, savedParamCount, shippedMigrations());
+}
+
 /**
  * The index `savedIndex` becomes under `migration`.
  *
