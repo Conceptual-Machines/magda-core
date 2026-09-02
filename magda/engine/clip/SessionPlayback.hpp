@@ -18,21 +18,6 @@
 
 namespace magda::engine {
 
-/**
- * @brief Where a beat inside @p block is on the block's own seconds axis.
- *
- * The block's own line, not a tempo map: it is the line sampleForBeat and
- * sampleForTime use, so a sub-range's seconds and its sample count agree.
- */
-inline double secondsWithin(const BlockInfo& block, double beat) {
-    const auto span = block.beats.end - block.beats.start;
-    if (!(span > 0.0))
-        return block.seconds.start;
-
-    return block.seconds.start +
-           (((beat - block.beats.start) / span) * (block.seconds.end - block.seconds.start));
-}
-
 /// Whether the material runs on from the last block. Material beat zero is a
 /// run beginning here (LaunchHandle::virtualStart), which is a discontinuity.
 inline bool runsOn(const BlockInfo& block, const BeatRange& range, const RunOrigin& origin) {
@@ -72,24 +57,38 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
     return material;
 }
 
-/// The same, cropped to @p range and the @p count samples it fills, for a
-/// reader handed a sub-block of the output.
+/**
+ * @brief The same, cropped to the @p count samples from @p offset.
+ *
+ * Cropped by samples rather than by beats, which is the only cut that says the
+ * same thing to the reader as it does to the buffer. The seconds face comes
+ * straight off them: a block runs at one second per sample rate whatever the
+ * tempo does, so this is exact rather than a curve read off the block's own two
+ * ends (#2330).
+ */
 inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range,
-                                  const RunOrigin& origin, int count) {
-    auto material = block;
+                                  const RunOrigin& origin, int offset, int count) {
+    auto material = materialBlock(block, range, origin);
     material.numSamples = count;
     material.beats = BeatRange{range.start - origin.beat, range.end - origin.beat};
-    material.seconds = SecondsRange{secondsWithin(block, range.start) - origin.seconds,
-                                    secondsWithin(block, range.end) - origin.seconds};
-    material.continuous = runsOn(block, range, origin);
-    material.runOrigin = origin;  // see materialBlock
+
+    const auto through = [&](int sample) {
+        return block.numSamples > 0
+                   ? block.seconds.start +
+                         (static_cast<double>(sample) / static_cast<double>(block.numSamples)) *
+                             block.seconds.length()
+                   : block.seconds.start;
+    };
+
+    material.seconds =
+        SecondsRange{through(offset) - origin.seconds, through(offset + count) - origin.seconds};
     return material;
 }
 
 /// Where in @p block the event landed, or the whole block when there was none.
 /// What starts a clip on its beat rather than on a callback boundary.
 inline int splitSample(const BlockInfo& block, const SplitStatus& status) {
-    return status.afterEvent ? block.sampleForBeat(status.beforeEvent.range.end) : block.numSamples;
+    return status.afterEvent ? status.event.sample : block.numSamples;
 }
 
 /**

@@ -104,25 +104,26 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
     // The status is the launcher's, worked out before anything rendered
     // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
-    forEachSlot(
-        *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
-            const auto play = [&](const BlockPiece& piece, int offset, int count) {
-                if (count <= 0 || !piece.origin)
-                    return;
+    forEachSlot(*handles.get(), track,
+                [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+                    const auto play = [&](const BlockPiece& piece, int offset, int count) {
+                        if (count <= 0 || !piece.origin)
+                            return;
 
-                gather(slot.audio, materialSubBlock(block, piece.range, *piece.origin, count),
-                       offset, streams, sounding, soundingCount);
-            };
+                        gather(slot.audio,
+                               materialSubBlock(block, piece.range, *piece.origin, offset, count),
+                               offset, streams, sounding, soundingCount);
+                    };
 
-            // What is on the far side of the event is not rendered. The ramp
-            // across that boundary is #2302's.
-            const auto split = splitSample(block, status);
+                    // What is on the far side of the event is not rendered. The ramp
+                    // across that boundary is #2302's.
+                    const auto split = splitSample(block, status);
 
-            play(status.beforeEvent, 0, split);
+                    play(status.beforeEvent, 0, split);
 
-            if (status.afterEvent)
-                play(*status.afterEvent, split, block.numSamples - split);
-        });
+                    if (status.afterEvent)
+                        play(*status.afterEvent, split, block.numSamples - split);
+                });
 }
 
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {

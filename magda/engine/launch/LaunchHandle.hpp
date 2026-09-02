@@ -1,9 +1,12 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <tuple>
 
 #include "core/TypeIds.hpp"
+#include "transport/TempoMap.hpp"
 #include "transport/TimeDomains.hpp"
 
 /**
@@ -48,25 +51,89 @@ struct SlotKey {
 };
 
 /**
- * @brief One block, in the four domains (TimeDomains.hpp).
+ * @brief One block, in the four domains (TimeDomains.hpp), and how to cut it.
  *
  * A queued position is named in monotonic beats; how far into its material a
  * run has got is measured in monotonic seconds. Neither is derived from the
  * other (#2324).
+ *
+ * The map comes with it, because naming an instant inside the block is the one
+ * thing a handle does that the four ranges cannot answer between them. Reading
+ * an instant off each range separately is what @ref BlockInstant exists to stop
+ * (#2330); everything here goes through @ref atSample.
  */
 struct SyncRange {
     BeatRange timeline;
     BeatRange monotonic;
     SecondsRange seconds;
     SecondsRange monotonicSeconds;
-};
 
-/// One instant, in the faces a run's origin is remembered in. Passed together
-/// so a run cannot be started with faces of different instants.
-struct SyncPoint {
-    double timelineBeat = 0.0;
-    double monotonicBeat = 0.0;
-    double monotonicSeconds = 0.0;
+    /// How many samples the block is, which is what an instant is counted in.
+    int numSamples = 0;
+
+    /// The map the block was cut from, or null for a block assembled by hand,
+    /// which is then taken to run at one tempo.
+    const TempoMap* tempo = nullptr;
+
+    /**
+     * @brief The instant @p sample sounds at, in every domain.
+     *
+     * The seconds faces are exact rather than nearly so: a block runs at one
+     * second per sample rate whatever the tempo is doing, so both of them are
+     * straight lines and not approximations of a curve.
+     *
+     * The beat face is the map's, because the block's own two beat ends are a
+     * straight line and the map between them is not. What is left linear is
+     * monotonic against timeline beats, and that one is exact: what makes the
+     * two differ is a wrap, and a wrap ends a block.
+     */
+    BlockInstant atSample(int sample) const {
+        BlockInstant at;
+        at.sample = std::clamp(sample, 0, numSamples);
+
+        const auto through =
+            numSamples > 0 ? static_cast<double>(at.sample) / static_cast<double>(numSamples) : 0.0;
+
+        at.timelineSeconds = seconds.start + through * seconds.length();
+        at.monotonicSeconds = monotonicSeconds.start + through * monotonicSeconds.length();
+
+        at.timelineBeat = tempo != nullptr ? tempo->timeToBeat(at.timelineSeconds)
+                                           : timeline.start + through * timeline.length();
+
+        at.monotonicBeat = monotonic.start + (at.timelineBeat - timeline.start);
+        return at;
+    }
+
+    /// The instant the block begins on.
+    BlockInstant start() const {
+        return atSample(0);
+    }
+
+    /**
+     * @brief The instant @p beat falls on, snapped to the sample it sounds on.
+     *
+     * Snapped, and then every face taken from that sample rather than from the
+     * beat that asked: a launch happens on a sample or it does not happen, and
+     * the faces of the beat it was asked for are the faces of a moment between
+     * two samples that nothing plays.
+     */
+    BlockInstant atMonotonicBeat(double beat) const {
+        if (numSamples <= 0 || seconds.empty())
+            return start();
+
+        const auto timelineBeat = timeline.start + (beat - monotonic.start);
+
+        const auto at =
+            tempo != nullptr
+                ? tempo->beatToTime(timelineBeat)
+                : seconds.start + (timeline.empty()
+                                       ? 0.0
+                                       : ((timelineBeat - timeline.start) / timeline.length()) *
+                                             seconds.length());
+
+        const auto through = (at - seconds.start) / seconds.length();
+        return atSample(static_cast<int>(std::lround(through * numSamples)));
+    }
 };
 
 /// One piece of a block. A piece sounds exactly when there is a run behind it,
@@ -104,6 +171,11 @@ struct SplitStatus {
     /// What was left after it. Absent rather than empty, so a caller cannot
     /// read a piece that was never played.
     std::optional<BlockPiece> afterEvent;
+
+    /// Where the cut is, when @ref afterEvent says there was one. The sample
+    /// the block ran into its event on, so a caller starts the clip there
+    /// rather than working the position out a second time and differently.
+    BlockInstant event;
 
     /// Whether the slot is sounding when the block ends, which is what decides
     /// whether a stop owes note-offs.
@@ -240,7 +312,7 @@ class LaunchHandle {
 
     /// Begin a run at @p at, already @p elapsedBeats and @p elapsedSeconds into
     /// itself. Non-zero only for a synced launch, which joins a run.
-    void beginRun(const SyncPoint& at, double elapsedBeats = 0.0, double elapsedSeconds = 0.0);
+    void beginRun(const BlockInstant& at, double elapsedBeats = 0.0, double elapsedSeconds = 0.0);
     void endRun();
 
     /// Carry the current run through @p piece without changing state.
@@ -251,7 +323,7 @@ class LaunchHandle {
     double virtualStartSeconds(const SyncRange& piece) const;
 
     /// Apply whatever the block ran into, at the instant it ran into it.
-    void applyEvent(bool fromPending, const SyncPoint& at);
+    void applyEvent(bool fromPending, const BlockInstant& at);
 
     /// The advance itself, wrapped so @ref blockStatus is stored in one place.
     SplitStatus advanceOver(const SyncRange& range);
