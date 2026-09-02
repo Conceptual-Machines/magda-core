@@ -1576,6 +1576,27 @@ OperationRegistry::OperationRegistry() {
             "required":["trackId"],"additionalProperties":false
         })json"),
         okResult);
+    add("tracks.group", "Group tracks under a new group track", OperationAccess::Write,
+        &handlers::tracksGroup, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackIds":{"type":"array","minItems":1,
+                            "items":{"type":"integer","minimum":0}},
+                "name":{"type":"string"}
+            },
+            "required":["trackIds","name"],"additionalProperties":false
+        })json"),
+        idResult);
+    add("tracks.move", "Move a track to a one-based position in the track list",
+        OperationAccess::Write, &handlers::tracksMove, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "trackId":{"type":"integer","minimum":0},
+                "position":{"type":"integer","minimum":1}
+            },
+            "required":["trackId","position"],"additionalProperties":false
+        })json"),
+        okResult);
 
     add("clips.list", "List clips with optional track and view filters", OperationAccess::Read,
         &handlers::clipsList, operationInputSchema(R"json({
@@ -1626,6 +1647,53 @@ OperationRegistry::OperationRegistry() {
             "required":["clipId"],"additionalProperties":false
         })json"),
         okResult);
+    add("clips.update", "Update clip name, enabled state, or groove template assignment",
+        OperationAccess::Write, &handlers::clipsUpdate, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "name":{"type":"string"},
+                "enabled":{"type":"boolean"},
+                "grooveTemplate":{"type":"string"}
+            },
+            "required":["clipId"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.transpose", "Transpose every note in a MIDI clip by semitones",
+        OperationAccess::Write, &handlers::clipsTranspose, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "semitones":{"type":"integer","minimum":-127,"maximum":127}
+            },
+            "required":["clipId","semitones"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.quantize",
+        "Quantize a MIDI clip's notes to a beat grid; all notes when noteIndices is absent",
+        OperationAccess::Write, &handlers::clipsQuantize, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "gridResolution":{"type":"number","exclusiveMinimum":0,"maximum":16},
+                "noteIndices":{"type":"array","items":{"type":"integer","minimum":0}},
+                "mode":{"type":"string","enum":["start","length","start_and_length"]}
+            },
+            "required":["clipId","gridResolution"],"additionalProperties":false
+        })json"),
+        clipSchema());
+    add("clips.sliceNotes",
+        "Slice a MIDI clip's notes into equal subdivisions; all notes when noteIndices is absent",
+        OperationAccess::Write, &handlers::clipsSliceNotes, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "clipId":{"type":"integer","minimum":0},
+                "subdivisions":{"type":"integer","minimum":2,"maximum":64},
+                "noteIndices":{"type":"array","items":{"type":"integer","minimum":0}}
+            },
+            "required":["clipId","subdivisions"],"additionalProperties":false
+        })json"),
+        clipSchema());
 
     add("devices.list", "List safe device and rack graph metadata", OperationAccess::Read,
         &handlers::devicesList, operationInputSchema(R"json({
@@ -1881,6 +1949,95 @@ OperationRegistry::OperationRegistry() {
         })json"),
         automationLaneSchema());
 
+    const auto stringArraySchema = arraySchema(parseSchema(R"json({"type":"string"})json"));
+    add("grooves.list", "List groove template names", OperationAccess::Read, &handlers::groovesList,
+        emptyObjectSchema(), stringArraySchema);
+    add("grooves.upsert",
+        "Create or replace a groove template; latenessProportions is one entry per grid slot, "
+        "-1..1 of the slot length",
+        OperationAccess::Write, &handlers::groovesUpsert, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "name":{"type":"string","minLength":1},
+                "notesPerBeat":{"type":"integer","minimum":1,"maximum":16},
+                "parameterized":{"type":"boolean"},
+                "latenessProportions":{"type":"array","minItems":1,
+                                       "items":{"type":"number","minimum":-1,"maximum":1}}
+            },
+            "required":["name","notesPerBeat","latenessProportions"],
+            "additionalProperties":false
+        })json"),
+        okResult);
+
+    // The focused device's macro page — the same surface controller scripts
+    // drive. Reads answer safely with hasFocus=false when nothing is focused.
+    const auto focusedSchema = parseSchema(R"json({
+        "type":"object",
+        "properties":{
+            "hasFocus":{"type":"boolean"},
+            "name":{"type":"string"},
+            "macros":{"type":"array","items":{
+                "type":"object",
+                "properties":{
+                    "index":{"type":"integer"},
+                    "name":{"type":"string"},
+                    "value":{"type":"number"}
+                },
+                "required":["index","name","value"],
+                "additionalProperties":false
+            }}
+        },
+        "required":["hasFocus","name","macros"],
+        "additionalProperties":false
+    })json");
+    add("focused.get", "Get the focused device or rack and its macro page", OperationAccess::Read,
+        &handlers::focusedGet, emptyObjectSchema(), focusedSchema);
+    add("focused.setMacro", "Write a normalized value to a macro on the focused device",
+        OperationAccess::Write, &handlers::focusedSetMacro, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "index":{"type":"integer","minimum":0,"maximum":15},
+                "value":{"type":"number","minimum":0,"maximum":1}
+            },
+            "required":["index","value"],"additionalProperties":false
+        })json"),
+        focusedSchema);
+    add("focused.cycleDevice", "Move device focus to the previous or next top-level chain node",
+        OperationAccess::Write, &handlers::focusedCycleDevice, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{"direction":{"type":"integer","enum":[-1,1]}},
+            "required":["direction"],"additionalProperties":false
+        })json"),
+        focusedSchema);
+
+    // Hardware MIDI out — the first operations behind the `hardware-midi`
+    // scope, which was declared ahead of them (#1860) precisely so existing
+    // grants read as "not granted" when these landed.
+    add("midi.listOutputPorts", "List available MIDI output port names", OperationAccess::Read,
+        &handlers::midiListOutputPorts, emptyObjectSchema(), stringArraySchema);
+    add("midi.send", "Send one channel message to a MIDI output, as status-first raw bytes",
+        OperationAccess::Write, &handlers::midiSend, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "port":{"type":"string","minLength":1},
+                "bytes":{"type":"array","minItems":1,"maxItems":3,
+                         "items":{"type":"integer","minimum":0,"maximum":255}}
+            },
+            "required":["port","bytes"],"additionalProperties":false
+        })json"),
+        okResult);
+    add("midi.sendSysEx", "Send a SysEx payload to a MIDI output; F0/F7 framing is added",
+        OperationAccess::Write, &handlers::midiSendSysEx, operationInputSchema(R"json({
+            "type":"object",
+            "properties":{
+                "port":{"type":"string","minLength":1},
+                "bytes":{"type":"array","minItems":1,"maxItems":4096,
+                         "items":{"type":"integer","minimum":0,"maximum":127}}
+            },
+            "required":["port","bytes"],"additionalProperties":false
+        })json"),
+        okResult);
+
     // -----------------------------------------------------------------------
     // Subscriptions (#1857)
     //
@@ -1944,9 +2101,20 @@ OperationRegistry::OperationRegistry() {
         {"tracks.create", Scope::Edit},
         {"tracks.update", Scope::Edit},
         {"tracks.delete", Scope::Edit},
+        {"tracks.group", Scope::Edit},
+        {"tracks.move", Scope::Edit},
         {"clips.createMidi", Scope::Edit},
         {"clips.addMidiNote", Scope::Edit},
         {"clips.delete", Scope::Edit},
+        {"clips.update", Scope::Edit},
+        {"clips.transpose", Scope::Edit},
+        {"clips.quantize", Scope::Edit},
+        {"clips.sliceNotes", Scope::Edit},
+        {"grooves.upsert", Scope::Edit},
+        // Focused-macro writes edit device state; cycling focus changes what
+        // the user is looking at, the same reasoning as selection.set.
+        {"focused.setMacro", Scope::Edit},
+        {"focused.cycleDevice", Scope::Edit},
         {"racks.create", Scope::Edit},
         {"racks.remove", Scope::Edit},
         {"racks.setBypassed", Scope::Edit},
@@ -1982,6 +2150,11 @@ OperationRegistry::OperationRegistry() {
         {"session.stopTrack", Scope::Session},
         {"session.stopAll", Scope::Session},
         {"session.launchScene", Scope::Session},
+
+        // Physical MIDI ports. The scope existed before any operation did
+        // (#1860); these are the operations it was declared for.
+        {"midi.send", Scope::HardwareMidi},
+        {"midi.sendSysEx", Scope::HardwareMidi},
     };
 
     for (const auto& [name, scope] : kWriteScopes) {

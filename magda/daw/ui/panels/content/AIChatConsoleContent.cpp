@@ -4,10 +4,12 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
 
+#include "../../../../agents/agent_tool_bridge.hpp"
 #include "../../../../agents/automation_agent.hpp"
 #include "../../../../agents/command_agent.hpp"
 #include "../../../../agents/console_agent_orchestrator.hpp"
@@ -19,11 +21,14 @@
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llama_model_manager.hpp"
 #include "../../../../agents/llm_presets.hpp"
+#include "../../../../agents/llm_tool_model.hpp"
 #include "../../../../agents/midi_context.hpp"
 #include "../../../../agents/mixing_agent.hpp"
 #include "../../../../agents/music_agent.hpp"
 #include "../../../../agents/theme_agent.hpp"
 #include "../../../api/magda_api_live.hpp"
+#include "../../../api/remote_api_host.hpp"
+#include "../../../api/remote_service.hpp"
 #include "../../../audio/analysis/OfflineMixAnalysis.hpp"
 #include "../../../core/AppPaths.hpp"
 #include "../../../core/ClipManager.hpp"
@@ -65,6 +70,97 @@ namespace {
 // next to isDrummerTrack().
 juce::String formatClipAsDrummerContext(magda::ClipId clipId);
 juce::String formatSelectedClipsAsDrummerContext();
+
+/**
+ * The tool-calling console path (#2295): the surface's agent runs the bounded
+ * observe-act runtime, and every call executes through RemoteApiService — the
+ * same schema validation, scope enforcement, revision tracking, and audit an
+ * MCP client gets, with the ConsoleRouting allowlist as its tool set.
+ *
+ * Preflight rather than commitment: returns nullopt when the loop is switched
+ * off in config, no remote host exists, or the configured provider cannot
+ * carry tool calls — and the caller falls through to the DSL workflows. Once
+ * the run starts, its outcome is the response, success or not: mutations have
+ * gone through the service, so falling back to a second execution path would
+ * apply the request twice.
+ */
+std::optional<std::string> runAgentToolLoop(magda::AgentSurfaceId surfaceId,
+                                            const std::string& message,
+                                            const std::string& priorConversation,
+                                            const magda::agent::CancellationToken& cancellation) {
+    auto& config = magda::Config::getInstance();
+    if (!config.getAgentToolLoopEnabled())
+        return std::nullopt;
+    // Read from the request thread: safe because the host outlives every
+    // console request thread — it is created at startup and destroyed at
+    // shutdown, after this panel (and its RequestThread) are gone.
+    auto* host = magda::remote::activeHost();
+    if (host == nullptr)
+        return std::nullopt;
+
+    const auto llmConfig = config.getAgentLLMConfig(magda::role::COMMAND);
+    // The on-device command model is an intent tagger, not a tool-calling
+    // model; the DSL path is the one that knows how to drive it. The embedded
+    // llama client likewise refuses any request that carries tools, so
+    // starting the loop with it could only end in a model error — preflight
+    // both and let the DSL workflows take the request instead.
+    if (llmConfig.provider == magda::provider::FAST_INFERENCE ||
+        llmConfig.provider == magda::provider::LLAMA_LOCAL)
+        return std::nullopt;
+    auto client = magda::createLLMClient(llmConfig, "tool-loop");
+    if (client == nullptr)
+        return std::nullopt;
+
+    const auto& surface = magda::agentSurface(surfaceId);
+    auto tools = magda::agent::agentToolsForSurface(surface);
+    if (tools.empty())
+        return std::nullopt;
+
+    magda::agent::LlmToolModel model(*client);
+    magda::agent::RemoteAgentToolExecutor executor(host->service(), surface);
+    // Approving here matches what the DSL executors do today — they apply
+    // mutations without a per-step prompt. The hook is the seam where a real
+    // approval UI lands; the surface's `approveMutations` policy is what it
+    // will read.
+    magda::agent::AgentRuntime runtime(model, executor, [](const magda::agent::ApprovalRequest&) {
+        return magda::agent::ApprovalDecision{};
+    });
+
+    magda::agent::AgentDefinition definition;
+    definition.id = "console-" + juce::String(surface.name);
+    definition.systemPrompt = "You are MAGDA's " + juce::String(surface.name) + " agent. " +
+                              juce::String(surface.responsibility);
+    for (const auto& fragment : surface.promptFragments)
+        definition.systemPrompt += "\n" + juce::String(fragment);
+    definition.systemPrompt +=
+        "\nAct by calling tools; inspect state before mutating it. When the work is done, "
+        "reply with a short summary and no further tool calls.";
+    definition.tools = std::move(tools);
+    definition.budget.maxSteps = surface.runPolicy.maxSteps;
+    definition.budget.maxMutations = surface.runPolicy.maxMutations;
+
+    magda::agent::AgentRunInput input;
+    input.userMessage = priorConversation.empty()
+                            ? juce::String(message)
+                            : juce::String(priorConversation) + "\nUser request: " + message;
+    input.projectRevision = host->service().currentRevision();
+
+    const auto result = runtime.run(definition, input, cancellation);
+
+    std::string response = result.finalText.toStdString();
+    if (result.state != magda::agent::RunState::Completed) {
+        if (!response.empty())
+            response += "\n";
+        response += "[agent stopped: " + std::string(magda::agent::toString(result.reason));
+        if (result.detail.isNotEmpty())
+            response += ": " + result.detail.toStdString();
+        response += "]";
+    }
+    if (result.mutations > 0)
+        response += "\n[" + std::to_string(result.mutations) + " change(s) applied in " +
+                    std::to_string(result.steps) + " step(s)]";
+    return response;
+}
 }  // namespace
 
 // ============================================================================
@@ -667,29 +763,41 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto agentStart = std::chrono::steady_clock::now();
 
-    magda::agent::ConsoleRunRequest request{
-        .surface = surfaceDecision.surface,
-        .userMessage = message,
-        .priorConversation = priorContext,
-        .midiContext = midiContext_.toStdString(),
-        .drummerContext = drummerContext_.toStdString(),
-        .reviseTargetClipId = reviseTargetClipId_,
-    };
-    auto output = owner_.agentOrchestrator_->run(
-        request,
-        [&](const magda::agent::ConsoleRunEvent& event) {
-            if (event.type == magda::agent::ConsoleRunEventType::Token)
-                onToken(event.text);
-        },
-        magda::agent::CancellationToken([this] { return threadShouldExit(); }));
-    if (output.cancelled || threadShouldExit())
-        return;
-    dslCode = std::move(output.dslCode);
-    musicInstructions = std::move(output.musicInstructions);
-    musicDescription = std::move(output.musicDescription);
-    autoInstructions = std::move(output.automationInstructions);
-    mixAnalysis = std::move(output.prose);
-    error = std::move(output.error);
+    // Tool-calling path first (#2295): when enabled, the agent acts through
+    // RemoteApiService with the surface allowlist as its tool set, and its
+    // summary flows through the same prose channel the mix agent uses. A
+    // nullopt is a preflight refusal, and the DSL workflows below run instead.
+    if (auto toolLoopResponse = runAgentToolLoop(
+            surfaceDecision.surface, message, priorContext,
+            magda::agent::CancellationToken([this] { return threadShouldExit(); }))) {
+        if (threadShouldExit())
+            return;
+        mixAnalysis = std::move(*toolLoopResponse);
+    } else {
+        magda::agent::ConsoleRunRequest request{
+            .surface = surfaceDecision.surface,
+            .userMessage = message,
+            .priorConversation = priorContext,
+            .midiContext = midiContext_.toStdString(),
+            .drummerContext = drummerContext_.toStdString(),
+            .reviseTargetClipId = reviseTargetClipId_,
+        };
+        auto output = owner_.agentOrchestrator_->run(
+            request,
+            [&](const magda::agent::ConsoleRunEvent& event) {
+                if (event.type == magda::agent::ConsoleRunEventType::Token)
+                    onToken(event.text);
+            },
+            magda::agent::CancellationToken([this] { return threadShouldExit(); }));
+        if (output.cancelled || threadShouldExit())
+            return;
+        dslCode = std::move(output.dslCode);
+        musicInstructions = std::move(output.musicInstructions);
+        musicDescription = std::move(output.musicDescription);
+        autoInstructions = std::move(output.automationInstructions);
+        mixAnalysis = std::move(output.prose);
+        error = std::move(output.error);
+    }
 
     agentMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - agentStart)

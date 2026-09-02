@@ -175,6 +175,7 @@ set(TEST_SOURCES
     routing/test_console_routing.cpp
     agents/test_conversation_store.cpp
     agents/test_agent_runtime.cpp
+    agents/test_agent_tool_bridge.cpp
     agents/test_console_agent_orchestrator.cpp
     midi/test_midi_context.cpp
     agents/test_llama_model_manager.cpp

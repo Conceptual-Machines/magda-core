@@ -104,6 +104,15 @@ std::vector<Vector> vectors() {
 
         {"selection is an edit", "selection.set", emptyObject(), read, false},
         {"automation is an edit", "automation.listLanes", emptyObject(), read, true},
+
+        {"hardware MIDI is refused without its scope", "midi.send",
+         object({{"port", "conformance-port"},
+                 {"bytes", juce::var(juce::Array<juce::var>{0x90, 60, 100})}}),
+         ScopeSet{Scope::Read, Scope::Edit}, false},
+        {"hardware MIDI is allowed with it", "midi.send",
+         object({{"port", "conformance-port"},
+                 {"bytes", juce::var(juce::Array<juce::var>{0x90, 60, 100})}}),
+         ScopeSet{Scope::Read, Scope::HardwareMidi}, true},
     };
 }
 

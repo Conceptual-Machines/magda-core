@@ -38,6 +38,8 @@ HandlerResult tracksGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksCreate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksUpdate(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult tracksDelete(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksGroup(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult tracksMove(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Clips
 HandlerResult clipsList(MagdaApi&, const juce::var&, const RequestContext&);
@@ -45,6 +47,10 @@ HandlerResult clipsGet(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsCreateMidi(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsAddMidiNote(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult clipsDelete(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsUpdate(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsTranspose(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsQuantize(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult clipsSliceNotes(MagdaApi&, const juce::var&, const RequestContext&);
 
 // Devices and racks
 HandlerResult devicesList(MagdaApi&, const juce::var&, const RequestContext&);
@@ -87,6 +93,20 @@ HandlerResult automationGetLane(MagdaApi&, const juce::var&, const RequestContex
 HandlerResult automationCreateLane(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationAddPoint(MagdaApi&, const juce::var&, const RequestContext&);
 HandlerResult automationClearLane(MagdaApi&, const juce::var&, const RequestContext&);
+
+// Grooves
+HandlerResult groovesList(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult groovesUpsert(MagdaApi&, const juce::var&, const RequestContext&);
+
+// Focused device macros
+HandlerResult focusedGet(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult focusedSetMacro(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult focusedCycleDevice(MagdaApi&, const juce::var&, const RequestContext&);
+
+// Hardware MIDI out
+HandlerResult midiListOutputPorts(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult midiSend(MagdaApi&, const juce::var&, const RequestContext&);
+HandlerResult midiSendSysEx(MagdaApi&, const juce::var&, const RequestContext&);
 
 }  // namespace remote::handlers
 }  // namespace magda

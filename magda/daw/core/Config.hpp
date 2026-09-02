@@ -884,6 +884,19 @@ class Config {
         agentInferenceConfigs[agentRole] = config;
     }
 
+    /**
+     * Whether console agents run the tool-calling loop (AgentRuntime over
+     * RemoteApiService, #2295) instead of the DSL/IR workflows. Off by
+     * default: the tool loop needs a provider with native tool calling, and
+     * the DSL paths stay the shipped behaviour until it has soaked.
+     */
+    bool getAgentToolLoopEnabled() const {
+        return agentToolLoopEnabled;
+    }
+    void setAgentToolLoopEnabled(bool enabled) {
+        agentToolLoopEnabled = enabled;
+    }
+
     // Temporary backend-specific bridge for existing LLM agents and settings
     // UI. These are not role APIs; callers configuring an agent should use
     // the inference-profile methods above.
@@ -1600,6 +1613,7 @@ class Config {
 
     // AI settings
     std::string aiPreset = "local_embedded";
+    bool agentToolLoopEnabled = false;
     std::map<std::string, AgentInferenceConfig> agentInferenceConfigs = {
         {"command", {"llm", {"llama_local", "", "", ""}}},
         {"music", {"llm", {"llama_local", "", "", ""}}},

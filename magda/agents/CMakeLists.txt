@@ -14,6 +14,10 @@ set(AGENTS_SOURCES
     agent_runtime.cpp
     fast_inference_policy.hpp
     fast_inference_policy.cpp
+    agent_tool_bridge.hpp
+    agent_tool_bridge.cpp
+    llm_tool_model.hpp
+    llm_tool_model.cpp
     console_agent_orchestrator.hpp
     console_agent_orchestrator.cpp
     instruction_executor.hpp
