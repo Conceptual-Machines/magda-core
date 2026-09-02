@@ -216,10 +216,7 @@ SplitStatus LaunchHandle::advance(const SyncRange& range) {
 
 SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     SplitStatus status;
-    status.range1 = range.timeline;
-    status.range2 = BeatRange{range.timeline.end, range.timeline.end};
-    status.playing1 = playState_ == PlayState::playing;
-    status.playing2 = status.playing1;
+    status.beforeEvent.range = range.timeline;
 
     // What happens inside this block, in monotonic beats. At most one, and a
     // request always outranks a loop wrap.
@@ -279,7 +276,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
 
     if (!event) {
         if (playState_ == PlayState::playing) {
-            status.origin1 = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
+            status.beforeEvent.origin = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
             extendRun(range);
         }
 
@@ -294,11 +291,8 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
         applyEvent(fromPending, SyncPoint{range.timeline.start, range.monotonic.start,
                                           range.monotonicSeconds.start});
 
-        status.playing1 = playState_ == PlayState::playing;
-        status.playing2 = status.playing1;
-
         if (playState_ == PlayState::playing) {
-            status.origin1 = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
+            status.beforeEvent.origin = RunOrigin{virtualStart(range), virtualStartSeconds(range)};
             extendRun(range);
         }
 
@@ -323,25 +317,25 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
                            SecondsRange{splitSeconds, range.seconds.end},
                            SecondsRange{splitMonotonicSeconds, range.monotonicSeconds.end}};
 
+    status.beforeEvent.range = first.timeline;
+
     if (playState_ == PlayState::playing) {
-        status.origin1 = RunOrigin{virtualStart(first), virtualStartSeconds(first)};
+        status.beforeEvent.origin = RunOrigin{virtualStart(first), virtualStartSeconds(first)};
         extendRun(first);
     }
 
     applyEvent(fromPending, SyncPoint{second.timeline.start, second.monotonic.start,
                                       second.monotonicSeconds.start});
 
-    status.playing2 = playState_ == PlayState::playing;
+    BlockPiece after;
+    after.range = second.timeline;
 
     if (playState_ == PlayState::playing) {
-        status.origin2 = RunOrigin{virtualStart(second), virtualStartSeconds(second)};
+        after.origin = RunOrigin{virtualStart(second), virtualStartSeconds(second)};
         extendRun(second);
     }
 
-    status.isSplit = true;
-    status.range1 = first.timeline;
-    status.range2 = second.timeline;
-
+    status.afterEvent = after;
     return status;
 }
 

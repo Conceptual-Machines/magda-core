@@ -98,44 +98,63 @@ struct RunOrigin {
 };
 
 /**
+ * @brief One piece of a block, and what the slot was doing over it.
+ *
+ * A piece sounds exactly when there is a run behind it, so where that run began
+ * is the whole answer and there is no separate flag to disagree with it.
+ */
+struct BlockPiece {
+    BeatRange range;
+
+    /**
+     * @brief Where the run sounding over this piece began, or nothing.
+     *
+     * On both of the block's own axes, because a source subtracts one from the
+     * beat it is handed and the other from the seconds, and the two are one
+     * instant (RunOrigin).
+     *
+     * Virtual rather than historical: once the timeline has wrapped, the
+     * instant the run really started on is no longer in the cycle the block
+     * belongs to, so each face is projected forward from its own monotonic
+     * domain instead. Either can therefore sit before the block, or before
+     * zero.
+     */
+    std::optional<RunOrigin> origin;
+
+    /// Whether the slot sounded over this piece.
+    bool playing() const {
+        return origin.has_value();
+    }
+};
+
+/**
  * @brief What one block was, once the handle has been advanced over it.
  *
- * Two sub-ranges rather than one play state, because a launch is quantized to
- * a beat and a beat lands wherever it lands inside a block. A handle that
+ * Two pieces rather than one play state, because a launch is quantized to a
+ * beat and a beat lands wherever it lands inside a block. A handle that
  * answered per block would start every clip on a block boundary: at 512
  * samples and 120 bpm that is up to 11 ms of slop, it differs per track, and
  * removing exactly that slop is what quantized launch is for.
  *
- * When @ref isSplit is false only the first half is meaningful and it covers
- * the whole block.
+ * The instant they are cut at is whatever the block ran into: a launch, a stop,
+ * or a loop re-trigger. A block that ran into nothing is one piece.
  */
 struct SplitStatus {
-    bool playing1 = false;
-    bool playing2 = false;
+    /// The block up to the instant it ran into, or the whole of it when it ran
+    /// into nothing.
+    BlockPiece beforeEvent;
 
-    BeatRange range1;
-    BeatRange range2;
+    /// What was left after that instant, or nothing when there was no instant.
+    /// Absent rather than empty, so a caller cannot read a second piece that
+    /// was never played.
+    std::optional<BlockPiece> afterEvent;
 
-    bool isSplit = false;
-
-    /// Where the run playing each sub-range began, on both of the block's own
-    /// axes. What a source subtracts from the beat and the seconds it is handed
-    /// to know how far into the material it is.
-    ///
-    /// Virtual rather than historical: once the timeline has wrapped, the
-    /// instant the run really started on is no longer in the cycle the block
-    /// belongs to, so each face is projected forward from its own monotonic
-    /// domain instead. Either can therefore sit before the block, or before
-    /// zero.
-    ///
-    /// Two faces in one value, and never one converted into the other: a tempo
-    /// map would answer where the beat sits rather than how long the run has
-    /// been going, and the two differ by every tempo change in between and by
-    /// every wrap the projection crossed (#2324). One optional rather than two,
-    /// so a caller cannot be handed a run with an origin in one domain and none
-    /// in the other.
-    std::optional<RunOrigin> origin1;
-    std::optional<RunOrigin> origin2;
+    /// Whether the slot is sounding when the block ends, which is what decides
+    /// whether a stop owes anything: the second piece when there is one, and
+    /// the first when the block was not cut.
+    bool playingAtEnd() const {
+        return afterEvent ? afterEvent->playing() : beforeEvent.playing();
+    }
 };
 
 class LaunchHandle {

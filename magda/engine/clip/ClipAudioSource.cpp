@@ -107,13 +107,12 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
     // what lets this source and the MIDI one see the same block.
     forEachSlot(
         *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
-            const auto play = [&](const BeatRange& range, const std::optional<RunOrigin>& origin,
-                                  int offset, int count) {
-                if (count <= 0 || !origin)
+            const auto play = [&](const BlockPiece& piece, int offset, int count) {
+                if (count <= 0 || !piece.origin)
                     return;
 
-                gather(slot.audio, materialSubBlock(block, range, *origin, count), offset, streams,
-                       sounding, soundingCount);
+                gather(slot.audio, materialSubBlock(block, piece.range, *piece.origin, count),
+                       offset, streams, sounding, soundingCount);
             };
 
             // Where the launch or the stop landed. What is on the far side of
@@ -121,11 +120,10 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
             // one between a track's session and its arrangement, are #2302's.
             const auto split = splitSample(block, status);
 
-            if (status.playing1)
-                play(status.range1, status.origin1, 0, split);
+            play(status.beforeEvent, 0, split);
 
-            if (status.isSplit && status.playing2)
-                play(status.range2, status.origin2, split, block.numSamples - split);
+            if (status.afterEvent)
+                play(*status.afterEvent, split, block.numSamples - split);
         });
 }
 

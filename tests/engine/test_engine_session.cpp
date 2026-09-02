@@ -319,7 +319,7 @@ class LaunchGatedSource final : public EngineAudioSource {
 
         const auto [first, last] = table->rangeFor(trackId_);
         for (const auto* entry = first; entry != last; ++entry)
-            if (entry->handle != nullptr && entry->handle->blockStatus().playing1)
+            if (entry->handle != nullptr && entry->handle->blockStatus().beforeEvent.playing())
                 out.fill(1.0f);
     }
 

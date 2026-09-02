@@ -558,8 +558,8 @@ TEST_CASE("A handle is advanced once per block however many sources read it",
     CHECK(played->length() == Approx(2 * kBeatsPerBlock));
 
     // And what the sources read is what that last advance said.
-    CHECK(handle.blockStatus().playing1);
-    CHECK(handle.blockStatus().range1.start == Approx(kBeatsPerBlock));
+    CHECK(handle.blockStatus().beforeEvent.playing());
+    CHECK(handle.blockStatus().beforeEvent.range.start == Approx(kBeatsPerBlock));
 }
 
 TEST_CASE("A slot with no handle in the table is silent rather than wrong",
@@ -893,6 +893,6 @@ TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][sessio
     // And they report the same origin to whatever renders them, on both axes.
     // One value rather than two, so agreeing in beats and not in seconds is
     // not a state this can be in.
-    REQUIRE(follower.blockStatus().origin1.has_value());
-    CHECK(*follower.blockStatus().origin1 == *leader.blockStatus().origin1);
+    REQUIRE(follower.blockStatus().beforeEvent.origin.has_value());
+    CHECK(*follower.blockStatus().beforeEvent.origin == *leader.blockStatus().beforeEvent.origin);
 }

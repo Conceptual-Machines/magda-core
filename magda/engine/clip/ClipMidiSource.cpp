@@ -462,19 +462,18 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
     // is placed at a sample of the callback: what the sub-range decides is which
     // events are emitted, not where they land (SessionPlayback.hpp).
     const auto eachPlaying = [&block](const SplitStatus& status, const auto& fn) {
-        const auto play = [&](const BeatRange& range, const std::optional<RunOrigin>& origin) {
-            if (!origin)
+        const auto play = [&](const BlockPiece& piece) {
+            if (!piece.origin)
                 return;
 
-            fn(materialBlock(block, range, *origin), range.start - origin->beat,
-               range.end - origin->beat);
+            fn(materialBlock(block, piece.range, *piece.origin),
+               piece.range.start - piece.origin->beat, piece.range.end - piece.origin->beat);
         };
 
-        if (status.playing1)
-            play(status.range1, status.origin1);
+        play(status.beforeEvent);
 
-        if (status.isSplit && status.playing2)
-            play(status.range2, status.origin2);
+        if (status.afterEvent)
+            play(*status.afterEvent);
     };
 
     if (reconcile) {
@@ -508,9 +507,8 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
                     // stopped holds nothing, so this costs a walk of the active list and
                     // emits nothing, and it needs no memory of the previous block to be
                     // right after a plan swap or a snapshot swap.
-                    const auto playingAtEnd = status.isSplit ? status.playing2 : status.playing1;
-                    if (!playingAtEnd)
-                        endSlot(out, status.isSplit ? splitSample(block, status) : 0, slot);
+                    if (!status.playingAtEnd())
+                        endSlot(out, status.afterEvent ? splitSample(block, status) : 0, slot);
                 });
 
     return true;

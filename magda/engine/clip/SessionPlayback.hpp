@@ -138,7 +138,7 @@ inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range
  * clip starting on its beat rather than on a callback boundary.
  */
 inline int splitSample(const BlockInfo& block, const SplitStatus& status) {
-    return status.isSplit ? block.sampleForBeat(status.range1.end) : block.numSamples;
+    return status.afterEvent ? block.sampleForBeat(status.beforeEvent.range.end) : block.numSamples;
 }
 
 /**
