@@ -253,7 +253,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     // The instant the block ran into, worked out once and in one domain. Every
     // face of it below comes off the sample it landed on, so the two halves and
     // the origin they produce cannot disagree about where the cut was (#2330).
-    const auto event = range.atMonotonicBeat(*eventBeat);
+    const auto event = range.eventAtMonotonicBeat(*eventBeat);
     status.event = event;
 
     // At or before the block's first sample: the whole block is in the new

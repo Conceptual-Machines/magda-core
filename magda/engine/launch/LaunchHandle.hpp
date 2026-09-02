@@ -78,6 +78,12 @@ struct SyncRange {
     /**
      * @brief The instant @p sample sounds at, in every domain.
      *
+     * An edge rather than an event: one past the end of the block is a legal
+     * answer here, the way it is for RenderContext::sampleForTime, because a
+     * range that runs to the end of the block ends at the sample after the last
+     * one. An event has to land on a sample the block actually has, which is
+     * @ref eventAtMonotonicBeat.
+     *
      * The seconds faces are exact rather than nearly so: a block runs at one
      * second per sample rate whatever the tempo is doing, so both of them are
      * straight lines and not approximations of a curve.
@@ -110,14 +116,21 @@ struct SyncRange {
     }
 
     /**
-     * @brief The instant @p beat falls on, snapped to the sample it sounds on.
+     * @brief The instant @p beat falls on, as an event this block can carry.
      *
-     * Snapped, and then every face taken from that sample rather than from the
-     * beat that asked: a launch happens on a sample or it does not happen, and
-     * the faces of the beat it was asked for are the faces of a moment between
-     * two samples that nothing plays.
+     * Snapped to a sample, and then every face taken from that sample rather
+     * than from the beat that asked: a launch happens on a sample or it does
+     * not happen, and the faces of the beat it was asked for are the faces of a
+     * moment between two samples that nothing plays.
+     *
+     * Never one past the end, which is where a beat in the block's last half
+     * sample rounds to. That sample belongs to the next callback, and an event
+     * placed there is written nowhere: a stop would clear its own note state
+     * while its note-offs went to an offset outside the buffer, and the notes
+     * would hang. The block's last sample instead, which is at most one sample
+     * early and is a sample that plays.
      */
-    BlockInstant atMonotonicBeat(double beat) const {
+    BlockInstant eventAtMonotonicBeat(double beat) const {
         if (numSamples <= 0 || seconds.empty())
             return start();
 
@@ -132,7 +145,8 @@ struct SyncRange {
                                              seconds.length());
 
         const auto through = (at - seconds.start) / seconds.length();
-        return atSample(static_cast<int>(std::lround(through * numSamples)));
+        const auto sample = static_cast<int>(std::lround(through * numSamples));
+        return atSample(std::min(sample, numSamples - 1));
     }
 };
 

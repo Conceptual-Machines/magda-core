@@ -50,6 +50,29 @@ SyncRange wrapped(double from, double to, double monotonicFrom, double monotonic
 
 }  // namespace
 
+TEST_CASE("An event in the block's last half sample stays inside the block", "[launch]") {
+    // A beat nearer the next callback's first sample than this one's last
+    // rounds past the end of the block. Applied there, the event happens but
+    // nothing can carry it: a stop would clear its own note state while its
+    // note-offs went to an offset outside the buffer, and the notes would hang.
+    LaunchHandle handle;
+
+    const auto range = block(0.0, 1.0);
+    const auto lastSample = range.numSamples - 1;
+
+    // Inside the beat range, and within half a sample of its end.
+    handle.play(1.0 - (0.4 / range.numSamples));
+
+    const auto status = handle.advance(range);
+
+    REQUIRE(status.afterEvent.has_value());
+
+    // On the block's last sample: at most one sample early, and a sample that
+    // plays. Never numSamples, which belongs to the next callback.
+    CHECK(status.event.sample == lastSample);
+    CHECK(status.event.sample < range.numSamples);
+}
+
 TEST_CASE("A handle starts stopped and having played nothing", "[launch]") {
     LaunchHandle handle;
 
