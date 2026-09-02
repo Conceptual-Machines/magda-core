@@ -296,15 +296,9 @@ std::shared_ptr<const magda::engine::ClipSnapshot> clipsOver(TrackId trackId, do
     return snapshot;
 }
 
-/**
- * @brief A session source that sounds while its slot's handle says it is playing.
- *
- * Everything a real one does below that -- the material, the readers, the split
- * block -- is ClipAudioSource's and has its own cases. What this one asks is
- * whether a launch reaches the audio thread at all: the handle it reads is made
- * by publishClips, published by it, and advanced by process() before the plan
- * renders, and any of those three missing is silence.
- */
+/// A session source that sounds while its slot's handle says it is playing.
+/// What it asks is whether a launch reaches the audio thread at all: the handle
+/// is made and published by publishClips and advanced by process().
 class LaunchGatedSource final : public EngineAudioSource {
   public:
     LaunchGatedSource(TrackId trackId, magda::engine::LaunchHandleFeed& handles)
@@ -328,8 +322,7 @@ class LaunchGatedSource final : public EngineAudioSource {
     magda::engine::LaunchHandleFeed& handles_;
 };
 
-/// A host with a launcher: it binds a session source for every track, which is
-/// what a session op is for.
+/// A host with a launcher: it binds a session source for every track.
 class LauncherFactory final : public RuntimeStateFactory {
   public:
     std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
@@ -1284,9 +1277,8 @@ TEST_CASE("Clips reach the voice pool with the transport that plays them",
 }
 
 TEST_CASE("A launch published with the clips reaches the audio thread", "[engine][session]") {
-    // The whole path, once: publishClips makes a handle for the slot and
-    // publishes the table the callback reads, process() advances it before the
-    // plan renders, and the session op is bound to a source that consults it.
+    // The whole path once: publishClips makes and publishes the handle,
+    // process() advances it, and the session op is bound to a source reading it.
     LauncherFactory factory;
     EngineSession session(factory);
     factory.handles = &session.launchHandleFeed();
@@ -1300,7 +1292,7 @@ TEST_CASE("A launch published with the clips reaches the audio thread", "[engine
 
     juce::AudioBuffer<float> output(2, kBlockSize);
 
-    // Nothing has been launched, so the session is silent and costs nothing.
+    // Nothing launched, so the session is silent.
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
 

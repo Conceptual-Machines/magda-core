@@ -522,11 +522,9 @@ TEST_CASE("The monotonic beat counts what was rolled through, not where the curs
 
 TEST_CASE("The monotonic seconds count rendered time, not converted beats",
           "[engine][transport][clock][monotonic]") {
-    // The fourth face (#2324). Beats and seconds each have a timeline form that
-    // jumps and a monotonic form that does not, and this is the one a run
-    // measures its own length in. It exists because the alternative was asking
-    // a tempo map how far apart two beats are, and a map answers where a beat
-    // is: across an edit, or across a wrap, that is a different question.
+    // The fourth face (#2324), and the one a run measures its own length in.
+    // The alternative was asking a tempo map how far apart two beats are, and a
+    // map answers where a beat is.
     TransportClock clock;
 
     /// The seconds a whole number of samples lasts, which is what this counts.
@@ -552,8 +550,7 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
 
         advance(clock, slow, 4096);
 
-        // Half the musical time in the second block and exactly the same
-        // wall-clock time, because the same samples went by.
+        // Half the musical time and the same wall-clock time: same samples.
         CHECK(afterFast == approx(secondsOf(4096)));
         CHECK(clock.monotonicSeconds() == approx(secondsOf(8192)));
     }
@@ -585,8 +582,7 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
             rendered += segment.block.numSamples;
         }
 
-        // End to end, and exactly the callback: the pieces of a cut callback
-        // share the samples out and none of them is counted twice.
+        // Exactly the callback: the pieces share the samples out, none twice.
         CHECK(clock.monotonicSeconds() == approx(secondsOf(rendered)));
     }
 
@@ -604,9 +600,7 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
 
         advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 3);
 
-        // Counting in is playing: the metronome sounds and the clock runs, so a
-        // run launched into the count-in measures from where it started rather
-        // than from where the material does.
+        // Counting in is playing: the clock runs through it.
         CHECK(clock.monotonicSeconds() == approx(secondsOf(static_cast<int>(kSamplesPerBeat) * 3)));
     }
 

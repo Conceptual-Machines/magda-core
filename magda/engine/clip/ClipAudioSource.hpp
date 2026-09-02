@@ -31,20 +31,13 @@
  *
  * ## The two sections
  *
- * The same class plays a track's arrangement and its session, and which one is
- * decided at construction (#2301). Everything below the choice is shared: the
- * spans, the fades, the stretching, the warping, the readers and the voices.
- * Writing a second source for the session would have been a second answer to
- * every one of those questions, and a clip dragged out of a slot onto the
- * timeline has to sound the same in both places.
+ * One class plays a track's arrangement and its session, chosen at construction
+ * (#2301). Spans, fades, stretching, warping, readers and voices are shared, so
+ * a clip dragged out of a slot onto the timeline sounds the same in both.
  *
- * What the section changes is where the material sits, which for a slot is
- * nowhere. A slot is compiled at the origin (ClipSnapshot.hpp) and a launch
- * handle says where its run began, so a session block is this block with its
- * beat axis shifted by that origin: same samples, same seconds of buffer, a
- * different stretch of material under them. A split block -- one a launch or a
- * stop lands inside -- is two such shifts over two sub-blocks of the output,
- * which is how a clip starts on its beat rather than on a callback boundary.
+ * What differs is where the material sits, which for a slot is nowhere: a
+ * session block is this block on the run's own axes (SessionPlayback.hpp), and
+ * a split block is two of them over two sub-blocks of the output.
  *
  * How many clips a track may sound at once is decided rather than discovered:
  * kMaxVoicesPerTrack, below. That is not how many readers a track may have,
@@ -96,18 +89,9 @@ class ClipAudioSource final : public EngineAudioSource {
      */
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams);
 
-    /**
-     * @brief The session's source for @p trackId.
-     *
-     * The same reading of the same material, positioned by @p handles instead
-     * of by the timeline. The handle feed is the section selector: a source
-     * given one plays the track's slots and a source without one plays its
-     * arrangement, because being positioned by a launch is the whole of what
-     * makes a slot a slot.
-     *
-     * @p handles outlives it and is shared with every other track, like the
-     * other two.
-     */
+    /// The session's source for @p trackId, positioned by @p handles instead of
+    /// by the timeline. The feed is the section selector: with one it plays the
+    /// track's slots, without one its arrangement. @p handles outlives it.
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
                     LaunchHandleFeed& handles);
 
@@ -147,10 +131,8 @@ class ClipAudioSource final : public EngineAudioSource {
         ClipStretcher* stretcher = nullptr;
         int preRoll = 0;
 
-        /// The stretch of material this entry is played over, and where in the
-        /// output it lands. The block itself for the arrangement; for a session
-        /// slot, the same block with its beat axis moved onto the slot's own
-        /// origin, narrowed to whichever sub-range of the block was playing.
+        /// What it is played over and where in the output it lands: the block
+        /// itself for the arrangement, a material sub-block for a slot.
         BlockInfo block;
         int outOffset = 0;
     };
@@ -162,7 +144,6 @@ class ClipAudioSource final : public EngineAudioSource {
     };
 
     /// Entries of @p clips that reach into @p block, appended to @p sounding.
-    /// Shared by both sections: what differs is the block handed in.
     void gather(const std::vector<AudioClipPlayback>& clips, const BlockInfo& block, int outOffset,
                 const Streams& streams, std::array<Sounding, kMaxVoicesPerTrack>& sounding,
                 int& soundingCount);
@@ -180,8 +161,7 @@ class ClipAudioSource final : public EngineAudioSource {
     ClipSnapshotFeed& clips_;
     ClipStreamFeed& streams_;
 
-    /// The section, and where a slot's position comes from. Null is the
-    /// arrangement, which needs no handles because the timeline is its handle.
+    /// The section. Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
 
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;

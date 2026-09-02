@@ -116,9 +116,8 @@ std::shared_ptr<const ClipSnapshot> snapshotOf(std::vector<AudioClipPlayback> cl
     return snapshot;
 }
 
-/// A snapshot whose track holds slots rather than an arrangement. A slot is
-/// compiled at the origin, which is why every one of these looks identical
-/// apart from its clip id.
+/// A snapshot whose track holds slots rather than an arrangement. Slots compile
+/// at the origin, so these differ only by clip id.
 std::shared_ptr<const ClipSnapshot> sessionSnapshotOf(std::vector<magda::ClipId> ids,
                                                       double lengthSeconds = 2.0) {
     auto snapshot = std::make_shared<ClipSnapshot>();
@@ -865,10 +864,9 @@ TEST_CASE("A round over a stretched clip that is playing does not swap a table",
 
 TEST_CASE("Every session slot has a reader, wherever the transport is",
           "[engine][clip][pool][session]") {
-    // A slot has no position, so there is no window it comes into: a launch can
-    // arrive on any block and nothing warns the pool first (#2301). What that
-    // buys is a launch that costs no seek, and what it costs is an open file
-    // per slot for as long as the project holds it.
+    // A slot has no position, so there is no window it comes into and a launch
+    // can arrive on any block (#2301). No seek at the launch, one open file per
+    // slot for as long as the project holds it.
     TestFiles files;
     PrefetchThread reader;
     ClipVoicePool pool(files, reader, context());
@@ -881,8 +879,7 @@ TEST_CASE("Every session slot has a reader, wherever the transport is",
     CHECK(files.opens == 3);
 
     SECTION("and moving the transport neither retires them nor re-opens them") {
-        // An arrangement clip an hour away is out of the window and gets
-        // nothing; the slots are unmoved, because there is nothing to move.
+        // Nothing to move: a slot has no position to come into range of.
         pool.setPosition(3600.0);
         pool.service();
 
@@ -909,10 +906,8 @@ TEST_CASE("Every session slot has a reader, wherever the transport is",
 
 TEST_CASE("The session's readers are its own, not a share of the arrangement's",
           "[engine][clip][pool][session]") {
-    // Two budgets, because the two are not the same kind of thing: an
-    // arrangement reader is a window the transport moves through, and a slot is
-    // never passed. A track playing its timeline and holding a session gets
-    // both, and neither starves the other.
+    // Two budgets: an arrangement reader is a window the transport moves
+    // through and a slot is never passed, so neither starves the other.
     TestFiles files;
     PrefetchThread reader;
     ClipVoicePool pool(files, reader, context());
@@ -933,9 +928,8 @@ TEST_CASE("The session's readers are its own, not a share of the arrangement's",
 
 TEST_CASE("A session past its budget says which slots have no reader",
           "[engine][clip][pool][session]") {
-    // The failure a shared budget would have hidden. A slot is never passed by
-    // the transport, so one that loses is not late, it is silent for as long as
-    // the project holds it, and the count is the only thing that says so.
+    // A slot that loses is not late, it is silent for as long as the project
+    // holds it, and the count is the only thing that says so.
     TestFiles files;
     PrefetchThread reader;
     ClipVoicePool pool(files, reader, context());
@@ -952,8 +946,7 @@ TEST_CASE("A session past its budget says which slots have no reader",
           static_cast<std::size_t>(magda::engine::kMaxSessionReadersPerTrack));
     CHECK(pool.unprovisionedSlots() == 3);
 
-    // And the arrangement still gets its own: a full session must not cost a
-    // track the clip it is playing.
+    // And the arrangement still gets its own.
     ClipSnapshot snapshot = *sessionSnapshotOf(ids);
     snapshot.tracks.front().audio.push_back(clipAt(1, 0.0, 10.0));
     pool.setSnapshot(std::make_shared<const ClipSnapshot>(std::move(snapshot)));

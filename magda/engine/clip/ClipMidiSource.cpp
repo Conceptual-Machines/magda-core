@@ -376,9 +376,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // Locating into the middle of a clip has to leave every controller at
         // the value its curve is at and strike the notes the instant is inside,
         // or seeking into a sustained pad is silence until the next note. A
-        // launch is the same discontinuity from the material's point of view,
-        // which is what the block's own continuity already says
-        // (SessionPlayback.hpp).
+        // launch is the same discontinuity (SessionPlayback.hpp).
         if (!block.continuous) {
             MidiFoldPass passes[kMaxFoldPassesPerBlock];
             if (foldBlock(clip.fold, from, to, clip.span.endBeat, passes) > 0)
@@ -457,10 +455,9 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
     if (!handles)
         return false;
 
-    // Whichever sub-ranges of this block the slot was playing, on the material's
-    // own axis. The block itself rather than a piece of it, because a MIDI event
-    // is placed at a sample of the callback: what the sub-range decides is which
-    // events are emitted, not where they land (SessionPlayback.hpp).
+    // The whole block rather than a piece of it: a MIDI event is placed at a
+    // sample of the callback, so the sub-range decides which events are emitted
+    // and not where they land (SessionPlayback.hpp).
     const auto eachPlaying = [&block](const SplitStatus& status, const auto& fn) {
         const auto play = [&](const BlockPiece& piece) {
             if (!piece.origin)
@@ -477,9 +474,8 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
     };
 
     if (reconcile) {
-        // Every lane marked before anything is ended. A session has one lane per
-        // playing slot rather than the arrangement's single one, and a sweep run
-        // per lane would end the notes of the slot walked after it.
+        // Every lane marked before anything is ended: a sweep per lane would end
+        // the notes of the slot walked after it.
         NoteMask expected;
 
         forEachSlot(*handles.get(), track,
@@ -498,15 +494,12 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
                         playLane(out, material, slot.midi, from, to);
                     });
 
-                    // The session's own way for a note to end. A slot that is not playing
-                    // when the block finishes owes an off for everything it started, at the
-                    // sample it stopped on: a stop is not a hole, not a snapshot swap and
-                    // not the end of a span, so nothing else here would have covered it.
+                    // The session's own way for a note to end: a stop is not a hole,
+                    // not a snapshot swap and not the end of a span.
                     //
-                    // Unconditional rather than edge-triggered. A slot that was already
-                    // stopped holds nothing, so this costs a walk of the active list and
-                    // emits nothing, and it needs no memory of the previous block to be
-                    // right after a plan swap or a snapshot swap.
+                    // Unconditional rather than edge-triggered. An already stopped
+                    // slot holds nothing, so this emits nothing and needs no memory
+                    // of the previous block.
                     if (!status.playingAtEnd())
                         endSlot(out, status.afterEvent ? splitSample(block, status) : 0, slot);
                 });

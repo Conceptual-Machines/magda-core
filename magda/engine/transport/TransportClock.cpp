@@ -208,10 +208,8 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         monotonicBeat_ += segment.block.beats.end - segment.block.beats.start;
         segment.block.monotonicBeats.end = monotonicBeat_;
 
-        // From the samples, not from the beats: what this counts is how long
-        // the transport has been rolling, and the two agree only while the
-        // tempo does. A rate change re-anchors the cursor and this carries
-        // straight on, which is what makes it survive one (#2324).
+        // From the samples, not the beats: a rate change re-anchors the cursor
+        // and this carries straight on (#2324).
         segment.block.monotonicSeconds.start = monotonicSeconds_;
         monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
         segment.block.monotonicSeconds.end = monotonicSeconds_;

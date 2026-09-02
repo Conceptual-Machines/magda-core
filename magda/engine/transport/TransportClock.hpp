@@ -83,9 +83,8 @@ class TransportClock {
         return monotonicBeat_;
     }
 
-    /// Wall-clock time the transport has rolled through since the clock began,
-    /// in seconds that never go backwards. Audio thread, and the domain a run
-    /// measures how far into its material it is in (#2324).
+    /// Wall-clock time rolled through since the clock began, in seconds that
+    /// never go backwards. Audio thread. The domain a run's length is in (#2324).
     double monotonicSeconds() const {
         return monotonicSeconds_;
     }
@@ -163,11 +162,9 @@ class TransportClock {
     /// locates that move the cursor backwards.
     double monotonicBeat_ = 0.0;
 
-    /// The same for wall-clock time, and accumulated from the samples rather
-    /// than from the beats beside it. A block's own two faces agree, so the
-    /// difference is not in this line but in what it refuses: a caller with two
-    /// monotonic beats and a tempo map cannot get seconds out of them, because
-    /// the map answers where a beat is and not how long a run has been going.
+    /// The same for wall-clock time, accumulated from the samples. What it
+    /// buys is what it refuses: two monotonic beats and a tempo map cannot
+    /// produce elapsed seconds, because a map answers where a beat is.
     double monotonicSeconds_ = 0.0;
 
     std::atomic<double> positionBeats_{0.0};

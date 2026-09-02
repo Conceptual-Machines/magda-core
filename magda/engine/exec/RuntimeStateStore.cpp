@@ -334,33 +334,25 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
             table->entries.push_back(LaunchHandleTable::Entry{key, made.get()});
         }
 
-    // A snapshot already holds its tracks by id and its slots by scene, so this
-    // is sorted on arrival. Sorted here anyway, because the binary search on
-    // the audio thread depends on it and an invariant borrowed from another
-    // file is one that breaks silently when that file changes its mind.
+    // Sorted on arrival, since a snapshot holds tracks by id and slots by
+    // scene. Sorted here anyway: the audio thread's binary search depends on it.
     std::sort(table->entries.begin(), table->entries.end(),
               [](const auto& a, const auto& b) { return a.key < b.key; });
 
-    // The same slots pointing at the same handles: a clip edit that did not
-    // touch the session. Swapping would cost the callback a wait and change
-    // nothing it can see, and nothing has been dropped to retire.
+    // A clip edit that did not touch the session. Swapping would cost the
+    // callback a wait and change nothing, and nothing was dropped to retire.
     if (publishedHandles_ != nullptr && publishedHandles_->entries == table->entries)
         return publishedHandles_;
 
     publishedHandles_ = table;
 
-    // This is the swap, and it waits for the block the callback is in. After it
-    // returns, a handle the previous table named and this one does not is
-    // unreachable from the audio thread.
+    // The swap waits for the block the callback is in, so afterwards a handle
+    // this table does not name is unreachable from the audio thread.
     feed.publish(table);
 
-    // So it can go, here, on this thread. Retiring is the same call as
-    // publishing because the two cannot be separated: a slot emptied and
-    // refilled has to come back new, and the only thing that knows a slot was
-    // emptied is the snapshot that stopped naming it. A plan publish would not
-    // do, because a clip edit deliberately does not compile a plan, so an
-    // emptied slot refilled before the next structural edit would inherit the
-    // old handle's play state, loop phase and played range.
+    // So it can go, here, on this thread. The only thing that knows a slot was
+    // emptied is the snapshot that stopped naming it; a plan publish would not
+    // do, because a clip edit does not compile a plan.
     std::erase_if(handles_,
                   [&table](const auto& entry) { return table->find(entry.first) == nullptr; });
 

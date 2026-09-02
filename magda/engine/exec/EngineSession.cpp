@@ -142,15 +142,12 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     if (voices_ != nullptr)
         voices_->setSnapshot(clips);
 
-    // Handles before clips, and both before anything can look for them. A
-    // handle table that arrives first names slots the callback cannot see yet,
-    // and a handle nobody has launched is silent; a snapshot that arrives first
-    // would name a slot with no handle behind it, which is a launch the block
-    // in between cannot honour.
+    // Handles first: a table naming slots the callback cannot see yet is
+    // silent, while a snapshot naming a slot with no handle is a launch the
+    // block in between cannot honour.
     //
-    // A null snapshot is a project with nothing in it rather than a publish to
-    // skip: leaving the previous table live would keep handles for slots the
-    // engine no longer knows about, and an empty one is what says so.
+    // A null snapshot publishes an empty table rather than skipping, or the
+    // previous one would keep handles for slots the engine no longer knows.
     static const ClipSnapshot kNothing;
     store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_);
 
@@ -206,9 +203,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
             voices_->setPosition(segment.block.seconds.start);
 
         // Before the plan, and over every handle rather than the ones this plan
-        // happens to render. A handle is a state machine that has to see each
-        // block exactly once and in order, and a slot has two sources reading
-        // it, so nothing that renders advances anything (SessionLauncher.hpp).
+        // renders: a handle must see each block exactly once and a slot has two
+        // sources reading it (SessionLauncher.hpp).
         advanceLaunchHandles(handles_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);

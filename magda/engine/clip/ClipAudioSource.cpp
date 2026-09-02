@@ -103,8 +103,7 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
         return;
 
     // The status is the launcher's, worked out before anything rendered
-    // (SessionLauncher.hpp). Reading it rather than advancing the handle is
-    // what lets this source and the MIDI one see the same block.
+    // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
     forEachSlot(
         *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
             const auto play = [&](const BlockPiece& piece, int offset, int count) {
@@ -115,9 +114,8 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
                        offset, streams, sounding, soundingCount);
             };
 
-            // Where the launch or the stop landed. What is on the far side of
-            // it is simply not rendered: the ramp across that boundary, and the
-            // one between a track's session and its arrangement, are #2302's.
+            // What is on the far side of the event is not rendered. The ramp
+            // across that boundary is #2302's.
             const auto split = splitSample(block, status);
 
             play(status.beforeEvent, 0, split);
@@ -147,10 +145,8 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             voice.release();
     };
 
-    // Held to what the caller actually provided as well as to what the block
-    // claims. The session hands its voices sub-blocks of this one, so a length
-    // the buffer does not have is not a short block, it is somebody else's
-    // memory.
+    // Held to what the caller provided as well as to what the block claims: the
+    // session hands its voices sub-blocks of this one.
     auto lane = block;
     lane.numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
 

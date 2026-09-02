@@ -48,19 +48,11 @@ struct SlotKey {
 };
 
 /**
- * @brief One block, as the launcher sees it.
+ * @brief One block, in the four domains (TimeDomains.hpp).
  *
- * Four faces of the same stretch, which is what BlockInfo carries and where
- * they were derived together. Beats and seconds each have a timeline form and a
- * monotonic one: the timeline forms are where the material sits and go
- * backwards when the loop wraps, the monotonic forms only ever move forwards.
- *
- * A queued position is named in monotonic beats, because a launch is quantized
- * musically. How far into its material a run has got is measured in monotonic
- * seconds, because that is elapsed time and a file is read at a rate. Neither
- * may be derived from the other: a tempo map answers where a beat is, not how
- * long something has been going, and after a wrap the two ends of a run are not
- * even in the same cycle of the timeline (#2324).
+ * A queued position is named in monotonic beats; how far into its material a
+ * run has got is measured in monotonic seconds. Neither is derived from the
+ * other (#2324).
  */
 struct SyncRange {
     BeatRange timeline;
@@ -69,27 +61,17 @@ struct SyncRange {
     SecondsRange monotonicSeconds;
 };
 
-/**
- * @brief One instant, in the faces a run's origin is remembered in.
- *
- * Passed together so a run cannot be started with three faces of one instant
- * and one of another, which is the shape of every bug this domain exists to
- * prevent.
- */
+/// One instant, in the faces a run's origin is remembered in. Passed together
+/// so a run cannot be started with faces of different instants.
 struct SyncPoint {
     double timelineBeat = 0.0;
     double monotonicBeat = 0.0;
     double monotonicSeconds = 0.0;
 };
 
-/**
- * @brief Where a run began, in the two domains a source reads it against.
- *
- * Together because they are one instant. A source positions beat-domain
- * material against the first and seconds-domain material against the second,
- * and a run whose two faces came from different instants would put a clip's
- * notes and its samples in different places.
- */
+/// Where a run began, in the two domains a source reads it against. One value,
+/// because a run whose faces came from different instants would put a clip's
+/// notes and its samples in different places.
 struct RunOrigin {
     double beat = 0.0;
     double seconds = 0.0;
@@ -97,28 +79,15 @@ struct RunOrigin {
     bool operator==(const RunOrigin&) const = default;
 };
 
-/**
- * @brief One piece of a block, and what the slot was doing over it.
- *
- * A piece sounds exactly when there is a run behind it, so where that run began
- * is the whole answer and there is no separate flag to disagree with it.
- */
+/// One piece of a block. A piece sounds exactly when there is a run behind it,
+/// so the origin is the whole answer and there is no flag to disagree with it.
 struct BlockPiece {
     BeatRange range;
 
-    /**
-     * @brief Where the run sounding over this piece began, or nothing.
-     *
-     * On both of the block's own axes, because a source subtracts one from the
-     * beat it is handed and the other from the seconds, and the two are one
-     * instant (RunOrigin).
-     *
-     * Virtual rather than historical: once the timeline has wrapped, the
-     * instant the run really started on is no longer in the cycle the block
-     * belongs to, so each face is projected forward from its own monotonic
-     * domain instead. Either can therefore sit before the block, or before
-     * zero.
-     */
+    /// Where the run sounding over this piece began, or nothing. Projected onto
+    /// this block from each monotonic domain, since after a wrap the instant it
+    /// really started on is not in this cycle: either face can sit before the
+    /// block, or before zero.
     std::optional<RunOrigin> origin;
 
     /// Whether the slot sounded over this piece.
@@ -130,28 +99,24 @@ struct BlockPiece {
 /**
  * @brief What one block was, once the handle has been advanced over it.
  *
- * Two pieces rather than one play state, because a launch is quantized to a
- * beat and a beat lands wherever it lands inside a block. A handle that
- * answered per block would start every clip on a block boundary: at 512
- * samples and 120 bpm that is up to 11 ms of slop, it differs per track, and
- * removing exactly that slop is what quantized launch is for.
+ * Two pieces rather than one play state: a launch is quantized to a beat and a
+ * beat lands wherever it lands inside a block. Answering per block would start
+ * every clip on a callback boundary, which is up to 11 ms of slop at 512
+ * samples and 120 bpm.
  *
- * The instant they are cut at is whatever the block ran into: a launch, a stop,
- * or a loop re-trigger. A block that ran into nothing is one piece.
+ * The cut is at whatever the block ran into: a launch, a stop, or a loop
+ * re-trigger. A block that ran into nothing is one piece.
  */
 struct SplitStatus {
-    /// The block up to the instant it ran into, or the whole of it when it ran
-    /// into nothing.
+    /// The block up to the event, or the whole of it when there was none.
     BlockPiece beforeEvent;
 
-    /// What was left after that instant, or nothing when there was no instant.
-    /// Absent rather than empty, so a caller cannot read a second piece that
-    /// was never played.
+    /// What was left after it. Absent rather than empty, so a caller cannot
+    /// read a piece that was never played.
     std::optional<BlockPiece> afterEvent;
 
     /// Whether the slot is sounding when the block ends, which is what decides
-    /// whether a stop owes anything: the second piece when there is one, and
-    /// the first when the block was not cut.
+    /// whether a stop owes note-offs.
     bool playingAtEnd() const {
         return afterEvent ? afterEvent->playing() : beforeEvent.playing();
     }
@@ -212,15 +177,8 @@ class LaunchHandle {
      */
     void setLooping(std::optional<double> beats);
 
-    /**
-     * @brief Move the played position without restarting.
-     *
-     * Both faces, given rather than converted. A nudge moves where in the
-     * material the run is, and the material has a beat position and a seconds
-     * position that are not the same number; working one out from the other
-     * here would be the round trip this domain exists to avoid. The caller has
-     * the block and therefore has both.
-     */
+    /// Move the played position without restarting. Both faces are given
+    /// rather than converted: the caller has the block and therefore has both.
     void nudge(double beats, double seconds);
 
     /**
@@ -229,22 +187,14 @@ class LaunchHandle {
      * The audio thread's call, once per block, in order. A block passed out of
      * order or skipped puts the played range somewhere the material never was.
      *
-     * Once per block and not once per reader. A slot has two sources rendering
-     * it, audio and MIDI, and a handle advanced by each of them would be moved
-     * twice through every block. So the launcher advances every handle before
-     * anything renders (SessionLauncher.hpp) and both sources read @ref
-     * blockStatus.
+     * Once per block and not once per reader: the launcher advances every
+     * handle before anything renders (SessionLauncher.hpp), and both of a
+     * slot's sources read @ref blockStatus.
      */
     SplitStatus advance(const SyncRange& range);
 
-    /**
-     * @brief What the last advance said, for whoever renders the slot.
-     *
-     * The other half of advancing centrally: the answer is worked out once and
-     * read by both of a slot's sources. Default-constructed until the first
-     * advance, which is a slot that has not been rendered yet and is therefore
-     * not playing.
-     */
+    /// What the last advance said. Default-constructed until the first one,
+    /// which is a slot not rendered yet and therefore not playing.
     const SplitStatus& blockStatus() const {
         return blockStatus_;
     }
@@ -261,8 +211,7 @@ class LaunchHandle {
     std::optional<BeatRange> playedMonotonicRange() const;
 
     /// The run in monotonic seconds: how long it has been going, which is what
-    /// a source reading a file at the file's own speed needs and the one
-    /// quantity no tempo map can answer.
+    /// a source reading a file at its own speed needs.
     std::optional<SecondsRange> playedMonotonicSecondsRange() const;
 
     /// The last completed run, kept after a stop so a follow action can ask
@@ -293,33 +242,28 @@ class LaunchHandle {
         std::optional<double> position;
 
         /// Set only by playSynced: the run to join rather than start. All
-        /// three faces, because a handle that joined in beats alone would
-        /// agree about the bar and disagree about the sample.
+        /// three faces, or the handles agree about the bar and not the sample.
         std::optional<double> syncedTimelineOrigin;
         std::optional<double> syncedMonotonicOrigin;
         std::optional<double> syncedMonotonicSecondsOrigin;
     };
 
-    /// Begin a run whose origin is @p at, and which is already @p elapsedBeats
-    /// and @p elapsedSeconds into itself. Non-zero only for a synced launch,
-    /// which joins a run rather than starting one, and both faces are given
-    /// because a synced handle has to agree with the one it joins in both.
+    /// Begin a run at @p at, already @p elapsedBeats and @p elapsedSeconds into
+    /// itself. Non-zero only for a synced launch, which joins a run.
     void beginRun(const SyncPoint& at, double elapsedBeats = 0.0, double elapsedSeconds = 0.0);
     void endRun();
 
     /// Carry the current run through @p piece without changing state.
     void extendRun(const SyncRange& piece);
 
-    /// The run's origin expressed in @p piece's own cycle of the timeline,
-    /// on each of the two axes a source can be handed.
+    /// The run's origin in @p piece's own cycle of the timeline, on each axis.
     double virtualStart(const SyncRange& piece) const;
     double virtualStartSeconds(const SyncRange& piece) const;
 
     /// Apply whatever the block ran into, at the instant it ran into it.
     void applyEvent(bool fromPending, const SyncPoint& at);
 
-    /// The advance itself. Wrapped so the answer is kept for @ref blockStatus
-    /// in one place rather than at each of the several ways out of it.
+    /// The advance itself, wrapped so @ref blockStatus is stored in one place.
     SplitStatus advanceOver(const SyncRange& range);
 
     PlayState playState_ = PlayState::stopped;

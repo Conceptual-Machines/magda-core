@@ -19,22 +19,18 @@ using Catch::Approx;
 
 namespace {
 
-/// Half a second a beat, which is 120 bpm and the tempo every case here runs
-/// at unless it says otherwise.
+/// 120 bpm, the tempo every case here runs at.
 constexpr double kSecondsPerBeat = 0.5;
 
-/// One block, in all four faces, with the timeline and the monotonic clocks
-/// running together. The two only diverge when something wraps the timeline,
-/// which the loop cases below do on purpose.
+/// One block, in all four faces, with the timeline and monotonic clocks running
+/// together. They diverge only when something wraps the timeline.
 SyncRange block(double from, double to) {
     return SyncRange{BeatRange{from, to}, BeatRange{from, to},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat}};
 }
 
-/// A block the timeline has wrapped under: it covers @p from to @p to on the
-/// timeline and @p monotonicFrom to @p monotonicTo on the clocks that do not
-/// go back.
+/// A block the timeline has wrapped under.
 SyncRange wrapped(double from, double to, double monotonicFrom, double monotonicTo) {
     return SyncRange{BeatRange{from, to}, BeatRange{monotonicFrom, monotonicTo},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
