@@ -138,19 +138,6 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
         fingerprint_ = mixInto(fingerprint_, static_cast<std::uint64_t>(signature.denominator));
     }
 
-    // Where the tempo jumps rather than arrives: two changes at one beat, the
-    // second of which is in force from it. Collected before the grid is baked,
-    // because the grid drops the first of each such pair and the fact that a
-    // jump happened there goes with it.
-    for (std::size_t i = 1; i < tempos.size(); ++i) {
-        if (tempos[i].startBeat > tempos[i - 1].startBeat)
-            continue;
-        if (std::abs(tempos[i].bpm - tempos[i - 1].bpm) <= kBeatEpsilon)
-            continue;
-        if (steps_.empty() || steps_.back() < tempos[i].startBeat)
-            steps_.push_back(tempos[i].startBeat);
-    }
-
     // The tempo grid: where the tempo takes a new constant value, from the
     // tempo track alone.
     //
@@ -270,9 +257,12 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
     }
 }
 
-double TempoMap::nextTempoStepAfter(double beat) const {
-    const auto next = std::upper_bound(steps_.begin(), steps_.end(), beat + kBeatEpsilon);
-    return next == steps_.end() ? std::numeric_limits<double>::infinity() : *next;
+double TempoMap::nextSectionBoundaryAfter(double beat) const {
+    const auto next = std::upper_bound(
+        sections_.begin(), sections_.end(), beat + kBeatEpsilon,
+        [](double value, const Section& section) { return value < section.startBeat; });
+
+    return next == sections_.end() ? std::numeric_limits<double>::infinity() : next->startBeat;
 }
 
 const TempoMap::Section& TempoMap::sectionForBeat(double beat) const {

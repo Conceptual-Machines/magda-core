@@ -334,18 +334,61 @@ TEST_CASE("A callback that crosses a tempo step is cut at it",
     CHECK(rendered.segments[1].block.continuous);
 }
 
-TEST_CASE("A tempo ramp does not cut the callback", "[engine][transport][clock][tempo]") {
-    // A ramp is baked into four sections a beat, and cutting at each would cut
-    // every block it covers. The kink between two of them is small enough to
-    // stay inside the fraction of a sample a block's own straight line
-    // promises, so only a jump is worth a cut (TempoMap::nextTempoStepAfter).
+TEST_CASE("A steep ramp leaves every block affine to within a sample",
+          "[engine][transport][clock][tempo]") {
+    // A ramp is baked into constant-tempo sections, and between two of them the
+    // slope changes as surely as it does at a step. Over this one, a beat the
+    // map puts at sample 256 of an uncut block lands at sample 93 on the
+    // block's own line.
+    //
+    // That line is what everything inside a block is placed on: where a launch
+    // lands, where a note goes, which instant a run began on. The invariant it
+    // needs is not a segment count but this: inside a block, the line and the
+    // map are the same answer to within the sample the block is allowed.
     TransportClock clock;
     auto snapshot = playing(0.0);
-    snapshot.tempo = TempoMap({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {});
+    snapshot.tempo = TempoMap({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
 
-    const auto rendered = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2));
+    // Long enough to cross several sections: at 20 bpm a beat is three seconds,
+    // and the ramp opens with its widest ones.
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSampleRate * 2));
+    requireCovers(rendered, static_cast<int>(kSampleRate * 2));
 
-    requireCovers(rendered, static_cast<int>(kSamplesPerBeat * 2));
+    REQUIRE(rendered.segments.size() > 1);
+
+    for (const auto& segment : rendered.segments) {
+        const auto& block = segment.block;
+        REQUIRE(block.numSamples > 0);
+
+        for (const auto through : {0.0, 0.25, 0.5, 0.75}) {
+            const auto beat = block.beats.start + through * block.beats.length();
+
+            // Where the map puts it, in samples of this block. The seconds axis
+            // is exact by construction: a block runs at one second per sample
+            // rate whatever the tempo does.
+            const auto exact =
+                (snapshot.tempo.beatToTime(beat) - block.seconds.start) * kSampleRate;
+
+            CHECK(static_cast<double>(block.sampleForBeat(beat)) == approx(exact).margin(1.0));
+        }
+    }
+
+    // Crossing a tempo change is not a jump. Audio flows through one, so an op
+    // that reset here would invent a gap the transport never asked for. The
+    // first segment is the exception every callback has: starting is a jump.
+    for (std::size_t i = 1; i < rendered.segments.size(); ++i)
+        CHECK(rendered.segments[i].block.continuous);
+}
+
+TEST_CASE("One tempo throughout cuts nothing", "[engine][transport][clock][tempo]") {
+    // The cut is bounded by what the map actually does: a project at one tempo
+    // has one section, so a callback is one segment however long it is.
+    TransportClock clock;
+    const auto snapshot = playing(0.0);
+
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 8));
+
+    requireCovers(rendered, static_cast<int>(kSamplesPerBeat * 8));
     CHECK(rendered.segments.size() == 1);
 }
 
