@@ -807,6 +807,44 @@ void callback(AudioRig& rig, magda::engine::TransportClock& clock,
 
 }  // namespace
 
+TEST_CASE("A slot launched where a block would step tempo starts at its own first sample",
+          "[engine][clip][session]") {
+    // The launch and the tempo step want the same instant inside one callback.
+    // Uncut, the block spans the step, and the launcher names the split in
+    // monotonic beats and projects it onto the timeline and the seconds axes
+    // separately, each a straight line across the block (LaunchHandle.cpp).
+    // Those two lines disagree across a jump: beat 4 projects to 2.020833 s
+    // where the map puts it at 2, so the run's origin is not one instant and
+    // material second zero sits a fiftieth of a beat past material beat zero.
+    //
+    // What that costs is the head of the clip. The transport cuts the block at
+    // the step instead, which leaves one tempo inside it and both projections
+    // exact (TempoMap::nextTempoStepAfter).
+    const auto map = steppedTempo();  // 120 to beat 4, then 60
+
+    // Half a block before the step, so both the step and the launch fall inside
+    // the callback rather than on its edge.
+    auto snapshot = rollingFrom(map, 4.0 - (kBeatsPerBlock / 2.0));
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<CountingReader>());
+    rig.publish();
+
+    magda::engine::TransportClock clock;
+
+    // Monotonic beat 0.125 is timeline beat 4: the step itself.
+    rig.handle.play(kBeatsPerBlock / 2.0);
+
+    callback(rig, clock, snapshot);
+
+    // The buffer holds the last segment, which is the one the run begins on, so
+    // its samples are the material's own from the first. CountingReader reads
+    // sample n back as n, so a clip that skipped its head would say so here.
+    CHECK(rig.at(0) == Approx(0.0f));
+    CHECK(rig.at(1000) == Approx(1000.0f));
+    CHECK(rig.at(2999) == Approx(2999.0f));
+}
+
 TEST_CASE("A launched slot plays straight through a loop wrap", "[engine][clip][session]") {
     // #2324's own example. The loop is beats 4 to 8 at 60 bpm, everything
     // before beat 4 is at 120, and a slot launched at beat 7 has one second of

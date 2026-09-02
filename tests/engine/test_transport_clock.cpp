@@ -303,6 +303,52 @@ TEST_CASE("Editing the tempo moves the seconds, not the beat",
     CHECK(block.segments[0].block.continuous);
 }
 
+TEST_CASE("A callback that crosses a tempo step is cut at it",
+          "[engine][transport][clock][tempo]") {
+    // 120 held to beat 2, then 60. Two changes at the one beat, which is how a
+    // step is written rather than a ramp to it (TempoMap.hpp).
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.tempo = TempoMap({{0.0, 120.0, 0.0f}, {2.0, 120.0, 0.0f}, {2.0, 60.0, 0.0f}}, {});
+
+    // A whole beat before the step, so it lands in the middle of the callback.
+    advance(clock, snapshot, static_cast<int>(kSamplesPerBeat));
+
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2));
+
+    // Cut on the step, not around it: the callback is covered once, in order.
+    requireCovers(rendered, static_cast<int>(kSamplesPerBeat * 2));
+    REQUIRE(rendered.segments.size() == 2);
+
+    CHECK(rendered.segments[0].block.beats.start == approx(1.0));
+    CHECK(rendered.segments[0].block.beats.end == approx(2.0));
+    CHECK(rendered.segments[0].block.numSamples == static_cast<int>(kSamplesPerBeat));
+
+    // Half the tempo past it, so the same samples again are half the beats.
+    CHECK(rendered.segments[1].block.beats.start == approx(2.0));
+    CHECK(rendered.segments[1].block.beats.end == approx(2.5));
+
+    // Not a jump. Audio flows straight through a tempo change, so an op that
+    // reset here would invent a gap the transport never asked for.
+    CHECK(rendered.segments[0].block.continuous);
+    CHECK(rendered.segments[1].block.continuous);
+}
+
+TEST_CASE("A tempo ramp does not cut the callback", "[engine][transport][clock][tempo]") {
+    // A ramp is baked into four sections a beat, and cutting at each would cut
+    // every block it covers. The kink between two of them is small enough to
+    // stay inside the fraction of a sample a block's own straight line
+    // promises, so only a jump is worth a cut (TempoMap::nextTempoStepAfter).
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.tempo = TempoMap({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {});
+
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2));
+
+    requireCovers(rendered, static_cast<int>(kSamplesPerBeat * 2));
+    CHECK(rendered.segments.size() == 1);
+}
+
 TEST_CASE("A request is applied once", "[engine][transport][clock]") {
     TransportClock clock;
     const auto snapshot = playing(2.0);

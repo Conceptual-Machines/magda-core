@@ -136,6 +136,26 @@ class TempoMap {
     BeatTick tickAtOrAfter(double beat) const;
 
     /**
+     * @brief The first tempo step strictly after @p beat, or infinity.
+     *
+     * A step is two changes at one beat, where the tempo in force jumps instead
+     * of ramping to its next value. What asks is the transport, which cuts a
+     * block there and never hands one out that spans a step.
+     *
+     * That cut is what makes the rest of the engine's arithmetic true. Inside a
+     * block every position is worked out on a straight line between its two
+     * ends: where a launch lands, where a note goes, which instant a run began
+     * on. A straight line is exact within one tempo and, across a jump, out by
+     * hundreds of samples rather than the fraction of one the block's own
+     * documentation promises (exec/RenderContext.hpp).
+     *
+     * Steps only, not every section: a ramp is baked into many short sections
+     * and cutting at each would cut every block it covers, while the kink
+     * between two of them is small enough to stay inside that fraction.
+     */
+    double nextTempoStepAfter(double beat) const;
+
+    /**
      * @brief Identity of the tempo track this was baked from.
      *
      * Two maps with the same fingerprint place every beat identically. The
@@ -181,6 +201,11 @@ class TempoMap {
     const Section& sectionForTime(double seconds) const;
 
     std::vector<Section> sections_;
+
+    /// The beats the tempo jumps at, ascending. Small: a project has a handful
+    /// of steps, and most have none.
+    std::vector<double> steps_;
+
     std::uint64_t fingerprint_ = 0;
 };
 

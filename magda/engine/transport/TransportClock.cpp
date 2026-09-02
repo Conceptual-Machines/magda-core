@@ -172,6 +172,17 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (countingIn_)
             samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
 
+        // A block never spans a tempo step. Not a jump: audio flows straight
+        // through one and the next segment carries on continuous. The cut is
+        // what keeps the block's own straight lines honest, since everything
+        // inside a block is placed on the line between its two ends and that
+        // line is out by hundreds of samples across a jump (TempoMap.hpp).
+        const auto step = tempo.nextTempoStepAfter(beatAfter(tempo, samplesSinceAnchor_));
+        if (std::isfinite(step)) {
+            if (const auto untilStep = samplesUntil(tempo, step); untilStep > 0)
+                samples = std::min(samples, untilStep);
+        }
+
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from
         // inside, it can still be zero, for a loop so short that its end is not
