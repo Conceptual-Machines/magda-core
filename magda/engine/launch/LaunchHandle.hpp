@@ -69,16 +69,6 @@ struct SyncPoint {
     double monotonicSeconds = 0.0;
 };
 
-/// Where a run began, in the two domains a source reads it against. One value,
-/// because a run whose faces came from different instants would put a clip's
-/// notes and its samples in different places.
-struct RunOrigin {
-    double beat = 0.0;
-    double seconds = 0.0;
-
-    bool operator==(const RunOrigin&) const = default;
-};
-
 /// One piece of a block. A piece sounds exactly when there is a run behind it,
 /// so the origin is the whole answer and there is no flag to disagree with it.
 struct BlockPiece {

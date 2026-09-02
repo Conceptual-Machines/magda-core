@@ -46,4 +46,22 @@ struct SecondsRange {
     bool operator==(const SecondsRange&) const = default;
 };
 
+/**
+ * @brief Where a run began, in the two domains a source reads it against.
+ *
+ * One value, because a run whose faces came from different instants would put a
+ * clip's notes and its samples in different places. The two are not one number
+ * converted: a map says where a beat sits, not how long a run has lasted, so
+ * each face is projected from its own monotonic domain (#2324).
+ *
+ * Here rather than with the launcher because it is what shifts a block onto a
+ * run's own axes, and the block is not a launcher concept.
+ */
+struct RunOrigin {
+    double beat = 0.0;
+    double seconds = 0.0;
+
+    bool operator==(const RunOrigin&) const = default;
+};
+
 }  // namespace magda::engine

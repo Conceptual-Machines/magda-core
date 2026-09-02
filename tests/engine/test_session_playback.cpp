@@ -397,11 +397,46 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
     // transport was doing.
     CHECK_FALSE(material.continuous);
 
-    // The project's map does not come with it: both axes moved, by different
-    // amounts, so what is left is the block's own line.
-    CHECK(material.tempo == nullptr);
+    // Both faces of the block agree with the axes it was given, which is what
+    // every reader asks it for first.
     CHECK(material.beatAtTime(material.seconds.start) == Approx(material.beats.start));
     CHECK(material.beatAtTime(material.seconds.end) == Approx(material.beats.end));
+}
+
+TEST_CASE("A session block answers about beats through the map, not its own line",
+          "[engine][clip][session]") {
+    // 120 held to beat 4, which is two seconds in, then 60. Two changes at the
+    // one beat, which is how a step is written rather than a ramp to it
+    // (TempoMap.hpp). A block ending on the step, so anything asked about past
+    // its end is asked across it.
+    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {4.0, 120.0, 0.0f}, {4.0, 60.0, 0.0f}},
+                                      {{0.0, 4, 4}});
+    const auto block = blockOnMap(map, 2.0 - (kBlockSize / kSampleRate));
+
+    const magda::engine::RunOrigin origin{block.beats.start, block.seconds.start};
+    const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
+    const auto material = magda::engine::materialBlock(block, whole, origin);
+
+    // The map comes with the block, and the shift it was moved by comes with
+    // it too, which is what keeps the map answerable here.
+    CHECK(material.tempo == &map);
+    CHECK(material.runOrigin == origin);
+
+    // A cell boundary past the end of the block, which is where ClipVoice reads
+    // (RenderContext.hpp): the grid is anchored to the event rather than to the
+    // block, so a cell runs on past it.
+    const auto beyond = material.seconds.end + 0.05;
+    const auto expected = map.timeToBeat(beyond + origin.seconds) - origin.beat;
+
+    CHECK(material.beatAtTime(beyond) == Approx(expected));
+
+    // And that is not what this block's own two ends say, which is the whole
+    // point: they carry the slope it happened to have before the step.
+    const auto straightLine =
+        material.beats.start +
+        ((beyond - material.seconds.start) / material.seconds.length()) * material.beats.length();
+
+    CHECK(straightLine != Approx(expected));
 }
 
 TEST_CASE("A run already under way is continuous with the block before it",
@@ -709,7 +744,8 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
     // the material beat back through the tempo map instead would hand the block
     // a seconds span half its sample span in a section at half the tempo, and
     // the next block would ask for a position this one had already read past.
-    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+    const magda::engine::TempoMap map({{0.0, 120.0, 0.0f}, {8.0, 120.0, 0.0f}, {8.0, 60.0, 0.0f}},
+                                      {{0.0, 4, 4}});
 
     AudioRig rig;
     rig.give(1, 4.0, std::make_unique<CountingReader>());
@@ -742,9 +778,12 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
 
 namespace {
 
-/// 120 bpm to beat 4 and 60 bpm from there: #2324's shape.
+/// 120 bpm to beat 4 and 60 bpm from there: #2324's shape. Two changes at the
+/// one beat, because a single change ramps to its bpm rather than stepping to
+/// it and the halves either side of beat 4 are the whole point (TempoMap.hpp).
 magda::engine::TempoMap steppedTempo() {
-    return magda::engine::TempoMap({{0.0, 120.0, 0.0f}, {4.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+    return magda::engine::TempoMap({{0.0, 120.0, 0.0f}, {4.0, 120.0, 0.0f}, {4.0, 60.0, 0.0f}},
+                                   {{0.0, 4, 4}});
 }
 
 /// Playing from @p fromBeat on @p map, with the metronome off.

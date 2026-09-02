@@ -203,8 +203,13 @@ struct BlockInfo {
         // one the map has there. A clip whose rate follows the tempo is read at
         // instants beyond the block that produced them (ClipVoice's cells), so
         // it is exactly the caller that cannot afford the straight line.
+        //
+        // Through the origin in both directions on a shifted block, which is
+        // what keeps the map usable there: the moment goes back onto the
+        // timeline to be asked about, and the answer comes back onto the run's
+        // own axis. Zero on a timeline block, where this is the map itself.
         if (tempo != nullptr)
-            return tempo->timeToBeat(moment);
+            return tempo->timeToBeat(moment + runOrigin.seconds) - runOrigin.beat;
 
         if (seconds.empty())
             return beats.start;
@@ -216,7 +221,26 @@ struct BlockInfo {
     /// The map this block was cut from, or null for a caller that assembles a
     /// block by hand. Not owned, and it outlives the block: what publishes a
     /// transport keeps it alive for as long as the callback reading it runs.
+    ///
+    /// Always the timeline's, even where the axes above are not: a shifted
+    /// block records the shift below rather than pretending the map is its own.
+    /// Anything reaching for this directly is asking a timeline question and
+    /// has to put @ref runOrigin back first.
     const TempoMap* tempo = nullptr;
+
+    /**
+     * @brief What the two axes above were shifted by, or zero on the timeline.
+     *
+     * A session slot plays over a block moved onto the run's own origin
+     * (clip/SessionPlayback.hpp), and the two faces move by different amounts:
+     * a beat is where something sits and a second is how long a run has
+     * lasted, and under a tempo curve those are not one number (#2324).
+     *
+     * Carried so the shift stays undoable. Dropping the map instead would
+     * leave the block's own two ends as the only answer, and that straight
+     * line is exactly what the cell path above cannot afford.
+     */
+    RunOrigin runOrigin;
 };
 
 }  // namespace magda::engine

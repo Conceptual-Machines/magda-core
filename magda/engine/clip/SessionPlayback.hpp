@@ -62,10 +62,13 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
         SecondsRange{block.seconds.start - origin.seconds, block.seconds.end - origin.seconds};
     material.continuous = runsOn(block, range, origin);
 
-    // Both axes moved, by different amounts, so the project's map would answer
-    // about the timeline. Dropped, so beatAtTime falls back to this block's own
-    // two ends, which are the material's.
-    material.tempo = nullptr;
+    // Both axes moved, by different amounts, so the project's map answers about
+    // the timeline rather than about this. Recorded rather than dropped:
+    // beatAtTime puts the origin back to ask and takes it off the answer, and a
+    // reader consuming its material against beats is asked about instants past
+    // the end of the block, where the block's own two ends are a straight line
+    // through whatever the tempo does next (RenderContext.hpp).
+    material.runOrigin = origin;
     return material;
 }
 
@@ -79,7 +82,7 @@ inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range
     material.seconds = SecondsRange{secondsWithin(block, range.start) - origin.seconds,
                                     secondsWithin(block, range.end) - origin.seconds};
     material.continuous = runsOn(block, range, origin);
-    material.tempo = nullptr;  // see materialBlock
+    material.runOrigin = origin;  // see materialBlock
     return material;
 }
 
