@@ -1,6 +1,8 @@
 #include "StepPatternState.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <utility>
 
 namespace magda::step_pattern {
 

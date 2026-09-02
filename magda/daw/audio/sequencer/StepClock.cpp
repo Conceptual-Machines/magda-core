@@ -1,5 +1,8 @@
 #include "sequencer/StepClock.hpp"
 
+#include <algorithm>
+#include <cstddef>
+
 #include "transport/RampCurve.hpp"
 
 namespace magda::daw::audio::sequencer {

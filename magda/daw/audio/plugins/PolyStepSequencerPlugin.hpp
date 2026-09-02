@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"

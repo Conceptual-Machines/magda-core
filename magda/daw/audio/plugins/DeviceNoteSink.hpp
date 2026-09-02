@@ -1,5 +1,7 @@
 #pragma once
 
+#include <utility>
+
 #include "plugins/MagdaDevice.hpp"
 #include "sequencer/NoteSink.hpp"
 

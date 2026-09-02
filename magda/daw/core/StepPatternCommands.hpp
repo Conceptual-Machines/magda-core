@@ -2,6 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <functional>
+#include <utility>
+
 #include "ChainNodePath.hpp"
 #include "CommandPattern.hpp"
 #include "StepPatternState.hpp"

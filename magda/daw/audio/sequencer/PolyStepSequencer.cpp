@@ -1,6 +1,7 @@
 #include "sequencer/PolyStepSequencer.hpp"
 
 #include <algorithm>
+#include <cstddef>
 
 namespace magda::daw::audio::sequencer {
 

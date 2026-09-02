@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include "plugins/PolyStepSequencerPlugin.hpp"
 #include "plugins/StepSequencerPlugin.hpp"
 #include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"

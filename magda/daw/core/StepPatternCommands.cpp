@@ -1,5 +1,8 @@
 #include "StepPatternCommands.hpp"
 
+#include <memory>
+#include <utility>
+
 #include "DeviceInfo.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"

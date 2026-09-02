@@ -1,6 +1,7 @@
 #include "plugins/StepSequencerPlugin.hpp"
 
 #include <algorithm>
+#include <cstddef>
 
 #include "plugins/DeviceNoteSink.hpp"
 

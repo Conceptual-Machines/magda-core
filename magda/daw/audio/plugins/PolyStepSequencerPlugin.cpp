@@ -1,6 +1,7 @@
 #include "plugins/PolyStepSequencerPlugin.hpp"
 
 #include <algorithm>
+#include <cstddef>
 
 #include "plugins/DeviceNoteSink.hpp"
 
