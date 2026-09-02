@@ -143,15 +143,32 @@ juce::ValueTree legacyPluginTree(const juce::String& savedState) {
 /// compiled pack (whose parameters were always normalised, docs included).
 ///
 /// Documents for these devices carry parameter values in the DEVICE'S DISPLAY
-/// DOMAIN. That is what every document captured from the retired host-native
-/// plugins already holds - their automatable parameters ran in display ranges -
-/// so released projects restore unchanged. The wrapper's parameters are
-/// normalised [0,1] slots, so capture and apply convert at this boundary.
+/// DOMAIN, declared by the document's `paramsDomain` marker. The wrapper's
+/// parameters are normalised [0,1] slots, so capture and apply convert at this
+/// boundary.
 const MagdaDevice* displayDomainDeviceFor(te::Plugin& plugin, const juce::String& deviceType) {
     auto* adapter = dynamic_cast<TracktionMagdaDevicePlugin*>(&plugin);
     if (adapter == nullptr || findInternalPluginSpec(deviceType) == nullptr)
         return nullptr;
     return &adapter->device();
+}
+
+/// Whether an UNMARKED document for @p deviceType holds display-domain values.
+///
+/// A document without the `paramsDomain` marker predates it, so its values are
+/// in whatever range the capturing parameter ran in. For the devices that
+/// crossed to the wrapper in #2312 that can only be the retired plugin's
+/// display range - they were never behind the wrapper before the marker
+/// existed. For everything that was already wrapped on the target branch (Test
+/// Tone, Sidechain, the runtime Faust device, the analyzers) an unmarked
+/// document is normalised and must apply raw.
+bool unmarkedDocIsDisplayDomain(const juce::String& deviceType) {
+    static constexpr const char* kPortedWithMarker[] = {
+        "magda_rings",       "magda_elements", "magda_clouds",
+        "magda_convolution", "magda_strum",    "arpeggiator",
+    };
+    return std::any_of(std::begin(kPortedWithMarker), std::end(kPortedWithMarker),
+                       [&deviceType](const char* id) { return deviceType == id; });
 }
 
 juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& existingState) {
@@ -184,6 +201,7 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
 
     juce::StringArray parameterProperties;
     const auto* displayDevice = displayDomainDeviceFor(plugin, doc.deviceType);
+    doc.paramsAreDisplayDomain = displayDevice != nullptr;
 
     for (int i = 0; i < params.size(); ++i) {
         auto* param = params[i];
@@ -232,6 +250,9 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
 
     const auto& params = plugin.getAutomatableParameters();
     const auto* displayDevice = displayDomainDeviceFor(plugin, doc->deviceType);
+    const bool convertFromDisplay =
+        displayDevice != nullptr &&
+        (doc->paramsAreDisplayDomain || unmarkedDocIsDisplayDomain(doc->deviceType));
 
     for (const auto& saved : doc->params) {
         te::AutomatableParameter* param = nullptr;
@@ -252,7 +273,7 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
 
         if (param != nullptr) {
             float value = saved.value;
-            if (displayDevice != nullptr)
+            if (convertFromDisplay)
                 value = ParameterUtils::realToNormalized(
                     value, displayDevice->parameterInfo(params.indexOf(param)));
             param->setParameterFromHost(value, juce::sendNotificationSync);

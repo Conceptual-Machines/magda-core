@@ -9,6 +9,7 @@
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/SidechainPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -197,17 +198,43 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
                                   100.0f, 0.5f);
         expectWithinAbsoluteError(displayOf(audio::ArpeggiatorPlugin::kGate, "gate"), 0.8f, 0.005f);
 
-        // And the capture side writes display values back, so the document is
-        // stable across a save/load cycle.
+        // And the capture side writes display values back, marked as such, so
+        // the document is stable across a save/load cycle.
         const auto recaptured = ds::decode(ta::captureInternalDeviceState(*plugin, {}));
         expect(recaptured.has_value());
         if (recaptured) {
+            expect(recaptured->paramsAreDisplayDomain,
+                   "wrapper capture did not mark the parameter domain");
             for (const auto& saved : recaptured->params)
                 if (saved.id == "fixedvel")
                     expectWithinAbsoluteError(saved.value, 100.0f, 0.5f);
         }
 
         plugin->deleteFromParent();
+
+        beginTest("An unmarked normalised document applies raw to an already-wrapped device");
+
+        // The sidechain was behind the wrapper before the domain marker
+        // existed, so its unmarked v2 documents hold normalised values and must
+        // not be reinterpreted as display: a normalised attack of 0.5 means
+        // half the knob (~25 ms), not 0.5 ms.
+        auto sidechain = createPlugin(edit, audio::SidechainPlugin::xmlTypeName);
+        expect(sidechain != nullptr);
+        if (sidechain == nullptr)
+            return;
+
+        ds::Doc sidechainDoc;
+        sidechainDoc.deviceType = audio::SidechainPlugin::xmlTypeName;
+        sidechainDoc.params.push_back({audio::SidechainPlugin::kAttackParamIndex, "attack", 0.5f});
+        expect(!ds::decode(ds::encode(sidechainDoc))->paramsAreDisplayDomain);
+        ta::applyDeviceStateParameters(*sidechain, ds::encode(sidechainDoc));
+
+        if (auto attack = sidechain->getAutomatableParameterByID("attack"))
+            expectWithinAbsoluteError(attack->getCurrentBaseValue(), 0.5f, 0.001f);
+        else
+            expect(false, "sidechain lost its 'attack' parameter");
+
+        sidechain->deleteFromParent();
     }
 
     // The frozen index is authoritative, and the stable id is what re-seats a

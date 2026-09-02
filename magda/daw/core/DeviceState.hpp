@@ -73,6 +73,11 @@ struct Doc {
     int version = kSchemaVersion;
     juce::String deviceType;
     std::vector<ParamValue> params;
+    /// Whether `params` values are in the device's DISPLAY domain rather than
+    /// the capturing parameter's own range. Set by captures taken from devices
+    /// behind the host adapter since #2312; readers that predate the field
+    /// ignore it, which is safe because absence is meaningful (see the bridge).
+    bool paramsAreDisplayDomain = false;
     Node root;
 };
 

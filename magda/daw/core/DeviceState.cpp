@@ -9,6 +9,7 @@ namespace {
 const juce::Identifier kKeySchema("schema");
 const juce::Identifier kKeyDevice("device");
 const juce::Identifier kKeyParams("params");
+const juce::Identifier kKeyParamsDomain("paramsDomain");
 const juce::Identifier kKeyProps("props");
 const juce::Identifier kKeyChildren("children");
 const juce::Identifier kKeyType("type");
@@ -131,6 +132,8 @@ juce::String encode(const Doc& doc) {
             params.add(juce::var(paramObj));
         }
         obj->setProperty(kKeyParams, juce::var(params));
+        if (doc.paramsAreDisplayDomain)
+            obj->setProperty(kKeyParamsDomain, "display");
     }
 
     if (doc.root.props.size() > 0)
@@ -172,6 +175,8 @@ std::optional<Doc> decode(const juce::String& text) {
     doc.deviceType = obj->getProperty(kKeyDevice).toString();
     if (doc.deviceType.isEmpty())
         return std::nullopt;
+
+    doc.paramsAreDisplayDomain = obj->getProperty(kKeyParamsDomain).toString() == "display";
 
     if (auto* params = obj->getProperty(kKeyParams).getArray()) {
         for (const auto& entry : *params) {

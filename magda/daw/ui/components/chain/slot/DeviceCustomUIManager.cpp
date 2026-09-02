@@ -944,8 +944,13 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         arpeggiatorUI_->onSettingsEdited = [this] {
             auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
             auto* bridge = audioEngine != nullptr ? audioEngine->getAudioBridge() : nullptr;
-            if (bridge != nullptr)
+            if (bridge != nullptr) {
                 bridge->getPluginManager().capturePluginState(devicePath_);
+                // The capture is the model update - DeviceInfo.pluginState is
+                // what autosave writes and what the engine's device factory
+                // builds from - so the edit also has to dirty the project.
+                ProjectManager::getInstance().markDirty();
+            }
         };
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
