@@ -1,6 +1,9 @@
 #pragma once
 
 #include <optional>
+#include <tuple>
+
+#include "core/TypeIds.hpp"
 
 /**
  * @file LaunchHandle.hpp
@@ -23,6 +26,25 @@
  */
 
 namespace magda::engine {
+
+/**
+ * @brief Which slot a launch handle belongs to.
+ *
+ * A track and a scene, because that is what a slot is in the model. The op that
+ * renders a session is per track and this is per slot on purpose: an op is a
+ * place in the graph and wants to be stable, a handle is state and wants to be
+ * per thing that has state.
+ */
+struct SlotKey {
+    TrackId trackId = INVALID_TRACK_ID;
+    int sceneIndex = -1;
+
+    bool operator==(const SlotKey&) const = default;
+
+    bool operator<(const SlotKey& other) const {
+        return std::tie(trackId, sceneIndex) < std::tie(other.trackId, other.sceneIndex);
+    }
+};
 
 /// A stretch of beats. Half open: a block ending at 4.0 and one starting there
 /// do not both contain beat 4.

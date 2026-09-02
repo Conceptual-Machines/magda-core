@@ -364,6 +364,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The launcher's state machine (#2300): quantized launch and stop against
     # monotonic beats, and the split a block straddling one reports.
     list(APPEND TEST_SOURCES engine/test_launch_handle.cpp)
+    # Which slot handles survive a publish (#2301): the plan is per track and a
+    # handle is per slot, so the snapshot is what names them.
+    list(APPEND TEST_SOURCES engine/test_launch_handle_lifetime.cpp)
     list(APPEND TEST_SOURCES audio/test_click_generator.cpp)
     list(APPEND TEST_SOURCES audio/test_prefetch_stream.cpp)
     list(APPEND TEST_SOURCES audio/test_source_readers.cpp)

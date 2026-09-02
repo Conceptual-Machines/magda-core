@@ -80,7 +80,7 @@ ClipSnapshot compile(std::vector<ClipInfo> clips, const TempoMap& tempoMap) {
 const std::string kGoldenDump =
     "magda-clip-snapshot v1\n"
     "tempo=a95350905fc122eb tracks=1\n"
-    "track 1 audio=2 midi=1\n"
+    "track 1 audio=2 midi=1 session=0\n"
     "  audio clip=1 span=0.000..8.000b 0.000..4.000s fade=0.000/1.000 curve=lin/lin "
     "behaviour=0/0 gain=0.0 pan=0.00 launch=256\n"
     "    event 1 src=7 file=loop.wav rate=48000 span=0.000..8.000b 0.000..4.000s anchor=0 "
@@ -603,4 +603,186 @@ TEST_CASE("The dump is the snapshot's golden surface", "[engine][clip]") {
 
     INFO(text);
     CHECK(text == kGoldenDump);
+}
+
+namespace {
+
+/// A lane whose session slots are @p slots, with nothing in its arrangement.
+ClipSnapshot compileSession(std::vector<ClipInfo> slots, const TempoMap& tempoMap) {
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.session = std::move(slots);
+    return compileClipSnapshot({lane}, makeSources(), tempoMap);
+}
+
+/// An audio clip in a scene, with the leftover placement a session clip really
+/// carries: nothing writes startBeat for one, so it is whatever it was.
+ClipInfo makeSessionClip(magda::ClipId id, int sceneIndex, double startBeat, double lengthBeats) {
+    auto clip = makeAudioClip(id, startBeat, lengthBeats);
+    clip.view = ClipView::Session;
+    clip.sceneIndex = sceneIndex;
+    return clip;
+}
+
+}  // namespace
+
+TEST_CASE("A session slot is compiled at the origin, whatever its placement says",
+          "[engine][clip][session]") {
+    // The leftover beat is the point: the scene index is a session clip's
+    // position and nothing writes the placement, so a slot compiled from what
+    // the field happens to hold would start wherever the clip last was in the
+    // arrangement (#2301).
+    const auto snapshot = compileSession({makeSessionClip(1, 2, 18.5, 8.0)}, makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto& track = snapshot.tracks.front();
+
+    CHECK(track.audio.empty());
+    REQUIRE(track.session.size() == 1);
+
+    const auto* slot = track.slot(2);
+    REQUIRE(slot != nullptr);
+    CHECK(slot->sceneIndex == 2);
+    CHECK(slot->lengthBeats == Catch::Approx(8.0));
+
+    REQUIRE(slot->audio.size() == 1);
+    CHECK(slot->audio.front().span.startBeat == Catch::Approx(0.0));
+    CHECK(slot->audio.front().span.endBeat == Catch::Approx(8.0));
+}
+
+TEST_CASE("A session slot compiles through the arrangement's own path", "[engine][clip][session]") {
+    // The reason slots are compiled by recursing rather than by a second
+    // implementation: a clip dragged from a slot onto the timeline has to sound
+    // the same, so there is one answer about fades, events and stretch.
+    const auto tempoMap = makeTempoMap();
+
+    const auto asSlot = compileSession({makeSessionClip(1, 0, 18.5, 8.0)}, tempoMap);
+    const auto asClip = compile({makeAudioClip(1, 0.0, 8.0)}, tempoMap);
+
+    REQUIRE(asSlot.tracks.size() == 1);
+    REQUIRE(asClip.tracks.size() == 1);
+
+    const auto* slot = asSlot.tracks.front().slot(0);
+    REQUIRE(slot != nullptr);
+    REQUIRE(slot->audio.size() == 1);
+    REQUIRE(asClip.tracks.front().audio.size() == 1);
+
+    const auto& fromSlot = slot->audio.front();
+    const auto& fromLane = asClip.tracks.front().audio.front();
+
+    CHECK(fromSlot.span.startBeat == Catch::Approx(fromLane.span.startBeat));
+    CHECK(fromSlot.span.endBeat == Catch::Approx(fromLane.span.endBeat));
+    CHECK(fromSlot.events.size() == fromLane.events.size());
+    REQUIRE(!fromSlot.events.empty());
+    CHECK(fromSlot.events.front().span.startSeconds ==
+          Catch::Approx(fromLane.events.front().span.startSeconds));
+}
+
+TEST_CASE("Slots are found by scene and kept in scene order", "[engine][clip][session]") {
+    const auto snapshot =
+        compileSession({makeSessionClip(3, 5, 0.0, 4.0), makeSessionClip(1, 0, 0.0, 4.0),
+                        makeSessionClip(2, 2, 0.0, 4.0)},
+                       makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto& track = snapshot.tracks.front();
+    REQUIRE(track.session.size() == 3);
+
+    CHECK(track.session[0].sceneIndex == 0);
+    CHECK(track.session[1].sceneIndex == 2);
+    CHECK(track.session[2].sceneIndex == 5);
+
+    CHECK(track.slot(2) != nullptr);
+    CHECK(track.slot(5) != nullptr);
+
+    // A scene nobody filled is not a slot, rather than an empty one a launch
+    // would have to check before binding.
+    CHECK(track.slot(1) == nullptr);
+    CHECK(track.slot(9) == nullptr);
+}
+
+TEST_CASE("What a session lane will not play says so", "[engine][clip][session]") {
+    SECTION("an arrangement clip in a session lane is reported") {
+        auto clip = makeAudioClip(1, 0.0, 8.0);  // left as Arrangement
+
+        const auto snapshot = compileSession({clip}, makeTempoMap());
+        CHECK(snapshot.tracks.empty());
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("arrangement clip") != std::string::npos);
+    }
+
+    SECTION("a session clip in no scene is reported") {
+        const auto snapshot = compileSession({makeSessionClip(1, -1, 0.0, 8.0)}, makeTempoMap());
+        CHECK(snapshot.tracks.empty());
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("no scene") != std::string::npos);
+    }
+
+    SECTION("a disabled slot is skipped without comment") {
+        auto clip = makeSessionClip(1, 0, 0.0, 8.0);
+        clip.enabled = false;
+
+        const auto snapshot = compileSession({clip}, makeTempoMap());
+        CHECK(snapshot.tracks.empty());
+        CHECK(snapshot.diagnostics.empty());
+    }
+}
+
+TEST_CASE("A track carrying both views keeps them apart", "[engine][clip][session]") {
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.clips.push_back(makeAudioClip(1, 0.0, 8.0));
+    lane.session.push_back(makeSessionClip(2, 0, 0.0, 4.0));
+
+    const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto& track = snapshot.tracks.front();
+
+    // Both, because they are not alternatives: which one sounds is decided at
+    // launch rather than at compile.
+    REQUIRE(track.audio.size() == 1);
+    CHECK(track.audio.front().clipId == 1);
+    REQUIRE(track.session.size() == 1);
+    REQUIRE(track.slot(0)->audio.size() == 1);
+    CHECK(track.slot(0)->audio.front().clipId == 2);
+    CHECK(snapshot.diagnostics.empty());
+}
+
+TEST_CASE("A session slot is in the dump, in the arrangement's own detail",
+          "[engine][clip][session]") {
+    // The dump is the snapshot's canonical surface, so a session slot has to be
+    // in it at the same detail an arrangement clip is. Printing only the count
+    // would let two materially different session snapshots compare identical,
+    // which is the one thing this file exists to prevent.
+    const auto snapshot = compileSession({makeSessionClip(1, 3, 18.5, 8.0)}, makeTempoMap());
+    const auto text = dumpClipSnapshot(snapshot);
+
+    INFO(text);
+
+    CHECK(text.find("track 1 audio=0 midi=0 session=1") != std::string::npos);
+    CHECK(text.find("slot scene=3 length=8.000b audio=1 midi=0") != std::string::npos);
+
+    // The slot's own material, not just its header: the clip, its span at the
+    // origin, and the event underneath it with the source it reads.
+    CHECK(text.find("audio clip=1 span=0.000..8.000b") != std::string::npos);
+    CHECK(text.find("event 1 src=7 file=loop.wav") != std::string::npos);
+
+    CHECK(text.find("/tmp/") == std::string::npos);
+}
+
+TEST_CASE("Two session snapshots that differ do not dump alike", "[engine][clip][session]") {
+    const auto tempoMap = makeTempoMap();
+
+    const auto inScene0 =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 0, 0.0, 8.0)}, tempoMap));
+    const auto inScene4 =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 4, 0.0, 8.0)}, tempoMap));
+    const auto shorter =
+        dumpClipSnapshot(compileSession({makeSessionClip(1, 0, 0.0, 4.0)}, tempoMap));
+
+    // The same clip in a different slot, and the same slot at a different
+    // length. Both were invisible before the dump carried the session.
+    CHECK(inScene0 != inScene4);
+    CHECK(inScene0 != shorter);
 }

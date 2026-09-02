@@ -109,6 +109,44 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
     return removed;
 }
 
+/// Handles the model no longer names.
+///
+/// By slot when the caller knew the slots, and by track when it did not. The
+/// live plan cannot help here the way it helps everything else: the session op
+/// is per track, so it says which tracks still have a session and nothing about
+/// which scenes are filled.
+///
+/// Track granularity alone is not a leak, it is stale state that is observable.
+/// A slot emptied while its track remains would keep its handle for ever, and
+/// the next clip dropped into that scene would come up already playing, at the
+/// old one's loop phase and played range (#2301).
+///
+/// **This is safe to narrow only while nothing binds a handle to the audio
+/// side.** Retiring by slot removes an object the live plan cannot name, so the
+/// moment a session source holds a handle pointer, the bindings that name it
+/// have to be a keep set here as well, exactly as the live plan is for
+/// everything else. That is #2305's, along with the request lane.
+std::size_t eraseUnnamedSlots(std::map<SlotKey, std::unique_ptr<LaunchHandle>>& map,
+                              const std::set<TrackId>& tracks,
+                              const std::optional<std::set<SlotKey>>& slots) {
+    std::size_t removed = 0;
+    for (auto entry = map.begin(); entry != map.end();) {
+        // Both, rather than the slots alone. A snapshot publishes on its own
+        // schedule, so the one in hand can still name slots on a track the
+        // model has since deleted; the track is what settles that, and the
+        // slots only narrow it further.
+        const auto named =
+            tracks.contains(entry->first.trackId) && (!slots || slots->contains(entry->first));
+        if (named) {
+            ++entry;
+            continue;
+        }
+        entry = map.erase(entry);
+        ++removed;
+    }
+    return removed;
+}
+
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
@@ -119,6 +157,8 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
         prepareAll(devices_, context);
         prepareAll(clipAudio_, context);
         prepareAll(clipMidi_, context);
+        prepareAll(sessionAudio_, context);
+        prepareAll(sessionMidi_, context);
         prepareAll(audioInputs_, context);
         prepareAll(midiInputs_, context);
     }
@@ -150,6 +190,20 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                         return factory_.createClipMidiSource(id);
                     }))
                     bindings.clipMidi[trackId] = source;
+                break;
+
+            case OpKind::SessionAudio:
+                if (auto* source = realiseOne(sessionAudio_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionAudioSource(id);
+                    }))
+                    bindings.sessionAudio[trackId] = source;
+                break;
+
+            case OpKind::SessionMidi:
+                if (auto* source = realiseOne(sessionMidi_, trackId, context, [this](TrackId id) {
+                        return factory_.createSessionMidiSource(id);
+                    }))
+                    bindings.sessionMidi[trackId] = source;
                 break;
 
             case OpKind::AudioInput:
@@ -228,6 +282,8 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
             case OpKind::ClipMidi:
             case OpKind::AudioInput:
             case OpKind::MidiInput:
+            case OpKind::SessionAudio:
+            case OpKind::SessionMidi:
                 keep.tracks.insert(op.key.trackId);
                 break;
             case OpKind::Meter:
@@ -246,8 +302,10 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
 
     std::size_t removed =
         eraseUnnamed(devices_, keep.devices) + eraseUnnamed(clipAudio_, keep.tracks) +
-        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
-        eraseUnnamed(midiInputs_, keep.tracks);
+        eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
+        eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
+        eraseUnnamed(midiInputs_, keep.tracks) +
+        eraseUnnamedSlots(handles_, keep.tracks, keep.slots);
 
     for (auto entry = meters_.begin(); entry != meters_.end();) {
         if (isNamed(entry->first, keep)) {
@@ -299,14 +357,43 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     return ids;
 }
 
+LaunchHandle& RuntimeStateStore::handle(const SlotKey& key) {
+    auto& slot = handles_[key];
+    if (slot == nullptr)
+        slot = std::make_unique<LaunchHandle>();
+    return *slot;
+}
+
+LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
+    const auto it = handles_.find(key);
+    return it == handles_.end() ? nullptr : it->second.get();
+}
+
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
     const auto found = valueTaps_.find(key);
     return found == valueTaps_.end() ? nullptr : found->second.get();
 }
 
 std::size_t RuntimeStateStore::size() const {
-    return devices_.size() + clipAudio_.size() + clipMidi_.size() + audioInputs_.size() +
-           midiInputs_.size() + meters_.size() + valueTaps_.size();
+    return devices_.size() + clipAudio_.size() + clipMidi_.size() + sessionAudio_.size() +
+           sessionMidi_.size() + handles_.size() + audioInputs_.size() + midiInputs_.size() +
+           meters_.size() + valueTaps_.size();
+}
+
+RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
+                                       const TrackInfo& master, const ClipSnapshot& clips) {
+    auto ids = collectRuntimeStateIds(tracks, master);
+
+    // Empty is a real answer here and absent is not: a project whose every slot
+    // was emptied names no slots, and every handle should go. Set the container
+    // first so it is present even when nothing fills it.
+    ids.slots.emplace();
+
+    for (const auto& track : clips.tracks)
+        for (const auto& slot : track.session)
+            ids.slots->insert(SlotKey{track.trackId, slot.sceneIndex});
+
+    return ids;
 }
 
 }  // namespace magda::engine

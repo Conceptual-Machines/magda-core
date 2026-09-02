@@ -484,6 +484,20 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
+            case OpKind::SessionAudio:
+                audioSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
+                if (audioSourceForOp_[i] == nullptr)
+                    messages.push_back(describe(i) + "no session audio source bound for track " +
+                                       std::to_string(trackId) + ", it renders silence");
+                break;
+
+            case OpKind::SessionMidi:
+                midiSourceForOp_[i] = findMidiSource(bindings.sessionMidi, trackId);
+                if (midiSourceForOp_[i] == nullptr)
+                    messages.push_back(describe(i) + "no session MIDI source bound for track " +
+                                       std::to_string(trackId) + ", it renders silence");
+                break;
+
             case OpKind::ClipMidi:
                 midiSourceForOp_[i] = findMidiSource(bindings.clipMidi, trackId);
                 if (midiSourceForOp_[i] == nullptr)
@@ -1178,7 +1192,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
     switch (op.kind) {
         case OpKind::ClipAudio:
-        case OpKind::AudioInput: {
+        case OpKind::AudioInput:
+        case OpKind::SessionAudio: {
             auto out = audioOut(id, 0, numSamples);
             if (value.silent || audioSourceForOp_[i] == nullptr)
                 out.clear();
@@ -1188,7 +1203,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         }
 
         case OpKind::ClipMidi:
-        case OpKind::MidiInput: {
+        case OpKind::MidiInput:
+        case OpKind::SessionMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
             if (!value.silent && midiSourceForOp_[i] != nullptr) {

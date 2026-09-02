@@ -18,6 +18,8 @@ int arityOf(OpKind kind) {
         case OpKind::ClipMidi:
         case OpKind::AudioInput:
         case OpKind::MidiInput:
+        case OpKind::SessionAudio:
+        case OpKind::SessionMidi:
             return 0;
         case OpKind::Device:
             return 3;  // audio, MIDI, sidechain audio
@@ -57,6 +59,10 @@ const char* toString(OpKind kind) {
             return "AudioInput";
         case OpKind::MidiInput:
             return "MidiInput";
+        case OpKind::SessionAudio:
+            return "SessionAudio";
+        case OpKind::SessionMidi:
+            return "SessionMidi";
         case OpKind::Device:
             return "Device";
         case OpKind::MixAudio:
@@ -101,6 +107,10 @@ const char* toString(OpRole role) {
             return "liveAudioInput";
         case OpRole::LiveMidiInput:
             return "liveMidiInput";
+        case OpRole::SessionAudio:
+            return "sessionAudio";
+        case OpRole::SessionMidi:
+            return "sessionMidi";
         case OpRole::TrackAudioInput:
             return "trackAudioInput";
         case OpRole::TrackMidiInput:

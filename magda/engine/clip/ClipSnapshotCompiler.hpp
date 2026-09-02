@@ -45,7 +45,17 @@ struct ClipSourceInfo {
  */
 struct ClipLane {
     TrackId trackId = INVALID_TRACK_ID;
+
+    /// The arrangement's clips, positioned on the timeline. A session clip here
+    /// is a diagnostic rather than a clip: the two are different questions and
+    /// the caller is the one that knows which it is asking.
     std::vector<ClipInfo> clips;
+
+    /// The track's session slots, positioned by scene rather than by beat.
+    /// Separate because they are not alternatives at the same place: a track
+    /// can carry an arrangement and a session at once, and which one sounds is
+    /// decided at launch rather than at compile (#2301).
+    std::vector<ClipInfo> session;
 };
 
 /**

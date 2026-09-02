@@ -104,8 +104,16 @@ constexpr int kMaxMultiOutPairs = 64;
  * cheap ops is a later back-end pass over the same flat list.
  */
 enum class OpKind : std::uint8_t {
-    ClipAudio,   ///< audio clip playback for one track (reads the clip snapshot)
-    ClipMidi,    ///< MIDI clip playback for one track
+    ClipAudio,  ///< audio clip playback for one track (reads the clip snapshot)
+    ClipMidi,   ///< MIDI clip playback for one track
+
+    /// The session's audio and MIDI for one track: whichever slot a launch
+    /// handle currently has playing (#2301). One op per track rather than per
+    /// slot, because a track sounds one session clip at a time and an op per
+    /// slot would put a silent node in the graph for every scene on every
+    /// track, and would change the plan's shape whenever a scene is added.
+    SessionAudio,
+    SessionMidi,
     AudioInput,  ///< live hardware audio input
     MidiInput,   ///< live MIDI input
     Device,      ///< a device instance (instrument, effect, MIDI or analysis)
@@ -142,6 +150,8 @@ enum class OpRole : std::uint8_t {
     ClipMidi,         ///< the track's MIDI clip source
     LiveAudioInput,   ///< the track's live audio input
     LiveMidiInput,    ///< the track's live MIDI input
+    SessionAudio,     ///< the track's session audio, whichever slot is playing
+    SessionMidi,      ///< the track's session MIDI
     TrackAudioInput,  ///< sum of everything feeding the track's chain head
     TrackMidiInput,   ///< merge of everything feeding the track's chain head
     DeviceProcess,    ///< the device itself

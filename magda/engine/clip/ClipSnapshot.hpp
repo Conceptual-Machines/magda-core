@@ -270,10 +270,43 @@ struct MidiClipPlayback {
 };
 
 /** Everything one track plays. */
+/**
+ * @brief One session slot's material, as if it began at beat zero.
+ *
+ * A session clip has no position on the timeline. Its scene index says which
+ * slot it sits in and nothing about when it sounds, because when it sounds is
+ * decided by a launch at runtime rather than by the model (#2301). So it is
+ * compiled at the origin, describing the material and nothing else, and the
+ * launch handle's virtual origin is what maps a block onto it.
+ *
+ * Compiled through the same path the arrangement's clips go through, so a clip
+ * dragged from a slot to the timeline sounds the same in both places.
+ */
+struct SessionSlotPlayback {
+    int sceneIndex = -1;
+
+    /// The slot's material, at most one of each. Empty means the slot holds a
+    /// clip that compiled to nothing playable, which is a diagnostic rather
+    /// than a slot that does nothing.
+    std::vector<AudioClipPlayback> audio;
+    std::vector<MidiClipPlayback> midi;
+
+    /// What one pass through the slot is worth, which is what a launch handle
+    /// re-triggers on. The clip's own loop is a separate thing that happens
+    /// inside this.
+    double lengthBeats = 0.0;
+};
+
 struct TrackClipPlayback {
     TrackId trackId = INVALID_TRACK_ID;
     std::vector<AudioClipPlayback> audio;
     std::vector<MidiClipPlayback> midi;
+
+    /// Sorted by scene index, so two compiles of one model agree.
+    std::vector<SessionSlotPlayback> session;
+
+    /// The slot at @p sceneIndex, or null.
+    const SessionSlotPlayback* slot(int sceneIndex) const;
 };
 
 /**
