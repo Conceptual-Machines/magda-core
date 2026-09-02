@@ -234,6 +234,42 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         else
             expect(false, "sidechain lost its 'attack' parameter");
 
+        beginTest("A v0.19 display-domain sidechain document still restores in ms");
+
+        // The other unmarked era: captured from the host-native sidechain,
+        // whose parameters ran in display ranges. The release value of 15 ms is
+        // what discriminates it - nothing normalised can sit outside [0, 1].
+        auto* sidechainDevice = ta::deviceFromPlugin<audio::SidechainPlugin>(sidechain.get());
+        expect(sidechainDevice != nullptr);
+        if (sidechainDevice == nullptr) {
+            sidechain->deleteFromParent();
+            return;
+        }
+
+        ds::Doc releasedDoc;
+        releasedDoc.deviceType = audio::SidechainPlugin::xmlTypeName;
+        releasedDoc.params.push_back({audio::SidechainPlugin::kGainParamIndex, "gain", 0.8f});
+        releasedDoc.params.push_back({audio::SidechainPlugin::kAttackParamIndex, "attack", 1.0f});
+        releasedDoc.params.push_back(
+            {audio::SidechainPlugin::kReleaseParamIndex, "release", 15.0f});
+        expect(!ds::decode(ds::encode(releasedDoc))->paramsAreDisplayDomain);
+        ta::applyDeviceStateParameters(*sidechain, ds::encode(releasedDoc));
+
+        const auto sidechainDisplay = [&](int slot, const char* id) {
+            auto param = sidechain->getAutomatableParameterByID(id);
+            expect(param != nullptr);
+            return param != nullptr
+                       ? magda::ParameterUtils::normalizedToReal(
+                             param->getCurrentBaseValue(), sidechainDevice->parameterInfo(slot))
+                       : -1.0f;
+        };
+        expectWithinAbsoluteError(
+            sidechainDisplay(audio::SidechainPlugin::kReleaseParamIndex, "release"), 15.0f, 0.1f);
+        expectWithinAbsoluteError(
+            sidechainDisplay(audio::SidechainPlugin::kAttackParamIndex, "attack"), 1.0f, 0.05f);
+        expectWithinAbsoluteError(sidechainDisplay(audio::SidechainPlugin::kGainParamIndex, "gain"),
+                                  0.8f, 0.005f);
+
         sidechain->deleteFromParent();
     }
 

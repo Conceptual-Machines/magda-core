@@ -250,9 +250,31 @@ void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedSta
 
     const auto& params = plugin.getAutomatableParameters();
     const auto* displayDevice = displayDomainDeviceFor(plugin, doc->deviceType);
-    const bool convertFromDisplay =
-        displayDevice != nullptr &&
-        (doc->paramsAreDisplayDomain || unmarkedDocIsDisplayDomain(doc->deviceType));
+
+    bool convertFromDisplay = false;
+    if (displayDevice != nullptr) {
+        if (doc->paramsAreDisplayDomain || unmarkedDocIsDisplayDomain(doc->deviceType)) {
+            convertFromDisplay = true;
+        } else {
+            // Devices that were already wrapped before the marker existed have
+            // TWO unmarked eras: 0.19 documents captured from the host-native
+            // plugins hold display values, target-branch documents captured
+            // from the wrapper hold normalised ones. No provenance survives in
+            // the document, but the values discriminate safely in one
+            // direction: anything outside [0, 1] can only be display-domain.
+            // A 0.19 sidechain document always carries one (its release
+            // defaults to 15 ms). The residue - a document whose every value
+            // sits inside [0, 1] - is read as normalised, which is exact for
+            // slots whose display range IS the unit interval and the
+            // target-branch form for the rest.
+            for (const auto& saved : doc->params) {
+                if (saved.value < -1.0e-4f || saved.value > 1.0f + 1.0e-4f) {
+                    convertFromDisplay = true;
+                    break;
+                }
+            }
+        }
+    }
 
     for (const auto& saved : doc->params) {
         te::AutomatableParameter* param = nullptr;
