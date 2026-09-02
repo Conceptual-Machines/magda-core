@@ -142,6 +142,14 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     if (voices_ != nullptr)
         voices_->setSnapshot(clips);
 
+    // Handles before clips, and both before anything can look for them. A
+    // handle table that arrives first names slots the callback cannot see yet,
+    // and a handle nobody has launched is silent; a snapshot that arrives first
+    // would name a slot with no handle behind it, which is a launch the block
+    // in between cannot honour.
+    if (clips != nullptr)
+        store_.publishHandles(*clips, handles_);
+
     clips_.publish(std::move(clips));
 }
 
@@ -192,6 +200,12 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         // round to be given a reader.
         if (voices_ != nullptr)
             voices_->setPosition(segment.block.startSeconds);
+
+        // Before the plan, and over every handle rather than the ones this plan
+        // happens to render. A handle is a state machine that has to see each
+        // block exactly once and in order, and a slot has two sources reading
+        // it, so nothing that renders advances anything (SessionLauncher.hpp).
+        advanceLaunchHandles(handles_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 

@@ -116,6 +116,28 @@ std::shared_ptr<const ClipSnapshot> snapshotOf(std::vector<AudioClipPlayback> cl
     return snapshot;
 }
 
+/// A snapshot whose track holds slots rather than an arrangement. A slot is
+/// compiled at the origin, which is why every one of these looks identical
+/// apart from its clip id.
+std::shared_ptr<const ClipSnapshot> sessionSnapshotOf(std::vector<magda::ClipId> ids,
+                                                      double lengthSeconds = 2.0) {
+    auto snapshot = std::make_shared<ClipSnapshot>();
+    TrackClipPlayback track;
+    track.trackId = kTrack;
+
+    auto scene = 0;
+    for (const auto id : ids) {
+        magda::engine::SessionSlotPlayback slot;
+        slot.sceneIndex = scene++;
+        slot.lengthBeats = lengthSeconds * 2.0;
+        slot.audio.push_back(clipAt(id, 0.0, lengthSeconds));
+        track.session.push_back(std::move(slot));
+    }
+
+    snapshot->tracks.push_back(std::move(track));
+    return snapshot;
+}
+
 BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
@@ -839,4 +861,70 @@ TEST_CASE("A round over a stretched clip that is playing does not swap a table",
     pool.service();
 
     CHECK(pool.tablesPublished() == 1);
+}
+
+TEST_CASE("Every session slot has a reader, wherever the transport is",
+          "[engine][clip][pool][session]") {
+    // A slot has no position, so there is no window it comes into: a launch can
+    // arrive on any block and nothing warns the pool first (#2301). What that
+    // buys is a launch that costs no seek, and what it costs is an open file
+    // per slot for as long as the project holds it.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    pool.setSnapshot(sessionSnapshotOf({1, 2, 3}));
+
+    pool.setPosition(0.0);
+    pool.service();
+    CHECK(pool.streamCount() == 3);
+    CHECK(files.opens == 3);
+
+    SECTION("and moving the transport neither retires them nor re-opens them") {
+        // An arrangement clip an hour away is out of the window and gets
+        // nothing; the slots are unmoved, because there is nothing to move.
+        pool.setPosition(3600.0);
+        pool.service();
+
+        CHECK(pool.streamCount() == 3);
+        CHECK(files.opens == 3);
+    }
+
+    SECTION("and a round that changes nothing publishes nothing") {
+        pool.service();
+        pool.service();
+
+        CHECK(pool.streamCount() == 3);
+        CHECK(files.opens == 3);
+    }
+
+    SECTION("a slot the model has lost gives its reader back") {
+        pool.setSnapshot(sessionSnapshotOf({1, 2}));
+        pool.service();
+
+        CHECK(pool.streamCount() == 2);
+        CHECK(files.opens == 3);
+    }
+}
+
+TEST_CASE("A clip that is sounding keeps its reader ahead of a slot",
+          "[engine][clip][pool][session]") {
+    // Slots rank as sounding, because a slot is always about to be, but not
+    // ahead of a clip the transport is actually inside: taking a stream off a
+    // clip mid-note is the one thing worse than a launch that seeks.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    ClipSnapshot snapshot = *sessionSnapshotOf({100});
+    snapshot.tracks.front().audio.push_back(clipAt(1, 0.0, 10.0));
+    pool.setSnapshot(std::make_shared<const ClipSnapshot>(std::move(snapshot)));
+
+    pool.setPosition(5.0);
+    pool.service();
+
+    CHECK(pool.streamCount() == 2);
+    CHECK(files.opens == 2);
+    CHECK(pool.unbridged() == 0);
+    CHECK(pool.overSubscribed() == 0);
 }

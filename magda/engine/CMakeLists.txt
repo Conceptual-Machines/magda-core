@@ -29,6 +29,7 @@ add_library(magda_engine STATIC
     clip/ClipSnapshotFeed.hpp
     clip/ClipAudioSource.hpp
     clip/ClipMidiSource.hpp
+    clip/SessionPlayback.hpp
     clip/ActiveNoteList.hpp
     clip/GrooveTemplate.hpp
     clip/MidiClipCompiler.hpp
@@ -105,6 +106,8 @@ add_library(magda_engine STATIC
     tap/ValueTap.hpp
     launch/LaunchHandle.cpp
     launch/LaunchHandle.hpp
+    launch/SessionLauncher.cpp
+    launch/SessionLauncher.hpp
     transport/TempoMap.cpp
     transport/TransportClock.cpp
     transport/ClickGenerator.cpp

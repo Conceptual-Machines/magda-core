@@ -1295,6 +1295,21 @@ void Compiler::emitTrack(const TrackInfo& track) {
         const OpKey key{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipAudio, 0};
         audioSources.push_back(PortRef{addOp(OpKind::ClipAudio, key, {}, {SignalKind::Audio}), 0});
+
+        // The session's own source, beside the arrangement's rather than
+        // instead of it. Emitted for every track that carries clips, on the
+        // same terms as the arrangement above and for the same reason: whether
+        // a track has clips in it is a property of the snapshot, not of the
+        // plan, so a clip put into a scene must no more recompile a plan than
+        // one dropped on the timeline does (#2301).
+        //
+        // Arrangement first, session second, and fixed: a mix sums in compiled
+        // order, so the order these two go in is what makes the parallel
+        // executor's output bit-identical to the serial one.
+        const OpKey sessionKey{track.id,          INVALID_RACK_ID,      INVALID_CHAIN_ID,
+                               INVALID_DEVICE_ID, OpRole::SessionAudio, 0};
+        audioSources.push_back(
+            PortRef{addOp(OpKind::SessionAudio, sessionKey, {}, {SignalKind::Audio}), 0});
     }
 
     // Input reaches a track only while it is monitoring or armed, whether it
@@ -1353,6 +1368,11 @@ void Compiler::emitTrack(const TrackInfo& track) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
         midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
+
+        const OpKey sessionKey{track.id,          INVALID_RACK_ID,     INVALID_CHAIN_ID,
+                               INVALID_DEVICE_ID, OpRole::SessionMidi, 0};
+        midiSources.push_back(
+            PortRef{addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi}), 0});
     }
     switch (const auto route = activeMidiInputRoute(track); route.kind) {
         case RouteKind::Track: {

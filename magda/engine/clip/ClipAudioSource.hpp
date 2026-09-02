@@ -5,12 +5,15 @@
 
 #include <array>
 #include <atomic>
+#include <optional>
+#include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "clip/ClipVoice.hpp"
 #include "core/TypeIds.hpp"
 #include "exec/EngineDevice.hpp"
+#include "launch/SessionLauncher.hpp"
 
 /**
  * @file ClipAudioSource.hpp
@@ -25,6 +28,23 @@
  * overlap simply sum: the lane's rules were applied when the snapshot was
  * compiled, and a crossfade reaching here is two voices each playing the fade
  * it was handed.
+ *
+ * ## The two sections
+ *
+ * The same class plays a track's arrangement and its session, and which one is
+ * decided at construction (#2301). Everything below the choice is shared: the
+ * spans, the fades, the stretching, the warping, the readers and the voices.
+ * Writing a second source for the session would have been a second answer to
+ * every one of those questions, and a clip dragged out of a slot onto the
+ * timeline has to sound the same in both places.
+ *
+ * What the section changes is where the material sits, which for a slot is
+ * nowhere. A slot is compiled at the origin (ClipSnapshot.hpp) and a launch
+ * handle says where its run began, so a session block is this block with its
+ * beat axis shifted by that origin: same samples, same seconds of buffer, a
+ * different stretch of material under them. A split block -- one a launch or a
+ * stop lands inside -- is two such shifts over two sub-blocks of the output,
+ * which is how a clip starts on its beat rather than on a callback boundary.
  *
  * How many clips a track may sound at once is decided rather than discovered:
  * kMaxVoicesPerTrack, below. That is not how many readers a track may have,
@@ -68,13 +88,28 @@ constexpr int kMaxVoicesPerTrack = 16;
 class ClipAudioSource final : public EngineAudioSource {
   public:
     /**
-     * @brief The clip source for @p trackId.
+     * @brief The arrangement's source for @p trackId.
      *
      * Both feeds outlive it and are shared with every other track: what a track
      * plays and which readers are standing by are properties of the session,
      * not of any one source or any one plan.
      */
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams);
+
+    /**
+     * @brief The session's source for @p trackId.
+     *
+     * The same reading of the same material, positioned by @p handles instead
+     * of by the timeline. The handle feed is the section selector: a source
+     * given one plays the track's slots and a source without one plays its
+     * arrangement, because being positioned by a launch is the whole of what
+     * makes a slot a slot.
+     *
+     * @p handles outlives it and is shared with every other track, like the
+     * other two.
+     */
+    ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
+                    LaunchHandleFeed& handles);
 
     void prepare(const RenderContext& context) override;
 
@@ -111,7 +146,31 @@ class ClipAudioSource final : public EngineAudioSource {
         /// was cued with. Null and zero for a clip at its file's own speed.
         ClipStretcher* stretcher = nullptr;
         int preRoll = 0;
+
+        /// The stretch of material this entry is played over, and where in the
+        /// output it lands. The block itself for the arrangement; for a session
+        /// slot, the same block with its beat axis moved onto the slot's own
+        /// origin, narrowed to whichever sub-range of the block was playing.
+        BlockInfo block;
+        int outOffset = 0;
     };
+
+    /// Where the streams for this track are, as one block's worth of lookups.
+    struct Streams {
+        const ClipStreamTable::Entry* first = nullptr;
+        const ClipStreamTable::Entry* last = nullptr;
+    };
+
+    /// Entries of @p clips that reach into @p block, appended to @p sounding.
+    /// Shared by both sections: what differs is the block handed in.
+    void gather(const std::vector<AudioClipPlayback>& clips, const BlockInfo& block, int outOffset,
+                const Streams& streams, std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                int& soundingCount);
+
+    /// The same, over whichever of this track's slots a handle has playing.
+    void gatherSession(const TrackClipPlayback& track, const BlockInfo& block,
+                       const Streams& streams, std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                       int& soundingCount);
 
     /// The voice already playing this entry, or a free one, or null when every
     /// voice is busy.
@@ -120,6 +179,10 @@ class ClipAudioSource final : public EngineAudioSource {
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
     ClipStreamFeed& streams_;
+
+    /// The section, and where a slot's position comes from. Null is the
+    /// arrangement, which needs no handles because the timeline is its handle.
+    LaunchHandleFeed* handles_ = nullptr;
 
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;
 

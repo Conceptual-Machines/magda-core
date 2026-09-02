@@ -1,6 +1,11 @@
 #include "clip/ClipAudioSource.hpp"
 
 #include <algorithm>
+#include <optional>
+#include <tuple>
+#include <vector>
+
+#include "clip/SessionPlayback.hpp"
 
 namespace magda::engine {
 
@@ -17,6 +22,10 @@ bool reachesInto(const SnapshotSpan& span, const BlockInfo& block) {
 
 ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams)
     : trackId_(trackId), clips_(clips), streams_(streams) {}
+
+ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
+                                 LaunchHandleFeed& handles)
+    : trackId_(trackId), clips_(clips), streams_(streams), handles_(&handles) {}
 
 void ClipAudioSource::prepare(const RenderContext& context) {
     // Longer than a block, because a clip playing faster than its file consumes
@@ -41,30 +50,113 @@ ClipVoice* ClipAudioSource::voiceFor(ClipId clipId, EventId eventId) {
     return nullptr;
 }
 
+void ClipAudioSource::gather(const std::vector<AudioClipPlayback>& clips, const BlockInfo& block,
+                             int outOffset, const Streams& streams,
+                             std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                             int& soundingCount) {
+    for (const auto& clip : clips) {
+        // Sorted by where they start (ClipSnapshot.hpp), so once one begins at
+        // or after the end of this block, so does everything behind it. Without
+        // the break a track pays for its whole tail on every callback, all
+        // session, and the cost grows with the length of the arrangement rather
+        // than with what is playing.
+        if (clip.span.startSeconds >= block.endSeconds)
+            break;
+
+        if (!reachesInto(clip.span, block))
+            continue;
+
+        for (const auto& event : clip.events) {
+            if (!reachesInto(event.span, block))
+                continue;
+
+            const auto* found =
+                std::find_if(streams.first, streams.last, [&](const ClipStreamTable::Entry& entry) {
+                    return entry.clipId == clip.clipId && entry.eventId == event.eventId;
+                });
+
+            if (found == streams.last || soundingCount == kMaxVoicesPerTrack) {
+                // No reader standing by, or no voice left to play it through.
+                // Both happen and they are different failures: a track may hold
+                // more readers than a callback has voices (kMaxReadersPerTrack
+                // is the larger, because a reader has to exist before its clip
+                // is due), so a block can be handed more entries than it can
+                // render. Either way the clip does not sound and the count is
+                // what says so.
+                starved_.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+
+            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{
+                &clip, &event,   found->stream.get(), found->stretcher.get(), found->preRollSamples,
+                block, outOffset};
+        }
+    }
+}
+
+void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockInfo& block,
+                                    const Streams& streams,
+                                    std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                                    int& soundingCount) {
+    const LaunchHandleFeed::Reader handles(*handles_);
+    if (!handles)
+        return;
+
+    // The status is the launcher's, worked out before anything rendered
+    // (SessionLauncher.hpp). Reading it rather than advancing the handle is
+    // what lets this source and the MIDI one see the same block.
+    forEachSlot(
+        *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+            const auto play = [&](const BeatRange& range, const std::optional<double>& playStart,
+                                  int offset, int count) {
+                if (count <= 0 || !playStart)
+                    return;
+
+                gather(slot.audio, materialSubBlock(block, range, *playStart, count), offset,
+                       streams, sounding, soundingCount);
+            };
+
+            // Where the launch or the stop landed. What is on the far side of
+            // it is simply not rendered: the ramp across that boundary, and the
+            // one between a track's session and its arrangement, are #2302's.
+            const auto split = splitSample(block, status);
+
+            if (status.playing1)
+                play(status.range1, status.playStartTime1, 0, split);
+
+            if (status.isSplit && status.playing2)
+                play(status.range2, status.playStartTime2, split, block.numSamples - split);
+        });
+}
+
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     out.clear();
 
     const ClipStreamFeed::Reader streams(streams_);
-    const auto [firstStream, lastStream] =
-        streams ? streams->rangeFor(trackId_)
-                : std::pair<const ClipStreamTable::Entry*, const ClipStreamTable::Entry*>{nullptr,
-                                                                                          nullptr};
+    Streams table;
+    if (streams)
+        std::tie(table.first, table.last) = streams->rangeFor(trackId_);
 
     // Every stream this track has, sounding or not, once per block. The stream
     // a cue is most useful to is one nobody is reading from: a clip that has
     // not started would otherwise not hear about the position it was pointed at
     // until the material was already due (#2016).
-    for (const auto* entry = firstStream; entry != lastStream; ++entry)
+    for (const auto* entry = table.first; entry != table.last; ++entry)
         entry->stream->applyPendingCue();
-
-    const auto numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
 
     const auto silence = [this] {
         for (auto& voice : voices_)
             voice.release();
     };
 
-    if (!block.playing || numSamples <= 0)
+    // Held to what the caller actually provided as well as to what the block
+    // claims. The session hands its voices sub-blocks of this one, so a length
+    // the buffer does not have is not a short block, it is somebody else's
+    // memory.
+    auto lane = block;
+    lane.numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
+
+    if (!block.playing || lane.numSamples <= 0)
         return silence();
 
     const ClipSnapshotFeed::Reader snapshot(clips_);
@@ -82,43 +174,10 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     std::array<Sounding, kMaxVoicesPerTrack> sounding;
     auto soundingCount = 0;
 
-    for (const auto& clip : track->audio) {
-        // Sorted by where they start (ClipSnapshot.hpp), so once one begins at
-        // or after the end of this block, so does everything behind it. Without
-        // the break a track pays for its whole tail on every callback, all
-        // session, and the cost grows with the length of the arrangement rather
-        // than with what is playing.
-        if (clip.span.startSeconds >= block.endSeconds)
-            break;
-
-        if (!reachesInto(clip.span, block))
-            continue;
-
-        for (const auto& event : clip.events) {
-            if (!reachesInto(event.span, block))
-                continue;
-
-            const auto* found =
-                std::find_if(firstStream, lastStream, [&](const ClipStreamTable::Entry& entry) {
-                    return entry.clipId == clip.clipId && entry.eventId == event.eventId;
-                });
-
-            if (found == lastStream || soundingCount == kMaxVoicesPerTrack) {
-                // No reader standing by, or no voice left to play it through.
-                // Both happen and they are different failures: a track may hold
-                // more readers than a callback has voices (kMaxReadersPerTrack
-                // is the larger, because a reader has to exist before its clip
-                // is due), so a block can be handed more entries than it can
-                // render. Either way the clip does not sound and the count is
-                // what says so.
-                starved_.fetch_add(1, std::memory_order_relaxed);
-                continue;
-            }
-
-            sounding[static_cast<std::size_t>(soundingCount++)] = Sounding{
-                &clip, &event, found->stream.get(), found->stretcher.get(), found->preRollSamples};
-        }
-    }
+    if (handles_ == nullptr)
+        gather(track->audio, lane, 0, table, sounding, soundingCount);
+    else
+        gatherSession(*track, lane, table, sounding, soundingCount);
 
     for (auto& voice : voices_) {
         if (voice.clipId() == INVALID_CLIP_ID)
@@ -150,8 +209,10 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             continue;
         }
 
-        voice->render(*entry.clip, *entry.event, block, *entry.stream, entry.stretcher,
-                      entry.preRoll, scratch, out);
+        voice->render(*entry.clip, *entry.event, entry.block, *entry.stream, entry.stretcher,
+                      entry.preRoll, scratch,
+                      out.getSubBlock(static_cast<std::size_t>(entry.outOffset),
+                                      static_cast<std::size_t>(entry.block.numSamples)));
     }
 }
 

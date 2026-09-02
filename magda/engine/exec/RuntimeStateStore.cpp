@@ -1,5 +1,6 @@
 #include "exec/RuntimeStateStore.hpp"
 
+#include <algorithm>
 #include <set>
 
 #include "core/ChainWalk.hpp"
@@ -121,14 +122,16 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
 /// the next clip dropped into that scene would come up already playing, at the
 /// old one's loop phase and played range (#2301).
 ///
-/// **This is safe to narrow only while nothing binds a handle to the audio
-/// side.** Retiring by slot removes an object the live plan cannot name, so the
-/// moment a session source holds a handle pointer, the bindings that name it
-/// have to be a keep set here as well, exactly as the live plan is for
-/// everything else. That is #2305's, along with the request lane.
+/// @p reachable is the published handle table, and it is to handles what the
+/// live plan is to everything else: the set the audio thread can name right
+/// now, which no model reading may waive. It is a separate argument because a
+/// handle is not in the plan at all -- a table is published with the clips
+/// rather than with a plan, so a caller's model IDs can have lost a slot the
+/// live table still points a session source at.
 std::size_t eraseUnnamedSlots(std::map<SlotKey, std::unique_ptr<LaunchHandle>>& map,
                               const std::set<TrackId>& tracks,
-                              const std::optional<std::set<SlotKey>>& slots) {
+                              const std::optional<std::set<SlotKey>>& slots,
+                              const LaunchHandleTable* reachable) {
     std::size_t removed = 0;
     for (auto entry = map.begin(); entry != map.end();) {
         // Both, rather than the slots alone. A snapshot publishes on its own
@@ -137,7 +140,7 @@ std::size_t eraseUnnamedSlots(std::map<SlotKey, std::unique_ptr<LaunchHandle>>& 
         // slots only narrow it further.
         const auto named =
             tracks.contains(entry->first.trackId) && (!slots || slots->contains(entry->first));
-        if (named) {
+        if (named || (reachable != nullptr && reachable->find(entry->first) != nullptr)) {
             ++entry;
             continue;
         }
@@ -305,7 +308,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         eraseUnnamed(clipMidi_, keep.tracks) + eraseUnnamed(sessionAudio_, keep.tracks) +
         eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
         eraseUnnamed(midiInputs_, keep.tracks) +
-        eraseUnnamedSlots(handles_, keep.tracks, keep.slots);
+        eraseUnnamedSlots(handles_, keep.tracks, keep.slots, publishedHandles_.get());
 
     for (auto entry = meters_.begin(); entry != meters_.end();) {
         if (isNamed(entry->first, keep)) {
@@ -355,6 +358,36 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     collectTrack(master);
 
     return ids;
+}
+
+std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
+    const ClipSnapshot& clips, LaunchHandleFeed& feed) {
+    auto table = std::make_shared<LaunchHandleTable>();
+
+    for (const auto& track : clips.tracks)
+        for (const auto& slot : track.session) {
+            const SlotKey key{track.trackId, slot.sceneIndex};
+            table->entries.push_back(LaunchHandleTable::Entry{key, &handle(key)});
+        }
+
+    // A snapshot already holds its tracks by id and its slots by scene, so this
+    // is sorted on arrival. Sorted here anyway, because the binary search on
+    // the audio thread depends on it and an invariant borrowed from another
+    // file is one that breaks silently when that file changes its mind.
+    std::sort(table->entries.begin(), table->entries.end(),
+              [](const auto& a, const auto& b) { return a.key < b.key; });
+
+    // The same slots pointing at the same handles: a clip edit that did not
+    // touch the session. Swapping would cost the callback a wait and change
+    // nothing it can see.
+    if (publishedHandles_ != nullptr && publishedHandles_->entries == table->entries)
+        return publishedHandles_;
+
+    // Remembered before it is published, not after: from here on it is what the
+    // audio thread can name, and therefore the keep set eviction may not waive.
+    publishedHandles_ = table;
+    feed.publish(table);
+    return table;
 }
 
 LaunchHandle& RuntimeStateStore::handle(const SlotKey& key) {

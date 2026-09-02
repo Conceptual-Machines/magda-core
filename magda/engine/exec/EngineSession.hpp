@@ -9,6 +9,7 @@
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
 
@@ -164,6 +165,35 @@ class EngineSession {
     }
 
     /**
+     * @brief The feed session sources read their handles from (#2301).
+     *
+     * Handed to a session source when it is created, and owned here for the
+     * reason the clip feed is: which slot is playing is a property of the
+     * session, and a structural recompile must not stop a clip that is
+     * sounding. Published by publishClips(), because a slot is a clip and the
+     * snapshot is what enumerates them.
+     */
+    LaunchHandleFeed& launchHandleFeed() {
+        return handles_;
+    }
+
+    /**
+     * @brief The handle for one slot, or null. On the publishing thread.
+     *
+     * What drives a launch until the request lane exists (#2305). A handle is
+     * advanced on the audio thread, so asking one for a change from here is a
+     * race with the callback: it is safe while nothing is rendering, which is
+     * an offline render and a test, and it is the whole reason #2305 is a
+     * separate slice rather than an argument here.
+     *
+     * Null until publishClips() has named the slot, which is a slot the engine
+     * has not been told about rather than one that cannot be launched.
+     */
+    LaunchHandle* launchHandle(const SlotKey& key) const {
+        return store_.findHandle(key);
+    }
+
+    /**
      * @brief Render @p numSamples. On the audio thread.
      *
      * The transport decides what stretch of timeline that is: the caller says
@@ -296,6 +326,10 @@ class EngineSession {
     /// Not swapped with a plan and not keyed to one: what a track plays is a
     /// property of the model, and a structural edit is not a reason to lose it.
     ClipSnapshotFeed clips_;
+
+    /// Where the audio thread finds a slot's handle. Travels with the clips
+    /// rather than with a plan, for the same reason they do.
+    LaunchHandleFeed handles_;
 
     /// The cursor. Not published and not swapped: it is where the timeline is,
     /// which is a property of the session rather than of any plan, and a plan

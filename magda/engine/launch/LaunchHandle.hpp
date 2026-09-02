@@ -172,8 +172,26 @@ class LaunchHandle {
      *
      * The audio thread's call, once per block, in order. A block passed out of
      * order or skipped puts the played range somewhere the material never was.
+     *
+     * Once per block and not once per reader. A slot has two sources rendering
+     * it, audio and MIDI, and a handle advanced by each of them would be moved
+     * twice through every block. So the launcher advances every handle before
+     * anything renders (SessionLauncher.hpp) and both sources read @ref
+     * blockStatus.
      */
     SplitStatus advance(const SyncRange& range);
+
+    /**
+     * @brief What the last advance said, for whoever renders the slot.
+     *
+     * The other half of advancing centrally: the answer is worked out once and
+     * read by both of a slot's sources. Default-constructed until the first
+     * advance, which is a slot that has not been rendered yet and is therefore
+     * not playing.
+     */
+    const SplitStatus& blockStatus() const {
+        return blockStatus_;
+    }
 
     /**
      * @brief Timeline beats this run of playing has covered, unlooped.
@@ -233,6 +251,10 @@ class LaunchHandle {
     /// Apply whatever the block ran into, at the instant it ran into it.
     void applyEvent(bool fromPending, double timelineBeat, double monotonicBeat);
 
+    /// The advance itself. Wrapped so the answer is kept for @ref blockStatus
+    /// in one place rather than at each of the several ways out of it.
+    SplitStatus advanceOver(const SyncRange& range);
+
     PlayState playState_ = PlayState::stopped;
     std::optional<Pending> pending_;
 
@@ -241,6 +263,8 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;
+
+    SplitStatus blockStatus_;
 
     int loopRetriggerOverflows_ = 0;
 };

@@ -254,7 +254,9 @@ TEST_CASE("A delay holding no samples is not a buffer and not an op",
             const auto& input = layout.plan.ops[i].inputs.front();
             CHECK(layout.slot(static_cast<OpId>(i), 0) == layout.slot(input.op, input.port));
         }
-        REQUIRE(delays == 2);
+        // Two per track for its own arrangement and session sections (#2301),
+        // and two at the master for the two tracks it sums.
+        REQUIRE(delays == 6);
     }
 
     SECTION("a delay that has samples to hold is not elided") {
@@ -300,10 +302,13 @@ TEST_CASE("Latency accumulates along a chain and meets at a fan-in",
     CHECK(latency.outputLatency == 120);
 
     // The master's two inputs: track 1 arrives 120 samples late and needs
-    // nothing, track 2 arrives on time and waits for it.
+    // nothing, track 2 arrives on time and waits for it. The master's own,
+    // rather than every mix delay there is: each track sums its arrangement
+    // and its session and so carries a pair of these too (#2301).
     std::vector<int> delays;
     for (std::size_t i = 0; i < plan.ops.size(); ++i)
-        if (plan.ops[i].key.role == OpRole::MixInputDelay)
+        if (plan.ops[i].key.role == OpRole::MixInputDelay &&
+            plan.ops[i].key.trackId == MASTER_TRACK_ID)
             delays.push_back(latency.delaySamples[i]);
 
     REQUIRE(delays.size() == 2);

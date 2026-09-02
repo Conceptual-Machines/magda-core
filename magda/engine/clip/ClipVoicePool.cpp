@@ -54,6 +54,12 @@ struct Candidate {
     /// stream off a clip mid-note is the one thing worse than not having
     /// pointed it at the next one yet.
     bool sounding = false;
+
+    /// Where playback will pick this up, which is what the reader is pointed
+    /// at. Its own first sample for a clip that has not started and for every
+    /// session slot; where the cursor already is for a clip the transport is
+    /// standing inside.
+    double cueSeconds = 0.0;
 };
 
 /**
@@ -329,9 +335,35 @@ void ClipVoicePool::service() {
 
                         candidates.push_back(Candidate{
                             clip.clipId, event.eventId, &clip, &event, event.span.startSeconds,
-                            event.span.endSeconds, event.span.startSeconds <= windowStart});
+                            event.span.endSeconds, event.span.startSeconds <= windowStart,
+                            std::max(windowStart, event.span.startSeconds)});
                     }
                 }
+
+                // Every slot, on every round, whatever the transport is doing.
+                // A slot has no position on the timeline, so there is no window
+                // it comes into and no moment it is due: a launch can arrive on
+                // any block and the material has to already be open when it
+                // does (#2301). What that costs is one open file per slot for
+                // as long as the project holds it, which is what a launcher is.
+                //
+                // Cued at the slot's own origin and never moved, which is what
+                // makes the launch itself cost no seek: a run begins at beat
+                // zero of the material and the reader is already there. A slot
+                // stopped part way through and launched again does seek, and
+                // the cue that would avoid it belongs with the request that
+                // knows a launch is coming, which is #2305's.
+                //
+                // Ranked as sounding, because a slot is always about to be. It
+                // still sorts behind an arrangement clip the transport is
+                // actually inside: those started earlier, and this stands at
+                // the window's own start.
+                for (const auto& slot : track.session)
+                    for (const auto& clip : slot.audio)
+                        for (const auto& event : clip.events)
+                            candidates.push_back(Candidate{clip.clipId, event.eventId, &clip,
+                                                           &event, windowStart, windowStart, true,
+                                                           event.span.startSeconds});
 
                 // What this track is being asked to sound at once, which is the
                 // only count worth reporting. How many clips are in the window
@@ -423,12 +455,7 @@ void ClipVoicePool::service() {
                         continue;
                     }
 
-                    // From where playback will pick it up: its own first sample
-                    // for a clip that has not started, and where the cursor
-                    // already is for one the transport is standing inside.
-                    const auto cueSeconds = std::max(windowStart, event.span.startSeconds);
-
-                    auto reader = open(*candidate.clip, event, cueSeconds);
+                    auto reader = open(*candidate.clip, event, candidate.cueSeconds);
                     if (reader.stream == nullptr)
                         ++unreadable;
 

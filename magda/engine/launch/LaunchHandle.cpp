@@ -168,6 +168,11 @@ void LaunchHandle::applyEvent(bool fromPending, double timelineBeat, double mono
 }
 
 SplitStatus LaunchHandle::advance(const SyncRange& range) {
+    blockStatus_ = advanceOver(range);
+    return blockStatus_;
+}
+
+SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     SplitStatus status;
     status.range1 = range.timeline;
     status.range2 = BeatRange{range.timeline.end, range.timeline.end};

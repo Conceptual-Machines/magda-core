@@ -10,6 +10,7 @@
 #include "clip/ClipSnapshot.hpp"
 #include "exec/PlanBindings.hpp"
 #include "launch/LaunchHandle.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
 #include "tap/ValueTap.hpp"
@@ -259,6 +260,29 @@ class RuntimeStateStore {
      */
     ValueTap* valueTap(const ParamKey& key) const;
 
+    /**
+     * @brief Make a handle for every slot @p clips names and publish them.
+     *
+     * On the publishing thread, beside the snapshot the slots came out of: a
+     * handle is made for a slot that has none and kept for a slot that already
+     * had one, which is what makes a clip edit leave a playing slot alone.
+     *
+     * The publish happens here rather than at the caller because what is
+     * published is also the keep set eviction may not waive: a handle the audio
+     * thread can name must outlive any model reading that has lost its slot.
+     * Splitting the two would make that depend on the caller publishing exactly
+     * what it was handed.
+     *
+     * Nothing is swapped when the slots have not moved. A publish waits for the
+     * block the callback is in, and a clip dragged across the timeline
+     * republishes its snapshot at gesture speed with the same slots every time;
+     * a table that says what the live one says is a wait for nothing.
+     *
+     * What comes back is what is live, for a caller that wants to look at it.
+     */
+    std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
+                                                            LaunchHandleFeed& feed);
+
     /// The handle for one slot, made on first ask. Unlike a device or a tap
     /// there is no factory to decline: a handle is the engine's own state
     /// rather than something the host builds, so a slot the model names always
@@ -297,6 +321,11 @@ class RuntimeStateStore {
     /// still its own. Retired by the same rule as everything else here, which
     /// is the model no longer naming the slot (#2301).
     std::map<SlotKey, std::unique_ptr<LaunchHandle>> handles_;
+
+    /// The table the caller was last given to publish, which is what the audio
+    /// thread can name. Held so eviction has the keep set that cannot be
+    /// waived, the way the live plan is for everything else here.
+    std::shared_ptr<const LaunchHandleTable> publishedHandles_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;
 

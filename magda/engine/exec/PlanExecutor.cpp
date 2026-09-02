@@ -484,18 +484,27 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
+            // Reported only by a host that has a launcher at all, which is what
+            // an empty binding map says. A session op is emitted for every
+            // track that carries clips whether or not the project has a
+            // session, so that dropping a clip into a scene stays a clip edit
+            // instead of becoming a structural one (#2301). A host that binds
+            // none of them is therefore an ordinary configuration -- an offline
+            // bounce of an arrangement, a rig asserting topology -- and not a
+            // track that has lost its source. One that binds some and not
+            // others is exactly that, and it is what these say.
             case OpKind::SessionAudio:
                 audioSourceForOp_[i] = findAudioSource(bindings.sessionAudio, trackId);
-                if (audioSourceForOp_[i] == nullptr)
+                if (audioSourceForOp_[i] == nullptr && !bindings.sessionAudio.empty())
                     messages.push_back(describe(i) + "no session audio source bound for track " +
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
             case OpKind::SessionMidi:
                 midiSourceForOp_[i] = findMidiSource(bindings.sessionMidi, trackId);
-                if (midiSourceForOp_[i] == nullptr)
+                if (midiSourceForOp_[i] == nullptr && !bindings.sessionMidi.empty())
                     messages.push_back(describe(i) + "no session MIDI source bound for track " +
-                                       std::to_string(trackId) + ", it renders silence");
+                                       std::to_string(trackId) + ", it renders nothing");
                 break;
 
             case OpKind::ClipMidi:
