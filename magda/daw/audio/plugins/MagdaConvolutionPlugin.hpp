@@ -46,6 +46,17 @@ class MagdaConvolutionPlugin : public MagdaDevice {
     MagdaConvolutionPlugin();
     ~MagdaConvolutionPlugin() override;
 
+    // The device's own state property names. The spellings deliberately match
+    // the retired Tracktion device's, which is how a migrated project keeps
+    // its impulse response (core/LegacyDeviceAliases.cpp). Public because an
+    // IR load travels as a model document patch in this vocabulary (#2317).
+    struct StateIDs {
+        static const juce::Identifier name;
+        static const juce::Identifier normalise;
+        static const juce::Identifier trimSilence;
+        static const juce::Identifier irFileData;
+    };
+
     //==============================================================================
     /// FROZEN parameter order - the compatibility surface saved links address.
     enum ParamIndex {
@@ -68,6 +79,13 @@ class MagdaConvolutionPlugin : public MagdaDevice {
         @return false when the file cannot be read or encoded.
     */
     bool loadImpulseResponse(const juce::File&);
+
+    /// Parse @p sourceData as audio and re-encode it as the FLAC blob the
+    /// state document stores. Pure: touches no device. The model-first IR
+    /// load (#2317) encodes here and writes the result into the document; the
+    /// projection then decodes it in restoreState().
+    static bool encodeImpulseResponse(const void* sourceData, size_t sourceDataSize,
+                                      juce::MemoryBlock& outEncoded);
 
     /** Loads an impulse response from an encoded audio file held in memory. */
     bool loadImpulseResponse(const void* sourceData, size_t sourceDataSize);

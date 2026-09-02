@@ -23,8 +23,11 @@ namespace te = tracktion::engine;
  * process / frozen flags, editor window bounds, modifier assignments, macro and
  * sidechain wiring). MAGDA already owns all of those in `DeviceInfo`, and
  * keeping them would put engine chrome back into user files. What survives is
- * the device's own property/child vocabulary plus its parameter values keyed by
- * frozen index.
+ * the device's own property/child vocabulary ONLY: since #2317 automatable
+ * parameter values are not captured at all, because `DeviceInfo::parameters`
+ * is their sole persisted authority (display domain). Documents from older
+ * builds that do carry a `params` record are consumed once at load by the
+ * model-side migration (`core/DeviceStateHydration.hpp`), never here.
  */
 
 /// Capture a live internal device as a v2 document (JSON text). Empty when the
@@ -42,11 +45,6 @@ juce::String captureInternalDeviceState(te::Plugin& plugin, const juce::String& 
 /// saved state. Accepts v2 JSON and legacy (v1) engine XML; returns an invalid
 /// tree when `savedState` is empty or unusable.
 juce::ValueTree devicePluginTreeFromState(const juce::String& savedState);
-
-/// Apply a v2 document's frozen parameter values on top of an already
-/// constructed plugin. No-op for legacy state, which carries no separate
-/// parameter record.
-void applyDeviceStateParameters(te::Plugin& plugin, const juce::String& savedState);
 
 /**
  * @brief Rewrite a nested retired-device plugin tree onto its compiled

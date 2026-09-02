@@ -8,14 +8,10 @@ namespace magda::daw::audio {
 
 const char* ArpeggiatorPlugin::xmlTypeName = "arpeggiator";
 
-// ValueTree property IDs for the non-parameter settings. The spellings are the
-// retired host-native plugin's, so saved projects keep them.
-namespace ArpIDs {
-static const juce::Identifier rampCycles("arpRampCycles");
-static const juce::Identifier quantize("arpQuantize");
-static const juce::Identifier quantizeSub("arpQuantizeSub");
-static const juce::Identifier hardAngle("arpHardAngle");
-}  // namespace ArpIDs
+const juce::Identifier ArpeggiatorPlugin::SettingIDs::rampCycles("arpRampCycles");
+const juce::Identifier ArpeggiatorPlugin::SettingIDs::quantize("arpQuantize");
+const juce::Identifier ArpeggiatorPlugin::SettingIDs::quantizeSub("arpQuantizeSub");
+const juce::Identifier ArpeggiatorPlugin::SettingIDs::hardAngle("arpHardAngle");
 
 namespace {
 
@@ -179,20 +175,21 @@ void ArpeggiatorPlugin::reset() {
 }
 
 void ArpeggiatorPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(ArpIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(ArpIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(ArpIDs::quantizeSub, quantizeSub.load(std::memory_order_relaxed), nullptr);
-    state.setProperty(ArpIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(SettingIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(SettingIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
+    state.setProperty(SettingIDs::quantizeSub, quantizeSub.load(std::memory_order_relaxed),
+                      nullptr);
+    state.setProperty(SettingIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
 }
 
 void ArpeggiatorPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* value = state.getPropertyPointer(ArpIDs::rampCycles))
+    if (const auto* value = state.getPropertyPointer(SettingIDs::rampCycles))
         rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(ArpIDs::quantize))
+    if (const auto* value = state.getPropertyPointer(SettingIDs::quantize))
         quantize.store(static_cast<float>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(ArpIDs::quantizeSub))
+    if (const auto* value = state.getPropertyPointer(SettingIDs::quantizeSub))
         quantizeSub.store(static_cast<int>(*value), std::memory_order_relaxed);
-    if (const auto* value = state.getPropertyPointer(ArpIDs::hardAngle))
+    if (const auto* value = state.getPropertyPointer(SettingIDs::hardAngle))
         hardAngle.store(static_cast<bool>(*value), std::memory_order_relaxed);
 }
 

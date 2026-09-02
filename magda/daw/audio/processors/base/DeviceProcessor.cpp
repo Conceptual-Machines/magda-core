@@ -94,6 +94,35 @@ bool DeviceProcessor::isDeltaSolo() const {
     return plugin_ && plugin_->isDeltaSoloEnabled();
 }
 
+void DeviceProcessor::populateParametersModelFirst(DeviceInfo& info) const {
+    if (info.format != PluginFormat::Internal) {
+        populateParameters(info);
+        return;
+    }
+
+    const auto model = std::move(info.parameters);
+    populateParameters(info);
+
+    auto sameParameter = [](const ParameterInfo& kept, const ParameterInfo& fresh) {
+        if (kept.paramIndex != fresh.paramIndex)
+            return false;
+        // A minimal hydrated entry (value and saved id only, named after that
+        // id) has no metadata to compare; its frozen index is all it has.
+        if (kept.name == kept.stableId)
+            return true;
+        if (kept.stableId.isNotEmpty() && fresh.stableId.isNotEmpty())
+            return kept.stableId == fresh.stableId;
+        return kept.name == fresh.name;
+    };
+
+    for (auto& fresh : info.parameters)
+        for (const auto& kept : model)
+            if (sameParameter(kept, fresh)) {
+                fresh.currentValue = kept.currentValue;
+                break;
+            }
+}
+
 void DeviceProcessor::syncFromDeviceInfo(const DeviceInfo& info) {
     setGainDb(info.gainDb);
     setBypassed(info.bypassed);

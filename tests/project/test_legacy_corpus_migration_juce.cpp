@@ -183,40 +183,25 @@ class LegacyDeviceStateMigrationTest final : public juce::UnitTest {
             if (!decoded)
                 continue;
 
-            const auto live = parameterValues(*plugin);
+            // #2317: the converted document is authored state only. The
+            // parameter values a legacy project carries restore from its
+            // serialized DeviceInfo::parameters array (hydrated at load), not
+            // from this document.
+            expect(decoded->params.empty(),
+                   "conversion wrote a duplicate parameter record: " + where);
 
-            // Every parameter the document claims must be the plugin's value at
-            // that index: the index IS the contract for saved automation.
-            for (const auto& param : decoded->params) {
-                expect(param.index >= 0 && param.index < static_cast<int>(live.size()),
-                       "captured paramIndex " + juce::String(param.index) +
-                           " is out of range: " + where);
-                if (param.index < 0 || param.index >= static_cast<int>(live.size()))
-                    continue;
-                expectWithinAbsoluteError(
-                    param.value, live[static_cast<size_t>(param.index)], 1.0e-4f,
-                    "captured value differs from the live parameter: " + where + " param " +
-                        juce::String(param.index));
-            }
-
-            // Restore from the v2 document into a fresh plugin: same values.
+            // Restore from the v2 document into a fresh plugin: the authored
+            // state round-trips and a second save does not change the file.
             auto restoredTree = bridge::devicePluginTreeFromState(captured);
             expect(restoredTree.isValid(), "v2 document produced no plugin tree: " + where);
             if (restoredTree.isValid()) {
                 if (auto restored = edit->getPluginCache().createNewPlugin(restoredTree)) {
-                    bridge::applyDeviceStateParameters(*restored, captured);
                     const auto restoredValues = parameterValues(*restored);
+                    const auto live = parameterValues(*plugin);
                     expectEquals(static_cast<int>(restoredValues.size()),
                                  static_cast<int>(live.size()),
                                  "restored plugin has a different parameter count: " + where);
 
-                    const auto count = std::min(restoredValues.size(), live.size());
-                    for (size_t i = 0; i < count; ++i)
-                        expectWithinAbsoluteError(restoredValues[i], live[i], 1.0e-4f,
-                                                  "restored value differs: " + where + " param " +
-                                                      juce::String(static_cast<int>(i)));
-
-                    // Saving again must not keep changing the file.
                     const auto recaptured = bridge::captureInternalDeviceState(*restored, captured);
                     expectEquals(recaptured, captured,
                                  "a second capture differs from the first: " + where);

@@ -280,11 +280,14 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         expect(doc->root.props["irFileData"].getBinaryData() != nullptr,
                "the captured state lost the impulse response");
 
+        // #2317: the document is authored state only; the low-cut travels in
+        // DeviceInfo::parameters, not here.
+        expect(doc->params.empty(), "capture wrote a duplicate parameter record");
+
         // What loading a project does: rebuild the plugin from the document.
         auto tree = ta::devicePluginTreeFromState(captured);
         expect(tree.isValid());
         auto restoredHolder = edit.getPluginCache().createNewPlugin(tree);
-        ta::applyDeviceStateParameters(*restoredHolder, captured);
 
         auto* restored = ta::deviceFromPlugin<audio::MagdaConvolutionPlugin>(restoredHolder.get());
         expect(restored != nullptr);
@@ -294,6 +297,10 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         expectEquals(restored->irName(), juce::String("Test Space"));
         expect(!restored->normalise(), "the normalise flag did not round-trip");
         expect(!restored->trimSilence());
+        // The parameter restores from the model array, the way a project load
+        // seats it (syncFromDeviceInfo), not from the document.
+        setSlotDisplayValue(*restoredHolder, *restored, audio::MagdaConvolutionPlugin::kLowCut,
+                            180.0f);
         expectWithinAbsoluteError(
             slotDisplayValue(*restoredHolder, *restored, audio::MagdaConvolutionPlugin::kLowCut),
             180.0f, 0.5f);

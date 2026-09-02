@@ -122,12 +122,7 @@ ArpeggiatorUI::ArpeggiatorUI() {
     setupSlider(cyclesSlider_, 1.0, 8.0, 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->rampCycles.store(juce::roundToInt(value), std::memory_order_relaxed);
-            settingsEdited();
-        }
-    };
+    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     setupLabel(quantizeLabel_, "Q");
     setupSlider(quantizeSlider_, 0.0, 1.0, 0.01);
@@ -135,30 +130,18 @@ ArpeggiatorUI::ArpeggiatorUI() {
         [](double v) { return juce::String(juce::roundToInt(v * 100.0)) + "%"; });
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.trimCharactersAtEnd("%").getDoubleValue() / 100.0; });
-    quantizeSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->quantize.store(static_cast<float>(value), std::memory_order_relaxed);
-            settingsEdited();
-        }
-    };
+    quantizeSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     setupLabel(quantizeSubLabel_, "SUB");
     setupSlider(quantizeSubSlider_, 16, 512, 16);
     quantizeSubSlider_.setValueFormatter(
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    quantizeSubSlider_.onValueChanged = [this](double value) {
-        if (plugin_) {
-            plugin_->quantizeSub.store(juce::roundToInt(value), std::memory_order_relaxed);
-            settingsEdited();
-        }
-    };
+    quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
-        if (plugin_) {
-            plugin_->hardAngle.store(hardAngle, std::memory_order_relaxed);
-            settingsEdited();
-        }
+        hardAngle_ = hardAngle;
+        settingsEdited();
     };
 
     setupLabel(velModeLabel_, "VEL MODE");
@@ -198,8 +181,19 @@ void ArpeggiatorUI::sendChange(int paramIndex, float value) {
 }
 
 void ArpeggiatorUI::settingsEdited() {
-    if (onSettingsEdited)
-        onSettingsEdited();
+    if (!onSettingsEdited)
+        return;
+
+    // The full settings set, from the controls, in the device's own state
+    // vocabulary. The owner patches these onto the model's document; the
+    // device itself is updated by the projection, not by this UI.
+    using IDs = daw::audio::ArpeggiatorPlugin::SettingIDs;
+    juce::NamedValueSet settings;
+    settings.set(IDs::rampCycles, juce::roundToInt(cyclesSlider_.getValue()));
+    settings.set(IDs::quantize, static_cast<float>(quantizeSlider_.getValue()));
+    settings.set(IDs::quantizeSub, juce::roundToInt(quantizeSubSlider_.getValue()));
+    settings.set(IDs::hardAngle, hardAngle_);
+    onSettingsEdited(settings);
 }
 
 void ArpeggiatorUI::setArpeggiator(daw::audio::ArpeggiatorPlugin* device) {
@@ -223,7 +217,8 @@ void ArpeggiatorUI::syncSettingsFromDevice() {
     quantizeSubSlider_.setValue(
         static_cast<double>(plugin_->quantizeSub.load(std::memory_order_relaxed)),
         juce::dontSendNotification);
-    rampCurveDisplay_.setHardAngle(plugin_->hardAngle.load(std::memory_order_relaxed));
+    hardAngle_ = plugin_->hardAngle.load(std::memory_order_relaxed);
+    rampCurveDisplay_.setHardAngle(hardAngle_);
 }
 
 void ArpeggiatorUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {

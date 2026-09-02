@@ -8,15 +8,12 @@
 
 namespace magda::daw::audio {
 
-namespace {
+const juce::Identifier MagdaConvolutionPlugin::StateIDs::name("name");
+const juce::Identifier MagdaConvolutionPlugin::StateIDs::normalise("normalise");
+const juce::Identifier MagdaConvolutionPlugin::StateIDs::trimSilence("trimSilence");
+const juce::Identifier MagdaConvolutionPlugin::StateIDs::irFileData("irFileData");
 
-// The device's own state property names. `irFileData`, `name`, `normalise` and
-// `trimSilence` deliberately match the retired Tracktion device's, which is how
-// a migrated project keeps its impulse response (core/LegacyDeviceAliases.cpp).
-const juce::Identifier kNameProp("name");
-const juce::Identifier kNormaliseProp("normalise");
-const juce::Identifier kTrimSilenceProp("trimSilence");
-const juce::Identifier kIrFileDataProp("irFileData");
+namespace {
 
 constexpr float kMinFrequency = 10.0f;
 constexpr float kMaxFrequency = 20000.0f;
@@ -165,7 +162,8 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const juce::File& file) {
     return loadImpulseResponse(fileData.getData(), fileData.getSize());
 }
 
-bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t sourceDataSize) {
+bool MagdaConvolutionPlugin::encodeImpulseResponse(const void* sourceData, size_t sourceDataSize,
+                                                   juce::MemoryBlock& outEncoded) {
     if (sourceData == nullptr || sourceDataSize == 0)
         return false;
 
@@ -197,6 +195,15 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t 
         return false;
 
     writer.reset();  // flush before the block is moved into the device state
+
+    outEncoded = std::move(encoded);
+    return true;
+}
+
+bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t sourceDataSize) {
+    juce::MemoryBlock encoded;
+    if (!encodeImpulseResponse(sourceData, sourceDataSize, encoded))
+        return false;
 
     irData_ = std::move(encoded);
     loadImpulseResponseFromData();
@@ -315,27 +322,27 @@ void MagdaConvolutionPlugin::process(DeviceProcessContext& context) {
 
 //==============================================================================
 void MagdaConvolutionPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(kNameProp, irName_, nullptr);
-    state.setProperty(kNormaliseProp, normalise_, nullptr);
-    state.setProperty(kTrimSilenceProp, trimSilence_, nullptr);
+    state.setProperty(StateIDs::name, irName_, nullptr);
+    state.setProperty(StateIDs::normalise, normalise_, nullptr);
+    state.setProperty(StateIDs::trimSilence, trimSilence_, nullptr);
 
     // Only written when the device holds an IR. A device with none leaves the
     // property alone rather than removing it: the retired device stored the
     // blob directly on this tree, and state written there behind the device's
     // back (tests do; a failed decode could) must survive a flush.
     if (irData_.getSize() > 0)
-        state.setProperty(kIrFileDataProp, juce::var(irData_), nullptr);
+        state.setProperty(StateIDs::irFileData, juce::var(irData_), nullptr);
 }
 
 void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* name = state.getPropertyPointer(kNameProp))
+    if (const auto* name = state.getPropertyPointer(StateIDs::name))
         irName_ = name->toString();
-    if (const auto* normalise = state.getPropertyPointer(kNormaliseProp))
+    if (const auto* normalise = state.getPropertyPointer(StateIDs::normalise))
         normalise_ = static_cast<bool>(*normalise);
-    if (const auto* trimSilence = state.getPropertyPointer(kTrimSilenceProp))
+    if (const auto* trimSilence = state.getPropertyPointer(StateIDs::trimSilence))
         trimSilence_ = static_cast<bool>(*trimSilence);
 
-    if (const auto* irFileData = state.getProperty(kIrFileDataProp).getBinaryData()) {
+    if (const auto* irFileData = state.getProperty(StateIDs::irFileData).getBinaryData()) {
         irData_ = *irFileData;
         loadImpulseResponseFromData();
     }

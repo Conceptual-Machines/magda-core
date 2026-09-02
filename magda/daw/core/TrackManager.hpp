@@ -3,6 +3,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -11,6 +12,7 @@
 #include "ChainIdRemap.hpp"
 #include "ChainNode.hpp"
 #include "ChainPlacement.hpp"
+#include "DeviceState.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -885,6 +887,32 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * plugin identity doesn't match the live device.
      */
     bool applyDevicePreset(const ChainNodePath& devicePath, const DeviceInfo& presetDevice);
+
+    /**
+     * @brief Edit an internal device's authored (non-parameter) state on the
+     *        model, then project it into the running engine (#2317).
+     *
+     * The one write direction for authored state: @p patch edits the device's
+     * state document (`device_state::Doc`) IN THE MODEL - decoded from
+     * `DeviceInfo::pluginState`, or a fresh document when the device has none
+     * - and the result is encoded back and pushed into the live plugin, never
+     * the other way around. Never touches `Doc::params`, which no longer
+     * exists in new documents; parameters go through setDeviceParameterValue.
+     *
+     * Returns false if the path doesn't resolve to an internal device or the
+     * saved state is from a future schema (which must not be edited blind).
+     */
+    bool updateDeviceAuthoredState(const ChainNodePath& devicePath,
+                                   const std::function<void(device_state::Doc&)>& patch);
+
+    /**
+     * @brief Replace an internal device's saved state document verbatim and
+     *        project it into the running engine.
+     *
+     * The undo half of updateDeviceAuthoredState: a command snapshots
+     * `DeviceInfo::pluginState`, and this puts a snapshot back.
+     */
+    bool setDeviceAuthoredState(const ChainNodePath& devicePath, const juce::String& docText);
 
     /**
      * @brief Apply a loaded rack preset to a live rack at the given path.

@@ -85,8 +85,20 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     void flushState(juce::ValueTree& state) override;
     void restoreState(const juce::ValueTree& state) override;
 
-    // --- Non-parameter settings (persisted device state, written by the UI) ---
-    // Atomics: the faceplate writes on the message thread while process() reads.
+    // ValueTree property ids for the non-parameter settings below. The
+    // spellings are the retired host-native plugin's, so saved projects keep
+    // them. Public because the faceplate's settings edits travel as model
+    // document patches in this vocabulary (#2317), not as writes to the
+    // atomics.
+    struct SettingIDs {
+        static const juce::Identifier rampCycles;
+        static const juce::Identifier quantize;
+        static const juce::Identifier quantizeSub;
+        static const juce::Identifier hardAngle;
+    };
+
+    // --- Non-parameter settings (persisted device state) ---
+    // Atomics: restoreState() writes on the message thread while process() reads.
     std::atomic<int> rampCycles{1};      // 1-8: curve repetitions within one arp cycle
     std::atomic<float> quantize{0.0f};   // 0..1: pull warped steps toward a regular grid
     std::atomic<int> quantizeSub{16};    // grid subdivisions for quantize

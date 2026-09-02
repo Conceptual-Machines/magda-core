@@ -34,6 +34,7 @@
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/DrumGridPads.hpp"
 #include "core/MidiFileWriter.hpp"
 #include "core/PadCommands.hpp"
@@ -938,19 +939,19 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
     if (device.pluginId.containsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName)) {
         arpeggiatorUI_ = std::make_unique<ArpeggiatorUI>();
         forwardParameterChanges(*arpeggiatorUI_, callbacks);
-        // Non-slot settings live in the device state, so an edit has to be
-        // captured into the model: that is what persists it, dirties the
-        // project, and hands the native engine's device the new values.
-        arpeggiatorUI_->onSettingsEdited = [this] {
-            auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-            auto* bridge = audioEngine != nullptr ? audioEngine->getAudioBridge() : nullptr;
-            if (bridge != nullptr) {
-                bridge->getPluginManager().capturePluginState(devicePath_);
-                // The capture is the model update - DeviceInfo.pluginState is
-                // what autosave writes and what the engine's device factory
-                // builds from - so the edit also has to dirty the project.
+        // Non-slot settings are authored state: the edit patches the MODEL's
+        // state document, and the projection updates the live device (#2317).
+        // The model is what autosave writes and what both engines build from,
+        // so the edit also dirties the project.
+        arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
+            auto& tm = magda::TrackManager::getInstance();
+            const bool changed = tm.updateDeviceAuthoredState(
+                devicePath_, [&settings](magda::device_state::Doc& doc) {
+                    for (int i = 0; i < settings.size(); ++i)
+                        doc.root.props.set(settings.getName(i), settings.getValueAt(i));
+                });
+            if (changed)
                 ProjectManager::getInstance().markDirty();
-            }
         };
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
@@ -1986,38 +1987,30 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         return false;
     }
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (audioEngine == nullptr) {
-        DBG("IR load: no audio engine");
-        return false;
-    }
-    auto* bridge = audioEngine->getAudioBridge();
-    if (bridge == nullptr) {
-        DBG("IR load: no audio bridge");
-        return false;
-    }
-    auto plugin = getLivePlugin();
-    if (!plugin) {
-        DBG("IR load: no plugin found for device " << devicePath_.getDeviceId());
-        return false;
-    }
-    auto* ir = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaConvolutionPlugin>(
-        plugin.get());
-    if (ir == nullptr) {
-        DBG("IR load: plugin is not a convolution device, type: " << plugin->getName());
-        return false;
-    }
-    if (!ir->loadImpulseResponse(file)) {
-        DBG("IR load: loadImpulseResponse returned false for: " << file.getFullPathName());
+    juce::MemoryBlock raw;
+    if (!file.loadFileAsData(raw)) {
+        DBG("IR load: could not read: " << file.getFullPathName());
         return false;
     }
 
-    ir->setIrName(file.getFileNameWithoutExtension());
+    // Encode up front so an unreadable file is refused before anything is
+    // committed. The command then writes the blob into the MODEL's state
+    // document and the projection reloads the live convolution from it -
+    // the same route a project load takes (#2317). Undoable: the previous
+    // document, previous IR included, comes back as one snapshot.
+    juce::MemoryBlock encoded;
+    if (!daw::audio::MagdaConvolutionPlugin::encodeImpulseResponse(raw.getData(), raw.getSize(),
+                                                                   encoded)) {
+        DBG("IR load: not readable as audio: " << file.getFullPathName());
+        return false;
+    }
+
+    magda::UndoManager::getInstance().executeCommand(
+        std::make_unique<magda::LoadImpulseResponseCommand>(
+            devicePath_, file.getFileNameWithoutExtension(), std::move(encoded)));
+
     if (impulseResponseUI_ != nullptr)
         impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());
-
-    // Capture plugin state so the IR persists in the project.
-    bridge->getPluginManager().capturePluginState(devicePath_);
     return true;
 }
 

@@ -1897,6 +1897,62 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
     }
 }
 
+namespace {
+
+/// Push an internal device's state document into its running plugin, if it has
+/// one. The projection direction: the model already holds the document, the
+/// engine adapter is told to match it.
+void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
+                                  const juce::String& docText) {
+    if (audioEngine == nullptr)
+        return;
+    auto* bridge = audioEngine->getAudioBridge();
+    if (bridge == nullptr)
+        return;
+    auto plugin = bridge->getPlugin(devicePath);
+    if (plugin == nullptr)
+        return;
+
+    namespace ta = daw::audio::tracktion_adapter;
+    if (auto tree = ta::devicePluginTreeFromState(docText); tree.isValid())
+        plugin->restorePluginStateFromValueTree(tree);
+}
+
+}  // namespace
+
+bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
+                                             const std::function<void(device_state::Doc&)>& patch) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
+        return false;
+    if (device_state::isFutureDeviceState(device->pluginState))
+        return false;
+
+    device_state::Doc doc;
+    if (auto decoded = device_state::decode(device->pluginState))
+        doc = std::move(*decoded);
+    doc.deviceType = device->pluginId;
+
+    patch(doc);
+
+    device->pluginState = device_state::encode(doc);
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
+
+bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
+                                          const juce::String& docText) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr || device->format != PluginFormat::Internal)
+        return false;
+
+    device->pluginState = docText;
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState);
+    notifyDevicePropertyChanged(devicePath);
+    return true;
+}
+
 bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                                      const DeviceInfo& presetDevice) {
     auto* live = getDeviceInChainByPath(devicePath);
@@ -1948,10 +2004,8 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
                 } else {
                     namespace ta = daw::audio::tracktion_adapter;
                     auto savedState = ta::devicePluginTreeFromState(live->pluginState);
-                    if (savedState.isValid()) {
+                    if (savedState.isValid())
                         plugin->restorePluginStateFromValueTree(savedState);
-                        ta::applyDeviceStateParameters(*plugin, live->pluginState);
-                    }
                 }
             }
         }

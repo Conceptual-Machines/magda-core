@@ -39,6 +39,19 @@ class DeviceProcessor {
     virtual ParameterInfo getParameterInfo(int index) const;
     virtual juce::String formatParameterValue(int index, float normalizedValue) const;
     virtual void populateParameters(DeviceInfo& info) const;
+
+    /**
+     * Refresh `info`'s parameters from this processor WITHOUT copying values
+     * back from the engine (#2317). For an internal device the model is the
+     * authority for parameter values: an entry the model already carried keeps
+     * its `currentValue` when the refreshed entry still names the same
+     * parameter (same frozen index, same identity), and only entries the model
+     * lacked - a new device, a parameter added by an update, a Faust recompile
+     * that changed what a slot means - take the processor's value. External
+     * devices get the plain copy-back: their chunk is authoritative and the
+     * model array mirrors it.
+     */
+    void populateParametersModelFirst(DeviceInfo& info) const;
     virtual void setParameterByIndex(int paramIndex, float value);
     void setParameterByIndex(int paramIndex, ParameterModelValue value);
 
