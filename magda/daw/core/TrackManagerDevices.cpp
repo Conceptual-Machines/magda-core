@@ -1965,18 +1965,31 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
     if (device == nullptr || device->format != PluginFormat::Internal)
         return false;
     // Same contract as updateDeviceAuthoredState: state this build cannot read
-    // must not be replaced blind.
-    if (device_state::isFutureDeviceState(device->pluginState))
+    // must not be replaced blind - and must not be ACCEPTED blind either. An
+    // incoming future-schema snapshot would sit in the model unreadable while
+    // the projection restored a bare tree in its place.
+    if (device_state::isFutureDeviceState(device->pluginState) ||
+        device_state::isFutureDeviceState(docText))
         return false;
 
     // Canonicalize at the WRITE BOUNDARY, not per mutation path: a snapshot
     // taken from a pre-#2317 document still carries the retired parameter
     // record, and an undo that put it back verbatim would recreate the second
-    // authority the edit itself just eliminated. Anything decode refuses -
+    // authority the edit itself just eliminated. Anything else decode refuses -
     // legacy engine XML, an empty string - passes through unchanged; only a
     // readable v2 document is stripped.
     auto canonical = docText;
     if (auto decoded = device_state::decode(docText)) {
+        // A readable document also has to be THIS device's: seating another
+        // device's authored state is corruption, not restoration. The saved
+        // type may be an older load alias, so the registry has the final say.
+        auto savedType = decoded->deviceType;
+        if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(savedType);
+            spec != nullptr && spec->pluginId != nullptr)
+            savedType = spec->pluginId;
+        if (savedType != device->pluginId)
+            return false;
+
         decoded->params.clear();
         decoded->paramsAreDisplayDomain = false;
         canonical = device_state::encode(*decoded);

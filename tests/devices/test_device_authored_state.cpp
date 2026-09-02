@@ -110,6 +110,33 @@ TEST_CASE("Undoing an authored-state command cannot resurrect the retired record
     tracks.clearAllTracks();
 }
 
+TEST_CASE("Snapshot replacement validates the incoming state too", "[device-authored-state]") {
+    auto& tracks = TrackManager::getInstance();
+
+    SECTION("a future-schema snapshot is refused, not stored unreadable") {
+        const auto path = addInternalDevice("arpeggiator", {});
+        const juce::String futureDoc =
+            "{\"schema\": 99, \"device\": \"arpeggiator\", \"somethingNewer\": true}";
+        CHECK_FALSE(tracks.setDeviceAuthoredState(path, futureDoc));
+        const auto* device = tracks.getDeviceInChainByPath(path);
+        REQUIRE(device != nullptr);
+        CHECK(device->pluginState.isEmpty());
+        tracks.clearAllTracks();
+    }
+
+    SECTION("another device's document is refused") {
+        const auto path = addInternalDevice("arpeggiator", {});
+        ds::Doc wrongDevice;
+        wrongDevice.deviceType = "magda_convolution";
+        wrongDevice.root.props.set(juce::Identifier("normalise"), true);
+        CHECK_FALSE(tracks.setDeviceAuthoredState(path, ds::encode(wrongDevice)));
+        const auto* device = tracks.getDeviceInChainByPath(path);
+        REQUIRE(device != nullptr);
+        CHECK(device->pluginState.isEmpty());
+        tracks.clearAllTracks();
+    }
+}
+
 TEST_CASE("Snapshot replacement passes through what decode refuses", "[device-authored-state]") {
     // Legacy engine XML is not a v2 document; a snapshot of it restores
     // verbatim rather than being mangled into one.
