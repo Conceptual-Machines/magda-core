@@ -326,12 +326,15 @@ void MagdaConvolutionPlugin::flushState(juce::ValueTree& state) {
     state.setProperty(StateIDs::normalise, normalise_, nullptr);
     state.setProperty(StateIDs::trimSilence, trimSilence_, nullptr);
 
-    // Only written when the device holds an IR. A device with none leaves the
-    // property alone rather than removing it: the retired device stored the
-    // blob directly on this tree, and state written there behind the device's
-    // back (tests do; a failed decode could) must survive a flush.
+    // The property tracks the device exactly: written when it holds an IR,
+    // REMOVED when it does not. Leaving a stale blob on the engine tree would
+    // let a capture write an un-loaded IR back into the model after an undo
+    // (#2317 review). restoreState() now owns the absent-means-none contract,
+    // so nothing legitimate parks state here behind the device's back.
     if (irData_.getSize() > 0)
         state.setProperty(StateIDs::irFileData, juce::var(irData_), nullptr);
+    else
+        state.removeProperty(StateIDs::irFileData, nullptr);
 }
 
 void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {
@@ -342,15 +345,34 @@ void MagdaConvolutionPlugin::restoreState(const juce::ValueTree& state) {
     if (const auto* trimSilence = state.getPropertyPointer(StateIDs::trimSilence))
         trimSilence_ = static_cast<bool>(*trimSilence);
 
+    // The document is the whole authored state, so no `irFileData` MEANS no
+    // impulse response - restoring a document saved before the first IR load
+    // (an undo of that load, a preset with none) has to unload the current
+    // one, or the model says "no IR" while playback keeps convolving with it
+    // (#2317 review). An empty blob reads the same way.
     if (const auto* irFileData = state.getProperty(StateIDs::irFileData).getBinaryData()) {
         irData_ = *irFileData;
-        loadImpulseResponseFromData();
+    } else {
+        irData_ = {};
+        if (!state.hasProperty(StateIDs::name))
+            irName_.clear();
     }
+    loadImpulseResponseFromData();
 }
 
 void MagdaConvolutionPlugin::loadImpulseResponseFromData() {
     if (irData_.getSize() == 0) {
         irLengthSeconds_.store(0.0, std::memory_order_relaxed);
+        // dsp::Convolution has no unload, but a single-sample unit impulse IS
+        // the identity: loading it returns the stage to the pass-through a
+        // fresh convolution gives, so "no IR" sounds the same whether the
+        // device never loaded one or just un-loaded it (#2317 review).
+        juce::AudioBuffer<float> dirac(1, 1);
+        dirac.setSample(0, 0, 1.0f);
+        chain_.get<kConvolution>().loadImpulseResponse(
+            std::move(dirac), sampleRate_ > 0.0 ? sampleRate_ : 44100.0,
+            juce::dsp::Convolution::Stereo::no, juce::dsp::Convolution::Trim::no,
+            juce::dsp::Convolution::Normalise::no);
         return;
     }
 

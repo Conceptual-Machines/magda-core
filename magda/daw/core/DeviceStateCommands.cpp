@@ -1,5 +1,6 @@
 #include "DeviceStateCommands.hpp"
 
+#include "DeviceState.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"
 
@@ -16,7 +17,17 @@ juce::String LoadImpulseResponseCommand::getDescription() const {
 
 bool LoadImpulseResponseCommand::canExecute() const {
     const auto* device = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
-    return device != nullptr && irData_.getSize() > 0;
+    if (device == nullptr || irData_.getSize() == 0)
+        return false;
+
+    // The same preconditions updateDeviceAuthoredState() enforces, checked
+    // here so a refused edit is refused BEFORE SnapshotCommand marks the
+    // command executed and the UndoManager records a dirty no-op undo step.
+    // The device id is a literal for the same layering reason as the property
+    // names below: core must not include a concrete device header.
+    if (device->format != PluginFormat::Internal || device->pluginId != "magda_convolution")
+        return false;
+    return !device_state::isFutureDeviceState(device->pluginState);
 }
 
 juce::String LoadImpulseResponseCommand::captureState() {

@@ -51,6 +51,7 @@ set(TEST_SOURCES
     project/test_update_checker.cpp
     devices/test_plugin_loading.cpp
     devices/test_plugin_format.cpp
+    devices/test_device_authored_state.cpp
     devices/test_device_state_hydration.cpp
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)

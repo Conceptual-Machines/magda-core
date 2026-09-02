@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "core/ChainWalk.hpp"
+#include "core/DeviceParamMigrations.hpp"
 #include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/TrackInfo.hpp"
@@ -147,8 +148,32 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
     if (!doc || doc->params.empty())
         return false;
 
+    // A record saved against a parameter order this build has since renumbered
+    // is identified by ITS length, not the model array's - the model array is
+    // exactly what an old preset or imported chain does not have. Remap the
+    // frozen indices first, or every old index would be read as a current one
+    // and land on the wrong slot (the pre-Enabled EQ, the 7-slot limiter).
+    // Dropped indices are dropped for the same reason the project-level pass
+    // drops them: re-pointing a value at a neighbour is corruption.
+    auto savedParams = doc->params;
+    const auto* migration = device_param_migrations::findMigrationForSavedCount(
+        device.pluginId, static_cast<int>(savedParams.size()));
+    if (migration != nullptr) {
+        std::vector<ds::ParamValue> remapped;
+        remapped.reserve(savedParams.size());
+        for (auto saved : savedParams) {
+            const auto newIndex =
+                device_param_migrations::migratedParamIndex(*migration, saved.index);
+            if (!newIndex.has_value())
+                continue;
+            saved.index = *newIndex;
+            remapped.push_back(std::move(saved));
+        }
+        savedParams = std::move(remapped);
+    }
+
     std::vector<const ds::ParamValue*> missing;
-    for (const auto& saved : doc->params)
+    for (const auto& saved : savedParams)
         if (saved.index >= 0 && !modelCarries(device, saved))
             missing.push_back(&saved);
     if (missing.empty())
@@ -184,6 +209,33 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
         }
         // A normalised value without slot metadata is meaningless and is
         // dropped: there is no device to run it on either.
+    }
+
+    // Parameters the migrated order ADDED, seeded so the device keeps doing
+    // what the old one did (an old EQ's bands were always running; today they
+    // default off). Seed values are display-domain by contract
+    // (DeviceParamMigrations.hpp), whatever domain the record itself used.
+    if (migration != nullptr) {
+        for (const auto& seed : migration->seeded) {
+            if (device.findParameterByIndex(seed.index) != nullptr)
+                continue;
+            if (metadata != nullptr && seed.index < metadata->parameterCount()) {
+                auto info = metadata->parameterInfo(seed.index);
+                info.paramIndex = seed.index;
+                info.currentValue = seed.value;
+                device.parameters.push_back(std::move(info));
+            } else {
+                ParameterInfo info;
+                info.paramIndex = seed.index;
+                info.name = seed.name != nullptr ? juce::String(seed.name) : juce::String();
+                info.minValue = std::min(0.0f, seed.value);
+                info.maxValue = std::max(1.0f, seed.value);
+                info.defaultValue = seed.value;
+                info.currentValue = seed.value;
+                device.parameters.push_back(std::move(info));
+            }
+            added = true;
+        }
     }
 
     // A fully hydrated array keeps the device's own display order; entries

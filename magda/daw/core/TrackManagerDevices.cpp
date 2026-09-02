@@ -1903,7 +1903,7 @@ namespace {
 /// one. The projection direction: the model already holds the document, the
 /// engine adapter is told to match it.
 void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath& devicePath,
-                                  const juce::String& docText) {
+                                  const juce::String& docText, const juce::String& deviceType) {
     if (audioEngine == nullptr)
         return;
     auto* bridge = audioEngine->getAudioBridge();
@@ -1914,8 +1914,16 @@ void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath&
         return;
 
     namespace ta = daw::audio::tracktion_adapter;
-    if (auto tree = ta::devicePluginTreeFromState(docText); tree.isValid())
-        plugin->restorePluginStateFromValueTree(tree);
+    auto tree = ta::devicePluginTreeFromState(docText);
+    if (!tree.isValid()) {
+        // An empty snapshot is still a state: "nothing authored". Project a
+        // bare typed tree so a device whose contract reads absence as none (a
+        // convolution's impulse response) actually unloads, rather than the
+        // model saying the edit was undone while the engine keeps playing it.
+        tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
+        tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
+    }
+    plugin->restorePluginStateFromValueTree(tree);
 }
 
 }  // namespace
@@ -1933,10 +1941,20 @@ bool TrackManager::updateDeviceAuthoredState(const ChainNodePath& devicePath,
         doc = std::move(*decoded);
     doc.deviceType = device->pluginId;
 
+    // A pre-#2317 document still carries the retired duplicate parameter
+    // record, and encode() writes whatever is in `params`. The record was
+    // consumed by the load-time hydration; writing it back here would leave a
+    // second persisted authority alive in every path that never passes through
+    // a Tracktion capture (preset saves, native-only sessions), free to
+    // hydrate stale values on the next load. This edit is the moment the
+    // document goes canonical.
+    doc.params.clear();
+    doc.paramsAreDisplayDomain = false;
+
     patch(doc);
 
     device->pluginState = device_state::encode(doc);
-    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState);
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
     notifyDevicePropertyChanged(devicePath);
     return true;
 }
@@ -1948,7 +1966,7 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
         return false;
 
     device->pluginState = docText;
-    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState);
+    projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
     notifyDevicePropertyChanged(devicePath);
     return true;
 }

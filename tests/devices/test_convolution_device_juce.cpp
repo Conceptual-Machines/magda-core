@@ -132,6 +132,7 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         testLoadedImpulseResponseConvolves(*edit);
         testTrimSilenceReachesTheDsp(*edit);
         testImpulseResponseSurvivesSaveAndReload(*edit);
+        testRestoringAStatelessDocumentUnloadsTheImpulseResponse(*edit);
         testDryPassesThroughUntouched(*edit);
     }
 
@@ -313,6 +314,52 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
                      "the reloaded device is not convolving with the saved IR");
 
         restoredHolder->deleteFromParent();
+    }
+
+    // Undoing the FIRST IR load restores a document with no `irFileData`.
+    // Absence means none (#2317 review): the device must unload - stop
+    // convolving, drop the name, and stop writing the blob back on the next
+    // flush, or capture would resurrect the "undone" IR into the model.
+    void testRestoringAStatelessDocumentUnloadsTheImpulseResponse(te::Edit& edit) {
+        beginTest("Restoring a document without an IR unloads the device");
+
+        auto irFile = writeDelayImpulseResponse();
+
+        te::Plugin::Ptr holder;
+        auto* convolution = createConvolution(edit, holder);
+        expect(convolution != nullptr);
+        if (convolution == nullptr)
+            return;
+
+        expect(convolution->loadImpulseResponse(irFile));
+        convolution->setIrName("Doomed");
+        irFile.deleteFile();
+        expect(convolution->irName() == "Doomed");
+
+        // What setDeviceAuthoredState projects for an empty snapshot: a bare
+        // typed tree, nothing authored.
+        juce::ValueTree bare(te::IDs::PLUGIN);
+        bare.setProperty(te::IDs::type, audio::MagdaConvolutionPlugin::xmlTypeName, nullptr);
+        convolution->restoreState(bare);
+
+        expect(convolution->irName().isEmpty(), "the un-loaded IR kept its name");
+        expectWithinAbsoluteError(convolution->properties().tailLengthSeconds, 0.0, 1.0e-9,
+                                  "the un-loaded IR still reports a tail");
+
+        // A capture after the unload must not resurrect the blob.
+        juce::ValueTree flushed(te::IDs::PLUGIN);
+        convolution->flushState(flushed);
+        expect(!flushed.hasProperty(te::IDs::irFileData),
+               "flush wrote an impulse response the device no longer holds");
+
+        // And the unloaded device passes signal instead of convolving.
+        setSlotDisplayValue(*holder, *convolution, audio::MagdaConvolutionPlugin::kMix, 1.0f);
+        prepareForRender(*holder);
+        const auto rendered = renderImpulse(*holder);
+        expectEquals(peakIndex(rendered), 0,
+                     "the un-loaded device is still convolving with the old IR");
+
+        holder->deleteFromParent();
     }
 
     void testDryPassesThroughUntouched(te::Edit& edit) {

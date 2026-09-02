@@ -2005,9 +2005,16 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
         return false;
     }
 
-    magda::UndoManager::getInstance().executeCommand(
-        std::make_unique<magda::LoadImpulseResponseCommand>(
-            devicePath_, file.getFileNameWithoutExtension(), std::move(encoded)));
+    auto command = std::make_unique<magda::LoadImpulseResponseCommand>(
+        devicePath_, file.getFileNameWithoutExtension(), std::move(encoded));
+    // Refused BEFORE it reaches the UndoManager: executeCommand records even a
+    // command whose execute() declines, which would leave a no-op undo step
+    // and a false success here.
+    if (!command->canExecute()) {
+        DBG("IR load: refused (future-schema state or not a convolution device)");
+        return false;
+    }
+    magda::UndoManager::getInstance().executeCommand(std::move(command));
 
     if (impulseResponseUI_ != nullptr)
         impulseResponseUI_->setIRName(file.getFileNameWithoutExtension());

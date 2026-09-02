@@ -283,6 +283,10 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         // The IR device keeps its audio in a binary property. JUCE's JSON writer
         // has no binary case, so an untagged encode emits unquoted base64 and the
         // document stops parsing entirely - the device would lose all its state.
+        // A neutral property name: `irFileData` itself is owned exactly by the
+        // device since the absent-means-none contract (flushState removes it
+        // when no IR is held), so a blob parked there behind the device's back
+        // no longer survives - any other binary property still does.
         auto plugin = createPlugin(edit, audio::MagdaConvolutionPlugin::xmlTypeName);
         expect(plugin != nullptr);
         if (plugin == nullptr)
@@ -293,7 +297,8 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
             const auto byte = static_cast<char>(i & 0xff);
             payload.append(&byte, 1);
         }
-        plugin->state.setProperty(te::IDs::irFileData, juce::var(payload), nullptr);
+        static const juce::Identifier kBlobProp("testBinaryBlob");
+        plugin->state.setProperty(kBlobProp, juce::var(payload), nullptr);
 
         const auto state = ta::captureInternalDeviceState(*plugin, {});
         plugin->deleteFromParent();
@@ -303,14 +308,15 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         if (!doc)
             return;
 
-        const auto* captured = doc->root.props["irFileData"].getBinaryData();
+        const auto* captured = doc->root.props["testBinaryBlob"].getBinaryData();
         expect(captured != nullptr, "binary property did not decode as binary");
         if (captured != nullptr)
             expect(*captured == payload, "binary property changed through the round-trip");
 
         auto restoredTree = ta::devicePluginTreeFromState(state);
         expect(restoredTree.isValid());
-        const auto* restoredBlock = restoredTree.getProperty(te::IDs::irFileData).getBinaryData();
+        const auto* restoredBlock =
+            restoredTree.getProperty(juce::Identifier("testBinaryBlob")).getBinaryData();
         expect(restoredBlock != nullptr, "restored tree lost the binary property");
         if (restoredBlock != nullptr)
             expect(*restoredBlock == payload, "restored binary property does not match");

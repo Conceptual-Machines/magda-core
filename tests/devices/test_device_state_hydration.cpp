@@ -8,6 +8,7 @@
 #include "../../magda/daw/audio/plugins/MagdaDevice.hpp"
 #include "../../magda/daw/audio/plugins/SidechainPlugin.hpp"
 #include "../../magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "../../magda/daw/core/DeviceParamMigrations.hpp"
 #include "../../magda/daw/core/DeviceState.hpp"
 #include "../../magda/daw/core/ParameterUtils.hpp"
 
@@ -228,6 +229,76 @@ TEST_CASE("Hydration leaves what it cannot read alone", "[device-state-hydration
 
         REQUIRE_FALSE(hydration::hydrateParametersFromDeviceState(device));
     }
+}
+
+TEST_CASE("A document saved against a renumbered parameter order is remapped and seeded",
+          "[device-state-hydration]") {
+    // The pre-Enabled compiled EQ: 33 slots -> 41, with the per-band Enabled
+    // switch inserted at the front of every band. The project-level migration
+    // pass matches on DeviceInfo::parameters.size(), which is empty in exactly
+    // the case hydration exists for (an old preset's document, an imported
+    // chain) - so hydration must run the record through the same table itself,
+    // or every old index lands on the wrong current slot (#2317 review).
+    const juce::String eqId = "magda_eq";
+    const auto* spec = daw::audio::compiled::findCompiledPluginSpec(eqId);
+    if (spec == nullptr || spec->createDevice == nullptr)
+        SKIP("compiled pack not linked into this test build");
+
+    const auto* migration = device_param_migrations::findMigrationForSavedCount(eqId, 33);
+    REQUIRE(migration != nullptr);
+
+    auto device = internalDevice(eqId);
+    ds::Doc doc;
+    doc.deviceType = eqId;
+    // The full 33-entry old order, normalised like every compiled document.
+    for (int i = 0; i < 33; ++i)
+        doc.params.push_back({i, "", 0.25f});
+    device.pluginState = ds::encode(doc);
+
+    REQUIRE(hydration::hydrateParametersFromDeviceState(device));
+
+    // Old band-1 slot 0 (filter type) now lives AFTER the inserted Enabled
+    // switch; nothing may sit on an old index read as a current one.
+    const auto expectedIndex = device_param_migrations::migratedParamIndex(*migration, 0);
+    REQUIRE(expectedIndex.has_value());
+    CHECK(*expectedIndex == 1);
+    CHECK(device.findParameterByIndex(*expectedIndex) != nullptr);
+
+    // The eight Enabled switches the old device did not have are seeded ON, in
+    // display units, so an old EQ keeps shaping the sound.
+    for (const auto& seed : migration->seeded) {
+        const auto* seeded = device.findParameterByIndex(seed.index);
+        REQUIRE(seeded != nullptr);
+        CHECK(seeded->currentValue == Catch::Approx(seed.value));
+    }
+}
+
+TEST_CASE("A renumbered document's dropped slots are dropped, not re-pointed",
+          "[device-state-hydration]") {
+    // The 7-slot limiter lost Hold, Mix and Autogain; their values must not
+    // land on the parameters that moved onto those indices.
+    const juce::String limiterId = "magda_limiter";
+    if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(limiterId);
+        spec == nullptr || spec->createDevice == nullptr)
+        SKIP("compiled pack not linked into this test build");
+
+    const auto* migration = device_param_migrations::findMigrationForSavedCount(limiterId, 7);
+    REQUIRE(migration != nullptr);
+
+    auto device = internalDevice(limiterId);
+    ds::Doc doc;
+    doc.deviceType = limiterId;
+    for (int i = 0; i < 7; ++i)
+        doc.params.push_back({i, "", 0.5f});
+    device.pluginState = ds::encode(doc);
+
+    REQUIRE(hydration::hydrateParametersFromDeviceState(device));
+
+    // 4 survivors (0,1,3,5 -> 0,1,2,3); the dropped Hold/Mix/Autogain must
+    // not produce entries past the new order's end or duplicates within it.
+    CHECK(device.parameters.size() == 4);
+    for (int i = 0; i < 4; ++i)
+        CHECK(device.findParameterByIndex(i) != nullptr);
 }
 
 TEST_CASE("Provenance parses the container's magdaVersion", "[device-state-hydration]") {
