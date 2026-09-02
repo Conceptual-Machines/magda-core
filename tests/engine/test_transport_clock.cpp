@@ -392,6 +392,70 @@ TEST_CASE("One tempo throughout cuts nothing", "[engine][transport][clock][tempo
     CHECK(rendered.segments.size() == 1);
 }
 
+TEST_CASE("Monotonic samples count what the transport rolled",
+          "[engine][transport][clock][samples]") {
+    TransportClock clock;
+    const auto snapshot = playing(0.0);
+
+    CHECK(clock.monotonicSamples() == 0);
+
+    const auto first = advance(clock, snapshot, 512);
+    CHECK(first.segments[0].block.monotonicSamples.start == 0);
+    CHECK(first.segments[0].block.monotonicSamples.end == 512);
+    CHECK(clock.monotonicSamples() == 512);
+
+    // Picks up where the last block left off, so two blocks are adjacent on
+    // this axis whatever the timeline did between them.
+    const auto second = advance(clock, snapshot, 512);
+    CHECK(second.segments[0].block.monotonicSamples.start == 512);
+    CHECK(clock.monotonicSamples() == 1024);
+}
+
+TEST_CASE("A stopped transport rolls no samples", "[engine][transport][clock][samples]") {
+    // A stopped block still renders, so tails ring out, but nothing played:
+    // the count stands still for the same reason the timeline does.
+    TransportClock clock;
+
+    advance(clock, playing(0.0), 512);
+    REQUIRE(clock.monotonicSamples() == 512);
+
+    const auto rendered = advance(clock, halt(2), 512);
+
+    CHECK(rendered.segments[0].block.monotonicSamples.start == 512);
+    CHECK(rendered.segments[0].block.monotonicSamples.end == 512);
+    CHECK(clock.monotonicSamples() == 512);
+}
+
+TEST_CASE("Nothing that moves the cursor moves the sample count",
+          "[engine][transport][clock][samples]") {
+    // The point of the axis. A wrap takes the timeline back and a locate puts
+    // it anywhere, and neither is a thing that unplays a sample.
+    TransportClock clock;
+
+    auto looping = playing(0.0);
+    looping.loop = {true, 0.0, 1.0};
+
+    // Several beats' worth at 120 bpm, so the loop wraps more than once.
+    constexpr auto kSamples = static_cast<int>(kSamplesPerBeat * 3);
+
+    const auto wrapped = advance(clock, looping, kSamples);
+    requireCovers(wrapped, kSamples);
+
+    // Cut into pieces by the wraps, and the pieces are adjacent: the count
+    // carries across a boundary the timeline does not.
+    for (std::size_t i = 1; i < wrapped.segments.size(); ++i)
+        CHECK(wrapped.segments[i].block.monotonicSamples.start ==
+              wrapped.segments[i - 1].block.monotonicSamples.end);
+
+    CHECK(clock.monotonicSamples() == kSamples);
+
+    // A locate backwards, which is where a beat-counting axis would go back.
+    const auto located = advance(clock, playing(0.0, 2), 512);
+
+    CHECK(located.segments[0].block.monotonicSamples.start == kSamples);
+    CHECK(clock.monotonicSamples() == kSamples + 512);
+}
+
 TEST_CASE("A request is applied once", "[engine][transport][clock]") {
     TransportClock clock;
     const auto snapshot = playing(2.0);

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /**
  * @file TimeDomains.hpp
  * @brief The four domains the engine says "when" in.
@@ -44,6 +46,36 @@ struct SecondsRange {
     }
 
     bool operator==(const SecondsRange&) const = default;
+};
+
+/**
+ * @brief A stretch of the transport's own sample count, half open.
+ *
+ * The count never goes back. A locate does not move it, a loop wrap does not
+ * take it back, a tempo edit does not rescale it, and re-anchoring the cursor
+ * does not reset it: it is how many samples the transport has rolled, and the
+ * device only ever hands over more of them.
+ *
+ * Which is what makes it the coordinate the others are derived from rather than
+ * one more of them. A beat is where something sits and a second is how long
+ * something lasted, and both are answers a tempo map gives; a sample is what
+ * played. Two beats a thousand blocks apart can be the same beat and two
+ * elapsed seconds can disagree about which cycle they are in, but no two
+ * samples are the same sample.
+ */
+struct SampleRange {
+    std::int64_t start = 0;
+    std::int64_t end = 0;
+
+    std::int64_t length() const {
+        return end - start;
+    }
+
+    bool empty() const {
+        return end <= start;
+    }
+
+    bool operator==(const SampleRange&) const = default;
 };
 
 /**
