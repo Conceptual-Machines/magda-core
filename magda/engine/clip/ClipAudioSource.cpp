@@ -108,11 +108,13 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
     forEachSlot(
         *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
             const auto play = [&](const BeatRange& range, const std::optional<double>& playStart,
-                                  int offset, int count) {
-                if (count <= 0 || !playStart)
+                                  const std::optional<double>& playStartSeconds, int offset,
+                                  int count) {
+                if (count <= 0 || !playStart || !playStartSeconds)
                     return;
 
-                gather(slot.audio, materialSubBlock(block, range, *playStart, count), offset,
+                gather(slot.audio,
+                       materialSubBlock(block, range, *playStart, *playStartSeconds, count), offset,
                        streams, sounding, soundingCount);
             };
 
@@ -122,10 +124,11 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
             const auto split = splitSample(block, status);
 
             if (status.playing1)
-                play(status.range1, status.playStartTime1, 0, split);
+                play(status.range1, status.playStartTime1, status.playStartSeconds1, 0, split);
 
             if (status.isSplit && status.playing2)
-                play(status.range2, status.playStartTime2, split, block.numSamples - split);
+                play(status.range2, status.playStartTime2, status.playStartSeconds2, split,
+                     block.numSamples - split);
         });
 }
 

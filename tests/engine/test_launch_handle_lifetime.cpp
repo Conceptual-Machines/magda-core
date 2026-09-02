@@ -43,7 +43,8 @@ ClipSnapshot snapshotWithScenes(const std::vector<int>& scenes, TrackId trackId 
 /// remade is visible rather than merely equal.
 void launch(LaunchHandle& handle) {
     handle.play({});
-    handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{0.0, 2.0}});
+    handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{0.0, 2.0}, SecondsRange{0.0, 1.0},
+                             SecondsRange{0.0, 1.0}});
     REQUIRE(handle.playState() == LaunchHandle::PlayState::playing);
 }
 

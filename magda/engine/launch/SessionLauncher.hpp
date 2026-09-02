@@ -119,13 +119,16 @@ class LaunchHandleFeed {
 /**
  * @brief The block as the launcher names it.
  *
- * Both faces of the same stretch, taken from the one place they were derived
- * together. The monotonic face is what a queued position is named in and the
- * only one that survives a loop wrap (RenderContext.hpp).
+ * All four faces of the same stretch, taken from the one place they were
+ * derived together. The monotonic faces are the ones that survive a loop wrap:
+ * beats are what a queued position is named in, seconds are what a run measures
+ * how far into its material it has got in (RenderContext.hpp).
  */
 inline SyncRange syncRangeFor(const BlockInfo& block) {
     return SyncRange{BeatRange{block.startBeat, block.endBeat},
-                     BeatRange{block.startMonotonicBeat, block.endMonotonicBeat}};
+                     BeatRange{block.startMonotonicBeat, block.endMonotonicBeat},
+                     SecondsRange{block.startSeconds, block.endSeconds},
+                     SecondsRange{block.startMonotonicSeconds, block.endMonotonicSeconds}};
 }
 
 /**

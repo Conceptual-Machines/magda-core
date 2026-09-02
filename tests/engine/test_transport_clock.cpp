@@ -519,3 +519,123 @@ TEST_CASE("The monotonic beat counts what was rolled through, not where the curs
         CHECK(whole.monotonicBeat() == approx(pieces.monotonicBeat()));
     }
 }
+
+TEST_CASE("The monotonic seconds count rendered time, not converted beats",
+          "[engine][transport][clock][monotonic]") {
+    // The fourth face (#2324). Beats and seconds each have a timeline form that
+    // jumps and a monotonic form that does not, and this is the one a run
+    // measures its own length in. It exists because the alternative was asking
+    // a tempo map how far apart two beats are, and a map answers where a beat
+    // is: across an edit, or across a wrap, that is a different question.
+    TransportClock clock;
+
+    /// The seconds a whole number of samples lasts, which is what this counts.
+    const auto secondsOf = [](int samples) { return samples / kSampleRate; };
+
+    SECTION("it advances by the samples rendered") {
+        const auto snapshot = playing(0.0);
+        const auto block = advance(clock, snapshot, 512);
+
+        REQUIRE(block.segments.size() == 1);
+        CHECK(block.segments[0].block.startMonotonicSeconds == approx(0.0));
+        CHECK(block.segments[0].block.endMonotonicSeconds == approx(secondsOf(512)));
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(512)));
+    }
+
+    SECTION("a tempo edit changes the beats and not this") {
+        auto fast = playing(0.0);
+        auto slow = playing(0.0);
+        slow.tempo = TempoMap({{0.0, 60.0, 0.0f}}, {});
+
+        advance(clock, fast, 4096);
+        const auto afterFast = clock.monotonicSeconds();
+
+        advance(clock, slow, 4096);
+
+        // Half the musical time in the second block and exactly the same
+        // wall-clock time, because the same samples went by.
+        CHECK(afterFast == approx(secondsOf(4096)));
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(8192)));
+    }
+
+    SECTION("a loop wrap takes the timeline back and leaves this alone") {
+        auto snapshot = playing(0.0);
+        snapshot.loop = {true, 0.0, 2.0};
+
+        for (auto i = 0; i < 5; ++i)
+            advance(clock, snapshot, static_cast<int>(kSamplesPerBeat));
+
+        CHECK(clock.positionBeats() == approx(1.0));
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(static_cast<int>(kSamplesPerBeat) * 5)));
+    }
+
+    SECTION("it never goes backwards across a wrap inside one callback") {
+        auto snapshot = playing(0.0);
+        snapshot.loop = {true, 0.0, 1.0};
+
+        const auto block = advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 2);
+        REQUIRE(block.segments.size() >= 2);
+
+        auto previous = -1.0;
+        auto rendered = 0;
+        for (const auto& segment : block.segments) {
+            CHECK(segment.block.startMonotonicSeconds >= previous);
+            CHECK(segment.block.endMonotonicSeconds >= segment.block.startMonotonicSeconds);
+            previous = segment.block.endMonotonicSeconds;
+            rendered += segment.block.numSamples;
+        }
+
+        // End to end, and exactly the callback: the pieces of a cut callback
+        // share the samples out and none of them is counted twice.
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(rendered)));
+    }
+
+    SECTION("a locate moves the cursor and does not rewind this") {
+        advance(clock, playing(8.0, 1), static_cast<int>(kSamplesPerBeat));
+        advance(clock, playing(0.0, 2), static_cast<int>(kSamplesPerBeat));
+
+        CHECK(clock.positionBeats() == approx(1.0));
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(static_cast<int>(kSamplesPerBeat) * 2)));
+    }
+
+    SECTION("a count-in is time the transport rolled through") {
+        auto snapshot = playing(0.0);
+        snapshot.request.countInBeats = 2.0;
+
+        advance(clock, snapshot, static_cast<int>(kSamplesPerBeat) * 3);
+
+        // Counting in is playing: the metronome sounds and the clock runs, so a
+        // run launched into the count-in measures from where it started rather
+        // than from where the material does.
+        CHECK(clock.monotonicSeconds() == approx(secondsOf(static_cast<int>(kSamplesPerBeat) * 3)));
+    }
+
+    SECTION("a stopped block does not advance it") {
+        advance(clock, playing(0.0, 1), static_cast<int>(kSamplesPerBeat));
+        const auto rolled = clock.monotonicSeconds();
+
+        const auto block = advance(clock, halt(2), 512);
+        REQUIRE(block.segments.size() == 1);
+
+        CHECK(block.segments[0].block.startMonotonicSeconds == approx(rolled));
+        CHECK(block.segments[0].block.endMonotonicSeconds == approx(rolled));
+        CHECK(clock.monotonicSeconds() == approx(rolled));
+    }
+
+    SECTION("it does not depend on how the callbacks were cut") {
+        TransportClock whole, pieces;
+        const auto snapshot = playing(0.0);
+
+        for (auto i = 0; i < 100; ++i)
+            advance(whole, snapshot, 512);
+
+        for (auto i = 0; i < 100; ++i) {
+            advance(pieces, snapshot, 128);
+            advance(pieces, snapshot, 64);
+            advance(pieces, snapshot, 256);
+            advance(pieces, snapshot, 64);
+        }
+
+        CHECK(whole.monotonicSeconds() == approx(pieces.monotonicSeconds()));
+    }
+}

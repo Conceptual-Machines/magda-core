@@ -19,11 +19,26 @@ using Catch::Approx;
 
 namespace {
 
-/// One block, one beat per unit, with the timeline and the monotonic clock
+/// Half a second a beat, which is 120 bpm and the tempo every case here runs
+/// at unless it says otherwise.
+constexpr double kSecondsPerBeat = 0.5;
+
+/// One block, in all four faces, with the timeline and the monotonic clocks
 /// running together. The two only diverge when something wraps the timeline,
 /// which the loop cases below do on purpose.
 SyncRange block(double from, double to) {
-    return SyncRange{BeatRange{from, to}, BeatRange{from, to}};
+    return SyncRange{BeatRange{from, to}, BeatRange{from, to},
+                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
+                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat}};
+}
+
+/// A block the timeline has wrapped under: it covers @p from to @p to on the
+/// timeline and @p monotonicFrom to @p monotonicTo on the clocks that do not
+/// go back.
+SyncRange wrapped(double from, double to, double monotonicFrom, double monotonicTo) {
+    return SyncRange{BeatRange{from, to}, BeatRange{monotonicFrom, monotonicTo},
+                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
+                     SecondsRange{monotonicFrom * kSecondsPerBeat, monotonicTo * kSecondsPerBeat}};
 }
 
 }  // namespace
@@ -156,8 +171,8 @@ TEST_CASE("The played range keeps increasing across a timeline wrap", "[launch]"
 
     // Two bars, then the loop takes the timeline back to zero while the
     // monotonic clock carries on. This is the case the two domains exist for.
-    handle.advance(SyncRange{BeatRange{6.0, 8.0}, BeatRange{6.0, 8.0}});
-    handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{8.0, 10.0}});
+    handle.advance(wrapped(6.0, 8.0, 6.0, 8.0));
+    handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
     REQUIRE(handle.playedRange().has_value());
     CHECK(handle.playedRange()->start == Approx(6.0));
@@ -174,10 +189,10 @@ TEST_CASE("A queued launch fires on the monotonic beat, not the timeline one", "
     // The timeline visits beat 9.0 in neither block, and the launch still
     // happens: a queued position is a monotonic one. A handle that resolved
     // against the timeline would wait for ever here.
-    const auto first = handle.advance(SyncRange{BeatRange{6.0, 8.0}, BeatRange{6.0, 8.0}});
+    const auto first = handle.advance(wrapped(6.0, 8.0, 6.0, 8.0));
     CHECK_FALSE(first.playing1);
 
-    const auto second = handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{8.0, 10.0}});
+    const auto second = handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
     REQUIRE(second.isSplit);
     CHECK(second.playing2);
@@ -264,7 +279,7 @@ TEST_CASE("Nudge moves the playhead without ending the run", "[launch]") {
     handle.play({});
     handle.advance(block(0.0, 2.0));
 
-    handle.nudge(0.5);
+    handle.nudge(0.5, 0.5 * kSecondsPerBeat);
 
     REQUIRE(handle.playedRange().has_value());
     CHECK(handle.playedRange()->length() == Approx(2.5));
@@ -422,12 +437,12 @@ TEST_CASE("A backward nudge cannot take a run before it started", "[launch]") {
     handle.advance(block(0.0, 2.0));
 
     SECTION("within the run it shifts the origin") {
-        handle.nudge(-0.5);
+        handle.nudge(-0.5, -0.5 * kSecondsPerBeat);
         CHECK(handle.playedRange()->length() == Approx(1.5));
     }
 
     SECTION("past the start it clamps rather than inverting") {
-        handle.nudge(-3.0);
+        handle.nudge(-3.0, -3.0 * kSecondsPerBeat);
 
         const auto played = *handle.playedRange();
         CHECK(played.length() == Approx(0.0));
@@ -443,11 +458,11 @@ TEST_CASE("A backward nudge cannot take a run before it started", "[launch]") {
 TEST_CASE("playStartTime survives the timeline wrapping under it", "[launch]") {
     LaunchHandle handle;
     handle.play({});
-    handle.advance(SyncRange{BeatRange{6.0, 8.0}, BeatRange{6.0, 8.0}});
+    handle.advance(wrapped(6.0, 8.0, 6.0, 8.0));
 
     // The loop takes the timeline back to zero. The run began at beat 6, which
     // is no longer a beat in the cycle this block belongs to.
-    const auto status = handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{8.0, 10.0}});
+    const auto status = handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
 
     REQUIRE(status.playStartTime1.has_value());
 

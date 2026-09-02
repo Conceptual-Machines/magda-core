@@ -18,6 +18,17 @@ double project(const BeatRange& from, const BeatRange& to, double value) {
     return to.start + ((value - from.start) / span) * to.length();
 }
 
+/// The same, from a beat face onto a seconds one. Within one block that is a
+/// straight line, which is the same approximation the two beat faces already
+/// make of each other.
+double project(const BeatRange& from, const SecondsRange& to, double value) {
+    const auto span = from.length();
+    if (span <= 0.0)
+        return to.start;
+
+    return to.start + (((value - from.start) / span) * to.length());
+}
+
 }  // namespace
 
 double LaunchHandle::virtualStart(const SyncRange& piece) const {
@@ -32,6 +43,18 @@ double LaunchHandle::virtualStart(const SyncRange& piece) const {
     // the wrap. It may sit before the block or before zero, and that is what it
     // means: the run began that far back.
     return piece.timeline.start - (piece.monotonic.start - playedMonotonic_->start);
+}
+
+double LaunchHandle::virtualStartSeconds(const SyncRange& piece) const {
+    // The seconds face of the same idea, and derived the same way: how long the
+    // run has been going comes off the monotonic seconds, and the answer is
+    // then expressed on this block's own seconds axis so a source can subtract
+    // it from the seconds it was handed.
+    //
+    // Not the beat origin converted. A tempo map would say where that beat sits
+    // rather than how long the run has lasted, and after a wrap the beat it
+    // projects to is in a cycle the run never played (#2324).
+    return piece.seconds.start - (piece.monotonicSeconds.start - playedMonotonicSeconds_->start);
 }
 
 std::optional<LaunchHandle::QueueState> LaunchHandle::queuedState() const {
@@ -49,23 +72,28 @@ std::optional<double> LaunchHandle::queuedPosition() const {
 }
 
 void LaunchHandle::play(std::optional<double> monotonicBeat) {
-    pending_ = Pending{QueueState::playQueued, monotonicBeat, {}, {}};
+    pending_ = Pending{QueueState::playQueued, monotonicBeat, {}, {}, {}};
 }
 
 void LaunchHandle::stop(std::optional<double> monotonicBeat) {
-    pending_ = Pending{QueueState::stopQueued, monotonicBeat, {}, {}};
+    pending_ = Pending{QueueState::stopQueued, monotonicBeat, {}, {}, {}};
 }
 
 void LaunchHandle::playSynced(const LaunchHandle& other, std::optional<double> monotonicBeat) {
-    Pending pending{QueueState::playQueued, monotonicBeat, {}, {}};
+    Pending pending{QueueState::playQueued, monotonicBeat, {}, {}, {}};
 
     // The origin rather than the launch point, which is the whole difference
     // between this and play(): a handle joining one that is already three bars
     // into its run reports the same played range as it does, so the two agree
     // about where in the material they are instead of merely starting together.
-    if (other.played_ && other.playedMonotonic_) {
+    //
+    // All three faces, or the agreement is only musical. A scene of one MIDI
+    // clip and one audio clip joined in beats alone would put the notes in the
+    // right bar and the samples somewhere else.
+    if (other.played_ && other.playedMonotonic_ && other.playedMonotonicSeconds_) {
         pending.syncedTimelineOrigin = other.played_->start;
         pending.syncedMonotonicOrigin = other.playedMonotonic_->start;
+        pending.syncedMonotonicSecondsOrigin = other.playedMonotonicSeconds_->start;
     }
 
     pending_ = pending;
@@ -80,20 +108,23 @@ void LaunchHandle::setLooping(std::optional<double> beats) {
     loopBeats_ = beats;
 }
 
-void LaunchHandle::nudge(double beats) {
+void LaunchHandle::nudge(double beats, double seconds) {
     // The origin moves, not the end: the played length is what a source reads
     // its position from, so shifting where the run began is what moves the
     // playhead through the material without interrupting the run.
-    if (!played_ || !playedMonotonic_)
+    if (!played_ || !playedMonotonic_ || !playedMonotonicSeconds_)
         return;
 
-    // Backwards only as far as the run has got. Further would put the origin
-    // in the future, which is a run of negative length and a loop whose next
-    // wrap has already passed; a handle cannot be nudged to before it started.
-    const auto effective = std::max(beats, -played_->length());
+    // Backwards only as far as the run has got, on each axis by its own length.
+    // Further would put the origin in the future, which is a run of negative
+    // length and a loop whose next wrap has already passed; a handle cannot be
+    // nudged to before it started.
+    const auto effectiveBeats = std::max(beats, -played_->length());
+    const auto effectiveSeconds = std::max(seconds, -playedMonotonicSeconds_->length());
 
-    played_->start -= effective;
-    playedMonotonic_->start -= effective;
+    played_->start -= effectiveBeats;
+    playedMonotonic_->start -= effectiveBeats;
+    playedMonotonicSeconds_->start -= effectiveSeconds;
 }
 
 std::optional<BeatRange> LaunchHandle::playedRange() const {
@@ -104,17 +135,23 @@ std::optional<BeatRange> LaunchHandle::playedMonotonicRange() const {
     return playedMonotonic_;
 }
 
+std::optional<SecondsRange> LaunchHandle::playedMonotonicSecondsRange() const {
+    return playedMonotonicSeconds_;
+}
+
 std::optional<BeatRange> LaunchHandle::lastPlayedRange() const {
     return lastPlayed_;
 }
 
-void LaunchHandle::beginRun(double timelineBeat, double monotonicBeat, double elapsed) {
+void LaunchHandle::beginRun(const SyncPoint& at, double elapsedBeats, double elapsedSeconds) {
     if (played_)
         lastPlayed_ = played_;
 
     playState_ = PlayState::playing;
-    played_ = BeatRange{timelineBeat, timelineBeat + elapsed};
-    playedMonotonic_ = BeatRange{monotonicBeat, monotonicBeat + elapsed};
+    played_ = BeatRange{at.timelineBeat, at.timelineBeat + elapsedBeats};
+    playedMonotonic_ = BeatRange{at.monotonicBeat, at.monotonicBeat + elapsedBeats};
+    playedMonotonicSeconds_ =
+        SecondsRange{at.monotonicSeconds, at.monotonicSeconds + elapsedSeconds};
 }
 
 void LaunchHandle::endRun() {
@@ -124,10 +161,11 @@ void LaunchHandle::endRun() {
     playState_ = PlayState::stopped;
     played_.reset();
     playedMonotonic_.reset();
+    playedMonotonicSeconds_.reset();
 }
 
 void LaunchHandle::extendRun(const SyncRange& piece) {
-    if (!played_ || !playedMonotonic_)
+    if (!played_ || !playedMonotonic_ || !playedMonotonicSeconds_)
         return;
 
     // Lengths rather than endpoints. The timeline goes backwards every time the
@@ -135,13 +173,14 @@ void LaunchHandle::extendRun(const SyncRange& piece) {
     // block's end beat would shrink at every wrap.
     played_->end += piece.timeline.length();
     playedMonotonic_->end += piece.monotonic.length();
+    playedMonotonicSeconds_->end += piece.monotonicSeconds.length();
 }
 
-void LaunchHandle::applyEvent(bool fromPending, double timelineBeat, double monotonicBeat) {
+void LaunchHandle::applyEvent(bool fromPending, const SyncPoint& at) {
     if (!fromPending) {
         // A loop re-trigger, which is a relaunch at the wrap: same handle, new
         // run, so the played range restarts and whatever reads it seeks.
-        beginRun(timelineBeat, monotonicBeat);
+        beginRun(at);
         return;
     }
 
@@ -153,8 +192,9 @@ void LaunchHandle::applyEvent(bool fromPending, double timelineBeat, double mono
         return;
     }
 
-    if (!pending.syncedMonotonicOrigin || !pending.syncedTimelineOrigin) {
-        beginRun(timelineBeat, monotonicBeat);
+    if (!pending.syncedMonotonicOrigin || !pending.syncedTimelineOrigin ||
+        !pending.syncedMonotonicSecondsOrigin) {
+        beginRun(at);
         return;
     }
 
@@ -162,9 +202,11 @@ void LaunchHandle::applyEvent(bool fromPending, double timelineBeat, double mono
     // run it joins has got is derived here rather than copied when the request
     // was made, because the two are different numbers whenever the launch was
     // queued for a later beat, and the one that matters is the one true at the
-    // instant it fires.
-    beginRun(*pending.syncedTimelineOrigin, *pending.syncedMonotonicOrigin,
-             monotonicBeat - *pending.syncedMonotonicOrigin);
+    // instant it fires. Both faces of "how far", each from its own domain.
+    beginRun(SyncPoint{*pending.syncedTimelineOrigin, *pending.syncedMonotonicOrigin,
+                       *pending.syncedMonotonicSecondsOrigin},
+             at.monotonicBeat - *pending.syncedMonotonicOrigin,
+             at.monotonicSeconds - *pending.syncedMonotonicSecondsOrigin);
 }
 
 SplitStatus LaunchHandle::advance(const SyncRange& range) {
@@ -238,6 +280,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     if (!event) {
         if (playState_ == PlayState::playing) {
             status.playStartTime1 = virtualStart(range);
+            status.playStartSeconds1 = virtualStartSeconds(range);
             extendRun(range);
         }
 
@@ -249,37 +292,53 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     // first half would be the same answer in a shape every caller has to
     // defend against.
     if (*event <= range.monotonic.start) {
-        applyEvent(fromPending, range.timeline.start, range.monotonic.start);
+        applyEvent(fromPending, SyncPoint{range.timeline.start, range.monotonic.start,
+                                          range.monotonicSeconds.start});
 
         status.playing1 = playState_ == PlayState::playing;
         status.playing2 = status.playing1;
 
         if (playState_ == PlayState::playing) {
             status.playStartTime1 = virtualStart(range);
+            status.playStartSeconds1 = virtualStartSeconds(range);
             extendRun(range);
         }
 
         return status;
     }
 
+    // The instant the block ran into, on every axis. Named in monotonic beats,
+    // because that is what a queued position is named in, and carried across to
+    // the other three by where it falls in this block: within one block that is
+    // the only slope there is, and it is the same projection the timeline face
+    // has always used.
     const auto splitBeat = project(range.monotonic, range.timeline, *event);
+    const auto splitSeconds = project(range.monotonic, range.seconds, *event);
+    const auto splitMonotonicSeconds = project(range.monotonic, range.monotonicSeconds, *event);
 
     const SyncRange first{BeatRange{range.timeline.start, splitBeat},
-                          BeatRange{range.monotonic.start, *event}};
+                          BeatRange{range.monotonic.start, *event},
+                          SecondsRange{range.seconds.start, splitSeconds},
+                          SecondsRange{range.monotonicSeconds.start, splitMonotonicSeconds}};
     const SyncRange second{BeatRange{splitBeat, range.timeline.end},
-                           BeatRange{*event, range.monotonic.end}};
+                           BeatRange{*event, range.monotonic.end},
+                           SecondsRange{splitSeconds, range.seconds.end},
+                           SecondsRange{splitMonotonicSeconds, range.monotonicSeconds.end}};
 
     if (playState_ == PlayState::playing) {
         status.playStartTime1 = virtualStart(first);
+        status.playStartSeconds1 = virtualStartSeconds(first);
         extendRun(first);
     }
 
-    applyEvent(fromPending, second.timeline.start, second.monotonic.start);
+    applyEvent(fromPending, SyncPoint{second.timeline.start, second.monotonic.start,
+                                      second.monotonicSeconds.start});
 
     status.playing2 = playState_ == PlayState::playing;
 
     if (playState_ == PlayState::playing) {
         status.playStartTime2 = virtualStart(second);
+        status.playStartSeconds2 = virtualStartSeconds(second);
         extendRun(second);
     }
 

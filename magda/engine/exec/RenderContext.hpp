@@ -102,6 +102,29 @@ struct BlockInfo {
     double endMonotonicBeat = 0.0;
 
     /**
+     * @brief The same stretch, counted in seconds that only ever go forwards.
+     *
+     * The fourth face, and the one that makes the set complete: beats and
+     * seconds each have a timeline form that jumps and a monotonic form that
+     * does not, and until this existed the monotonic half was beats only.
+     *
+     * Accumulated from the samples each block actually rendered, which is what
+     * makes it elapsed time rather than a reading of a position. Nothing
+     * derives it from the beat faces, and nothing may: a tempo map converts a
+     * position, and how long something has been going is not a position. Ask a
+     * map how far apart two beats are and the answer changes with every tempo
+     * edit between them, and after a loop wrap the two beats are not even in
+     * the same cycle (#2324).
+     *
+     * What asks is a run that started at some point and needs to know how far
+     * into its material it is: a launched session clip reading a file at the
+     * file's own speed (LaunchHandle.hpp). A stopped block does not advance it,
+     * for the same reason it does not advance the other three.
+     */
+    double startMonotonicSeconds = 0.0;
+    double endMonotonicSeconds = 0.0;
+
+    /**
      * @brief Whether the timeline ran into this block out of the last one.
      *
      * False on the first block after the transport starts, after a locate, and

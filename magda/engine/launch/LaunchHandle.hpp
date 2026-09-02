@@ -63,17 +63,57 @@ struct BeatRange {
     bool operator==(const BeatRange&) const = default;
 };
 
+/// A stretch of seconds. Half open like BeatRange, and a separate type for the
+/// reason this file exists: a beat and a second are different domains, and the
+/// bug this guards against is one being passed where the other was meant.
+struct SecondsRange {
+    double start = 0.0;
+    double end = 0.0;
+
+    double length() const {
+        return end - start;
+    }
+
+    bool empty() const {
+        return end <= start;
+    }
+
+    bool operator==(const SecondsRange&) const = default;
+};
+
 /**
  * @brief One block, as the launcher sees it.
  *
- * Two faces of the same stretch. The timeline range is where the material is
- * and goes backwards when the loop wraps; the monotonic range only ever moves
- * forwards and is what a queued position is named in. Both come from the same
- * BlockInfo, which is where they were derived together.
+ * Four faces of the same stretch, which is what BlockInfo carries and where
+ * they were derived together. Beats and seconds each have a timeline form and a
+ * monotonic one: the timeline forms are where the material sits and go
+ * backwards when the loop wraps, the monotonic forms only ever move forwards.
+ *
+ * A queued position is named in monotonic beats, because a launch is quantized
+ * musically. How far into its material a run has got is measured in monotonic
+ * seconds, because that is elapsed time and a file is read at a rate. Neither
+ * may be derived from the other: a tempo map answers where a beat is, not how
+ * long something has been going, and after a wrap the two ends of a run are not
+ * even in the same cycle of the timeline (#2324).
  */
 struct SyncRange {
     BeatRange timeline;
     BeatRange monotonic;
+    SecondsRange seconds;
+    SecondsRange monotonicSeconds;
+};
+
+/**
+ * @brief One instant, in the faces a run's origin is remembered in.
+ *
+ * Passed together so a run cannot be started with three faces of one instant
+ * and one of another, which is the shape of every bug this domain exists to
+ * prevent.
+ */
+struct SyncPoint {
+    double timelineBeat = 0.0;
+    double monotonicBeat = 0.0;
+    double monotonicSeconds = 0.0;
 };
 
 /**
@@ -107,6 +147,18 @@ struct SplitStatus {
     /// therefore sit before the block, or before zero.
     std::optional<double> playStartTime1;
     std::optional<double> playStartTime2;
+
+    /// The same origin on the block's own seconds axis, for a source that
+    /// subtracts it from the seconds it is handed.
+    ///
+    /// The second face rather than a conversion of the first. Both are
+    /// projections of one origin into this block, but each is projected from
+    /// its own monotonic domain: converting the beat one through a tempo map
+    /// would answer where that beat sits rather than how long the run has been
+    /// going, and the two differ by every tempo change in between and by every
+    /// wrap the projection crossed (#2324).
+    std::optional<double> playStartSeconds1;
+    std::optional<double> playStartSeconds2;
 };
 
 class LaunchHandle {
@@ -164,8 +216,16 @@ class LaunchHandle {
      */
     void setLooping(std::optional<double> beats);
 
-    /// Move the played position by @p beats without restarting.
-    void nudge(double beats);
+    /**
+     * @brief Move the played position without restarting.
+     *
+     * Both faces, given rather than converted. A nudge moves where in the
+     * material the run is, and the material has a beat position and a seconds
+     * position that are not the same number; working one out from the other
+     * here would be the round trip this domain exists to avoid. The caller has
+     * the block and therefore has both.
+     */
+    void nudge(double beats, double seconds);
 
     /**
      * @brief Advance over one block and say what it was.
@@ -204,6 +264,11 @@ class LaunchHandle {
     /// The same run in monotonic beats, which is what another handle syncs to.
     std::optional<BeatRange> playedMonotonicRange() const;
 
+    /// The run in monotonic seconds: how long it has been going, which is what
+    /// a source reading a file at the file's own speed needs and the one
+    /// quantity no tempo map can answer.
+    std::optional<SecondsRange> playedMonotonicSecondsRange() const;
+
     /// The last completed run, kept after a stop so a follow action can ask
     /// what it followed.
     std::optional<BeatRange> lastPlayedRange() const;
@@ -231,25 +296,31 @@ class LaunchHandle {
         QueueState state = QueueState::playQueued;
         std::optional<double> position;
 
-        /// Set only by playSynced: the run to join rather than start.
+        /// Set only by playSynced: the run to join rather than start. All
+        /// three faces, because a handle that joined in beats alone would
+        /// agree about the bar and disagree about the sample.
         std::optional<double> syncedTimelineOrigin;
         std::optional<double> syncedMonotonicOrigin;
+        std::optional<double> syncedMonotonicSecondsOrigin;
     };
 
-    /// Begin a run whose origin is @p timelineBeat and @p monotonicBeat, and
-    /// which is already @p elapsed beats into itself. Non-zero only for a
-    /// synced launch, which joins a run rather than starting one.
-    void beginRun(double timelineBeat, double monotonicBeat, double elapsed = 0.0);
+    /// Begin a run whose origin is @p at, and which is already @p elapsedBeats
+    /// and @p elapsedSeconds into itself. Non-zero only for a synced launch,
+    /// which joins a run rather than starting one, and both faces are given
+    /// because a synced handle has to agree with the one it joins in both.
+    void beginRun(const SyncPoint& at, double elapsedBeats = 0.0, double elapsedSeconds = 0.0);
     void endRun();
 
     /// Carry the current run through @p piece without changing state.
     void extendRun(const SyncRange& piece);
 
-    /// The run's origin expressed in @p piece's own cycle of the timeline.
+    /// The run's origin expressed in @p piece's own cycle of the timeline,
+    /// on each of the two axes a source can be handed.
     double virtualStart(const SyncRange& piece) const;
+    double virtualStartSeconds(const SyncRange& piece) const;
 
     /// Apply whatever the block ran into, at the instant it ran into it.
-    void applyEvent(bool fromPending, double timelineBeat, double monotonicBeat);
+    void applyEvent(bool fromPending, const SyncPoint& at);
 
     /// The advance itself. Wrapped so the answer is kept for @ref blockStatus
     /// in one place rather than at each of the several ways out of it.
@@ -260,6 +331,7 @@ class LaunchHandle {
 
     std::optional<BeatRange> played_;
     std::optional<BeatRange> playedMonotonic_;
+    std::optional<SecondsRange> playedMonotonicSeconds_;
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;

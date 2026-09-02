@@ -3,7 +3,6 @@
 #include "clip/ClipSnapshot.hpp"
 #include "exec/RenderContext.hpp"
 #include "launch/SessionLauncher.hpp"
-#include "transport/TempoMap.hpp"
 
 /**
  * @file SessionPlayback.hpp
@@ -24,31 +23,10 @@
 namespace magda::engine {
 
 /**
- * @brief Where @p beat is on the project's seconds axis.
+ * @brief Where a beat inside @p block is on the block's own seconds axis.
  *
- * Through the block's own map, because what is asked about is usually outside
- * the block: the beat a run began on can be far behind the cursor, or before
- * zero. Without a map the block's own two ends are the only slope there is,
- * which is exact at a constant tempo and is what a hand-assembled block gets.
- */
-inline double timeOfBeat(const BlockInfo& block, double beat) {
-    if (block.tempo != nullptr)
-        return block.tempo->beatToTime(beat);
-
-    const auto span = block.endBeat - block.startBeat;
-    if (!(span > 0.0))
-        return block.startSeconds;
-
-    return block.startSeconds +
-           (((beat - block.startBeat) / span) * (block.endSeconds - block.startSeconds));
-}
-
-/**
- * @brief The same, for a beat known to be inside @p block.
- *
- * The block's own line rather than the map, deliberately. A block is short
- * enough that the two agree to well under a sample, and this one is the line
- * `sampleForBeat` and `sampleForTime` are already drawn on: a sub-range's
+ * The block's own line rather than a tempo map, deliberately, and it is the
+ * line `sampleForBeat` and `sampleForTime` are already drawn on: a sub-range's
  * seconds and its sample count have to be two views of one stretch, or a reader
  * consumes a different amount of material than the block renders.
  */
@@ -84,23 +62,23 @@ inline bool runsOn(const BlockInfo& block, const BeatRange& range, double playSt
  * block where a material beat lands in the output and get the sample the
  * timeline beat would have landed on.
  *
- * ## Two faces, moved differently
+ * ## Two faces, each from its own domain
  *
  * The beat face is the material's own beat: the timeline beat less the run's
- * origin, which is what an auto tempo or warped event is read against.
+ * origin in beats, which is what an auto tempo or warped event is read against.
  *
- * The seconds face is how long the run has been going, which is what an event
- * played at its file's own speed is read against, and it is a subtraction
- * rather than a conversion for a reason. Putting the material beat back through
- * the tempo map would give the seconds that beat occupies **at the origin**,
- * and a slot launched where the tempo differs would then be handed a block
- * whose seconds span disagreed with its sample count: the reader would consume
- * a block's worth of material and the next block would ask for a position it
- * had already passed, which repeats the difference. Elapsed keeps the two
- * views of one stretch equal by construction.
+ * The seconds face is how long the run has been going: the block's seconds less
+ * the run's origin in seconds, which is what an event played at its file's own
+ * speed is read against. Two subtractions rather than one subtraction and a
+ * conversion, and the handle projects each origin from its own monotonic domain
+ * (LaunchHandle.hpp). Deriving the seconds from the beats would give where that
+ * beat sits rather than how long the run has lasted: the two differ by every
+ * tempo change between the origin and now, and after a loop wrap the projected
+ * origin is a beat in a cycle the run never played (#2324).
  *
- * Both faces come out identical under a constant tempo, which is where the
- * distinction is invisible and where it would have been discovered late.
+ * Both faces come out identical at one constant tempo with no wraps, which is
+ * where the distinction is invisible and where it would have been discovered
+ * late.
  *
  * The remaining approximation is the compile's rather than this: a slot's spans
  * and fades were resolved at the origin's tempo (ClipSnapshot.hpp), so under a
@@ -112,15 +90,23 @@ inline bool runsOn(const BlockInfo& block, const BeatRange& range, double playSt
  * here is @ref runsOn: the block is the whole block, and bounding the emission
  * to the sub-range is the caller's.
  */
-inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, double playStart) {
-    const auto origin = timeOfBeat(block, playStart);
-
+inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, double playStart,
+                               double playStartSeconds) {
     auto material = block;
     material.startBeat = block.startBeat - playStart;
     material.endBeat = block.endBeat - playStart;
-    material.startSeconds = block.startSeconds - origin;
-    material.endSeconds = block.endSeconds - origin;
+    material.startSeconds = block.startSeconds - playStartSeconds;
+    material.endSeconds = block.endSeconds - playStartSeconds;
     material.continuous = runsOn(block, range, playStart);
+
+    // The project's map is not this block's map any more. Both of its axes have
+    // moved, and by different amounts, so asking the map where a material
+    // second falls would answer about the timeline: for an auto tempo event,
+    // whose position is a question about beats, that is a beat the material
+    // never had. Dropped, so `BlockInfo::beatAtTime` falls back to the block's
+    // own two ends, which are the material's own two ends and are exact there
+    // (#2324).
+    material.tempo = nullptr;
     return material;
 }
 
@@ -134,16 +120,15 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range, d
  * line @p count was measured on.
  */
 inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range, double playStart,
-                                  int count) {
-    const auto origin = timeOfBeat(block, playStart);
-
+                                  double playStartSeconds, int count) {
     auto material = block;
     material.numSamples = count;
     material.startBeat = range.start - playStart;
     material.endBeat = range.end - playStart;
-    material.startSeconds = secondsWithin(block, range.start) - origin;
-    material.endSeconds = secondsWithin(block, range.end) - origin;
+    material.startSeconds = secondsWithin(block, range.start) - playStartSeconds;
+    material.endSeconds = secondsWithin(block, range.end) - playStartSeconds;
     material.continuous = runsOn(block, range, playStart);
+    material.tempo = nullptr;  // see materialBlock
     return material;
 }
 

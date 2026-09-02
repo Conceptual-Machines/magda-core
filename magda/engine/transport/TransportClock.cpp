@@ -123,6 +123,8 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.endSeconds = seconds;
         segment.block.startMonotonicBeat = monotonicBeat_;
         segment.block.endMonotonicBeat = monotonicBeat_;
+        segment.block.startMonotonicSeconds = monotonicSeconds_;
+        segment.block.endMonotonicSeconds = monotonicSeconds_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -199,12 +201,20 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
         segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
 
-        // Accumulated from the segment rather than read off the cursor: this
-        // is the one quantity a wrap must not take back, and the cursor is
-        // about to be moved by one.
+        // Accumulated from the segment rather than read off the cursor: these
+        // are the quantities a wrap must not take back, and the cursor is about
+        // to be moved by one.
         segment.block.startMonotonicBeat = monotonicBeat_;
         monotonicBeat_ += segment.block.endBeat - segment.block.startBeat;
         segment.block.endMonotonicBeat = monotonicBeat_;
+
+        // From the samples, not from the beats: what this counts is how long
+        // the transport has been rolling, and the two agree only while the
+        // tempo does. A rate change re-anchors the cursor and this carries
+        // straight on, which is what makes it survive one (#2324).
+        segment.block.startMonotonicSeconds = monotonicSeconds_;
+        monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
+        segment.block.endMonotonicSeconds = monotonicSeconds_;
 
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
