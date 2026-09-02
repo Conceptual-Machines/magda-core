@@ -1964,8 +1964,25 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
     auto* device = getDeviceInChainByPath(devicePath);
     if (device == nullptr || device->format != PluginFormat::Internal)
         return false;
+    // Same contract as updateDeviceAuthoredState: state this build cannot read
+    // must not be replaced blind.
+    if (device_state::isFutureDeviceState(device->pluginState))
+        return false;
 
-    device->pluginState = docText;
+    // Canonicalize at the WRITE BOUNDARY, not per mutation path: a snapshot
+    // taken from a pre-#2317 document still carries the retired parameter
+    // record, and an undo that put it back verbatim would recreate the second
+    // authority the edit itself just eliminated. Anything decode refuses -
+    // legacy engine XML, an empty string - passes through unchanged; only a
+    // readable v2 document is stripped.
+    auto canonical = docText;
+    if (auto decoded = device_state::decode(docText)) {
+        decoded->params.clear();
+        decoded->paramsAreDisplayDomain = false;
+        canonical = device_state::encode(*decoded);
+    }
+
+    device->pluginState = canonical;
     projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
     notifyDevicePropertyChanged(devicePath);
     return true;

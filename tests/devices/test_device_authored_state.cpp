@@ -66,6 +66,62 @@ TEST_CASE("An authored-state edit never re-encodes the retired parameter record"
     TrackManager::getInstance().clearAllTracks();
 }
 
+TEST_CASE("Undoing an authored-state command cannot resurrect the retired record",
+          "[device-authored-state]") {
+    // The command snapshots DeviceInfo::pluginState verbatim, and a device
+    // that has not been saved since #2317 still holds a document WITH the
+    // retired `params`. The canonicalization therefore lives at the write
+    // boundary (setDeviceAuthoredState), not in the forward edit alone:
+    // execute -> undo must leave a canonical document, not the pre-#2317 one.
+    ds::Doc oldDoc;
+    oldDoc.deviceType = "magda_convolution";
+    oldDoc.params.push_back({0, "gain", 0.5f});
+    oldDoc.root.props.set(juce::Identifier("normalise"), true);
+
+    const auto path = addInternalDevice("magda_convolution", ds::encode(oldDoc));
+
+    juce::MemoryBlock blob;
+    blob.append("notrealaudio", 12);
+    LoadImpulseResponseCommand command(path, "Test IR", std::move(blob));
+    REQUIRE(command.canExecute());
+    command.execute();
+    REQUIRE(command.wasExecuted());
+
+    auto& tracks = TrackManager::getInstance();
+    const auto* device = tracks.getDeviceInChainByPath(path);
+    REQUIRE(device != nullptr);
+    {
+        const auto written = ds::decode(device->pluginState);
+        REQUIRE(written.has_value());
+        CHECK(written->params.empty());
+        CHECK(written->root.props.contains(juce::Identifier("irFileData")));
+    }
+
+    command.undo();
+    {
+        const auto restored = ds::decode(device->pluginState);
+        REQUIRE(restored.has_value());
+        CHECK(restored->params.empty());
+        CHECK_FALSE(restored->root.props.contains(juce::Identifier("irFileData")));
+        // The authored state itself came back with the snapshot.
+        CHECK(static_cast<bool>(restored->root.props[juce::Identifier("normalise")]));
+    }
+
+    tracks.clearAllTracks();
+}
+
+TEST_CASE("Snapshot replacement passes through what decode refuses", "[device-authored-state]") {
+    // Legacy engine XML is not a v2 document; a snapshot of it restores
+    // verbatim rather than being mangled into one.
+    const juce::String legacyXml = "<PLUGIN type=\"arpeggiator\" arpQuantizeSub=\"8\"/>";
+    const auto path = addInternalDevice("arpeggiator", {});
+    REQUIRE(TrackManager::getInstance().setDeviceAuthoredState(path, legacyXml));
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(path);
+    REQUIRE(device != nullptr);
+    CHECK(device->pluginState == legacyXml);
+    TrackManager::getInstance().clearAllTracks();
+}
+
 TEST_CASE("Authored-state edits refuse what they cannot read", "[device-authored-state]") {
     const juce::String futureDoc =
         "{\"schema\": 99, \"device\": \"arpeggiator\", \"somethingNewer\": true}";
