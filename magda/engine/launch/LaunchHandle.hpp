@@ -251,10 +251,47 @@ struct SplitStatus {
     /// rather than working the position out a second time and differently.
     BlockInstant event;
 
+    /**
+     * @brief Whether the slot was sounding when the block opened.
+     *
+     * Not the same as @ref beforeEvent playing, and that is the whole of it: an
+     * event at or before the first sample puts the whole block in the new state
+     * and reports no first half, so a slot stopped there looks exactly like one
+     * stopped ten blocks ago. It is still an edge, and this is what the handle
+     * knows about it that nothing downstream can work out (#2344 review).
+     */
+    bool soundingAtStart = false;
+
+    /// Whether this slot held its track when the block opened, before anything
+    /// in it applied (@ref LaunchHandle::holdsSection).
+    bool heldSectionAtStart = false;
+
+    /// Whether this slot gave its track up in this block. A release is a
+    /// request the advance applies at sample zero, so ownership of the first
+    /// sample already reflects it and nothing downstream could otherwise tell a
+    /// track just handed back from one that was never taken.
+    bool releasedSection = false;
+
     /// Whether the slot is sounding when the block ends, which is what decides
     /// whether a stop owes note-offs.
     bool playingAtEnd() const {
         return afterEvent ? afterEvent->playing() : beforeEvent.playing();
+    }
+
+    /**
+     * @brief Where the slot stopped sounding inside this block, if it did.
+     *
+     * The one question a de-click asks, answered in one place because the two
+     * shapes a stop arrives in have the same answer: @ref event is the sample
+     * the block ran into whatever it ran into, whether or not there was a first
+     * half to report. Absent when the slot sounded nothing here, and when it is
+     * still sounding at the end.
+     */
+    std::optional<EdgeSample> silencedAt() const {
+        if (!soundingAtStart || playingAtEnd())
+            return std::nullopt;
+
+        return EdgeSample{std::max(0, event.sample)};
     }
 };
 
@@ -362,6 +399,37 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayedRange() const;
 
     /**
+     * @brief Whether this slot holds its track's playback (#2302).
+     *
+     * A track sounds its arrangement or its session, never both, and launching
+     * a slot is what hands it over. The hand-back is not the slot stopping:
+     * silence after a stop is the session still holding the track, exactly as
+     * it is in the incumbent, and the arrangement comes back only when
+     * @ref releaseSection asks for it.
+     *
+     * Set the moment a run begins rather than when one is queued, so a launch
+     * quantized to the next bar leaves the arrangement playing until the bar.
+     *
+     * Per slot for a question that is per track, because the track's answer is
+     * the fold: a track is held by whichever of its slots holds it. Keeping it
+     * here is what lets both of a slot's sources reach the same answer from the
+     * table they already read, with nothing published between them.
+     */
+    bool holdsSection() const {
+        return holdsSection_;
+    }
+
+    /**
+     * @brief Give the track back to its arrangement. Back to Arrangement.
+     *
+     * A request, applied by the next advance: the slot stops and the hold goes
+     * at that block's first sample, and the block reports both. Every change of
+     * this state goes through the advance for the reason every stop does, which
+     * is that an edge nothing was told about is an edge nothing can ramp.
+     */
+    void releaseSection();
+
+    /**
      * @brief Blocks in which a loop was too short to be re-triggered fully.
      *
      * A handle reports one event per block, so a loop duration shorter than a
@@ -440,6 +508,15 @@ class LaunchHandle {
         /// Set only by playSynced: the run to join rather than start. The whole
         /// of it, or the handles agree about the bar and not the sample.
         std::optional<Run> synced;
+
+        /// Whether this stop is Back to Arrangement rather than an ordinary
+        /// one, so the slot gives the track up as it stops.
+        ///
+        /// Here rather than beside it, because a request replaces this one
+        /// whole. Two fields would let a later play cancel the stop and leave
+        /// the hand-back behind, and the slot would go on sounding while the
+        /// track said it belonged to the arrangement (#2344 review).
+        bool releasesSection = false;
     };
 
     /// Begin a run at @p at, scheduled for @p scheduledBeat.
@@ -481,6 +558,9 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;
+
+    /// Whether this slot has sounded since the last release (#2302).
+    bool holdsSection_ = false;
 
     SplitStatus blockStatus_;
 

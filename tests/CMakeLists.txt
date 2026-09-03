@@ -379,6 +379,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
+    # The two edges of a voice (#2302): the step a start subtracts and the
+    # one a stop carries down, which is what a section switch is made of.
+    list(APPEND TEST_SOURCES engine/test_de_click.cpp)
     list(APPEND TEST_SOURCES engine/test_session_playback.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice_pool.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_stretch.cpp)

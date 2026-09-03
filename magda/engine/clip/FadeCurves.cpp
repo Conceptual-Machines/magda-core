@@ -120,4 +120,81 @@ void StartDeClick::applyFrom(juce::dsp::AudioBlock<float> audio, int alreadyDone
     done_ = alreadyDone + static_cast<int>(count);
 }
 
+void StopDeClick::hold(juce::dsp::AudioBlock<float> audio, int upTo) {
+    if (upTo <= 0)
+        return;
+
+    const auto channels = std::min(audio.getNumChannels(), kMaxChannels);
+    for (std::size_t channel = 0; channel < channels; ++channel)
+        held_[channel] = audio.getChannelPointer(channel)[static_cast<std::size_t>(upTo) - 1];
+
+    // Channels this block did not have are stale rather than silent, and a
+    // stop that decayed them would add a sample the source stopped producing
+    // some blocks ago. A track that narrows keeps its wider channels quiet.
+    for (auto channel = channels; channel < kMaxChannels; ++channel)
+        held_[channel] = 0.0f;
+}
+
+void StopDeClick::push(juce::dsp::AudioBlock<float> audio) {
+    hold(audio, static_cast<int>(audio.getNumSamples()));
+}
+
+void StopDeClick::begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples) {
+    length_ = std::max(0, fadeSamples);
+    done_ = 0;
+
+    if (length_ == 0)
+        return;
+
+    applyFrom(audio, offset, 0);
+}
+
+void StopDeClick::advance(juce::dsp::AudioBlock<float> audio) {
+    if (!active())
+        return;
+
+    applyFrom(audio, 0, done_);
+}
+
+void StopDeClick::applyFrom(juce::dsp::AudioBlock<float> audio, int offset, int alreadyDone) {
+    const auto remaining = length_ - alreadyDone;
+    if (remaining <= 0)
+        return;
+
+    const auto room = static_cast<int>(audio.getNumSamples()) - offset;
+    if (room <= 0)
+        return;
+
+    const auto count = static_cast<std::size_t>(std::min(remaining, room));
+    const auto channels = std::min(audio.getNumChannels(), kMaxChannels);
+
+    for (std::size_t channel = 0; channel < channels; ++channel) {
+        const auto discontinuity = held_[channel];
+
+        // Nothing to step down from. A source that ended on a zero crossing,
+        // and every source that ended through a fade out, lands here.
+        if (discontinuity == 0.0f)
+            continue;
+
+        auto* samples = audio.getChannelPointer(channel) + offset;
+
+        if (length_ == 1) {
+            samples[0] += discontinuity;
+            continue;
+        }
+
+        for (std::size_t i = 0; i < count; ++i) {
+            // Phase runs across the whole ramp rather than across this block,
+            // which is what carrying the progress is for: the same stop has to
+            // come out the same however the render was cut up.
+            const auto phase = static_cast<float>(alreadyDone + static_cast<int>(i)) /
+                               static_cast<float>(length_ - 1);
+            const auto correction = 0.5f * (1.0f + std::cos(kPi * phase));
+            samples[i] += discontinuity * correction;
+        }
+    }
+
+    done_ = alreadyDone + static_cast<int>(count);
+}
+
 }  // namespace magda::engine

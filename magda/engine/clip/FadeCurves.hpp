@@ -113,4 +113,88 @@ class StartDeClick {
     int done_ = 0;
 };
 
+/**
+ * @brief Return the end of a voice to zero without fading what came before it.
+ *
+ * The other edge of StartDeClick, and the same trick read backwards. Where a
+ * start subtracts the step the material begins on, a stop carries the step it
+ * ends on: the last sample that sounded is held and decayed to zero over the
+ * ramp, added on top of the silence that follows. The material itself is never
+ * attenuated, so a clip stopped a sample before its own tail ends keeps that
+ * tail exactly as far as it got.
+ *
+ * What it is for is the discontinuity of ending mid-material: a session slot
+ * stopped on a beat, a track handed from the arrangement to the session, a
+ * launch that cuts the arrangement off mid-note. None of those end on a zero
+ * crossing except by luck, and the step left behind is a click whose energy is
+ * spread across the spectrum rather than confined below the ramp's own rate.
+ *
+ * It carries across blocks, for the reason StartDeClick does: a ramp that
+ * stopped at the end of the block it began in would decay over min(length,
+ * block) samples, and the same stop would come out differently at 128 samples a
+ * block and at 1024.
+ *
+ * A held value of zero costs nothing, which is why a source can stop through
+ * this unconditionally rather than deciding first whether it clicks.
+ */
+class StopDeClick {
+  public:
+    /// The most channels one source renders, as StartDeClick sizes it.
+    static constexpr std::size_t kMaxChannels = StartDeClick::kMaxChannels;
+
+    /**
+     * @brief Remember where @p audio ended.
+     *
+     * The contract, and the whole of it: call this with what you rendered,
+     * before anything corrects it. Then what is remembered is always the last
+     * sample of your own signal, and @ref begin never has to guess which of the
+     * things in a buffer was yours.
+     *
+     * Getting that order wrong is what every way of using this wrongly looks
+     * like. Push a buffer a ramp has already been added to and the remembered
+     * sample is part decayed correction rather than signal; push a buffer
+     * somebody else also wrote into and it is their signal too, and a ramp that
+     * decays it corrects for something that never stopped. The caller that owns
+     * one signal is the caller that can push, which is why a voice pushes its
+     * own region and a source pushes its own output.
+     */
+    void push(juce::dsp::AudioBlock<float> audio);
+
+    /**
+     * @brief Start decaying into @p audio from @p offset, over @p fadeSamples.
+     *
+     * What it decays is what @ref push last remembered, never anything read
+     * back out of @p audio: by the time a stop is applied that buffer may hold
+     * other voices, an earlier ramp, or nothing at all, and none of those is
+     * the signal that stopped.
+     */
+    void begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples);
+
+    /// Carry on from the start of @p audio. Does nothing once the ramp has run
+    /// out, so a caller can ask every block without checking.
+    void advance(juce::dsp::AudioBlock<float> audio);
+
+    /// Whether there is any decay left to add.
+    bool active() const {
+        return done_ < length_;
+    }
+
+    /// Forget the ramp and what it was decaying, for a source starting over.
+    void reset() {
+        held_.fill(0.0f);
+        length_ = 0;
+        done_ = 0;
+    }
+
+  private:
+    /// Remember the sample before @p upTo, whatever a ramp is doing.
+    void hold(juce::dsp::AudioBlock<float> audio, int upTo);
+
+    void applyFrom(juce::dsp::AudioBlock<float> audio, int offset, int alreadyDone);
+
+    std::array<float, kMaxChannels> held_{};
+    int length_ = 0;
+    int done_ = 0;
+};
+
 }  // namespace magda::engine

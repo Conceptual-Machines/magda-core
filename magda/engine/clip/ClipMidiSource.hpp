@@ -79,9 +79,19 @@ class ClipMidiSource final : public EngineMidiSource {
     /// The arrangement's source for @p trackId.
     ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips);
 
-    /// The session's source for @p trackId, positioned by @p handles rather
-    /// than by the timeline. @p handles outlives it.
-    ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles);
+    /**
+     * @brief The @p section's source for @p trackId, reading @p handles.
+     *
+     * Both sources of a track take the feed, and @p section says which of them
+     * this is (#2302). A session source is positioned by the handles rather
+     * than by the timeline; an arrangement source reads them only to know when
+     * the session has taken the track off it, and where in the block, which is
+     * where it owes note-offs for whatever it had sounding.
+     *
+     * @p handles outlives it.
+     */
+    ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles,
+                   Section section);
 
     void prepare(const RenderContext& context) override;
 
@@ -220,6 +230,7 @@ class ClipMidiSource final : public EngineMidiSource {
 
     /// The section. Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
+    Section section_ = Section::Arrangement;
 
     ActiveNoteList active_;
     int activeCount_ = 0;
