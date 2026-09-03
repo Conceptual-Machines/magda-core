@@ -2,7 +2,14 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
+#include <functional>
+#include <vector>
+
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
+#include "core/ChainNodePath.hpp"
+#include "core/ParameterInfo.hpp"
+#include "core/StepPatternCommands.hpp"
 #include "ui/components/common/LinkableTextSlider.hpp"
 #include "ui/components/common/RampCurveDisplay.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -30,16 +37,50 @@ namespace magda::daw::ui {
  * The pattern-grid area is a swappable PatternView child: KeysView is a
  * piano-roll style grid, DrumLanesView is a classic x0x lane layout whose
  * lanes follow a Drum Grid found downstream in the same chain. The mode is
- * persisted on the plugin state ("seqViewMode") so it restores with the edit.
+ * persisted in the device's state ("seqViewMode") so it restores with the
+ * project.
+ *
+ * Written against the model (#2299/#2313): slot values arrive through
+ * updateFromParameters() and leave through onParameterChanged, the pattern
+ * arrives through setPattern() and every edit to it leaves through
+ * onPatternEdited as one undoable command. The device pointer stays for what
+ * only the running device knows - the play step and the step recorder - and the
+ * device path for the drum-lane discovery, which walks the live chain.
  */
-class PolyStepSequencerUI : public juce::Component,
-                            private juce::ValueTree::Listener,
-                            private juce::Timer {
+class PolyStepSequencerUI : public juce::Component, private juce::Timer {
   public:
     PolyStepSequencerUI();
     ~PolyStepSequencerUI() override;
 
-    void setPlugin(daw::audio::PolyStepSequencerPlugin* plugin);
+    void setSequencer(daw::audio::PolyStepSequencerPlugin* device);
+    void setDevicePath(const magda::ChainNodePath& devicePath);
+
+    void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
+
+    /// The pattern the model holds. Redrawing follows; nothing is sent back.
+    void setPattern(const step_pattern::PolyPattern& pattern);
+
+    std::function<void(int paramIndex, float value)> onParameterChanged;
+
+    /// Non-slot settings (quantize, subdivision, ramp cycles, hard angle, view
+    /// mode) in the device's own state vocabulary, for the owner to patch onto
+    /// the model's document (#2317).
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
+
+    /// Every pattern edit, for the owner to commit as one undoable step. A
+    /// continuous gesture (a velocity or probability drag) says so, and the
+    /// owner folds its run of edits into one entry.
+    std::function<void(const juce::String& description,
+                       std::function<void(step_pattern::PolyPattern&)>, magda::StepPatternGesture)>
+        onPatternEdited;
+
+    /// Which drag the continuous edits - the velocity and probability lanes,
+    /// the step-count slider - currently belong to. Bumped when a drag ends, so
+    /// consecutive gestures are separate undo steps rather than one merged run
+    /// (#2335, and DrumGridUI::getFaderGesture for the same idea).
+    int patternGesture() const {
+        return patternGesture_;
+    }
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -51,20 +92,56 @@ class PolyStepSequencerUI : public juce::Component,
     void mouseUp(const juce::MouseEvent& e) override;
 
   private:
+    /** What a pattern view draws from and edits through. */
+    struct ViewContext {
+        /// The model's pattern, owned by the UI and refreshed by setPattern().
+        const step_pattern::PolyPattern* pattern = nullptr;
+        /// The device, for the chain walk that finds the drum lanes.
+        magda::ChainNodePath devicePath;
+        /// One undoable pattern edit.
+        std::function<void(const juce::String&, std::function<void(step_pattern::PolyPattern&)>,
+                           magda::StepPatternGesture)>
+            edit;
+    };
+
     /** Base for pattern-view modes (keys / drum), swapped via the mode toggle. */
     class PatternView : public juce::Component {
       public:
         ~PatternView() override = default;
-        virtual void setPlugin(daw::audio::PolyStepSequencerPlugin* plugin) = 0;
+
+        virtual void setContext(const ViewContext& context);
         virtual void setPlayStep(int step) = 0;
         virtual void patternChanged() = 0;
+
+      protected:
+        /// The model's pattern, or an empty one before the view is bound.
+        const step_pattern::PolyPattern& pattern() const;
+
+        /// One undoable pattern edit, through the owner.
+        void editPattern(
+            const juce::String& description, std::function<void(step_pattern::PolyPattern&)> edit,
+            magda::StepPatternGesture gesture = magda::StepPatternGesture::Discrete) const;
+
+        /// The step / pattern menu both views show. False when @p result names
+        /// none of its items, so the caller can leave the view alone.
+        bool applyStepMenuAction(int result, int stepIndex);
+
+        /// Called after a transpose the view asked for, so a pitch-windowed
+        /// view can follow the notes it just moved.
+        virtual void patternTransposed(int) {}
+
+        ViewContext context_;
     };
 
     class KeysView;       // Piano-roll style pitch x step grid (defined in .cpp)
     class DrumLanesView;  // x0x drum-lane grid driven by a downstream Drum Grid (defined in .cpp)
 
-    daw::audio::PolyStepSequencerPlugin* plugin_ = nullptr;
-    juce::ValueTree watchedState_;
+    daw::audio::PolyStepSequencerPlugin* device_ = nullptr;
+    magda::ChainNodePath devicePath_;
+    step_pattern::PolyPattern pattern_;
+    // Mirror of the curve display's hard-angle toggle, so settingsEdited() can
+    // publish the full settings set from the controls alone.
+    bool hardAngle_ = false;
 
     // --- Controls ---
     juce::Label rateLabel_;
@@ -95,6 +172,8 @@ class PolyStepSequencerUI : public juce::Component,
     // --- View mode toggle (keys / drum) ---
     juce::TextButton viewModeButton_;
     bool drumViewActive_ = false;
+    /// Which view is actually built, so a mode change swaps it exactly once.
+    bool usingDrumView_ = false;
 
     // Right-side control panel bounds (controls + time bend), painted as a card.
     juce::Rectangle<int> sidePanelArea_;
@@ -108,6 +187,17 @@ class PolyStepSequencerUI : public juce::Component,
     // Lane being drag-edited (velocity / probability bars)
     enum class DragLane { None, Velocity, Probability };
     DragLane activeDragLane_ = DragLane::None;
+
+    // Starts above kNoStepPatternGesture and never repeats within a session,
+    // so a faceplate rebuilt over the same device cannot reuse a token the
+    // command still on top of the undo stack is carrying.
+    static std::atomic<int> nextPatternGesture_;
+    int patternGesture_ = nextPatternGesture_.fetch_add(1);
+
+    /// End the current continuous gesture, so the next one is its own undo.
+    void endPatternGesture() {
+        patternGesture_ = nextPatternGesture_.fetch_add(1);
+    }
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;
@@ -141,15 +231,23 @@ class PolyStepSequencerUI : public juce::Component,
     void setupLabel(juce::Label& label, const juce::String& text);
     void setupSlider(LinkableTextSlider& slider, double min, double max, double step);
 
-    void syncFromPlugin();
+    void sendChange(int paramIndex, float value);
+    void settingsEdited();
+    void syncSettingsFromDevice();
 
-    /** Swap the pattern view to match the plugin's persisted view mode. */
-    void updatePatternViewMode();
+    /// Run @p edit over the model's pattern as one undoable step.
+    void editPattern(const juce::String& description,
+                     std::function<void(step_pattern::PolyPattern&)> edit,
+                     magda::StepPatternGesture gesture = magda::StepPatternGesture::Discrete);
 
-    // ValueTree::Listener — reflects external changes (undo/redo, preset load)
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier& property) override;
-    void valueTreeChildAdded(juce::ValueTree& parent, juce::ValueTree& child) override;
-    void valueTreeChildRemoved(juce::ValueTree& parent, juce::ValueTree& child, int index) override;
+    /// Notes the device's step recorder captured, committed to the model.
+    void drainRecordedSteps();
+
+    /// Hand the current pattern, path and edit route to the pattern view.
+    void pushViewContext();
+
+    /** Swap the pattern view to match the persisted view mode. */
+    void applyPatternViewMode();
 
     // Timer — playhead animation only
     void timerCallback() override;

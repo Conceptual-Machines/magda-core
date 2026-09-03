@@ -1,6 +1,6 @@
 #include "RampCurveDisplay.hpp"
 
-#include "audio/transport/StepClock.hpp"
+#include "audio/sequencer/StepClock.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -46,8 +46,8 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.35f));
         for (int i = 0; i < numTicks_; ++i) {
             double t = static_cast<double>(i) / static_cast<double>(numTicks_);
-            double curved = daw::audio::StepClock::applyRampCurveWithCycles(t, depth_, skew_,
-                                                                            cycles_, hardAngle_);
+            double curved = daw::audio::sequencer::StepClock::applyRampCurveWithCycles(
+                t, depth_, skew_, cycles_, hardAngle_);
             curved = juce::jlimit(0.0, 1.0, curved);
             float tx = x0 + static_cast<float>(curved) * w;
             g.drawLine(tx, tickY0, tx, tickY1, 1.0f);
@@ -62,8 +62,9 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
 
         // Apply curve with cycles to get the x position
         float pos = playbackPos_;
-        float curvedPos = static_cast<float>(daw::audio::StepClock::applyRampCurveWithCycles(
-            pos, depth_, skew_, cycles_, hardAngle_));
+        float curvedPos =
+            static_cast<float>(daw::audio::sequencer::StepClock::applyRampCurveWithCycles(
+                pos, depth_, skew_, cycles_, hardAngle_));
         curvedPos = juce::jlimit(0.0f, 1.0f, curvedPos);
         float sweepX = x0 + curvedPos * w;
 
@@ -89,7 +90,8 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
     int NUM_POINTS = juce::jlimit(96, 256, static_cast<int>(w));
     for (int i = 0; i <= NUM_POINTS; ++i) {
         double t = static_cast<double>(i) / static_cast<double>(NUM_POINTS);
-        double curved = daw::audio::StepClock::applyRampCurve(t, depth_, skew_, hardAngle_);
+        double curved =
+            daw::audio::sequencer::StepClock::applyRampCurve(t, depth_, skew_, hardAngle_);
         float px = x0 + static_cast<float>(t) * w;
         float py = y0 + h - static_cast<float>(curved) * h;
         if (i == 0)

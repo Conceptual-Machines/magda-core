@@ -40,6 +40,8 @@ target_sources(magda_daw PRIVATE
     ClipPropertyCommands.cpp
     WarpMarkerCommands.cpp
     DeviceStateCommands.cpp
+    StepPatternState.cpp
+    StepPatternCommands.cpp
     TrackCommands.cpp
     PadCommands.cpp
     TrackPropertyCommands.cpp

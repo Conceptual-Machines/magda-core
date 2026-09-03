@@ -61,12 +61,9 @@ class ArpeggiatorProcessor : public MagdaDeviceProcessor {
  * - 4: Accent Velocity (1-127)
  * - 5: Normal Velocity (1-127)
  */
-class StepSequencerProcessor : public AutomatablePluginProcessor {
+class StepSequencerProcessor : public MagdaDeviceProcessor {
   public:
     StepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-  protected:
-    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**
@@ -81,12 +78,9 @@ class StepSequencerProcessor : public AutomatablePluginProcessor {
  * - 4: Timing Depth (-1..1, ramp curve depth)
  * - 5: Timing Skew (-1..1, bipolar ramp curve skew)
  */
-class PolyStepSequencerProcessor : public AutomatablePluginProcessor {
+class PolyStepSequencerProcessor : public MagdaDeviceProcessor {
   public:
     PolyStepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
-
-  protected:
-    void customiseParameterInfo(int index, ParameterInfo& info) const override;
 };
 
 /**

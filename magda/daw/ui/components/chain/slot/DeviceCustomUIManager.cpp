@@ -39,6 +39,7 @@
 #include "core/MidiFileWriter.hpp"
 #include "core/PadCommands.hpp"
 #include "core/SelectionManager.hpp"
+#include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
 #include "custom_ui/DrumVoiceUI.hpp"
@@ -268,6 +269,21 @@ bool isMidiFxDrop(const juce::DynamicObject& obj) {
 bool isMidiFxPlugin(const PluginBrowserInfo& plugin) {
     return plugin.categoryOverride.equalsIgnoreCase("MIDI FX") ||
            plugin.subcategory.equalsIgnoreCase("MIDI");
+}
+
+/// Patch a device's non-slot settings onto the MODEL's state document, which
+/// the projection then pushes to the live device (#2317). Every faceplate whose
+/// settings are authored state writes them this way.
+void writeDeviceSettings(const magda::ChainNodePath& devicePath,
+                         const juce::NamedValueSet& settings) {
+    auto& trackManager = magda::TrackManager::getInstance();
+    const bool changed = trackManager.updateDeviceAuthoredState(
+        devicePath, [&settings](magda::device_state::Doc& doc) {
+            for (int i = 0; i < settings.size(); ++i)
+                doc.root.props.set(settings.getName(i), settings.getValueAt(i));
+        });
+    if (changed)
+        magda::ProjectManager::getInstance().markDirty();
 }
 
 bool isMidiFxPlugin(const juce::PluginDescription& desc) {
@@ -664,34 +680,24 @@ std::optional<bool> DeviceCustomUIManager::toggleSequencerStepRecording(bool pol
 }
 
 void DeviceCustomUIManager::copySequencerPatternToClipboard(bool polyphonic) {
-    // Clipboard/export gestures are UI-specific operations that need the concrete
-    // plugin helpers rather than the generic command surface used for state
-    // mutations.
-    auto plugin = getLivePlugin();
-    if (polyphonic) {
-        if (auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get()))
-            copyPolyStepSequencerPatternToClipboard(*sequencer);
-        return;
-    }
-
-    if (auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get()))
-        copyStepSequencerPatternToClipboard(*sequencer);
+    // Clipboard/export gestures read the pattern from the MODEL (#2313), so
+    // they need the device's path rather than a live plugin.
+    if (polyphonic)
+        copyPolyStepSequencerPatternToClipboard(devicePath_);
+    else
+        copyStepSequencerPatternToClipboard(devicePath_);
 }
 
 bool DeviceCustomUIManager::handleSequencerPatternExternalDrag(bool polyphonic,
                                                                juce::Component* exportButton,
                                                                juce::Component* dragOwner,
                                                                const juce::MouseEvent& event) {
-    auto plugin = getLivePlugin();
     if (polyphonic) {
-        return handlePolyStepSequencerPatternExternalDrag(
-            dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get()), exportButton,
-            dragOwner, event);
+        return handlePolyStepSequencerPatternExternalDrag(devicePath_, exportButton, dragOwner,
+                                                          event);
     }
 
-    return handleStepSequencerPatternExternalDrag(
-        dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get()), exportButton, dragOwner,
-        event);
+    return handleStepSequencerPatternExternalDrag(devicePath_, exportButton, dragOwner, event);
 }
 
 bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int& position,
@@ -708,22 +714,21 @@ bool DeviceCustomUIManager::getSequencerStepRecordingState(bool polyphonic, int&
     }
 
     // Position and range are display-only details that are not part of the
-    // command mutation surface.
-    auto plugin = getLivePlugin();
+    // command mutation surface. The recorder's position is the device's; how
+    // many steps there are to fill is the model's.
     if (polyphonic) {
-        auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-        if (sequencer == nullptr || (!commandHandled && !sequencer->isStepRecording()))
+        if (polyStepSeqPlugin_ == nullptr ||
+            (!commandHandled && !polyStepSeqPlugin_->isStepRecording()))
             return false;
-        position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
-        maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
+        position = polyStepSeqPlugin_->stepRecordPosition_.load(std::memory_order_relaxed);
+        maxSteps = magda::currentPolyPattern(devicePath_).playingLength();
         return true;
     }
 
-    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr || (!commandHandled && !sequencer->isStepRecording()))
+    if (stepSeqPlugin_ == nullptr || (!commandHandled && !stepSeqPlugin_->isStepRecording()))
         return false;
-    position = sequencer->stepRecordPosition_.load(std::memory_order_relaxed);
-    maxSteps = juce::jlimit(1, 32, static_cast<int>(sequencer->numSteps.get()));
+    position = stepSeqPlugin_->stepRecordPosition_.load(std::memory_order_relaxed);
+    maxSteps = magda::currentMonoPattern(devicePath_).playingLength();
     return true;
 }
 
@@ -826,6 +831,16 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
     if (arpeggiatorUI_ &&
         device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
         arpeggiatorUI_->updateFromParameters(device.parameters);
+    if (stepSequencerUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
+        stepSequencerUI_->setPattern(magda::step_pattern::monoPatternOf(device.pluginState));
+        stepSequencerUI_->updateFromParameters(device.parameters);
+    }
+    if (polyStepSequencerUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::PolyStepSequencerPlugin::xmlTypeName)) {
+        polyStepSequencerUI_->setPattern(magda::step_pattern::polyPatternOf(device.pluginState));
+        polyStepSequencerUI_->updateFromParameters(device.parameters);
+    }
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
@@ -944,14 +959,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         // The model is what autosave writes and what both engines build from,
         // so the edit also dirties the project.
         arpeggiatorUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
-            auto& tm = magda::TrackManager::getInstance();
-            const bool changed = tm.updateDeviceAuthoredState(
-                devicePath_, [&settings](magda::device_state::Doc& doc) {
-                    for (int i = 0; i < settings.size(); ++i)
-                        doc.root.props.set(settings.getName(i), settings.getValueAt(i));
-                });
-            if (changed)
-                ProjectManager::getInstance().markDirty();
+            writeDeviceSettings(devicePath_, settings);
         };
         parent.addAndMakeVisible(*arpeggiatorUI_);
         if (auto plugin = getLivePlugin()) {
@@ -982,25 +990,67 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         // NB: checked before the mono sequencer — "polystepsequencer" also
         // contains "stepsequencer", so the order of these branches matters.
         polyStepSequencerUI_ = std::make_unique<PolyStepSequencerUI>();
+        forwardParameterChanges(*polyStepSequencerUI_, callbacks);
+        polyStepSequencerUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
+            writeDeviceSettings(devicePath_, settings);
+        };
+        polyStepSequencerUI_->onPatternEdited =
+            [this](const juce::String& description,
+                   std::function<void(magda::step_pattern::PolyPattern&)> edit,
+                   magda::StepPatternGesture gesture) {
+                // The faceplate's token says which drag a continuous edit
+                // belongs to, so two drags never merge into one undo (#2335).
+                const int gestureId = polyStepSequencerUI_ != nullptr
+                                          ? polyStepSequencerUI_->patternGesture()
+                                          : magda::kNoStepPatternGesture;
+                if (magda::editPolyStepPattern(devicePath_, description, edit, gesture,
+                                               gestureId) &&
+                    polyStepSequencerUI_ != nullptr)
+                    polyStepSequencerUI_->setPattern(magda::currentPolyPattern(devicePath_));
+            };
         parent.addAndMakeVisible(*polyStepSequencerUI_);
         if (auto plugin = getLivePlugin()) {
-            if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
-                polyStepSequencerUI_->setPlugin(seq);
+            if (auto* seq = daw::audio::tracktion_adapter::deviceFromPlugin<
+                    daw::audio::PolyStepSequencerPlugin>(plugin.get())) {
+                polyStepSequencerUI_->setSequencer(seq);
                 polyStepSeqPlugin_ = seq;
             }
         }
+        update(device);
         return true;
     }
 
     if (device.pluginId.containsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
         stepSequencerUI_ = std::make_unique<StepSequencerUI>();
+        forwardParameterChanges(*stepSequencerUI_, callbacks);
+        stepSequencerUI_->onSettingsEdited = [this](const juce::NamedValueSet& settings) {
+            writeDeviceSettings(devicePath_, settings);
+        };
+        stepSequencerUI_->onPatternEdited =
+            [this](const juce::String& description,
+                   std::function<void(magda::step_pattern::MonoPattern&)> edit,
+                   magda::StepPatternGesture gesture) {
+                // See the poly sequencer above.
+                const int gestureId = stepSequencerUI_ != nullptr
+                                          ? stepSequencerUI_->patternGesture()
+                                          : magda::kNoStepPatternGesture;
+                if (magda::editMonoStepPattern(devicePath_, description, edit, gesture,
+                                               gestureId) &&
+                    stepSequencerUI_ != nullptr) {
+                    // Straight back into the faceplate, so a click redraws now
+                    // rather than on its next poll of the device.
+                    stepSequencerUI_->setPattern(magda::currentMonoPattern(devicePath_));
+                }
+            };
         parent.addAndMakeVisible(*stepSequencerUI_);
         if (auto plugin = getLivePlugin()) {
-            if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-                stepSequencerUI_->setPlugin(seq);
+            if (auto* seq = daw::audio::tracktion_adapter::deviceFromPlugin<
+                    daw::audio::StepSequencerPlugin>(plugin.get())) {
+                stepSequencerUI_->setSequencer(seq);
                 stepSeqPlugin_ = seq;
             }
         }
+        update(device);
         return true;
     }
 
@@ -2024,35 +2074,31 @@ bool DeviceCustomUIManager::executeImpulseResponseLoadCommand(const juce::var& a
 juce::var DeviceCustomUIManager::executeSequencerCommand(const juce::Identifier& command,
                                                          const juce::var& arguments,
                                                          bool polyphonic) {
-    auto plugin = getLivePlugin();
+    // A pattern is authored state, so randomizing one is a model edit and
+    // undoable (#2313). Step recording is the live device's own mode, so it
+    // stays a call on the device.
     if (polyphonic) {
-        auto* sequencer = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-        if (sequencer == nullptr)
+        if (command == kPolyStepSequencerRandomizePattern)
+            return randomizePolyStepPattern(devicePath_);
+
+        if (polyStepSeqPlugin_ == nullptr)
             return false;
-
-        if (command == kPolyStepSequencerRandomizePattern) {
-            sequencer->randomizePattern();
-            return true;
-        }
         if (command == kPolyStepSequencerGetStepRecording)
-            return sequencer->isStepRecording();
+            return polyStepSeqPlugin_->isStepRecording();
 
-        sequencer->setStepRecording(static_cast<bool>(arguments));
+        polyStepSeqPlugin_->setStepRecording(static_cast<bool>(arguments));
         return true;
     }
 
-    auto* sequencer = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get());
-    if (sequencer == nullptr)
+    if (command == kStepSequencerRandomizePattern)
+        return randomizeMonoStepPattern(devicePath_);
+
+    if (stepSeqPlugin_ == nullptr)
         return false;
-
-    if (command == kStepSequencerRandomizePattern) {
-        sequencer->randomizePattern();
-        return true;
-    }
     if (command == kStepSequencerGetStepRecording)
-        return sequencer->isStepRecording();
+        return stepSeqPlugin_->isStepRecording();
 
-    sequencer->setStepRecording(static_cast<bool>(arguments));
+    stepSeqPlugin_->setStepRecording(static_cast<bool>(arguments));
     return true;
 }
 
@@ -2159,6 +2205,11 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
 
     if (externalInsertUI_ != nullptr)
         externalInsertUI_->setDevicePath(devicePath_);
+
+    // The poly sequencer's drum-lane view finds its lanes by walking the live
+    // chain from the device's path, so it needs the path once it is valid.
+    if (polyStepSequencerUI_ != nullptr)
+        polyStepSequencerUI_->setDevicePath(devicePath_);
 
     if (polySynthUI_ != nullptr) {
         daw::audio::compiled::MagdaPolySynthCompiledPlugin* synth = nullptr;

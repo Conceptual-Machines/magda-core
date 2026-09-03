@@ -15,10 +15,12 @@
 #include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/SidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
-#include "magda/daw/audio/transport/StepClock.hpp"
+#include "magda/daw/audio/sequencer/StepClock.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/RackInfo.hpp"
+#include "magda/daw/core/StepPatternCommands.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/ui/components/chain/slot/StepSequencerClipExport.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
@@ -86,7 +88,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState(
             [this] { testPolyStepSequencerStepRecordingStopsAtEnd(); });
         magda::test::runWithCleanJuceState(
-            [this] { testStepSequencerStepEditsSurviveStateSave(); });
+            [this] { testStepSequencerPatternRoundTripsThroughTheModel(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerCopyPatternToClipboard(); });
         magda::test::runWithCleanJuceState(
             [this] { testPolyStepSequencerCopyPatternToClipboard(); });
@@ -255,6 +257,27 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                                   "Unbound meter tap should pass audio through unchanged");
         expectWithinAbsoluteError(buffer.getSample(1, 0), -0.25f, 0.0001f,
                                   "Unbound meter tap should pass audio through unchanged");
+    }
+
+    /// The MagdaDevice inside a host wrapper plugin (#2299).
+    static magda::daw::audio::StepSequencerPlugin* sequencerDevice(const te::Plugin::Ptr& plugin) {
+        return magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+            magda::daw::audio::StepSequencerPlugin>(plugin.get());
+    }
+
+    static magda::daw::audio::PolyStepSequencerPlugin* polySequencerDevice(
+        const te::Plugin::Ptr& plugin) {
+        return magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+            magda::daw::audio::PolyStepSequencerPlugin>(plugin.get());
+    }
+
+    /// Publish a one-step pattern the way a project load would, so a test can
+    /// drive the step recorder to the end of a pattern in one note.
+    static void restoreOneStepPattern(te::Plugin& plugin, const juce::String& deviceType) {
+        juce::ValueTree state(te::IDs::PLUGIN);
+        state.setProperty(te::IDs::type, deviceType, nullptr);
+        state.setProperty("seqNumSteps", 1, nullptr);
+        plugin.restorePluginStateFromValueTree(state);
     }
 
     static magda::DeviceInfo makeInternalDevice(magda::DeviceId id, const juce::String& name,
@@ -1172,20 +1195,20 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto plugin =
             createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer plugin must be created");
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        expect(seq->midiThru.get(), "Fresh step sequencers should pass incoming MIDI");
+        expect(seq->midiThru.load(), "Fresh step sequencers should pass incoming MIDI");
 
         juce::ValueTree saved(te::IDs::PLUGIN);
         saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
                           nullptr);
         saved.setProperty("seqMidiThru", false, nullptr);
-        seq->restorePluginStateFromValueTree(saved);
+        plugin->restorePluginStateFromValueTree(saved);
 
-        expect(!seq->midiThru.get(), "Saved MIDI thru state should be restored");
+        expect(!seq->midiThru.load(), "Saved MIDI thru state should be restored");
     }
 
     void testDrumGridLoadsInternalInstrumentAsPadVoice() {
@@ -1283,22 +1306,22 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         bridge->syncTrackPlugins(trackId);
 
         auto plugin = bridge->getPlugin(devicePath);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer runtime plugin must be created");
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer runtime device must be created");
         if (seq == nullptr) {
             trackManager.clearAllTracks();
             trackManager.setAudioEngine(nullptr);
             return;
         }
 
-        expect(!seq->midiThru.get(), "Runtime MIDI thru should load from DeviceInfo::midiInThru");
+        expect(!seq->midiThru.load(), "Runtime MIDI thru should load from DeviceInfo::midiInThru");
 
         trackManager.setDeviceInChainMidiInThruByPath(devicePath, true);
-        expect(seq->midiThru.get(),
+        expect(seq->midiThru.load(),
                "Runtime MIDI thru should follow DeviceInfo when the header control enables it");
 
         trackManager.setDeviceInChainMidiInThruByPath(devicePath, false);
-        expect(!seq->midiThru.get(),
+        expect(!seq->midiThru.load(),
                "Runtime MIDI thru should follow DeviceInfo when the header control disables it");
 
         trackManager.clearAllTracks();
@@ -1316,12 +1339,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto plugin =
             createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer plugin must be created");
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        seq->midiThru = true;
+        seq->midiThru.store(true);
 
         juce::AudioBuffer<float> buffer(2, 8);
         buffer.clear();
@@ -1334,7 +1357,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             &midi, 0.0,
             te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(1.0)),
             false, false, false, false);
-        seq->applyToBuffer(rc);
+        plugin->applyToBuffer(rc);
 
         bool sawThruNote = false;
         for (auto& msg : midi) {
@@ -1355,12 +1378,14 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto plugin =
             createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer plugin must be created");
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        seq->numSteps = 1;
+        // How many steps play is part of the pattern, which the model owns and
+        // publishes to the device (#2313).
+        restoreOneStepPattern(*plugin, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
         seq->setStepRecording(true);
 
         juce::AudioBuffer<float> buffer(2, 8);
@@ -1374,11 +1399,18 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             &midi, 0.0,
             te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(1.0)),
             false, false, false, false);
-        seq->applyToBuffer(rc);
+        plugin->applyToBuffer(rc);
 
         expect(!seq->isStepRecording(), "Step recording should stop at the end of the pattern");
         expectEquals(seq->stepRecordPosition_.load(std::memory_order_relaxed), 1,
                      "Step recording position should advance to the pattern end");
+
+        // The device does not write the pattern itself: it hands the note to
+        // the faceplate, which commits it to the model.
+        magda::daw::audio::StepSequencerPlugin::RecordedStep recorded;
+        expect(seq->popRecordedStep(recorded), "The recorded note should be queued for the model");
+        expectEquals(recorded.stepIndex, 0, "The note should land on the first step");
+        expectEquals(recorded.noteNumber, 65, "The recorded note should keep its pitch");
     }
 
     void testPolyStepSequencerStepRecordingStopsAtEnd() {
@@ -1392,12 +1424,12 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto plugin =
             createCustomPlugin(*edit, magda::daw::audio::PolyStepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Poly step sequencer plugin must be created");
+        auto* seq = polySequencerDevice(plugin);
+        expect(seq != nullptr, "Poly step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        seq->numSteps = 1;
+        restoreOneStepPattern(*plugin, magda::daw::audio::PolyStepSequencerPlugin::xmlTypeName);
         seq->setStepRecording(true);
 
         juce::AudioBuffer<float> buffer(2, 8);
@@ -1412,16 +1444,21 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
             &midi, 0.0,
             te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(1.0)),
             false, false, false, false);
-        seq->applyToBuffer(rc);
+        plugin->applyToBuffer(rc);
 
         expect(!seq->isStepRecording(),
                "Poly step recording should stop at the end of the pattern");
         expectEquals(seq->stepRecordPosition_.load(std::memory_order_relaxed), 1,
                      "Poly step recording position should advance to the pattern end");
+
+        magda::daw::audio::PolyStepSequencerPlugin::RecordedStep recorded;
+        expect(seq->popRecordedStep(recorded), "The recorded note should be queued for the model");
+        expectEquals(recorded.stepIndex, 0, "The note should land on the first step");
+        expectEquals(recorded.noteNumber, 65, "The recorded note should keep its pitch");
     }
 
-    void testStepSequencerStepEditsSurviveStateSave() {
-        beginTest("Step sequencer step edits survive ValueTree saves");
+    void testStepSequencerPatternRoundTripsThroughTheModel() {
+        beginTest("Step sequencer pattern round-trips through the model's document");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1431,64 +1468,102 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         auto plugin =
             createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer plugin must be created");
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        seq->setStepNote(0, 64);
-        seq->setStepGate(0, true);
-        seq->setStepNote(1, 67);
-        seq->setStepGate(1, false);
+        // The model authors a pattern, encodes it, and the device is restored
+        // from what a project load would hand it (#2313).
+        magda::step_pattern::MonoPattern authored;
+        authored.length = 4;
+        authored.steps[0] = {.noteNumber = 64, .gate = true};
+        authored.steps[1] = {.noteNumber = 67, .gate = false};
+        authored.steps[2] = {.noteNumber = 60, .octaveShift = 1, .gate = true, .accent = true};
 
-        expectEquals(seq->getStep(0).noteNumber, 64, "First edited note should persist");
-        expect(seq->getStep(0).gate, "First edited gate should persist");
-        expectEquals(seq->getStep(1).noteNumber, 67, "Second edited note should persist");
-        expect(!seq->getStep(1).gate, "Second edited gate should persist");
+        magda::device_state::Doc doc;
+        doc.deviceType = magda::daw::audio::StepSequencerPlugin::xmlTypeName;
+        magda::step_pattern::writeMono(doc, authored);
+        plugin->restorePluginStateFromValueTree(magda::device_state::toValueTree(
+            magda::device_state::decode(magda::device_state::encode(doc))->root));
 
-        seq->randomizePattern();
-        expect(seq->getStep(0).noteNumber >= 36 && seq->getStep(0).noteNumber < 60,
-               "Randomized note should persist after saving the pattern");
+        const auto played = seq->pattern();
+        expectEquals(played.playingLength(), 4, "The device should play the authored length");
+        expectEquals(played.steps[0].noteNumber, 64, "First authored note should reach the device");
+        expect(played.steps[0].gate, "First authored gate should reach the device");
+        expect(!played.steps[1].gate, "A rest should reach the device as a rest");
+        expectEquals(played.steps[2].octaveShift, 1, "Octave shift should reach the device");
+        expect(played.steps[2].accent, "Accent should reach the device");
+
+        // And a capture writes the same pattern back out, so a save round-trips.
+        juce::ValueTree captured(te::IDs::PLUGIN);
+        seq->flushState(captured);
+        magda::device_state::Doc rebuilt;
+        for (int i = 0; i < captured.getNumChildren(); ++i) {
+            const auto child = captured.getChild(i);
+            if (!child.hasType(juce::Identifier("STEP")))
+                continue;
+            magda::device_state::Node node;
+            node.type = "STEP";
+            for (int p = 0; p < child.getNumProperties(); ++p) {
+                const auto name = child.getPropertyName(p);
+                node.props.set(name, child.getProperty(name));
+            }
+            rebuilt.root.children.push_back(std::move(node));
+        }
+        rebuilt.root.props.set(juce::Identifier("seqNumSteps"),
+                               captured.getProperty("seqNumSteps"));
+
+        const auto readBack = magda::step_pattern::readMono(rebuilt);
+        expect(readBack == authored, "A capture should write the pattern the model authored");
     }
 
     void testStepSequencerCopyPatternToClipboard() {
         beginTest("Step sequencer copy pattern writes MIDI notes to clipboard");
 
         auto& wrapper = magda::test::getSharedEngine();
-        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
-        expect(edit != nullptr, "Test edit must be created");
-        if (!edit)
-            return;
-
-        auto plugin =
-            createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::StepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Step sequencer plugin must be created");
-        if (seq == nullptr)
-            return;
-
-        seq->numSteps = 4;
-        seq->rate = static_cast<int>(magda::daw::audio::StepClock::Rate::Quarter);
-        seq->gateLength = 0.5f;
-        seq->normalVelocity = 70;
-        seq->accentVelocity = 110;
-        seq->setStepNote(0, 60);
-        seq->setStepGate(0, true);
-        seq->setStepAccent(0, false);
-        seq->setStepGate(1, false);
-        seq->setStepNote(2, 59);
-        seq->setStepOctaveShift(2, 1);
-        seq->setStepGate(2, true);
-        seq->setStepAccent(2, true);
-        seq->setStepGate(3, false);
-
+        auto& trackManager = magda::TrackManager::getInstance();
         magda::TrackManager::ScopedListenerMuteForTests muteTrackListeners;
         magda::ClipManager::ScopedListenerMuteForTests muteClipListeners;
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Step Sequencer Export");
+        auto sequencer = makeInternalDevice(magda::INVALID_DEVICE_ID, "Step Sequencer",
+                                            magda::daw::audio::StepSequencerPlugin::xmlTypeName);
+        const auto deviceId = trackManager.addDeviceToTrack(trackId, sequencer);
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, deviceId);
+        // Instantiate it, so the model has the device's parameter entries to
+        // write into.
+        if (auto* bridge = wrapper.getAudioBridge())
+            bridge->syncTrackPlugins(trackId);
+
+        using Seq = magda::daw::audio::StepSequencerPlugin;
+        trackManager.setDeviceParameterValue(
+            devicePath, Seq::kRate,
+            static_cast<float>(magda::daw::audio::sequencer::StepClock::Rate::Quarter));
+        trackManager.setDeviceParameterValue(devicePath, Seq::kGateLength, 0.5f);
+        trackManager.setDeviceParameterValue(devicePath, Seq::kNormalVelocity, 70.0f);
+        trackManager.setDeviceParameterValue(devicePath, Seq::kAccentVelocity, 110.0f);
+
+        expect(magda::editMonoStepPattern(devicePath, "Test Pattern",
+                                          [](magda::step_pattern::MonoPattern& pattern) {
+                                              pattern.length = 4;
+                                              pattern.steps[0] = {.noteNumber = 60, .gate = true};
+                                              pattern.steps[1] = {.gate = false};
+                                              pattern.steps[2] = {.noteNumber = 59,
+                                                                  .octaveShift = 1,
+                                                                  .gate = true,
+                                                                  .accent = true};
+                                              pattern.steps[3] = {.gate = false};
+                                          }),
+               "The pattern edit should reach the model");
 
         auto& clipManager = magda::ClipManager::getInstance();
         clipManager.setNoteClipboard({});
         clipManager.clearClipboard();
-        magda::daw::ui::copyStepSequencerPatternToClipboard(*seq);
+        magda::daw::ui::copyStepSequencerPatternToClipboard(devicePath);
 
         expect(!clipManager.hasNotesInClipboard(),
                "Copying a mono step sequence should not seed note-paste clipboard");
@@ -1499,7 +1574,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
                "Copied mono pattern must not paste a ghost clip without a target track");
 
-        auto& trackManager = magda::TrackManager::getInstance();
         const auto targetTrackId = trackManager.createTrack("Step Sequencer Pattern Paste Target",
                                                             magda::TrackType::Media);
         const auto targetColour = juce::Colour(0xff3366aa);
@@ -1508,13 +1582,19 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto pastedIds = clipManager.pasteFromClipboard(0.0, targetTrackId);
         expectEquals(static_cast<int>(pastedIds.size()), 1,
                      "Copied mono pattern should paste as one MIDI clip with a target track");
-        if (pastedIds.empty())
+        if (pastedIds.empty()) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
             return;
+        }
 
         const auto* pastedClip = clipManager.getClip(pastedIds.front());
         expect(pastedClip != nullptr && pastedClip->isMidi(), "Pasted pattern clip should be MIDI");
-        if (pastedClip == nullptr || !pastedClip->isMidi())
+        if (pastedClip == nullptr || !pastedClip->isMidi()) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
             return;
+        }
 
         expectWithinAbsoluteError(pastedClip->placement.lengthBeats, 4.0, 0.0001,
                                   "Copied mono pattern clip should keep the full step-sequencer "
@@ -1525,63 +1605,80 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto& notes = pastedClip->midiNotes;
         expectEquals(static_cast<int>(notes.size()), 2,
                      "Copying a mono step sequence should copy active gated steps only");
-        if (notes.size() < 2)
-            return;
+        if (notes.size() >= 2) {
+            expectEquals(notes[0].noteNumber, 60, "First copied note should keep its pitch");
+            expectEquals(notes[0].velocity, 70, "First copied note should use normal velocity");
+            expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
+                                      "First copied note should start at beat 0");
+            expectWithinAbsoluteError(notes[0].lengthBeats, 0.5, 0.0001,
+                                      "Copied note length should apply gate length");
 
-        expectEquals(notes[0].noteNumber, 60, "First copied note should keep its pitch");
-        expectEquals(notes[0].velocity, 70, "First copied note should use normal velocity");
-        expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
-                                  "First copied note should start at beat 0");
-        expectWithinAbsoluteError(notes[0].lengthBeats, 0.5, 0.0001,
-                                  "Copied note length should apply gate length");
+            expectEquals(notes[1].noteNumber, 71,
+                         "Second copied note should apply octave shift and clamp pitch");
+            expectEquals(notes[1].velocity, 110, "Accented copied note should use accent velocity");
+            expectWithinAbsoluteError(notes[1].startBeat, 2.0, 0.0001,
+                                      "Second copied note should start at its step beat");
+            expectWithinAbsoluteError(notes[1].lengthBeats, 0.5, 0.0001,
+                                      "Second copied note should apply gate length");
+        }
 
-        expectEquals(notes[1].noteNumber, 71,
-                     "Second copied note should apply octave shift and clamp pitch");
-        expectEquals(notes[1].velocity, 110, "Accented copied note should use accent velocity");
-        expectWithinAbsoluteError(notes[1].startBeat, 2.0, 0.0001,
-                                  "Second copied note should start at its step beat");
-        expectWithinAbsoluteError(notes[1].lengthBeats, 0.5, 0.0001,
-                                  "Second copied note should apply gate length");
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
     }
 
     void testPolyStepSequencerCopyPatternToClipboard() {
         beginTest("Poly step sequencer copy pattern writes chord notes to clipboard");
 
         auto& wrapper = magda::test::getSharedEngine();
-        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
-        expect(edit != nullptr, "Test edit must be created");
-        if (!edit)
-            return;
-
-        auto plugin =
-            createCustomPlugin(*edit, magda::daw::audio::PolyStepSequencerPlugin::xmlTypeName);
-        auto* seq = dynamic_cast<magda::daw::audio::PolyStepSequencerPlugin*>(plugin.get());
-        expect(seq != nullptr, "Poly step sequencer plugin must be created");
-        if (seq == nullptr)
-            return;
-
-        seq->numSteps = 3;
-        seq->rate = static_cast<int>(magda::daw::audio::StepClock::Rate::Quarter);
-        seq->gateLength = 0.5f;
-        seq->setStepGate(0, true);
-        seq->setStepTie(0, false);
-        seq->setStepVelocity(0, 90);
-        seq->addStepNote(0, 60);
-        seq->addStepNote(0, 64, 80);
-        seq->setStepGate(1, true);
-        seq->setStepTie(1, true);
-        seq->setStepGate(2, true);
-        seq->setStepTie(2, false);
-        seq->setStepVelocity(2, 75);
-        seq->addStepNote(2, 67);
-
+        auto& trackManager = magda::TrackManager::getInstance();
         magda::TrackManager::ScopedListenerMuteForTests muteTrackListeners;
         magda::ClipManager::ScopedListenerMuteForTests muteClipListeners;
+
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(&wrapper);
+
+        const auto trackId = trackManager.createTrack("Poly Sequencer Export");
+        auto sequencer =
+            makeInternalDevice(magda::INVALID_DEVICE_ID, "Poly Sequencer",
+                               magda::daw::audio::PolyStepSequencerPlugin::xmlTypeName);
+        const auto deviceId = trackManager.addDeviceToTrack(trackId, sequencer);
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, deviceId);
+        if (auto* bridge = wrapper.getAudioBridge())
+            bridge->syncTrackPlugins(trackId);
+
+        using PolySeq = magda::daw::audio::PolyStepSequencerPlugin;
+        trackManager.setDeviceParameterValue(
+            devicePath, PolySeq::kRate,
+            static_cast<float>(magda::daw::audio::sequencer::StepClock::Rate::Quarter));
+        trackManager.setDeviceParameterValue(devicePath, PolySeq::kGateLength, 0.5f);
+
+        expect(magda::editPolyStepPattern(devicePath, "Test Pattern",
+                                          [](magda::step_pattern::PolyPattern& pattern) {
+                                              pattern.length = 3;
+                                              auto& chord = pattern.steps[0];
+                                              chord.gate = true;
+                                              chord.tie = false;
+                                              chord.velocity = 90;
+                                              chord.noteCount = 2;
+                                              chord.notes[0] = {.noteNumber = 60};
+                                              chord.notes[1] = {.noteNumber = 64, .velocity = 80};
+
+                                              pattern.steps[1].gate = true;
+                                              pattern.steps[1].tie = true;
+
+                                              auto& last = pattern.steps[2];
+                                              last.gate = true;
+                                              last.tie = false;
+                                              last.velocity = 75;
+                                              last.noteCount = 1;
+                                              last.notes[0] = {.noteNumber = 67};
+                                          }),
+               "The pattern edit should reach the model");
 
         auto& clipManager = magda::ClipManager::getInstance();
         clipManager.setNoteClipboard({});
         clipManager.clearClipboard();
-        magda::daw::ui::copyPolyStepSequencerPatternToClipboard(*seq);
+        magda::daw::ui::copyPolyStepSequencerPatternToClipboard(devicePath);
 
         expect(!clipManager.hasNotesInClipboard(),
                "Copying a poly sequence should not seed note-paste clipboard");
@@ -1592,7 +1689,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(clipManager.pasteFromClipboard(0.0, magda::INVALID_TRACK_ID).empty(),
                "Copied poly pattern must not paste a ghost clip without a target track");
 
-        auto& trackManager = magda::TrackManager::getInstance();
         const auto targetTrackId = trackManager.createTrack("Poly Sequencer Pattern Paste Target",
                                                             magda::TrackType::Media);
         const auto targetColour = juce::Colour(0xff8844aa);
@@ -1601,13 +1697,19 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto pastedIds = clipManager.pasteFromClipboard(0.0, targetTrackId);
         expectEquals(static_cast<int>(pastedIds.size()), 1,
                      "Copied poly pattern should paste as one MIDI clip with a target track");
-        if (pastedIds.empty())
+        if (pastedIds.empty()) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
             return;
+        }
 
         const auto* pastedClip = clipManager.getClip(pastedIds.front());
         expect(pastedClip != nullptr && pastedClip->isMidi(), "Pasted pattern clip should be MIDI");
-        if (pastedClip == nullptr || !pastedClip->isMidi())
+        if (pastedClip == nullptr || !pastedClip->isMidi()) {
+            trackManager.clearAllTracks();
+            trackManager.setAudioEngine(nullptr);
             return;
+        }
 
         expectWithinAbsoluteError(pastedClip->placement.lengthBeats, 3.0, 0.0001,
                                   "Copied poly pattern clip should keep the full step-sequencer "
@@ -1618,29 +1720,31 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         const auto& notes = pastedClip->midiNotes;
         expectEquals(static_cast<int>(notes.size()), 3,
                      "Copying a poly sequence should copy each note in non-tied gated steps");
-        if (notes.size() < 3)
-            return;
+        if (notes.size() >= 3) {
+            expectEquals(notes[0].noteNumber, 60, "First chord note should keep its pitch");
+            expectEquals(notes[0].velocity, 90, "First chord note should use the step velocity");
+            expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
+                                      "First chord should start at beat 0");
+            expectWithinAbsoluteError(notes[0].lengthBeats, 1.5, 0.0001,
+                                      "Tied following step should extend chord note length");
 
-        expectEquals(notes[0].noteNumber, 60, "First chord note should keep its pitch");
-        expectEquals(notes[0].velocity, 90, "First chord note should use the step velocity");
-        expectWithinAbsoluteError(notes[0].startBeat, 0.0, 0.0001,
-                                  "First chord should start at beat 0");
-        expectWithinAbsoluteError(notes[0].lengthBeats, 1.5, 0.0001,
-                                  "Tied following step should extend chord note length");
+            expectEquals(notes[1].noteNumber, 64, "Second chord note should keep its pitch");
+            expectEquals(notes[1].velocity, 80, "Per-note velocity override should be copied");
+            expectWithinAbsoluteError(notes[1].startBeat, 0.0, 0.0001,
+                                      "Second chord note should share the chord start");
+            expectWithinAbsoluteError(notes[1].lengthBeats, 1.5, 0.0001,
+                                      "Second chord note should share the tied length");
 
-        expectEquals(notes[1].noteNumber, 64, "Second chord note should keep its pitch");
-        expectEquals(notes[1].velocity, 80, "Per-note velocity override should be copied");
-        expectWithinAbsoluteError(notes[1].startBeat, 0.0, 0.0001,
-                                  "Second chord note should share the chord start");
-        expectWithinAbsoluteError(notes[1].lengthBeats, 1.5, 0.0001,
-                                  "Second chord note should share the tied length");
+            expectEquals(notes[2].noteNumber, 67, "Later step note should keep its pitch");
+            expectEquals(notes[2].velocity, 75, "Later note should use its step velocity");
+            expectWithinAbsoluteError(notes[2].startBeat, 2.0, 0.0001,
+                                      "Later note should start at its step beat");
+            expectWithinAbsoluteError(notes[2].lengthBeats, 0.5, 0.0001,
+                                      "Later note should use gate length without tie extension");
+        }
 
-        expectEquals(notes[2].noteNumber, 67, "Later step note should keep its pitch");
-        expectEquals(notes[2].velocity, 75, "Later note should use its step velocity");
-        expectWithinAbsoluteError(notes[2].startBeat, 2.0, 0.0001,
-                                  "Later note should start at its step beat");
-        expectWithinAbsoluteError(notes[2].lengthBeats, 0.5, 0.0001,
-                                  "Later note should use gate length without tie extension");
+        trackManager.clearAllTracks();
+        trackManager.setAudioEngine(nullptr);
     }
 };
 

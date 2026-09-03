@@ -358,13 +358,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI step sequencer for pattern-driven notes and rhythmic control.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<StepSequencerPlugin>,
+         .matchesPlugin = matchesDevice<StepSequencerPlugin>,
          .createProcessor = makeProcessor<StepSequencerProcessor>,
          .showInBrowser = true,
          .tags = kStepSequencerTags,
          .tagCount = static_cast<int>(std::size(kStepSequencerTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<StepSequencerPlugin>});
+         .createDevice = createDevice<StepSequencerPlugin>});
     add(registry,
         {.pluginId = PolyStepSequencerPlugin::xmlTypeName,
          .displayName = "Poly Sequencer",
@@ -372,13 +372,13 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .description =
              "Polyphonic MIDI step sequencer with multiple notes per step for chord patterns.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<PolyStepSequencerPlugin>,
+         .matchesPlugin = matchesDevice<PolyStepSequencerPlugin>,
          .createProcessor = makeProcessor<PolyStepSequencerProcessor>,
          .showInBrowser = true,
          .tags = kPolyStepSequencerTags,
          .tagCount = static_cast<int>(std::size(kPolyStepSequencerTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<PolyStepSequencerPlugin>});
+         .createDevice = createDevice<PolyStepSequencerPlugin>});
     add(registry, {.pluginId = SidechainPlugin::xmlTypeName,
                    .displayName = "Sidechain",
                    .browserCategory = "Dynamics",

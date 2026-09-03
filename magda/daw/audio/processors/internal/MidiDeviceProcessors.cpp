@@ -28,24 +28,14 @@ StrumProcessor::StrumProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
 // =============================================================================
 
 StepSequencerProcessor::StepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-void StepSequencerProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
-    // Timing Depth (6) and Timing Skew (7) are bipolar
-    info.bipolarModulation = (index == 6 || index == 7);
-}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // PolyStepSequencerProcessor
 // =============================================================================
 
 PolyStepSequencerProcessor::PolyStepSequencerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
-
-void PolyStepSequencerProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
-    // Timing Depth (4) and Timing Skew (5) are bipolar
-    info.bipolarModulation = (index == 4 || index == 5);
-}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // DrumGridProcessor

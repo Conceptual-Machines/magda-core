@@ -321,8 +321,18 @@ void TracktionMagdaDevicePlugin::flushPluginStateToValueTree() {
 
 void TracktionMagdaDevicePlugin::restorePluginStateFromValueTree(
     const juce::ValueTree& restoredState) {
-    for (auto& parameterValue : parameterValues_)
-        tracktion::copyPropertiesToCachedValues(restoredState, *parameterValue);
+    // Only the slots the state actually names. copyPropertiesToCachedValues()
+    // would reset every absent one to its factory default, and since #2317 the
+    // model owns parameter values - it pushes them itself - so an authored
+    // state projection carries none at all. Resetting here meant every pattern
+    // edit and every settings edit snapped Rate, Swing and Gate back to their
+    // defaults mid-play (#2335). A slot the state says nothing about keeps
+    // what the model last wrote.
+    for (auto& parameterValue : parameterValues_) {
+        if (const auto* property =
+                restoredState.getPropertyPointer(parameterValue->getPropertyID()))
+            *parameterValue = static_cast<float>(*property);
+    }
     syncParametersToDevice();
     device_->restoreState(restoredState);
 }

@@ -54,16 +54,22 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
             customUI.bindStrumPlugin(strum);
     }
 
+    // Both sequencers are MagdaDevices (#2299) whose patterns live in the model
+    // (#2313): the UI reads the model, and the live device is needed only for
+    // the play step, the note strip and the step recorder.
     if (auto* stepSequencerUI = customUI.getStepSequencerUI()) {
-        if (auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(plugin.get())) {
-            stepSequencerUI->setPlugin(seq);
+        if (auto* seq =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::StepSequencerPlugin>(
+                    plugin.get())) {
+            stepSequencerUI->setSequencer(seq);
             customUI.bindStepSequencerPlugin(seq);
         }
     }
 
     if (auto* polyStepSequencerUI = customUI.getPolyStepSequencerUI()) {
-        if (auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(plugin.get())) {
-            polyStepSequencerUI->setPlugin(seq);
+        if (auto* seq = daw::audio::tracktion_adapter::deviceFromPlugin<
+                daw::audio::PolyStepSequencerPlugin>(plugin.get())) {
+            polyStepSequencerUI->setSequencer(seq);
             customUI.bindPolyStepSequencerPlugin(seq);
         }
     }

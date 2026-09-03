@@ -1,9 +1,12 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <vector>
 
-#include "magda/daw/audio/transport/StepClock.hpp"
+#include "magda/daw/audio/sequencer/StepClock.hpp"
 
-using StepClock = magda::daw::audio::StepClock;
+using StepClock = magda::daw::audio::sequencer::StepClock;
 using Approx = Catch::Approx;
 
 // ============================================================================
@@ -225,4 +228,381 @@ TEST_CASE("StepClock applyRampCurveWithCycles preserves repeated segment boundar
             Approx(0.75).margin(0.000001));
     REQUIRE(StepClock::applyRampCurveWithCycles(1.0, 0.5f, 0.0f, 4, true) ==
             Approx(1.0).margin(0.000001));
+}
+
+// ============================================================================
+// processBlock — reachable directly since the clock took a BlockTiming (#2313)
+// ============================================================================
+
+namespace {
+
+/// Drive the clock over a run of equal blocks and collect every step event.
+/// 120 bpm and 512-sample blocks at 48 kHz: one block is 512/48000 s, which at
+/// 2 beats/sec is 512/24000 beats.
+struct ClockRunner {
+    static constexpr double kSampleRate = 48000.0;
+    static constexpr int kBlockSamples = 512;
+    static constexpr double kBeatsPerBlock = kBlockSamples / 24000.0;
+
+    StepClock clock;
+    int blockSamples = kBlockSamples;
+    double beat = 0.0;
+    std::vector<StepClock::StepEvent> events;
+
+    explicit ClockRunner(int samplesPerBlock = kBlockSamples) : blockSamples(samplesPerBlock) {
+        clock.setSampleRate(kSampleRate);
+    }
+
+    double beatsPerBlock() const {
+        return blockSamples / 24000.0;
+    }
+
+    /// Blocks needed to cover @p beats of timeline at this block size.
+    int blocksFor(double beats) const {
+        return static_cast<int>(beats / beatsPerBlock()) + 1;
+    }
+
+    void run(int blocks, StepClock::Rate rate, StepClock::Direction dir, int numSteps,
+             float swing = 0.0f, bool playing = true) {
+        StepClock::StepEvent buffer[16];
+        for (int i = 0; i < blocks; ++i) {
+            const StepClock::BlockTiming timing{.startBeat = beat,
+                                                .endBeat = beat + beatsPerBlock(),
+                                                .isPlaying = playing,
+                                                .numSamples = blockSamples};
+            int n = clock.processBlock(timing, rate, dir, swing, numSteps, buffer, 16);
+            for (int e = 0; e < n; ++e)
+                events.push_back(buffer[e]);
+            beat += beatsPerBlock();
+        }
+    }
+
+    std::vector<int> stepIndices() const {
+        std::vector<int> out;
+        out.reserve(events.size());
+        for (const auto& e : events)
+            out.push_back(e.stepIndex);
+        return out;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("StepClock emits nothing while the transport is stopped", "[stepclock][process]") {
+    ClockRunner runner;
+    runner.run(64, StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8, 0.0f,
+               /*playing=*/false);
+    REQUIRE(runner.events.empty());
+    REQUIRE_FALSE(runner.clock.isRunning());
+}
+
+TEST_CASE("StepClock steps forward at the requested rate", "[stepclock][process]") {
+    ClockRunner runner;
+    // One bar of 4/4 at 1/16 = 16 steps = 4 beats.
+    runner.run(runner.blocksFor(4.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8);
+
+    REQUIRE(runner.events.size() >= 16);
+    // Consecutive steps sit one sixteenth (0.25 beats) apart.
+    for (size_t i = 1; i < runner.events.size(); ++i) {
+        REQUIRE(runner.events[i].beatPosition - runner.events[i - 1].beatPosition ==
+                Approx(0.25).margin(1e-9));
+    }
+    // Forward over 8 steps wraps 0..7, 0..7.
+    auto indices = runner.stepIndices();
+    for (size_t i = 0; i < indices.size(); ++i)
+        REQUIRE(indices[i] == static_cast<int>(i % 8));
+}
+
+TEST_CASE("StepClock reverse direction walks the pattern backwards", "[stepclock][process]") {
+    ClockRunner runner;
+    runner.run(runner.blocksFor(2.0), StepClock::Rate::Sixteenth, StepClock::Direction::Reverse, 4);
+
+    auto indices = runner.stepIndices();
+    REQUIRE(indices.size() >= 8);
+    // First event lands on step 0, then walks down and wraps: 0, 3, 2, 1, 0, ...
+    const int expected[] = {0, 3, 2, 1};
+    for (size_t i = 0; i < indices.size(); ++i)
+        REQUIRE(indices[i] == expected[i % 4]);
+}
+
+TEST_CASE("StepClock ping-pong turns around at both ends", "[stepclock][process]") {
+    ClockRunner runner;
+    runner.run(runner.blocksFor(2.0), StepClock::Rate::Sixteenth, StepClock::Direction::PingPong,
+               4);
+
+    auto indices = runner.stepIndices();
+    REQUIRE(indices.size() >= 6);
+    // 0, 1, 2, 3, 2, 1, 0, 1, ...
+    const int expected[] = {0, 1, 2, 3, 2, 1};
+    for (size_t i = 0; i < std::min<size_t>(indices.size(), 6); ++i)
+        REQUIRE(indices[i] == expected[i]);
+}
+
+TEST_CASE("StepClock events carry an in-block time inside the block", "[stepclock][process]") {
+    ClockRunner runner;
+    runner.run(runner.blocksFor(2.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8);
+
+    const double blockSecs = ClockRunner::kBlockSamples / ClockRunner::kSampleRate;
+    REQUIRE_FALSE(runner.events.empty());
+    for (const auto& e : runner.events) {
+        REQUIRE(e.timeInBlock >= 0.0);
+        REQUIRE(e.timeInBlock < blockSecs);
+    }
+}
+
+TEST_CASE("StepClock swing pushes a tick later on the grid, never earlier",
+          "[stepclock][process]") {
+    // Whatever swing survives the emit guard below, it only ever delays: an
+    // even tick sits exactly on the sixteenth grid and an odd one after it.
+    ClockRunner swung{4096};
+    swung.run(swung.blocksFor(4.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8,
+              0.25f);
+
+    REQUIRE(swung.events.size() >= 4);
+    bool sawDelayed = false;
+    for (const auto& e : swung.events) {
+        const double offGrid = e.beatPosition - std::floor(e.beatPosition / 0.25) * 0.25;
+        REQUIRE(offGrid >= -1e-9);
+        REQUIRE(offGrid < 0.25);
+        if (offGrid > 1e-6)
+            sawDelayed = true;
+    }
+    REQUIRE(sawDelayed);
+}
+
+TEST_CASE("StepClock plays a swung tick late instead of dropping it", "[stepclock][process]") {
+    // Regression for the defect #2313 surfaced: the emit guard used to accept a
+    // swung position only inside the block that scheduled it, while the step
+    // cursor advanced regardless, so a tick swung past the block end was never
+    // played. Swing offsets by up to half a step - several blocks at a typical
+    // buffer size - so from roughly 8% upward every odd tick vanished and the
+    // pattern played half its notes. A swung tick is now held until the block
+    // that contains it.
+    ClockRunner straight;
+    straight.run(straight.blocksFor(4.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward,
+                 8, 0.0f);
+
+    ClockRunner swung;
+    swung.run(swung.blocksFor(4.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8,
+              0.5f);
+
+    REQUIRE(straight.events.size() >= 16);
+    REQUIRE(swung.events.size() == straight.events.size());
+    // Same steps, same order - only their timing moved.
+    REQUIRE(swung.stepIndices() == straight.stepIndices());
+    for (size_t i = 0; i < swung.events.size(); ++i) {
+        if (i % 2 == 0)
+            REQUIRE(swung.events[i].beatPosition ==
+                    Approx(straight.events[i].beatPosition).margin(1e-9));
+        else
+            REQUIRE(swung.events[i].beatPosition > straight.events[i].beatPosition);
+    }
+}
+
+TEST_CASE("StepClock keeps a held-over tick inside the block that plays it",
+          "[stepclock][process]") {
+    // The carried tick reports a position and in-block offset belonging to the
+    // block that emits it, not the one that scheduled it.
+    ClockRunner swung;
+    const double blockSecs = ClockRunner::kBlockSamples / ClockRunner::kSampleRate;
+    swung.run(swung.blocksFor(4.0), StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8,
+              0.5f);
+
+    REQUIRE_FALSE(swung.events.empty());
+    for (const auto& e : swung.events) {
+        REQUIRE(e.timeInBlock >= 0.0);
+        REQUIRE(e.timeInBlock < blockSecs);
+    }
+}
+
+TEST_CASE("StepClock survives an arrangement loop wrapping the beat", "[stepclock][process]") {
+    // Beats jump backwards at a loop boundary; the clock's monotonic offset
+    // must keep stepping rather than re-anchoring and dropping steps.
+    StepClock clock;
+    clock.setSampleRate(ClockRunner::kSampleRate);
+    StepClock::StepEvent buffer[16];
+
+    int total = 0;
+    double beat = 0.0;
+    for (int i = 0; i < 400; ++i) {
+        // Four bars of 4/4, then wrap to zero.
+        if (beat >= 16.0)
+            beat = 0.0;
+        const StepClock::BlockTiming timing{.startBeat = beat,
+                                            .endBeat = beat + ClockRunner::kBeatsPerBlock,
+                                            .isPlaying = true,
+                                            .numSamples = ClockRunner::kBlockSamples};
+        total += clock.processBlock(timing, StepClock::Rate::Sixteenth,
+                                    StepClock::Direction::Forward, 0.0f, 8, buffer, 16);
+        beat += ClockRunner::kBeatsPerBlock;
+    }
+
+    // 400 blocks is 400 * 512/24000 beats = ~8.53 beats of stepping per pass;
+    // at a sixteenth per step that is ~34 steps whatever the wrap did.
+    REQUIRE(total > 30);
+}
+
+TEST_CASE("StepClock stops and resets when the transport stops", "[stepclock][process]") {
+    ClockRunner runner;
+    const int blocks = runner.blocksFor(1.0);
+    runner.run(blocks, StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8);
+    REQUIRE_FALSE(runner.events.empty());
+
+    const size_t whilePlaying = runner.events.size();
+    runner.run(blocks, StepClock::Rate::Sixteenth, StepClock::Direction::Forward, 8, 0.0f,
+               /*playing=*/false);
+    REQUIRE(runner.events.size() == whilePlaying);
+    REQUIRE(runner.clock.getCurrentStep() == 0);
+}
+
+// ============================================================================
+// The pending queue — steps held for the block that actually contains them
+// (#2313), and never lost on the way there (#2335)
+// ============================================================================
+
+namespace {
+
+/// Drive the clock over blocks of an arbitrary musical length, with quantize.
+/// Quantize snaps a tick toward a coarse grid, which can push it a long way
+/// past the block that scheduled it - much further than swing's half a step -
+/// so it is how a test builds up several pending steps at once.
+struct QuantizedRunner {
+    static constexpr double kSampleRate = 48000.0;
+    static constexpr int kBlockSamples = 512;
+
+    StepClock clock;
+    double beat = 0.0;
+    std::vector<StepClock::StepEvent> events;
+
+    QuantizedRunner() {
+        clock.setSampleRate(kSampleRate);
+    }
+
+    /// One block spanning @p beats, taking at most @p maxEvents events out.
+    int block(double beats, int numSteps, int quantizeSub, int maxEvents) {
+        StepClock::StepEvent buffer[32];
+        const StepClock::BlockTiming timing{.startBeat = beat,
+                                            .endBeat = beat + beats,
+                                            .isPlaying = true,
+                                            .numSamples = kBlockSamples};
+        const int n = clock.processBlock(timing, StepClock::Rate::Sixteenth,
+                                         StepClock::Direction::Forward, 0.0f, numSteps, buffer,
+                                         maxEvents, 0.0f, 0.0f, 1, false, 1.0f, quantizeSub);
+        for (int e = 0; e < n; ++e)
+            events.push_back(buffer[e]);
+        beat += beats;
+        return n;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("StepClock holds a due step the caller has no room for", "[stepclock][process]") {
+    // Regression for #2335. A pending step whose beat fell inside the block was
+    // emitted when there was room and DROPPED when there was not: the loop's
+    // "keep it pending" branch only covered steps still in the future, so a
+    // full event buffer took the step out of the pattern for good. It now waits
+    // for a block with room, as a step past the block end always did.
+    //
+    // Four sixteenths a cycle is one beat, and a quantize grid of one division
+    // per cycle snaps everything to a whole beat: ticks at 0.5 and 0.75 both
+    // land on beat 1, past a block that ends there, so two steps go pending.
+    QuantizedRunner runner;
+    runner.block(/*beats=*/1.0, /*numSteps=*/4, /*quantizeSub=*/1, /*maxEvents=*/32);
+
+    // Room for one of the two, so step 2 plays and step 3 has to wait.
+    REQUIRE(runner.block(1.0, 4, 1, /*maxEvents=*/1) == 1);
+    REQUIRE(runner.events.back().stepIndex == 2);
+    const size_t afterSqueeze = runner.events.size();
+
+    // Step 3 is still owed, and is the first thing the next block plays.
+    // Before the fix it was gone and this block opened on a fresh tick.
+    REQUIRE(runner.block(1.0, 4, 1, /*maxEvents=*/32) >= 1);
+    REQUIRE(runner.events.size() > afterSqueeze);
+    REQUIRE(runner.events[afterSqueeze].stepIndex == 3);
+}
+
+TEST_CASE("StepClock holds every step a coarse quantize pushes past the block",
+          "[stepclock][process]") {
+    // Regression for #2335. The pending queue was eight entries deep, sized for
+    // swing - which can only push a tick within half a step of the block end,
+    // so at most one at a time. Quantize snaps toward a grid that may be far
+    // coarser than the rate, and a big offline block can push a whole half of
+    // the pattern past its end at once; the ninth onwards were dropped with no
+    // branch to hold them. The queue is now one entry per step.
+    //
+    // 32 sixteenths is an eight-beat cycle, and one grid division per cycle
+    // snaps each tick to the nearer of beat 0 and beat 8: steps 0-15 fire at
+    // the block's start, steps 16-31 all land on its end.
+    QuantizedRunner runner;
+    REQUIRE(runner.block(/*beats=*/8.0, /*numSteps=*/32, /*quantizeSub=*/1, /*maxEvents=*/32) ==
+            16);
+
+    const size_t afterFirst = runner.events.size();
+    runner.block(/*beats=*/0.5, /*numSteps=*/32, /*quantizeSub=*/1, /*maxEvents=*/32);
+
+    std::vector<int> carried;
+    for (size_t i = afterFirst; i < runner.events.size(); ++i)
+        carried.push_back(runner.events[i].stepIndex);
+
+    // All sixteen, not the eight the old queue had room for.
+    for (int step = 16; step < 32; ++step)
+        REQUIRE(std::find(carried.begin(), carried.end(), step) != carried.end());
+}
+
+TEST_CASE("StepClock brings its position back inside a pattern that shrank",
+          "[stepclock][process]") {
+    // Regression for #2335. The cursor was emitted unwrapped, so shortening a
+    // pattern under a running clock kept playing the steps the user had just
+    // hidden - and in ping-pong the turnaround then walked down through the
+    // rest of them rather than back into the pattern.
+    for (auto direction : {StepClock::Direction::Forward, StepClock::Direction::Reverse,
+                           StepClock::Direction::PingPong}) {
+        ClockRunner runner;
+        // Four beats of sixteenths is sixteen steps, so the cursor is well past
+        // the eight the pattern is about to become.
+        runner.run(runner.blocksFor(4.0), StepClock::Rate::Sixteenth, direction, 32);
+        const size_t beforeShrink = runner.events.size();
+        REQUIRE(beforeShrink > 8);
+
+        runner.run(runner.blocksFor(4.0), StepClock::Rate::Sixteenth, direction, 8);
+        REQUIRE(runner.events.size() > beforeShrink);
+        for (size_t i = beforeShrink; i < runner.events.size(); ++i)
+            REQUIRE(runner.events[i].stepIndex < 8);
+    }
+}
+
+TEST_CASE("StepClock keeps the steps a full event array could not carry", "[stepclock][process]") {
+    // Regression for #2335. Stopping the emit loop at maxEvents left the cursor
+    // where it stood, and the next block's catch-up then walked through the
+    // ticks it had not emitted without emitting any of them - so a block
+    // holding more steps than the caller's array lost every one past the last
+    // that fitted. Those ticks now wait in the queue that already exists for a
+    // tick the block cannot play.
+    constexpr int kMaxEvents = 16;  // what the sequencers passed before #2335
+    constexpr int kSteps = 32;
+
+    StepClock clock;
+    clock.setSampleRate(48000.0);
+
+    std::vector<int> played;
+    const auto block = [&](double startBeat, double endBeat) {
+        StepClock::StepEvent buffer[kMaxEvents];
+        const StepClock::BlockTiming timing{
+            .startBeat = startBeat, .endBeat = endBeat, .isPlaying = true, .numSamples = 4096};
+        const int written =
+            clock.processBlock(timing, StepClock::Rate::ThirtySecond, StepClock::Direction::Forward,
+                               0.0f, kSteps, buffer, kMaxEvents);
+        for (int i = 0; i < written; ++i)
+            played.push_back(buffer[i].stepIndex);
+    };
+
+    // One dense block: four beats of thirty-seconds is 32 steps, twice the
+    // array. Then ordinary blocks, which is when the held ticks come out.
+    block(0.0, 4.0);
+    for (int i = 0; i < 4; ++i)
+        block(4.0 + (i * 0.25), 4.25 + (i * 0.25));
+
+    for (int step = 0; step < kSteps; ++step)
+        REQUIRE(std::count(played.begin(), played.end(), step) >= 1);
 }
