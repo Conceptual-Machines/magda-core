@@ -218,6 +218,23 @@ struct BlockInfo {
         return beats.start + (position * beats.length());
     }
 
+    /**
+     * @brief Where the block sits on the transport's own sample count.
+     *
+     * The durable coordinate, and the one every other face here is ultimately
+     * an interpretation of (transport/TimeDomains.hpp). A locate does not move
+     * it, a wrap does not take it back and a tempo edit does not rescale it, so
+     * it is the only one of them two blocks can be compared on without knowing
+     * what happened between.
+     *
+     * A stopped block does not advance it, for the same reason it does not
+     * advance the timeline: nothing played.
+     *
+     * Empty on a block assembled by hand, which is why nothing may assume it is
+     * set (#2332 is what makes it load-bearing).
+     */
+    SampleRange monotonicSamples;
+
     /// The map this block was cut from, or null for a caller that assembles a
     /// block by hand. Not owned, and it outlives the block: what publishes a
     /// transport keeps it alive for as long as the callback reading it runs.

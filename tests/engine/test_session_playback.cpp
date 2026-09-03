@@ -807,6 +807,52 @@ void callback(AudioRig& rig, magda::engine::TransportClock& clock,
 
 }  // namespace
 
+TEST_CASE("A launch inside a block that spans a tempo step names one instant",
+          "[engine][clip][session]") {
+    // The invariant #2330 is about, asserted on a block the clock would no
+    // longer hand out: built by hand so it spans the step, which is exactly the
+    // shape that used to produce an origin with two faces of different moments.
+    //
+    // The cut and this are two answers to the same leak, and only this one
+    // closes the class: whatever a block spans, an instant inside it is worked
+    // out once, in samples, and every face derived from that.
+    const auto map = steppedTempo();  // 120 to beat 4, then 60
+
+    // Half a block either side of the step, at 120 throughout its first half.
+    const auto from = map.beatToTime(4.0) - (kBlockSize / kSampleRate / 2.0);
+
+    magda::engine::BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+    block.seconds = {from, from + (kBlockSize / kSampleRate)};
+    block.beats = {map.timeToBeat(block.seconds.start), map.timeToBeat(block.seconds.end)};
+    block.monotonicBeats = block.beats;
+    block.monotonicSeconds = block.seconds;
+    block.tempo = &map;
+
+    LaunchHandle handle;
+    handle.play(map.timeToBeat(map.beatToTime(4.0)));  // the step itself
+
+    const auto status = handle.advance(magda::engine::syncRangeFor(block));
+
+    REQUIRE(status.afterEvent.has_value());
+    REQUIRE(status.afterEvent->origin.has_value());
+
+    const auto origin = *status.afterEvent->origin;
+
+    // The two faces of a fresh run's origin are the two faces of one sample.
+    // Projected separately they are not: the beat lands where the block's
+    // straight line puts it and the seconds where its other line does, and
+    // across a step those are different moments.
+    CHECK(map.timeToBeat(origin.seconds) == Approx(origin.beat));
+
+    // Which is what the material needs: second zero of the run is beat zero of
+    // it, so an auto-tempo reader starts at the head of its file.
+    const auto material = magda::engine::materialBlock(block, status.afterEvent->range, origin);
+    CHECK(material.beatAtTime(0.0) == Approx(0.0));
+}
+
 TEST_CASE("A slot launched where a block would step tempo starts at its own first sample",
           "[engine][clip][session]") {
     // The launch and the tempo step want the same instant inside one callback.

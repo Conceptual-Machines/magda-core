@@ -125,6 +125,8 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.monotonicBeats.end = monotonicBeat_;
         segment.block.monotonicSeconds.start = monotonicSeconds_;
         segment.block.monotonicSeconds.end = monotonicSeconds_;
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        segment.block.monotonicSamples.end = monotonicSamples_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -225,6 +227,15 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.monotonicSeconds.start = monotonicSeconds_;
         monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
         segment.block.monotonicSeconds.end = monotonicSeconds_;
+
+        // The samples themselves, which is what the seconds above are counted
+        // from and what everything else here is an interpretation of. Kept
+        // rather than divided back out of them: a rate change makes the two no
+        // longer one conversion apart, and this side of it is the one that did
+        // not move (#2332).
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        monotonicSamples_ += samples;
+        segment.block.monotonicSamples.end = monotonicSamples_;
 
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;

@@ -93,7 +93,8 @@ class LaunchHandleFeed {
 /// The block as the launcher names it: all four faces, from the one place they
 /// were derived together (RenderContext.hpp).
 inline SyncRange syncRangeFor(const BlockInfo& block) {
-    return SyncRange{block.beats, block.monotonicBeats, block.seconds, block.monotonicSeconds};
+    return SyncRange{block.beats,      block.monotonicBeats, block.seconds, block.monotonicSeconds,
+                     block.numSamples, block.tempo};
 }
 
 /// Advance every handle over @p block, once, before anything renders. On the
