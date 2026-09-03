@@ -598,6 +598,8 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // The arrangement's, and only while the session has not taken the track off
     // it (#2302). A source built without the feed is the whole track and has no
     // section to lose.
+    auto handedBack = false;
+
     if (handles_ != nullptr) {
         const LaunchHandleFeed::Reader handles(*handles_);
         const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
@@ -630,18 +632,29 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
             return;
         }
 
-        // Taken back. Nothing sounded while the session held it, so there is
-        // nothing to chase and the lane simply resumes where the timeline is.
+        // Taken back, which is a discontinuity even though the transport never
+        // moved: the arrangement's notes were ended at the hand-over and the
+        // timeline has run on underneath. Resuming without a chase leaves a
+        // sustained pad silent, and every controller at whatever it was before
+        // the session took the track, until the next event happens to arrive.
+        // That is the case playLane already answers for a locate.
+        handedBack = wasHeld_;
         wasHeld_ = false;
     }
 
+    // The block as the lane should read it: its own, unless this is the block
+    // the arrangement got its track back on.
+    auto lane = block;
+    if (handedBack)
+        lane.continuous = false;
+
     if (swapped) {
         NoteMask expected;
-        expectLane(out, block, track->midi, block.beats.start, block.beats.end, expected);
+        expectLane(out, lane, track->midi, lane.beats.start, lane.beats.end, expected);
         endUnexpected(out, expected);
     }
 
-    playLane(out, block, track->midi, block.beats.start, block.beats.end);
+    playLane(out, lane, track->midi, lane.beats.start, lane.beats.end);
     lastSnapshot_ = live;
 }
 

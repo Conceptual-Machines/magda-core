@@ -698,6 +698,7 @@ TEST_CASE("A stop quantized inside a block ends on its beat", "[engine][clip][se
 struct SwitchRig {
     SwitchRig() {
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
         handles.publish(std::make_shared<const LaunchHandleTable>(table));
 
         arrangement.prepare(context());
@@ -715,10 +716,10 @@ struct SwitchRig {
         addStream(lane.audio.back(), level);
     }
 
-    /// A slot in the scene, @p lengthBeats long, sounding @p level.
-    void giveSlot(magda::ClipId id, double lengthBeats, float level) {
+    /// A slot in @p scene, @p lengthBeats long, sounding @p level.
+    void giveSlot(magda::ClipId id, double lengthBeats, float level, int scene = kScene) {
         SessionSlotPlayback slot;
-        slot.sceneIndex = kScene;
+        slot.sceneIndex = scene;
         slot.lengthBeats = lengthBeats;
         slot.audio.push_back(clipOver(id, beats(0.0, lengthBeats)));
         lane.session.push_back(std::move(slot));
@@ -781,6 +782,10 @@ struct SwitchRig {
     ClipSnapshotFeed clips;
     ClipStreamFeed streams;
     LaunchHandle handle;
+
+    /// The scene below, for the cases where one slot hands over to another.
+    LaunchHandle second;
+
     LaunchHandleTable table;
     LaunchHandleFeed handles;
 
@@ -976,6 +981,87 @@ TEST_CASE("A slot stopping mid-block carries its own last sample down",
     }
 }
 
+TEST_CASE("One slot handing over to another carries the outgoing one down",
+          "[engine][clip][session][section]") {
+    // The incoming clip's own start ramp corrects its own edge and knows
+    // nothing about the one it replaced, so without this the track sum steps
+    // from the old signal straight to the new (#2344 review).
+    SwitchRig rig;
+    rig.giveArrangement(1, 0.0f);
+    rig.giveSlot(2, 4.0, 0.8f, kScene);
+    rig.giveSlot(3, 4.0, -0.3f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(0) == Approx(0.8f));
+
+    // The first stops and the second starts on the same beat, half way through
+    // the block: the swap a scene launch makes on a track already playing.
+    const auto at = kBeatsPerBlock * 2.5;
+    rig.handle.stop(at);
+    rig.second.play(at);
+    rig.render(2);
+
+    const auto swapSample = kBlockSize / 2;
+
+    SECTION("the outgoing level carries on under the incoming one") {
+        // 0.8 carried on, with the incoming clip's own opening sample on top of
+        // it. That clip begins at its own start, so it is not de-clicked and
+        // must not be: the step it makes is its attack (ClipVoice.cpp, #2040).
+        CHECK(rig.sessionAt(swapSample - 1) == Approx(0.8f));
+        CHECK(rig.sessionAt(swapSample) == Approx(0.8f - 0.3f));
+    }
+
+    SECTION("and decays out from under it, leaving the incoming clip alone") {
+        CHECK(rig.sessionAt(swapSample + kSectionDeClickSamples) == Approx(-0.3f));
+
+        for (auto sample = swapSample + 1; sample < swapSample + kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.sessionAt(sample) <= rig.sessionAt(sample - 1));
+        }
+    }
+
+    SECTION("so the swap adds no step beyond the incoming clip's own attack") {
+        // The whole point. Without the outgoing ramp the sum jumps 0.8 to -0.3
+        // in one sample, which is 1.1 of step where the material only ever
+        // asked for 0.3.
+        for (auto sample = 1; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(std::abs(rig.sessionAt(sample) - rig.sessionAt(sample - 1)) <= 0.3f + 1e-5f);
+        }
+    }
+}
+
+TEST_CASE("A slot sounding right through masks another's stop",
+          "[engine][clip][session][section]") {
+    // The other side of the same rule. The ramp reads its step off the summed
+    // buffer, so a slot that was already sounding before the stop is still in
+    // that sum afterwards and decaying it would correct for a signal that never
+    // stopped.
+    SwitchRig rig;
+    rig.giveArrangement(1, 0.0f);
+    rig.giveSlot(2, 4.0, 0.5f, kScene);
+    rig.giveSlot(3, 4.0, 0.5f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.second.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(0) == Approx(1.0f));
+
+    rig.handle.stop(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto stopSample = kBlockSize / 2;
+
+    // One of the two stops, and what is left is the other at its own level
+    // rather than that plus a decaying copy of the pair.
+    CHECK(rig.sessionAt(stopSample - 1) == Approx(1.0f));
+    CHECK(rig.sessionAt(stopSample) == Approx(0.5f));
+    CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+}
+
 TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {
     // The property the switch exists for. The two sections are summed into one
     // track input, so a sample both contribute material to is a track playing
@@ -1099,6 +1185,38 @@ TEST_CASE("Releasing the section brings the arrangement's MIDI back",
         REQUIRE(ons.size() == 1);
         CHECK(ons.front().message.getNoteNumber() == 64);
     }
+}
+
+TEST_CASE("A hand-back inside a sustained note strikes it rather than waiting",
+          "[engine][clip][session][section]") {
+    // The hand-back is a discontinuity even though the transport never moved:
+    // the arrangement's notes were ended at the hand-over and the timeline ran
+    // on underneath. Releasing into the middle of a pad has to strike it, the
+    // way locating into one does, or the track is silent until the next onset
+    // (#2344 review).
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 16.0, {MidiNote{64, 100, 0.5, 12.0, 0, {}}})},
+                {sessionMidiClip(2, 16.0, {MidiNote{67, 100, 0.0, 16.0, 0, {}}})});
+
+    // Launch while the arrangement's note is already sounding, so the hand-over
+    // ends it and the timeline runs well past its onset.
+    rig.roll(0, 2);
+    REQUIRE(rig.notesOn(rig.fromArrangement).size() == 1);
+
+    rig.handle.play(std::nullopt);
+    rig.roll(3, 12);
+    REQUIRE(rig.hanging(rig.fromArrangement).empty());  // ended at the hand-over
+
+    const auto before = rig.notesOn(rig.fromArrangement).size();
+
+    // Beat 3 by now, which is inside the note and nowhere near its onset.
+    rig.handle.releaseSection();
+    rig.roll(13, 13);
+
+    const auto ons = rig.notesOn(rig.fromArrangement);
+    REQUIRE(ons.size() == before + 1);
+    CHECK(ons.back().block == 13);
+    CHECK(ons.back().message.getNoteNumber() == 64);
 }
 
 TEST_CASE("The hand-over overlap is the ramp and no longer", "[engine][clip][session][section]") {

@@ -104,10 +104,13 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
     // The status is the launcher's, worked out before anything rendered
     // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
-    // Whether anything is still sounding when the block ends, gathered in the
-    // one walk that renders: a track with a slot still going has not stepped,
-    // whatever its other slots did.
-    auto stillSounding = false;
+    // Whether some other slot sounded right across the block. Only that masks
+    // another slot's stop: the ramp reads the step off the summed buffer, and a
+    // slot that was already sounding before the stop sample is still in that
+    // sum afterwards, so decaying it would correct for a signal that never
+    // stopped. A slot that starts where another stops was not in the sum
+    // before, so the value at the stop is the outgoing slot's alone.
+    auto soundedThroughout = false;
 
     const auto renderSlot = [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
         const auto play = [&](const BlockPiece& piece, int offset, int count) {
@@ -132,15 +135,13 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
         if (status.beforeEvent.playing() && !status.playingAtEnd())
             sessionSilentFrom_ = std::max(sessionSilentFrom_.value_or(0), split);
 
-        stillSounding = stillSounding || status.playingAtEnd();
+        soundedThroughout =
+            soundedThroughout || (status.beforeEvent.playing() && status.playingAtEnd());
     };
 
     forEachSlot(*handles.get(), track, renderSlot);
 
-    // The ramp is bound to the same grain as the signal it corrects, which is
-    // the track: the op is per track because a track sounds one session clip at
-    // a time, so a sum that did not step needs no correction.
-    if (stillSounding)
+    if (soundedThroughout)
         sessionSilentFrom_.reset();
 }
 
