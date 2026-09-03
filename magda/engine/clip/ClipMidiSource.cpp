@@ -595,12 +595,10 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         return;
     }
 
-    // The arrangement's, and only while the session has not taken the track off
-    // it (#2302). A source built without the feed is the whole track and has no
-    // section to lose.
-    // The arrangement's share of the block, which is the whole of it on a track
-    // the session never took (#2302). The same fold the audio source reads, so
-    // the two are on the same side of every switch.
+    // A source built without the feed is the whole track and has no section to
+    // lose.
+    // The arrangement's share, which is all of it on a track the session never
+    // took (#2302). The same fold the audio source reads.
     auto lane = block;
     auto until = block.numSamples;
     auto lost = false;
@@ -612,20 +610,17 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         until = std::clamp(hold.until.value, 0, block.numSamples);
         lost = hold.lost;
 
-        // Taking the track back is a discontinuity even though the transport
-        // never moved: the arrangement's notes were ended when it lost the
-        // track and the timeline has run on underneath. Resuming without a
-        // chase leaves a sustained pad silent, and every controller at whatever
-        // it was before, until the next event happens to arrive. That is the
+        // A discontinuity even though the transport never moved: its notes were
+        // ended when it lost the track and the timeline ran on underneath.
+        // Resuming without a chase leaves a sustained pad silent, which is the
         // case playLane already answers for a locate.
         if (hold.gained)
             lane.continuous = false;
     }
 
-    // The session owns every sample of the block. What the arrangement owes is
-    // whether it lost the track here: note-offs on the block it loses it, even
-    // when it loses it on the first sample and sounds none of that block, and
-    // nothing on the blocks after, where what it had was ended already.
+    // The session owns every sample. The arrangement owes note-offs on the
+    // block it loses the track, even losing it on the first sample and sounding
+    // none of that block, and nothing on the blocks after.
     if (until == 0) {
         if (lost)
             endAll(out, EventSample{0});
@@ -647,9 +642,8 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     playLane(out, lane, track->midi, lane.beats.start, laneEnd);
 
     // It sounds up to the hand-over the way its audio renders up to it, and
-    // owes note-offs there: the session's own notes start on that sample, and
-    // one the arrangement left holding would sound under them until the
-    // transport stopped.
+    // owes note-offs there: a note left holding would sound under the session's
+    // own until the transport stopped.
     if (lost)
         endAll(out, EventSample{std::min(until, block.numSamples - 1)});
 

@@ -32,15 +32,9 @@
 
 namespace magda::engine {
 
-/**
- * @brief Which of a track's two bodies of material a source plays (#2302).
- *
- * A track has both and sounds one: the arrangement laid out on the timeline,
- * and the session's slots positioned by their handles. Stated rather than
- * inferred from whether a source was given a handle feed, because both sources
- * need the feed now: the one that plays the arrangement reads it to know when
- * the session has taken the track off it.
- */
+/// Which of a track's two bodies of material a source plays (#2302). Stated
+/// rather than inferred from having a handle feed, because both sources need
+/// one: the arrangement's reads it to know when the session has taken the track.
 enum class Section : std::uint8_t { Arrangement, Session };
 
 /// Every slot's handle, at one moment. Sorted by slot key, so a source finds
