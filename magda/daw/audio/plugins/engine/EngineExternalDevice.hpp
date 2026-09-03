@@ -124,6 +124,7 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     void prepare(const magda::engine::RenderContext& context) override;
     void reset() override;
     void setMidiInputBoundBytes(int bytes) override;
+    void setMidiOutputBoundBytes(int bytes) override;
     int latencySamples() const override;
 
     /// One block through the plugin: its parameters written, its audio
@@ -276,6 +277,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     int latencySamples_ = 0;
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
+
+    /// What the executor reserved on the output port: this device's input
+    /// carried through plus a producer's worth of its own. A plugin handed a
+    /// merged input hands one back, and the flat constant would cut it (#2341).
+    int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
     bool offlineRender_ = false;
     bool prepared_ = false;
 };
