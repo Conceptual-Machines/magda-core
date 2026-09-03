@@ -362,6 +362,31 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayedRange() const;
 
     /**
+     * @brief Whether this slot holds its track's playback (#2302).
+     *
+     * A track sounds its arrangement or its session, never both, and launching
+     * a slot is what hands it over. The hand-back is not the slot stopping:
+     * silence after a stop is the session still holding the track, exactly as
+     * it is in the incumbent, and the arrangement comes back only when
+     * @ref releaseSection asks for it.
+     *
+     * Set the moment a run begins rather than when one is queued, so a launch
+     * quantized to the next bar leaves the arrangement playing until the bar.
+     *
+     * Per slot for a question that is per track, because the track's answer is
+     * the fold: a track is held by whichever of its slots holds it. Keeping it
+     * here is what lets both of a slot's sources reach the same answer from the
+     * table they already read, with nothing published between them.
+     */
+    bool holdsSection() const {
+        return holdsSection_;
+    }
+
+    /// Give the track back to its arrangement, stopping this slot at once if it
+    /// is playing. The engine side of Back to Arrangement.
+    void releaseSection();
+
+    /**
      * @brief Blocks in which a loop was too short to be re-triggered fully.
      *
      * A handle reports one event per block, so a loop duration shorter than a
@@ -481,6 +506,9 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;
+
+    /// Whether this slot has sounded since the last release (#2302).
+    bool holdsSection_ = false;
 
     SplitStatus blockStatus_;
 

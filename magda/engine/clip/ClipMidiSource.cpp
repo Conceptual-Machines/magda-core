@@ -24,8 +24,9 @@ constexpr int kOwedCapacity = ActiveNoteList::kChannels * ActiveNoteList::kNotes
 ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips)
     : trackId_(trackId), clips_(clips) {}
 
-ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles)
-    : trackId_(trackId), clips_(clips), handles_(&handles) {}
+ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles,
+                               Section section)
+    : trackId_(trackId), clips_(clips), handles_(&handles), section_(section) {}
 
 void ClipMidiSource::prepare(const RenderContext&) {
     // Everything the audio thread may need room for, reserved here and never
@@ -586,12 +587,52 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // from the wrong owner and the note hangs until the transport stops.
     const auto swapped = live != lastSnapshot_;
 
-    if (handles_ != nullptr) {
+    if (section_ == Section::Session) {
         if (!renderSession(out, block, *track, swapped))
             endAll(out, EventSample{0});  // no handles published yet: nothing can be playing
 
         lastSnapshot_ = live;
         return;
+    }
+
+    // The arrangement's, and only while the session has not taken the track off
+    // it (#2302). A source built without the feed is the whole track and has no
+    // section to lose.
+    if (handles_ != nullptr) {
+        const LaunchHandleFeed::Reader handles(*handles_);
+        const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
+
+        if (hold.session) {
+            if (!wasHeld_) {
+                // The arrangement still sounds up to the hand-over, the way its
+                // audio still renders up to it: a note due a sample before the
+                // launch is one the listener was going to hear.
+                const auto at = std::clamp(hold.takenAt.value, 0, block.numSamples);
+                const auto range = syncRangeFor(block);
+                const auto until = range.timelineBeatAt(range.atSample(at));
+
+                if (swapped) {
+                    NoteMask expected;
+                    expectLane(out, block, track->midi, block.beats.start, until, expected);
+                    endUnexpected(out, expected);
+                }
+
+                playLane(out, block, track->midi, block.beats.start, until);
+
+                // And owes note-offs there. The session's own notes start on
+                // that sample, and one the arrangement left holding would sound
+                // under them until the transport stopped.
+                endAll(out, EventSample{std::min(at, block.numSamples - 1)});
+            }
+
+            wasHeld_ = true;
+            lastSnapshot_ = live;
+            return;
+        }
+
+        // Taken back. Nothing sounded while the session held it, so there is
+        // nothing to chase and the lane simply resumes where the timeline is.
+        wasHeld_ = false;
     }
 
     if (swapped) {

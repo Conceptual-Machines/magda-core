@@ -1,5 +1,8 @@
 #pragma once
 
+#include <algorithm>
+#include <limits>
+
 #include "clip/ClipSnapshot.hpp"
 #include "exec/RenderContext.hpp"
 #include "launch/SessionLauncher.hpp"
@@ -92,6 +95,83 @@ inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range
 /// other begins, and with no event it is the boundary past the last sample.
 inline EdgeSample splitSample(const BlockInfo& block, const SplitStatus& status) {
     return EdgeSample{status.afterEvent ? status.event.sample : block.numSamples};
+}
+
+/**
+ * @brief How long a section takes to hand a track over, and to take it back.
+ *
+ * Short, and much shorter than ClipInfo::launchFadeSamples, because it is the
+ * other kind of ramp. A start de-click subtracts an offset from material that
+ * goes on sounding underneath it, so its length costs nothing and 256 samples
+ * buys a gentler correction. A stop de-click has no material underneath: what
+ * it spends its length on is a held constant, and 5 ms of one is a thump in
+ * place of a click rather than the absence of both.
+ *
+ * 32 samples puts what the correction does spend below about 750 Hz at 48 kHz,
+ * which is under the step's own broadband energy without lasting long enough to
+ * be heard as a level of its own. The incumbent spends between 10 and 40 on the
+ * same edge, in two places that disagree with each other; this is one number
+ * for one job.
+ *
+ * A constant rather than a per-clip figure, unlike a slot's own launch ramp: an
+ * arrangement handed over is a whole track's worth of clips at once, and no one
+ * of them owns the number.
+ */
+constexpr int kSectionDeClickSamples = 32;
+
+/**
+ * @brief Which section a track sounds over one block, and where that changed.
+ *
+ * A track plays its arrangement or its session, never both (#2302). The answer
+ * is the fold over the track's slots: the session holds the track if any slot
+ * holds it, and it took it over at the earliest sample any of them began on.
+ *
+ * Derived rather than stored, from the table both of a track's sources already
+ * read, after the launcher has advanced every handle and before anything
+ * renders. Two sources folding the same table over the same block reach the
+ * same answer, which is what keeps the audio and the MIDI of one track on the
+ * same side of the switch without a third thing to publish between them.
+ */
+struct SectionHold {
+    /// Whether the session holds the track when this block ends.
+    bool session = false;
+
+    /// Where it took the track over, for the block in which that happened.
+    /// Zero when it already held it, which is also what a caller that was
+    /// already handed over does with it: mute the whole block.
+    EdgeSample takenAt{0};
+};
+
+/// @copydoc SectionHold
+inline SectionHold sectionHold(const LaunchHandleTable& handles, TrackId trackId) {
+    const auto [first, last] = handles.rangeFor(trackId);
+
+    SectionHold hold;
+    auto earliest = std::numeric_limits<int>::max();
+
+    for (const auto* entry = first; entry != last; ++entry) {
+        if (entry->handle == nullptr || !entry->handle->holdsSection())
+            continue;
+
+        hold.session = true;
+
+        // Where this slot began sounding within the block, if it did. A slot
+        // already playing when the block opened took the track at its start; a
+        // slot that holds the track and sounded nothing here is one that
+        // stopped in an earlier block and is still holding it, which is the
+        // same answer.
+        const auto& status = entry->handle->blockStatus();
+
+        if (status.beforeEvent.playing())
+            earliest = 0;
+        else if (status.afterEvent && status.afterEvent->playing())
+            earliest = std::min(earliest, status.event.sample);
+    }
+
+    if (hold.session && earliest != std::numeric_limits<int>::max())
+        hold.takenAt = EdgeSample{earliest};
+
+    return hold;
 }
 
 /**

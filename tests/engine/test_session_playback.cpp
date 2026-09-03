@@ -44,11 +44,13 @@ using magda::engine::ClipSnapshot;
 using magda::engine::ClipSnapshotFeed;
 using magda::engine::ClipStreamFeed;
 using magda::engine::ClipStreamTable;
+using magda::engine::kSectionDeClickSamples;
 using magda::engine::LaunchHandle;
 using magda::engine::LaunchHandleFeed;
 using magda::engine::LaunchHandleTable;
 using magda::engine::PrefetchStream;
 using magda::engine::RenderContext;
+using magda::engine::Section;
 using magda::engine::SessionSlotPlayback;
 using magda::engine::SlotKey;
 using magda::engine::SnapshotSpan;
@@ -89,6 +91,34 @@ class ConstantReader final : public magda::engine::AudioFileReader {
                 destination.setSample(channel, destinationOffset + sample, 1.0f);
         return numSamples;
     }
+};
+
+/// Every sample the same known level, so which section reached the output is
+/// readable off the value.
+class LevelReader final : public magda::engine::AudioFileReader {
+  public:
+    explicit LevelReader(float level) : level_(level) {}
+
+    std::int64_t lengthInSamples() const override {
+        return 10000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int destinationOffset, std::int64_t,
+             int numSamples) override {
+        for (auto channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (auto sample = 0; sample < numSamples; ++sample)
+                destination.setSample(channel, destinationOffset + sample, level_);
+        return numSamples;
+    }
+
+  private:
+    float level_;
 };
 
 /// Sample n reads back as n, so where in the material a sample came from is
@@ -275,7 +305,7 @@ struct AudioRig {
     LaunchHandle handle;
     LaunchHandleTable table;
     LaunchHandleFeed handles;
-    ClipAudioSource source{kTrack, clips, streams, handles};
+    ClipAudioSource source{kTrack, clips, streams, handles, Section::Session};
     ClipStreamTable streamTable;
     juce::AudioBuffer<float> output;
 };
@@ -376,8 +406,116 @@ struct MidiRig {
     LaunchHandle handle;
     LaunchHandleTable table;
     LaunchHandleFeed handles;
-    ClipMidiSource source{kTrack, clips, handles};
+    ClipMidiSource source{kTrack, clips, handles, Section::Session};
     std::vector<Captured> captured;
+};
+
+/// A clip on the timeline, from beat @p start, carrying @p notes.
+ClipInfo arrangementMidiClip(magda::ClipId id, double start, double lengthBeats,
+                             std::vector<MidiNote> notes) {
+    ClipInfo clip;
+    clip.id = id;
+    clip.trackId = kTrack;
+    clip.view = magda::ClipView::Arrangement;
+    clip.setMidiContent();
+    clip.setPlacementBeats(start, lengthBeats);
+    clip.midiNotes = std::move(notes);
+    return clip;
+}
+
+/// One track's MIDI in both sections, with a source for each (#2302).
+struct MidiSwitchRig {
+    MidiSwitchRig() {
+        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        handles.publish(std::make_shared<const LaunchHandleTable>(table));
+        arrangement.prepare(context());
+        session.prepare(context());
+    }
+
+    void publish(std::vector<ClipInfo> arrangementClips, std::vector<ClipInfo> sessionClips) {
+        ClipLane lane;
+        lane.trackId = kTrack;
+        lane.clips = std::move(arrangementClips);
+        lane.session = std::move(sessionClips);
+
+        auto compiled = std::make_shared<const ClipSnapshot>(
+            magda::engine::compileClipSnapshot({lane}, {}, tempoMap(), {}));
+        REQUIRE(compiled->diagnostics.empty());
+        clips.publish(compiled);
+    }
+
+    /// Continuous across calls, not just within one: only the very first block
+    /// this rig ever rolls is a discontinuity, or a case that rolls in two
+    /// stages would chase its own notes in the middle.
+    void roll(int first, int last) {
+        for (auto index = first; index <= last; ++index) {
+            const auto block = blockAt(index, rolled_);
+            rolled_ = true;
+
+            magda::engine::advanceLaunchHandles(handles, block);
+
+            capture(arrangement, block, index, fromArrangement);
+            capture(session, block, index, fromSession);
+        }
+    }
+
+    static std::vector<Captured> notesOn(const std::vector<Captured>& all) {
+        std::vector<Captured> out;
+        for (const auto& entry : all)
+            if (entry.message.isNoteOn())
+                out.push_back(entry);
+        return out;
+    }
+
+    static std::vector<Captured> notesOff(const std::vector<Captured>& all) {
+        std::vector<Captured> out;
+        for (const auto& entry : all)
+            if (entry.message.isNoteOff())
+                out.push_back(entry);
+        return out;
+    }
+
+    /// Notes the section left sounding, which is the invariant a hand-over has
+    /// to keep: whatever it started, it owes an off for.
+    static std::vector<std::string> hanging(const std::vector<Captured>& all) {
+        std::vector<std::string> sounding;
+
+        for (const auto& entry : all) {
+            const auto key = std::to_string(entry.message.getChannel()) + ":" +
+                             std::to_string(entry.message.getNoteNumber());
+            const auto found = std::find(sounding.begin(), sounding.end(), key);
+
+            if (entry.message.isNoteOn() && found == sounding.end())
+                sounding.push_back(key);
+            else if (entry.message.isNoteOff() && found != sounding.end())
+                sounding.erase(found);
+        }
+
+        return sounding;
+    }
+
+    ClipSnapshotFeed clips;
+    LaunchHandle handle;
+    LaunchHandleTable table;
+    LaunchHandleFeed handles;
+
+    ClipMidiSource arrangement{kTrack, clips, handles, Section::Arrangement};
+    ClipMidiSource session{kTrack, clips, handles, Section::Session};
+
+    std::vector<Captured> fromArrangement;
+    std::vector<Captured> fromSession;
+
+  private:
+    bool rolled_ = false;
+
+    static void capture(ClipMidiSource& source, const BlockInfo& block, int index,
+                        std::vector<Captured>& into) {
+        juce::MidiBuffer buffer;
+        source.render(block, buffer);
+
+        for (const auto metadata : buffer)
+            into.push_back(Captured{index, metadata.samplePosition, metadata.getMessage()});
+    }
 };
 
 }  // namespace
@@ -538,12 +676,134 @@ TEST_CASE("A stop quantized inside a block ends on its beat", "[engine][clip][se
 
     CHECK(rig.at(0) == Approx(1.0f));
     CHECK(rig.at(2999) == Approx(1.0f));
-    CHECK(rig.at(3000) == Approx(0.0f));
+
+    // Past the beat the material is over, and what is left is the ramp that
+    // takes the step out of it rather than the material going on (#2302).
+    CHECK(rig.at(3000 + kSectionDeClickSamples - 1) == Approx(0.0f).margin(1e-5));
+    CHECK(rig.at(3000 + kSectionDeClickSamples) == Approx(0.0f));
     CHECK(rig.at(kBlockSize - 1) == Approx(0.0f));
 
     rig.render(42);
     CHECK(rig.peak() == 0.0f);
 }
+
+/**
+ * One track with material in both sections and a source for each, sharing the
+ * one handle feed (#2302).
+ *
+ * The arrangement runs the whole time; the session's slot is launched by the
+ * case. What is asserted is which of them reaches the output, and how the
+ * hand-over between them sounds.
+ */
+struct SwitchRig {
+    SwitchRig() {
+        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        handles.publish(std::make_shared<const LaunchHandleTable>(table));
+
+        arrangement.prepare(context());
+        session.prepare(context());
+
+        arrangementOut.setSize(2, kBlockSize);
+        sessionOut.setSize(2, kBlockSize);
+        arrangementOut.clear();
+        sessionOut.clear();
+    }
+
+    /// A clip on the timeline, sounding @p level from beat zero onwards.
+    void giveArrangement(magda::ClipId id, float level) {
+        lane.audio.push_back(clipOver(id, beats(0.0, 1000.0)));
+        addStream(lane.audio.back(), level);
+    }
+
+    /// A slot in the scene, @p lengthBeats long, sounding @p level.
+    void giveSlot(magda::ClipId id, double lengthBeats, float level) {
+        SessionSlotPlayback slot;
+        slot.sceneIndex = kScene;
+        slot.lengthBeats = lengthBeats;
+        slot.audio.push_back(clipOver(id, beats(0.0, lengthBeats)));
+        lane.session.push_back(std::move(slot));
+        addStream(lane.session.back().audio.front(), level);
+    }
+
+    void publish() {
+        auto compiled = std::make_shared<ClipSnapshot>();
+        compiled->tracks.push_back(lane);
+        clips.publish(std::move(compiled));
+        streams.publish(std::make_shared<const ClipStreamTable>(streamTable));
+    }
+
+    /// Roll one block through the launcher and both sources, in the order the
+    /// session does it: every handle advanced before anything renders.
+    void render(int index, bool continuous = true) {
+        const auto block = blockAt(index, continuous);
+
+        fill();
+        magda::engine::advanceLaunchHandles(handles, block);
+        arrangement.render(block, juce::dsp::AudioBlock<float>(arrangementOut));
+        session.render(block, juce::dsp::AudioBlock<float>(sessionOut));
+    }
+
+    void roll(int first, int last) {
+        for (auto index = first; index <= last; ++index)
+            render(index, index != first);
+    }
+
+    void fill() {
+        auto worked = true;
+        while (worked) {
+            worked = false;
+            for (const auto& entry : streamTable.entries)
+                worked = entry.stream->fill() || worked;
+        }
+    }
+
+    float arrangementAt(int sample) const {
+        return arrangementOut.getSample(0, sample);
+    }
+    float sessionAt(int sample) const {
+        return sessionOut.getSample(0, sample);
+    }
+
+    float arrangementPeak() const {
+        return arrangementOut.getMagnitude(0, kBlockSize);
+    }
+    float sessionPeak() const {
+        return sessionOut.getMagnitude(0, kBlockSize);
+    }
+
+    /// What the track sounds, which is the sum of its two sections: the one
+    /// assertion that says a switch did not leave a hole or double the signal.
+    float trackAt(int sample) const {
+        return arrangementAt(sample) + sessionAt(sample);
+    }
+
+    TrackClipPlayback lane{kTrack, {}, {}};
+    ClipSnapshotFeed clips;
+    ClipStreamFeed streams;
+    LaunchHandle handle;
+    LaunchHandleTable table;
+    LaunchHandleFeed handles;
+
+    ClipAudioSource arrangement{kTrack, clips, streams, handles, Section::Arrangement};
+    ClipAudioSource session{kTrack, clips, streams, handles, Section::Session};
+
+    ClipStreamTable streamTable;
+    juce::AudioBuffer<float> arrangementOut;
+    juce::AudioBuffer<float> sessionOut;
+
+  private:
+    void addStream(const AudioClipPlayback& clip, float level) {
+        const auto& event = clip.events.front();
+
+        auto stream = std::make_shared<PrefetchStream>(
+            magda::engine::readThrough(std::make_unique<LevelReader>(level),
+                                       magda::engine::sourceReadFor(event, kSampleRate)),
+            context(), magda::engine::PrefetchSettings{1024, 8});
+
+        streamTable.entries.push_back(
+            ClipStreamTable::Entry{kTrack, clip.clipId, event.eventId, stream});
+    }
+};
 
 TEST_CASE("The arrangement and the session are different sections of one track",
           "[engine][clip][session]") {
@@ -565,6 +825,326 @@ TEST_CASE("The arrangement and the session are different sections of one track",
     arrangement.render(block, juce::dsp::AudioBlock<float>(out));
 
     CHECK(out.getMagnitude(0, kBlockSize) == 0.0f);  // nothing is in the arrangement
+}
+
+// =============================================================================
+// Handing a track from one section to the other (#2302)
+// =============================================================================
+
+TEST_CASE("A launch takes the track off its arrangement, at the sample it lands on",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.publish();
+
+    // Two blocks of arrangement, then a launch quantized to the beat that falls
+    // halfway through the third.
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementAt(0) == Approx(1.0f));
+    REQUIRE(rig.sessionPeak() == 0.0f);
+
+    rig.handle.play(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto launchSample = kBlockSize / 2;
+
+    SECTION("the arrangement sounds up to the launch and not past it") {
+        CHECK(rig.arrangementAt(launchSample - 1) == Approx(1.0f));
+        CHECK(rig.arrangementAt(launchSample + kSectionDeClickSamples) == Approx(0.0f));
+    }
+
+    SECTION("the session begins there") {
+        CHECK(rig.sessionAt(launchSample - 1) == Approx(0.0f));
+        CHECK(rig.sessionAt(launchSample) == Approx(0.5f));
+    }
+
+    SECTION("and the block after it is the session alone") {
+        rig.render(3);
+        CHECK(rig.arrangementPeak() == 0.0f);
+        CHECK(rig.sessionAt(0) == Approx(0.5f));
+    }
+}
+
+TEST_CASE("The arrangement is carried down rather than cut off",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.0f);  // silent, so only the arrangement's edge is read
+    rig.publish();
+
+    rig.roll(0, 1);
+    rig.handle.play(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto launchSample = kBlockSize / 2;
+
+    SECTION("the first sample past the launch is where the signal was") {
+        CHECK(rig.arrangementAt(launchSample) == Approx(1.0f));
+    }
+
+    SECTION("and it reaches zero over the ramp, monotonically") {
+        for (auto sample = launchSample + 1; sample < launchSample + kSectionDeClickSamples;
+             ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.arrangementAt(sample) <= rig.arrangementAt(sample - 1));
+        }
+
+        CHECK(rig.arrangementAt(launchSample + kSectionDeClickSamples - 1) ==
+              Approx(0.0f).margin(1e-5));
+    }
+}
+
+TEST_CASE("A stopped slot goes on holding the track", "[engine][clip][session][section]") {
+    // The hand-back is not the slot stopping. Silence after a stop is the
+    // session still holding the track, exactly as it is in the incumbent.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+    REQUIRE(rig.sessionAt(0) == Approx(0.5f));
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    rig.handle.stop(std::nullopt);
+    rig.render(3);
+    rig.render(4);
+
+    CHECK(rig.sessionPeak() == 0.0f);
+    CHECK(rig.arrangementPeak() == 0.0f);  // and the arrangement has not crept back
+}
+
+TEST_CASE("Releasing the section gives the track back to its arrangement",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    rig.handle.releaseSection();
+    rig.render(3);
+
+    SECTION("the session stops with it") {
+        CHECK(rig.sessionPeak() == 0.0f);
+    }
+
+    SECTION("and the arrangement comes back where the timeline is, not where it left off") {
+        // It kept rendering all along, so it resumes at the sample the timeline
+        // says rather than at the one it was on when it lost the track.
+        CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(1.0f));
+    }
+
+    SECTION("stepping up out of silence over the ramp") {
+        CHECK(rig.arrangementAt(0) == Approx(0.0f).margin(1e-5));
+
+        for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.arrangementAt(sample) >= rig.arrangementAt(sample - 1));
+        }
+    }
+}
+
+TEST_CASE("A slot stopping mid-block carries its own last sample down",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 0.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(0) == Approx(0.5f));
+
+    rig.handle.stop(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto stopSample = kBlockSize / 2;
+
+    CHECK(rig.sessionAt(stopSample - 1) == Approx(0.5f));
+    CHECK(rig.sessionAt(stopSample) == Approx(0.5f));
+    CHECK(rig.sessionAt(stopSample + kSectionDeClickSamples - 1) == Approx(0.0f).margin(1e-5));
+
+    for (auto sample = stopSample + 1; sample < stopSample + kSectionDeClickSamples; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.sessionAt(sample) <= rig.sessionAt(sample - 1));
+    }
+}
+
+TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {
+    // The property the switch exists for. The two sections are summed into one
+    // track input, so a sample both contribute material to is a track playing
+    // itself twice.
+    //
+    // The hand-over ramp is the one exception and is not one of those: what
+    // overlaps there is the outgoing section's last sample decaying, which is
+    // the step being taken out rather than a second signal.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 1.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    rig.handle.play(kBeatsPerBlock * 2.5);
+
+    const auto launchSample = kBlockSize / 2;
+
+    for (auto index = 2; index <= 6; ++index) {
+        rig.render(index);
+
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            // Everything except the ramp that follows the launch.
+            if (index == 2 && sample >= launchSample &&
+                sample < launchSample + kSectionDeClickSamples)
+                continue;
+
+            INFO("block " << index << " sample " << sample);
+            REQUIRE(rig.trackAt(sample) <= 1.0f + 1e-5f);
+        }
+    }
+}
+
+TEST_CASE("The arrangement's MIDI sounds up to the hand-over and owes note-offs there",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+
+    // An arrangement note that begins before the launch and would run well past
+    // it, and a slot with a note of its own.
+    rig.publish({arrangementMidiClip(1, 0.0, 8.0, {MidiNote{60, 100, 0.25, 4.0, 0, {}}})},
+                {sessionMidiClip(2, 4.0, {MidiNote{67, 100, 0.0, 2.0, 0, {}}})});
+
+    rig.roll(0, 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).size() == 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).front().message.getNoteNumber() == 60);
+
+    // A launch quantized to the middle of the next block.
+    rig.handle.play(kBeatsPerBlock * 2.5);
+    rig.roll(2, 4);
+
+    const auto launchSample = kBlockSize / 2;
+
+    SECTION("the arrangement's note ends where the session takes the track") {
+        const auto offs = rig.notesOff(rig.fromArrangement);
+        REQUIRE(offs.size() == 1);
+        CHECK(offs.front().block == 2);
+        CHECK(offs.front().sample == launchSample);
+        CHECK(offs.front().message.getNoteNumber() == 60);
+    }
+
+    SECTION("and nothing of the arrangement's is left sounding") {
+        CHECK(rig.hanging(rig.fromArrangement).empty());
+    }
+
+    SECTION("the session's note starts there") {
+        const auto ons = rig.notesOn(rig.fromSession);
+        REQUIRE(ons.size() == 1);
+        CHECK(ons.front().block == 2);
+        CHECK(ons.front().sample == launchSample);
+        CHECK(ons.front().message.getNoteNumber() == 67);
+    }
+
+    SECTION("and the arrangement emits nothing at all afterwards") {
+        const auto afterward = std::count_if(rig.fromArrangement.begin(), rig.fromArrangement.end(),
+                                             [](const Captured& entry) { return entry.block > 2; });
+        CHECK(afterward == 0);
+    }
+}
+
+TEST_CASE("A note due before the hand-over still sounds", "[engine][clip][session][section]") {
+    // The arrangement's MIDI runs up to the switch the way its audio renders up
+    // to it: a note due a sample before the launch is one the listener was
+    // going to hear.
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 8.0, {MidiNote{62, 100, 0.6, 0.1, 0, {}}})},
+                {sessionMidiClip(2, 4.0, {})});
+
+    rig.roll(0, 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).empty());
+
+    // Beat 0.625 is the middle of block 2; the note is at 0.6, just inside it.
+    rig.handle.play(kBeatsPerBlock * 2.5);
+    rig.roll(2, 2);
+
+    const auto ons = rig.notesOn(rig.fromArrangement);
+    REQUIRE(ons.size() == 1);
+    CHECK(ons.front().message.getNoteNumber() == 62);
+    CHECK(ons.front().sample < kBlockSize / 2);
+    CHECK(rig.hanging(rig.fromArrangement).empty());
+}
+
+TEST_CASE("Releasing the section brings the arrangement's MIDI back",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 8.0, {MidiNote{64, 100, 2.0, 1.0, 0, {}}})},
+                {sessionMidiClip(2, 8.0, {MidiNote{67, 100, 0.0, 8.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 4);
+    REQUIRE(rig.notesOn(rig.fromSession).size() == 1);
+
+    rig.handle.releaseSection();
+    rig.roll(5, 12);  // through beat 2, where the arrangement's note is
+
+    SECTION("the session's note is ended by the release") {
+        CHECK(rig.hanging(rig.fromSession).empty());
+    }
+
+    SECTION("and the arrangement plays what the timeline has reached") {
+        const auto ons = rig.notesOn(rig.fromArrangement);
+        REQUIRE(ons.size() == 1);
+        CHECK(ons.front().message.getNoteNumber() == 64);
+    }
+}
+
+TEST_CASE("The hand-over overlap is the ramp and no longer", "[engine][clip][session][section]") {
+    // What the outgoing section adds past its own ramp is nothing at all, which
+    // is what says the de-click is a correction to an edge rather than a fade
+    // the two sections share.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 1.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    rig.handle.play(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto launchSample = kBlockSize / 2;
+
+    CHECK(rig.arrangementAt(launchSample + kSectionDeClickSamples - 1) ==
+          Approx(0.0f).margin(1e-5));
+    CHECK(rig.arrangementAt(launchSample + kSectionDeClickSamples) == Approx(0.0f));
+    CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(0.0f));
+
+    // And the incoming one is at full level throughout, never attenuated by the
+    // hand-over: a launch is not a gain fade (FadeCurves.hpp).
+    for (auto sample = launchSample; sample < kBlockSize; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(rig.sessionAt(sample) == Approx(1.0f));
+    }
+}
+
+TEST_CASE("A launch on the first sample of a block is the same switch",
+          "[engine][clip][session][section]") {
+    // Which side of a callback boundary the launch fell on is not something the
+    // hand-over should be able to hear: the step comes off the block before.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    rig.handle.play(kBeatsPerBlock * 2.0);
+    rig.render(2);
+
+    CHECK(rig.arrangementAt(0) == Approx(1.0f));
+    CHECK(rig.arrangementAt(kSectionDeClickSamples - 1) == Approx(0.0f).margin(1e-5));
+    CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(0.0f));
 }
 
 // =============================================================================

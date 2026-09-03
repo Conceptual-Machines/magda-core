@@ -113,4 +113,73 @@ class StartDeClick {
     int done_ = 0;
 };
 
+/**
+ * @brief Return the end of a voice to zero without fading what came before it.
+ *
+ * The other edge of StartDeClick, and the same trick read backwards. Where a
+ * start subtracts the step the material begins on, a stop carries the step it
+ * ends on: the last sample that sounded is held and decayed to zero over the
+ * ramp, added on top of the silence that follows. The material itself is never
+ * attenuated, so a clip stopped a sample before its own tail ends keeps that
+ * tail exactly as far as it got.
+ *
+ * What it is for is the discontinuity of ending mid-material: a session slot
+ * stopped on a beat, a track handed from the arrangement to the session, a
+ * launch that cuts the arrangement off mid-note. None of those end on a zero
+ * crossing except by luck, and the step left behind is a click whose energy is
+ * spread across the spectrum rather than confined below the ramp's own rate.
+ *
+ * It carries across blocks, for the reason StartDeClick does: a ramp that
+ * stopped at the end of the block it began in would decay over min(length,
+ * block) samples, and the same stop would come out differently at 128 samples a
+ * block and at 1024.
+ *
+ * A held value of zero costs nothing, which is why a source can stop through
+ * this unconditionally rather than deciding first whether it clicks.
+ */
+class StopDeClick {
+  public:
+    /// The most channels one source renders, as StartDeClick sizes it.
+    static constexpr std::size_t kMaxChannels = StartDeClick::kMaxChannels;
+
+    /// Remember where @p audio ended. Called with what sounded, every block a
+    /// source produces anything, so a stop landing on the first sample of some
+    /// later block still knows what it is stepping down from.
+    void push(juce::dsp::AudioBlock<float> audio);
+
+    /**
+     * @brief Start decaying at @p offset samples into @p audio.
+     *
+     * The value decayed is the sample before @p offset when the stop lands
+     * inside a block that sounded, and the one @ref push last saw when it lands
+     * on the block's first sample. Those are the same sample; which side of a
+     * callback boundary it fell on is not something a stop should be able to
+     * hear.
+     */
+    void begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples);
+
+    /// Carry on from the start of @p audio. Does nothing once the ramp has run
+    /// out, so a caller can ask every block without checking.
+    void advance(juce::dsp::AudioBlock<float> audio);
+
+    /// Whether there is any decay left to add.
+    bool active() const {
+        return done_ < length_;
+    }
+
+    /// Forget the ramp and what it was decaying, for a source starting over.
+    void reset() {
+        held_.fill(0.0f);
+        length_ = 0;
+        done_ = 0;
+    }
+
+  private:
+    void applyFrom(juce::dsp::AudioBlock<float> audio, int offset, int alreadyDone);
+
+    std::array<float, kMaxChannels> held_{};
+    int length_ = 0;
+    int done_ = 0;
+};
+
 }  // namespace magda::engine

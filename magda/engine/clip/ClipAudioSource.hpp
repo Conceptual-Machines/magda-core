@@ -11,6 +11,7 @@
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "clip/ClipVoice.hpp"
+#include "clip/FadeCurves.hpp"
 #include "core/TypeIds.hpp"
 #include "exec/EngineDevice.hpp"
 #include "launch/SessionLauncher.hpp"
@@ -89,11 +90,19 @@ class ClipAudioSource final : public EngineAudioSource {
      */
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams);
 
-    /// The session's source for @p trackId, positioned by @p handles instead of
-    /// by the timeline. The feed is the section selector: with one it plays the
-    /// track's slots, without one its arrangement. @p handles outlives it.
+    /**
+     * @brief The @p section's source for @p trackId, reading @p handles.
+     *
+     * Both sources of a track take the feed, and @p section says which of them
+     * this is (#2302). A session source is positioned by the handles instead of
+     * by the timeline; an arrangement source is positioned by the timeline as
+     * ever and reads the handles only to know when the session has taken the
+     * track off it, and where in the block that happened.
+     *
+     * @p handles outlives it.
+     */
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
-                    LaunchHandleFeed& handles);
+                    LaunchHandleFeed& handles, Section section);
 
     void prepare(const RenderContext& context) override;
 
@@ -186,7 +195,34 @@ class ClipAudioSource final : public EngineAudioSource {
     ClipStreamFeed& streams_;
 
     /// The section. Null is the arrangement, which needs no handles.
+    /// Sum this track's material for @p block, on whichever section this is.
+    void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out);
+
+    /// Drop what the arrangement rendered for as long as the session holds the
+    /// track, and de-click both edges of the hand-over (#2302).
+    void applySectionHold(juce::dsp::AudioBlock<float> out);
+
     LaunchHandleFeed* handles_ = nullptr;
+    Section section_ = Section::Arrangement;
+
+    /// Whether the session held this track when the last block ended, which is
+    /// what makes the hand-over an edge rather than a state (#2302). The switch
+    /// sample comes from the handles; only the previous answer is remembered.
+    bool wasHeld_ = false;
+
+    /// The two edges of the arrangement's own playback: the step it carries
+    /// down when the session takes the track, and the one it subtracts when it
+    /// gets the track back mid-material.
+    StopDeClick handOver_;
+    StartDeClick handBack_;
+
+    /// Where this track's session output went silent in the block just
+    /// gathered, when it did. Per track rather than per slot, on the same terms
+    /// as the op: a track sounds one session clip at a time.
+    std::optional<int> sessionSilentFrom_;
+
+    /// The step that leaves behind.
+    StopDeClick sessionStop_;
 
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;
 

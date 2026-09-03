@@ -24,8 +24,8 @@ ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipS
     : trackId_(trackId), clips_(clips), streams_(streams) {}
 
 ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
-                                 LaunchHandleFeed& handles)
-    : trackId_(trackId), clips_(clips), streams_(streams), handles_(&handles) {}
+                                 LaunchHandleFeed& handles, Section section)
+    : trackId_(trackId), clips_(clips), streams_(streams), handles_(&handles), section_(section) {}
 
 void ClipAudioSource::prepare(const RenderContext& context) {
     // Longer than a block, because a clip playing faster than its file consumes
@@ -104,6 +104,11 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
     // The status is the launcher's, worked out before anything rendered
     // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
+    // Whether anything is still sounding when the block ends, gathered in the
+    // one walk that renders: a track with a slot still going has not stepped,
+    // whatever its other slots did.
+    auto stillSounding = false;
+
     const auto renderSlot = [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
         const auto play = [&](const BlockPiece& piece, int offset, int count) {
             if (count <= 0 || !piece.origin)
@@ -114,20 +119,103 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
             gather(slot.audio, material, offset, streams, sounding, soundingCount);
         };
 
-        // What is on the far side of the event is not rendered. The ramp
-        // across that boundary is #2302's.
         const auto split = splitSample(block, status).value;
 
         play(status.beforeEvent, 0, split);
 
         if (status.afterEvent)
             play(*status.afterEvent, split, block.numSamples - split);
+
+        // Where this slot stopped sounding, for the ramp that takes the step
+        // out of it. A slot still sounding at the end of the block leaves no
+        // step, and one that stopped in an earlier block has none left here.
+        if (status.beforeEvent.playing() && !status.playingAtEnd())
+            sessionSilentFrom_ = std::max(sessionSilentFrom_.value_or(0), split);
+
+        stillSounding = stillSounding || status.playingAtEnd();
     };
 
     forEachSlot(*handles.get(), track, renderSlot);
+
+    // The ramp is bound to the same grain as the signal it corrects, which is
+    // the track: the op is per track because a track sounds one session clip at
+    // a time, so a sum that did not step needs no correction.
+    if (stillSounding)
+        sessionSilentFrom_.reset();
 }
 
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
+    // Cleared for the block rather than by whatever gathers, because every path
+    // through the render can return before the gather does: a stale edge would
+    // de-click a second time, blocks after the stop it belongs to.
+    sessionSilentFrom_.reset();
+
+    renderMaterial(block, out);
+
+    switch (section_) {
+        case Section::Arrangement:
+            // Only a source that shares its track with a session has a section
+            // to lose it to. One built without the feed is the whole track.
+            if (handles_ != nullptr)
+                applySectionHold(out);
+            break;
+
+        case Section::Session:
+            if (sessionSilentFrom_) {
+                sessionStop_.begin(out, *sessionSilentFrom_, kSectionDeClickSamples);
+            } else {
+                sessionStop_.advance(out);
+
+                // What sounded, remembered for a stop that lands on the first
+                // sample of some later block.
+                sessionStop_.push(out);
+            }
+            break;
+    }
+}
+
+void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
+    const LaunchHandleFeed::Reader handles(*handles_);
+    const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
+
+    if (!hold.session) {
+        // The track is the arrangement's. Coming back to it lands mid-material,
+        // which is the same step a voice starting mid-file leaves and comes out
+        // the same way.
+        if (wasHeld_)
+            handBack_.begin(out, kSectionDeClickSamples);
+        else
+            handBack_.advance(out);
+
+        // A hand-over taken back inside its own ramp finishes into the material
+        // rather than being cut off, which would be the click it exists to
+        // remove.
+        handOver_.advance(out);
+        handOver_.push(out);
+
+        wasHeld_ = false;
+        return;
+    }
+
+    // The session has the track. What the arrangement rendered still advanced
+    // every voice, stream and stretcher, which is what makes handing the track
+    // back land where the timeline says rather than where the arrangement was
+    // when it lost it. Only the output is dropped.
+    const auto numSamples = static_cast<int>(out.getNumSamples());
+    const auto from = wasHeld_ ? 0 : std::clamp(hold.takenAt.value, 0, numSamples);
+
+    out.getSubBlock(static_cast<std::size_t>(from)).clear();
+
+    if (wasHeld_)
+        handOver_.advance(out);
+    else
+        handOver_.begin(out, from, kSectionDeClickSamples);
+
+    handBack_.reset();
+    wasHeld_ = true;
+}
+
+void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     out.clear();
 
     const ClipStreamFeed::Reader streams(streams_);
@@ -195,10 +283,10 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     std::array<Sounding, kMaxVoicesPerTrack> sounding;
     auto soundingCount = 0;
 
-    if (handles_ == nullptr)
-        gather(track->audio, lane, 0, table, sounding, soundingCount);
-    else
+    if (section_ == Section::Session)
         gatherSession(*track, lane, table, sounding, soundingCount);
+    else
+        gather(track->audio, lane, 0, table, sounding, soundingCount);
 
     for (auto& voice : voices_) {
         if (voice.clipId() == INVALID_CLIP_ID)

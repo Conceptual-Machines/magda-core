@@ -170,11 +170,24 @@ std::optional<BeatRange> LaunchHandle::lastPlayedRange() const {
     return lastPlayed_;
 }
 
+void LaunchHandle::releaseSection() {
+    if (playState_ == PlayState::playing)
+        endRun();
+
+    pending_.reset();
+    holdsSection_ = false;
+}
+
 void LaunchHandle::beginRun(const SyncRange& range, const BlockInstant& at, double scheduledBeat) {
     if (const auto played = playedRange())
         lastPlayed_ = played;
 
     playState_ = PlayState::playing;
+
+    // The hand-over, at the sample the run begins on rather than at the one it
+    // was asked on: a launch quantized to the next bar leaves the arrangement
+    // playing until the bar (#2302).
+    holdsSection_ = true;
 
     Run run;
     run.origin = at.monotonic;
@@ -196,6 +209,7 @@ void LaunchHandle::joinRun(const SyncRange& range, const BlockInstant& at, const
         lastPlayed_ = played;
 
     playState_ = PlayState::playing;
+    holdsSection_ = true;
 
     // Adopting the position, not just the origin. Derived here rather than at
     // the request, which is a different number whenever the launch was queued
