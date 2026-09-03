@@ -214,9 +214,14 @@ struct AudioRig {
         lane.session.push_back(std::move(slot));
     }
 
-    void publish() {
+    /// @p map is the one the blocks will carry, and the snapshot is stamped
+    /// with its fingerprint. A source counts a snapshot compiled against
+    /// another map, so a fixture that publishes one is a fixture that lies
+    /// about its own setup (#2337). Absent for cases whose blocks carry none.
+    void publish(const magda::engine::TempoMap* map = nullptr) {
         auto compiled = std::make_shared<ClipSnapshot>();
         compiled->tracks.push_back(lane);
+        compiled->tempoFingerprint = map != nullptr ? map->fingerprint() : 0;
         clips.publish(std::move(compiled));
         streams.publish(std::make_shared<const ClipStreamTable>(streamTable));
     }
@@ -749,7 +754,7 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
 
     AudioRig rig;
     rig.give(1, 4.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     // Beat 8 is four seconds in, and everything from there runs at half the
     // tempo the slot was compiled at.
@@ -806,6 +811,80 @@ void callback(AudioRig& rig, magda::engine::TransportClock& clock,
 }
 
 }  // namespace
+
+// =============================================================================
+// The map a snapshot was compiled for
+// =============================================================================
+
+TEST_CASE("A snapshot compiled against another tempo map is counted",
+          "[engine][clip][session][tempo]") {
+    // A snapshot carries the fingerprint of the map its seconds came through.
+    // One that is not the transport's was compiled against a tempo that has
+    // since changed, and every second in it is wrong by however much the map
+    // moved.
+    //
+    // It still plays. What it does not do is pass unnoticed: the publish is
+    // meant to swap the map and the snapshot compiled for it together, and a
+    // count above zero is how anyone finds out that it did not (#2337).
+    const auto map = steppedTempo();
+    const magda::engine::TempoMap other({{0.0, 90.0, 0.0f}}, {{0.0, 4, 4}});
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<ConstantReader>());
+    rig.publish(&other);
+
+    rig.handle.play(std::nullopt);
+    rig.renderBlock(blockOnMap(map, map.beatToTime(4.0)));
+
+    CHECK(rig.source.staleSnapshots() == 1);
+}
+
+TEST_CASE("A snapshot that is the map's is not counted", "[engine][clip][session][tempo]") {
+    // The other half: the count is the fingerprint's doing rather than
+    // something every block does.
+    const auto map = steppedTempo();
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<ConstantReader>());
+    rig.publish(&map);
+
+    rig.handle.play(std::nullopt);
+    rig.renderBlock(blockOnMap(map, map.beatToTime(4.0)));
+
+    CHECK(rig.peak() == Approx(1.0f));
+    CHECK(rig.source.staleSnapshots() == 0);
+}
+
+TEST_CASE("A stale snapshot does not cost the notes it started", "[engine][clip][session][tempo]") {
+    // Counted, not cut off. A mismatch is a publish-ordering bug, and taking
+    // the notes away to report it would put a hole in the middle of a set to
+    // say so.
+    MidiRig rig;
+    rig.publish({sessionMidiClip(1, 4.0, {MidiNote{60, 100, 0.0, 4.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+
+    REQUIRE(rig.noteOns().size() == 1);
+    REQUIRE(rig.hanging().size() == 1);
+
+    const magda::engine::TempoMap other({{0.0, 90.0, 0.0f}}, {{0.0, 4, 4}});
+    auto block = blockAt(3);
+    block.tempo = &other;
+
+    juce::MidiBuffer buffer;
+    rig.source.render(block, buffer);
+
+    CHECK(rig.source.staleSnapshots() == 1);
+
+    // Still sounding: nothing was ended to report the mismatch.
+    auto offs = 0;
+    for (const auto metadata : buffer)
+        if (metadata.getMessage().isNoteOff())
+            ++offs;
+
+    CHECK(offs == 0);
+}
 
 TEST_CASE("A launch inside a block that spans a tempo step names one instant",
           "[engine][clip][session]") {
@@ -874,7 +953,7 @@ TEST_CASE("A slot launched where a block would step tempo starts at its own firs
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 
@@ -903,7 +982,7 @@ TEST_CASE("A launched slot plays straight through a loop wrap", "[engine][clip][
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 
@@ -937,7 +1016,7 @@ TEST_CASE("A launched slot keeps its place across a locate", "[engine][clip][ses
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 

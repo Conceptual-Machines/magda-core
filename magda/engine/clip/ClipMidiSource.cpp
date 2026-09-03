@@ -530,6 +530,31 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         return;
     }
 
+    // Compiled against a tempo map that has since changed: every second in it
+    // is wrong by however much the map moved (ClipSnapshot.hpp).
+    //
+    // Counted, and then played anyway. Not because playing it is right, but
+    // because the alternatives are worse in front of an audience: silence is a
+    // hole in the middle of a set, and the stale spans usually stop overlapping
+    // the block anyway, so refusing them mostly turns an accidental gap into a
+    // deliberate one. Re-deriving the seconds from the beats, which do survive
+    // a tempo edit, would be compiling on the audio thread, which is the one
+    // thing a snapshot exists to have already done.
+    //
+    // The count is the point. Zero is the only right answer and reaching it is
+    // the publish's job: the map and the snapshot compiled for it are meant to
+    // swap together, and this says when they did not (#2337).
+    //
+    // Coarser than the question it stands in for, and knowingly. The
+    // fingerprint is the whole map, while an arrangement clip's seconds depend
+    // on the map at its own placement and a session slot's depend on it only
+    // over beats zero to its length, because a slot compiles at the origin
+    // (ClipSnapshotCompiler.cpp). A tempo change at bar 200 moves neither a
+    // slot nor a clip before it, and still changes the fingerprint. Which is
+    // another reason this counts rather than acts.
+    if (block.tempo != nullptr && live->tempoFingerprint != block.tempo->fingerprint())
+        staleSnapshots_.fetch_add(1, std::memory_order_relaxed);
+
     const auto* track = live->find(trackId_);
 
     // A stopped transport does not advance the timeline, so nothing new sounds;
