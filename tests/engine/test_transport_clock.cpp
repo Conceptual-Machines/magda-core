@@ -4,6 +4,7 @@
 
 #include "transport/TransportClock.hpp"
 
+using magda::engine::SamplePosition;
 using magda::engine::TempoMap;
 using magda::engine::TransportClock;
 using magda::engine::TransportSnapshot;
@@ -14,6 +15,11 @@ constexpr double kSampleRate = 44100.0;
 
 /// 120 bpm: a beat is half a second, 22050 samples, and a bar is four of them.
 constexpr double kSamplesPerBeat = kSampleRate / 2.0;
+
+/// A position on the transport's count, which is what the clock answers in.
+SamplePosition at(std::int64_t sample) {
+    return SamplePosition{sample};
+}
 
 Catch::Approx approx(double value) {
     return Catch::Approx(value).margin(1e-9);
@@ -341,10 +347,14 @@ TEST_CASE("A steep ramp leaves every block affine to within a sample",
     // map puts at sample 256 of an uncut block lands at sample 93 on the
     // block's own line.
     //
-    // That line is what everything inside a block is placed on: where a launch
-    // lands, where a note goes, which instant a run began on. The invariant it
-    // needs is not a segment count but this: inside a block, the line and the
-    // map are the same answer to within the sample the block is allowed.
+    // That line is what a reader without a map has: the seconds face of a
+    // shifted block, the monotonic offset a launcher works in, the crop
+    // materialSubBlock takes. Placement itself goes through the map now
+    // (RenderContext::eventForBeat), so what is asserted here is the property
+    // the cut exists to provide rather than any consumer of it: inside a block,
+    // the line and the map are the same answer to within the sample the block
+    // is allowed. Whether anything still needs that is what decides whether the
+    // cut stays (#2333).
     TransportClock clock;
     auto snapshot = playing(0.0);
     snapshot.tempo = TempoMap({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
@@ -369,7 +379,11 @@ TEST_CASE("A steep ramp leaves every block affine to within a sample",
             const auto exact =
                 (snapshot.tempo.beatToTime(beat) - block.seconds.start) * kSampleRate;
 
-            CHECK(static_cast<double>(block.sampleForBeat(beat)) == approx(exact).margin(1.0));
+            // And where the block's own two ends put it, which is the line.
+            const auto online =
+                ((beat - block.beats.start) / block.beats.length()) * block.numSamples;
+
+            CHECK(online == approx(exact).margin(1.0));
         }
     }
 
@@ -397,18 +411,18 @@ TEST_CASE("Monotonic samples count what the transport rolled",
     TransportClock clock;
     const auto snapshot = playing(0.0);
 
-    CHECK(clock.monotonicSamples() == 0);
+    CHECK(clock.monotonicSamples() == at(0));
 
     const auto first = advance(clock, snapshot, 512);
-    CHECK(first.segments[0].block.monotonicSamples.start == 0);
-    CHECK(first.segments[0].block.monotonicSamples.end == 512);
-    CHECK(clock.monotonicSamples() == 512);
+    CHECK(first.segments[0].block.monotonicSamples.start == at(0));
+    CHECK(first.segments[0].block.monotonicSamples.end == at(512));
+    CHECK(clock.monotonicSamples() == at(512));
 
     // Picks up where the last block left off, so two blocks are adjacent on
     // this axis whatever the timeline did between them.
     const auto second = advance(clock, snapshot, 512);
-    CHECK(second.segments[0].block.monotonicSamples.start == 512);
-    CHECK(clock.monotonicSamples() == 1024);
+    CHECK(second.segments[0].block.monotonicSamples.start == at(512));
+    CHECK(clock.monotonicSamples() == at(1024));
 }
 
 TEST_CASE("A stopped transport rolls no samples", "[engine][transport][clock][samples]") {
@@ -417,13 +431,13 @@ TEST_CASE("A stopped transport rolls no samples", "[engine][transport][clock][sa
     TransportClock clock;
 
     advance(clock, playing(0.0), 512);
-    REQUIRE(clock.monotonicSamples() == 512);
+    REQUIRE(clock.monotonicSamples() == at(512));
 
     const auto rendered = advance(clock, halt(2), 512);
 
-    CHECK(rendered.segments[0].block.monotonicSamples.start == 512);
-    CHECK(rendered.segments[0].block.monotonicSamples.end == 512);
-    CHECK(clock.monotonicSamples() == 512);
+    CHECK(rendered.segments[0].block.monotonicSamples.start == at(512));
+    CHECK(rendered.segments[0].block.monotonicSamples.end == at(512));
+    CHECK(clock.monotonicSamples() == at(512));
 }
 
 TEST_CASE("Nothing that moves the cursor moves the sample count",
@@ -447,13 +461,13 @@ TEST_CASE("Nothing that moves the cursor moves the sample count",
         CHECK(wrapped.segments[i].block.monotonicSamples.start ==
               wrapped.segments[i - 1].block.monotonicSamples.end);
 
-    CHECK(clock.monotonicSamples() == kSamples);
+    CHECK(clock.monotonicSamples() == at(kSamples));
 
     // A locate backwards, which is where a beat-counting axis would go back.
     const auto located = advance(clock, playing(0.0, 2), 512);
 
-    CHECK(located.segments[0].block.monotonicSamples.start == kSamples);
-    CHECK(clock.monotonicSamples() == kSamples + 512);
+    CHECK(located.segments[0].block.monotonicSamples.start == at(kSamples));
+    CHECK(clock.monotonicSamples() == at(kSamples + 512));
 }
 
 TEST_CASE("A request is applied once", "[engine][transport][clock]") {
@@ -784,5 +798,93 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
         }
 
         CHECK(whole.monotonicSeconds() == approx(pieces.monotonicSeconds()));
+    }
+}
+
+TEST_CASE("A block is one tempo, which is what a rate-synced modifier reads",
+          "[engine][transport][clock][tempo][2336]") {
+    // Why the section cut stays now that placement goes through the map
+    // (#2333). A modifier synced to the tempo reads one bpm for the whole block
+    // it renders (ModLfo's modTimingFor), and so does anything else that takes
+    // a rate rather than a position: a block spanning a step would run at the
+    // tempo it opened on for the rest of itself.
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.tempo = TempoMap({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
+
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSampleRate * 2));
+    requireCovers(rendered, static_cast<int>(kSampleRate * 2));
+
+    REQUIRE(rendered.segments.size() > 1);
+
+    for (const auto& segment : rendered.segments) {
+        const auto& block = segment.block;
+
+        // Read where the consumer reads, which is the middle of the block. Not
+        // its start: a cut lands on the first sample at or after a boundary, so
+        // a block can open a fraction of a sample before one, and the beat at
+        // its start is then in the section it is leaving while every sample it
+        // renders is in the next.
+        const auto inside = block.beats.start + (0.5 * block.beats.length());
+
+        const auto first = snapshot.tempo.timeToBeat(block.seconds.start);
+        const auto last =
+            snapshot.tempo.timeToBeat(block.seconds.start + ((block.numSamples - 1) / kSampleRate));
+
+        // Every sample the block renders is at the tempo that reading gives.
+        // The end beat is excluded and may sit past the boundary, which is why
+        // the far end is asked about by its last sample rather than by it.
+        const auto bpm = snapshot.tempo.bpmAt(inside);
+
+        CHECK(snapshot.tempo.bpmAt(first) == approx(bpm));
+        CHECK(snapshot.tempo.bpmAt(last) == approx(bpm));
+    }
+}
+
+TEST_CASE("A boundary the epsilon swallows is still cut at",
+          "[engine][transport][clock][tempo][2336]") {
+    // The hole in the guarantee above, and it is the epsilon's. A boundary
+    // within a hundredth of a sample ahead of the cursor is zero samples away,
+    // and a zero cut is no cut: the segment then runs to whatever else ends it,
+    // through that boundary and every later one in the callback. What comes out
+    // is exactly the block the cut exists to prevent, on exactly the alignment
+    // nobody would think to try.
+    //
+    // Built by choosing a tempo that puts the first boundary a hundredth of a
+    // sample past a sample, so the cut at it leaves the cursor a hundredth of a
+    // sample short of it. Swept over several fractions, because which of them
+    // the arithmetic actually lands on is not the point.
+    for (const auto fraction : {0.001, 0.005, 0.009}) {
+        // 24000 samples to the first boundary, plus the fraction of one.
+        const auto bpm = 60.0 * kSampleRate / (24000.0 + fraction);
+
+        TransportClock clock;
+        auto snapshot = playing(0.0);
+
+        // Two steps: one at beat 1, one at beat 1.5. A step is two changes at
+        // the one beat, which is how it is written rather than a ramp to it.
+        snapshot.tempo = TempoMap({{0.0, bpm, 0.0f},
+                                   {1.0, bpm, 0.0f},
+                                   {1.0, 240.0, 0.0f},
+                                   {1.5, 240.0, 0.0f},
+                                   {1.5, 60.0, 0.0f}},
+                                  {});
+
+        // Past both boundaries, so a segment that missed the first has the
+        // second to run through.
+        const auto rendered = advance(clock, snapshot, 32768);
+        requireCovers(rendered, 32768);
+
+        for (const auto& segment : rendered.segments) {
+            const auto& block = segment.block;
+
+            const auto inside = block.beats.start + (0.5 * block.beats.length());
+            const auto last = snapshot.tempo.timeToBeat(block.seconds.start +
+                                                        ((block.numSamples - 1) / kSampleRate));
+
+            INFO("fraction " << fraction << " block " << block.beats.start << ".."
+                             << block.beats.end);
+            CHECK(snapshot.tempo.bpmAt(last) == approx(snapshot.tempo.bpmAt(inside)));
+        }
     }
 }

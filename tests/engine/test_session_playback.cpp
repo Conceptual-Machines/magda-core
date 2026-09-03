@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -124,6 +125,9 @@ RenderContext context() {
 BlockInfo blockAt(int index, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {magda::engine::SamplePosition{index * kBlockSize},
+                              magda::engine::SamplePosition{(index + 1) * kBlockSize}};
     block.playing = true;
     block.continuous = continuous;
     block.beats.start = index * kBeatsPerBlock;
@@ -144,6 +148,10 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
                      bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + kBlockSize}};
     block.playing = true;
     block.continuous = continuous;
     block.seconds.start = startSeconds;
@@ -214,9 +222,14 @@ struct AudioRig {
         lane.session.push_back(std::move(slot));
     }
 
-    void publish() {
+    /// @p map is the one the blocks will carry, and the snapshot is stamped
+    /// with its fingerprint. A source counts a snapshot compiled against
+    /// another map, so a fixture that publishes one is a fixture that lies
+    /// about its own setup (#2337). Absent for cases whose blocks carry none.
+    void publish(const magda::engine::TempoMap* map = nullptr) {
         auto compiled = std::make_shared<ClipSnapshot>();
         compiled->tracks.push_back(lane);
+        compiled->tempoFingerprint = map != nullptr ? map->fingerprint() : 0;
         clips.publish(std::move(compiled));
         streams.publish(std::make_shared<const ClipStreamTable>(streamTable));
     }
@@ -379,7 +392,7 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
 
     magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(
-        block, whole, magda::engine::RunOrigin{block.beats.start, block.seconds.start});
+        block, whole, magda::engine::MaterialOrigin{block.beats.start, block.seconds.start});
 
     // Beat zero of the material, at the seconds beat zero has.
     CHECK(material.beats.start == Approx(0.0));
@@ -391,7 +404,7 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
     // callback's own buffer.
     CHECK(material.numSamples == block.numSamples);
     for (const auto beat : {0.0, 0.1, 0.2})
-        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.beats.start + beat));
+        CHECK(material.eventForBeat(beat) == block.eventForBeat(block.beats.start + beat));
 
     // A run that began here is not continuous with the last block, whatever the
     // transport was doing.
@@ -413,14 +426,14 @@ TEST_CASE("A session block answers about beats through the map, not its own line
                                       {{0.0, 4, 4}});
     const auto block = blockOnMap(map, 2.0 - (kBlockSize / kSampleRate));
 
-    const magda::engine::RunOrigin origin{block.beats.start, block.seconds.start};
+    const magda::engine::MaterialOrigin origin{block.beats.start, block.seconds.start};
     const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(block, whole, origin);
 
     // The map comes with the block, and the shift it was moved by comes with
     // it too, which is what keeps the map answerable here.
     CHECK(material.tempo == &map);
-    CHECK(material.runOrigin == origin);
+    CHECK(material.materialOrigin == origin);
 
     // A cell boundary past the end of the block, which is where ClipVoice reads
     // (RenderContext.hpp): the grid is anchored to the event rather than to the
@@ -444,8 +457,8 @@ TEST_CASE("A run already under way is continuous with the block before it",
     const auto block = blockAt(40);
 
     // The run began four blocks ago, so this block is one beat into it.
-    const magda::engine::RunOrigin origin{block.beats.start - 1.0,
-                                          block.seconds.start - kSecondsPerBeat};
+    const magda::engine::MaterialOrigin origin{block.beats.start - 1.0,
+                                               block.seconds.start - kSecondsPerBeat};
     const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(block, whole, origin);
 
@@ -749,7 +762,7 @@ TEST_CASE("A slot launched where the tempo differs reads forward, not twice",
 
     AudioRig rig;
     rig.give(1, 4.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     // Beat 8 is four seconds in, and everything from there runs at half the
     // tempo the slot was compiled at.
@@ -806,6 +819,80 @@ void callback(AudioRig& rig, magda::engine::TransportClock& clock,
 }
 
 }  // namespace
+
+// =============================================================================
+// The map a snapshot was compiled for
+// =============================================================================
+
+TEST_CASE("A snapshot compiled against another tempo map is counted",
+          "[engine][clip][session][tempo]") {
+    // A snapshot carries the fingerprint of the map its seconds came through.
+    // One that is not the transport's was compiled against a tempo that has
+    // since changed, and every second in it is wrong by however much the map
+    // moved.
+    //
+    // It still plays. What it does not do is pass unnoticed: the publish is
+    // meant to swap the map and the snapshot compiled for it together, and a
+    // count above zero is how anyone finds out that it did not (#2337).
+    const auto map = steppedTempo();
+    const magda::engine::TempoMap other({{0.0, 90.0, 0.0f}}, {{0.0, 4, 4}});
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<ConstantReader>());
+    rig.publish(&other);
+
+    rig.handle.play(std::nullopt);
+    rig.renderBlock(blockOnMap(map, map.beatToTime(4.0)));
+
+    CHECK(rig.source.staleSnapshots() == 1);
+}
+
+TEST_CASE("A snapshot that is the map's is not counted", "[engine][clip][session][tempo]") {
+    // The other half: the count is the fingerprint's doing rather than
+    // something every block does.
+    const auto map = steppedTempo();
+
+    AudioRig rig;
+    rig.give(1, 8.0, std::make_unique<ConstantReader>());
+    rig.publish(&map);
+
+    rig.handle.play(std::nullopt);
+    rig.renderBlock(blockOnMap(map, map.beatToTime(4.0)));
+
+    CHECK(rig.peak() == Approx(1.0f));
+    CHECK(rig.source.staleSnapshots() == 0);
+}
+
+TEST_CASE("A stale snapshot does not cost the notes it started", "[engine][clip][session][tempo]") {
+    // Counted, not cut off. A mismatch is a publish-ordering bug, and taking
+    // the notes away to report it would put a hole in the middle of a set to
+    // say so.
+    MidiRig rig;
+    rig.publish({sessionMidiClip(1, 4.0, {MidiNote{60, 100, 0.0, 4.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+
+    REQUIRE(rig.noteOns().size() == 1);
+    REQUIRE(rig.hanging().size() == 1);
+
+    const magda::engine::TempoMap other({{0.0, 90.0, 0.0f}}, {{0.0, 4, 4}});
+    auto block = blockAt(3);
+    block.tempo = &other;
+
+    juce::MidiBuffer buffer;
+    rig.source.render(block, buffer);
+
+    CHECK(rig.source.staleSnapshots() == 1);
+
+    // Still sounding: nothing was ended to report the mismatch.
+    auto offs = 0;
+    for (const auto metadata : buffer)
+        if (metadata.getMessage().isNoteOff())
+            ++offs;
+
+    CHECK(offs == 0);
+}
 
 TEST_CASE("A launch inside a block that spans a tempo step names one instant",
           "[engine][clip][session]") {
@@ -874,7 +961,7 @@ TEST_CASE("A slot launched where a block would step tempo starts at its own firs
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 
@@ -903,7 +990,7 @@ TEST_CASE("A launched slot plays straight through a loop wrap", "[engine][clip][
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 
@@ -937,7 +1024,7 @@ TEST_CASE("A launched slot keeps its place across a locate", "[engine][clip][ses
 
     AudioRig rig;
     rig.give(1, 8.0, std::make_unique<CountingReader>());
-    rig.publish();
+    rig.publish(&map);
 
     magda::engine::TransportClock clock;
 
@@ -955,7 +1042,7 @@ TEST_CASE("A launched slot keeps its place across a locate", "[engine][clip][ses
     CHECK(rig.at(0) == Approx(kRunBlocks * kBlockSize));
 }
 
-TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][session]") {
+TEST_CASE("Synced handles agree in beats and in samples", "[engine][clip][session]") {
     // What makes a scene one event rather than N. Beats alone would put a
     // scene's MIDI in the right bar and its audio somewhere else.
     LaunchHandle leader;
@@ -972,15 +1059,16 @@ TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][sessio
 
     REQUIRE(leader.playedMonotonicRange().has_value());
     REQUIRE(follower.playedMonotonicRange().has_value());
-    REQUIRE(leader.playedMonotonicSecondsRange().has_value());
-    REQUIRE(follower.playedMonotonicSecondsRange().has_value());
+    REQUIRE(leader.playedSampleRange().has_value());
+    REQUIRE(follower.playedSampleRange().has_value());
 
     CHECK(follower.playedMonotonicRange()->start == Approx(leader.playedMonotonicRange()->start));
     CHECK(follower.playedMonotonicRange()->end == Approx(leader.playedMonotonicRange()->end));
-    CHECK(follower.playedMonotonicSecondsRange()->start ==
-          Approx(leader.playedMonotonicSecondsRange()->start));
-    CHECK(follower.playedMonotonicSecondsRange()->end ==
-          Approx(leader.playedMonotonicSecondsRange()->end));
+
+    // The same sample, not the same second: two runs that began on one sample
+    // began together whatever the tempo does afterwards (#2336).
+    CHECK(follower.playedSampleRange()->start == leader.playedSampleRange()->start);
+    CHECK(follower.playedSampleRange()->end == leader.playedSampleRange()->end);
 
     // And the same origin to whatever renders them, on both axes.
     REQUIRE(follower.blockStatus().beforeEvent.origin.has_value());

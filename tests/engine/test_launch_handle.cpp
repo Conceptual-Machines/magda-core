@@ -1,5 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <cstdint>
+#include <vector>
 
 #include "launch/LaunchHandle.hpp"
 
@@ -31,30 +34,42 @@ constexpr int samplesFor(double beats) {
     return static_cast<int>(beats * kSecondsPerBeat * kSampleRate);
 }
 
-/// One block, in all four faces, with the timeline and monotonic clocks running
-/// together. They diverge only when something wraps the timeline.
+/// Where a monotonic beat sits on the transport's count, at that tempo. The
+/// count is what a run's origin is recorded as, so a block carries it (#2336).
+SamplePosition at(double monotonicBeat) {
+    return SamplePosition{static_cast<std::int64_t>(monotonicBeat * kSecondsPerBeat * kSampleRate)};
+}
+
+/// One block, with the timeline and monotonic clocks running together. They
+/// diverge only when something wraps the timeline.
 SyncRange block(double from, double to) {
-    return SyncRange{BeatRange{from, to}, BeatRange{from, to},
+    return SyncRange{BeatRange{from, to},
+                     BeatRange{from, to},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
-                     SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
-                     samplesFor(to - from)};
+                     SampleRange{at(from), at(to)},
+                     samplesFor(to - from),
+                     kSampleRate};
 }
 
 /// A block the timeline has wrapped under.
 SyncRange wrapped(double from, double to, double monotonicFrom, double monotonicTo) {
-    return SyncRange{BeatRange{from, to}, BeatRange{monotonicFrom, monotonicTo},
+    return SyncRange{BeatRange{from, to},
+                     BeatRange{monotonicFrom, monotonicTo},
                      SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
-                     SecondsRange{monotonicFrom * kSecondsPerBeat, monotonicTo * kSecondsPerBeat},
-                     samplesFor(monotonicTo - monotonicFrom)};
+                     SampleRange{at(monotonicFrom), at(monotonicTo)},
+                     samplesFor(monotonicTo - monotonicFrom),
+                     kSampleRate};
 }
 
 }  // namespace
 
 TEST_CASE("An event in the block's last half sample stays inside the block", "[launch]") {
-    // A beat nearer the next callback's first sample than this one's last
-    // rounds past the end of the block. Applied there, the event happens but
-    // nothing can carry it: a stop would clear its own note state while its
-    // note-offs went to an offset outside the buffer, and the notes would hang.
+    // A beat nearer the next callback's first sample than this one's last is
+    // where nearest would answer past the end of the block. Applied there, the
+    // event happens but nothing can carry it: a stop would clear its own note
+    // state while its note-offs went to an offset outside the buffer, and the
+    // notes would hang. Floor answers the sample the beat is inside, which is
+    // one this block has (TimeDomains::eventAt).
     LaunchHandle handle;
 
     const auto range = block(0.0, 1.0);
@@ -307,7 +322,7 @@ TEST_CASE("Nudge moves the playhead without ending the run", "[launch]") {
     handle.play({});
     handle.advance(block(0.0, 2.0));
 
-    handle.nudge(0.5, 0.5 * kSecondsPerBeat);
+    handle.nudge(0.5, SampleDuration::ofSeconds(0.5 * kSecondsPerBeat, kSampleRate));
 
     REQUIRE(handle.playedRange().has_value());
     CHECK(handle.playedRange()->length() == Approx(2.5));
@@ -465,12 +480,12 @@ TEST_CASE("A backward nudge cannot take a run before it started", "[launch]") {
     handle.advance(block(0.0, 2.0));
 
     SECTION("within the run it shifts the origin") {
-        handle.nudge(-0.5, -0.5 * kSecondsPerBeat);
+        handle.nudge(-0.5, SampleDuration::ofSeconds(-0.5 * kSecondsPerBeat, kSampleRate));
         CHECK(handle.playedRange()->length() == Approx(1.5));
     }
 
     SECTION("past the start it clamps rather than inverting") {
-        handle.nudge(-3.0, -3.0 * kSecondsPerBeat);
+        handle.nudge(-3.0, SampleDuration::ofSeconds(-3.0 * kSecondsPerBeat, kSampleRate));
 
         const auto played = *handle.playedRange();
         CHECK(played.length() == Approx(0.0));
@@ -498,4 +513,183 @@ TEST_CASE("playStartTime survives the timeline wrapping under it", "[launch]") {
     // in, because that is how long the run has been going.
     CHECK(status.beforeEvent.range.start - status.beforeEvent.origin->beat == Approx(2.0));
     CHECK(status.beforeEvent.origin->beat == Approx(-2.0));
+}
+
+TEST_CASE("A thousand retriggers do not walk off the beat", "[launch][2336]") {
+    // The drift the epic opens with. At 48 kHz and 123 bpm a beat is 23,414.634
+    // samples, so no whole number of samples is a beat, and a wrap scheduled
+    // from the sample the previous wrap landed on rounds up every time: after a
+    // thousand of them the run is about 366 samples late, a third of a beat
+    // short of eight milliseconds.
+    //
+    // What stops it is that the schedule and the sound are different questions.
+    // A wrap sounds on a sample, because that is the only thing that can sound;
+    // the next wrap is counted from the beat the run was asked for, which no
+    // rounding has ever touched (LaunchHandle::Run::scheduleBeat).
+    constexpr auto kBpm = 123.0;
+    constexpr auto kRate = 48000.0;
+    constexpr auto kBlock = 512;
+    constexpr auto kTurns = 1000;
+
+    const TempoMap tempo({{0.0, kBpm, 0.0f}}, {});
+    const auto samplesPerBeat = (60.0 / kBpm) * kRate;
+
+    const auto blockFrom = [&](std::int64_t sample) {
+        const auto from = static_cast<double>(sample) / kRate;
+        const auto to = static_cast<double>(sample + kBlock) / kRate;
+
+        return SyncRange{BeatRange{tempo.timeToBeat(from), tempo.timeToBeat(to)},
+                         BeatRange{tempo.timeToBeat(from), tempo.timeToBeat(to)},
+                         SecondsRange{from, to},
+                         SampleRange{SamplePosition{sample}, SamplePosition{sample + kBlock}},
+                         kBlock,
+                         kRate,
+                         &tempo};
+    };
+
+    LaunchHandle handle;
+    handle.play({});
+    handle.setLooping(1.0);
+
+    std::vector<std::int64_t> wraps;
+    auto origin = SamplePosition{0};
+
+    // A beat past the last wrap that is due, so the thousandth has somewhere to
+    // land and nothing after it is counted.
+    const auto blocks = static_cast<std::int64_t>(((kTurns + 1) * samplesPerBeat) / kBlock);
+
+    for (std::int64_t i = 0; i < blocks; ++i) {
+        handle.advance(blockFrom(i * kBlock));
+
+        const auto run = handle.playedSampleRange();
+        REQUIRE(run.has_value());
+
+        if (run->start != origin) {
+            origin = run->start;
+            wraps.push_back(origin.sample);
+        }
+    }
+
+    REQUIRE(wraps.size() >= static_cast<std::size_t>(kTurns));
+
+    for (std::size_t turn = 0; turn < static_cast<std::size_t>(kTurns); ++turn) {
+        // Where the beat is, rather than where a chain of rounded intervals
+        // would have got to. Within a sample at the thousandth as at the first.
+        const auto expected = static_cast<double>(turn + 1) * samplesPerBeat;
+        CHECK(std::abs(static_cast<double>(wraps[turn]) - expected) <= 1.0);
+    }
+}
+
+TEST_CASE("A rate change does not reinterpret a run's origin", "[launch][2336]") {
+    // A run's origin is a count of samples, and a device that changes rate
+    // changes what a sample is worth. Holding the number would silently move
+    // the run: a clip a second into its file would be half a second in, or two,
+    // depending on which way the rate went.
+    //
+    // What is kept is the time the run has actually had. The origin is
+    // re-counted behind the block at the new rate, which is the only thing that
+    // leaves the material where the listener last heard it.
+    LaunchHandle handle;
+    handle.play({});
+    handle.advance(block(0.0, 2.0));  // one second at 120 bpm
+
+    // The same transport count, carrying on: what changes is what each sample
+    // is worth, not how many have gone by.
+    const auto doubled = SyncRange{BeatRange{2.0, 3.0},
+                                   BeatRange{2.0, 3.0},
+                                   SecondsRange{1.0, 1.5},
+                                   SampleRange{SamplePosition{48000}, SamplePosition{96000}},
+                                   48000,
+                                   2.0 * kSampleRate};
+
+    const auto status = handle.advance(doubled);
+
+    REQUIRE(status.beforeEvent.origin.has_value());
+
+    // Still one second in, so the run's material begins where the block does
+    // minus the second it has had. Without the re-count it would read half a
+    // second, and every launched clip would jump backwards through its file.
+    CHECK(status.beforeEvent.origin->seconds == Approx(0.0));
+    CHECK(doubled.seconds.start - status.beforeEvent.origin->seconds == Approx(1.0));
+}
+
+TEST_CASE("A run's origin is the same sample after the timeline wraps", "[launch][2336]") {
+    // The durable identity. The beat the run began on stops being a beat in
+    // any cycle the moment the loop takes it back, and the second it began on
+    // is one the transport has passed twice; the sample it began on is the
+    // sample it began on.
+    LaunchHandle handle;
+    handle.play({});
+    handle.advance(wrapped(6.0, 8.0, 6.0, 8.0));
+
+    REQUIRE(handle.playedSampleRange().has_value());
+    const auto origin = handle.playedSampleRange()->start;
+
+    handle.advance(wrapped(0.0, 2.0, 8.0, 10.0));
+    handle.advance(wrapped(2.0, 4.0, 10.0, 12.0));
+
+    CHECK(handle.playedSampleRange()->start == origin);
+
+    // And the run has got as far as the count says, whatever the cursor did.
+    CHECK(handle.playedSampleRange()->length() == SampleDuration{samplesFor(6.0)});
+}
+
+TEST_CASE("A synced launch joins the run as the rate left it", "[launch][2336]") {
+    // A scene launch is a request now and a launch at the quantized beat, and
+    // between the two the device can change rate. The run to join is held as a
+    // copy, and a copy counted in samples of one length adopted at another puts
+    // the follower somewhere the leader is not: at 44.1 to 48 kHz with a second
+    // in between it is about 90 ms, for the rest of the run.
+    //
+    // So the copy follows the rate on the same blocks the leader's own run
+    // does, which is what makes joining at the launch instant and joining a
+    // copy the same answer.
+    LaunchHandle leader;
+    LaunchHandle follower;
+
+    leader.play({});
+    leader.advance(block(0.0, 2.0));  // one second at 48 kHz
+
+    // Queued for a beat that has not arrived, which is what a scene launch is.
+    follower.playSynced(leader, 4.0);
+
+    // The device doubles its rate. The transport's count carries straight on;
+    // what changes is what each sample is worth.
+    const auto doubled = [](double from, double to, std::int64_t fromSample) {
+        return SyncRange{BeatRange{from, to},
+                         BeatRange{from, to},
+                         SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
+                         SampleRange{SamplePosition{fromSample},
+                                     SamplePosition{fromSample + static_cast<std::int64_t>(
+                                                                     (to - from) * kSecondsPerBeat *
+                                                                     2.0 * kSampleRate)}},
+                         static_cast<int>((to - from) * kSecondsPerBeat * 2.0 * kSampleRate),
+                         2.0 * kSampleRate};
+    };
+
+    const auto second = doubled(2.0, 3.0, 48000);
+    leader.advance(second);
+    follower.advance(second);
+
+    // And now the launch beat arrives.
+    const auto third = doubled(3.0, 5.0, 96000);
+    const auto leading = leader.advance(third);
+    const auto following = follower.advance(third);
+
+    REQUIRE(follower.playedSampleRange().has_value());
+    REQUIRE(leader.playedSampleRange().has_value());
+
+    // The same origin, which is the whole point of a synced launch: the same
+    // sample, not merely the same bar.
+    CHECK(follower.playedSampleRange()->start == leader.playedSampleRange()->start);
+
+    REQUIRE(following.afterEvent.has_value());
+    REQUIRE(following.afterEvent->origin.has_value());
+    REQUIRE(leading.beforeEvent.origin.has_value());
+
+    // And what a source is handed says the same thing on both axes. The origin
+    // is where the run began in absolute terms, so the two agree whatever piece
+    // of the block each was worked out over.
+    CHECK(following.afterEvent->origin->beat == Approx(leading.beforeEvent.origin->beat));
+    CHECK(following.afterEvent->origin->seconds == Approx(leading.beforeEvent.origin->seconds));
 }

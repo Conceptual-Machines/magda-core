@@ -9,11 +9,6 @@ namespace {
 
 constexpr double kBeatEpsilon = 1.0e-9;
 
-/// A boundary this close to the cursor is the cursor. Rounding up to the first
-/// sample at or past a musical position would otherwise turn the position the
-/// clock just anchored to into a boundary one sample ahead of itself.
-constexpr double kSampleEpsilon = 1.0e-2;
-
 }  // namespace
 
 void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
@@ -33,6 +28,9 @@ double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) co
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
+    // A boundary within the epsilon of the cursor is the cursor: rounding up to
+    // the first sample at or past a musical position would otherwise turn the
+    // position just anchored to into a boundary one sample ahead of itself.
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
@@ -127,6 +125,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.monotonicSeconds.end = monotonicSeconds_;
         segment.block.monotonicSamples.start = monotonicSamples_;
         segment.block.monotonicSamples.end = monotonicSamples_;
+        segment.block.sampleRate = sampleRate_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -176,15 +175,33 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
         // A block never spans a tempo section, which is the stretch the map is
         // linear over. Not a jump: audio flows straight through a tempo change
-        // and the next segment carries on continuous. The cut is what keeps the
-        // block's own straight lines honest, since everything inside a block is
-        // placed on the line between its two ends, and that line is the map
-        // within a section and a guess across a boundary (TempoMap.hpp).
-        const auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
-        if (std::isfinite(boundary)) {
-            if (const auto untilBoundary = samplesUntil(tempo, boundary); untilBoundary > 0)
-                samples = std::min(samples, untilBoundary);
-        }
+        // and the next segment carries on continuous.
+        //
+        // What the cut is for has changed. It arrived to keep the block's own
+        // straight line honest, because everything inside a block was placed on
+        // the line between its two ends; placement goes through the map now, so
+        // that is no longer what pays for it (#2336).
+        //
+        // What it still buys is that a block is one tempo and one signature. A
+        // rate-synced modifier reads a single bpm for the whole block it is
+        // rendering (ModLfo's modTimingFor), and a block spanning a step would
+        // run at the tempo it opened on for the rest of it. The cut is what
+        // makes that reading exact rather than nearly right, and it costs one
+        // extra segment per tempo change (#2333).
+        //
+        // Past a boundary the epsilon has already swallowed, or the guarantee
+        // has a hole exactly where it is hardest to see. A boundary within a
+        // hundredth of a sample ahead of the cursor counts as zero samples
+        // away, and a zero cut is no cut: the segment would then run to
+        // whatever else ends it, through that boundary and every later one in
+        // the callback. The cursor is on that boundary for all practical
+        // purposes, so the one to cut at is the next one after it.
+        auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
+        while (std::isfinite(boundary) && samplesUntil(tempo, boundary) <= 0)
+            boundary = tempo.nextSectionBoundaryAfter(boundary);
+
+        if (std::isfinite(boundary))
+            samples = std::min(samples, samplesUntil(tempo, boundary));
 
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from
@@ -234,8 +251,10 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // longer one conversion apart, and this side of it is the one that did
         // not move (#2332).
         segment.block.monotonicSamples.start = monotonicSamples_;
-        monotonicSamples_ += samples;
+        monotonicSamples_ += SampleDuration{samples};
         segment.block.monotonicSamples.end = monotonicSamples_;
+
+        segment.block.sampleRate = sampleRate_;
 
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;

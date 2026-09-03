@@ -92,9 +92,9 @@ void ClickGenerator::render(const TempoMap& tempo, const ClickSettings& click,
     // falls silent without being told to.
     for (auto tick = tempo.tickAtOrAfter(block.beats.start); tick.beat < block.beats.end;
          tick = tempo.tickAtOrAfter(tick.nextBeat)) {
-        const auto offset = block.sampleForBeat(tick.beat);
+        const auto offset = block.eventForBeat(tick.beat);
         trigger(click.emphasiseBars && tick.startsBar);
-        pour(output, startSample + offset, block.numSamples - offset, click.gain);
+        pour(output, startSample + offset.value, block.numSamples - offset.value, click.gain);
     }
 }
 

@@ -40,7 +40,8 @@ ClipSnapshot snapshotWithScenes(const std::vector<int>& scenes, TrackId trackId 
 void launch(LaunchHandle& handle) {
     handle.play({});
     handle.advance(SyncRange{BeatRange{0.0, 2.0}, BeatRange{0.0, 2.0}, SecondsRange{0.0, 1.0},
-                             SecondsRange{0.0, 1.0}});
+                             SampleRange{SamplePosition{0}, SamplePosition{48000}}, 48000,
+                             48000.0});
     REQUIRE(handle.playState() == LaunchHandle::PlayState::playing);
 }
 

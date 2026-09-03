@@ -26,8 +26,8 @@ void StreamingAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<
     // The part of the block the clip covers, as samples of it. Half-open at
     // both ends, so a clip ending exactly on a block boundary contributes
     // nothing to the block that starts there.
-    const auto first = block.sampleForTime(std::max(block.seconds.start, placement_.seconds.start));
-    const auto last = block.sampleForTime(std::min(block.seconds.end, placement_.seconds.end));
+    const auto first = block.edgeForTime(std::max(block.seconds.start, placement_.seconds.start));
+    const auto last = block.edgeForTime(std::min(block.seconds.end, placement_.seconds.end));
     const auto count = last - first;
 
     if (count <= 0)
@@ -40,9 +40,10 @@ void StreamingAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<
     const auto sourceStart =
         sourceSampleAt(std::max(block.seconds.start, placement_.seconds.start));
 
-    stream_.read(sourceStart,
-                 out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)),
-                 count);
+    stream_.read(
+        sourceStart,
+        out.getSubBlock(static_cast<std::size_t>(first.value), static_cast<std::size_t>(count)),
+        count);
 }
 
 }  // namespace magda::engine

@@ -89,9 +89,9 @@ class TransportClock {
         return monotonicSeconds_;
     }
 
-    /// Samples the transport has rolled since the clock began. Never goes back,
-    /// and is not re-anchored by anything that moves the cursor.
-    std::int64_t monotonicSamples() const {
+    /// Where the transport has rolled to on its own sample count. Never goes
+    /// back, and is not re-anchored by anything that moves the cursor.
+    SamplePosition monotonicSamples() const {
         return monotonicSamples_;
     }
 
@@ -176,7 +176,7 @@ class TransportClock {
     /// Samples rolled since the clock began. What the two monotonic faces above
     /// are counted from, and the one coordinate a locate, a wrap, a tempo edit
     /// and a re-anchor all leave alone (#2332).
-    std::int64_t monotonicSamples_ = 0;
+    SamplePosition monotonicSamples_;
 
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};

@@ -106,6 +106,30 @@ class ClipMidiSource final : public EngineMidiSource {
         return overflowed_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Blocks rendered against a map the snapshot was not compiled for.
+     *
+     * A snapshot carries the fingerprint of the tempo map its seconds were
+     * derived through. One that is not the transport's was compiled against a
+     * tempo that has since changed, so every second in it is wrong by however
+     * much the map moved.
+     *
+     * Counted and then played anyway. Refusing to play it is a hole in the
+     * middle of a set to report a bug that should not happen, and it buys
+     * little, because stale spans usually stop overlapping the block in any
+     * case: what that mostly converts is an accidental gap into a deliberate
+     * one.
+     *
+     * Zero is the only right answer, and reaching it is the publish's job
+     * rather than this one's: the map and the snapshot compiled for it are
+     * meant to swap together (#2337). Non-zero says they did not, which is a
+     * publish-ordering bug that would otherwise be inaudible until somebody
+     * wondered why a clip was in the wrong place.
+     */
+    int staleSnapshots() const {
+        return staleSnapshots_.load(std::memory_order_relaxed);
+    }
+
   private:
     /// One note owed an off that would not fit in the block that owed it.
     struct OwedNote {
@@ -138,15 +162,15 @@ class ClipMidiSource final : public EngineMidiSource {
     /// Whether @p bytes more will fit, leaving room for every off still owed.
     bool fits(int bytes) const;
 
-    void emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event);
+    void emit(juce::MidiBuffer& out, EventSample sample, const MidiClipEvent& event);
 
     /// Note-off now, or owed if it will not fit. Always leaves the note not
     /// sounding.
-    void endNote(juce::MidiBuffer& out, int sample, int channel, int note);
+    void endNote(juce::MidiBuffer& out, EventSample sample, int channel, int note);
 
     /// End everything, or everything one clip owns.
-    void endAll(juce::MidiBuffer& out, int sample);
-    void endClip(juce::MidiBuffer& out, int sample, ClipId clipId);
+    void endAll(juce::MidiBuffer& out, EventSample sample);
+    void endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId);
 
     /// The notes of @p clip actually sounding at @p timelineBeat, into @ref
     /// scratch_. Grooved edges, not written ones, and one implementation for
@@ -180,7 +204,7 @@ class ClipMidiSource final : public EngineMidiSource {
     void endUnexpected(juce::MidiBuffer& out, const NoteMask& expected);
 
     /// Every note one slot started, ended at @p sample. What a stop owes.
-    void endSlot(juce::MidiBuffer& out, int sample, const SessionSlotPlayback& slot);
+    void endSlot(juce::MidiBuffer& out, EventSample sample, const SessionSlotPlayback& slot);
 
     /// What a launched slot plays and what a stopped one owes. False when no
     /// handles have been published yet.
@@ -212,6 +236,7 @@ class ClipMidiSource final : public EngineMidiSource {
 
     std::atomic<int> dropped_{0};
     std::atomic<int> overflowed_{0};
+    std::atomic<int> staleSnapshots_{0};
 };
 
 }  // namespace magda::engine

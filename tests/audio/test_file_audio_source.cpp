@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -70,6 +71,10 @@ Catch::Approx approx(float value) {
 BlockInfo blockFrom(double startSeconds, int numSamples = kBlockSize, bool continuous = true) {
     BlockInfo block;
     block.numSamples = numSamples;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + numSamples}};
     block.playing = true;
     block.seconds.start = startSeconds;
     block.seconds.end = startSeconds + numSamples / kSampleRate;

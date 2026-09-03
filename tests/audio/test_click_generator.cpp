@@ -16,12 +16,18 @@ constexpr int kBlockSize = 512;
 /// 120 bpm: 22050 samples to the beat.
 constexpr double kSamplesPerBeat = kSampleRate / 2.0;
 
+/// A block at 120 bpm, with both faces and the rate the transport would give
+/// it: a tick is placed through the map, and the map needs a seconds face to
+/// answer against (RenderContext::offsetForBeat).
 BlockInfo blockFrom(double startBeat, int numSamples) {
     BlockInfo block;
     block.numSamples = numSamples;
+    block.sampleRate = kSampleRate;
     block.playing = true;
     block.beats.start = startBeat;
     block.beats.end = startBeat + numSamples / kSamplesPerBeat;
+    block.seconds.start = block.beats.start * 0.5;
+    block.seconds.end = block.beats.end * 0.5;
     block.continuous = true;
     return block;
 }
@@ -49,7 +55,8 @@ struct Fixture {
         output.clear();
     }
 
-    void render(const BlockInfo& block, bool countingIn = false) {
+    void render(BlockInfo block, bool countingIn = false) {
+        block.tempo = &tempo;
         generator.render(tempo, click, block, countingIn, output, 0);
     }
 
@@ -187,8 +194,39 @@ TEST_CASE("Two beats inside one block both sound", "[engine][transport][click]")
     output.clear();
 
     auto block = blockFrom(0.0, output.getNumSamples());
+    block.tempo = &fixture.tempo;
     fixture.generator.render(fixture.tempo, fixture.click, block, false, output, 0);
 
     CHECK(clickStart(output) == 0);
     CHECK(output.getSample(0, static_cast<int>(kSamplesPerBeat) + 1) != 0.0f);
+}
+
+TEST_CASE("The metronome follows a signature change inside one block",
+          "[engine][transport][click][2336]") {
+    // The other thing the tempo-section cut incidentally provides: a block
+    // inside one time signature. The metronome walks the map's own ticks rather
+    // than a grid it worked out from the block's ends, so it does not need one,
+    // and this is the case that says so (#2333).
+    //
+    // The transport does not hand out such a block today. Built by hand, the
+    // assertion holds whatever the clock decides about cutting.
+    Fixture fixture;
+    fixture.tempo = TempoMap({}, {{0.0, 4, 4}, {2.0, 6, 8}});
+
+    constexpr auto kSamples = static_cast<int>(1.5 * kSamplesPerBeat);
+    fixture.output.setSize(2, kSamples);
+    fixture.output.clear();
+
+    fixture.render(blockFrom(1.5, kSamples));
+
+    // The beat at 2, half a beat into the block.
+    const auto first = static_cast<int>(0.5 * kSamplesPerBeat);
+    CHECK(clickStart(fixture.output) == first);
+
+    // And the one at 2.5, which only exists because six eighths to the bar puts
+    // a tick every half beat. Under four four the next tick would be at beat 3,
+    // past the end of the block, and this half of it would be silent.
+    const auto blip = static_cast<int>(0.05 * kSampleRate);
+    CHECK(firstSounding(fixture.output, first + blip) - 1 ==
+          static_cast<int>(1.0 * kSamplesPerBeat));
 }

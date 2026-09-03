@@ -51,68 +51,106 @@ struct SlotKey {
 };
 
 /**
- * @brief One block, in the four domains (TimeDomains.hpp), and how to cut it.
+ * @brief One block, in the domains a handle names things in, and how to cut it.
  *
- * A queued position is named in monotonic beats; how far into its material a
- * run has got is measured in monotonic seconds. Neither is derived from the
- * other (#2324).
+ * A queued position is named in monotonic beats; where a run began and how far
+ * it has got are counted in samples, which is the coordinate no wrap, locate or
+ * tempo edit moves (#2336). The timeline faces are here because a piece of a
+ * block is reported in them.
  *
  * The map comes with it, because naming an instant inside the block is the one
- * thing a handle does that the four ranges cannot answer between them. Reading
- * an instant off each range separately is what @ref BlockInstant exists to stop
- * (#2330); everything here goes through @ref atSample.
+ * thing a handle does that the ranges cannot answer between them. An instant is
+ * a sample and only a sample; every face of it is derived here, through the map,
+ * which is what stops two faces of one moment disagreeing (#2330).
  */
 struct SyncRange {
     BeatRange timeline;
     BeatRange monotonic;
     SecondsRange seconds;
-    SecondsRange monotonicSeconds;
+
+    /// Where the block sits on the transport's own count.
+    SampleRange monotonicSamples;
 
     /// How many samples the block is, which is what an instant is counted in.
     int numSamples = 0;
+
+    /// What one of those samples is worth. Zero for a block assembled by hand
+    /// that did not say, which then converts through its own two seconds ends.
+    double sampleRate = 0.0;
 
     /// The map the block was cut from, or null for a block assembled by hand,
     /// which is then taken to run at one tempo.
     const TempoMap* tempo = nullptr;
 
+    /// What one sample is worth, stated or taken from the block's own faces.
+    double rate() const {
+        if (sampleRate > 0.0)
+            return sampleRate;
+
+        return seconds.length() > 0.0 ? static_cast<double>(numSamples) / seconds.length() : 0.0;
+    }
+
     /**
-     * @brief The instant @p sample sounds at, in every domain.
+     * @brief The instant @p sample sounds at.
      *
      * An edge rather than an event: one past the end of the block is a legal
-     * answer here, the way it is for RenderContext::sampleForTime, because a
-     * range that runs to the end of the block ends at the sample after the last
-     * one. An event has to land on a sample the block actually has, which is
-     * @ref eventAtMonotonicBeat.
-     *
-     * The seconds faces are exact rather than nearly so: a block runs at one
-     * second per sample rate whatever the tempo is doing, so both of them are
-     * straight lines and not approximations of a curve.
-     *
-     * The beat face is the map's, because the block's own two beat ends are a
-     * straight line and the map between them is not. What is left linear is
-     * monotonic against timeline beats, and that one is exact: what makes the
-     * two differ is a wrap, and a wrap ends a block.
+     * answer here, because a range that runs to the end of the block ends at
+     * the sample after the last one. An event has to land on a sample the block
+     * actually has, which is @ref eventAtMonotonicBeat.
      */
     BlockInstant atSample(int sample) const {
-        BlockInstant at;
-        at.sample = std::clamp(sample, 0, numSamples);
-
-        const auto through =
-            numSamples > 0 ? static_cast<double>(at.sample) / static_cast<double>(numSamples) : 0.0;
-
-        at.timelineSeconds = seconds.start + through * seconds.length();
-        at.monotonicSeconds = monotonicSeconds.start + through * monotonicSeconds.length();
-
-        at.timelineBeat = tempo != nullptr ? tempo->timeToBeat(at.timelineSeconds)
-                                           : timeline.start + through * timeline.length();
-
-        at.monotonicBeat = monotonic.start + (at.timelineBeat - timeline.start);
-        return at;
+        const auto offset = std::clamp(sample, 0, numSamples);
+        return BlockInstant{offset, monotonicSamples.start + SampleDuration{offset}};
     }
 
     /// The instant the block begins on.
     BlockInstant start() const {
         return atSample(0);
+    }
+
+    /**
+     * @brief The moment @p at falls on, in the timeline's seconds.
+     *
+     * Exact rather than nearly so: a block runs at one second per sample rate
+     * whatever the tempo is doing, so this is a straight line and not an
+     * approximation of a curve.
+     */
+    double timeAt(BlockInstant at) const {
+        if (const auto perSecond = rate(); perSecond > 0.0)
+            return seconds.start + (static_cast<double>(at.sample) / perSecond);
+
+        return numSamples > 0
+                   ? seconds.start +
+                         ((static_cast<double>(at.sample) / static_cast<double>(numSamples)) *
+                          seconds.length())
+                   : seconds.start;
+    }
+
+    /**
+     * @brief The timeline beat @p at falls on.
+     *
+     * The map's, because the block's own two beat ends are a straight line and
+     * the map between them is not.
+     */
+    double timelineBeatAt(BlockInstant at) const {
+        if (tempo != nullptr)
+            return tempo->timeToBeat(timeAt(at));
+
+        if (numSamples <= 0)
+            return timeline.start;
+
+        const auto through = static_cast<double>(at.sample) / static_cast<double>(numSamples);
+        return timeline.start + (through * timeline.length());
+    }
+
+    /**
+     * @brief The monotonic beat @p at falls on.
+     *
+     * Off the timeline beat, and exact inside a block: what makes the two
+     * differ is a wrap, and a wrap ends a block.
+     */
+    double monotonicBeatAt(BlockInstant at) const {
+        return monotonic.start + (timelineBeatAt(at) - timeline.start);
     }
 
     /**
@@ -123,15 +161,16 @@ struct SyncRange {
      * not happen, and the faces of the beat it was asked for are the faces of a
      * moment between two samples that nothing plays.
      *
-     * Never one past the end, which is where a beat in the block's last half
-     * sample rounds to. That sample belongs to the next callback, and an event
-     * placed there is written nowhere: a stop would clear its own note state
-     * while its note-offs went to an offset outside the buffer, and the notes
-     * would hang. The block's last sample instead, which is at most one sample
-     * early and is a sample that plays.
+     * Never one past the end, which is where nearest would put a beat in the
+     * block's last half sample. That sample belongs to the next callback, and
+     * an event placed there is written nowhere: a stop would clear its own note
+     * state while its note-offs went to an offset outside the buffer, and the
+     * notes would hang. Floor answers 0 to N-1 for anything inside the block
+     * without a case to clamp away (TimeDomains::eventAt).
      */
     BlockInstant eventAtMonotonicBeat(double beat) const {
-        if (numSamples <= 0 || seconds.empty())
+        const auto perSecond = rate();
+        if (numSamples <= 0 || seconds.empty() || perSecond <= 0.0)
             return start();
 
         const auto timelineBeat = timeline.start + (beat - monotonic.start);
@@ -144,9 +183,31 @@ struct SyncRange {
                                        : ((timelineBeat - timeline.start) / timeline.length()) *
                                              seconds.length());
 
-        const auto through = (at - seconds.start) / seconds.length();
-        const auto sample = static_cast<int>(std::lround(through * numSamples));
-        return atSample(std::min(sample, numSamples - 1));
+        return atSample(eventAt((at - seconds.start) * perSecond, numSamples).value);
+    }
+
+    /// The part of this block up to @p at, which is the half a run was already
+    /// playing when the block ran into something.
+    SyncRange upTo(BlockInstant at) const {
+        return SyncRange{BeatRange{timeline.start, timelineBeatAt(at)},
+                         BeatRange{monotonic.start, monotonicBeatAt(at)},
+                         SecondsRange{seconds.start, timeAt(at)},
+                         SampleRange{monotonicSamples.start, at.monotonic},
+                         at.sample,
+                         sampleRate,
+                         tempo};
+    }
+
+    /// The part from @p at onwards, which is the half whatever happened there
+    /// applies to.
+    SyncRange from(BlockInstant at) const {
+        return SyncRange{BeatRange{timelineBeatAt(at), timeline.end},
+                         BeatRange{monotonicBeatAt(at), monotonic.end},
+                         SecondsRange{timeAt(at), seconds.end},
+                         SampleRange{at.monotonic, monotonicSamples.end},
+                         numSamples - at.sample,
+                         sampleRate,
+                         tempo};
     }
 };
 
@@ -156,10 +217,9 @@ struct BlockPiece {
     BeatRange range;
 
     /// Where the run sounding over this piece began, or nothing. Projected onto
-    /// this block from each monotonic domain, since after a wrap the instant it
-    /// really started on is not in this cycle: either face can sit before the
-    /// block, or before zero.
-    std::optional<RunOrigin> origin;
+    /// this block, since after a wrap the instant it really started on is not
+    /// in this cycle: either face can sit before the block, or before zero.
+    std::optional<MaterialOrigin> origin;
 
     /// Whether the slot sounded over this piece.
     bool playing() const {
@@ -253,9 +313,14 @@ class LaunchHandle {
      */
     void setLooping(std::optional<double> beats);
 
-    /// Move the played position without restarting. Both faces are given
-    /// rather than converted: the caller has the block and therefore has both.
-    void nudge(double beats, double seconds);
+    /**
+     * @brief Move the played position without restarting.
+     *
+     * Both axes are given rather than one converted from the other: a map says
+     * where a beat sits, not how long a run has lasted (#2324). They change
+     * units here and they do not become one number.
+     */
+    void nudge(double beats, SampleDuration samples);
 
     /**
      * @brief Advance over one block and say what it was.
@@ -286,9 +351,11 @@ class LaunchHandle {
     /// The same run in monotonic beats, which is what another handle syncs to.
     std::optional<BeatRange> playedMonotonicRange() const;
 
-    /// The run in monotonic seconds: how long it has been going, which is what
-    /// a source reading a file at its own speed needs.
-    std::optional<SecondsRange> playedMonotonicSecondsRange() const;
+    /// The run on the transport's own count: where it began and how far it has
+    /// got, in the one coordinate a wrap, a locate and a tempo edit all leave
+    /// alone. How long it has been going is this divided by the rate, which is
+    /// what a source reading a file at its own speed needs (#2336).
+    std::optional<SampleRange> playedSampleRange() const;
 
     /// The last completed run, kept after a stop so a follow action can ask
     /// what it followed.
@@ -313,20 +380,74 @@ class LaunchHandle {
     }
 
   private:
+    /**
+     * @brief The run in progress: where it began, and how far it has got.
+     *
+     * One origin rather than one per axis. A run whose faces came from
+     * different instants would put a clip's notes and its samples in different
+     * places, which is what #2330 closed; keeping the sample is what makes the
+     * agreement survive the blocks after the launch as well (#2336).
+     */
+    struct Run {
+        /// Where it began on the transport's count. The durable identity: a
+        /// locate does not move it, a wrap does not take it back, a tempo edit
+        /// does not rescale it, and two runs that began on the same sample
+        /// began together whatever happened to the timeline since.
+        SamplePosition origin;
+
+        /// Where it has been advanced to. The far end of the same axis, so
+        /// elapsed samples is a subtraction and elapsed seconds is that divided
+        /// by the rate, exactly.
+        SamplePosition through;
+
+        /// The monotonic beat the origin sample fell on. Not recoverable from
+        /// the sample afterwards: a map converts a position, and after a wrap
+        /// the origin is not a position on this cycle of the timeline (#2324).
+        double originBeat = 0.0;
+
+        /// The timeline beat it fell on, kept for what @ref playedRange
+        /// reports. Stale after a wrap by construction, which is why nothing
+        /// derives anything from it: the cycle it names has been taken back.
+        double originTimelineBeat = 0.0;
+
+        /// Monotonic beats covered since the origin.
+        double elapsedBeats = 0.0;
+
+        /**
+         * @brief The beat the loop counts from, as it was asked for.
+         *
+         * Not @ref originBeat, and that is the whole of the retrigger fix. A
+         * launch is snapped to the sample it sounds on, and a wrap scheduled
+         * from that snapped beat starts the next interval from a rounded value:
+         * at 48 kHz and 123 bpm a beat is 23,414.634 samples, so a thousand
+         * one-beat retriggers finish about 366 samples late. The schedule
+         * counts from the beat that was asked for and is never re-anchored to
+         * what any wrap landed on, so the error stays under a sample for ever
+         * (#2336).
+         */
+        double scheduleBeat = 0.0;
+
+        /// The rate the origin was counted at. A block arriving at another rate
+        /// re-counts it, so the run keeps the elapsed time it has actually had
+        /// rather than silently changing length.
+        double sampleRate = 0.0;
+    };
+
     struct Pending {
         QueueState state = QueueState::playQueued;
         std::optional<double> position;
 
-        /// Set only by playSynced: the run to join rather than start. All
-        /// three faces, or the handles agree about the bar and not the sample.
-        std::optional<double> syncedTimelineOrigin;
-        std::optional<double> syncedMonotonicOrigin;
-        std::optional<double> syncedMonotonicSecondsOrigin;
+        /// Set only by playSynced: the run to join rather than start. The whole
+        /// of it, or the handles agree about the bar and not the sample.
+        std::optional<Run> synced;
     };
 
-    /// Begin a run at @p at, already @p elapsedBeats and @p elapsedSeconds into
-    /// itself. Non-zero only for a synced launch, which joins a run.
-    void beginRun(const BlockInstant& at, double elapsedBeats = 0.0, double elapsedSeconds = 0.0);
+    /// Begin a run at @p at, scheduled for @p scheduledBeat.
+    void beginRun(const SyncRange& range, const BlockInstant& at, double scheduledBeat);
+
+    /// Join @p other's run, as it stands at @p at.
+    void joinRun(const SyncRange& range, const BlockInstant& at, const Run& other);
+
     void endRun();
 
     /// Carry the current run through @p piece without changing state.
@@ -336,8 +457,19 @@ class LaunchHandle {
     double virtualStart(const SyncRange& piece) const;
     double virtualStartSeconds(const SyncRange& piece) const;
 
+    /// How long the run had been going when @p piece began.
+    double elapsedSecondsAt(const SyncRange& piece) const;
+
+    /// Re-count @p run's origin at @p piece's rate, keeping its elapsed time.
+    static void recountRun(Run& run, const SyncRange& piece);
+
+    /// Follow the device's rate on every run this handle holds: the one it is
+    /// playing, and the one a queued synced launch is waiting to join.
+    void followRate(const SyncRange& piece);
+
     /// Apply whatever the block ran into, at the instant it ran into it.
-    void applyEvent(bool fromPending, const BlockInstant& at);
+    void applyEvent(const SyncRange& range, bool fromPending, const BlockInstant& at,
+                    double scheduledBeat);
 
     /// The advance itself, wrapped so @ref blockStatus is stored in one place.
     SplitStatus advanceOver(const SyncRange& range);
@@ -345,9 +477,7 @@ class LaunchHandle {
     PlayState playState_ = PlayState::stopped;
     std::optional<Pending> pending_;
 
-    std::optional<BeatRange> played_;
-    std::optional<BeatRange> playedMonotonic_;
-    std::optional<SecondsRange> playedMonotonicSeconds_;
+    std::optional<Run> run_;
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;

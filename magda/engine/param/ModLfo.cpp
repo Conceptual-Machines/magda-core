@@ -121,8 +121,21 @@ float laneValueFromRateType(int rateType) {
 
 double modBarPosition(const BlockInfo& block, const ModTiming& timing) {
     if (block.tempo != nullptr) {
-        const auto grid = block.tempo->barsAndBeatsAt(block.beats.start);
-        return grid.bar + grid.beat / std::max(grid.numerator, 1);
+        // The bar grid the block renders in, which is the section's rather than
+        // the one its first beat happens to sit in (BlockInfo::sectionBeat).
+        // A signature the epsilon swallowed would otherwise run this whole
+        // block at the old bar fraction instead of restarting on the new bar:
+        // four four to three four at the boundary is a bar-rate LFO a quarter
+        // of a cycle out for the length of the block.
+        const auto inside = block.sectionBeat();
+        const auto grid = block.tempo->barsAndBeatsAt(inside);
+        const auto barBeats = 4.0 * grid.numerator / std::max(1, grid.denominator);
+
+        // Back to the block's own first sample, under that grid. The phase is
+        // the value the block opens on, and the section is only what says how
+        // long a bar is there.
+        const auto atSectionBeat = grid.bar + (grid.beat / std::max(grid.numerator, 1));
+        return atSectionBeat - ((inside - block.beats.start) / std::max(barBeats, 1.0e-6));
     }
 
     const auto barBeats = 4.0 * timing.numerator / timing.denominator;
@@ -136,9 +149,13 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // The map where there is one. A block assembled by hand carries none, and
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
+    //
+    // Asked about the section the block renders in rather than about its first
+    // beat, which is not reliably in it (BlockInfo::sectionBeat).
     if (block.tempo != nullptr) {
-        const auto signature = block.tempo->barsAndBeatsAt(block.beats.start);
-        timing.bpm = block.tempo->bpmAt(block.beats.start);
+        const auto inside = block.sectionBeat();
+        const auto signature = block.tempo->barsAndBeatsAt(inside);
+        timing.bpm = block.tempo->bpmAt(inside);
         timing.numerator = signature.numerator;
         timing.denominator = signature.denominator;
     }

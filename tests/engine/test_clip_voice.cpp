@@ -169,6 +169,10 @@ SnapshotSpan blocks(int firstBlock, int lastBlock) {
 BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + kBlockSize}};
     block.playing = true;
     block.seconds.start = startSeconds;
     block.seconds.end = startSeconds + kBlockSize / kSampleRate;
