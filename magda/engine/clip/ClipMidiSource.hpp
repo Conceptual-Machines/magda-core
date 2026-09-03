@@ -106,6 +106,23 @@ class ClipMidiSource final : public EngineMidiSource {
         return overflowed_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Blocks that rendered nothing because the snapshot was stale.
+     *
+     * A snapshot carries the fingerprint of the tempo map its seconds were
+     * derived through. One that is not the transport's was compiled against a
+     * tempo that has since changed, and playing it would put clips somewhere
+     * the transport is not.
+     *
+     * Zero is the only right answer, and reaching it is the publish's job
+     * rather than this one's: the map and the snapshot compiled for it are
+     * meant to swap together (#2337). Non-zero says they did not, which is a
+     * publish-ordering bug wearing the costume of an audio dropout.
+     */
+    int staleSnapshots() const {
+        return staleSnapshots_.load(std::memory_order_relaxed);
+    }
+
   private:
     /// One note owed an off that would not fit in the block that owed it.
     struct OwedNote {
@@ -212,6 +229,7 @@ class ClipMidiSource final : public EngineMidiSource {
 
     std::atomic<int> dropped_{0};
     std::atomic<int> overflowed_{0};
+    std::atomic<int> staleSnapshots_{0};
 };
 
 }  // namespace magda::engine
