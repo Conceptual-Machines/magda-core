@@ -120,6 +120,24 @@ int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction dire
 
     running_ = true;
 
+    // A pattern can shrink under a running clock - the faceplate's STEPS slider
+    // is a live edit - and the position has to come back inside it. The cursor
+    // was emitted unwrapped, so shortening a 32-step pattern to 8 while playing
+    // step 20 played step 20, a step the user had just hidden; ping-pong then
+    // walked DOWN through 19, 18, ... and kept sounding hidden steps until the
+    // index happened to fall inside the pattern again. Steps already queued
+    // carry indices from before the shrink and wrap the same way, so a held
+    // tick plays the step the shortened pattern has in that position (#2335).
+    if (sequenceStep_ >= numSteps)
+        sequenceStep_ %= numSteps;
+    if (cycleStep_ >= numSteps)
+        cycleStep_ %= numSteps;
+    for (int i = 0; i < pendingCount_; ++i) {
+        auto& pending = pending_[static_cast<size_t>(i)];
+        if (pending.stepIndex >= numSteps)
+            pending.stepIndex %= numSteps;
+    }
+
     // --- Beat positions for this block, as the caller's engine resolved them ---
     double blockStartBeat = timing.startBeat;
     double blockEndBeat = timing.endBeat;

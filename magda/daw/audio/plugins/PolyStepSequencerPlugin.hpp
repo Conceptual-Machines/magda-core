@@ -140,12 +140,6 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     // --- Audio-thread state ---
     bool needsAllNotesOff_ = false;
 
-    /// Incoming MIDI held aside for the block, sized to the whole input bound
-    /// rather than a convenient number (see StepSequencerPlugin, #2335).
-    static constexpr int kMaxThruMessages = 512;
-    std::array<juce::MidiMessage, kMaxThruMessages> thruMessages_{};
-    std::array<std::uint32_t, kMaxThruMessages> thruSources_{};
-
     // --- Step recording state ---
     std::atomic<bool> stepRecording_{false};
     int recordHeldCount_ = 0;  // notes held during recording (audio thread)

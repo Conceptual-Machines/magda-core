@@ -143,6 +143,8 @@ set(TEST_SOURCES
     devices/test_step_pattern_commands.cpp
     # Handing a published pattern to the audio thread a block at a time (#2335)
     midi/test_published_pattern.cpp
+    # A step sequencer's MIDI thru passes a dense block through whole (#2335)
+    midi/test_step_sequencer_midi_thru.cpp
     utilities/test_string_table.cpp
     # Guards the juce::String(const char*) ASCII-decode trap (#1858 follow-up)
     utilities/test_non_ascii_string_literals.cpp

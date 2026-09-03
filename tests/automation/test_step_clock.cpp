@@ -549,3 +549,25 @@ TEST_CASE("StepClock holds every step a coarse quantize pushes past the block",
     for (int step = 16; step < 32; ++step)
         REQUIRE(std::find(carried.begin(), carried.end(), step) != carried.end());
 }
+
+TEST_CASE("StepClock brings its position back inside a pattern that shrank",
+          "[stepclock][process]") {
+    // Regression for #2335. The cursor was emitted unwrapped, so shortening a
+    // pattern under a running clock kept playing the steps the user had just
+    // hidden - and in ping-pong the turnaround then walked down through the
+    // rest of them rather than back into the pattern.
+    for (auto direction : {StepClock::Direction::Forward, StepClock::Direction::Reverse,
+                           StepClock::Direction::PingPong}) {
+        ClockRunner runner;
+        // Four beats of sixteenths is sixteen steps, so the cursor is well past
+        // the eight the pattern is about to become.
+        runner.run(runner.blocksFor(4.0), StepClock::Rate::Sixteenth, direction, 32);
+        const size_t beforeShrink = runner.events.size();
+        REQUIRE(beforeShrink > 8);
+
+        runner.run(runner.blocksFor(4.0), StepClock::Rate::Sixteenth, direction, 8);
+        REQUIRE(runner.events.size() > beforeShrink);
+        for (size_t i = beforeShrink; i < runner.events.size(); ++i)
+            REQUIRE(runner.events[i].stepIndex < 8);
+    }
+}

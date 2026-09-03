@@ -344,16 +344,23 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
         }
     }
 
-    // --- Hold incoming MIDI aside, so the sequencer owns the buffer ---
-    int thruCount = 0;
-    if (midiThru.load(std::memory_order_relaxed)) {
-        thruCount = std::min(midi.size(), kMaxThruMessages);
-        for (int i = 0; i < thruCount; ++i) {
-            thruMessages_[static_cast<size_t>(i)] = midi.message(i);
-            thruSources_[static_cast<size_t>(i)] = midi.sourceId(i);
-        }
-    }
-    midi.clear();
+    // --- Incoming MIDI: passed through in place, or swallowed here ---
+    //
+    // Passing it through means LEAVING it in the buffer. Holding it aside would
+    // mean a fixed-size store, and a device cannot size one: a MIDI port's
+    // bound is bytes rather than events, the cheapest message is one byte of
+    // data, and a device fed by a merge is fed the sum of several producers -
+    // the executor has to tell EngineMagdaDevice its real bound for exactly
+    // this reason. Any event count is therefore a count some legal block
+    // exceeds, and the tail it dropped could be the note-off that leaves the
+    // instrument downstream holding a note (#2335).
+    //
+    // The sequencer's own notes are appended after whatever was already there.
+    // The buffer was never in timestamp order anyway - it used to end with the
+    // incoming events, whose positions are their own - so what reads it reads
+    // the timestamps.
+    if (!midiThru.load(std::memory_order_relaxed))
+        midi.clear();
 
     // Clear anything a re-prepared device left sounding under it.
     if (needsAllNotesOff_) {
@@ -389,12 +396,6 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
         setMidiOutDisplay(sequencer_.soundingNote(), sequencer_.soundingVelocity());
     else
         clearMidiOutDisplay();
-
-    // Incoming MIDI still reaches the instrument downstream.
-    for (int i = 0; i < thruCount; ++i) {
-        midi.addEvent(
-            {thruMessages_[static_cast<size_t>(i)], thruSources_[static_cast<size_t>(i)]});
-    }
 }
 
 }  // namespace magda::daw::audio
