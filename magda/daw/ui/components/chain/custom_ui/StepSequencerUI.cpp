@@ -7,6 +7,8 @@ namespace magda::daw::ui {
 
 using SeqPlugin = daw::audio::StepSequencerPlugin;
 
+std::atomic<int> StepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
+
 static const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
 juce::String StepSequencerUI::noteNameShort(int noteNumber) {
@@ -41,7 +43,13 @@ StepSequencerUI::StepSequencerUI() {
     stepsSlider_.onValueChanged = [this](double value) {
         const int steps = juce::jlimit(1, SeqPlugin::MAX_STEPS, juce::roundToInt(value));
         // How many steps play is part of the pattern, so it is a pattern edit.
-        editPattern("Set Step Count", [steps](step_pattern::MonoPattern& p) { p.length = steps; });
+        // A drag writes one on every mouse move, so those coalesce into the one
+        // undo entry the drag deserves rather than ~28 of them; a typed or
+        // clicked value is a single edit and stays discrete (#2335).
+        editPattern(
+            "Set Step Count", [steps](step_pattern::MonoPattern& p) { p.length = steps; },
+            stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
+                                          : magda::StepPatternGesture::Discrete);
         rampCurveDisplay_.setNumTicks(steps);
         // Clamp cycles to num steps
         cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
@@ -49,6 +57,7 @@ StepSequencerUI::StepSequencerUI() {
             cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
         repaint();
     };
+    stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
 
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
@@ -176,10 +185,14 @@ void StepSequencerUI::setSequencer(daw::audio::StepSequencerPlugin* device) {
 }
 
 void StepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    // By paramIndex, not array position: the model's list is in the saved
+    // document's order and need not be complete, so a positional read draws one
+    // slot's value on another's control (#2335).
     const auto display = [&params](int index, float fallback) {
-        return index < static_cast<int>(params.size())
-                   ? params[static_cast<size_t>(index)].currentValue
-                   : fallback;
+        for (const auto& parameter : params)
+            if (parameter.paramIndex == index)
+                return parameter.currentValue;
+        return fallback;
     };
 
     rateSlider_.setValue(static_cast<double>(display(SeqPlugin::kRate, 7.0f)),

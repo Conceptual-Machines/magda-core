@@ -15,6 +15,8 @@ namespace te = tracktion::engine;
 
 using PolySeqPlugin = daw::audio::PolyStepSequencerPlugin;
 
+std::atomic<int> PolyStepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
+
 namespace {
 
 // Drum Grid chain child type (mirrors DrumGridPlugin's private chainTreeId)
@@ -1033,7 +1035,12 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     stepsSlider_.onValueChanged = [this](double value) {
         const int steps = juce::jlimit(1, PolySeqPlugin::MAX_STEPS, juce::roundToInt(value));
         // How many steps play is part of the pattern, so it is a pattern edit.
-        editPattern("Set Step Count", [steps](step_pattern::PolyPattern& p) { p.length = steps; });
+        // A drag coalesces into one undo entry; a typed or clicked value is a
+        // single discrete edit (#2335).
+        editPattern(
+            "Set Step Count", [steps](step_pattern::PolyPattern& p) { p.length = steps; },
+            stepsSlider_.isBeingDragged() ? magda::StepPatternGesture::Continuous
+                                          : magda::StepPatternGesture::Discrete);
         rampCurveDisplay_.setNumTicks(steps);
         // Clamp cycles to num steps
         cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
@@ -1041,6 +1048,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
             cyclesSlider_.setValue(static_cast<double>(steps), juce::sendNotificationSync);
         repaint();
     };
+    stepsSlider_.getSlider().onDragEnd = [this] { endPatternGesture(); };
 
     setupLabel(dirLabel_, "DIR");
     dirCombo_.setLookAndFeel(&SmallComboBoxLookAndFeel::getInstance());
@@ -1084,7 +1092,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v * 100)) + "%"; });
     quantizeSlider_.setValueParser(
         [](const juce::String& t) { return t.replace("%", "").trim().getDoubleValue() / 100.0; });
-    quantizeSlider_.onValueChanged = [this](double value) { settingsEdited(); };
+    quantizeSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Quantize subdivisions (grid resolution, multiples of 16)
     setupLabel(quantizeSubLabel_, "SUB");
@@ -1093,7 +1101,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
         [](double v) { return juce::String(juce::roundToInt(v)); });
     quantizeSubSlider_.setValueParser(
         [](const juce::String& t) { return t.trim().getDoubleValue(); });
-    quantizeSubSlider_.onValueChanged = [this](double value) { settingsEdited(); };
+    quantizeSubSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // --- Ramp curve (time warp) ---
     setupLabel(rampLabel_, "TIME BEND");
@@ -1134,7 +1142,7 @@ PolyStepSequencerUI::PolyStepSequencerUI() {
     setupSlider(cyclesSlider_, 1.0, static_cast<double>(PolySeqPlugin::MAX_STEPS), 1.0);
     cyclesSlider_.setValueFormatter([](double v) { return juce::String(juce::roundToInt(v)); });
     cyclesSlider_.setValueParser([](const juce::String& t) { return t.getDoubleValue(); });
-    cyclesSlider_.onValueChanged = [this](double value) { settingsEdited(); };
+    cyclesSlider_.onValueChanged = [this](double) { settingsEdited(); };
 
     // Hard angle toggle (right-click on control point)
     rampCurveDisplay_.onHardAngleChanged = [this](bool hardAngle) {
@@ -1197,10 +1205,14 @@ void PolyStepSequencerUI::setDevicePath(const magda::ChainNodePath& devicePath) 
 }
 
 void PolyStepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInfo>& params) {
+    // By paramIndex, not array position: the model's list is in the saved
+    // document's order and need not be complete, so a positional read draws one
+    // slot's value on another's control (#2335).
     const auto display = [&params](int index, float fallback) {
-        return index < static_cast<int>(params.size())
-                   ? params[static_cast<size_t>(index)].currentValue
-                   : fallback;
+        for (const auto& parameter : params)
+            if (parameter.paramIndex == index)
+                return parameter.currentValue;
+        return fallback;
     };
 
     rateSlider_.setValue(static_cast<double>(display(PolySeqPlugin::kRate, 7.0f)),
@@ -1626,6 +1638,10 @@ void PolyStepSequencerUI::mouseDrag(const juce::MouseEvent& e) {
 }
 
 void PolyStepSequencerUI::mouseUp(const juce::MouseEvent&) {
+    // The drag is over, so the next one starts its own undo entry rather than
+    // merging into the run this one built (#2335).
+    if (activeDragLane_ != DragLane::None)
+        endPatternGesture();
     activeDragLane_ = DragLane::None;
 }
 

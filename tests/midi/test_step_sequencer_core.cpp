@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstddef>
@@ -81,6 +82,18 @@ template <typename SequencerT, typename PatternT, typename ParamsT> struct Runne
                                                      .numSamples = kBlockSamples};
             sequencer.processBlock(timing, pattern, params, recorder);
             beat += kBeatsPerBlock;
+            recorder.blockStart += kBlockSeconds;
+        }
+    }
+
+    /// Blocks the transport still reports as playing but that advance no
+    /// musical time - a held playhead, a zero-advance render block, a stalled
+    /// tempo map. The clock emits nothing for any of them.
+    void stall(int blocks, const PatternT& pattern, const ParamsT& params) {
+        for (int i = 0; i < blocks; ++i) {
+            const seq::StepClock::BlockTiming timing{
+                .startBeat = beat, .endBeat = beat, .isPlaying = true, .numSamples = kBlockSamples};
+            sequencer.processBlock(timing, pattern, params, recorder);
             recorder.blockStart += kBlockSeconds;
         }
     }
@@ -435,4 +448,107 @@ TEST_CASE("PolyStepSequencer releases its chord when the transport stops", "[seq
     REQUIRE(notesAreBalanced(runner.recorder.played));
     REQUIRE(runner.sequencer.soundingNote() == -1);
     REQUIRE(runner.sequencer.currentStep() == -1);
+}
+
+// ============================================================================
+// Ties: which step is "next", and how long a tie may hold (#2335)
+// ============================================================================
+
+TEST_CASE("MonoStepSequencer reads the tie on the step reverse plays next", "[sequencer][mono]") {
+    // Regression for #2335. The gate look-ahead asked whether stepIndex + 1
+    // ties, which is only the next step going forwards. Reverse plays 0, 3, 2,
+    // 1, so the note on step 0 has to survive as far as step 3 - and it was
+    // being cut at the gate length instead, leaving step 3's tie with nothing
+    // to hold and retriggering its own note.
+    auto pattern = fourNotePattern();
+    pattern.steps[3].tie = true;
+
+    auto params = monoParams();
+    params.direction = seq::StepClock::Direction::Reverse;
+
+    MonoRunner runner;
+    runner.run(blocksFor(1.0), pattern, params);
+
+    // 60 is held through the tie on step 3, so steps 2 and 1 are the only
+    // other notes struck. Before the fix 65 was retriggered between them.
+    REQUIRE(runner.recorder.noteOnNumbers() == std::vector<int>{60, 64, 62});
+    REQUIRE(notesAreBalanced(runner.recorder.played));
+}
+
+TEST_CASE("PolyStepSequencer reads the tie on the step reverse plays next", "[sequencer][poly]") {
+    // The mono engine's case, on the chord voice.
+    seq::PolyPattern pattern;
+    pattern.length = 4;
+    const int notes[] = {60, 62, 64, 65};
+    for (int i = 0; i < 4; ++i) {
+        auto& step = pattern.steps[static_cast<size_t>(i)];
+        step.gate = true;
+        step.noteCount = 1;
+        step.notes[0] = {.noteNumber = notes[i]};
+    }
+    pattern.steps[3].tie = true;
+
+    auto params = polyParams();
+    params.direction = seq::StepClock::Direction::Reverse;
+
+    PolyRunner runner;
+    runner.run(blocksFor(1.0), pattern, params);
+
+    REQUIRE(runner.recorder.noteOnNumbers() == std::vector<int>{60, 64, 62});
+    REQUIRE(notesAreBalanced(runner.recorder.played));
+}
+
+TEST_CASE("PolyStepSequencer treats a tie with no gate as the rest it is", "[sequencer][poly]") {
+    // Regression for #2335. The gate look-ahead checked `.tie` alone while the
+    // scheduled release checked `.tie && .gate`, so a muted tie stretched the
+    // chord to a full step and was then cut by the rest anyway - the two paths
+    // disagreeing about the same step for no audible gain.
+    auto pattern = chordPattern();
+    pattern.steps[1].tie = true;
+    pattern.steps[1].gate = false;
+
+    PolyRunner runner;
+    runner.run(blocksFor(0.5), pattern, polyParams());
+
+    const auto& played = runner.recorder.played;
+    const auto firstOff = std::find_if(played.begin(), played.end(),
+                                       [](const Played& event) { return !event.isNoteOn; });
+    REQUIRE(firstOff != played.end());
+
+    // Half of a sixteenth at 120 bpm is 0.0625 s. A full step would be 0.125.
+    REQUIRE(firstOff->time == Approx(0.0625).margin(0.02));
+}
+
+TEST_CASE("MonoStepSequencer releases a tied note when the clock stops emitting",
+          "[sequencer][mono]") {
+    // Regression for #2335. A tie suspends the stuck-note guard, because a tie
+    // is deliberately a note with no release scheduled. The suspension was
+    // permanent: with the transport still reporting playing but the playhead
+    // held, no step ever arrived to end the tie and the note sounded for ever.
+    auto pattern = fourNotePattern();
+    pattern.steps[1].tie = true;
+
+    MonoRunner runner;
+    // Far enough for step 1's tie to take hold, and no further.
+    runner.run(blocksFor(0.4), pattern, monoParams());
+    REQUIRE(runner.sequencer.soundingNote() >= 0);
+
+    // A few steps' worth of stalled blocks, then the guard reclaims the note.
+    runner.stall(200, pattern, monoParams());
+    REQUIRE(runner.sequencer.soundingNote() == -1);
+    REQUIRE(notesAreBalanced(runner.recorder.played));
+}
+
+TEST_CASE("PolyStepSequencer releases a tied chord when the clock stops emitting",
+          "[sequencer][poly]") {
+    auto pattern = chordPattern();
+    pattern.steps[1].tie = true;
+
+    PolyRunner runner;
+    runner.run(blocksFor(0.4), pattern, polyParams());
+    REQUIRE(runner.sequencer.soundingNote() >= 0);
+
+    runner.stall(200, pattern, polyParams());
+    REQUIRE(runner.sequencer.soundingNote() == -1);
+    REQUIRE(notesAreBalanced(runner.recorder.played));
 }

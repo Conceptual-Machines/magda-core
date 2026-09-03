@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <atomic>
 #include <functional>
 #include <vector>
 
@@ -72,6 +73,14 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
     std::function<void(const juce::String& description,
                        std::function<void(step_pattern::PolyPattern&)>, magda::StepPatternGesture)>
         onPatternEdited;
+
+    /// Which drag the continuous edits - the velocity and probability lanes,
+    /// the step-count slider - currently belong to. Bumped when a drag ends, so
+    /// consecutive gestures are separate undo steps rather than one merged run
+    /// (#2335, and DrumGridUI::getFaderGesture for the same idea).
+    int patternGesture() const {
+        return patternGesture_;
+    }
 
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
@@ -178,6 +187,17 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
     // Lane being drag-edited (velocity / probability bars)
     enum class DragLane { None, Velocity, Probability };
     DragLane activeDragLane_ = DragLane::None;
+
+    // Starts above kNoStepPatternGesture and never repeats within a session,
+    // so a faceplate rebuilt over the same device cannot reuse a token the
+    // command still on top of the undo stack is carrying.
+    static std::atomic<int> nextPatternGesture_;
+    int patternGesture_ = nextPatternGesture_.fetch_add(1);
+
+    /// End the current continuous gesture, so the next one is its own undo.
+    void endPatternGesture() {
+        patternGesture_ = nextPatternGesture_.fetch_add(1);
+    }
 
     // --- Layout constants ---
     static constexpr int CONTROL_ROW_HEIGHT = 22;

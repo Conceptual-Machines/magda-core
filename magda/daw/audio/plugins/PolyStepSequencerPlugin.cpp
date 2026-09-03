@@ -165,7 +165,7 @@ void PolyStepSequencerPlugin::reset() {
 // =============================================================================
 
 sequencer::PolyPattern PolyStepSequencerPlugin::pattern() const {
-    return patternSlots_[static_cast<size_t>(livePattern_.load(std::memory_order_acquire))];
+    return published_.current();
 }
 
 void PolyStepSequencerPlugin::flushState(juce::ValueTree& state) {
@@ -263,10 +263,7 @@ void PolyStepSequencerPlugin::restoreState(const juce::ValueTree& state) {
         }
     }
 
-    // Fill the slot the audio thread is not reading, then hand it over.
-    const int next = 1 - livePattern_.load(std::memory_order_relaxed);
-    patternSlots_[static_cast<size_t>(next)] = parsed;
-    livePattern_.store(next, std::memory_order_release);
+    published_.publish(parsed);
 }
 
 // =============================================================================
@@ -302,8 +299,16 @@ void PolyStepSequencerPlugin::process(DeviceProcessContext& context) {
         return;
 
     auto& midi = *context.midi;
-    const auto& live =
-        patternSlots_[static_cast<size_t>(livePattern_.load(std::memory_order_acquire))];
+
+    // Take the published pattern for the length of this block: a publish
+    // waiting on the message thread cannot touch this slot until the hold goes
+    // out of scope, so the reference stays valid for the whole call.
+    const sequencer::PublishedPattern<sequencer::PolyPattern>::Hold hold{published_};
+    if (!hold.isValid()) {
+        jassertfalse;  // one audio thread, and it always hands the slot back
+        return;
+    }
+    const auto& live = hold.pattern();
 
     // --- Step recording: a chord fills one step, and releasing it advances ---
     if (stepRecording_.load(std::memory_order_relaxed)) {

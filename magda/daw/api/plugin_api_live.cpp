@@ -42,10 +42,14 @@ std::vector<DeviceInfo> toDeviceInfo(const juce::Array<juce::PluginDescription>&
 
 /// A device's parameter in its display domain, or @p fallback when the model
 /// has no entry for that slot yet.
+///
+/// By paramIndex, never by array position: DeviceInfo::parameters is built in
+/// the saved document's order and a migration can drop an entry, so the two
+/// part company and a positional read hands back a neighbouring slot's value
+/// (DeviceInfo::findParameterByIndex, #2335).
 float deviceParameterValue(const DeviceInfo& device, int index, float fallback) {
-    if (index < 0 || index >= static_cast<int>(device.parameters.size()))
-        return fallback;
-    return device.parameters[static_cast<size_t>(index)].currentValue;
+    const auto* parameter = device.findParameterByIndex(index);
+    return parameter != nullptr ? parameter->currentValue : fallback;
 }
 
 AudioBridge* getAudioBridge() {
@@ -226,29 +230,37 @@ juce::String PluginApiLive::applyStepSequencerPattern(const ChainNodePath& path,
         trackManager.setDeviceParameterValue(path, Seq::kGateLength, pattern.gateLength);
 
     int stepsWritten = 0;
-    editMonoStepPattern(path, "Apply Step Pattern", [&](step_pattern::MonoPattern& target) {
-        if (pattern.numSteps >= 1)
-            target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
+    const bool committed =
+        editMonoStepPattern(path, "Apply Step Pattern", [&](step_pattern::MonoPattern& target) {
+            if (pattern.numSteps >= 1)
+                target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
 
-        // The incoming pattern is the whole pattern: steps it does not mention
-        // are rests, not leftovers from what was there before.
-        const int playing = target.playingLength();
-        for (int i = 0; i < playing; ++i)
-            target.steps[static_cast<size_t>(i)] = Seq::Step{};
+            // The incoming pattern is the whole pattern: steps it does not mention
+            // are rests, not leftovers from what was there before.
+            const int playing = target.playingLength();
+            for (int i = 0; i < playing; ++i)
+                target.steps[static_cast<size_t>(i)] = Seq::Step{};
 
-        for (const auto& step : pattern.steps) {
-            if (step.index < 0 || step.index >= Seq::MAX_STEPS)
-                continue;
-            auto& written = target.steps[static_cast<size_t>(step.index)];
-            written.noteNumber = juce::jlimit(0, 127, step.noteNumber);
-            written.octaveShift = juce::jlimit(-2, 2, step.octaveShift);
-            written.gate = step.gate;
-            written.accent = step.accent;
-            written.glide = step.glide;
-            written.tie = step.tie;
-            ++stepsWritten;
-        }
-    });
+            for (const auto& step : pattern.steps) {
+                if (step.index < 0 || step.index >= Seq::MAX_STEPS)
+                    continue;
+                auto& written = target.steps[static_cast<size_t>(step.index)];
+                written.noteNumber = juce::jlimit(0, 127, step.noteNumber);
+                written.octaveShift = juce::jlimit(-2, 2, step.octaveShift);
+                written.gate = step.gate;
+                written.accent = step.accent;
+                written.glide = step.glide;
+                written.tie = step.tie;
+                ++stepsWritten;
+            }
+        });
+
+    // The lambda only runs when the model will accept the edit, so nothing
+    // written and no commit means the write was refused - a state document
+    // this build cannot rewrite, say. Reporting that as a success left the
+    // agent believing a pattern had landed that never did (#2335).
+    if (!committed && stepsWritten == 0)
+        return "(could not write the pattern to " + device->name + ")";
 
     if (pattern.description.isNotEmpty())
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);
@@ -273,37 +285,42 @@ juce::String PluginApiLive::applyPolySequencerPattern(const ChainNodePath& path,
 
     int stepsWritten = 0;
     int notesWritten = 0;
-    editPolyStepPattern(path, "Apply Poly Step Pattern", [&](step_pattern::PolyPattern& target) {
-        if (pattern.numSteps >= 1)
-            target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
+    const bool committed = editPolyStepPattern(
+        path, "Apply Poly Step Pattern", [&](step_pattern::PolyPattern& target) {
+            if (pattern.numSteps >= 1)
+                target.length = juce::jlimit(1, Seq::MAX_STEPS, pattern.numSteps);
 
-        // The incoming pattern is the whole pattern: steps it does not mention
-        // are rests, not leftovers from what was there before.
-        const int playing = target.playingLength();
-        for (int i = 0; i < playing; ++i)
-            target.steps[static_cast<size_t>(i)] = Seq::Step{};
+            // The incoming pattern is the whole pattern: steps it does not mention
+            // are rests, not leftovers from what was there before.
+            const int playing = target.playingLength();
+            for (int i = 0; i < playing; ++i)
+                target.steps[static_cast<size_t>(i)] = Seq::Step{};
 
-        for (const auto& step : pattern.steps) {
-            if (step.index < 0 || step.index >= Seq::MAX_STEPS)
-                continue;
-            auto& written = target.steps[static_cast<size_t>(step.index)];
-            written.gate = step.gate;
-            written.tie = step.tie;
-            written.probability = juce::jlimit(0.0f, 1.0f, step.probability);
-            written.velocity = juce::jlimit(1, 127, step.velocity);
-            written.noteCount = 0;
-            for (const auto& note : step.notes) {
-                if (written.noteCount >= Seq::MAX_NOTES_PER_STEP)
-                    break;
-                auto& target_note = written.notes[static_cast<size_t>(written.noteCount)];
-                target_note.noteNumber = juce::jlimit(0, 127, note.noteNumber);
-                target_note.velocity = juce::jlimit(0, 127, note.velocityOverride);
-                ++written.noteCount;
-                ++notesWritten;
+            for (const auto& step : pattern.steps) {
+                if (step.index < 0 || step.index >= Seq::MAX_STEPS)
+                    continue;
+                auto& written = target.steps[static_cast<size_t>(step.index)];
+                written.gate = step.gate;
+                written.tie = step.tie;
+                written.probability = juce::jlimit(0.0f, 1.0f, step.probability);
+                written.velocity = juce::jlimit(1, 127, step.velocity);
+                written.noteCount = 0;
+                for (const auto& note : step.notes) {
+                    if (written.noteCount >= Seq::MAX_NOTES_PER_STEP)
+                        break;
+                    auto& target_note = written.notes[static_cast<size_t>(written.noteCount)];
+                    target_note.noteNumber = juce::jlimit(0, 127, note.noteNumber);
+                    target_note.velocity = juce::jlimit(0, 127, note.velocityOverride);
+                    ++written.noteCount;
+                    ++notesWritten;
+                }
+                ++stepsWritten;
             }
-            ++stepsWritten;
-        }
-    });
+        });
+
+    // See applyStepSequencerPattern.
+    if (!committed && stepsWritten == 0)
+        return "(could not write the pattern to " + device->name + ")";
 
     if (pattern.description.isNotEmpty())
         PresetManager::getInstance().setSuggestedPresetName(device->id, pattern.description);

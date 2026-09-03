@@ -9,6 +9,7 @@
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/processors/base/MagdaDeviceProcessor.hpp"
@@ -72,6 +73,7 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         testCaptureShape(*edit);
         testRoundTrip(*edit);
         testModelParametersRestoreThroughWrapper(*edit);
+        testAuthoredStateProjectionLeavesParametersAlone(*edit);
         testNestedDeviceSurvives(*edit);
         testBinaryPropertySurvives(*edit);
         testFutureStateIsNotOverwritten(*edit);
@@ -233,6 +235,82 @@ class DeviceStateSchemaTest final : public juce::UnitTest {
         expect(refreshed != nullptr);
         if (refreshed != nullptr)
             expectWithinAbsoluteError(refreshed->currentValue, 100.0f, 0.001f);
+
+        plugin->deleteFromParent();
+    }
+
+    // An authored-state edit projects the model's document into the running
+    // device (#2317), and that document carries no parameters at all - the
+    // model owns them and seats them itself. The projection therefore has to
+    // leave them alone: treating an absent property as "reset this slot" wiped
+    // every parameter out of the plugin's own state on each pattern edit
+    // (#2335).
+    void testAuthoredStateProjectionLeavesParametersAlone(te::Edit& edit) {
+        beginTest("An authored-state projection leaves the parameters alone");
+
+        auto plugin = createPlugin(edit, audio::StepSequencerPlugin::xmlTypeName);
+        expect(plugin != nullptr);
+        if (plugin == nullptr)
+            return;
+
+        auto* device = ta::deviceFromPlugin<audio::StepSequencerPlugin>(plugin.get());
+        expect(device != nullptr);
+        if (device == nullptr) {
+            plugin->deleteFromParent();
+            return;
+        }
+
+        // Rate to 1/4 and Gate to 30%, well away from their defaults of 1/16
+        // and 80%.
+        const auto setSlot = [&](int slot, const char* id, float displayValue) {
+            auto param = plugin->getAutomatableParameterByID(id);
+            expect(param != nullptr, juce::String("no parameter ") + id);
+            if (param != nullptr)
+                param->setParameterFromHost(magda::ParameterUtils::realToNormalized(
+                                                displayValue, device->parameterInfo(slot)),
+                                            juce::sendNotificationSync);
+        };
+        setSlot(audio::StepSequencerPlugin::kRate, "rate", 1.0f);  // 1/4
+        setSlot(audio::StepSequencerPlugin::kGateLength, "gatelength", 0.3f);
+        expect(plugin->state.hasProperty("rate"));
+        const auto rateBefore = static_cast<float>(plugin->state["rate"]);
+        const auto gateBefore = static_cast<float>(plugin->state["gatelength"]);
+
+        // What a step toggled in the faceplate projects: the authored document
+        // and nothing else.
+        ds::Doc doc;
+        doc.deviceType = audio::StepSequencerPlugin::xmlTypeName;
+        doc.root.props.set(audio::StepSequencerPlugin::SettingIDs::numSteps, 8);
+        auto tree = ta::devicePluginTreeFromState(ds::encode(doc));
+        expect(tree.isValid());
+        plugin->restorePluginStateFromValueTree(tree);
+
+        // The slots the projection said nothing about are still there, and
+        // still hold what the model put in them. Before the fix the properties
+        // were removed outright, so a save or a rebuild from this tree brought
+        // the device back on its factory defaults.
+        expect(plugin->state.hasProperty("rate"), "the projection wiped the rate property");
+        expect(plugin->state.hasProperty("gatelength"),
+               "the projection wiped the gate length property");
+        expectWithinAbsoluteError(static_cast<float>(plugin->state["rate"]), rateBefore, 0.001f);
+        expectWithinAbsoluteError(static_cast<float>(plugin->state["gatelength"]), gateBefore,
+                                  0.001f);
+
+        // The live parameter and the device agree with them.
+        const auto displayOf = [&](int slot, const char* id) {
+            auto param = plugin->getAutomatableParameterByID(id);
+            expect(param != nullptr);
+            return param != nullptr ? magda::ParameterUtils::normalizedToReal(
+                                          param->getCurrentBaseValue(), device->parameterInfo(slot))
+                                    : -1.0f;
+        };
+        expectWithinAbsoluteError(displayOf(audio::StepSequencerPlugin::kRate, "rate"), 1.0f,
+                                  0.01f);
+        expectWithinAbsoluteError(displayOf(audio::StepSequencerPlugin::kGateLength, "gatelength"),
+                                  0.3f, 0.005f);
+
+        // And the authored state DID land.
+        expectEquals(device->pattern().playingLength(), 8);
 
         plugin->deleteFromParent();
     }

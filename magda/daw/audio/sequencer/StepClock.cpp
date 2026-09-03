@@ -204,27 +204,33 @@ int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction dire
     // --- Emit step events within this block ---
     int eventCount = 0;
 
-    // Write one event, clamping a position the block has already passed to its
-    // start rather than losing the step.
+    // The block's last sample, so an event clamped to the block's end still
+    // lands inside it rather than one sample past.
+    const double lastSampleSecs =
+        timing.numSamples > 1 ? static_cast<double>(timing.numSamples - 1) / sampleRate_ : 0.0;
+
+    // Write one event, clamping a position outside the block to its nearest
+    // edge rather than losing the step.
     auto emit = [&](int stepIndex, double beatPosition) {
-        const double clamped = std::max(beatPosition, blockStartBeat);
+        const double clamped = std::clamp(beatPosition, blockStartBeat, blockEndBeat);
         const double frac = (clamped - blockStartBeat) / (blockEndBeat - blockStartBeat);
         events[eventCount] = {.stepIndex = stepIndex,
                               .beatPosition = clamped,
-                              .timeInBlock = frac * blockDurationSecs};
+                              .timeInBlock = std::min(frac * blockDurationSecs, lastSampleSecs)};
         ++eventCount;
     };
 
     // Steps a previous block scheduled past its own end (swing, quantize) fire
-    // in the block that contains them.
+    // in the block that contains them. One that is due here but has no room
+    // left in the caller's buffer stays pending rather than being dropped: the
+    // next block emits it, clamped to its start (#2335).
     int stillPending = 0;
     for (int i = 0; i < pendingCount_; ++i) {
-        const auto& step = pending_[static_cast<size_t>(i)];
-        if (step.beat >= blockEndBeat) {
-            pending_[static_cast<size_t>(stillPending++)] = step;
-        } else if (eventCount < maxEvents) {
+        const auto step = pending_[static_cast<size_t>(i)];
+        if (step.beat < blockEndBeat && eventCount < maxEvents)
             emit(step.stepIndex, step.beat);
-        }
+        else
+            pending_[static_cast<size_t>(stillPending++)] = step;
     }
     pendingCount_ = stillPending;
 
@@ -241,12 +247,16 @@ int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction dire
             swungBeat += (snapped - swungBeat) * static_cast<double>(quantizeAmount);
         }
 
-        if (swungBeat < blockEndBeat) {
+        // A tick swung or quantized past this block's end waits for the block
+        // that contains it. With nowhere left to hold it, emit() clamps it to
+        // this block's end instead - early by less than the offset that pushed
+        // it out, where dropping it would take the step out of the pattern
+        // altogether, which is what this queue exists to prevent (#2335).
+        if (swungBeat >= blockEndBeat && pendingCount_ < kMaxPending)
+            pending_[static_cast<size_t>(pendingCount_++)] = {.stepIndex = sequenceStep_,
+                                                              .beat = swungBeat};
+        else
             emit(sequenceStep_, swungBeat);
-        } else if (pendingCount_ < kMaxPending) {
-            // Swung past this block: hold it for the block that contains it.
-            pending_[static_cast<size_t>(pendingCount_++)] = {sequenceStep_, swungBeat};
-        }
 
         // Advance to next step
         nextStepBeat_ += warpedStepDuration(cycleStep_);

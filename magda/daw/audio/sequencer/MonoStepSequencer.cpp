@@ -14,6 +14,12 @@ constexpr int kMaxStepEventsPerBlock = 16;
 /// stuck-note guard cuts it - about 50 ms at 44.1 kHz and a 512-sample block.
 constexpr int kMaxSilentBlocks = 4;
 
+/// Steps' worth of silence a tie may hold its note through before the
+/// stuck-note guard reclaims it. Generous, because the step that ends the tie
+/// is one step away at the rate the clock is running; bounded, because a clock
+/// that has stopped emitting will never send that step (#2335).
+constexpr int kMaxTieHoldSteps = 4;
+
 /// Note-offs land just before the note-on that replaces them, so a host that
 /// sorts by timestamp cannot reorder them into a stuck note.
 constexpr double kNoteOffLead = 0.0001;
@@ -32,7 +38,7 @@ void MonoStepSequencer::reset(NoteSink* sink) {
     soundingVelocity_ = 0;
     noteOffCountdown_ = 0;
     silentBlockCount_ = 0;
-    heldByTie_ = false;
+    tieHoldCountdown_ = 0;
     currentStep_ = -1;
     clock_.reset();
 }
@@ -44,7 +50,7 @@ void MonoStepSequencer::killNote(NoteSink& sink, double time) {
     soundingNote_ = -1;
     soundingVelocity_ = 0;
     noteOffCountdown_ = 0;
-    heldByTie_ = false;
+    tieHoldCountdown_ = 0;
 }
 
 void MonoStepSequencer::processBlock(const StepClock::BlockTiming& timing,
@@ -143,7 +149,7 @@ void MonoStepSequencer::processBlock(const StepClock::BlockTiming& timing,
         // next step is what releases it.
         if (step.tie && soundingNote_ >= 0) {
             noteOffCountdown_ = 0;
-            heldByTie_ = true;
+            tieHoldCountdown_ = kMaxTieHoldSteps * stepDurationSamples;
             continue;
         }
 
@@ -160,13 +166,22 @@ void MonoStepSequencer::processBlock(const StepClock::BlockTiming& timing,
                            .isNoteOn = true});
         soundingNote_ = noteNumber;
         soundingVelocity_ = velocity;
-        heldByTie_ = false;
+        tieHoldCountdown_ = 0;
 
         // Hold the full step when this one glides into the next, or when the
         // next one ties onto this note; either way the note has to reach it.
-        const auto& nextStep = pattern.step((event.stepIndex + 1) % stepCount);
-        const double gateRatio =
-            (step.glide || nextStep.tie) ? 1.0 : static_cast<double>(gateLength);
+        //
+        // The next step is the one the CLOCK will play next, not stepIndex + 1:
+        // reverse and ping-pong run the pattern in another order, and random
+        // has already drawn its successor (#2335). Within the block that is the
+        // next event; for the last one the clock has advanced to it already.
+        const int nextIndex =
+            (i + 1 < eventCount) ? events[i + 1].stepIndex : clock_.getCurrentStep();
+        const auto& nextStep = pattern.step(nextIndex);
+        // A tie on a step with no gate is a rest, and the countdown branch
+        // above already reads it that way; the two must agree.
+        const bool nextTies = nextStep.tie && nextStep.gate;
+        const double gateRatio = (step.glide || nextTies) ? 1.0 : static_cast<double>(gateLength);
         const int noteOnSample = static_cast<int>(event.timeInBlock * sampleRate_);
         const int gateSamples = static_cast<int>(stepDurationSamples * gateRatio);
         noteOffCountdown_ = gateSamples - (blockSamples - noteOnSample);
@@ -180,15 +195,22 @@ void MonoStepSequencer::processBlock(const StepClock::BlockTiming& timing,
 
     // Stuck-note guard: a note sounding with nothing scheduled to release it
     // and no steps arriving is a note the pattern has forgotten about. A tie
-    // is exactly that shape on purpose, so it is exempt - the step that ends
-    // the tie is what releases the note.
+    // is exactly that shape on purpose, so it holds the guard off - for a few
+    // steps' worth of silence, not for ever, so a clock that has stopped
+    // emitting cannot leave a tied note sounding (#2335).
     if (eventCount > 0) {
         silentBlockCount_ = 0;
-    } else if (soundingNote_ >= 0 && noteOffCountdown_ <= 0 && !heldByTie_) {
-        ++silentBlockCount_;
-        if (silentBlockCount_ > kMaxSilentBlocks) {
-            killNote(sink, 0.0);
-            silentBlockCount_ = 0;
+    } else if (soundingNote_ >= 0 && noteOffCountdown_ <= 0) {
+        if (tieHoldCountdown_ > 0) {
+            tieHoldCountdown_ -= blockSamples;
+            if (tieHoldCountdown_ <= 0)
+                killNote(sink, 0.0);
+        } else {
+            ++silentBlockCount_;
+            if (silentBlockCount_ > kMaxSilentBlocks) {
+                killNote(sink, 0.0);
+                silentBlockCount_ = 0;
+            }
         }
     }
 

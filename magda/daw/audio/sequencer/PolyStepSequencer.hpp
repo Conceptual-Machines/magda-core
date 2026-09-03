@@ -99,9 +99,10 @@ class PolyStepSequencer {
     int soundingVelocity_ = 0;
     int noteOffCountdown_ = 0;  ///< samples until the sounding chord releases
     int silentBlockCount_ = 0;  ///< blocks with no step event, for the stuck-note guard
-    /// A tie is holding the sounding chord deliberately, with no release
-    /// scheduled (see MonoStepSequencer).
-    bool heldByTie_ = false;
+    /// Samples a tie may keep holding the sounding chord while no step
+    /// arrives, bounded so a clock that stops emitting cannot leave the chord
+    /// sounding for ever (see MonoStepSequencer, #2335).
+    int tieHoldCountdown_ = 0;
 
     std::uint32_t rngState_ = 0x9E3779B9U;
 

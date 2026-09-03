@@ -139,6 +139,10 @@ set(TEST_SOURCES
     midi/test_step_sequencer_core.cpp
     # A step pattern in the model's device state document (#2313)
     devices/test_step_pattern_state.cpp
+    # Coalescing a pattern drag into one undo step, and only that drag (#2335)
+    devices/test_step_pattern_commands.cpp
+    # Handing a published pattern to the audio thread a block at a time (#2335)
+    midi/test_published_pattern.cpp
     utilities/test_string_table.cpp
     # Guards the juce::String(const char*) ASCII-decode trap (#1858 follow-up)
     utilities/test_non_ascii_string_literals.cpp

@@ -43,12 +43,26 @@ step_pattern::PolyPattern currentPolyPattern(const ChainNodePath& devicePath);
  */
 enum class StepPatternGesture { Discrete, Continuous };
 
+/**
+ * Which drag a continuous edit belongs to.
+ *
+ * `Continuous` says an edit may coalesce; this says what it may coalesce WITH.
+ * The UndoManager merges adjacent commands with no timeout of its own, so
+ * without an identity two separate drags on the same lane - same device, same
+ * description - folded into one undo entry, and one Ctrl+Z walked back both
+ * (#2335). The faceplate holds a token and bumps it when a drag ends, the way
+ * DrumGridUI does for a pad fader (#2211). `kNoStepPatternGesture` is what a
+ * discrete edit carries, where it means nothing.
+ */
+inline constexpr int kNoStepPatternGesture = 0;
+
 /// Replace a monophonic step sequencer's whole pattern.
 class SetMonoStepPatternCommand : public SnapshotCommand<juce::String> {
   public:
     SetMonoStepPatternCommand(const ChainNodePath& devicePath, step_pattern::MonoPattern pattern,
                               juce::String description,
-                              StepPatternGesture gesture = StepPatternGesture::Discrete);
+                              StepPatternGesture gesture = StepPatternGesture::Discrete,
+                              int gestureId = kNoStepPatternGesture);
 
     juce::String getDescription() const override;
     bool canExecute() const override;
@@ -65,6 +79,7 @@ class SetMonoStepPatternCommand : public SnapshotCommand<juce::String> {
     step_pattern::MonoPattern pattern_;
     juce::String description_;
     StepPatternGesture gesture_;
+    int gestureId_;
 };
 
 /// Replace a polyphonic step sequencer's whole pattern.
@@ -72,7 +87,8 @@ class SetPolyStepPatternCommand : public SnapshotCommand<juce::String> {
   public:
     SetPolyStepPatternCommand(const ChainNodePath& devicePath, step_pattern::PolyPattern pattern,
                               juce::String description,
-                              StepPatternGesture gesture = StepPatternGesture::Discrete);
+                              StepPatternGesture gesture = StepPatternGesture::Discrete,
+                              int gestureId = kNoStepPatternGesture);
 
     juce::String getDescription() const override;
     bool canExecute() const override;
@@ -89,6 +105,7 @@ class SetPolyStepPatternCommand : public SnapshotCommand<juce::String> {
     step_pattern::PolyPattern pattern_;
     juce::String description_;
     StepPatternGesture gesture_;
+    int gestureId_;
 };
 
 /**
@@ -99,10 +116,12 @@ class SetPolyStepPatternCommand : public SnapshotCommand<juce::String> {
  */
 bool editMonoStepPattern(const ChainNodePath& devicePath, const juce::String& description,
                          const std::function<void(step_pattern::MonoPattern&)>& edit,
-                         StepPatternGesture gesture = StepPatternGesture::Discrete);
+                         StepPatternGesture gesture = StepPatternGesture::Discrete,
+                         int gestureId = kNoStepPatternGesture);
 bool editPolyStepPattern(const ChainNodePath& devicePath, const juce::String& description,
                          const std::function<void(step_pattern::PolyPattern&)>& edit,
-                         StepPatternGesture gesture = StepPatternGesture::Discrete);
+                         StepPatternGesture gesture = StepPatternGesture::Discrete,
+                         int gestureId = kNoStepPatternGesture);
 
 /**
  * Replace a sequencer's pattern with a random one, as a single undoable step.

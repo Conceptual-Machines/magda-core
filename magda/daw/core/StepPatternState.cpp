@@ -28,6 +28,13 @@ const juce::Identifier kNoteTree("NOTE");
 const juce::Identifier kNoteNumber("note");
 const juce::Identifier kNoteVelocity("vel");
 
+// device_state::Node::type is a juce::String, so a comparison against an
+// Identifier has to go through one. Held here rather than built per child:
+// every read and every write walks all 32 steps, and the faceplate commits a
+// pattern on every mouse move of a velocity drag (#2335).
+const juce::String kStepTypeName = kStepTree.toString();
+const juce::String kNoteTypeName = kNoteTree.toString();
+
 /// A property of @p node, or @p fallback when it carries none.
 template <typename T>
 T propertyOr(const device_state::Node& node, const juce::Identifier& name, T fallback) {
@@ -47,11 +54,10 @@ int patternLengthOf(const device_state::Doc& doc) {
 /// Drop every `STEP` child, so the pattern being written is the whole pattern.
 void removeStepNodes(device_state::Doc& doc) {
     auto& children = doc.root.children;
-    children.erase(std::remove_if(children.begin(), children.end(),
-                                  [](const device_state::Node& node) {
-                                      return node.type == kStepTree.toString();
-                                  }),
-                   children.end());
+    children.erase(
+        std::remove_if(children.begin(), children.end(),
+                       [](const device_state::Node& node) { return node.type == kStepTypeName; }),
+        children.end());
 }
 
 }  // namespace
@@ -61,7 +67,7 @@ MonoPattern readMono(const device_state::Doc& doc) {
     pattern.length = patternLengthOf(doc);
 
     for (const auto& node : doc.root.children) {
-        if (node.type != kStepTree.toString())
+        if (node.type != kStepTypeName)
             continue;
         const int index = stepIndexOf(node);
         if (index < 0 || index >= seq::kMaxSteps)
@@ -94,7 +100,7 @@ void writeMono(device_state::Doc& doc, const MonoPattern& pattern) {
             continue;
 
         device_state::Node node;
-        node.type = kStepTree.toString();
+        node.type = kStepTypeName;
         node.props.set(kStepIndex, i);
         node.props.set(kStepNote, std::clamp(step.noteNumber, 0, 127));
         node.props.set(kStepOctave, std::clamp(step.octaveShift, -2, 2));
@@ -111,7 +117,7 @@ PolyPattern readPoly(const device_state::Doc& doc) {
     pattern.length = patternLengthOf(doc);
 
     for (const auto& node : doc.root.children) {
-        if (node.type != kStepTree.toString())
+        if (node.type != kStepTypeName)
             continue;
         const int index = stepIndexOf(node);
         if (index < 0 || index >= seq::kMaxSteps)
@@ -125,7 +131,7 @@ PolyPattern readPoly(const device_state::Doc& doc) {
 
         step.noteCount = 0;
         for (const auto& noteNode : node.children) {
-            if (noteNode.type != kNoteTree.toString())
+            if (noteNode.type != kNoteTypeName)
                 continue;
             if (step.noteCount >= seq::kMaxNotesPerStep)
                 break;
@@ -153,7 +159,7 @@ void writePoly(device_state::Doc& doc, const PolyPattern& pattern) {
             continue;
 
         device_state::Node node;
-        node.type = kStepTree.toString();
+        node.type = kStepTypeName;
         node.props.set(kStepIndex, i);
         node.props.set(kStepGate, step.gate);
         node.props.set(kStepTie, step.tie);
@@ -164,7 +170,7 @@ void writePoly(device_state::Doc& doc, const PolyPattern& pattern) {
         for (int n = 0; n < noteCount; ++n) {
             const auto& note = step.notes[static_cast<size_t>(n)];
             device_state::Node noteNode;
-            noteNode.type = kNoteTree.toString();
+            noteNode.type = kNoteTypeName;
             noteNode.props.set(kNoteNumber, std::clamp(note.noteNumber, 0, 127));
             if (note.velocity > 0)
                 noteNode.props.set(kNoteVelocity, std::clamp(note.velocity, 1, 127));

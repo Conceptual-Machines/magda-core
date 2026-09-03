@@ -454,3 +454,98 @@ TEST_CASE("StepClock stops and resets when the transport stops", "[stepclock][pr
     REQUIRE(runner.events.size() == whilePlaying);
     REQUIRE(runner.clock.getCurrentStep() == 0);
 }
+
+// ============================================================================
+// The pending queue — steps held for the block that actually contains them
+// (#2313), and never lost on the way there (#2335)
+// ============================================================================
+
+namespace {
+
+/// Drive the clock over blocks of an arbitrary musical length, with quantize.
+/// Quantize snaps a tick toward a coarse grid, which can push it a long way
+/// past the block that scheduled it - much further than swing's half a step -
+/// so it is how a test builds up several pending steps at once.
+struct QuantizedRunner {
+    static constexpr double kSampleRate = 48000.0;
+    static constexpr int kBlockSamples = 512;
+
+    StepClock clock;
+    double beat = 0.0;
+    std::vector<StepClock::StepEvent> events;
+
+    QuantizedRunner() {
+        clock.setSampleRate(kSampleRate);
+    }
+
+    /// One block spanning @p beats, taking at most @p maxEvents events out.
+    int block(double beats, int numSteps, int quantizeSub, int maxEvents) {
+        StepClock::StepEvent buffer[32];
+        const StepClock::BlockTiming timing{.startBeat = beat,
+                                            .endBeat = beat + beats,
+                                            .isPlaying = true,
+                                            .numSamples = kBlockSamples};
+        const int n = clock.processBlock(timing, StepClock::Rate::Sixteenth,
+                                         StepClock::Direction::Forward, 0.0f, numSteps, buffer,
+                                         maxEvents, 0.0f, 0.0f, 1, false, 1.0f, quantizeSub);
+        for (int e = 0; e < n; ++e)
+            events.push_back(buffer[e]);
+        beat += beats;
+        return n;
+    }
+};
+
+}  // namespace
+
+TEST_CASE("StepClock holds a due step the caller has no room for", "[stepclock][process]") {
+    // Regression for #2335. A pending step whose beat fell inside the block was
+    // emitted when there was room and DROPPED when there was not: the loop's
+    // "keep it pending" branch only covered steps still in the future, so a
+    // full event buffer took the step out of the pattern for good. It now waits
+    // for a block with room, as a step past the block end always did.
+    //
+    // Four sixteenths a cycle is one beat, and a quantize grid of one division
+    // per cycle snaps everything to a whole beat: ticks at 0.5 and 0.75 both
+    // land on beat 1, past a block that ends there, so two steps go pending.
+    QuantizedRunner runner;
+    runner.block(/*beats=*/1.0, /*numSteps=*/4, /*quantizeSub=*/1, /*maxEvents=*/32);
+
+    // Room for one of the two, so step 2 plays and step 3 has to wait.
+    REQUIRE(runner.block(1.0, 4, 1, /*maxEvents=*/1) == 1);
+    REQUIRE(runner.events.back().stepIndex == 2);
+    const size_t afterSqueeze = runner.events.size();
+
+    // Step 3 is still owed, and is the first thing the next block plays.
+    // Before the fix it was gone and this block opened on a fresh tick.
+    REQUIRE(runner.block(1.0, 4, 1, /*maxEvents=*/32) >= 1);
+    REQUIRE(runner.events.size() > afterSqueeze);
+    REQUIRE(runner.events[afterSqueeze].stepIndex == 3);
+}
+
+TEST_CASE("StepClock holds every step a coarse quantize pushes past the block",
+          "[stepclock][process]") {
+    // Regression for #2335. The pending queue was eight entries deep, sized for
+    // swing - which can only push a tick within half a step of the block end,
+    // so at most one at a time. Quantize snaps toward a grid that may be far
+    // coarser than the rate, and a big offline block can push a whole half of
+    // the pattern past its end at once; the ninth onwards were dropped with no
+    // branch to hold them. The queue is now one entry per step.
+    //
+    // 32 sixteenths is an eight-beat cycle, and one grid division per cycle
+    // snaps each tick to the nearer of beat 0 and beat 8: steps 0-15 fire at
+    // the block's start, steps 16-31 all land on its end.
+    QuantizedRunner runner;
+    REQUIRE(runner.block(/*beats=*/8.0, /*numSteps=*/32, /*quantizeSub=*/1, /*maxEvents=*/32) ==
+            16);
+
+    const size_t afterFirst = runner.events.size();
+    runner.block(/*beats=*/0.5, /*numSteps=*/32, /*quantizeSub=*/1, /*maxEvents=*/32);
+
+    std::vector<int> carried;
+    for (size_t i = afterFirst; i < runner.events.size(); ++i)
+        carried.push_back(runner.events[i].stepIndex);
+
+    // All sixteen, not the eight the old queue had room for.
+    for (int step = 16; step < 32; ++step)
+        REQUIRE(std::find(carried.begin(), carried.end(), step) != carried.end());
+}

@@ -7,6 +7,7 @@
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
 #include "sequencer/PolyStepSequencer.hpp"
+#include "sequencer/PublishedPattern.hpp"
 
 namespace magda::daw::audio {
 
@@ -131,16 +132,17 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     // The sequencing engine: clock, chord voice and the tie/probability rules.
     sequencer::PolyStepSequencer sequencer_;
 
-    /// The published pattern, double-buffered (see StepSequencerPlugin).
-    std::array<sequencer::PolyPattern, 2> patternSlots_{};
-    std::atomic<int> livePattern_{0};
+    /// What the model published, handed to the audio thread a block at a time.
+    sequencer::PublishedPattern<sequencer::PolyPattern> published_;
 
     juce::String viewMode_{"keys"};
 
     // --- Audio-thread state ---
     bool needsAllNotesOff_ = false;
 
-    static constexpr int kMaxThruMessages = 64;
+    /// Incoming MIDI held aside for the block, sized to the whole input bound
+    /// rather than a convenient number (see StepSequencerPlugin, #2335).
+    static constexpr int kMaxThruMessages = 512;
     std::array<juce::MidiMessage, kMaxThruMessages> thruMessages_{};
     std::array<std::uint32_t, kMaxThruMessages> thruSources_{};
 

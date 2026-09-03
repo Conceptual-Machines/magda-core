@@ -180,7 +180,7 @@ void StepSequencerPlugin::reset() {
 // =============================================================================
 
 sequencer::MonoPattern StepSequencerPlugin::pattern() const {
-    return patternSlots_[static_cast<size_t>(livePattern_.load(std::memory_order_acquire))];
+    return published_.current();
 }
 
 void StepSequencerPlugin::flushState(juce::ValueTree& state) {
@@ -253,10 +253,7 @@ void StepSequencerPlugin::restoreState(const juce::ValueTree& state) {
         step.tie = child.getProperty(kStepTie, false);
     }
 
-    // Fill the slot the audio thread is not reading, then hand it over.
-    const int next = 1 - livePattern_.load(std::memory_order_relaxed);
-    patternSlots_[static_cast<size_t>(next)] = parsed;
-    livePattern_.store(next, std::memory_order_release);
+    published_.publish(parsed);
 }
 
 // =============================================================================
@@ -291,8 +288,16 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
         return;
 
     auto& midi = *context.midi;
-    const auto& live =
-        patternSlots_[static_cast<size_t>(livePattern_.load(std::memory_order_acquire))];
+
+    // Take the published pattern for the length of this block: a publish
+    // waiting on the message thread cannot touch this slot until the hold goes
+    // out of scope, so the reference stays valid for the whole call.
+    const sequencer::PublishedPattern<sequencer::MonoPattern>::Hold hold{published_};
+    if (!hold.isValid()) {
+        jassertfalse;  // one audio thread, and it always hands the slot back
+        return;
+    }
+    const auto& live = hold.pattern();
 
     // --- Step recording: an incoming note fills the next step ---
     if (stepRecording_.load(std::memory_order_relaxed)) {

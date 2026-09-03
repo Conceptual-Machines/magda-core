@@ -33,10 +33,13 @@ template <typename PatternT> struct SequencerExportState {
 
 /// A device's parameter in its display domain, or @p fallback when the model
 /// has no entry for that slot.
+///
+/// By paramIndex, never by array position - the model's parameter list is in
+/// document order and need not be complete, so a positional read exports the
+/// clip at another slot's value (#2335).
 float parameterOr(const magda::DeviceInfo& device, int index, float fallback) {
-    if (index < 0 || index >= static_cast<int>(device.parameters.size()))
-        return fallback;
-    return device.parameters[static_cast<size_t>(index)].currentValue;
+    const auto* parameter = device.findParameterByIndex(index);
+    return parameter != nullptr ? parameter->currentValue : fallback;
 }
 
 SequencerExportState<step_pattern::MonoPattern> monoStateOf(const magda::ChainNodePath& path) {

@@ -998,7 +998,13 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
             [this](const juce::String& description,
                    std::function<void(magda::step_pattern::PolyPattern&)> edit,
                    magda::StepPatternGesture gesture) {
-                if (magda::editPolyStepPattern(devicePath_, description, edit, gesture) &&
+                // The faceplate's token says which drag a continuous edit
+                // belongs to, so two drags never merge into one undo (#2335).
+                const int gestureId = polyStepSequencerUI_ != nullptr
+                                          ? polyStepSequencerUI_->patternGesture()
+                                          : magda::kNoStepPatternGesture;
+                if (magda::editPolyStepPattern(devicePath_, description, edit, gesture,
+                                               gestureId) &&
                     polyStepSequencerUI_ != nullptr)
                     polyStepSequencerUI_->setPattern(magda::currentPolyPattern(devicePath_));
             };
@@ -1024,7 +1030,12 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
             [this](const juce::String& description,
                    std::function<void(magda::step_pattern::MonoPattern&)> edit,
                    magda::StepPatternGesture gesture) {
-                if (magda::editMonoStepPattern(devicePath_, description, edit, gesture) &&
+                // See the poly sequencer above.
+                const int gestureId = stepSequencerUI_ != nullptr
+                                          ? stepSequencerUI_->patternGesture()
+                                          : magda::kNoStepPatternGesture;
+                if (magda::editMonoStepPattern(devicePath_, description, edit, gesture,
+                                               gestureId) &&
                     stepSequencerUI_ != nullptr) {
                     // Straight back into the faceplate, so a click redraws now
                     // rather than on its next poll of the device.

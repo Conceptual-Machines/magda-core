@@ -7,6 +7,7 @@
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
 #include "sequencer/MonoStepSequencer.hpp"
+#include "sequencer/PublishedPattern.hpp"
 
 namespace magda::daw::audio {
 
@@ -133,11 +134,8 @@ class StepSequencerPlugin : public MidiMagdaDevice {
     // The sequencing engine: clock, voice and the tie/glide/gate rules.
     sequencer::MonoStepSequencer sequencer_;
 
-    /// The published pattern, double-buffered: restoreState() fills the slot
-    /// the audio thread is not reading and then flips the index, so a publish
-    /// never rewrites the pattern mid-block.
-    std::array<sequencer::MonoPattern, 2> patternSlots_{};
-    std::atomic<int> livePattern_{0};
+    /// What the model published, handed to the audio thread a block at a time.
+    sequencer::PublishedPattern<sequencer::MonoPattern> published_;
 
     // --- Audio-thread state ---
     bool needsAllNotesOff_ = false;
@@ -145,7 +143,13 @@ class StepSequencerPlugin : public MidiMagdaDevice {
     /// Incoming MIDI held back while the sequencer writes its own notes, then
     /// appended so it still reaches the instrument downstream. A member so the
     /// block allocates nothing.
-    static constexpr int kMaxThruMessages = 64;
+    ///
+    /// Sized to the whole input bound rather than a convenient number: a MIDI
+    /// port's budget is 4096 bytes and a short message costs nine, so about
+    /// 450 notes and controller changes can reach one block. Truncating below
+    /// that dropped the tail of a dense block silently, and a note-off lost
+    /// that way leaves the instrument downstream holding the note (#2335).
+    static constexpr int kMaxThruMessages = 512;
     std::array<juce::MidiMessage, kMaxThruMessages> thruMessages_{};
     std::array<std::uint32_t, kMaxThruMessages> thruSources_{};
 

@@ -4,6 +4,8 @@
 
 #include <array>
 
+#include "sequencer/StepPattern.hpp"
+
 namespace magda::daw::audio::sequencer {
 
 /**
@@ -153,11 +155,18 @@ class StepClock {
     // simply not emitted, so any swing above a few percent silently dropped
     // half the pattern. They are held here and emitted by the block that
     // actually contains them.
+    //
+    // One entry per step of the longest pattern. Swing alone can only push a
+    // tick within half a step of the block end, but quantize snaps toward a
+    // grid that may be far coarser than the rate, so a big offline block can
+    // hold several ticks at once - and an entry that does not fit here is a
+    // step the pattern loses, which is the defect this queue exists to fix
+    // (#2335).
     struct PendingStep {
         int stepIndex = 0;
         double beat = 0.0;
     };
-    static constexpr int kMaxPending = 8;
+    static constexpr int kMaxPending = kMaxSteps;
     std::array<PendingStep, kMaxPending> pending_{};
     int pendingCount_ = 0;
 

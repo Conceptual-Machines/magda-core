@@ -14,6 +14,10 @@ constexpr int kMaxStepEventsPerBlock = 16;
 /// the stuck-note guard cuts it.
 constexpr int kMaxSilentBlocks = 4;
 
+/// Steps' worth of silence a tie may hold its chord through, as in the mono
+/// engine (#2335).
+constexpr int kMaxTieHoldSteps = 4;
+
 /// Note-offs land just before the note-ons that replace them.
 constexpr double kNoteOffLead = 0.0001;
 
@@ -44,7 +48,7 @@ void PolyStepSequencer::reset(NoteSink* sink) {
     soundingVelocity_ = 0;
     noteOffCountdown_ = 0;
     silentBlockCount_ = 0;
-    heldByTie_ = false;
+    tieHoldCountdown_ = 0;
     currentStep_ = -1;
     clock_.reset();
 }
@@ -58,7 +62,7 @@ void PolyStepSequencer::killAllNotes(NoteSink& sink, double time) {
     soundingCount_ = 0;
     soundingVelocity_ = 0;
     noteOffCountdown_ = 0;
-    heldByTie_ = false;
+    tieHoldCountdown_ = 0;
 }
 
 void PolyStepSequencer::processBlock(const StepClock::BlockTiming& timing,
@@ -145,7 +149,7 @@ void PolyStepSequencer::processBlock(const StepClock::BlockTiming& timing,
         // no roll - the step never decides anything, so it never draws.
         if (step.tie && soundingCount_ > 0) {
             noteOffCountdown_ = 0;
-            heldByTie_ = true;
+            tieHoldCountdown_ = kMaxTieHoldSteps * stepDurationSamples;
             continue;
         }
 
@@ -178,12 +182,16 @@ void PolyStepSequencer::processBlock(const StepClock::BlockTiming& timing,
         }
         soundingCount_ = noteCount;
         soundingVelocity_ = displayVelocity;
-        heldByTie_ = false;
+        tieHoldCountdown_ = 0;
 
-        // Hold the full step when the next one ties onto this chord.
-        const double gateRatio = pattern.step((event.stepIndex + 1) % stepCount).tie
-                                     ? 1.0
-                                     : static_cast<double>(gateLength);
+        // Hold the full step when the next one ties onto this chord - the step
+        // the CLOCK will play next, not stepIndex + 1, and a tie without a gate
+        // is a rest here as it is in the countdown branch above (#2335).
+        const int nextIndex =
+            (i + 1 < eventCount) ? events[i + 1].stepIndex : clock_.getCurrentStep();
+        const auto& nextStep = pattern.step(nextIndex);
+        const double gateRatio =
+            (nextStep.tie && nextStep.gate) ? 1.0 : static_cast<double>(gateLength);
         const int noteOnSample = static_cast<int>(event.timeInBlock * sampleRate_);
         const int gateSamples = static_cast<int>(stepDurationSamples * gateRatio);
         noteOffCountdown_ = gateSamples - (blockSamples - noteOnSample);
@@ -195,13 +203,20 @@ void PolyStepSequencer::processBlock(const StepClock::BlockTiming& timing,
         }
     }
 
+    // The mono engine's stuck-note guard, with the same bounded tie hold.
     if (eventCount > 0) {
         silentBlockCount_ = 0;
-    } else if (soundingCount_ > 0 && noteOffCountdown_ <= 0 && !heldByTie_) {
-        ++silentBlockCount_;
-        if (silentBlockCount_ > kMaxSilentBlocks) {
-            killAllNotes(sink, 0.0);
-            silentBlockCount_ = 0;
+    } else if (soundingCount_ > 0 && noteOffCountdown_ <= 0) {
+        if (tieHoldCountdown_ > 0) {
+            tieHoldCountdown_ -= blockSamples;
+            if (tieHoldCountdown_ <= 0)
+                killAllNotes(sink, 0.0);
+        } else {
+            ++silentBlockCount_;
+            if (silentBlockCount_ > kMaxSilentBlocks) {
+                killAllNotes(sink, 0.0);
+                silentBlockCount_ = 0;
+            }
         }
     }
 

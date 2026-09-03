@@ -91,10 +91,16 @@ class MonoStepSequencer {
     int soundingVelocity_ = 0;
     int noteOffCountdown_ = 0;  ///< samples until the sounding note releases
     int silentBlockCount_ = 0;  ///< blocks with no step event, for the stuck-note guard
-    /// A tie is holding the sounding note deliberately, with no release
-    /// scheduled. Without this the stuck-note guard reads a held tie as a note
-    /// nothing will ever release and cuts it after a few blocks.
-    bool heldByTie_ = false;
+    /// Samples a tie may keep holding the sounding note while no step arrives.
+    ///
+    /// A tie holds deliberately, with no release scheduled, which is exactly
+    /// the shape the stuck-note guard cuts - so a tie has to suspend it. It
+    /// suspends it for a bounded time, not for ever: a clock that stops
+    /// producing events while the transport still reads as playing (a held
+    /// playhead, a zero-advance render block) would otherwise leave the note
+    /// sounding with nothing left to release it (#2335). Re-armed by every tie
+    /// step, so an unbroken run of ties never expires.
+    int tieHoldCountdown_ = 0;
 
     // Timing settings whose change re-anchors the grid, so a change is noticed.
     int prevRate_ = -1;

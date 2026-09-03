@@ -67,11 +67,12 @@ step_pattern::PolyPattern currentPolyPattern(const ChainNodePath& devicePath) {
 SetMonoStepPatternCommand::SetMonoStepPatternCommand(const ChainNodePath& devicePath,
                                                      step_pattern::MonoPattern pattern,
                                                      juce::String description,
-                                                     StepPatternGesture gesture)
+                                                     StepPatternGesture gesture, int gestureId)
     : devicePath_(devicePath),
       pattern_(pattern),
       description_(std::move(description)),
-      gesture_(gesture) {}
+      gesture_(gesture),
+      gestureId_(gestureId) {}
 
 juce::String SetMonoStepPatternCommand::getDescription() const {
     return description_;
@@ -82,8 +83,12 @@ bool SetMonoStepPatternCommand::canExecute() const {
 }
 
 bool SetMonoStepPatternCommand::canMergeWith(const UndoableCommand* other) const {
+    // BOTH gestures, not just the incoming one: a discrete edit that happened
+    // to share a description would otherwise swallow the drag that followed
+    // it. And the same drag, not merely two drags that look alike (#2335).
     const auto* next = dynamic_cast<const SetMonoStepPatternCommand*>(other);
-    return next != nullptr && next->gesture_ == StepPatternGesture::Continuous &&
+    return next != nullptr && gesture_ == StepPatternGesture::Continuous &&
+           next->gesture_ == StepPatternGesture::Continuous && next->gestureId_ == gestureId_ &&
            next->devicePath_ == devicePath_ && next->description_ == description_;
 }
 
@@ -115,11 +120,12 @@ void SetMonoStepPatternCommand::performAction() {
 SetPolyStepPatternCommand::SetPolyStepPatternCommand(const ChainNodePath& devicePath,
                                                      step_pattern::PolyPattern pattern,
                                                      juce::String description,
-                                                     StepPatternGesture gesture)
+                                                     StepPatternGesture gesture, int gestureId)
     : devicePath_(devicePath),
       pattern_(pattern),
       description_(std::move(description)),
-      gesture_(gesture) {}
+      gesture_(gesture),
+      gestureId_(gestureId) {}
 
 juce::String SetPolyStepPatternCommand::getDescription() const {
     return description_;
@@ -130,8 +136,10 @@ bool SetPolyStepPatternCommand::canExecute() const {
 }
 
 bool SetPolyStepPatternCommand::canMergeWith(const UndoableCommand* other) const {
+    // See SetMonoStepPatternCommand::canMergeWith.
     const auto* next = dynamic_cast<const SetPolyStepPatternCommand*>(other);
-    return next != nullptr && next->gesture_ == StepPatternGesture::Continuous &&
+    return next != nullptr && gesture_ == StepPatternGesture::Continuous &&
+           next->gesture_ == StepPatternGesture::Continuous && next->gestureId_ == gestureId_ &&
            next->devicePath_ == devicePath_ && next->description_ == description_;
 }
 
@@ -160,7 +168,7 @@ void SetPolyStepPatternCommand::performAction() {
 
 bool editMonoStepPattern(const ChainNodePath& devicePath, const juce::String& description,
                          const std::function<void(step_pattern::MonoPattern&)>& edit,
-                         StepPatternGesture gesture) {
+                         StepPatternGesture gesture, int gestureId) {
     if (editableSequencer(devicePath, kMonoSequencerId) == nullptr)
         return false;
 
@@ -170,14 +178,14 @@ bool editMonoStepPattern(const ChainNodePath& devicePath, const juce::String& de
     if (after == before)
         return false;
 
-    UndoManager::getInstance().executeCommand(
-        std::make_unique<SetMonoStepPatternCommand>(devicePath, after, description, gesture));
+    UndoManager::getInstance().executeCommand(std::make_unique<SetMonoStepPatternCommand>(
+        devicePath, after, description, gesture, gestureId));
     return true;
 }
 
 bool editPolyStepPattern(const ChainNodePath& devicePath, const juce::String& description,
                          const std::function<void(step_pattern::PolyPattern&)>& edit,
-                         StepPatternGesture gesture) {
+                         StepPatternGesture gesture, int gestureId) {
     if (editableSequencer(devicePath, kPolySequencerId) == nullptr)
         return false;
 
@@ -187,8 +195,8 @@ bool editPolyStepPattern(const ChainNodePath& devicePath, const juce::String& de
     if (after == before)
         return false;
 
-    UndoManager::getInstance().executeCommand(
-        std::make_unique<SetPolyStepPatternCommand>(devicePath, after, description, gesture));
+    UndoManager::getInstance().executeCommand(std::make_unique<SetPolyStepPatternCommand>(
+        devicePath, after, description, gesture, gestureId));
     return true;
 }
 

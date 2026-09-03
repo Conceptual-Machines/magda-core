@@ -346,6 +346,7 @@ set(_magda_neutral_base_device_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/NoteSink.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PolyStepSequencer.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/PublishedPattern.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepClock.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/sequencer/StepPattern.hpp"
