@@ -200,3 +200,33 @@ TEST_CASE("Two beats inside one block both sound", "[engine][transport][click]")
     CHECK(clickStart(output) == 0);
     CHECK(output.getSample(0, static_cast<int>(kSamplesPerBeat) + 1) != 0.0f);
 }
+
+TEST_CASE("The metronome follows a signature change inside one block",
+          "[engine][transport][click][2336]") {
+    // The other thing the tempo-section cut incidentally provides: a block
+    // inside one time signature. The metronome walks the map's own ticks rather
+    // than a grid it worked out from the block's ends, so it does not need one,
+    // and this is the case that says so (#2333).
+    //
+    // The transport does not hand out such a block today. Built by hand, the
+    // assertion holds whatever the clock decides about cutting.
+    Fixture fixture;
+    fixture.tempo = TempoMap({}, {{0.0, 4, 4}, {2.0, 6, 8}});
+
+    constexpr auto kSamples = static_cast<int>(1.5 * kSamplesPerBeat);
+    fixture.output.setSize(2, kSamples);
+    fixture.output.clear();
+
+    fixture.render(blockFrom(1.5, kSamples));
+
+    // The beat at 2, half a beat into the block.
+    const auto first = static_cast<int>(0.5 * kSamplesPerBeat);
+    CHECK(clickStart(fixture.output) == first);
+
+    // And the one at 2.5, which only exists because six eighths to the bar puts
+    // a tick every half beat. Under four four the next tick would be at beat 3,
+    // past the end of the block, and this half of it would be silent.
+    const auto blip = static_cast<int>(0.05 * kSampleRate);
+    CHECK(firstSounding(fixture.output, first + blip) - 1 ==
+          static_cast<int>(1.0 * kSamplesPerBeat));
+}

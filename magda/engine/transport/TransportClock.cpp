@@ -175,10 +175,19 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
         // A block never spans a tempo section, which is the stretch the map is
         // linear over. Not a jump: audio flows straight through a tempo change
-        // and the next segment carries on continuous. The cut is what keeps the
-        // block's own straight lines honest, since everything inside a block is
-        // placed on the line between its two ends, and that line is the map
-        // within a section and a guess across a boundary (TempoMap.hpp).
+        // and the next segment carries on continuous.
+        //
+        // What the cut is for has changed. It arrived to keep the block's own
+        // straight line honest, because everything inside a block was placed on
+        // the line between its two ends; placement goes through the map now, so
+        // that is no longer what pays for it (#2336).
+        //
+        // What it still buys is that a block is one tempo and one signature. A
+        // rate-synced modifier reads a single bpm for the whole block it is
+        // rendering (ModLfo's modTimingFor), and a block spanning a step would
+        // run at the tempo it opened on for the rest of it. The cut is what
+        // makes that reading exact rather than nearly right, and it costs one
+        // extra segment per tempo change (#2333).
         const auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
         if (std::isfinite(boundary)) {
             if (const auto untilBoundary = samplesUntil(tempo, boundary); untilBoundary > 0)

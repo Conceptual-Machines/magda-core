@@ -800,3 +800,36 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
         CHECK(whole.monotonicSeconds() == approx(pieces.monotonicSeconds()));
     }
 }
+
+TEST_CASE("A block is one tempo, which is what a rate-synced modifier reads",
+          "[engine][transport][clock][tempo][2336]") {
+    // Why the section cut stays now that placement goes through the map
+    // (#2333). A modifier synced to the tempo reads one bpm for the whole block
+    // it renders (ModLfo's modTimingFor), and so does anything else that takes
+    // a rate rather than a position: a block spanning a step would run at the
+    // tempo it opened on for the rest of itself.
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.tempo = TempoMap({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
+
+    const auto rendered = advance(clock, snapshot, static_cast<int>(kSampleRate * 2));
+    requireCovers(rendered, static_cast<int>(kSampleRate * 2));
+
+    REQUIRE(rendered.segments.size() > 1);
+
+    for (const auto& segment : rendered.segments) {
+        const auto& block = segment.block;
+
+        // At the last sample as well as the first. The end beat itself is
+        // excluded and can sit a fraction of a sample past the boundary, since
+        // a cut lands on the first sample at or after it; what has to be one
+        // tempo is every sample the block actually renders.
+        const auto last =
+            snapshot.tempo.timeToBeat(block.seconds.start + ((block.numSamples - 1) / kSampleRate));
+
+        const auto opening = snapshot.tempo.bpmAt(block.beats.start);
+        const auto closing = snapshot.tempo.bpmAt(last);
+
+        CHECK(closing == approx(opening));
+    }
+}

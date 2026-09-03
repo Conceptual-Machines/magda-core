@@ -1378,3 +1378,80 @@ TEST_CASE("Offs owed by a full block arrive in the next one", "[engine][clip][mi
 
     CHECK(recorder.hanging().empty());
 }
+
+TEST_CASE("A note inside a ramp is placed where the map puts it", "[engine][clip][midi][2336]") {
+    // The consumer half of #2336's placement rule, and the evidence for #2333.
+    // A ramp is baked into constant-tempo sections, and between two of them the
+    // slope changes as surely as it does at a step: over this one, a beat the
+    // map puts at sample 256 of a block lands at sample 93 on the line between
+    // the block's own two ends.
+    //
+    // The transport does not hand out a block that spans a boundary today,
+    // because it cuts at every one. This block is built by hand so the
+    // assertion holds whatever the clock decides about cutting: what places a
+    // note is the map, not the block's shape.
+    const TempoMap ramp({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
+
+    // Either side of the baked boundary at 0.75, which is where the slope
+    // changes: the map cuts a ramp four ways to the beat.
+    auto clip = makeMidiClip(1, 0.0, 8.0);
+    for (const auto beat : {0.6, 0.7, 0.8})
+        clip.midiNotes.push_back(note(60, beat, 0.02));
+
+    ClipSnapshotFeed feed;
+    const auto snapshot = std::make_shared<const ClipSnapshot>(
+        compileClipSnapshot({ClipLane{kTrack, {clip}}}, {}, ramp, {}));
+    feed.publish(snapshot);
+
+    // Long enough to hold all three notes and to cross that boundary, which is
+    // what makes the block's own line and the map two different answers.
+    const auto from = ramp.beatToTime(0.5);
+    const auto to = ramp.beatToTime(0.85);
+    const auto samples = static_cast<int>(std::lround((to - from) * kSampleRate));
+
+    ClipMidiSource source(kTrack, feed);
+    source.prepare(RenderContext{kSampleRate, samples, 2});
+
+    BlockInfo block;
+    block.numSamples = samples;
+    block.sampleRate = kSampleRate;
+    block.playing = true;
+    block.continuous = true;
+    block.seconds.start = from;
+    block.seconds.end = to;
+    block.beats.start = ramp.timeToBeat(block.seconds.start);
+    block.beats.end = ramp.timeToBeat(block.seconds.end);
+    block.monotonicBeats = block.beats;
+    block.monotonicSeconds = block.seconds;
+    block.tempo = &ramp;
+
+    juce::MidiBuffer buffer;
+    source.render(block, buffer);
+
+    Recorder recorder;
+    recorder.add(0, buffer);
+
+    const auto ons = recorder.noteOns();
+    REQUIRE(ons.size() == 3);
+
+    auto index = std::size_t{0};
+    auto worstOnTheLine = 0.0;
+
+    for (const auto beat : {0.6, 0.7, 0.8}) {
+        const auto exact = (ramp.beatToTime(beat) - block.seconds.start) * kSampleRate;
+
+        // Where the block's own two ends would have put it, which is what the
+        // conversion used to do and what the section cut exists to keep honest.
+        const auto onTheLine =
+            ((beat - block.beats.start) / block.beats.length()) * block.numSamples;
+
+        worstOnTheLine = std::max(worstOnTheLine, std::abs(onTheLine - exact));
+
+        CHECK(std::abs(static_cast<double>(ons[index].sample) - exact) <= 1.0);
+        ++index;
+    }
+
+    // And this is a block where the two answers differ, or the case above
+    // would pass on a block that could not tell them apart.
+    CHECK(worstOnTheLine > 1.0);
+}
