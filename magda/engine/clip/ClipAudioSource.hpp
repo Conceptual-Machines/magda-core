@@ -221,11 +221,6 @@ class ClipAudioSource final : public EngineAudioSource {
     /// as the op: a track sounds one session clip at a time.
     std::optional<int> sessionSilentFrom_;
 
-    /// Whether any of this track's slots was sounding when the last block
-    /// ended. A stop on a block's first sample is reported as a block that was
-    /// never playing, so this is the only thing that can tell the two apart.
-    bool sessionSounded_ = false;
-
     /// The step that leaves behind.
     StopDeClick sessionStop_;
 

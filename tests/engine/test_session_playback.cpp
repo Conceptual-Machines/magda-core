@@ -1071,6 +1071,48 @@ TEST_CASE("One slot handing over to another carries the outgoing one down",
     }
 }
 
+TEST_CASE("A slot swap on a block boundary carries the outgoing one down too",
+          "[engine][clip][session][section]") {
+    // The boundary-aligned version of the swap above. The handle reports an
+    // event on sample zero as a block that was never playing, so the outgoing
+    // slot's stop is invisible in the shape of the split; and the incoming
+    // slot's own first half does report as playing, so a rule reading either
+    // one off beforeEvent gets both of them wrong (#2344 review).
+    SwitchRig rig;
+    rig.giveArrangement(1, 0.0f);
+    rig.giveSlot(2, 400.0, 0.8f, kScene);
+    rig.giveSlot(3, 400.0, -0.3f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(kBlockSize - 1) == Approx(0.8f));
+
+    // Both requests before the same advance, both as soon as possible, so both
+    // events land on the first sample of the next block.
+    rig.handle.stop(std::nullopt);
+    rig.second.play(std::nullopt);
+    rig.render(2);
+
+    SECTION("the outgoing level is carried down from where the last block left it") {
+        CHECK(rig.sessionAt(0) == Approx(0.8f - 0.3f));
+        CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(-0.3f));
+
+        for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.sessionAt(sample) <= rig.sessionAt(sample - 1));
+        }
+    }
+
+    SECTION("so the swap adds no step beyond the incoming clip's own attack") {
+        // Without it the seam jumps 0.8 to -0.3 between two callbacks.
+        for (auto sample = 1; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(std::abs(rig.sessionAt(sample) - rig.sessionAt(sample - 1)) <= 0.3f + 1e-5f);
+        }
+    }
+}
+
 TEST_CASE("A slot sounding right through masks another's stop",
           "[engine][clip][session][section]") {
     // The other side of the same rule. The ramp reads its step off the summed

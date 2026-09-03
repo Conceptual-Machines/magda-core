@@ -129,16 +129,14 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
         if (status.afterEvent)
             play(*status.afterEvent, split, block.numSamples - split);
 
-        // Where this slot stopped sounding, for the ramp that takes the step
-        // out of it. A slot still sounding at the end of the block leaves no
-        // step, and one that stopped in an earlier block has none left here.
-        if (status.beforeEvent.playing() && !status.playingAtEnd())
-            sessionSilentFrom_ = std::max(sessionSilentFrom_.value_or(0), split);
+        // Where this slot stopped sounding, for the ramp that takes the step out
+        // of it. The handle's answer rather than the shape of the split, so a
+        // stop on the block's first sample is the same edge as one half way
+        // through it (LaunchHandle::silencedAt).
+        if (const auto silenced = status.silencedAt())
+            sessionSilentFrom_ = std::max(sessionSilentFrom_.value_or(0), silenced->value);
 
-        soundedThroughout =
-            soundedThroughout || (status.beforeEvent.playing() && status.playingAtEnd());
-
-        sessionSounded_ = sessionSounded_ || status.playingAtEnd();
+        soundedThroughout = soundedThroughout || (status.soundingAtStart && status.playingAtEnd());
     };
 
     forEachSlot(*handles.get(), track, renderSlot);
@@ -150,12 +148,8 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     // Cleared for the block rather than by whatever gathers, because every path
     // through the render can return before the gather does: a stale edge would
-    // de-click a second time, blocks after the stop it belongs to. The same
-    // goes for whether anything sounded, which every early return answers no.
+    // de-click a second time, blocks after the stop it belongs to.
     sessionSilentFrom_.reset();
-
-    const auto soundedLastBlock = sessionSounded_;
-    sessionSounded_ = false;
 
     renderMaterial(block, out);
 
@@ -168,15 +162,6 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             break;
 
         case Section::Session:
-            // A stop landing on this block's first sample. The handle reports
-            // it as a block that was never playing, which is the same
-            // SplitStatus as a slot that stopped long ago, so the edge is only
-            // visible from here: something sounded last block and nothing does
-            // now. The value it steps down from is the one push remembered,
-            // which is what push is for.
-            if (!sessionSilentFrom_ && soundedLastBlock && !sessionSounded_)
-                sessionSilentFrom_ = 0;
-
             if (sessionSilentFrom_) {
                 sessionStop_.begin(out, *sessionSilentFrom_, kSectionDeClickSamples);
             } else {

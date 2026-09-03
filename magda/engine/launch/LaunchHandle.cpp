@@ -171,10 +171,13 @@ std::optional<BeatRange> LaunchHandle::lastPlayedRange() const {
 }
 
 void LaunchHandle::releaseSection() {
-    if (playState_ == PlayState::playing)
-        endRun();
+    // A request rather than a state change, like every other way a slot stops.
+    // The advance is what turns a stop into an edge a source can see and ramp;
+    // a run ended behind their backs is a step nobody is told about, and the
+    // slot would cut off rather than decay (#2344 review). It also replaces a
+    // queued launch, so nothing fires after the track has been handed back.
+    stop(std::nullopt);
 
-    pending_.reset();
     holdsSection_ = false;
 }
 
@@ -283,6 +286,10 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
 
     SplitStatus status;
     status.beforeEvent.range = range.timeline;
+
+    // Before anything below can apply an event and change it. A stop landing on
+    // the first sample leaves no first half to read this off afterwards.
+    status.soundingAtStart = playState_ == PlayState::playing;
 
     // What happens inside this block, in monotonic beats. At most one, and a
     // request always outranks a loop wrap.

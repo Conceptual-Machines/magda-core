@@ -251,10 +251,37 @@ struct SplitStatus {
     /// rather than working the position out a second time and differently.
     BlockInstant event;
 
+    /**
+     * @brief Whether the slot was sounding when the block opened.
+     *
+     * Not the same as @ref beforeEvent playing, and that is the whole of it: an
+     * event at or before the first sample puts the whole block in the new state
+     * and reports no first half, so a slot stopped there looks exactly like one
+     * stopped ten blocks ago. It is still an edge, and this is what the handle
+     * knows about it that nothing downstream can work out (#2344 review).
+     */
+    bool soundingAtStart = false;
+
     /// Whether the slot is sounding when the block ends, which is what decides
     /// whether a stop owes note-offs.
     bool playingAtEnd() const {
         return afterEvent ? afterEvent->playing() : beforeEvent.playing();
+    }
+
+    /**
+     * @brief Where the slot stopped sounding inside this block, if it did.
+     *
+     * The one question a de-click asks, answered in one place because the two
+     * shapes a stop arrives in have the same answer: @ref event is the sample
+     * the block ran into whatever it ran into, whether or not there was a first
+     * half to report. Absent when the slot sounded nothing here, and when it is
+     * still sounding at the end.
+     */
+    std::optional<EdgeSample> silencedAt() const {
+        if (!soundingAtStart || playingAtEnd())
+            return std::nullopt;
+
+        return EdgeSample{std::max(0, event.sample)};
     }
 };
 
@@ -382,8 +409,8 @@ class LaunchHandle {
         return holdsSection_;
     }
 
-    /// Give the track back to its arrangement, stopping this slot at once if it
-    /// is playing. The engine side of Back to Arrangement.
+    /// Give the track back to its arrangement, stopping this slot as soon as
+    /// the next block begins. The engine side of Back to Arrangement.
     void releaseSection();
 
     /**
