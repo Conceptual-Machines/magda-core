@@ -331,8 +331,9 @@ void EngineExternalDevice::writeMidiOut(juce::MidiBuffer& out, int numSamples) c
     // the plan for it (DeviceInfo::midiInThru) rather than asking the plugin.
     //
     // Counted in bytes against what the executor reserved for this port, which
-    // for a plugin handing its input back is that input's bound plus a
-    // producer's worth rather than the flat constant (#2341).
+    // is the plan's figure rather than the flat constant (#2341). A plugin that
+    // did hand its input back would be over it as soon as more than one source
+    // fed the track, and the assertion below is where that shows.
     int bytesWritten = 0;
 
     for (const auto metadata : midi_) {

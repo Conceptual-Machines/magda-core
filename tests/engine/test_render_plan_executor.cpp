@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/RackInfo.hpp"
@@ -1166,6 +1167,56 @@ TEST_CASE("A MIDI-producing device's output reaches the device after it", "[engi
     // The arp replaces the incoming note rather than passing it through, so the
     // instrument sees only what the arp emitted.
     CHECK(harness.outputSample() == approx(72.0f / 127.0f));
+}
+
+TEST_CASE("MIDI thru is the merge behind a device, and it merges once", "[engine][exec][2345]") {
+    // What DeviceInfo::midiInThru turns on, and the only thing it turns on. A
+    // host cannot make a plugin pass its input through -- every JUCE format
+    // replaces the host's buffer with what the plugin declared -- so the plan
+    // offers the raw stream itself, beside the device's output.
+    //
+    // Which is why a device must not do it too. When both did, the toggle
+    // stopped meaning on or off and started meaning once or twice: thru
+    // happened whatever the toggle said, and turning it on added a second copy
+    // of every note (#2345).
+    const auto reaching = [](bool thru) {
+        auto arp = makeEffect(7);
+        arp.deviceType = DeviceType::MIDI;
+        arp.canReceiveMidi = true;
+        arp.producesMidi = true;
+        arp.midiInThru = thru;
+
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(arp));
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(8)));
+
+        Harness harness({track}, makeMaster());
+        ConstantSource audio(0.0f);
+        NoteSource notes(40);
+        ArpDevice arpDevice(72);
+        MidiPositionProbe probe;
+        harness.bindings.clipAudio[1] = &audio;
+        harness.bindings.clipMidi[1] = &notes;
+        harness.bindings.devices[DeviceKey{7}] = &arpDevice;
+        harness.bindings.devices[DeviceKey{8}] = &probe;
+
+        harness.prepareCleanly();
+        harness.render();
+
+        return std::pair{probe.positionsOf(40).size(), probe.positionsOf(72).size()};
+    };
+
+    SECTION("on: the chain's note arrives, exactly once") {
+        const auto [chainNotes, deviceNotes] = reaching(true);
+        CHECK(chainNotes == 1u);
+        CHECK(deviceNotes == 1u);
+    }
+
+    SECTION("off: nothing of the chain's own reaches the device behind it") {
+        const auto [chainNotes, deviceNotes] = reaching(false);
+        CHECK(chainNotes == 0u);
+        CHECK(deviceNotes == 1u);
+    }
 }
 
 TEST_CASE("A merge carries everything that reaches it", "[engine][exec]") {

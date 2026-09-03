@@ -86,7 +86,6 @@ class StepSequencerPlugin : public MidiMagdaDevice {
     // the pattern, and pattern() is where it is read.
     struct SettingIDs {
         static const juce::Identifier numSteps;
-        static const juce::Identifier midiThru;
         static const juce::Identifier rampCycles;
         static const juce::Identifier hardAngle;
         static const juce::Identifier quantize;
@@ -95,7 +94,6 @@ class StepSequencerPlugin : public MidiMagdaDevice {
 
     // --- Non-parameter settings (persisted device state) ---
     // Atomics: restoreState() writes on the message thread while process() reads.
-    std::atomic<bool> midiThru{true};    // pass incoming MIDI to downstream devices
     std::atomic<int> rampCycles{1};      // 1-8: curve repetitions within one pattern cycle
     std::atomic<bool> hardAngle{false};  // piecewise linear instead of smooth bezier
     std::atomic<float> quantize{0.0f};   // 0-1: adaptive quantize strength

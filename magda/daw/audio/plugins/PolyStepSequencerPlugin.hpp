@@ -78,7 +78,6 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
     // in this vocabulary (#2317).
     struct SettingIDs {
         static const juce::Identifier numSteps;
-        static const juce::Identifier midiThru;
         static const juce::Identifier rampCycles;
         static const juce::Identifier hardAngle;
         static const juce::Identifier quantize;
@@ -88,7 +87,6 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
 
     // --- Non-parameter settings (persisted device state) ---
     // Atomics: restoreState() writes on the message thread while process() reads.
-    std::atomic<bool> midiThru{true};
     std::atomic<int> rampCycles{1};
     std::atomic<bool> hardAngle{false};
     std::atomic<float> quantize{0.0f};

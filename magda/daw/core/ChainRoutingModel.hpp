@@ -88,6 +88,12 @@ inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     if (externalMidiSidechain) {
         node.midiOutput = MidiOutputPolicy::RawInputOnly;
     } else if (outputsMidi) {
+        // The whole of MIDI thru, wherever it is honoured: a merge the host
+        // puts behind the device, never something the device does inside
+        // itself. No plugin format lets a plugin hand its MIDI input back --
+        // every one replaces the host's buffer with what the plugin declared --
+        // so a host that offers thru offers the raw stream itself, and a device
+        // that also passed its input on would make every note a pair (#2345).
         node.midiOutput = device.midiInThru ? MidiOutputPolicy::MergeRawInputAndPluginOutput
                                             : MidiOutputPolicy::PluginOutputOnly;
     } else {

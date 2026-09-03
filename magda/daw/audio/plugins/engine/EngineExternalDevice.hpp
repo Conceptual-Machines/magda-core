@@ -278,9 +278,12 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     int latencySamples_ = 0;
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
-    /// What the executor reserved on the output port: this device's input
-    /// carried through plus a producer's worth of its own. A plugin handed a
-    /// merged input hands one back, and the flat constant would cut it (#2341).
+    /// What the executor reserved on the output port: one producer's worth,
+    /// because a plugin's MIDI output is its own. Every JUCE format replaces
+    /// the host's buffer with what the plugin declared, and a chain that wants
+    /// the raw input as well gets it from the plan's merge rather than from
+    /// here (#2345). Read from the executor rather than from the constant
+    /// because the figure is the port's (#2341).
     int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
     bool offlineRender_ = false;
     bool prepared_ = false;

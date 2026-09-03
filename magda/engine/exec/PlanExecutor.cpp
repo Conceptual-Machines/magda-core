@@ -658,11 +658,17 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         // Everything that carries MIDI on from what reached it. A merge is the
         // obvious one and a fader carries a rack chain's MIDI out beside its
         // audio, but a conduit is a conduit: a note gate passes on whatever
-        // falls in its range, and a device with MIDI thru switched on passes on
-        // the lot. Leaving those two out is how a device fed a legal merged
-        // input could only emit one producer's worth of it (#2341).
+        // falls in its range.
+        //
+        // A Device is deliberately not one. Its MIDI output port carries what
+        // the device produced and nothing it was handed: MIDI thru is the
+        // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
+        // the only way a host can offer it over a plugin it does not write, and
+        // a device doing it as well made every note a pair (#2345). So a device
+        // is a producer like any other and its port stays at the budget every
+        // port starts on.
         if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
-            op.kind != OpKind::MidiNoteGate && op.kind != OpKind::Device)
+            op.kind != OpKind::MidiNoteGate)
             continue;
 
         int carried = 0;
@@ -675,15 +681,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 continue;
             carried += portMidiBytes[flatPort(input)];
         }
-
-        // A device is a conduit and a producer at once, and the two add up: it
-        // may hand its whole input on and place its own events among them. One
-        // producer's worth of headroom is what it may add, which is the budget
-        // every other producer in the graph is held to and what the external
-        // adapter already sizes its own buffer by. A device with no MIDI input
-        // is left at exactly that, which is where every port starts.
-        if (op.kind == OpKind::Device)
-            carried += kMaxMidiBytesPerPort;
 
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
             if (op.outputs[port].kind == SignalKind::Midi)
@@ -710,17 +707,18 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // may allocate.
     //
     // A device can work out neither for itself: kMaxMidiBytesPerPort is what
-    // one producer may write, a device fed by a merge is fed the sum of
-    // several, and a device that hands that on emits the sum too. Sizing from
-    // the constant is how a device on a track with two MIDI sources silently
-    // drops the second one's tail on the way in, and truncates it on the way
-    // out. The executor is the only thing that knows, so it is the thing that
-    // says.
+    // one producer may write, and a device fed by a merge is fed the sum of
+    // several. Sizing from the constant is how a device on a track with two
+    // MIDI sources silently drops the second one's tail on the way in. The two
+    // figures differ for that reason and no other now that thru is the plan's
+    // (#2345): a device writes one producer's worth and may read far more.
+    // The executor is the only thing that knows, so it is the thing that says.
     //
     // The input is the slot's bound and the output is the port's own. A slot
     // holds the largest of the ports sharing it, which is the right size for a
     // buffer to read from and the wrong figure to write against: everything
-    // downstream reserved its room from this port's sum, not its neighbour's.
+    // downstream reserved its room from this port's figure, not its
+    // neighbour's.
     for (std::size_t i = 0; i < numOps; ++i) {
         auto* device = deviceForOp_[i];
         if (device == nullptr)

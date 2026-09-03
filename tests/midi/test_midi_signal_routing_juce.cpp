@@ -15,6 +15,7 @@
 #include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/SidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
 #include "magda/daw/audio/sequencer/StepClock.hpp"
@@ -79,11 +80,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
-        magda::test::runWithCleanJuceState([this] { testStepSequencerDefaultsToMidiThru(); });
         magda::test::runWithCleanJuceState(
-            [this] { testStepSequencerMidiThruMirrorsDeviceState(); });
-        magda::test::runWithCleanJuceState(
-            [this] { testStepSequencerMidiThruPassesWhileStopped(); });
+            [this] { testStepSequencerLoadsAProjectSavedWithMidiThru(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
         magda::test::runWithCleanJuceState(
             [this] { testPolyStepSequencerStepRecordingStopsAtEnd(); });
@@ -1184,8 +1182,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         trackManager.setAudioEngine(nullptr);
     }
 
-    void testStepSequencerDefaultsToMidiThru() {
-        beginTest("Step sequencer defaults to MIDI thru and restores MIDI thru state");
+    void testStepSequencerLoadsAProjectSavedWithMidiThru() {
+        beginTest("Step sequencer loads a project saved with seqMidiThru, and drops it");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1193,22 +1191,43 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         if (!edit)
             return;
 
-        auto plugin =
-            createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
+        // The load path a project takes, not a restore onto a plugin built
+        // fresh: PluginManager::createInternalPlugin hands the saved tree to the
+        // cache, so the tree the project was saved on IS the plugin's live
+        // state. That is what makes leaving the retired property alone
+        // insufficient - captureInternalDeviceState() copies whatever the tree
+        // holds, so a property nothing writes still comes back on every save
+        // until something takes it off (#2345).
+        juce::ValueTree saved(te::IDs::PLUGIN);
+        saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
+                          nullptr);
+        saved.setProperty("seqMidiThru", false, nullptr);
+        saved.setProperty("seqRampCycles", 5, nullptr);
+
+        auto plugin = edit->getPluginCache().createNewPlugin(saved);
+        expect(plugin != nullptr, "Step sequencer must load from the saved tree");
+        if (plugin == nullptr)
+            return;
+
         auto* seq = sequencerDevice(plugin);
         expect(seq != nullptr, "Step sequencer device must be created");
         if (seq == nullptr)
             return;
 
-        expect(seq->midiThru.load(), "Fresh step sequencers should pass incoming MIDI");
-
-        juce::ValueTree saved(te::IDs::PLUGIN);
-        saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
-                          nullptr);
-        saved.setProperty("seqMidiThru", false, nullptr);
         plugin->restorePluginStateFromValueTree(saved);
+        expectEquals(seq->rampCycles.load(), 5,
+                     "A setting saved beside the retired property must still restore");
 
-        expect(!seq->midiThru.load(), "Saved MIDI thru state should be restored");
+        namespace bridge = magda::daw::audio::tracktion_adapter;
+        const auto captured = bridge::captureInternalDeviceState(*plugin, {});
+        expect(captured.isNotEmpty(), "Capturing the device's state must produce a document");
+
+        const auto reloaded = bridge::devicePluginTreeFromState(captured);
+        expect(reloaded.isValid(), "The captured document must load back");
+        expect(!reloaded.hasProperty("seqMidiThru"),
+               "Saving a project that had a device-level MIDI thru flag must not keep it");
+        expectEquals(static_cast<int>(reloaded.getProperty("seqRampCycles")), 5,
+                     "The settings the device still owns must survive the same capture");
     }
 
     void testDrumGridLoadsInternalInstrumentAsPadVoice() {
@@ -1272,99 +1291,6 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         expect(chain->plugins[0] != nullptr &&
                    chain->plugins[0]->getPluginType() == juce::String("magda_fm"),
                "Pad voice should be replaced by the new internal instrument");
-    }
-
-    void testStepSequencerMidiThruMirrorsDeviceState() {
-        beginTest("Step sequencer MIDI thru mirrors DeviceInfo state");
-
-        auto& wrapper = magda::test::getSharedEngine();
-        auto* bridge = wrapper.getAudioBridge();
-        expect(bridge != nullptr, "Audio bridge must be available");
-        if (bridge == nullptr)
-            return;
-
-        auto& trackManager = magda::TrackManager::getInstance();
-        trackManager.clearAllTracks();
-        trackManager.setAudioEngine(&wrapper);
-
-        const auto trackId = trackManager.createTrack("MIDI Thru Mirror");
-        auto sequencer = makeInternalDevice(magda::INVALID_DEVICE_ID, "Step Sequencer",
-                                            magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        sequencer.canReceiveMidi = true;
-        sequencer.producesMidi = true;
-        sequencer.midiInThru = false;
-
-        const auto deviceId = trackManager.addDeviceToTrack(trackId, sequencer);
-        expect(deviceId != magda::INVALID_DEVICE_ID, "Step sequencer device must be added");
-        if (deviceId == magda::INVALID_DEVICE_ID) {
-            trackManager.clearAllTracks();
-            trackManager.setAudioEngine(nullptr);
-            return;
-        }
-
-        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, deviceId);
-        bridge->syncTrackPlugins(trackId);
-
-        auto plugin = bridge->getPlugin(devicePath);
-        auto* seq = sequencerDevice(plugin);
-        expect(seq != nullptr, "Step sequencer runtime device must be created");
-        if (seq == nullptr) {
-            trackManager.clearAllTracks();
-            trackManager.setAudioEngine(nullptr);
-            return;
-        }
-
-        expect(!seq->midiThru.load(), "Runtime MIDI thru should load from DeviceInfo::midiInThru");
-
-        trackManager.setDeviceInChainMidiInThruByPath(devicePath, true);
-        expect(seq->midiThru.load(),
-               "Runtime MIDI thru should follow DeviceInfo when the header control enables it");
-
-        trackManager.setDeviceInChainMidiInThruByPath(devicePath, false);
-        expect(!seq->midiThru.load(),
-               "Runtime MIDI thru should follow DeviceInfo when the header control disables it");
-
-        trackManager.clearAllTracks();
-        trackManager.setAudioEngine(nullptr);
-    }
-
-    void testStepSequencerMidiThruPassesWhileStopped() {
-        beginTest("Step sequencer MIDI thru passes input while transport is stopped");
-
-        auto& wrapper = magda::test::getSharedEngine();
-        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
-        expect(edit != nullptr, "Test edit must be created");
-        if (!edit)
-            return;
-
-        auto plugin =
-            createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = sequencerDevice(plugin);
-        expect(seq != nullptr, "Step sequencer device must be created");
-        if (seq == nullptr)
-            return;
-
-        seq->midiThru.store(true);
-
-        juce::AudioBuffer<float> buffer(2, 8);
-        buffer.clear();
-        te::MidiMessageArray midi;
-        midi.addMidiMessage(juce::MidiMessage::noteOn(1, 64, static_cast<juce::uint8>(100)), 0.0,
-                            te::MPESourceID{});
-
-        te::PluginRenderContext rc(
-            &buffer, juce::AudioChannelSet::canonicalChannelSet(2), 0, buffer.getNumSamples(),
-            &midi, 0.0,
-            te::TimeRange(te::TimePosition::fromSeconds(0.0), te::TimePosition::fromSeconds(1.0)),
-            false, false, false, false);
-        plugin->applyToBuffer(rc);
-
-        bool sawThruNote = false;
-        for (auto& msg : midi) {
-            if (msg.isNoteOn() && msg.getNoteNumber() == 64)
-                sawThruNote = true;
-        }
-        expect(sawThruNote, "MIDI thru should pass note-ons while transport is stopped");
     }
 
     void testStepSequencerStepRecordingStopsAtEnd() {

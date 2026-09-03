@@ -128,10 +128,11 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     /// than before it could.
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
-    /// What the executor reserved on the output port, which is the input's
-    /// bound plus a producer's worth: a device passing a merged input through
-    /// emits the merge, and the constant would cut it in half. The constant
-    /// until the executor says otherwise, for the reason above (#2341).
+    /// What the executor reserved on the output port, which is one producer's
+    /// worth: a device emits what it made, and MIDI thru is the plan's merge
+    /// behind it rather than the device's doing (#2345). Read from the executor
+    /// rather than from the constant because the figure is the port's, and the
+    /// constant until it says otherwise, for the reason above.
     int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     double sampleRate_ = 44100.0;
