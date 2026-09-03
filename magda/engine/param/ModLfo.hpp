@@ -253,12 +253,20 @@ struct LfoState {
  *
  * The sample rate, because a free-running LFO advances by how long the block
  * lasted rather than by how far the timeline moved, and the two are different
- * things while the transport is stopped. The tempo and the whole signature,
- * because a musical division is a fraction of a bar and a bar is none of those
- * on its own.
+ * things while the transport is stopped. The tempo, because a stopped block
+ * covers no beats and a free-running modifier still has to keep musical time.
+ * And the whole signature, because a musical division is a fraction of a bar
+ * and a bar is neither number on its own: a rolling block reads the bars it
+ * covers off the map instead (@ref modBarsElapsed), which is what a stopped
+ * one has no map to read them from.
  */
 struct ModTiming {
     double sampleRate = 44100.0;
+
+    /// The tempo the block opens at. What a stopped block keeps time at, and
+    /// nothing else: a rolling block says how many bars it covers, and that is
+    /// the map's own answer across a tempo or signature change inside it (@ref
+    /// modBarsElapsed).
     double bpm = 120.0;
 
     /// The signature at the block's first beat. Both halves of it, because a
@@ -294,6 +302,43 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate);
  * would be two answers to one question.
  */
 double modBarPosition(const BlockInfo& block, const ModTiming& timing);
+
+/**
+ * @brief How long a bar is, in beats, under one signature.
+ *
+ * The numerator counted in the denominator's own note value:
+ * `numerator * 4 / denominator` quarter notes, because a beat is a quarter
+ * note here and everywhere else in the engine. A bar of six eight is three of
+ * them, not six. Shared between @ref cycleBeats, which asks it of one
+ * signature, and @ref modBarsElapsed, which asks it of every signature a
+ * block crosses.
+ */
+double barBeatsOf(int numerator, int denominator);
+
+/**
+ * @brief How many bars @p block covers, for a modifier advancing its own ramp.
+ *
+ * The block's own beat length, translated into bars off the map. Not a single
+ * division, because a bar is a different number of beats on each side of a
+ * signature change, and a block that spans one covers a fraction of each: the
+ * map knows where the change is, so this walks the spans between them and
+ * sums what each is worth in its own bar length. Right across a tempo step as
+ * well, since @ref modBarsElapsed reads through the same grid the beats
+ * themselves came from; block seconds scaled by a single bpm and signature
+ * read anywhere in the block is not, and runs the rest of a block that spans a
+ * change at the numbers it opened on (#2340).
+ *
+ * A stopped block is the one that still needs a tempo and a signature. It
+ * covers no beats at all, and a free-running modifier goes on turning through
+ * it, so there the bars are how long the block lasted at the tempo and
+ * signature the cursor is sitting on. A stopped cursor is on one beat, so one
+ * bpm and one bar length are exact there.
+ *
+ * Shared because the LFO, the random walk and the envelope all ask it, and two
+ * answers to one question is what a modifier drifting from the one beside it
+ * would be.
+ */
+double modBarsElapsed(const BlockInfo& block, const ModTiming& timing);
 
 /**
  * @brief How much of a bar one rate type is.

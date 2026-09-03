@@ -1002,9 +1002,10 @@ TEST_CASE("The plugin is told where the transport is", "[engine][external]") {
 }
 
 TEST_CASE("The plugin is told the section the block renders in", "[engine][external][2336]") {
-    // A block covers one tempo section, but a cut lands on the first sample at
-    // or after the boundary, so it can open a fraction of a sample before one
-    // (BlockInfo::sectionBeat). A plugin is told one bpm and one signature for
+    // A musical position within a hundredth of a sample of the cursor is the
+    // cursor as far as the transport is concerned, so a block can open that
+    // close before a section boundary while every sample it renders is past it
+    // (BlockInfo::openingBeat). A plugin is told one bpm and one signature for
     // the whole call, and taking them from the block's first beat would run the
     // call on the section it had already left.
     auto plugin = std::make_unique<StubPlugin>();
@@ -1059,11 +1060,10 @@ TEST_CASE("The plugin is told the section the block renders in", "[engine][exter
 }
 
 TEST_CASE("A block straddling a bar line reports the bar it began in", "[engine][external][2336]") {
-    // The section a block renders in is one thing and the bar its first sample
-    // is in is another. A block is cut at every tempo section and at no bar
-    // line, so a long one straddles one, and reporting the bar its middle is in
-    // would make what the plugin is told depend on how the host sized the
-    // callback: the same first sample, two answers.
+    // The bar a block's first sample is in is what the plugin is told, and a
+    // block is not cut at bar lines, so a long one straddles one. Reporting the
+    // bar its middle is in would make what the plugin hears depend on how the
+    // host sized the callback: the same first sample, two answers.
     auto plugin = std::make_unique<StubPlugin>();
     auto* raw = plugin.get();
 

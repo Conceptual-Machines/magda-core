@@ -257,14 +257,6 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
     }
 }
 
-double TempoMap::nextSectionBoundaryAfter(double beat) const {
-    const auto next = std::upper_bound(
-        sections_.begin(), sections_.end(), beat + kBeatEpsilon,
-        [](double value, const Section& section) { return value < section.startBeat; });
-
-    return next == sections_.end() ? std::numeric_limits<double>::infinity() : next->startBeat;
-}
-
 const TempoMap::Section& TempoMap::sectionForBeat(double beat) const {
     // Before the first section is the first section extended backwards: the
     // timeline exists before beat zero and has to have a tempo there.
@@ -308,6 +300,14 @@ BarsAndBeats TempoMap::barsAndBeatsAt(double beat) const {
     return {section.signatureStartBar + static_cast<int>(bars),
             (sinceSignature - bars * barBeats) / tickBeatsOf(section.denominator),
             section.numerator, section.denominator};
+}
+
+double TempoMap::signatureEndAfter(double beat) const {
+    // Already infinity on the section under the last signature change (built
+    // that way above), so there is nothing left to guard here: a beat with no
+    // change ahead of it answers with a number nothing on the timeline is ever
+    // past.
+    return sectionForBeat(beat).signatureEndBeat;
 }
 
 BeatTick TempoMap::tickAtOrAfter(double beat) const {

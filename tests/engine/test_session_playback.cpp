@@ -940,19 +940,19 @@ TEST_CASE("A launch inside a block that spans a tempo step names one instant",
     CHECK(material.beatAtTime(0.0) == Approx(0.0));
 }
 
-TEST_CASE("A slot launched where a block would step tempo starts at its own first sample",
+TEST_CASE("A slot launched where a block steps tempo starts at its own first sample",
           "[engine][clip][session]") {
-    // The launch and the tempo step want the same instant inside one callback.
-    // Uncut, the block spans the step, and the launcher names the split in
-    // monotonic beats and projects it onto the timeline and the seconds axes
-    // separately, each a straight line across the block (LaunchHandle.cpp).
-    // Those two lines disagree across a jump: beat 4 projects to 2.020833 s
-    // where the map puts it at 2, so the run's origin is not one instant and
-    // material second zero sits a fiftieth of a beat past material beat zero.
+    // The launch and the tempo step want the same instant inside one callback,
+    // and the block is not cut at the step (#2340). The launcher used to name
+    // the split in monotonic beats and project it onto the timeline and the
+    // seconds axes separately, each a straight line across the block, and those
+    // two lines disagree across a step: beat 4 projects to 2.020833 s where the
+    // map puts it at 2, so the run's origin was not one instant and material
+    // second zero sat a fiftieth of a beat past material beat zero.
     //
-    // What that costs is the head of the clip. The transport cuts the block at
-    // the step instead, which leaves one tempo inside it and both projections
-    // exact (TempoMap::nextTempoStepAfter).
+    // What that cost was the head of the clip. The split is worked out once, in
+    // samples, and every face taken from that sample (#2336), so an uncut block
+    // hands the run its own first sample either way.
     const auto map = steppedTempo();  // 120 to beat 4, then 60
 
     // Half a block before the step, so both the step and the launch fall inside
@@ -965,17 +965,21 @@ TEST_CASE("A slot launched where a block would step tempo starts at its own firs
 
     magda::engine::TransportClock clock;
 
-    // Monotonic beat 0.125 is timeline beat 4: the step itself.
+    // Monotonic beat 0.125 is timeline beat 4: the step itself, and half a
+    // block into the callback.
     rig.handle.play(kBeatsPerBlock / 2.0);
 
     callback(rig, clock, snapshot);
 
-    // The buffer holds the last segment, which is the one the run begins on, so
-    // its samples are the material's own from the first. CountingReader reads
-    // sample n back as n, so a clip that skipped its head would say so here.
-    CHECK(rig.at(0) == Approx(0.0f));
-    CHECK(rig.at(1000) == Approx(1000.0f));
-    CHECK(rig.at(2999) == Approx(2999.0f));
+    // Nothing before the launch sample, and the material's own samples from it.
+    // CountingReader reads sample n back as n, so a clip that skipped its head
+    // would say so here.
+    constexpr auto kLaunchSample = kBlockSize / 2;
+
+    CHECK(rig.at(kLaunchSample - 1) == Approx(0.0f));
+    CHECK(rig.at(kLaunchSample) == Approx(0.0f));
+    CHECK(rig.at(kLaunchSample + 1000) == Approx(1000.0f));
+    CHECK(rig.at(kBlockSize - 1) == Approx(kLaunchSample - 1.0f));
 }
 
 TEST_CASE("A launched slot plays straight through a loop wrap", "[engine][clip][session]") {

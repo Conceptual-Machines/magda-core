@@ -128,33 +128,24 @@ class TempoMap {
     BarsAndBeats barsAndBeatsAt(double beat) const;
 
     /**
+     * @brief Where the signature at @p beat gives way to the next, or infinity.
+     *
+     * A modifier that runs in bars has to know how far its own bar length
+     * carries before the map cuts it short: a bar is a different number of
+     * beats on the far side of a change, so a stretch that crosses one is a
+     * sum over two grids rather than one division (ModLfo.hpp's
+     * modBarsElapsed). The metronome already needed this per section
+     * (Section::signatureEndBeat); this is the same number, public.
+     */
+    double signatureEndAfter(double beat) const;
+
+    /**
      * @brief The first metronome tick at or after @p beat.
      *
      * A beat sitting exactly on a tick is that tick, so a block starting on the
      * downbeat clicks on its first sample rather than a block late.
      */
     BeatTick tickAtOrAfter(double beat) const;
-
-    /**
-     * @brief The first section boundary strictly after @p beat, or infinity.
-     *
-     * A section is the stretch this map is linear over, which is what makes
-     * both conversions a multiply. What asks is the transport, which ends a
-     * segment there and never hands out a block that spans one.
-     *
-     * That cut is what makes the rest of the engine's arithmetic true. Inside a
-     * block every position is worked out on a straight line between its two
-     * ends: where a launch lands, where a note goes, which instant a run began
-     * on (exec/RenderContext.hpp). Within one section that line is the map;
-     * across a boundary it is a guess, and the block's two faces stop naming
-     * one instant.
-     *
-     * Every boundary, not only the steps a tempo track spells out. A ramp is
-     * baked into constant-tempo sections, and between two of them the slope
-     * changes as surely as it does at a step: over a steep one, a beat the map
-     * puts at sample 256 of a block lands at sample 93 on its line.
-     */
-    double nextSectionBoundaryAfter(double beat) const;
 
     /**
      * @brief Identity of the tempo track this was baked from.

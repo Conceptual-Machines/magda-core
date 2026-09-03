@@ -93,8 +93,6 @@ void restartRandom(RandomState& state, const RandomSettings& settings) {
 float advanceRandom(RandomState& state, const RandomSettings& settings, const BlockInfo& block,
                     const ModTiming& timing) {
     const double hz = std::max(static_cast<double>(settings.rate.hz), kMinHz);
-    const double beatsPerCycle =
-        std::max(cycleBeats(settings.rate.rateType, timing.numerator, timing.denominator), 1.0e-6);
 
     const bool noise = settings.type == RandomShape::Noise;
 
@@ -145,12 +143,19 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
     // order and the fork's: the value a block renders with is the value at its
     // first sample.
     if (settings.sync != ModSync::Transport) {
-        const double blockSeconds =
-            static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
-        const double periodSeconds =
-            settings.tempoSync ? beatsPerCycle * 60.0 / timing.bpm : 1.0 / hz;
-
-        state.cycles += blockSeconds / std::max(periodSeconds, 1.0e-9);
+        if (settings.tempoSync) {
+            // The bars the block covered over the bars a step lasts, off the
+            // block rather than through a bpm and a signature, which is the
+            // LFO's advance and is what makes a step across a tempo or
+            // signature change the map's length rather than the opening
+            // numbers' (#2340).
+            state.cycles += modBarsElapsed(block, timing) /
+                            std::max(barFractionOf(settings.rate.rateType), 1.0e-6);
+        } else {
+            const double blockSeconds = static_cast<double>(std::max(block.numSamples, 0)) /
+                                        std::max(timing.sampleRate, 1.0);
+            state.cycles += blockSeconds * hz;
+        }
     }
 
     // Kept bounded, so a walk left running for hours steps as precisely as one

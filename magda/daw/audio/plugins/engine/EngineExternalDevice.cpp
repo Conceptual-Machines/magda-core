@@ -76,19 +76,24 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
             return;
         }
 
-        // The tempo and the bar grid of the section the block renders in, not
-        // of its first beat: a block can open a fraction of a sample before a
-        // boundary it is otherwise entirely past (BlockInfo::sectionBeat). The
-        // plugin is told one bpm and one signature for the whole call, so
-        // taking them from the old section would run the call on the wrong one.
+        // The tempo and the bar grid the block's first sample sounds under, not
+        // the ones its first beat sits in: a block can open a hundredth of a
+        // sample before a boundary it is otherwise entirely past
+        // (BlockInfo::openingBeat), and taking them from there would run the
+        // call on the section it had already left.
+        //
+        // One bpm and one signature for the whole call is all this interface
+        // has to give, so a block spanning a tempo change reports what its
+        // first sample is in for all of it. That is what every host does and
+        // what plugins are built to tolerate (#2340).
         //
         // Where the block is stays its own: the time and the PPQ position above
         // are its first sample's, which is what the plugin is being handed.
-        const auto inside = block.sectionBeat();
+        const auto opening = block.openingBeat();
 
-        bpm_.store(block.tempo->bpmAt(inside), std::memory_order_relaxed);
+        bpm_.store(block.tempo->bpmAt(opening), std::memory_order_relaxed);
 
-        const auto position = block.tempo->barsAndBeatsAt(inside);
+        const auto position = block.tempo->barsAndBeatsAt(opening);
         numerator_.store(position.numerator, std::memory_order_relaxed);
         denominator_.store(position.denominator, std::memory_order_relaxed);
 
@@ -97,28 +102,17 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
         // denominator is not four: three eighths into a 6/8 bar is one and a
         // half quarter notes, not three.
         const auto quartersPerBeat = 4.0 / std::max(1, position.denominator);
-        const auto barBeats = std::max(position.numerator * quartersPerBeat, 1.0e-6);
 
         // The bar the block's first sample is in, under the signature it
-        // renders in. Not the bar its midpoint is in: a block is cut at every
-        // tempo section but not at every bar line, so a long one can straddle
-        // one, and taking the midpoint's bar would make what the plugin is told
-        // depend on how the host happened to size the callback.
+        // renders in. Not the bar its middle is in: a block is not cut at bar
+        // lines, so a long one straddles one, and taking the middle's bar would
+        // make what the plugin is told depend on how the host happened to size
+        // the callback.
         //
-        // Which is a sample's question, not a beat's, so it is answered to a
-        // hundredth of one: a block that opens before the bar line by less than
-        // that is the swallowed boundary above, and is in the bar it is about to
-        // render, not in the one before it.
-        const auto perSample = block.numSamples > 0
-                                   ? block.beats.length() / static_cast<double>(block.numSamples)
-                                   : 0.0;
-        const auto tolerance = magda::engine::kSampleEpsilon * perSample;
-
-        auto intoBar = block.beats.start - (inside - (position.beat * quartersPerBeat));
-        while (intoBar < -tolerance)
-            intoBar += barBeats;
-
-        ppqOfBarStart_.store(block.beats.start - intoBar, std::memory_order_relaxed);
+        // Straight back from where the grid was read, because the opening beat
+        // already carries the tolerance a sample's question is answered to.
+        ppqOfBarStart_.store(opening - (position.beat * quartersPerBeat),
+                             std::memory_order_relaxed);
     }
 
     juce::Optional<PositionInfo> getPosition() const override {

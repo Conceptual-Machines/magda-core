@@ -10,6 +10,7 @@
 #include "param/ParamResolve.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "transport/TempoMap.hpp"
 
 /**
  * @file test_mod_random.cpp
@@ -38,6 +39,7 @@ using magda::engine::ModKind;
 using magda::engine::ModRuntime;
 using magda::engine::ModSync;
 using magda::engine::ModTiming;
+using magda::engine::modTimingFor;
 using magda::engine::ParamKey;
 using magda::engine::ParamSegment;
 using magda::engine::ParamTable;
@@ -370,6 +372,85 @@ TEST_CASE("A free-running walk advances by how long the block was", "[engine][mo
 
     step(state, settings, block);
     CHECK(state.phase == approx(0.0f));
+}
+
+TEST_CASE("A free-running synced walk steps on the map's beats", "[engine][mod][random][2340]") {
+    // The LFO's claim, on the walk. 120 held to beat 2, then 60, and a block
+    // from beat 1.5 to 2.5: half a beat either side of the step, a quarter of a
+    // second at 120 and half a second at 60. What it covers is one beat; three
+    // quarters of a second at the tempo it opened on would say one and a half
+    // (#2340).
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 60.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4}});
+
+    BlockInfo block;
+    block.playing = true;
+    block.beats.start = 1.5;
+    block.beats.end = 2.5;
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.numSamples =
+        static_cast<int>(std::llround((block.seconds.end - block.seconds.start) * kSampleRate));
+    block.sampleRate = kSampleRate;
+    block.tempo = &tempo;
+
+    auto settings = stepped();
+    settings.sync = ModSync::Free;
+    settings.tempoSync = true;
+    settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+    auto state = seeded();
+    const auto timings = modTimingFor(block, kSampleRate);
+
+    step(state, settings, block, timings);
+
+    // One beat of a four-beat step. The opening tempo's one and a half beats
+    // would have put the walk three eighths of the way through it.
+    CHECK(state.cycles == Catch::Approx(0.25));
+
+    step(state, settings, block, timings);
+    CHECK(state.phase == approx(0.25f));
+}
+
+TEST_CASE("A free-running synced walk steps on the map's bars, not the opening signature's",
+          "[engine][mod][random][2340]") {
+    // The LFO's claim, on the walk. 120 throughout, four four to beat 2 and
+    // three four from it: a block from beat 1 to beat 3 covers one beat of the
+    // four-beat bar and one beat of the three-beat bar that follows, a quarter
+    // plus a third. The opening signature's formula would divide the whole two
+    // beats by four and say a half (#2340).
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4},
+                                         {.startBeat = 2.0, .numerator = 3, .denominator = 4}});
+
+    BlockInfo block;
+    block.playing = true;
+    block.beats.start = 1.0;
+    block.beats.end = 3.0;
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.numSamples =
+        static_cast<int>(std::llround((block.seconds.end - block.seconds.start) * kSampleRate));
+    block.sampleRate = kSampleRate;
+    block.tempo = &tempo;
+
+    auto settings = stepped();
+    settings.sync = ModSync::Free;
+    settings.tempoSync = true;
+    settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+    auto state = seeded();
+    const auto timings = modTimingFor(block, kSampleRate);
+
+    step(state, settings, block, timings);
+
+    // A quarter of the four-beat bar plus a third of the three-beat one.
+    CHECK(state.cycles == Catch::Approx(0.25 + 1.0 / 3.0));
+
+    step(state, settings, block, timings);
+    CHECK(state.phase == approx(static_cast<float>(0.25 + 1.0 / 3.0)));
 }
 
 TEST_CASE("A trigger restarts the walk and takes a step", "[engine][mod][random]") {

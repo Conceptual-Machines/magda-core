@@ -173,36 +173,14 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (countingIn_)
             samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
 
-        // A block never spans a tempo section, which is the stretch the map is
-        // linear over. Not a jump: audio flows straight through a tempo change
-        // and the next segment carries on continuous.
+        // A tempo section boundary is not cut at. It used to be, so that the
+        // block's own straight line stayed honest and so that a modifier
+        // reading one bpm per block read the right one; placement goes through
+        // the map now (#2336) and a modifier reads the beats the block covers
+        // (#2340), so nothing is left that a section boundary inside a block
+        // would be wrong for. A tempo change is not a jump either: audio flows
+        // straight through one and the block carries on continuous.
         //
-        // What the cut is for has changed. It arrived to keep the block's own
-        // straight line honest, because everything inside a block was placed on
-        // the line between its two ends; placement goes through the map now, so
-        // that is no longer what pays for it (#2336).
-        //
-        // What it still buys is that a block is one tempo and one signature. A
-        // rate-synced modifier reads a single bpm for the whole block it is
-        // rendering (ModLfo's modTimingFor), and a block spanning a step would
-        // run at the tempo it opened on for the rest of it. The cut is what
-        // makes that reading exact rather than nearly right, and it costs one
-        // extra segment per tempo change (#2333).
-        //
-        // Past a boundary the epsilon has already swallowed, or the guarantee
-        // has a hole exactly where it is hardest to see. A boundary within a
-        // hundredth of a sample ahead of the cursor counts as zero samples
-        // away, and a zero cut is no cut: the segment would then run to
-        // whatever else ends it, through that boundary and every later one in
-        // the callback. The cursor is on that boundary for all practical
-        // purposes, so the one to cut at is the next one after it.
-        auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
-        while (std::isfinite(boundary) && samplesUntil(tempo, boundary) <= 0)
-            boundary = tempo.nextSectionBoundaryAfter(boundary);
-
-        if (std::isfinite(boundary))
-            samples = std::min(samples, samplesUntil(tempo, boundary));
-
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from
         // inside, it can still be zero, for a loop so short that its end is not

@@ -177,3 +177,57 @@ TEST_CASE("A block with beats alone places along its own line", "[engine][block]
     CHECK(block.eventForBeat(5.0) == EventSample{63});
     CHECK(block.edgeForBeat(5.0) == EdgeSample{64});
 }
+
+TEST_CASE("The opening beat is nudged through the map, not the block's average slope",
+          "[engine][block][samples][2340]") {
+    // openingBeat() nudges by a hundredth of a sample of real time, converted
+    // at the tempo the block opens on. A block's own average slope is a
+    // different number whenever a step sits inside it, because it is the
+    // whole block's beats over the whole block's samples rather than the rate
+    // at the very start, and it can land the nudge on the wrong side of the
+    // boundary the tolerance is measured against.
+    constexpr double kRate = 44100.0;
+
+    SECTION("a step up: the true nudge falls short, the average slope overshoots") {
+        // 20 bpm to beat 1, then 300, written as two changes at the one beat.
+        // The block opens 0.02 samples of real time before the boundary, which
+        // at 20 bpm is farther than the hundredth-of-a-sample tolerance: the
+        // true opening beat stays on the near side of it. The average slope is
+        // pulled toward the fast section that dominates the rest of the block
+        // and crosses the boundary anyway.
+        const TempoMap tempo({{0.0, 20.0, 0.0f}, {1.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
+
+        BlockInfo block;
+        block.numSamples = 4096;
+        block.sampleRate = kRate;
+        block.playing = true;
+        block.seconds.start = tempo.beatToTime(1.0) - (0.02 / kRate);
+        block.seconds.end = block.seconds.start + (4096.0 / kRate);
+        block.beats.start = tempo.timeToBeat(block.seconds.start);
+        block.beats.end = tempo.timeToBeat(block.seconds.end);
+        block.tempo = &tempo;
+
+        CHECK(tempo.bpmAt(block.openingBeat()) == Catch::Approx(20.0));
+    }
+
+    SECTION("a step down: the true nudge crosses, the average slope falls short") {
+        // 300 bpm to beat 1, then 20. The block opens 0.005 samples of real
+        // time before the boundary, which at 300 bpm is inside the tolerance:
+        // the true opening beat is already on the far side of it. The average
+        // slope is pulled toward the slow section that dominates the rest of
+        // the block and stays short.
+        const TempoMap tempo({{0.0, 300.0, 0.0f}, {1.0, 300.0, 0.0f}, {1.0, 20.0, 0.0f}}, {});
+
+        BlockInfo block;
+        block.numSamples = 4096;
+        block.sampleRate = kRate;
+        block.playing = true;
+        block.seconds.start = tempo.beatToTime(1.0) - (0.005 / kRate);
+        block.seconds.end = block.seconds.start + (4096.0 / kRate);
+        block.beats.start = tempo.timeToBeat(block.seconds.start);
+        block.beats.end = tempo.timeToBeat(block.seconds.end);
+        block.tempo = &tempo;
+
+        CHECK(tempo.bpmAt(block.openingBeat()) == Catch::Approx(20.0));
+    }
+}
