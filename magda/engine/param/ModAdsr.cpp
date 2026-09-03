@@ -103,7 +103,7 @@ void enterStage(AdsrState& state, AdsrStage stage, float startValue) {
 /// Whether an envelope's stages are a musical length rather than a duration. A
 /// division of Hertz is not a division, and falls back to the milliseconds,
 /// which is the fork's rule (adsrStageSeconds says so).
-bool runsInBeats(const AdsrSettings& settings) {
+bool runsInBars(const AdsrSettings& settings) {
     return settings.tempoSync && settings.rateType != static_cast<int>(magda::ModRateType::Hertz);
 }
 
@@ -112,10 +112,11 @@ bool runsInBeats(const AdsrSettings& settings) {
  *        stage is instant.
  *
  * All four in one unit: seconds for an envelope whose stages are milliseconds,
- * beats for one whose stages are a division. The machine below only compares an
+ * bars for one whose stages are a division. The machine below only compares an
  * elapsed amount against a length and divides one by the other, so it does not
- * care which, and running a synced envelope in beats is what lets the block say
- * how far it moved rather than a bpm (#2340).
+ * care which, and running a synced envelope in bars is what lets the block say
+ * how many it moved through rather than a bpm and a signature read once
+ * (#2340).
  */
 struct StageLengths {
     double attack = 0.0;
@@ -125,15 +126,20 @@ struct StageLengths {
 };
 
 StageLengths stageLengthsFor(const AdsrSettings& settings, const ModTiming& timing) {
-    if (runsInBeats(settings)) {
-        // One division for all three stages, which is what the model carries.
-        const auto beats = cycleBeats(settings.rateType, timing.numerator, timing.denominator);
+    if (runsInBars(settings)) {
+        // One division for all three stages, which is what the model carries,
+        // and a division is a number of bars whatever the signature is doing:
+        // no signature to ask, unlike the seconds this same division is worth
+        // (adsrStageSeconds).
+        const auto bars = barFractionOf(settings.rateType);
 
         // The same instant the seconds floor stands for, converted once at the
-        // tempo the block opens on: what counts as no time at all is a duration
-        // rather than a musical length, and a hundredth of a millisecond is far
-        // below any division a project can name.
-        return {beats, beats, beats, kMinStageSeconds * timing.bpm / 60.0};
+        // tempo and signature the block opens on: what counts as no time at all
+        // is a duration rather than a musical length, and a hundredth of a
+        // millisecond is far below any division a project can name.
+        return {bars, bars, bars,
+                kMinStageSeconds * timing.bpm / 60.0 /
+                    std::max(barBeatsOf(timing.numerator, timing.denominator), 1.0e-6)};
     }
 
     return {adsrStageSeconds(settings.attackMs, settings, timing),
@@ -230,7 +236,7 @@ double adsrStageSeconds(float milliseconds, const AdsrSettings& settings, const 
     // A division of Hertz is not a division. The model reaches that state by
     // having tempo sync on with nothing musical selected, and the fork's answer
     // is to fall back to the milliseconds rather than to invent a period.
-    if (runsInBeats(settings)) {
+    if (runsInBars(settings)) {
         const auto beats = cycleBeats(settings.rateType, timing.numerator, timing.denominator);
         return beats * 60.0 / std::max(timing.bpm, 1.0e-6);
     }
@@ -308,13 +314,40 @@ float advanceAdsr(AdsrState& state, const AdsrSettings& settings, const BlockInf
 
     const auto lengths = stageLengthsFor(settings, timing);
 
-    // A synced envelope's stages are a number of beats, so the block moves it on
-    // by the beats it covered, which the map answered for exactly this stretch.
+    // A tempo-sync toggle mid-stage changes what unit timeInStage is counted
+    // in without emptying it, and reinterpreting a duration as a bar count (or
+    // the reverse) would snap the envelope to wherever that number happens to
+    // land in the new unit rather than leaving it where it was. Converted
+    // instead, from the phase the old unit had already worked out: the current
+    // stage's length in the new unit times how far through it the envelope is
+    // puts the accumulator back at the same point (#2340).
+    if (runsInBars(settings) != state.stageInBars) {
+        const auto currentLength = [&]() {
+            switch (state.stage) {
+                case AdsrStage::Attack:
+                    return lengths.attack;
+                case AdsrStage::Decay:
+                    return lengths.decay;
+                case AdsrStage::Release:
+                    return lengths.release;
+                case AdsrStage::Idle:
+                case AdsrStage::Sustain:
+                    return 0.0;
+            }
+            return 0.0;
+        }();
+
+        state.timeInStage = static_cast<double>(state.stagePhase) * currentLength;
+        state.stageInBars = runsInBars(settings);
+    }
+
+    // A synced envelope's stages are a number of bars, so the block moves it on
+    // by the bars it covered, which the map answered for exactly this stretch.
     // A millisecond envelope is a duration and moves on by how long the block
     // lasted (#2340).
     const double elapsed =
-        runsInBeats(settings)
-            ? modBeatsElapsed(block, timing)
+        runsInBars(settings)
+            ? modBarsElapsed(block, timing)
             : static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
 
     advanceStages(state, settings, lengths, elapsed, freeRunning, gateOpen);

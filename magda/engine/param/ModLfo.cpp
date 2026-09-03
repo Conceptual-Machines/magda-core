@@ -100,12 +100,15 @@ double barFractionOf(int rateType) {
     return 1.0;
 }
 
-double cycleBeats(int rateType, int numerator, int denominator) {
+double barBeatsOf(int numerator, int denominator) {
     // A bar in quarter notes, which is what a beat is here. The signature's
     // own note value is the denominator's, so six eight is three quarter notes
     // rather than six.
-    const auto barBeats = 4.0 * std::max(numerator, 1) / std::max(denominator, 1);
-    return barFractionOf(rateType) * barBeats;
+    return 4.0 * std::max(numerator, 1) / std::max(denominator, 1);
+}
+
+double cycleBeats(int rateType, int numerator, int denominator) {
+    return barFractionOf(rateType) * barBeatsOf(numerator, denominator);
 }
 
 int rateTypeFromLaneValue(float laneValue) {
@@ -119,19 +122,45 @@ float laneValueFromRateType(int rateType) {
         std::max(rateType, static_cast<int>(magda::ModRateType::SixteenBars)) - 1);
 }
 
-double modBeatsElapsed(const BlockInfo& block, const ModTiming& timing) {
-    // The map's own answer for this stretch, which is what the clock derived
-    // the block's beat ends from. Right across a tempo change inside the block,
-    // where seconds times one bpm is not.
-    if (block.playing && !block.beats.empty())
-        return block.beats.length();
-
+double modBarsElapsed(const BlockInfo& block, const ModTiming& timing) {
     // A stopped block covers no beats and still has to turn a free-running
-    // modifier, so it keeps its own time at the tempo the cursor sits on. One
-    // beat, one bpm, and no conversion to be wrong about.
-    const auto seconds =
-        static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
-    return seconds * timing.bpm / 60.0;
+    // modifier, so it keeps its own time at the tempo and signature the cursor
+    // sits on. One beat, one bpm, one bar length, and no conversion to be wrong
+    // about.
+    if (!(block.playing && !block.beats.empty())) {
+        const auto seconds =
+            static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
+        return seconds * timing.bpm / 60.0 /
+               std::max(barBeatsOf(timing.numerator, timing.denominator), 1.0e-6);
+    }
+
+    // A block assembled by hand carries no map, so its own beat length under
+    // the one signature it was given is the only line there is.
+    if (block.tempo == nullptr)
+        return block.beats.length() /
+               std::max(barBeatsOf(timing.numerator, timing.denominator), 1.0e-6);
+
+    // Through the origin in both directions on a shifted block, which is what
+    // keeps the map usable there (BlockInfo::beatAtTime says the same about a
+    // moment).
+    const auto from = block.beats.start + block.materialOrigin.beat;
+    const auto to = block.beats.end + block.materialOrigin.beat;
+
+    // A bar is a different number of beats on each side of a signature change,
+    // so a block that spans one covers a fraction of each: the map knows where
+    // the change is, so the block's bars are the sum over the spans it runs
+    // through (#2340).
+    double bars = 0.0;
+    double at = from;
+    for (int guard = 0; guard < 64 && at < to; ++guard) {
+        const auto grid = block.tempo->barsAndBeatsAt(at);
+        const auto end = std::min(to, block.tempo->signatureEndAfter(at));
+        if (!(end > at))
+            break;
+        bars += (end - at) / std::max(barBeatsOf(grid.numerator, grid.denominator), 1.0e-6);
+        at = end;
+    }
+    return bars;
 }
 
 double modBarPosition(const BlockInfo& block, const ModTiming& timing) {
@@ -171,8 +200,8 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // (BlockInfo::openingBeat).
     //
     // The bpm here is what a stopped block keeps time at. A rolling one reads
-    // the beats it covers instead (modBeatsElapsed), so a block spanning a
-    // tempo change is not this reading's problem.
+    // the bars it covers instead (modBarsElapsed), so a block spanning a tempo
+    // or signature change is not this reading's problem.
     if (block.tempo != nullptr) {
         const auto opening = block.openingBeat();
         const auto signature = block.tempo->barsAndBeatsAt(opening);
@@ -228,8 +257,6 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
         state.completed = false;
 
     const double hz = std::max(static_cast<double>(settings.rate.hz), kMinHz);
-    const double beatsPerCycle =
-        std::max(cycleBeats(settings.rate.rateType, timing.numerator, timing.denominator), 1.0e-6);
 
     // A timeline-locked LFO is a function of where the block is rather than of
     // how many blocks have gone by, which is what puts two of them at one rate
@@ -299,10 +326,12 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     // is the value at its first sample.
     if (settings.sync != ModSync::Transport && !holding && !zeroed) {
         if (settings.tempoSync) {
-            // The beats the block covered over the beats a cycle lasts. Off the
-            // block rather than through a bpm, so a block spanning a tempo
-            // change advances by what the map says it covered (#2340).
-            state.cycles += modBeatsElapsed(block, timing) / beatsPerCycle;
+            // The bars the block covered over the bars a cycle lasts. Off the
+            // block rather than through a bpm and a signature, so a block
+            // spanning a tempo or signature change advances by what the map
+            // says it covered (#2340).
+            state.cycles += modBarsElapsed(block, timing) /
+                            std::max(barFractionOf(settings.rate.rateType), 1.0e-6);
         } else {
             const double blockSeconds = static_cast<double>(std::max(block.numSamples, 0)) /
                                         std::max(timing.sampleRate, 1.0);

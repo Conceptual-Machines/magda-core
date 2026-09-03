@@ -93,8 +93,6 @@ void restartRandom(RandomState& state, const RandomSettings& settings) {
 float advanceRandom(RandomState& state, const RandomSettings& settings, const BlockInfo& block,
                     const ModTiming& timing) {
     const double hz = std::max(static_cast<double>(settings.rate.hz), kMinHz);
-    const double beatsPerCycle =
-        std::max(cycleBeats(settings.rate.rateType, timing.numerator, timing.denominator), 1.0e-6);
 
     const bool noise = settings.type == RandomShape::Noise;
 
@@ -146,11 +144,13 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
     // first sample.
     if (settings.sync != ModSync::Transport) {
         if (settings.tempoSync) {
-            // The beats the block covered over the beats a step lasts, off the
-            // block rather than through a bpm, which is the LFO's advance and
-            // is what makes a step across a tempo change the map's length
-            // rather than the opening tempo's (#2340).
-            state.cycles += modBeatsElapsed(block, timing) / beatsPerCycle;
+            // The bars the block covered over the bars a step lasts, off the
+            // block rather than through a bpm and a signature, which is the
+            // LFO's advance and is what makes a step across a tempo or
+            // signature change the map's length rather than the opening
+            // numbers' (#2340).
+            state.cycles += modBarsElapsed(block, timing) /
+                            std::max(barFractionOf(settings.rate.rateType), 1.0e-6);
         } else {
             const double blockSeconds = static_cast<double>(std::max(block.numSamples, 0)) /
                                         std::max(timing.sampleRate, 1.0);

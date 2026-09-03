@@ -198,10 +198,15 @@ struct BlockInfo {
      * left, and a consumer that takes one signature or one bar for the whole
      * block takes the wrong one.
      *
-     * So this is the start nudged forward by that same hundredth of a sample,
-     * in beats at the block's own rate: a block opening that close before a
-     * boundary reads the section on the far side of it, and every other block
-     * reads the section its start is in.
+     * So this is the start nudged forward by that same hundredth of a sample of
+     * seconds, converted to a beat at the tempo the block opens on rather than
+     * at the block's own average slope: through the map, the way @ref
+     * beatAtTime reads any other moment, which is what matters once a block may
+     * span a tempo change. The block-average slope would over-nudge across a
+     * step up and under-nudge across a step down, either of which can land the
+     * nudge on the wrong side of the very boundary it exists to cross (#2340).
+     * A block with no seconds face at all is one assembled by hand from beats,
+     * and the average slope is the only line there is to nudge along.
      *
      * Where the block *is* stays @ref beats and @ref seconds. This only says
      * which side of a boundary its first sample is on, and a position derived
@@ -211,7 +216,10 @@ struct BlockInfo {
         if (numSamples <= 0 || beats.empty())
             return beats.start;
 
-        return beats.start + (kSampleEpsilon * (beats.length() / numSamples));
+        if (seconds.empty() || rate() <= 0.0)
+            return beats.start + (kSampleEpsilon * (beats.length() / numSamples));
+
+        return beatAtTime(seconds.start + (kSampleEpsilon / rate()));
     }
 
     /**

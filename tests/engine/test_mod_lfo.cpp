@@ -365,6 +365,49 @@ TEST_CASE("A free-running synced LFO turns by the map's beats, not the opening t
     CHECK(step(state, settings, block, {}, timings) == approx(0.25f));
 }
 
+TEST_CASE("A free-running synced LFO turns by the map's bars, not the opening signature's",
+          "[engine][mod][lfo][2340]") {
+    // 120 throughout, four four to beat 2 and three four from it: a bar-rate
+    // LFO reading one signature for the whole block would run it at four beats
+    // a bar the entire way, where the map says a bar is three beats past the
+    // change.
+    //
+    // A block from beat 1 to beat 3 covers one beat of the four-beat bar and
+    // one beat of the three-beat bar that follows it, which is a quarter of the
+    // first plus a third of the second. The opening signature's formula would
+    // divide the whole two beats by four and say a half (#2340).
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4},
+                                         {.startBeat = 2.0, .numerator = 3, .denominator = 4}});
+
+    BlockInfo block;
+    block.playing = true;
+    block.beats.start = 1.0;
+    block.beats.end = 3.0;
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.numSamples =
+        static_cast<int>(std::llround((block.seconds.end - block.seconds.start) * kSampleRate));
+    block.sampleRate = kSampleRate;
+    block.tempo = &tempo;
+
+    LfoSettings settings;
+    settings.wave = LFOWaveform::Saw;
+    settings.sync = ModSync::Free;
+    settings.tempoSync = true;
+    settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+    LfoState state;
+    const auto timings = modTimingFor(block, kSampleRate);
+
+    CHECK(step(state, settings, block, {}, timings) == approx(0.0f));
+
+    // A quarter of the four-beat bar plus a third of the three-beat one.
+    CHECK(state.cycles == Catch::Approx(0.25 + 1.0 / 3.0));
+    CHECK(step(state, settings, block, {}, timings) ==
+          approx(static_cast<float>(0.25 + 1.0 / 3.0)));
+}
+
 TEST_CASE("A transport-locked LFO is a function of where the block is", "[engine][mod][lfo]") {
     auto settings = freeRunning(1.0f);
     settings.sync = ModSync::Transport;
