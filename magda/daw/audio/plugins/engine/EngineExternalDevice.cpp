@@ -250,6 +250,10 @@ void EngineExternalDevice::setMidiInputBoundBytes(int bytes) {
                          magda::engine::kMaxMidiBytesPerPort);
 }
 
+void EngineExternalDevice::setMidiOutputBoundBytes(int bytes) {
+    midiOutputBoundBytes_ = bytes;
+}
+
 int EngineExternalDevice::latencySamples() const {
     return latencySamples_;
 }
@@ -326,12 +330,14 @@ void EngineExternalDevice::writeMidiOut(juce::MidiBuffer& out, int numSamples) c
     // is in it afterwards, and a chain that wanted the raw input as well asks
     // the plan for it (DeviceInfo::midiInThru) rather than asking the plugin.
     //
-    // Counted in bytes against the port's budget, like every other producer.
+    // Counted in bytes against what the executor reserved for this port, which
+    // for a plugin handing its input back is that input's bound plus a
+    // producer's worth rather than the flat constant (#2341).
     int bytesWritten = 0;
 
     for (const auto metadata : midi_) {
         const auto cost = kMidiEventOverheadBytes + metadata.numBytes;
-        if (bytesWritten + cost > magda::engine::kMaxMidiBytesPerPort) {
+        if (bytesWritten + cost > midiOutputBoundBytes_) {
             jassertfalse;  // a plugin past the port's budget
             break;
         }

@@ -75,8 +75,9 @@ struct DeviceBlock {
     const juce::MidiBuffer* midiIn = nullptr;
 
     /// Where a MIDI-producing device writes, cleared before the call. Null when
-    /// the plan gave the device no MIDI output port. At most
-    /// kMaxMidiBytesPerPort of encoded MIDI; past that the buffer allocates.
+    /// the plan gave the device no MIDI output port. At most what
+    /// setMidiOutputBoundBytes said, which for a device that passes its input
+    /// through is more than kMaxMidiBytesPerPort; past it the buffer allocates.
     juce::MidiBuffer* midiOut = nullptr;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
@@ -159,6 +160,29 @@ class EngineDevice {
      * lies and never need to know how big it can get.
      */
     virtual void setMidiInputBoundBytes(int) {}
+
+    /**
+     * @brief The most encoded MIDI this device may write in one block.
+     *
+     * Called off the audio thread beside setMidiInputBoundBytes, by the same
+     * executor and for the same reason: the figure belongs to the plan and no
+     * device can work it out for itself.
+     *
+     * Not kMaxMidiBytesPerPort either. A device that passes its MIDI input
+     * through is a conduit, and a conduit fed a merge emits a merge: held to
+     * one producer's budget it would drop half of a legal two-source stream on
+     * the way out, and no choice about which half is a good one. So the
+     * executor reserves a device's MIDI output port its input's bound plus one
+     * producer's worth on top, and that sum is what arrives here. The headroom
+     * is for what the device adds of its own -- a pattern, an arpeggio, the
+     * all-notes-off it owes after a prepare -- which is the same budget every
+     * other producer in the graph is held to. Zero for a device the plan gave
+     * no MIDI output.
+     *
+     * Ignored by default, because a device that writes what it means to write
+     * and no more never comes near it.
+     */
+    virtual void setMidiOutputBoundBytes(int) {}
 
     /// Samples the device delays its output by. Read but not yet compensated:
     /// latency compensation is its own slice, and the executor reports any

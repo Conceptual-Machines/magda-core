@@ -75,12 +75,17 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 /// that already owns its messages, so this is a real difference between the two
 /// hosts and it needs the SDK to close (#1836).
 ///
-/// Nothing here grows the vector. Its capacity is the most events the input
-/// port's own bound admits, so what is refused is a producer past that bound
-/// rather than an ordinary block: growing it would allocate, and one dropped
-/// event is cheaper than a callback that missed its deadline. The engine treats
-/// the same violation the same way -- assert where it is written, count it
-/// where it costs something.
+/// Nothing here grows the vector. Its capacity is the most events the wider of
+/// the device's two port bounds admits, so what is refused is a producer past
+/// that bound rather than an ordinary block: growing it would allocate, and one
+/// dropped event is cheaper than a callback that missed its deadline. The
+/// engine treats the same violation the same way -- assert where it is written,
+/// count it where it costs something.
+///
+/// The wider of the two, because one vector serves both directions: a device
+/// passing its input through and adding its own events reads and writes the
+/// same scratch, and sizing it from the input alone left a device with a full
+/// input no room to say anything of its own (#2341).
 ///
 /// That bound is a count of events and it is only half the rule. The port's
 /// budget is bytes, and the two part company on SysEx: a handful of dumps sit
@@ -274,12 +279,22 @@ void EngineMagdaDevice::setMidiInputBoundBytes(int bytes) {
     sizeMidiScratch();
 }
 
+void EngineMagdaDevice::setMidiOutputBoundBytes(int bytes) {
+    midiOutputBoundBytes_ = bytes;
+    sizeMidiScratch();
+}
+
 void EngineMagdaDevice::sizeMidiScratch() {
-    // Both callers run off the audio thread, and both run again if the other
-    // does: prepare() sizes from whatever bound is known, and the executor tells
-    // us the real one straight after. A device the plan gave no MIDI input is
-    // told zero and keeps nothing.
-    midiCapacity_ = midiEventsWithin(midiInputBoundBytes_);
+    // Every caller runs off the audio thread, and each runs again when another
+    // does: prepare() sizes from whatever bounds are known, and the executor
+    // tells us the real ones straight after.
+    //
+    // From the wider of the two, because the device reads its input out of this
+    // vector and writes its own events back into the same one. Sized from the
+    // input alone, a device handed a block that fills its input port had
+    // nowhere to put the all-notes-off it owes after a prepare (#2341). A
+    // device the plan gave neither port is told zero twice and keeps nothing.
+    midiCapacity_ = midiEventsWithin(std::max(midiInputBoundBytes_, midiOutputBoundBytes_));
 
     midiScratch_.clear();
     midiScratch_.reserve(static_cast<std::size_t>(midiCapacity_));
@@ -395,13 +410,19 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     // executor sized its storage from. The scratch's own guard is a count of
     // events, which is the right bound for a vector and the wrong one for this:
     // a device emitting SysEx stays far inside that count while going far past
-    // kMaxMidiBytesPerPort, and every byte over it grows a juce::MidiBuffer the
+    // the port's budget, and every byte over it grows a juce::MidiBuffer the
     // executor reserved once and a delay line downstream sized to match.
+    //
+    // Against what the executor reserved for this port, never the flat
+    // constant. The port carries this device's input through plus what it adds
+    // of its own, so a device with MIDI thru on a track with two sources may
+    // legally write more than one producer's worth; capping at the constant
+    // dropped half of it here, whatever the plan had made room for (#2341).
     int bytesWritten = 0;
 
     for (const auto& event : midiScratch_) {
         const auto cost = kMidiEventOverheadBytes + event.message.getRawDataSize();
-        if (bytesWritten + cost > magda::engine::kMaxMidiBytesPerPort) {
+        if (bytesWritten + cost > midiOutputBoundBytes_) {
             jassertfalse;  // a device past the port's budget; see the view's comment
             break;
         }

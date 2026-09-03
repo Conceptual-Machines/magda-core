@@ -140,6 +140,20 @@ juce::MidiMessage noteOn(int note) {
     return juce::MidiMessage::noteOn(1, note, 1.0f);
 }
 
+/// Records the input bound the executor told it, and renders nothing.
+class BoundProbe final : public EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        block.audio.clear();
+    }
+
+    void setMidiInputBoundBytes(int bytes) override {
+        bound = bytes;
+    }
+
+    int bound = -1;
+};
+
 }  // namespace
 
 TEST_CASE("A note gate passes only the notes in its range", "[engine][exec][notegate]") {
@@ -208,4 +222,80 @@ TEST_CASE("A note gate is a MidiNoteGate in a plan dump", "[engine][exec][notega
     CHECK(std::string(magda::engine::toString(magda::engine::OpRole::PadNoteGate)) ==
           "padNoteGate");
     CHECK(magda::engine::arityOf(OpKind::MidiNoteGate) == 1);
+}
+
+TEST_CASE("A note gate carries its input's MIDI bound to what it feeds",
+          "[engine][exec][notegate][2341]") {
+    // A gate is a pure conduit: everything it emits arrived, so its port has to
+    // be reserved for what reached it. The forward pass recomputed the bound
+    // for a merge and left every other op at one producer's budget, which made
+    // a gate the place a two-source stream stopped being one -- the pad's
+    // sampler was told 4096 for an input carrying 8192, and sized whatever it
+    // buffers from a figure half the truth.
+    RenderPlan plan;
+
+    for (int source = 0; source < 2; ++source) {
+        magda::engine::PlanOp input;
+        input.kind = OpKind::MidiInput;
+        input.key.trackId = 1;
+        input.key.role = magda::engine::OpRole::LiveMidiInput;
+        input.key.index = source;
+        input.outputs = {SignalKind::Midi};
+        plan.ops.push_back(input);
+    }
+
+    magda::engine::PlanOp merge;
+    merge.kind = OpKind::MergeMidi;
+    merge.key.trackId = 1;
+    merge.key.role = magda::engine::OpRole::TrackMidiInput;
+    merge.inputs = {PortRef{0, 0}, PortRef{1, 0}};
+    merge.outputs = {SignalKind::Midi};
+    plan.ops.push_back(merge);
+
+    magda::engine::PlanOp gate;
+    gate.kind = OpKind::MidiNoteGate;
+    gate.key.trackId = 1;
+    gate.key.rackId = 5;
+    gate.key.chainId = 2;
+    gate.key.role = magda::engine::OpRole::PadNoteGate;
+    gate.inputs = {PortRef{2, 0}};
+    gate.outputs = {SignalKind::Midi};
+    gate.noteGateLow = 36;
+    gate.noteGateHigh = 39;
+    plan.ops.push_back(gate);
+
+    magda::engine::PlanOp device;
+    device.kind = OpKind::Device;
+    device.key.trackId = 1;
+    device.key.rackId = 5;
+    device.key.chainId = 2;
+    device.key.deviceId = 9;
+    device.key.role = magda::engine::OpRole::DeviceProcess;
+    device.inputs = {PortRef{}, PortRef{3, 0}, PortRef{}};
+    device.outputs = {SignalKind::Audio};
+    plan.ops.push_back(device);
+
+    magda::engine::PlanOp out;
+    out.kind = OpKind::Output;
+    out.key.trackId = 1;
+    out.key.role = magda::engine::OpRole::HardwareOutput;
+    out.inputs = {PortRef{4, 0}};
+    plan.ops.push_back(out);
+
+    plan.outputOps = {5};
+    magda::engine::bakeScheduling(plan);
+
+    BoundProbe probe;
+    PlanBindings bindings;
+    NoteSource source({});
+    bindings.midiInputs[1] = &source;
+    bindings.devices[DeviceKey{9}] = &probe;
+
+    PlanExecutor executor;
+    const auto messages = executor.prepare(plan, bindings, RenderContext{44100.0, kBlockSize, 2});
+    for (const auto& message : messages)
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(executor.isPrepared());
+
+    CHECK(probe.bound == 2 * magda::engine::kMaxMidiBytesPerPort);
 }

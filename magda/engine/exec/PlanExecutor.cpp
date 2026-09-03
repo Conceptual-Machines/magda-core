@@ -655,7 +655,14 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             continue;
         }
 
-        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader)
+        // Everything that carries MIDI on from what reached it. A merge is the
+        // obvious one and a fader carries a rack chain's MIDI out beside its
+        // audio, but a conduit is a conduit: a note gate passes on whatever
+        // falls in its range, and a device with MIDI thru switched on passes on
+        // the lot. Leaving those two out is how a device fed a legal merged
+        // input could only emit one producer's worth of it (#2341).
+        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
+            op.kind != OpKind::MidiNoteGate && op.kind != OpKind::Device)
             continue;
 
         int carried = 0;
@@ -668,6 +675,15 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 continue;
             carried += portMidiBytes[flatPort(input)];
         }
+
+        // A device is a conduit and a producer at once, and the two add up: it
+        // may hand its whole input on and place its own events among them. One
+        // producer's worth of headroom is what it may add, which is the budget
+        // every other producer in the graph is held to and what the external
+        // adapter already sizes its own buffer by. A device with no MIDI input
+        // is left at exactly that, which is where every port starts.
+        if (op.kind == OpKind::Device)
+            carried += kMaxMidiBytesPerPort;
 
         for (std::size_t port = 0; port < op.outputs.size(); ++port)
             if (op.outputs[port].kind == SignalKind::Midi)
@@ -689,15 +705,22 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
         midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
 
-    // Tell every bound device how much MIDI can reach it, now that the sums are
-    // known and while there is still a thread that may allocate.
+    // Tell every bound device how much MIDI can reach it and how much it may
+    // write, now that the sums are known and while there is still a thread that
+    // may allocate.
     //
-    // A device that buffers its input cannot work this out for itself:
-    // kMaxMidiBytesPerPort is what one producer may write, and a device fed by
-    // a merge is fed the sum of several. Sizing from the constant is how a
-    // device on a track with two MIDI sources silently drops the second one's
-    // tail. The executor is the only thing that knows, so it is the thing that
+    // A device can work out neither for itself: kMaxMidiBytesPerPort is what
+    // one producer may write, a device fed by a merge is fed the sum of
+    // several, and a device that hands that on emits the sum too. Sizing from
+    // the constant is how a device on a track with two MIDI sources silently
+    // drops the second one's tail on the way in, and truncates it on the way
+    // out. The executor is the only thing that knows, so it is the thing that
     // says.
+    //
+    // The input is the slot's bound and the output is the port's own. A slot
+    // holds the largest of the ports sharing it, which is the right size for a
+    // buffer to read from and the wrong figure to write against: everything
+    // downstream reserved its room from this port's sum, not its neighbour's.
     for (std::size_t i = 0; i < numOps; ++i) {
         auto* device = deviceForOp_[i];
         if (device == nullptr)
@@ -707,6 +730,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         const auto hasMidiIn = op.inputs.size() > 1 && op.inputs[1].valid();
         device->setMidiInputBoundBytes(
             hasMidiIn ? midiByteBounds_[static_cast<std::size_t>(slotFor(op.inputs[1]))] : 0);
+
+        const auto hasMidiOut = op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+        device->setMidiOutputBoundBytes(
+            hasMidiOut ? portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] : 0);
     }
 
     // Delay lines, for the edges that turned out to need one. A plan with no
@@ -1483,7 +1510,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 else
                     slot.clear();
             }
-            jassert(deviceMidiOut == nullptr || deviceMidiOut->data.size() <= kMaxMidiBytesPerPort);
+            // The port's reservation, not the flat constant: a device passing a
+            // merged input through legally writes more than one producer's
+            // worth, and that is what its port was sized for (#2341).
+            jassert(deviceMidiOut == nullptr ||
+                    deviceMidiOut->data.size() <=
+                        midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 1}))]);
             break;
         }
 

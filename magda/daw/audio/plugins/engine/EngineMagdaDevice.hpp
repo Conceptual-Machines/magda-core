@@ -82,6 +82,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     void prepare(const magda::engine::RenderContext& context) override;
     void reset() override;
     void setMidiInputBoundBytes(int bytes) override;
+    void setMidiOutputBoundBytes(int bytes) override;
     int latencySamples() const override;
     void process(magda::engine::DeviceBlock& block) override;
 
@@ -126,6 +127,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     /// until it says otherwise, so a host that never tells us is no worse off
     /// than before it could.
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
+
+    /// What the executor reserved on the output port, which is the input's
+    /// bound plus a producer's worth: a device passing a merged input through
+    /// emits the merge, and the constant would cut it in half. The constant
+    /// until the executor says otherwise, for the reason above (#2341).
+    int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     double sampleRate_ = 44100.0;
     int latencySamples_ = 0;
