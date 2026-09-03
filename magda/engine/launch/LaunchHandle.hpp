@@ -508,6 +508,15 @@ class LaunchHandle {
         /// Set only by playSynced: the run to join rather than start. The whole
         /// of it, or the handles agree about the bar and not the sample.
         std::optional<Run> synced;
+
+        /// Whether this stop is Back to Arrangement rather than an ordinary
+        /// one, so the slot gives the track up as it stops.
+        ///
+        /// Here rather than beside it, because a request replaces this one
+        /// whole. Two fields would let a later play cancel the stop and leave
+        /// the hand-back behind, and the slot would go on sounding while the
+        /// track said it belonged to the arrangement (#2344 review).
+        bool releasesSection = false;
     };
 
     /// Begin a run at @p at, scheduled for @p scheduledBeat.
@@ -552,9 +561,6 @@ class LaunchHandle {
 
     /// Whether this slot has sounded since the last release (#2302).
     bool holdsSection_ = false;
-
-    /// A release waiting for the advance that applies it.
-    bool releasePending_ = false;
 
     SplitStatus blockStatus_;
 

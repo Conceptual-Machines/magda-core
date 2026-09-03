@@ -1354,6 +1354,61 @@ TEST_CASE("A release and a relaunch in one block put the arrangement's MIDI in t
     }
 }
 
+TEST_CASE("A launch arriving after a release keeps the track it was holding",
+          "[engine][clip][session][section]") {
+    // One handle, both requests, before the same advance. The stop and the
+    // hand-back are one request, so the launch replaces both: split across two
+    // fields it replaced only the stop, and the track was handed to the
+    // arrangement while the slot went on sounding (#2344 review).
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(0) == Approx(0.5f));
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    // Back to Arrangement, then a launch queued for a beat away, both before
+    // the next block.
+    rig.handle.releaseSection();
+    rig.handle.play(kBeatsPerBlock * 8.0);
+    rig.render(2);
+
+    SECTION("the slot goes on sounding") {
+        CHECK(rig.sessionAt(0) == Approx(0.5f));
+        CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+    }
+
+    SECTION("and the arrangement stays off it, so the track sounds one section") {
+        CHECK(rig.arrangementPeak() == 0.0f);
+
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.trackAt(sample) == Approx(0.5f));
+        }
+    }
+}
+
+TEST_CASE("A release on its own still hands the track back", "[engine][clip][session][section]") {
+    // The other side of the same rule: nothing replaced it, so it applies.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    rig.handle.releaseSection();
+    rig.render(2);
+
+    CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(1.0f));
+    CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(0.0f).margin(1e-5));
+}
+
 TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {
     // The property the switch exists for. The two sections are summed into one
     // track input, so a sample both contribute material to is a track playing
