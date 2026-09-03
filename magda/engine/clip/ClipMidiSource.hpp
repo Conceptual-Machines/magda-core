@@ -232,10 +232,6 @@ class ClipMidiSource final : public EngineMidiSource {
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
 
-    /// Whether the session held this track when the last block ended, which is
-    /// what makes the hand-over an edge rather than a state (#2302).
-    bool wasHeld_ = false;
-
     ActiveNoteList active_;
     int activeCount_ = 0;
 

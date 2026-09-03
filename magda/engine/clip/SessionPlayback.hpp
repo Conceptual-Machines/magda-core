@@ -120,26 +120,54 @@ inline EdgeSample splitSample(const BlockInfo& block, const SplitStatus& status)
 constexpr int kSectionDeClickSamples = 32;
 
 /**
- * @brief Which section a track sounds over one block, and where that changed.
+ * @brief Which section owns a track across one block, and where that changed.
  *
- * A track plays its arrangement or its session, never both (#2302). The answer
- * is the fold over the track's slots: the session holds the track if any slot
- * holds it, and it took it over at the earliest sample any of them began on.
+ * A track plays its arrangement or its session, never both (#2302), and this is
+ * the whole of who owns it when: not a final state a caller then reconciles
+ * against what it remembers, but the block's own ownership, start to end.
+ *
+ * That distinction is the point. Combining "who owns it at the end" with a
+ * caller's memory of the last block cannot express a block in which the session
+ * gave the track up and took it again, so the arrangement lost an interval it
+ * owned (#2344 review). Two transitions is what a block can hold, because the
+ * two directions happen at different kinds of instant: a session takes a track
+ * at the sample its slot launches, and gives one up at a block boundary, since
+ * a release is a request the advance applies at sample zero.
  *
  * Derived rather than stored, from the table both of a track's sources already
  * read, after the launcher has advanced every handle and before anything
  * renders. Two sources folding the same table over the same block reach the
- * same answer, which is what keeps the audio and the MIDI of one track on the
- * same side of the switch without a third thing to publish between them.
+ * same answer, which is what keeps a track's audio and its MIDI on the same
+ * side of the switch without a third thing to publish between them, and with
+ * nothing of their own to keep in step.
  */
 struct SectionHold {
-    /// Whether the session holds the track when this block ends.
-    bool session = false;
+    /// Who owns the block's first sample, after any release has applied.
+    Section atStart = Section::Arrangement;
 
-    /// Where it took the track over, for the block in which that happened.
-    /// Zero when it already held it, which is also what a caller that was
-    /// already handed over does with it: mute the whole block.
-    EdgeSample takenAt{0};
+    /// Who owns its last.
+    Section atEnd = Section::Arrangement;
+
+    /// Where @ref atEnd took the track, when the two differ.
+    EdgeSample changeAt{0};
+
+    /// Whether the session gave the track up in this block. Needed as well as
+    /// @ref atStart, and not implied by it: by the time the arrangement owns
+    /// the first sample the release has already happened, so this is the only
+    /// thing that separates a track just handed back from one never taken.
+    bool handedBack = false;
+
+    /// The edge past which the arrangement is silent, over a block of @p
+    /// numSamples. The one question both sources ask.
+    EdgeSample arrangementUntil(int numSamples) const {
+        if (atStart == Section::Session)
+            return EdgeSample{0};
+
+        if (atEnd == Section::Session)
+            return changeAt;
+
+        return EdgeSample{numSamples};
+    }
 };
 
 /// @copydoc SectionHold
@@ -147,29 +175,43 @@ inline SectionHold sectionHold(const LaunchHandleTable& handles, TrackId trackId
     const auto [first, last] = handles.rangeFor(trackId);
 
     SectionHold hold;
-    auto earliest = std::numeric_limits<int>::max();
+    auto held = false;
+    auto takenAt = std::numeric_limits<int>::max();
 
     for (const auto* entry = first; entry != last; ++entry) {
-        if (entry->handle == nullptr || !entry->handle->holdsSection())
+        if (entry->handle == nullptr)
             continue;
 
-        hold.session = true;
-
-        // Where this slot began sounding within the block, if it did. A slot
-        // already playing when the block opened took the track at its start; a
-        // slot that holds the track and sounded nothing here is one that
-        // stopped in an earlier block and is still holding it, which is the
-        // same answer.
         const auto& status = entry->handle->blockStatus();
 
-        if (status.beforeEvent.playing())
-            earliest = 0;
+        // Who owns the first sample: a slot that held the track when the block
+        // opened and did not give it up here. A release applies at sample zero,
+        // so a slot that was released holds nothing by the time anything sounds.
+        if (status.heldSectionAtStart && !status.releasedSection)
+            hold.atStart = Section::Session;
+
+        hold.handedBack = hold.handedBack || status.releasedSection;
+
+        if (!entry->handle->holdsSection())
+            continue;
+
+        held = true;
+
+        // Where this slot took the track. One already holding it at the start
+        // took it before this block; one that launched here took it on the
+        // sample it launched.
+        if (status.heldSectionAtStart && !status.releasedSection)
+            takenAt = 0;
         else if (status.afterEvent && status.afterEvent->playing())
-            earliest = std::min(earliest, status.event.sample);
+            takenAt = std::min(takenAt, status.event.sample);
+        else if (status.beforeEvent.playing())
+            takenAt = 0;
     }
 
-    if (hold.session && earliest != std::numeric_limits<int>::max())
-        hold.takenAt = EdgeSample{earliest};
+    hold.atEnd = held ? Section::Session : Section::Arrangement;
+
+    if (hold.atStart != hold.atEnd && takenAt != std::numeric_limits<int>::max())
+        hold.changeAt = EdgeSample{takenAt};
 
     return hold;
 }

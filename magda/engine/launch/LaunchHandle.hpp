@@ -262,6 +262,16 @@ struct SplitStatus {
      */
     bool soundingAtStart = false;
 
+    /// Whether this slot held its track when the block opened, before anything
+    /// in it applied (@ref LaunchHandle::holdsSection).
+    bool heldSectionAtStart = false;
+
+    /// Whether this slot gave its track up in this block. A release is a
+    /// request the advance applies at sample zero, so ownership of the first
+    /// sample already reflects it and nothing downstream could otherwise tell a
+    /// track just handed back from one that was never taken.
+    bool releasedSection = false;
+
     /// Whether the slot is sounding when the block ends, which is what decides
     /// whether a stop owes note-offs.
     bool playingAtEnd() const {
@@ -409,8 +419,14 @@ class LaunchHandle {
         return holdsSection_;
     }
 
-    /// Give the track back to its arrangement, stopping this slot as soon as
-    /// the next block begins. The engine side of Back to Arrangement.
+    /**
+     * @brief Give the track back to its arrangement. Back to Arrangement.
+     *
+     * A request, applied by the next advance: the slot stops and the hold goes
+     * at that block's first sample, and the block reports both. Every change of
+     * this state goes through the advance for the reason every stop does, which
+     * is that an edge nothing was told about is an edge nothing can ramp.
+     */
     void releaseSection();
 
     /**
@@ -536,6 +552,9 @@ class LaunchHandle {
 
     /// Whether this slot has sounded since the last release (#2302).
     bool holdsSection_ = false;
+
+    /// A release waiting for the advance that applies it.
+    bool releasePending_ = false;
 
     SplitStatus blockStatus_;
 

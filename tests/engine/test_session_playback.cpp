@@ -449,6 +449,7 @@ ClipInfo arrangementMidiClip(magda::ClipId id, double start, double lengthBeats,
 struct MidiSwitchRig {
     MidiSwitchRig() {
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
         handles.publish(std::make_shared<const LaunchHandleTable>(table));
         arrangement.prepare(context());
         session.prepare(context());
@@ -518,6 +519,10 @@ struct MidiSwitchRig {
 
     ClipSnapshotFeed clips;
     LaunchHandle handle;
+
+    /// The scene below, for the cases where one slot hands over to another.
+    LaunchHandle second;
+
     LaunchHandleTable table;
     LaunchHandleFeed handles;
 
@@ -1275,6 +1280,77 @@ TEST_CASE("A stop inside another slot's unfinished ramp starts from its own leve
 
     SECTION("ending in silence once both are spent") {
         CHECK(tail.back() == Approx(0.0f).margin(1e-5));
+    }
+}
+
+TEST_CASE("A release and a relaunch in one block leave the arrangement the gap between",
+          "[engine][clip][session][section]") {
+    // The block a final state cannot describe. The session held the track, Back
+    // to Arrangement gives it up at sample zero, and another slot takes it back
+    // part way through: the arrangement owns everything in between and sounded
+    // none of it while ownership was one answer per block (#2344 review).
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.giveSlot(3, 400.0, 0.5f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    // Both before the same advance: the release applies on the block's first
+    // sample, the launch on its own.
+    rig.handle.releaseSection();
+    rig.second.play(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto relaunch = kBlockSize / 2;
+
+    SECTION("the arrangement sounds the gap") {
+        CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(1.0f));
+        CHECK(rig.arrangementAt(relaunch - 1) == Approx(1.0f));
+    }
+
+    SECTION("and loses the track again at the relaunch") {
+        CHECK(rig.arrangementAt(relaunch + kSectionDeClickSamples) == Approx(0.0f));
+        CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(0.0f));
+    }
+
+    SECTION("the session is silent across the gap and back for the rest") {
+        CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(0.0f).margin(1e-5));
+        CHECK(rig.sessionAt(relaunch) == Approx(0.5f));
+        CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+    }
+}
+
+TEST_CASE("A release and a relaunch in one block put the arrangement's MIDI in the gap",
+          "[engine][clip][session][section]") {
+    // The same block, on the other source: they read one fold, so they are on
+    // the same side of both switches.
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 16.0, {MidiNote{64, 100, 0.55, 0.2, 0, {}}})},
+                {sessionMidiClip(2, 16.0, {MidiNote{67, 100, 0.0, 16.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).empty());
+
+    // Beat 0.5 to 0.75 is block 2; the arrangement's note is at 0.55, inside the
+    // gap, and the relaunch is at 0.625 which is half way through.
+    rig.handle.releaseSection();
+    rig.second.play(kBeatsPerBlock * 2.5);
+    rig.roll(2, 2);
+
+    SECTION("the note in the gap sounds") {
+        const auto ons = rig.notesOn(rig.fromArrangement);
+        REQUIRE(ons.size() == 1);
+        CHECK(ons.front().message.getNoteNumber() == 64);
+        CHECK(ons.front().sample < kBlockSize / 2);
+    }
+
+    SECTION("and is ended when the session takes the track back") {
+        CHECK(rig.hanging(rig.fromArrangement).empty());
     }
 }
 

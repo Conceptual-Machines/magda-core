@@ -205,11 +205,6 @@ class ClipAudioSource final : public EngineAudioSource {
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
 
-    /// Whether the session held this track when the last block ended, which is
-    /// what makes the hand-over an edge rather than a state (#2302). The switch
-    /// sample comes from the handles; only the previous answer is remembered.
-    bool wasHeld_ = false;
-
     /// The two edges of the arrangement's own playback: the step it carries
     /// down when the session takes the track, and the one it subtracts when it
     /// gets the track back mid-material.

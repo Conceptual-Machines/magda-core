@@ -164,51 +164,37 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     const LaunchHandleFeed::Reader handles(*handles_);
     const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
 
-    if (!hold.session) {
-        // What the arrangement rendered, before anything corrects it, which is
-        // the order StopDeClick::push asks for: pushed after the ramps below
-        // this would remember a correction rather than a signal.
-        handOver_.push(out);
-
-        // The track is the arrangement's. Coming back to it lands mid-material,
-        // which is the same step a voice starting mid-file leaves and comes out
-        // the same way.
-        if (wasHeld_)
-            handBack_.begin(out, kSectionDeClickSamples);
-        else
-            handBack_.advance(out);
-
-        // A hand-over taken back inside its own ramp finishes into the material
-        // rather than being cut off, which would be the click it exists to
-        // remove.
-        handOver_.advance(out);
-
-        wasHeld_ = false;
-        return;
-    }
-
-    // The session has the track. What the arrangement rendered still advanced
-    // every voice, stream and stretcher, which is what makes handing the track
-    // back land where the timeline says rather than where the arrangement was
-    // when it lost it. Only the output is dropped.
     const auto numSamples = static_cast<int>(out.getNumSamples());
-    const auto from = wasHeld_ ? 0 : std::clamp(hold.takenAt.value, 0, numSamples);
+    const auto until = std::clamp(hold.arrangementUntil(numSamples).value, 0, numSamples);
 
-    // What it rendered up to the cut, which is what the ramp carries down.
-    // Empty for a hand-over on the block's first sample, where what the ramp
-    // carries down is the block before's, pushed then.
-    if (!wasHeld_)
-        handOver_.push(out.getSubBlock(0, static_cast<std::size_t>(from)));
+    // What it rendered and gets to keep, before anything corrects it, which is
+    // the order StopDeClick::push asks for. Empty when the session already owned
+    // the first sample, and the ramp then carries down what the block before
+    // pushed, which is the same sample on the other side of a boundary.
+    if (until > 0)
+        handOver_.push(out.getSubBlock(0, static_cast<std::size_t>(until)));
 
-    out.getSubBlock(static_cast<std::size_t>(from)).clear();
+    // The session's share of the block is dropped. What the arrangement
+    // rendered into it still advanced every voice, stream and stretcher, which
+    // is what makes taking the track back land where the timeline says rather
+    // than where the arrangement was when it lost it. Only the output goes.
+    if (until < numSamples)
+        out.getSubBlock(static_cast<std::size_t>(until)).clear();
 
-    if (wasHeld_)
-        handOver_.advance(out);
+    // Taking the track back lands mid-material, which is the same step a voice
+    // starting mid-file leaves and comes out the same way.
+    if (hold.handedBack && hold.atStart == Section::Arrangement)
+        handBack_.begin(out, kSectionDeClickSamples);
     else
-        handOver_.begin(out, from, kSectionDeClickSamples);
+        handBack_.advance(out);
 
-    handBack_.reset();
-    wasHeld_ = true;
+    // Losing it leaves the other step. A ramp still running from an earlier
+    // block finishes into whatever is here now rather than being cut off, which
+    // would be the click it exists to remove.
+    if (until < numSamples && hold.atStart == Section::Arrangement)
+        handOver_.begin(out, until, kSectionDeClickSamples);
+    else
+        handOver_.advance(out);
 }
 
 void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {

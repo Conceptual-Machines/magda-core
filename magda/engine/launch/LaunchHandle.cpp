@@ -178,7 +178,7 @@ void LaunchHandle::releaseSection() {
     // queued launch, so nothing fires after the track has been handed back.
     stop(std::nullopt);
 
-    holdsSection_ = false;
+    releasePending_ = true;
 }
 
 void LaunchHandle::beginRun(const SyncRange& range, const BlockInstant& at, double scheduledBeat) {
@@ -290,6 +290,16 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     // Before anything below can apply an event and change it. A stop landing on
     // the first sample leaves no first half to read this off afterwards.
     status.soundingAtStart = playState_ == PlayState::playing;
+    status.heldSectionAtStart = holdsSection_;
+
+    // At the block's first sample, which is where a request that arrived
+    // between blocks happens. A launch inside this block can take the track
+    // back afterwards, and the two are different samples.
+    if (releasePending_) {
+        holdsSection_ = false;
+        releasePending_ = false;
+        status.releasedSection = true;
+    }
 
     // What happens inside this block, in monotonic beats. At most one, and a
     // request always outranks a loop wrap.
