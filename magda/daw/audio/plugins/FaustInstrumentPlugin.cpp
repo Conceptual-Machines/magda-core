@@ -570,9 +570,8 @@ void FaustInstrumentPlugin::initialiseUnsetPoolValues(
 }
 
 FaustInstrumentPlugin::FaustInstrumentPlugin() {
-    // Mono/legato note-ons push onto this from process(). MIDI cannot hold more
-    // than 128 notes down at once, so reserving here means the audio thread
-    // never grows it.
+    // Reserved so process() never grows it. See #2351: without a dedup this
+    // bound is note-ons rather than held notes, and can be exceeded.
     heldNotes_.reserve(128);
 
     for (auto& value : poolValues_)
@@ -580,14 +579,11 @@ FaustInstrumentPlugin::FaustInstrumentPlugin() {
 
     hostValues_[0].store(0.0f, std::memory_order_relaxed);  // Poly
     hostValues_[1].store(0.0f, std::memory_order_relaxed);  // no glide
-    // 2 semitones, the near-universal synth default, normalised against
-    // kMaxBendSemitones like every other parameter here.
+    // 2 semitones, the usual default, normalised against kMaxBendSemitones.
     hostValues_[2].store(2.0f / kMaxBendSemitones, std::memory_order_relaxed);
 
-    // The pool is lifetime-stable and starts empty; a saved source arrives
-    // later through restoreState(), which recompiles and rebinds onto the same
-    // slots. Construction settles on the default patch so the device is
-    // answerable before any project has been loaded into it.
+    // The default patch, so the device is answerable before a project loads
+    // into it. A saved source arrives later through restoreState().
     juce::String err;
     auto compiled = compileAndRebind(kDefaultDspSource, err);
 
@@ -665,8 +661,8 @@ void FaustInstrumentPlugin::stageSourceForEditing(const juce::String& name,
 }
 
 DeviceProperties FaustInstrumentPlugin::properties() const {
-    // The output count is the compiled dsp's own. No audio input at all: this
-    // is a source, and the plan mixes what it writes into the chain's bus.
+    // The compiled dsp's own output count. No audio input: the plan mixes what
+    // this writes into the chain's bus.
     const auto active = std::atomic_load(&active_);
 
     return {
@@ -941,8 +937,8 @@ void FaustInstrumentPlugin::flushState(juce::ValueTree& state) {
                           poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
                           nullptr);
 
-    // The host's three, under the spellings the retired plugin registered, so
-    // a project saved before the port reads back onto the same controls.
+    // The retired plugin's spellings, so an older project reads back onto the
+    // same controls.
     state.setProperty("voiceMode", hostValue(kVoiceModeParamIndex), nullptr);
     state.setProperty("glide", hostValue(kGlideParamIndex), nullptr);
     state.setProperty("bendRange", hostValue(kBendRangeParamIndex), nullptr);
@@ -958,17 +954,15 @@ void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
                            err)) {
             DBG("FaustInstrumentPlugin::restore: compile failed: " << err);
 
-            // Staged rather than dropped, as the effect does: the source stays
-            // editable so whoever opens the project sees what failed and can
-            // repair it, instead of the patch silently becoming the default.
+            // Staged rather than dropped, as the effect does, so the source
+            // stays editable instead of silently becoming the default.
             stageSourceForEditing(savedName.isNotEmpty() ? savedName : juce::String("Loaded"),
                                   savedSource);
         }
     }
 
-    // Pool values are saved under stable ids (param_01 ... param_64), which is
-    // what lets a macro or automation lane keep pointing at the same control
-    // across a recompile.
+    // Stable ids (param_01 ... param_64), so a macro or automation lane keeps
+    // pointing at the same control across a recompile.
     for (int i = 0; i < FaustParamPool::kSize; ++i) {
         const auto* saved = v.getPropertyPointer(juce::Identifier(poolParamId(i)));
         poolValueWasRestored_[static_cast<size_t>(i)] = saved != nullptr;
@@ -977,10 +971,8 @@ void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
     }
     refreshPoolDomains();
 
-    // A property the project does not name keeps what the constructor set,
-    // which for the bend range is two semitones rather than none: absent and
-    // zero have to stay different, or every older project would open with the
-    // wheel doing nothing.
+    // An absent property keeps the constructor's value: for the bend range
+    // that is two semitones, and absent must not read as zero.
     const auto restoreHost = [&v, this](const char* id, int parameterIndex) {
         if (const auto* saved = v.getPropertyPointer(juce::Identifier(id)))
             setParameterValue(parameterIndex, static_cast<float>(*saved));

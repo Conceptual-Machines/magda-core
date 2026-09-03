@@ -302,22 +302,13 @@ bool judgeStretched(const Case& value, const NativeRender& native, const Incumbe
 }
 
 /**
- * @brief The samples the fork's note-end nudge makes unanswerable, or none.
+ * @brief [end - nudge, end) per note: where one leg has released and the other
+ *        has not.
  *
- * MidiNote::getPlaybackTime ends every note 0.0001 s early "to make sure the
- * ordering is correct" (tracktion_MidiList.cpp:829). The engine orders its
- * events when it compiles them and keeps the length the note was drawn at, so
- * the two legs release a note four samples apart at 44.1 kHz. The corpus has
- * always known the figure -- Case::incumbentNoteEndEarlySeconds -- and the MIDI
- * comparison has always subtracted it. The audio comparison could not: until a
- * case rendered an instrument that sustains, no audio depended on when a note
- * ended, and the difference had nowhere to show.
- *
+ * MidiNote::getPlaybackTime ends every note 0.0001 s early to keep an off ahead
+ * of an on (tracktion_MidiList.cpp:829); the engine keeps the authored length.
  * Derived from the authored notes rather than found in the residual, which is
- * the whole difference between naming a known window and widening a tolerance
- * until a case passes. Each range is [end - nudge, end): the samples where one
- * leg has released and the other has not. Every other sample of the case,
- * note-ons included, is still held to bit identity.
+ * what makes it a named window and not a tolerance.
  */
 std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case& value) {
     if (!value.audioChangesAtNoteEnds)

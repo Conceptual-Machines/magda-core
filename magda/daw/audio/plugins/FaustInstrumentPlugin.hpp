@@ -27,11 +27,8 @@ namespace magda::daw::audio {
 // polyphonic convention: the reserved controls `freq`, `gain`, `gate` are
 // driven per-voice by the allocator and are NOT exposed as user parameters.
 //
-// A MagdaDevice since #2315, like its effect sibling: one instrument, whichever
-// engine is running it. The compiled factory and its voices live for as long as
-// the device does, which is the runtime store's lifetime rather than the plan's
-// - so recompiling a plan because a fader moved never rebuilds a voice
-// mid-note.
+// A MagdaDevice since #2315. The factory and its voices live as long as the
+// device, so a plan recompile never rebuilds a voice mid-note.
 //
 // Shared scaffolding (UIHarvester, pool rebind, atomic state swap, retire
 // timer) is still copied from FaustPlugin rather than shared; a future
@@ -53,8 +50,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     void reset() override;
     void process(DeviceProcessContext& context) override;
 
-    // The pool's stable slots, then the three the host owns. See
-    // kVoiceModeParamIndex below: a patch keeps all 64 of its own.
+    // The pool's stable slots, then the three the host owns.
     int parameterCount() const override {
         return FaustParamPool::kSize + kHostParamCount;
     }
@@ -187,23 +183,18 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
 
     // Lifetime-stable parameter pool (macro/mod/automation links pin to slots).
     FaustParamPool pool_;
-    // Normalised 0..1 per slot, written by the host and read on the audio
-    // thread. Relaxed atomics rather than a lock: a torn read is a value one
-    // block stale, which a parameter already is.
+    // Normalised 0..1, written by the host and read on the audio thread.
     std::array<std::atomic<float>, FaustParamPool::kSize> poolValues_{};
     std::array<ParameterUtils::ParameterDomain, FaustParamPool::kSize> poolDomains_{};
     std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // ---- Host-owned voice allocation -------------------------------------
-    // Addressed past the end of the pool, so their indices are
-    // kVoiceModeParamIndex / kGlideParamIndex / kBendRangeParamIndex and
-    // nothing in the pool moves. Normalised like every other parameter here;
+    // Past the end of the pool, so nothing in the pool moves. Normalised;
     // faustInstrumentHostParamInfo() carries the real ranges for display.
     std::array<std::atomic<float>, kHostParamCount> hostValues_{};
 
-    /// One of the three host-owned parameters, normalised, by its parameter
-    /// index (kVoiceModeParamIndex and friends) rather than its slot in the
-    /// array - every caller has the index to hand and none has the offset.
+    /// A host-owned parameter by its parameter index (kVoiceModeParamIndex and
+    /// friends), which is what every caller has to hand.
     float hostValue(int parameterIndex) const {
         const auto slot = static_cast<std::size_t>(parameterIndex - FaustParamPool::kSize);
         if (slot >= hostValues_.size())

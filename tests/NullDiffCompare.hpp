@@ -75,16 +75,10 @@ struct AudioCompareOptions {
     /// window or two; anything beyond this is not priming.
     int maxShiftSamples = 8192;
 
-    /// Half-open sample ranges, in the native render's domain, that the
-    /// residual is not taken over. Sorted and non-overlapping.
-    ///
-    /// Not a tolerance and not a floor: the samples are named, they are counted
-    /// out of `comparedSamples`, and everything either side of them is still
-    /// held to bit identity. What earns a range is a fact about the incumbent
-    /// the corpus has already written down and can derive a position from --
-    /// today only the note-end nudge (Case::incumbentNoteEndEarlySeconds), which
-    /// the MIDI comparison has always honoured and this one could not see.
-    /// A range nobody can derive is an allowance, and belongs nowhere near here.
+    /// Half-open sample ranges the residual is not taken over. Sorted, merged,
+    /// and counted out of `comparedSamples`. Only for samples a declared fact
+    /// about the incumbent can place: a range nobody can derive is an
+    /// allowance, not a shape. See NullDiffRunner's noteEndNudgeRanges.
     std::vector<std::pair<std::int64_t, std::int64_t>> excludedRanges;
 
     double sampleRate = 44100.0;
