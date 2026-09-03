@@ -571,3 +571,38 @@ TEST_CASE("StepClock brings its position back inside a pattern that shrank",
             REQUIRE(runner.events[i].stepIndex < 8);
     }
 }
+
+TEST_CASE("StepClock keeps the steps a full event array could not carry", "[stepclock][process]") {
+    // Regression for #2335. Stopping the emit loop at maxEvents left the cursor
+    // where it stood, and the next block's catch-up then walked through the
+    // ticks it had not emitted without emitting any of them - so a block
+    // holding more steps than the caller's array lost every one past the last
+    // that fitted. Those ticks now wait in the queue that already exists for a
+    // tick the block cannot play.
+    constexpr int kMaxEvents = 16;  // what the sequencers passed before #2335
+    constexpr int kSteps = 32;
+
+    StepClock clock;
+    clock.setSampleRate(48000.0);
+
+    std::vector<int> played;
+    const auto block = [&](double startBeat, double endBeat) {
+        StepClock::StepEvent buffer[kMaxEvents];
+        const StepClock::BlockTiming timing{
+            .startBeat = startBeat, .endBeat = endBeat, .isPlaying = true, .numSamples = 4096};
+        const int written =
+            clock.processBlock(timing, StepClock::Rate::ThirtySecond, StepClock::Direction::Forward,
+                               0.0f, kSteps, buffer, kMaxEvents);
+        for (int i = 0; i < written; ++i)
+            played.push_back(buffer[i].stepIndex);
+    };
+
+    // One dense block: four beats of thirty-seconds is 32 steps, twice the
+    // array. Then ordinary blocks, which is when the held ticks come out.
+    block(0.0, 4.0);
+    for (int i = 0; i < 4; ++i)
+        block(4.0 + (i * 0.25), 4.25 + (i * 0.25));
+
+    for (int step = 0; step < kSteps; ++step)
+        REQUIRE(std::count(played.begin(), played.end(), step) >= 1);
+}

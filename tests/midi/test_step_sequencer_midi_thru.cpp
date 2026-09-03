@@ -103,9 +103,11 @@ template <typename DeviceT> void runIdleBlock(DeviceT& device, TestMidiBuffer& m
 }  // namespace
 
 TEST_CASE("A step sequencer passes a dense block through whole", "[sequencer][midithru]") {
-    // 600 events: past both the 64 the device used to keep and the ~450 a
-    // note-sized division of the byte budget suggests.
-    constexpr int kClocks = 600;
+    // The densest block a port may actually carry, and no denser: a clock costs
+    // seven bytes against the budget and a note nine, so a note-on, 582 clocks
+    // and a note-off come to 4092 of the 4096 a port allows. Past both the 64
+    // the device used to keep and the ~450 a note-sized division suggests.
+    constexpr int kClocks = 582;
 
     SECTION("mono") {
         audio::StepSequencerPlugin device;

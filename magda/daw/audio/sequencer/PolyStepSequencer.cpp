@@ -7,8 +7,15 @@ namespace magda::daw::audio::sequencer {
 
 namespace {
 
-/// Step events one block can carry, as in the mono engine.
-constexpr int kMaxStepEventsPerBlock = 16;
+/// Step events one block can carry: one pattern's worth.
+///
+/// A block covers a few steps at any sane rate, and sixteen was chosen for
+/// that. But the timing warp can compress several steps into a small span, and
+/// an offline block at a fast rate holds more of them than a callback does, so
+/// the sixteenth was reachable - and past it the clock used to stop and lose
+/// the rest. It holds them now, and this covers a whole pattern so it does not
+/// have to hold them block after block (#2335).
+constexpr int kMaxStepEventsPerBlock = kMaxSteps;
 
 /// Blocks a chord may sound with no step event and no pending release before
 /// the stuck-note guard cuts it.

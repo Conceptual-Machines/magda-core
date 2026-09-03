@@ -252,7 +252,7 @@ int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction dire
     }
     pendingCount_ = stillPending;
 
-    while (nextStepBeat_ < blockEndBeat && eventCount < maxEvents) {
+    while (nextStepBeat_ < blockEndBeat) {
         // Apply swing to odd ticks
         double swungBeat = nextStepBeat_;
         if (tickParity_ % 2 == 1 && swing > 0.0f)
@@ -265,16 +265,30 @@ int StepClock::processBlock(const BlockTiming& timing, Rate rate, Direction dire
             swungBeat += (snapped - swungBeat) * static_cast<double>(quantizeAmount);
         }
 
-        // A tick swung or quantized past this block's end waits for the block
-        // that contains it. With nowhere left to hold it, emit() clamps it to
-        // this block's end instead - early by less than the offset that pushed
-        // it out, where dropping it would take the step out of the pattern
-        // altogether, which is what this queue exists to prevent (#2335).
-        if (swungBeat >= blockEndBeat && pendingCount_ < kMaxPending)
+        // A tick this block cannot carry waits for one that can. Two ways it
+        // cannot: the tick was swung or quantized past the block's end, or the
+        // caller's array is full.
+        //
+        // The second used to end the loop. That left the cursor behind, and the
+        // next block's catch-up then walked through those ticks without
+        // emitting any of them, so a block holding more steps than the caller's
+        // array - a large offline block past the sequencers' sixteen - lost
+        // every step past the sixteenth outright. The queue already exists for
+        // a tick that cannot be played yet; a full array is that (#2335).
+        const bool fitsInThisBlock = swungBeat < blockEndBeat && eventCount < maxEvents;
+        if (fitsInThisBlock) {
+            emit(sequenceStep_, swungBeat);
+        } else if (pendingCount_ < kMaxPending) {
             pending_[static_cast<size_t>(pendingCount_++)] = {.stepIndex = sequenceStep_,
                                                               .beat = swungBeat};
-        else
-            emit(sequenceStep_, swungBeat);
+        } else {
+            // Neither room to play it nor room to hold it, which takes more
+            // ticks in one block than a pattern has steps on top of a full
+            // array. Stop rather than advance past it: the cursor stays here,
+            // so the block that has room starts from this tick.
+            jassertfalse;
+            break;
+        }
 
         // Advance to next step
         nextStepBeat_ += warpedStepDuration(cycleStep_);

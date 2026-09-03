@@ -14,6 +14,7 @@
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
@@ -405,6 +406,76 @@ TEST_CASE("a device writing past the port's byte budget is cut off at the bytes"
     // events arrived than were emitted, and far fewer than the cap allows.
     CHECK(out.getNumEvents() < kEmitted);
     CHECK(out.getNumEvents() > 0);
+}
+
+TEST_CASE("a step sequencer passing MIDI through keeps the whole legal block",
+          "[engine][devices][2335]") {
+    // The device stopped holding its input aside, so this is the guarantee that
+    // replaced the fixed-size store: everything a port may legally carry
+    // reaches the instrument downstream, through the real adapter rather than a
+    // test double.
+    //
+    // The densest legal block, and no denser. A clock is one byte of data and
+    // costs seven against the budget, a note costs nine, so a note-on, 582
+    // clocks and a note-off come to 4092 of the 4096 a port allows - past the
+    // 512 the device used to keep, and past the ~450 a note-sized division of
+    // the budget suggests.
+    constexpr int kClocks = 582;
+
+    auto sequencer = std::make_unique<magda::daw::audio::StepSequencerPlugin>();
+    sequencer->midiThru.store(true);
+
+    adapter::EngineMagdaDevice hosted(std::move(sequencer), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    // One block first, to spend the all-notes-off a freshly prepared device
+    // owes. A port's budget is the OUTPUT's as well as the input's, so a block
+    // that already fills it leaves no room for anything the device adds on top
+    // - the asymmetry between an input bound the executor sums across producers
+    // and an output bound fixed at kMaxMidiBytesPerPort is the engine's to
+    // settle, not this device's. What passing through guarantees, and what this
+    // asserts, is that the device itself takes nothing out.
+    {
+        Block warmUp(context);
+        warmUp.info.playing = false;
+        juce::MidiBuffer warmUpOut;
+        auto warmUpBlock = warmUp.deviceBlock();
+        warmUpBlock.midiOut = &warmUpOut;
+        hosted.process(warmUpBlock);
+    }
+
+    Block block(context);
+    // Stopped, so the sequencer writes nothing of its own and what comes out is
+    // exactly what thru let through.
+    block.info.playing = false;
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
+    for (int i = 0; i < kClocks; ++i)
+        block.midi.addEvent(juce::MidiMessage::midiClock(), i % context.maxBlockSize);
+    block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
+
+    REQUIRE(budgetCostOf(block.midi) <= magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(block.midi.getNumEvents() == kClocks + 2);
+
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    int clocks = 0;
+    int noteOffs = 0;
+    for (const auto metadata : out) {
+        const auto message = metadata.getMessage();
+        if (message.isMidiClock())
+            ++clocks;
+        else if (message.isNoteOff())
+            ++noteOffs;
+    }
+
+    CHECK(clocks == kClocks);
+    // The note-off is the last event in. Losing it is what leaves the
+    // instrument downstream holding the note.
+    CHECK(noteOffs == 1);
 }
 
 TEST_CASE("the adapter carries a merged input, not one producer's worth",
