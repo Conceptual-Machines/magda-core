@@ -46,9 +46,10 @@ TEST_CASE("A stop carries the last sample down to zero", "[engine][clip][declick
     // A source at full swing that stops a third of the way into the block. What
     // it leaves behind is a step from 1 to 0, which is the click.
     Signal signal(64, 1.0f);
-    signal.clearFrom(20);
 
     StopDeClick deClick;
+    deClick.push(signal.block.getSubBlock(0, 20));  // what the source rendered
+    signal.clearFrom(20);
     deClick.begin(signal.block, 20, 16);
 
     SECTION("the tail begins where the signal was") {
@@ -100,6 +101,7 @@ TEST_CASE("A stop ramp longer than the block carries on into the next", "[engine
     StopDeClick deClick;
 
     Signal first(32, 1.0f);
+    deClick.push(first.block.getSubBlock(0, 24));
     first.clearFrom(24);
     deClick.begin(first.block, 24, 64);
 
@@ -157,8 +159,9 @@ TEST_CASE("A stop ramp is the same however the render was cut up", "[engine][cli
             for (auto sample = 0; sample < blockSize; ++sample)
                 tail.push_back(out.at(sample));
 
-            // What a source does every block, running ramp or not.
-            deClick.push(out.block);
+            // Nothing is pushed here, because nothing rendered: what is in the
+            // buffer is the ramp itself. A source with material to push would
+            // be pushing that material, not this.
         }
 
         return tail;
@@ -203,9 +206,10 @@ TEST_CASE("A stop ramp of zero leaves the step exactly as it was", "[engine][cli
     // The dual of a launch ramp of zero preserving the leading transient: a
     // caller that asked for no de-click gets the material and nothing else.
     Signal signal(64, 1.0f);
-    signal.clearFrom(20);
 
     StopDeClick deClick;
+    deClick.push(signal.block.getSubBlock(0, 20));
+    signal.clearFrom(20);
     deClick.begin(signal.block, 20, 0);
 
     REQUIRE(signal.at(19) == Approx(1.0f));
@@ -220,10 +224,16 @@ TEST_CASE("A second stop steps down from where the signal is now", "[engine][cli
     StopDeClick deClick;
 
     Signal signal(64, 1.0f);
+    deClick.push(signal.block.getSubBlock(0, 8));
     signal.clearFrom(8);
     deClick.begin(signal.block, 8, 32);
 
-    // The other side comes back at half the level, and goes again.
+    // The other side comes back at half the level, and goes again. What the
+    // caller pushes is its own material at that point, not the buffer, which
+    // by now also holds the first ramp.
+    Signal resumed(8, 0.5f);
+    deClick.push(resumed.block);
+
     for (auto channel = 0; channel < kChannels; ++channel)
         juce::FloatVectorOperations::fill(signal.buffer.getWritePointer(channel) + 16, 0.5f, 8);
     signal.clearFrom(24);

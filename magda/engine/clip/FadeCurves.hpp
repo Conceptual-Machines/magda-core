@@ -145,25 +145,28 @@ class StopDeClick {
     /**
      * @brief Remember where @p audio ended.
      *
-     * Called with what sounded, every block a source produces anything, so a
-     * stop landing on the first sample of some later block still knows what it
-     * is stepping down from.
+     * The contract, and the whole of it: call this with what you rendered,
+     * before anything corrects it. Then what is remembered is always the last
+     * sample of your own signal, and @ref begin never has to guess which of the
+     * things in a buffer was yours.
      *
-     * Does nothing while a ramp is running: the buffer then holds the value
-     * being decayed rather than a signal, and remembering that would bend the
-     * rest of the ramp. Safe to call unconditionally, which is how a source
-     * that does not track its own ramps wants to call it.
+     * Getting that order wrong is what every way of using this wrongly looks
+     * like. Push a buffer a ramp has already been added to and the remembered
+     * sample is part decayed correction rather than signal; push a buffer
+     * somebody else also wrote into and it is their signal too, and a ramp that
+     * decays it corrects for something that never stopped. The caller that owns
+     * one signal is the caller that can push, which is why a voice pushes its
+     * own region and a source pushes its own output.
      */
     void push(juce::dsp::AudioBlock<float> audio);
 
     /**
-     * @brief Start decaying at @p offset samples into @p audio.
+     * @brief Start decaying into @p audio from @p offset, over @p fadeSamples.
      *
-     * The value decayed is the sample before @p offset when the stop lands
-     * inside a block that sounded, and the one @ref push last saw when it lands
-     * on the block's first sample. Those are the same sample; which side of a
-     * callback boundary it fell on is not something a stop should be able to
-     * hear.
+     * What it decays is what @ref push last remembered, never anything read
+     * back out of @p audio: by the time a stop is applied that buffer may hold
+     * other voices, an earlier ramp, or nothing at all, and none of those is
+     * the signal that stopped.
      */
     void begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples);
 

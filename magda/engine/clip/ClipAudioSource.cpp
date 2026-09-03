@@ -43,8 +43,10 @@ ClipVoice* ClipAudioSource::voiceFor(ClipId clipId, EventId eventId) {
         if (voice.playing(clipId, eventId))
             return &voice;
 
+    // A voice still carrying a release ramp holds no entry and yet is still
+    // sounding, so claiming it would cut the tail it is in the middle of.
     for (auto& voice : voices_)
-        if (voice.clipId() == INVALID_CLIP_ID)
+        if (voice.clipId() == INVALID_CLIP_ID && !voice.fading())
             return &voice;
 
     return nullptr;
@@ -104,14 +106,6 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
     // The status is the launcher's, worked out before anything rendered
     // (SessionLauncher.hpp), so this source and the MIDI one see the same block.
-    // Whether some other slot sounded right across the block. Only that masks
-    // another slot's stop: the ramp reads the step off the summed buffer, and a
-    // slot that was already sounding before the stop sample is still in that
-    // sum afterwards, so decaying it would correct for a signal that never
-    // stopped. A slot that starts where another stops was not in the sum
-    // before, so the value at the stop is the outgoing slot's alone.
-    auto soundedThroughout = false;
-
     const auto renderSlot = [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
         const auto play = [&](const BlockPiece& piece, int offset, int count) {
             if (count <= 0 || !piece.origin)
@@ -129,50 +123,41 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
         if (status.afterEvent)
             play(*status.afterEvent, split, block.numSamples - split);
 
-        // Where this slot stopped sounding, for the ramp that takes the step out
-        // of it. The handle's answer rather than the shape of the split, so a
-        // stop on the block's first sample is the same edge as one half way
-        // through it (LaunchHandle::silencedAt).
-        if (const auto silenced = status.silencedAt())
-            sessionSilentFrom_ = std::max(sessionSilentFrom_.value_or(0), silenced->value);
+        // Where this slot stopped sounding, noted per clip rather than per
+        // track: the ramp is the voice's own (ClipVoice::releaseInto), so
+        // whether some other slot goes on sounding through the same samples
+        // does not come into it. The handle's answer rather than the shape of
+        // the split, so a stop on the block's first sample is the same edge as
+        // one half way through it (LaunchHandle::silencedAt).
+        const auto silenced = status.silencedAt();
+        if (!silenced)
+            return;
 
-        soundedThroughout = soundedThroughout || (status.soundingAtStart && status.playingAtEnd());
+        for (const auto& clip : slot.audio)
+            for (const auto& event : clip.events) {
+                if (stoppingCount_ >= kMaxVoicesPerTrack)
+                    return;
+
+                stopping_[static_cast<std::size_t>(stoppingCount_++)] =
+                    Stopping{clip.clipId, event.eventId, silenced->value};
+            }
     };
 
     forEachSlot(*handles.get(), track, renderSlot);
-
-    if (soundedThroughout)
-        sessionSilentFrom_.reset();
 }
 
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     // Cleared for the block rather than by whatever gathers, because every path
     // through the render can return before the gather does: a stale edge would
-    // de-click a second time, blocks after the stop it belongs to.
-    sessionSilentFrom_.reset();
+    // release a voice a second time, blocks after the stop it belongs to.
+    stoppingCount_ = 0;
 
     renderMaterial(block, out);
 
-    switch (section_) {
-        case Section::Arrangement:
-            // Only a source that shares its track with a session has a section
-            // to lose it to. One built without the feed is the whole track.
-            if (handles_ != nullptr)
-                applySectionHold(out);
-            break;
-
-        case Section::Session:
-            if (sessionSilentFrom_) {
-                sessionStop_.begin(out, *sessionSilentFrom_, kSectionDeClickSamples);
-            } else {
-                sessionStop_.advance(out);
-
-                // What sounded, remembered for a stop that lands on the first
-                // sample of some later block.
-                sessionStop_.push(out);
-            }
-            break;
-    }
+    // Only a source that shares its track with a session has a section to lose
+    // it to. One built without the feed is the whole track.
+    if (section_ == Section::Arrangement && handles_ != nullptr)
+        applySectionHold(out);
 }
 
 void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
@@ -180,6 +165,11 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
 
     if (!hold.session) {
+        // What the arrangement rendered, before anything corrects it, which is
+        // the order StopDeClick::push asks for: pushed after the ramps below
+        // this would remember a correction rather than a signal.
+        handOver_.push(out);
+
         // The track is the arrangement's. Coming back to it lands mid-material,
         // which is the same step a voice starting mid-file leaves and comes out
         // the same way.
@@ -192,7 +182,6 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
         // rather than being cut off, which would be the click it exists to
         // remove.
         handOver_.advance(out);
-        handOver_.push(out);
 
         wasHeld_ = false;
         return;
@@ -204,6 +193,12 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     // when it lost it. Only the output is dropped.
     const auto numSamples = static_cast<int>(out.getNumSamples());
     const auto from = wasHeld_ ? 0 : std::clamp(hold.takenAt.value, 0, numSamples);
+
+    // What it rendered up to the cut, which is what the ramp carries down.
+    // Empty for a hand-over on the block's first sample, where what the ramp
+    // carries down is the block before's, pushed then.
+    if (!wasHeld_)
+        handOver_.push(out.getSubBlock(0, static_cast<std::size_t>(from)));
 
     out.getSubBlock(static_cast<std::size_t>(from)).clear();
 
@@ -289,7 +284,19 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     else
         gather(track->audio, lane, 0, table, sounding, soundingCount);
 
+    const auto stopping = [&](const ClipVoice& voice) {
+        const auto* found =
+            std::find_if(stopping_.begin(), stopping_.begin() + stoppingCount_,
+                         [&](const Stopping& s) { return voice.playing(s.clipId, s.eventId); });
+
+        return found != stopping_.begin() + stoppingCount_ ? found : nullptr;
+    };
+
     for (auto& voice : voices_) {
+        // A release ramp from an earlier block, which sounds whether or not
+        // anything replaced the voice that left it.
+        voice.carryTail(out);
+
         if (voice.clipId() == INVALID_CLIP_ID)
             continue;
 
@@ -298,7 +305,11 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
                 return voice.playing(s.clip->clipId, s.event->eventId);
             });
 
-        if (!stillSounding)
+        // Let go before anything renders, so a voice holding a clip that
+        // stopped last block does not keep a slot a clip starting this one
+        // needs. Not one the launcher says is stopping in this block: that one
+        // is released below, once it has rendered whatever it still had to.
+        if (!stillSounding && stopping(voice) == nullptr)
             voice.release();
     }
 
@@ -323,6 +334,19 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
                       entry.preRoll, scratch,
                       out.getSubBlock(static_cast<std::size_t>(entry.outOffset),
                                       static_cast<std::size_t>(entry.block.numSamples)));
+    }
+
+    // After rendering, because a slot that stops half way through a block still
+    // sounds the first half of it, and the ramp carries on from what that half
+    // ended at. A slot stopped on the block's first sample rendered nothing
+    // here and carries on from the block before, which is the same thing said
+    // about a different sample (StopDeClick::push).
+    for (auto& voice : voices_) {
+        if (voice.clipId() == INVALID_CLIP_ID)
+            continue;
+
+        if (const auto* stopped = stopping(voice))
+            voice.releaseInto(out, stopped->offset, kSectionDeClickSamples);
     }
 }
 

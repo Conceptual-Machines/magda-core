@@ -18,6 +18,20 @@ void ClipVoice::prepare(const RenderContext& context) {
     held_.setSize(std::max(1, context.numChannels), kCellSamples, false, true, false);
 
     release();
+    stop_.reset();
+}
+
+void ClipVoice::releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples) {
+    // What it was contributing, remembered by the render that produced it, so
+    // the ramp decays this voice and nothing else that landed in the same
+    // samples (StopDeClick::push).
+    stop_.begin(out, offset, fadeSamples);
+
+    release();
+}
+
+void ClipVoice::carryTail(juce::dsp::AudioBlock<float> out) {
+    stop_.advance(out);
 }
 
 void ClipVoice::release() {
@@ -26,6 +40,9 @@ void ClipVoice::release() {
     sounded_ = false;
     primed_ = nullptr;
     deClick_.reset();
+
+    // stop_ is deliberately left alone: releasing is what starts its ramp, and
+    // what is left of it is still sounding.
     pending_ = false;
     pendingCount_ = 0;
     pendingRead_ = 0;
@@ -394,6 +411,11 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     } else {
         deClick_.advance(region);
     }
+
+    // Before it is summed with anything else, and before any correction is
+    // added to it: what is remembered has to be this voice's own signal, or a
+    // ramp that decays it corrects for whatever else landed here too.
+    stop_.push(region.getSubBlock(0, static_cast<std::size_t>(count)));
 
     out.getSubBlock(static_cast<std::size_t>(first.value), static_cast<std::size_t>(count))
         .add(region);

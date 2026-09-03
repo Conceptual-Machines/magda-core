@@ -136,31 +136,10 @@ void StopDeClick::hold(juce::dsp::AudioBlock<float> audio, int upTo) {
 }
 
 void StopDeClick::push(juce::dsp::AudioBlock<float> audio) {
-    // Not while a ramp is running, and this is what keeps the ramp independent
-    // of how the render was cut up. What a running ramp decays is the value the
-    // signal stopped at, and the buffer it was just written into now holds that
-    // value part way down. Taking the remembered sample from there would
-    // multiply the rest of the cosine by an already decayed number, so the ramp
-    // would bend at every block seam and a stop would come out differently at
-    // 8 samples a block and at 1024.
-    //
-    // Refusing here rather than at the callers, because every caller pushes
-    // unconditionally every block: which of those blocks a ramp happens to be
-    // running through is exactly what they should not have to know.
-    if (active())
-        return;
-
     hold(audio, static_cast<int>(audio.getNumSamples()));
 }
 
 void StopDeClick::begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples) {
-    // Whatever a previous ramp had left is finished by this one: a stop landing
-    // while an earlier stop is still decaying steps down from where the signal
-    // is now, not from where it was two stops ago. Deliberately past the guard
-    // in push, because a new stop is the one thing that should re-anchor a
-    // running ramp.
-    hold(audio, offset);
-
     length_ = std::max(0, fadeSamples);
     done_ = 0;
 

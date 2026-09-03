@@ -1113,16 +1113,17 @@ TEST_CASE("A slot swap on a block boundary carries the outgoing one down too",
     }
 }
 
-TEST_CASE("A slot sounding right through masks another's stop",
+TEST_CASE("A slot stopping under one that keeps sounding is still ramped",
           "[engine][clip][session][section]") {
-    // The other side of the same rule. The ramp reads its step off the summed
-    // buffer, so a slot that was already sounding before the stop is still in
-    // that sum afterwards and decaying it would correct for a signal that never
-    // stopped.
+    // The case one ramp over the track's sum could not do, and the reason the
+    // ramp belongs to the voice: the outgoing slot's own 0.5 is carried down
+    // while the other slot's 0.5 goes on sounding through the same samples,
+    // rather than the stop being passed over because something else was still
+    // playing (#2344 review).
     SwitchRig rig;
     rig.giveArrangement(1, 0.0f);
-    rig.giveSlot(2, 4.0, 0.5f, kScene);
-    rig.giveSlot(3, 4.0, 0.5f, kScene + 1);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.giveSlot(3, 400.0, 0.5f, kScene + 1);
     rig.publish();
 
     rig.handle.play(std::nullopt);
@@ -1135,11 +1136,27 @@ TEST_CASE("A slot sounding right through masks another's stop",
 
     const auto stopSample = kBlockSize / 2;
 
-    // One of the two stops, and what is left is the other at its own level
-    // rather than that plus a decaying copy of the pair.
-    CHECK(rig.sessionAt(stopSample - 1) == Approx(1.0f));
-    CHECK(rig.sessionAt(stopSample) == Approx(0.5f));
-    CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+    SECTION("the outgoing half decays rather than vanishing") {
+        CHECK(rig.sessionAt(stopSample - 1) == Approx(1.0f));
+        CHECK(rig.sessionAt(stopSample) == Approx(1.0f));
+
+        for (auto sample = stopSample + 1; sample < stopSample + kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.sessionAt(sample) <= rig.sessionAt(sample - 1));
+        }
+    }
+
+    SECTION("leaving exactly the slot that is still playing") {
+        CHECK(rig.sessionAt(stopSample + kSectionDeClickSamples) == Approx(0.5f));
+        CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+    }
+
+    SECTION("and the track never steps") {
+        for (auto sample = 1; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(std::abs(rig.sessionAt(sample) - rig.sessionAt(sample - 1)) < 0.05f);
+        }
+    }
 }
 
 TEST_CASE("A session stop sounds the same however the callback is cut up",
@@ -1197,6 +1214,67 @@ TEST_CASE("A session stop sounds the same however the callback is cut up",
         INFO("sample " << sample);
         REQUIRE(chopped[static_cast<std::size_t>(sample)] <=
                 chopped[static_cast<std::size_t>(sample) - 1]);
+    }
+}
+
+TEST_CASE("A stop inside another slot's unfinished ramp starts from its own level",
+          "[engine][clip][session][section]") {
+    // Slot A hands over to B near a block end, A's ramp carries into the next
+    // block, and B stops on the boundary after that. With one ramp over the
+    // track's sum, B's tail would have started from A's anchor or from a
+    // half decayed correction, whichever the aggregate happened to hold. Two
+    // voices, two ramps, and neither can reach the other (#2344 review).
+    constexpr int kSmall = 16;  // so a 32-sample ramp spans blocks
+
+    SwitchRig rig;
+    rig.giveArrangement(1, 0.0f);
+    rig.giveSlot(2, 400.0, 0.8f, kScene);
+    rig.giveSlot(3, 400.0, -0.3f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.sessionAt(kBlockSize - 1) == Approx(0.8f));
+
+    std::vector<float> tail;
+    auto at = static_cast<std::int64_t>(2 * kBlockSize);
+
+    const auto step = [&] {
+        rig.renderSession(smallBlockAt(at, kSmall));
+        for (auto index = 0; index < kSmall; ++index)
+            tail.push_back(rig.sessionAt(index));
+        at += kSmall;
+    };
+
+    // A out, B in, on the same sample.
+    rig.handle.stop(std::nullopt);
+    rig.second.play(std::nullopt);
+    step();
+
+    // B out while A's ramp is still running.
+    rig.second.stop(std::nullopt);
+    step();
+
+    // And on, until both ramps are spent.
+    for (auto index = 0; index < 6; ++index)
+        step();
+
+    SECTION("B's own level is what its tail starts from") {
+        // A's ramp is 16 samples in and worth 0.8 * cos-decay; B contributes
+        // its own -0.3 carried down from where it was. Neither is the other's.
+        REQUIRE(tail[kSmall] < tail[kSmall - 1] + 1e-5f);
+        REQUIRE(tail[kSmall] > -0.3f);
+    }
+
+    SECTION("and nothing steps anywhere across either seam") {
+        for (std::size_t sample = 1; sample < tail.size(); ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(std::abs(tail[sample] - tail[sample - 1]) <= 0.3f + 1e-5f);
+        }
+    }
+
+    SECTION("ending in silence once both are spent") {
+        CHECK(tail.back() == Approx(0.0f).margin(1e-5));
     }
 }
 

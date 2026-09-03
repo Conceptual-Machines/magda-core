@@ -216,13 +216,19 @@ class ClipAudioSource final : public EngineAudioSource {
     StopDeClick handOver_;
     StartDeClick handBack_;
 
-    /// Where this track's session output went silent in the block just
-    /// gathered, when it did. Per track rather than per slot, on the same terms
-    /// as the op: a track sounds one session clip at a time.
-    std::optional<int> sessionSilentFrom_;
+    /// One entry of this track's session that stopped in the block just
+    /// gathered, and where. Per entry rather than per track, because the ramp
+    /// that takes its step out belongs to the voice playing it: one ramp over
+    /// the track's sum could not tell an outgoing slot from one still sounding
+    /// through the same samples (#2344 review).
+    struct Stopping {
+        ClipId clipId = INVALID_CLIP_ID;
+        EventId eventId = INVALID_EVENT_ID;
+        int offset = 0;
+    };
 
-    /// The step that leaves behind.
-    StopDeClick sessionStop_;
+    std::array<Stopping, kMaxVoicesPerTrack> stopping_;
+    int stoppingCount_ = 0;
 
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;
 
