@@ -20,7 +20,7 @@ namespace magda::engine {
 
 /// Whether the material runs on from the last block. Material beat zero is a
 /// run beginning here (LaunchHandle::virtualStart), which is a discontinuity.
-inline bool runsOn(const BlockInfo& block, const BeatRange& range, const RunOrigin& origin) {
+inline bool runsOn(const BlockInfo& block, const BeatRange& range, const MaterialOrigin& origin) {
     return block.continuous && (range.start - origin.beat) > 0.0;
 }
 
@@ -40,7 +40,7 @@ inline bool runsOn(const BlockInfo& block, const BeatRange& range, const RunOrig
  * caller's.
  */
 inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
-                               const RunOrigin& origin) {
+                               const MaterialOrigin& origin) {
     auto material = block;
     material.beats = BeatRange{block.beats.start - origin.beat, block.beats.end - origin.beat};
     material.seconds =
@@ -53,7 +53,7 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
     // reader consuming its material against beats is asked about instants past
     // the end of the block, where the block's own two ends are a straight line
     // through whatever the tempo does next (RenderContext.hpp).
-    material.runOrigin = origin;
+    material.materialOrigin = origin;
     return material;
 }
 
@@ -67,7 +67,7 @@ inline BlockInfo materialBlock(const BlockInfo& block, const BeatRange& range,
  * ends (#2330).
  */
 inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range,
-                                  const RunOrigin& origin, int offset, int count) {
+                                  const MaterialOrigin& origin, int offset, int count) {
     auto material = materialBlock(block, range, origin);
     material.numSamples = count;
     material.beats = BeatRange{range.start - origin.beat, range.end - origin.beat};

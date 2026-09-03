@@ -392,7 +392,7 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
 
     magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(
-        block, whole, magda::engine::RunOrigin{block.beats.start, block.seconds.start});
+        block, whole, magda::engine::MaterialOrigin{block.beats.start, block.seconds.start});
 
     // Beat zero of the material, at the seconds beat zero has.
     CHECK(material.beats.start == Approx(0.0));
@@ -426,14 +426,14 @@ TEST_CASE("A session block answers about beats through the map, not its own line
                                       {{0.0, 4, 4}});
     const auto block = blockOnMap(map, 2.0 - (kBlockSize / kSampleRate));
 
-    const magda::engine::RunOrigin origin{block.beats.start, block.seconds.start};
+    const magda::engine::MaterialOrigin origin{block.beats.start, block.seconds.start};
     const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(block, whole, origin);
 
     // The map comes with the block, and the shift it was moved by comes with
     // it too, which is what keeps the map answerable here.
     CHECK(material.tempo == &map);
-    CHECK(material.runOrigin == origin);
+    CHECK(material.materialOrigin == origin);
 
     // A cell boundary past the end of the block, which is where ClipVoice reads
     // (RenderContext.hpp): the grid is anchored to the event rather than to the
@@ -457,8 +457,8 @@ TEST_CASE("A run already under way is continuous with the block before it",
     const auto block = blockAt(40);
 
     // The run began four blocks ago, so this block is one beat into it.
-    const magda::engine::RunOrigin origin{block.beats.start - 1.0,
-                                          block.seconds.start - kSecondsPerBeat};
+    const magda::engine::MaterialOrigin origin{block.beats.start - 1.0,
+                                               block.seconds.start - kSecondsPerBeat};
     const magda::engine::BeatRange whole{block.beats.start, block.beats.end};
     const auto material = magda::engine::materialBlock(block, whole, origin);
 
@@ -1042,7 +1042,7 @@ TEST_CASE("A launched slot keeps its place across a locate", "[engine][clip][ses
     CHECK(rig.at(0) == Approx(kRunBlocks * kBlockSize));
 }
 
-TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][session]") {
+TEST_CASE("Synced handles agree in beats and in samples", "[engine][clip][session]") {
     // What makes a scene one event rather than N. Beats alone would put a
     // scene's MIDI in the right bar and its audio somewhere else.
     LaunchHandle leader;
@@ -1059,15 +1059,16 @@ TEST_CASE("Synced handles agree in beats and in seconds", "[engine][clip][sessio
 
     REQUIRE(leader.playedMonotonicRange().has_value());
     REQUIRE(follower.playedMonotonicRange().has_value());
-    REQUIRE(leader.playedMonotonicSecondsRange().has_value());
-    REQUIRE(follower.playedMonotonicSecondsRange().has_value());
+    REQUIRE(leader.playedSampleRange().has_value());
+    REQUIRE(follower.playedSampleRange().has_value());
 
     CHECK(follower.playedMonotonicRange()->start == Approx(leader.playedMonotonicRange()->start));
     CHECK(follower.playedMonotonicRange()->end == Approx(leader.playedMonotonicRange()->end));
-    CHECK(follower.playedMonotonicSecondsRange()->start ==
-          Approx(leader.playedMonotonicSecondsRange()->start));
-    CHECK(follower.playedMonotonicSecondsRange()->end ==
-          Approx(leader.playedMonotonicSecondsRange()->end));
+
+    // The same sample, not the same second: two runs that began on one sample
+    // began together whatever the tempo does afterwards (#2336).
+    CHECK(follower.playedSampleRange()->start == leader.playedSampleRange()->start);
+    CHECK(follower.playedSampleRange()->end == leader.playedSampleRange()->end);
 
     // And the same origin to whatever renders them, on both axes.
     REQUIRE(follower.blockStatus().beforeEvent.origin.has_value());

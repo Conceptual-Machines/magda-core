@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <compare>
 #include <cstdint>
@@ -221,51 +222,101 @@ inline EdgeSample operator+(EdgeSample edge, int count) {
 }
 
 /**
- * @brief One instant inside a block, in every domain the engine names it in.
+ * @brief The sample of an @p numSamples block that something @p offset samples
+ * in happens on.
  *
- * Built from one coordinate and one only: the sample. Every face below is
- * derived from it through the tempo map, so the five of them are one instant
- * rather than five answers that happen to be near each other.
+ * Floor rather than nearest, which is what makes the answer total. A block
+ * covers the half-open stretch its samples run over, so a position inside it is
+ * somewhere in `[0, N)` and the sample it is inside is `0..N-1`, always, with
+ * no case to clamp away. Nearest has one: a position in the block's last half
+ * sample rounds to N, which is not a sample this block has, and the clamp that
+ * used to hide that is the defect the epic names (#2336).
  *
- * That is the whole point of the type. The domains are related by the map,
- * which is not a straight line, and projecting an instant onto each axis
- * separately gives a set of faces no single moment has: over a steep ramp the
- * beat face and the seconds face of one "instant" can be 163 samples apart.
- * Anything built from those faces inherits the gap, and a run whose origin has
- * it starts its material somewhere it was never placed (#2330).
+ * A position on the boundary belongs to the next block, where it is sample
+ * zero, and it gets there without anything being carried: the next block's
+ * stretch begins there.
  *
- * The sample is canonical because it is the one coordinate that is not a
- * matter of interpretation: it is what plays.
+ * The epsilon is why this is not plain truncation, and the clamp is a guard
+ * rather than the rule: every caller resolves a position its own bounds have
+ * already put inside the block.
+ */
+inline EventSample eventAt(double offset, int numSamples) {
+    if (numSamples <= 0)
+        return EventSample{0};
+
+    const auto sample = static_cast<int>(std::floor(offset + kSampleEpsilon));
+    return EventSample{std::clamp(sample, 0, numSamples - 1)};
+}
+
+/**
+ * @brief Where a stretch of an @p numSamples block that begins or ends
+ * @p offset samples in has its edge.
+ *
+ * Nearest, and N is a legal answer: a region that runs to the end of the block
+ * ends at the sample after the last one, the way every half-open range does. An
+ * edge is a bound rather than a moment something happens at, so it is not
+ * floored to the sample it is inside; a fade that begins a hair before a sample
+ * begins on it.
+ */
+inline EdgeSample edgeAt(double offset, int numSamples) {
+    if (numSamples <= 0)
+        return EdgeSample{0};
+
+    return EdgeSample{std::clamp(static_cast<int>(std::lround(offset)), 0, numSamples)};
+}
+
+/**
+ * @brief One instant inside a block: the sample it sounds on, and nothing else.
+ *
+ * Two numbers that are one number. The offset is where in this block's buffer
+ * it is, and the position is the same sample on the transport's own count, so
+ * an instant stays comparable once the block that produced it is gone.
+ *
+ * Every other domain is a face of it, and none of them are stored here. That is
+ * the point of the type. The domains are related by a map, which is not a
+ * straight line, and an instant carrying its own copies of them is a set of
+ * faces anything may overwrite one of: over a steep ramp the beat face and the
+ * seconds face of one "instant" can be 163 samples apart, and a run whose
+ * origin has that gap starts its material somewhere it was never placed
+ * (#2330). The faces come from the block instead, which is the only thing that
+ * knows the map (SyncRange in launch/LaunchHandle.hpp).
+ *
+ * The sample is canonical because it is the one coordinate that is not a matter
+ * of interpretation: it is what plays.
  */
 struct BlockInstant {
     /// Offset within the block. What actually sounds at this instant.
     int sample = 0;
 
-    double timelineBeat = 0.0;
-    double timelineSeconds = 0.0;
+    /// The same instant on the transport's count, which no wrap, locate or
+    /// tempo edit moves (#2336).
+    SamplePosition monotonic;
 
-    /// The faces that never go back, which is what a queued launch is named in
-    /// and what a run's elapsed material is measured in (#2324).
-    double monotonicBeat = 0.0;
-    double monotonicSeconds = 0.0;
+    bool operator==(const BlockInstant&) const = default;
 };
 
 /**
- * @brief Where a run began, in the two domains a source reads it against.
+ * @brief Where a run's material begins, on one block's own axes.
  *
- * One value, because a run whose faces came from different instants would put a
- * clip's notes and its samples in different places. The two are not one number
- * converted: a map says where a beat sits, not how long a run has lasted, so
- * each face is projected from its own monotonic domain (#2324).
+ * What a block is shifted by to become the run's, so a source reading it is
+ * reading material beats and elapsed run time rather than timeline positions
+ * (clip/SessionPlayback.hpp).
  *
- * Here rather than with the launcher because it is what shifts a block onto a
- * run's own axes, and the block is not a launcher concept.
+ * Derived per block rather than stored: after a wrap, the instant a run really
+ * began on is not in this cycle of the timeline, so either face can sit before
+ * the block or before zero, and what that means is that the run began that far
+ * back. The run's own durable origin is a sample, and it is the launcher's
+ * (launch/LaunchHandle.hpp).
+ *
+ * The two faces are not one number converted. A map says where a beat sits, not
+ * how long a run has lasted, so the beat face comes off the monotonic beats and
+ * the seconds face off the sample count (#2324).
  */
-struct RunOrigin {
+struct MaterialOrigin {
     double beat = 0.0;
     double seconds = 0.0;
 
-    bool operator==(const RunOrigin&) const = default;
+    bool operator==(const MaterialOrigin&) const = default;
 };
 
 }  // namespace magda::engine

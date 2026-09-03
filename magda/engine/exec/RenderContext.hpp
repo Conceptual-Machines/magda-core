@@ -124,8 +124,14 @@ struct BlockInfo {
      * nothing may: a map converts a position, and after a wrap two monotonic
      * beats are not in the same cycle (#2324).
      *
-     * What asks is a run needing to know how far into its material it is: a
-     * launched session clip reading a file at its own speed (LaunchHandle.hpp).
+     * Kept because it is the one thing @ref monotonicSamples cannot answer: how
+     * long the transport has actually rolled, across a rate change as well as
+     * within one. A count of samples divided by the rate they are being counted
+     * at now is not that, because they were not all worth the same amount of
+     * time. A run's own elapsed time is measured from the samples instead
+     * (LaunchHandle.hpp), and it handles a rate change by re-counting its
+     * origin rather than by reading this.
+     *
      * A stopped block does not advance it.
      */
     SecondsRange monotonicSeconds;
@@ -172,7 +178,7 @@ struct BlockInfo {
      */
     double timeForBeat(double beat) const {
         if (tempo != nullptr)
-            return tempo->beatToTime(beat + runOrigin.beat) - runOrigin.seconds;
+            return tempo->beatToTime(beat + materialOrigin.beat) - materialOrigin.seconds;
 
         if (beats.empty())
             return seconds.start;
@@ -208,74 +214,25 @@ struct BlockInfo {
         return beats.empty() ? 0.0 : ((beat - beats.start) / beats.length()) * numSamples;
     }
 
-    /**
-     * @brief The sample of this block that something @p offset samples in
-     * happens on.
-     *
-     * Floor rather than nearest, which is what makes the answer total. A block
-     * covers the half-open stretch its samples run over, so a moment inside it
-     * is somewhere in `[0, N)` and the sample it is inside is `0..N-1`, always,
-     * with no case to clamp away. Nearest has one: a moment in the block's last
-     * half sample rounds to N, which is not a sample this block has, and the
-     * clamp that used to hide that is the defect the epic names (#2336).
-     *
-     * A moment on the boundary belongs to the next block, where it is sample
-     * zero, and it gets there without anything being carried: the next block's
-     * stretch begins there.
-     *
-     * The epsilon is why this is not plain truncation. A moment that is the
-     * block's own start can come out at minus a billionth of a sample, and a
-     * beat asked for on a shifted block has had an origin taken off it and put
-     * back on. Floor turns either into the sample before, which is an event in
-     * the wrong block or none at all; the same reason TransportClock guards its
-     * own ceiling.
-     *
-     * The clamp is a guard rather than the rule. Every caller resolves a
-     * position its own bounds have already put inside the block.
-     */
-    EventSample eventAt(double offset) const {
-        if (numSamples <= 0)
-            return EventSample{0};
-
-        const auto sample = static_cast<int>(std::floor(offset + kSampleEpsilon));
-        return EventSample{std::clamp(sample, 0, numSamples - 1)};
-    }
-
-    /**
-     * @brief Where a stretch that begins or ends @p offset samples in has its
-     * edge.
-     *
-     * Nearest, and N is a legal answer: a region that runs to the end of the
-     * block ends at the sample after the last one, the way every half-open
-     * range does. An edge is a bound rather than a moment something happens at,
-     * so it is not floored to the sample it is inside; a fade that begins a
-     * hair before a sample begins on it.
-     */
-    EdgeSample edgeAt(double offset) const {
-        if (numSamples <= 0)
-            return EdgeSample{0};
-
-        return EdgeSample{std::clamp(static_cast<int>(std::lround(offset)), 0, numSamples)};
-    }
-
-    /// The sample of this block that @p moment happens on.
+    /// The sample of this block that @p moment happens on
+    /// (TimeDomains::eventAt).
     EventSample eventForTime(double moment) const {
-        return seconds.empty() ? EventSample{0} : eventAt(offsetForTime(moment));
+        return seconds.empty() ? EventSample{0} : eventAt(offsetForTime(moment), numSamples);
     }
 
     /// The sample of this block that @p beat happens on.
     EventSample eventForBeat(double beat) const {
-        return beats.empty() ? EventSample{0} : eventAt(offsetForBeat(beat));
+        return beats.empty() ? EventSample{0} : eventAt(offsetForBeat(beat), numSamples);
     }
 
-    /// Where a stretch bounded by @p moment has its edge.
+    /// Where a stretch bounded by @p moment has its edge (TimeDomains::edgeAt).
     EdgeSample edgeForTime(double moment) const {
-        return seconds.empty() ? EdgeSample{0} : edgeAt(offsetForTime(moment));
+        return seconds.empty() ? EdgeSample{0} : edgeAt(offsetForTime(moment), numSamples);
     }
 
     /// Where a stretch bounded by @p beat has its edge.
     EdgeSample edgeForBeat(double beat) const {
-        return beats.empty() ? EdgeSample{0} : edgeAt(offsetForBeat(beat));
+        return beats.empty() ? EdgeSample{0} : edgeAt(offsetForBeat(beat), numSamples);
     }
 
     /**
@@ -323,7 +280,7 @@ struct BlockInfo {
         // timeline to be asked about, and the answer comes back onto the run's
         // own axis. Zero on a timeline block, where this is the map itself.
         if (tempo != nullptr)
-            return tempo->timeToBeat(moment + runOrigin.seconds) - runOrigin.beat;
+            return tempo->timeToBeat(moment + materialOrigin.seconds) - materialOrigin.beat;
 
         if (seconds.empty())
             return beats.start;
@@ -356,7 +313,7 @@ struct BlockInfo {
     /// Always the timeline's, even where the axes above are not: a shifted
     /// block records the shift below rather than pretending the map is its own.
     /// Anything reaching for this directly is asking a timeline question and
-    /// has to put @ref runOrigin back first.
+    /// has to put @ref materialOrigin back first.
     const TempoMap* tempo = nullptr;
 
     /**
@@ -371,7 +328,7 @@ struct BlockInfo {
      * leave the block's own two ends as the only answer, and that straight
      * line is exactly what the cell path above cannot afford.
      */
-    RunOrigin runOrigin;
+    MaterialOrigin materialOrigin;
 };
 
 }  // namespace magda::engine
