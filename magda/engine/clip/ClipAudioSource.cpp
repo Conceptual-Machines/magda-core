@@ -137,6 +137,8 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
         soundedThroughout =
             soundedThroughout || (status.beforeEvent.playing() && status.playingAtEnd());
+
+        sessionSounded_ = sessionSounded_ || status.playingAtEnd();
     };
 
     forEachSlot(*handles.get(), track, renderSlot);
@@ -148,8 +150,12 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
     // Cleared for the block rather than by whatever gathers, because every path
     // through the render can return before the gather does: a stale edge would
-    // de-click a second time, blocks after the stop it belongs to.
+    // de-click a second time, blocks after the stop it belongs to. The same
+    // goes for whether anything sounded, which every early return answers no.
     sessionSilentFrom_.reset();
+
+    const auto soundedLastBlock = sessionSounded_;
+    sessionSounded_ = false;
 
     renderMaterial(block, out);
 
@@ -162,6 +168,15 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
             break;
 
         case Section::Session:
+            // A stop landing on this block's first sample. The handle reports
+            // it as a block that was never playing, which is the same
+            // SplitStatus as a slot that stopped long ago, so the edge is only
+            // visible from here: something sounded last block and nothing does
+            // now. The value it steps down from is the one push remembered,
+            // which is what push is for.
+            if (!sessionSilentFrom_ && soundedLastBlock && !sessionSounded_)
+                sessionSilentFrom_ = 0;
+
             if (sessionSilentFrom_) {
                 sessionStop_.begin(out, *sessionSilentFrom_, kSectionDeClickSamples);
             } else {

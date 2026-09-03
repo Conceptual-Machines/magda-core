@@ -171,6 +171,28 @@ BlockInfo blockAt(int index, bool continuous = true) {
     return block;
 }
 
+/// A block of @p count samples beginning at @p startSample, at the one tempo.
+/// For the cases that assert a render does not depend on how the callback was
+/// cut up, where the block is smaller than the fixture's own.
+BlockInfo smallBlockAt(std::int64_t startSample, int count, bool continuous = true) {
+    BlockInfo block;
+    block.numSamples = count;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {magda::engine::SamplePosition{startSample},
+                              magda::engine::SamplePosition{startSample + count}};
+    block.playing = true;
+    block.continuous = continuous;
+    block.seconds.start = static_cast<double>(startSample) / kSampleRate;
+    block.seconds.end = static_cast<double>(startSample + count) / kSampleRate;
+    block.beats.start = block.seconds.start / kSecondsPerBeat;
+    block.beats.end = block.seconds.end / kSecondsPerBeat;
+    block.monotonicBeats.start = block.beats.start;
+    block.monotonicBeats.end = block.beats.end;
+    block.monotonicSeconds.start = block.seconds.start;
+    block.monotonicSeconds.end = block.seconds.end;
+    return block;
+}
+
 /// The block covering @p startSeconds, on @p map rather than at one tempo. The
 /// two faces are derived through the one map, the way the transport derives
 /// them (RenderContext.hpp).
@@ -749,6 +771,14 @@ struct SwitchRig {
             render(index, index != first);
     }
 
+    /// The session alone, over a block the case assembled itself.
+    void renderSession(const BlockInfo& block) {
+        fill();
+        magda::engine::advanceLaunchHandles(handles, block);
+        session.render(block, juce::dsp::AudioBlock<float>(sessionOut)
+                                  .getSubBlock(0, static_cast<std::size_t>(block.numSamples)));
+    }
+
     void fill() {
         auto worked = true;
         while (worked) {
@@ -936,6 +966,14 @@ TEST_CASE("Releasing the section gives the track back to its arrangement",
     rig.render(3);
 
     SECTION("the session stops with it") {
+        // Its material is gone; what is left in this block is the ramp taking
+        // the step out of the sample it stopped on.
+        CHECK(rig.sessionAt(0) == Approx(0.5f));
+        CHECK(rig.sessionAt(kSectionDeClickSamples - 1) == Approx(0.0f).margin(1e-5));
+        CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(0.0f));
+        CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.0f));
+
+        rig.render(4);
         CHECK(rig.sessionPeak() == 0.0f);
     }
 
@@ -1060,6 +1098,64 @@ TEST_CASE("A slot sounding right through masks another's stop",
     CHECK(rig.sessionAt(stopSample - 1) == Approx(1.0f));
     CHECK(rig.sessionAt(stopSample) == Approx(0.5f));
     CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+}
+
+TEST_CASE("A session stop sounds the same however the callback is cut up",
+          "[engine][clip][session][section]") {
+    // Block size is an I/O batching concept and never a precision one
+    // (RenderContext.hpp). The ramp after a stop is carried across blocks for
+    // exactly this reason, so a stop rendered in one block and the same stop
+    // rendered in eight-sample blocks have to agree sample for sample
+    // (#2344 review).
+    const auto tailOf = [](int blockSize) {
+        SwitchRig rig;
+        rig.giveArrangement(1, 0.0f);
+        rig.giveSlot(2, 400.0, 0.5f);
+        rig.publish();
+
+        rig.handle.play(std::nullopt);
+
+        // Up to the stop in whole blocks, so both runs start it from the same
+        // place, then onwards in blocks of the size under test.
+        rig.roll(0, 1);
+
+        std::vector<float> tail;
+        auto sample = static_cast<std::int64_t>(2 * kBlockSize);
+
+        // Stopped as soon as possible, so it lands on the first sample of the
+        // block after this one whatever that block's size is.
+        rig.handle.stop(std::nullopt);
+
+        while (static_cast<int>(tail.size()) < kSectionDeClickSamples * 2) {
+            rig.renderSession(smallBlockAt(sample, blockSize));
+
+            for (auto index = 0; index < blockSize; ++index)
+                tail.push_back(rig.sessionAt(index));
+
+            sample += blockSize;
+        }
+
+        return tail;
+    };
+
+    const auto whole = tailOf(kSectionDeClickSamples * 2);
+    const auto chopped = tailOf(8);
+
+    for (auto sample = 0; sample < kSectionDeClickSamples * 2; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(chopped[static_cast<std::size_t>(sample)] ==
+                Approx(whole[static_cast<std::size_t>(sample)]).margin(1e-6));
+    }
+
+    // A decay to zero rather than a staircase restarting at every seam.
+    CHECK(chopped[0] == Approx(0.5f));
+    CHECK(chopped[kSectionDeClickSamples - 1] == Approx(0.0f).margin(1e-5));
+
+    for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(chopped[static_cast<std::size_t>(sample)] <=
+                chopped[static_cast<std::size_t>(sample) - 1]);
+    }
 }
 
 TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {

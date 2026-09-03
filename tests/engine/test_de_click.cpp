@@ -132,6 +132,61 @@ TEST_CASE("A stop ramp longer than the block carries on into the next", "[engine
     }
 }
 
+TEST_CASE("A stop ramp is the same however the render was cut up", "[engine][clip][declick]") {
+    // The property the carried progress exists for, driven the way a source
+    // drives it: push every block, because a source does not track whether one
+    // of its own ramps happens to be running (#2344 review).
+    constexpr int kRamp = 32;
+
+    const auto tailOverBlocks = [](int blockSize) {
+        StopDeClick deClick;
+
+        Signal sounded(blockSize, 1.0f);
+        deClick.push(sounded.block);
+
+        std::vector<float> tail;
+
+        while (static_cast<int>(tail.size()) < kRamp * 2) {
+            Signal out(blockSize);
+
+            if (tail.empty())
+                deClick.begin(out.block, 0, kRamp);
+            else
+                deClick.advance(out.block);
+
+            for (auto sample = 0; sample < blockSize; ++sample)
+                tail.push_back(out.at(sample));
+
+            // What a source does every block, running ramp or not.
+            deClick.push(out.block);
+        }
+
+        return tail;
+    };
+
+    const auto whole = tailOverBlocks(kRamp * 2);
+    const auto chopped = tailOverBlocks(8);
+
+    REQUIRE(chopped.size() >= whole.size());
+
+    for (auto sample = 0; sample < kRamp * 2; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(chopped[static_cast<std::size_t>(sample)] ==
+                Approx(whole[static_cast<std::size_t>(sample)]).margin(1e-6));
+    }
+
+    // And it is a decay to zero rather than a staircase that restarts at every
+    // seam, which is what refreshing the held sample mid-ramp would make it.
+    for (auto sample = 1; sample < kRamp; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(chopped[static_cast<std::size_t>(sample)] <=
+                chopped[static_cast<std::size_t>(sample) - 1]);
+    }
+
+    CHECK(chopped[kRamp - 1] == Approx(0.0f).margin(1e-6));
+    CHECK(chopped[kRamp] == Approx(0.0f));
+}
+
 TEST_CASE("A stop on a zero crossing adds nothing at all", "[engine][clip][declick]") {
     Signal signal(64);
 

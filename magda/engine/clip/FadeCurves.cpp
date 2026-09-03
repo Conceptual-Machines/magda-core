@@ -120,14 +120,13 @@ void StartDeClick::applyFrom(juce::dsp::AudioBlock<float> audio, int alreadyDone
     done_ = alreadyDone + static_cast<int>(count);
 }
 
-void StopDeClick::push(juce::dsp::AudioBlock<float> audio) {
-    const auto numSamples = audio.getNumSamples();
-    if (numSamples == 0)
+void StopDeClick::hold(juce::dsp::AudioBlock<float> audio, int upTo) {
+    if (upTo <= 0)
         return;
 
     const auto channels = std::min(audio.getNumChannels(), kMaxChannels);
     for (std::size_t channel = 0; channel < channels; ++channel)
-        held_[channel] = audio.getChannelPointer(channel)[numSamples - 1];
+        held_[channel] = audio.getChannelPointer(channel)[static_cast<std::size_t>(upTo) - 1];
 
     // Channels this block did not have are stale rather than silent, and a
     // stop that decayed them would add a sample the source stopped producing
@@ -136,12 +135,31 @@ void StopDeClick::push(juce::dsp::AudioBlock<float> audio) {
         held_[channel] = 0.0f;
 }
 
+void StopDeClick::push(juce::dsp::AudioBlock<float> audio) {
+    // Not while a ramp is running, and this is what keeps the ramp independent
+    // of how the render was cut up. What a running ramp decays is the value the
+    // signal stopped at, and the buffer it was just written into now holds that
+    // value part way down. Taking the remembered sample from there would
+    // multiply the rest of the cosine by an already decayed number, so the ramp
+    // would bend at every block seam and a stop would come out differently at
+    // 8 samples a block and at 1024.
+    //
+    // Refusing here rather than at the callers, because every caller pushes
+    // unconditionally every block: which of those blocks a ramp happens to be
+    // running through is exactly what they should not have to know.
+    if (active())
+        return;
+
+    hold(audio, static_cast<int>(audio.getNumSamples()));
+}
+
 void StopDeClick::begin(juce::dsp::AudioBlock<float> audio, int offset, int fadeSamples) {
     // Whatever a previous ramp had left is finished by this one: a stop landing
     // while an earlier stop is still decaying steps down from where the signal
-    // is now, not from where it was two stops ago.
-    if (offset > 0)
-        push(audio.getSubBlock(0, static_cast<std::size_t>(offset)));
+    // is now, not from where it was two stops ago. Deliberately past the guard
+    // in push, because a new stop is the one thing that should re-anchor a
+    // running ramp.
+    hold(audio, offset);
 
     length_ = std::max(0, fadeSamples);
     done_ = 0;

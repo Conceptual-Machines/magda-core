@@ -142,9 +142,18 @@ class StopDeClick {
     /// The most channels one source renders, as StartDeClick sizes it.
     static constexpr std::size_t kMaxChannels = StartDeClick::kMaxChannels;
 
-    /// Remember where @p audio ended. Called with what sounded, every block a
-    /// source produces anything, so a stop landing on the first sample of some
-    /// later block still knows what it is stepping down from.
+    /**
+     * @brief Remember where @p audio ended.
+     *
+     * Called with what sounded, every block a source produces anything, so a
+     * stop landing on the first sample of some later block still knows what it
+     * is stepping down from.
+     *
+     * Does nothing while a ramp is running: the buffer then holds the value
+     * being decayed rather than a signal, and remembering that would bend the
+     * rest of the ramp. Safe to call unconditionally, which is how a source
+     * that does not track its own ramps wants to call it.
+     */
     void push(juce::dsp::AudioBlock<float> audio);
 
     /**
@@ -175,6 +184,9 @@ class StopDeClick {
     }
 
   private:
+    /// Remember the sample before @p upTo, whatever a ramp is doing.
+    void hold(juce::dsp::AudioBlock<float> audio, int upTo);
+
     void applyFrom(juce::dsp::AudioBlock<float> audio, int offset, int alreadyDone);
 
     std::array<float, kMaxChannels> held_{};
