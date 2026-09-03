@@ -266,10 +266,9 @@ struct SplitStatus {
     /// in it applied (@ref LaunchHandle::holdsSection).
     bool heldSectionAtStart = false;
 
-    /// Whether this slot gave its track up in this block. A release is a
-    /// request the advance applies at sample zero, so ownership of the first
-    /// sample already reflects it and nothing downstream could otherwise tell a
-    /// track just handed back from one that was never taken.
+    /// Whether it gave the track up here. Ownership of the first sample already
+    /// reflects it, so this is what tells a track just handed back from one
+    /// that was never taken.
     bool releasedSection = false;
 
     /// Whether the slot is sounding when the block ends, which is what decides
@@ -278,15 +277,9 @@ struct SplitStatus {
         return afterEvent ? afterEvent->playing() : beforeEvent.playing();
     }
 
-    /**
-     * @brief Where the slot stopped sounding inside this block, if it did.
-     *
-     * The one question a de-click asks, answered in one place because the two
-     * shapes a stop arrives in have the same answer: @ref event is the sample
-     * the block ran into whatever it ran into, whether or not there was a first
-     * half to report. Absent when the slot sounded nothing here, and when it is
-     * still sounding at the end.
-     */
+    /// Where the slot stopped sounding inside this block, if it did. Both
+    /// shapes a stop arrives in have the same answer, since @ref event is set
+    /// whether or not there was a first half to report.
     std::optional<EdgeSample> silencedAt() const {
         if (!soundingAtStart || playingAtEnd())
             return std::nullopt;
@@ -401,32 +394,19 @@ class LaunchHandle {
     /**
      * @brief Whether this slot holds its track's playback (#2302).
      *
-     * A track sounds its arrangement or its session, never both, and launching
-     * a slot is what hands it over. The hand-back is not the slot stopping:
-     * silence after a stop is the session still holding the track, exactly as
-     * it is in the incumbent, and the arrangement comes back only when
-     * @ref releaseSection asks for it.
-     *
-     * Set the moment a run begins rather than when one is queued, so a launch
-     * quantized to the next bar leaves the arrangement playing until the bar.
-     *
-     * Per slot for a question that is per track, because the track's answer is
-     * the fold: a track is held by whichever of its slots holds it. Keeping it
-     * here is what lets both of a slot's sources reach the same answer from the
-     * table they already read, with nothing published between them.
+     * The hand-back is not the slot stopping: silence after a stop is the
+     * session still holding the track, and the arrangement comes back only when
+     * @ref releaseSection asks. Set when a run begins rather than when one is
+     * queued, so a launch quantized to the next bar leaves the arrangement
+     * playing until the bar.
      */
     bool holdsSection() const {
         return holdsSection_;
     }
 
-    /**
-     * @brief Give the track back to its arrangement. Back to Arrangement.
-     *
-     * A request, applied by the next advance: the slot stops and the hold goes
-     * at that block's first sample, and the block reports both. Every change of
-     * this state goes through the advance for the reason every stop does, which
-     * is that an edge nothing was told about is an edge nothing can ramp.
-     */
+    /// Give the track back to its arrangement. A request, applied by the next
+    /// advance at that block's first sample: an edge nothing was told about is
+    /// an edge nothing can ramp.
     void releaseSection();
 
     /**
@@ -509,13 +489,10 @@ class LaunchHandle {
         /// of it, or the handles agree about the bar and not the sample.
         std::optional<Run> synced;
 
-        /// Whether this stop is Back to Arrangement rather than an ordinary
-        /// one, so the slot gives the track up as it stops.
-        ///
-        /// Here rather than beside it, because a request replaces this one
-        /// whole. Two fields would let a later play cancel the stop and leave
-        /// the hand-back behind, and the slot would go on sounding while the
-        /// track said it belonged to the arrangement (#2344 review).
+        /// Whether this stop is Back to Arrangement, so the slot gives the
+        /// track up as it stops. Here rather than beside it, because a request
+        /// replaces this one whole: two fields would let a later play cancel
+        /// the stop and leave the hand-back behind.
         bool releasesSection = false;
     };
 

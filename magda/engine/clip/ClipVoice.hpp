@@ -77,16 +77,11 @@ class ClipVoice {
      * @brief Stop, carrying this voice's own last sample down into @p out.
      *
      * The stop edge belongs here for the reason the start edge does: a voice is
-     * the only thing that knows what it alone was contributing. One ramp over a
-     * track's summed output cannot take one voice's step out of it while other
-     * voices go on sounding through the same samples, and a track whose slots
-     * change independently is exactly that (#2344 review).
+     * the only thing that knows what it alone was contributing, and one ramp
+     * over a track's sum cannot isolate it while other voices keep sounding.
      *
-     * @p offset is where in the block it stopped, so a slot that ends half way
-     * through a callback ends there rather than on the boundary.
-     *
-     * The voice is not free until the ramp is spent (@ref fading), because what
-     * is left of it is still sounding.
+     * @p offset is where in the block it stopped. The voice is not free until
+     * the ramp is spent (@ref fading).
      */
     void releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples);
 
@@ -185,8 +180,8 @@ class ClipVoice {
     /// every block size (FadeCurves.hpp).
     StartDeClick deClick_;
 
-    /// This voice's own stop edge: what it was contributing when it ended,
-    /// carried down without touching anything else on the track.
+    /// What it was contributing when it ended, carried down without touching
+    /// anything else on the track.
     StopDeClick stop_;
 
     /// One cell's output, and how much of it a block has taken. Allocated in

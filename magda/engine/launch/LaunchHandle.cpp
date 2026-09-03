@@ -171,14 +171,9 @@ std::optional<BeatRange> LaunchHandle::lastPlayedRange() const {
 }
 
 void LaunchHandle::releaseSection() {
-    // A request rather than a state change, like every other way a slot stops.
-    // The advance is what turns a stop into an edge a source can see and ramp;
-    // a run ended behind their backs is a step nobody is told about, and the
-    // slot would cut off rather than decay (#2344 review).
-    //
-    // The stop and the hand-back are one request, so a later one replaces both
-    // or neither: a launch arriving before the next block means the clip is
-    // what was wanted, and it keeps the track it was already holding.
+    // A request, like every other way a slot stops: a run ended behind the
+    // sources' backs is a step nobody can ramp. The stop and the hand-back are
+    // one request, so a launch arriving before the next block replaces both.
     stop(std::nullopt);
     pending_->releasesSection = true;
 }
@@ -189,9 +184,8 @@ void LaunchHandle::beginRun(const SyncRange& range, const BlockInstant& at, doub
 
     playState_ = PlayState::playing;
 
-    // The hand-over, at the sample the run begins on rather than at the one it
-    // was asked on: a launch quantized to the next bar leaves the arrangement
-    // playing until the bar (#2302).
+    // At the sample the run begins on, not the one it was asked on, so a launch
+    // quantized to the next bar leaves the arrangement playing until the bar.
     holdsSection_ = true;
 
     Run run;
@@ -268,9 +262,8 @@ void LaunchHandle::applyEvent(const SyncRange& range, bool fromPending, const Bl
     if (pending.state == QueueState::stopQueued) {
         endRun();
 
-        // The hand-back happens where the stop does, because it is the same
-        // request: the slot cannot give a track up on one sample and fall
-        // silent on another.
+        // Where the stop does: a slot cannot give a track up on one sample and
+        // fall silent on another.
         if (pending.releasesSection)
             holdsSection_ = false;
 
@@ -296,8 +289,8 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     SplitStatus status;
     status.beforeEvent.range = range.timeline;
 
-    // Before anything below can apply an event and change it. A stop landing on
-    // the first sample leaves no first half to read this off afterwards.
+    // Before an event below can change either: a stop on the first sample
+    // leaves no first half to read them off afterwards.
     status.soundingAtStart = playState_ == PlayState::playing;
     status.heldSectionAtStart = holdsSection_;
 
@@ -328,10 +321,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
             fromPending = true;
         }
 
-        // Reported here because applyEvent consumes the request: by the time it
-        // has run there is nothing left to ask. A hand-back is always at the
-        // block's first sample, since Back to Arrangement queues its stop for
-        // as soon as possible.
+        // Here because applyEvent consumes the request.
         status.releasedSection =
             fromPending && pending_->state == QueueState::stopQueued && pending_->releasesSection;
     }
