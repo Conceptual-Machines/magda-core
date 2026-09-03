@@ -147,7 +147,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     return full;
 }
 
-void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
+void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                           const BlockInfo& block, double startSeconds, double endSeconds,
                           FadeCurve curve, bool rising) const {
     const auto length = endSeconds - startSeconds;
@@ -159,23 +159,24 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSa
         return;
 
     // The samples of the block the fade covers, narrowed to the ones this
-    // region holds. sampleForTime clamps to the block, so a fade that began
-    // before it or runs past it contributes the part that is here.
+    // region holds. Bounds rather than moments, so they may sit one past the
+    // block's last sample, and edgeForTime clamps them to it: a fade that began
+    // before this block or runs past it contributes the part that is here.
     const auto count = static_cast<int>(region.getNumSamples());
-    const auto from = std::max(regionFirstSample, block.sampleForTime(startSeconds));
-    const auto to = std::min(regionFirstSample + count, block.sampleForTime(endSeconds));
+    const auto from = std::max(regionFirstSample, block.edgeForTime(startSeconds));
+    const auto to = std::min(regionFirstSample + count, block.edgeForTime(endSeconds));
     if (to <= from)
         return;
 
     const auto secondsPerSample = blockSeconds / block.numSamples;
     const auto channels = region.getNumChannels();
 
-    for (auto sample = from; sample < to; ++sample) {
-        const auto seconds = block.seconds.start + sample * secondsPerSample;
+    for (auto sample = from.value; sample < to.value; ++sample) {
+        const auto seconds = block.seconds.start + (sample * secondsPerSample);
         const auto progress = static_cast<float>((seconds - startSeconds) / length);
         const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
 
-        const auto index = static_cast<std::size_t>(sample - regionFirstSample);
+        const auto index = static_cast<std::size_t>(sample - regionFirstSample.value);
         for (std::size_t channel = 0; channel < channels; ++channel)
             region.getChannelPointer(channel)[index] *= gain;
     }
@@ -213,8 +214,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     if (windowEnd <= windowStart)
         return nothing();
 
-    const auto first = block.sampleForTime(windowStart);
-    const auto count = block.sampleForTime(windowEnd) - first;
+    const auto first = block.edgeForTime(windowStart);
+    const auto count = block.edgeForTime(windowEnd) - first;
     if (count <= 0)
         return nothing();
 
@@ -300,8 +301,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         if (holeEnd <= holeStart)
             continue;
 
-        const auto from = std::clamp(block.sampleForTime(holeStart) - first, 0, count);
-        const auto to = std::clamp(block.sampleForTime(holeEnd) - first, 0, count);
+        const auto from = std::clamp(block.edgeForTime(holeStart) - first, 0, count);
+        const auto to = std::clamp(block.edgeForTime(holeEnd) - first, 0, count);
         if (to > from)
             region.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from))
                 .clear();
@@ -394,7 +395,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         deClick_.advance(region);
     }
 
-    out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)).add(region);
+    out.getSubBlock(static_cast<std::size_t>(first.value), static_cast<std::size_t>(count))
+        .add(region);
 
     // Silence the reader could not fill is not sounding, and a block it only
     // half filled ends in that silence as surely as one it missed entirely.

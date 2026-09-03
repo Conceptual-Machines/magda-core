@@ -155,15 +155,15 @@ class ClipMidiSource final : public EngineMidiSource {
     /// Whether @p bytes more will fit, leaving room for every off still owed.
     bool fits(int bytes) const;
 
-    void emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event);
+    void emit(juce::MidiBuffer& out, EventSample sample, const MidiClipEvent& event);
 
     /// Note-off now, or owed if it will not fit. Always leaves the note not
     /// sounding.
-    void endNote(juce::MidiBuffer& out, int sample, int channel, int note);
+    void endNote(juce::MidiBuffer& out, EventSample sample, int channel, int note);
 
     /// End everything, or everything one clip owns.
-    void endAll(juce::MidiBuffer& out, int sample);
-    void endClip(juce::MidiBuffer& out, int sample, ClipId clipId);
+    void endAll(juce::MidiBuffer& out, EventSample sample);
+    void endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId);
 
     /// The notes of @p clip actually sounding at @p timelineBeat, into @ref
     /// scratch_. Grooved edges, not written ones, and one implementation for
@@ -197,7 +197,7 @@ class ClipMidiSource final : public EngineMidiSource {
     void endUnexpected(juce::MidiBuffer& out, const NoteMask& expected);
 
     /// Every note one slot started, ended at @p sample. What a stop owes.
-    void endSlot(juce::MidiBuffer& out, int sample, const SessionSlotPlayback& slot);
+    void endSlot(juce::MidiBuffer& out, EventSample sample, const SessionSlotPlayback& slot);
 
     /// What a launched slot plays and what a stopped one owes. False when no
     /// handles have been published yet.

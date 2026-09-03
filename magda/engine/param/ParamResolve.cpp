@@ -193,7 +193,8 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         curve.begin(), curve.end(), block.beats.end,
         [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
     const bool hasKnotInside = boundary != curve.begin();
-    const int endingSample = hasKnotInside ? block.sampleForBeat((boundary - 1)->beatPosition) : 0;
+    const int endingSample =
+        hasKnotInside ? block.eventForBeat((boundary - 1)->beatPosition).value : 0;
     const float endingHeld = hasKnotInside ? valueAt((boundary - 1)->beatPosition) : opening;
 
     int written = 0;
@@ -206,7 +207,9 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // value at a knot is the curve's value after it, which for a step is the
     // jump and for everything else is where the previous run arrived.
     const auto closeAt = [&](double beat) {
-        const auto sample = block.sampleForBeat(beat);
+        // A segment starts where a value takes effect, which is an event: one
+        // sample of this block, never the boundary past its last (#2336).
+        const auto sample = block.eventForBeat(beat).value;
         const auto value = valueAt(beat);
 
         if (sample > startSample) {

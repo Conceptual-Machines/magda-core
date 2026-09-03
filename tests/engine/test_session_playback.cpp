@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -124,6 +125,9 @@ RenderContext context() {
 BlockInfo blockAt(int index, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {magda::engine::SamplePosition{index * kBlockSize},
+                              magda::engine::SamplePosition{(index + 1) * kBlockSize}};
     block.playing = true;
     block.continuous = continuous;
     block.beats.start = index * kBeatsPerBlock;
@@ -144,6 +148,10 @@ BlockInfo blockOnMap(const magda::engine::TempoMap& map, double startSeconds,
                      bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + kBlockSize}};
     block.playing = true;
     block.continuous = continuous;
     block.seconds.start = startSeconds;
@@ -396,7 +404,7 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
     // callback's own buffer.
     CHECK(material.numSamples == block.numSamples);
     for (const auto beat : {0.0, 0.1, 0.2})
-        CHECK(material.sampleForBeat(beat) == block.sampleForBeat(block.beats.start + beat));
+        CHECK(material.eventForBeat(beat) == block.eventForBeat(block.beats.start + beat));
 
     // A run that began here is not continuous with the last block, whatever the
     // transport was doing.

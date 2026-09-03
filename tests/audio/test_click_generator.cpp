@@ -16,12 +16,18 @@ constexpr int kBlockSize = 512;
 /// 120 bpm: 22050 samples to the beat.
 constexpr double kSamplesPerBeat = kSampleRate / 2.0;
 
+/// A block at 120 bpm, with both faces and the rate the transport would give
+/// it: a tick is placed through the map, and the map needs a seconds face to
+/// answer against (RenderContext::offsetForBeat).
 BlockInfo blockFrom(double startBeat, int numSamples) {
     BlockInfo block;
     block.numSamples = numSamples;
+    block.sampleRate = kSampleRate;
     block.playing = true;
     block.beats.start = startBeat;
     block.beats.end = startBeat + numSamples / kSamplesPerBeat;
+    block.seconds.start = block.beats.start * 0.5;
+    block.seconds.end = block.beats.end * 0.5;
     block.continuous = true;
     return block;
 }
@@ -49,7 +55,8 @@ struct Fixture {
         output.clear();
     }
 
-    void render(const BlockInfo& block, bool countingIn = false) {
+    void render(BlockInfo block, bool countingIn = false) {
+        block.tempo = &tempo;
         generator.render(tempo, click, block, countingIn, output, 0);
     }
 
@@ -187,6 +194,7 @@ TEST_CASE("Two beats inside one block both sound", "[engine][transport][click]")
     output.clear();
 
     auto block = blockFrom(0.0, output.getNumSamples());
+    block.tempo = &fixture.tempo;
     fixture.generator.render(fixture.tempo, fixture.click, block, false, output, 0);
 
     CHECK(clickStart(output) == 0);

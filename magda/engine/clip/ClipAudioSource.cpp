@@ -116,7 +116,7 @@ void ClipAudioSource::gatherSession(const TrackClipPlayback& track, const BlockI
 
         // What is on the far side of the event is not rendered. The ramp
         // across that boundary is #2302's.
-        const auto split = splitSample(block, status);
+        const auto split = splitSample(block, status).value;
 
         play(status.beforeEvent, 0, split);
 

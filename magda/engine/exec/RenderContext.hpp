@@ -54,6 +54,22 @@ struct RenderContext {
 struct BlockInfo {
     int numSamples = 0;
 
+    /**
+     * @brief What one sample of it is worth, in seconds.
+     *
+     * Here as well as on the RenderContext because the conversions below are
+     * the block's own and most of what calls them holds a block and nothing
+     * else: a MIDI clip placing a note, a metronome placing a tick.
+     *
+     * Zero says a block did not state one, which is a block assembled by hand,
+     * and the conversions then take it from the two faces the block does have.
+     * That derivation is the rate exactly whenever the block is well formed,
+     * because a block runs at one rate whatever the tempo does. What it cannot
+     * do is answer for a block that covers no time at all, which is a stopped
+     * one, and a stopped block places nothing.
+     */
+    double sampleRate = 0.0;
+
     /// Whether the transport is rolling. A stopped block still renders: the
     /// graph keeps running so tails ring out and live input passes through.
     /// What a stopped block does not do is advance the timeline, so its start
@@ -131,53 +147,151 @@ struct BlockInfo {
     bool continuous = false;
 
     /**
-     * @brief Sample offset within this block of a musical position inside it.
+     * @brief What one sample of this block is worth, in seconds.
      *
-     * The conversion every op needs and none of them should be doing twice: a
-     * MIDI clip placing a note, a metronome placing a tick. Linear across the
-     * block, which is exact at a constant tempo and, across a ramp, wrong by
-     * far less than a sample over the few milliseconds a block lasts.
-     *
-     * Positions outside the block clamp to its ends: an event has to land on a
-     * sample this block actually has.
+     * What the block says, or what its own two faces say when it says nothing.
+     * The derivation is the rate exactly whenever a block is well formed, since
+     * a block runs at one rate whatever the tempo does; zero for a block that
+     * covers no time and states no rate, which converts nothing.
      */
-    int sampleForBeat(double beat) const {
-        if (numSamples <= 0)
-            return 0;
-        if (beats.empty())
-            return 0;
+    double rate() const {
+        if (sampleRate > 0.0)
+            return sampleRate;
 
-        // Nearest rather than truncated: a position that lands exactly on a
-        // sample has to resolve to that sample, and the arithmetic getting
-        // there is not exact enough for truncation to promise it.
-        const auto position = (beat - beats.start) / beats.length();
-        const auto sample = static_cast<int>(std::lround(position * numSamples));
-        return std::clamp(sample, 0, numSamples - 1);
+        return seconds.length() > 0.0 ? static_cast<double>(numSamples) / seconds.length() : 0.0;
     }
 
     /**
-     * @brief Sample offset within this block of a moment inside it.
+     * @brief The moment @p beat falls on, on this block's own seconds axis.
      *
-     * As sampleForBeat, for the seconds face of the same instant. Exact rather
-     * than nearly so: the timeline runs at one second per sample rate through a
-     * block whatever the tempo is doing, so this is a straight line and not an
-     * approximation of a curve.
-     *
-     * One sample past the end of the block is a legal answer here, where it is
-     * not for a beat, and the difference is what the two are for. A beat places
-     * an event, which has to land on a sample this block has. Seconds place the
-     * edges of a region, and a region that runs to the end of the block ends at
-     * the sample after the last one, the way every half-open range does.
+     * The inverse of @ref beatAtTime, through the map for the same reason and
+     * with the same detour through the origin on a shifted block. The one
+     * conversion under everything below: a beat becomes a moment here, and a
+     * moment becomes a sample by counting them, which is the only step that
+     * does not need a tempo (#2336).
      */
-    int sampleForTime(double moment) const {
-        if (numSamples <= 0)
-            return 0;
-        if (seconds.empty())
-            return 0;
+    double timeForBeat(double beat) const {
+        if (tempo != nullptr)
+            return tempo->beatToTime(beat + runOrigin.beat) - runOrigin.seconds;
 
-        const auto position = (moment - seconds.start) / seconds.length();
-        const auto sample = static_cast<int>(std::lround(position * numSamples));
-        return std::clamp(sample, 0, numSamples);
+        if (beats.empty())
+            return seconds.start;
+
+        return seconds.start + (((beat - beats.start) / beats.length()) * seconds.length());
+    }
+
+    /**
+     * @brief How many samples into this block @p moment falls, unrounded.
+     *
+     * By counting samples, which is the one step that needs no tempo: a block
+     * runs at one rate whatever the map is doing.
+     */
+    double offsetForTime(double moment) const {
+        return (moment - seconds.start) * rate();
+    }
+
+    /**
+     * @brief How many samples into this block @p beat falls, unrounded.
+     *
+     * Through the seconds face, because that is where samples are counted, and
+     * therefore through the map wherever there is one: a beat's distance into
+     * the block is a question about when it happens, and the answer is only a
+     * straight line while the tempo is.
+     *
+     * A block with no seconds face at all is one assembled by hand from beats,
+     * and its own two beat ends are then the only line there is.
+     */
+    double offsetForBeat(double beat) const {
+        if (!seconds.empty() && rate() > 0.0)
+            return offsetForTime(timeForBeat(beat));
+
+        return beats.empty() ? 0.0 : ((beat - beats.start) / beats.length()) * numSamples;
+    }
+
+    /**
+     * @brief The sample of this block that something @p offset samples in
+     * happens on.
+     *
+     * Floor rather than nearest, which is what makes the answer total. A block
+     * covers the half-open stretch its samples run over, so a moment inside it
+     * is somewhere in `[0, N)` and the sample it is inside is `0..N-1`, always,
+     * with no case to clamp away. Nearest has one: a moment in the block's last
+     * half sample rounds to N, which is not a sample this block has, and the
+     * clamp that used to hide that is the defect the epic names (#2336).
+     *
+     * A moment on the boundary belongs to the next block, where it is sample
+     * zero, and it gets there without anything being carried: the next block's
+     * stretch begins there.
+     *
+     * The epsilon is why this is not plain truncation. A moment that is the
+     * block's own start can come out at minus a billionth of a sample, and a
+     * beat asked for on a shifted block has had an origin taken off it and put
+     * back on. Floor turns either into the sample before, which is an event in
+     * the wrong block or none at all; the same reason TransportClock guards its
+     * own ceiling.
+     *
+     * The clamp is a guard rather than the rule. Every caller resolves a
+     * position its own bounds have already put inside the block.
+     */
+    EventSample eventAt(double offset) const {
+        if (numSamples <= 0)
+            return EventSample{0};
+
+        const auto sample = static_cast<int>(std::floor(offset + kSampleEpsilon));
+        return EventSample{std::clamp(sample, 0, numSamples - 1)};
+    }
+
+    /**
+     * @brief Where a stretch that begins or ends @p offset samples in has its
+     * edge.
+     *
+     * Nearest, and N is a legal answer: a region that runs to the end of the
+     * block ends at the sample after the last one, the way every half-open
+     * range does. An edge is a bound rather than a moment something happens at,
+     * so it is not floored to the sample it is inside; a fade that begins a
+     * hair before a sample begins on it.
+     */
+    EdgeSample edgeAt(double offset) const {
+        if (numSamples <= 0)
+            return EdgeSample{0};
+
+        return EdgeSample{std::clamp(static_cast<int>(std::lround(offset)), 0, numSamples)};
+    }
+
+    /// The sample of this block that @p moment happens on.
+    EventSample eventForTime(double moment) const {
+        return seconds.empty() ? EventSample{0} : eventAt(offsetForTime(moment));
+    }
+
+    /// The sample of this block that @p beat happens on.
+    EventSample eventForBeat(double beat) const {
+        return beats.empty() ? EventSample{0} : eventAt(offsetForBeat(beat));
+    }
+
+    /// Where a stretch bounded by @p moment has its edge.
+    EdgeSample edgeForTime(double moment) const {
+        return seconds.empty() ? EdgeSample{0} : edgeAt(offsetForTime(moment));
+    }
+
+    /// Where a stretch bounded by @p beat has its edge.
+    EdgeSample edgeForBeat(double beat) const {
+        return beats.empty() ? EdgeSample{0} : edgeAt(offsetForBeat(beat));
+    }
+
+    /**
+     * @brief The sample an edge that has to be heard is emitted on.
+     *
+     * A note-off is where a note's stretch ends, so it is an edge and lands on
+     * N whenever a clip or a loop pass ends on the block boundary. It is also a
+     * message, and a message at N is written into nobody's buffer: the block
+     * that owns that sample is the next one, and by the time it renders, the
+     * stretch that owed the off has gone. What is left is a note that hangs.
+     *
+     * So an emitted edge at N sounds on N-1 instead. One sample early, against
+     * a note that rings until the session ends.
+     */
+    EventSample soundsAt(EdgeSample edge) const {
+        return EventSample{std::clamp(edge.value, 0, std::max(0, numSamples - 1))};
     }
 
     /**

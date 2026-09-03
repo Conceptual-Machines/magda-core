@@ -87,8 +87,11 @@ inline BlockInfo materialSubBlock(const BlockInfo& block, const BeatRange& range
 
 /// Where in @p block the event landed, or the whole block when there was none.
 /// What starts a clip on its beat rather than on a callback boundary.
-inline int splitSample(const BlockInfo& block, const SplitStatus& status) {
-    return status.afterEvent ? status.event.sample : block.numSamples;
+///
+/// A bound rather than a moment: it is where one half of the block ends and the
+/// other begins, and with no event it is the boundary past the last sample.
+inline EdgeSample splitSample(const BlockInfo& block, const SplitStatus& status) {
+    return EdgeSample{status.afterEvent ? status.event.sample : block.numSamples};
 }
 
 /**

@@ -22,8 +22,8 @@ void FileAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     // both ends, so a clip ending exactly on a block boundary contributes
     // nothing to the block that starts there. Identical to the streaming
     // source, because it is the same clip in the same place.
-    const auto first = block.sampleForTime(std::max(block.seconds.start, placement_.seconds.start));
-    const auto last = block.sampleForTime(std::min(block.seconds.end, placement_.seconds.end));
+    const auto first = block.edgeForTime(std::max(block.seconds.start, placement_.seconds.start));
+    const auto last = block.edgeForTime(std::min(block.seconds.end, placement_.seconds.end));
     const auto count = last - first;
 
     if (count <= 0)
@@ -47,7 +47,7 @@ void FileAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
         std::min(static_cast<int>(out.getNumChannels()), scratch_.getNumChannels());
     for (auto channel = 0; channel < channels; ++channel)
         juce::FloatVectorOperations::copy(out.getChannelPointer(static_cast<std::size_t>(channel)) +
-                                              first,
+                                              first.value,
                                           scratch_.getReadPointer(channel), count);
 }
 

@@ -126,7 +126,7 @@ class ClipVoice {
 
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
     /// by a curve running across it, rising or falling.
-    void applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
+    void applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                    const BlockInfo& block, double startSeconds, double endSeconds, FadeCurve curve,
                    bool rising) const;
 

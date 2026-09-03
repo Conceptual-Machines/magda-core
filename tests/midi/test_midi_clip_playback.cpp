@@ -202,6 +202,9 @@ class Rig {
     static BlockInfo blockAt(int index, bool continuous) {
         BlockInfo block;
         block.numSamples = kBlockSize;
+        block.sampleRate = kSampleRate;
+        block.monotonicSamples = {magda::engine::SamplePosition{index * kBlockSize},
+                                  magda::engine::SamplePosition{(index + 1) * kBlockSize}};
         block.playing = true;
         block.continuous = continuous;
         block.beats.start = index * kBeatsPerBlock;
@@ -609,8 +612,10 @@ TEST_CASE("A note running past the loop end is cut there", "[engine][clip][midi]
     REQUIRE(offs.size() == 2);
 
     // On the pass boundary, nudged back one sample so it is not lost to the
-    // block that starts there. The fork does the same by hand; here the clamp in
-    // BlockInfo::sampleForBeat does it without being asked.
+    // block that starts there. The fork does the same by hand; here it is the
+    // edge rule: a note-off is where a note's stretch ends, and an edge that
+    // has to be heard sounds on the block's last sample rather than on the
+    // boundary past it (BlockInfo::soundsAt).
     CHECK(offs[0].beat() == Approx(2.0).margin(kBeatsPerBlock / kBlockSize + 1e-9));
     CHECK(recorder.hanging().empty());
 }

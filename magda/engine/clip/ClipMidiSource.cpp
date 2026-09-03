@@ -43,7 +43,7 @@ bool ClipMidiSource::fits(int bytes) const {
     return bytesUsed_ + bytes + reserved <= kMaxMidiBytesPerPort;
 }
 
-void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event) {
+void ClipMidiSource::emit(juce::MidiBuffer& out, EventSample sample, const MidiClipEvent& event) {
     // Two bytes or three, by status. Program change and channel pressure carry
     // one data byte, and building them as three makes a message whose length
     // disagrees with its status: JUCE would hand a synth a byte nobody sent.
@@ -54,7 +54,7 @@ void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent
                              ? juce::MidiMessage(event.status, event.data1)
                              : juce::MidiMessage(event.status, event.data1, event.data2);
 
-    out.addEvent(message, sample);
+    out.addEvent(message, sample.value);
 
     // Charged as a short message either way. The budget is a ceiling, and one
     // byte of slack per two-byte message spends it slightly early rather than
@@ -62,7 +62,7 @@ void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent
     bytesUsed_ += kMidiShortMessageBytes;
 }
 
-void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int note) {
+void ClipMidiSource::endNote(juce::MidiBuffer& out, EventSample sample, int channel, int note) {
     if (!active_.active(channel, note))
         return;
 
@@ -70,7 +70,7 @@ void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int
     activeCount_ = std::max(0, activeCount_ - 1);
 
     if (bytesUsed_ + kMidiShortMessageBytes <= kMaxMidiBytesPerPort) {
-        out.addEvent(juce::MidiMessage::noteOff(channel, note), sample);
+        out.addEvent(juce::MidiMessage::noteOff(channel, note), sample.value);
         bytesUsed_ += kMidiShortMessageBytes;
         return;
     }
@@ -83,7 +83,7 @@ void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int
         owed_.push_back(OwedNote{channel, note});
 }
 
-void ClipMidiSource::endAll(juce::MidiBuffer& out, int sample) {
+void ClipMidiSource::endAll(juce::MidiBuffer& out, EventSample sample) {
     // Gathered before anything is emitted: endNote mutates the list.
     scratch_.clear();
     active_.forEach([this](int channel, int note) {
@@ -94,7 +94,7 @@ void ClipMidiSource::endAll(juce::MidiBuffer& out, int sample) {
         endNote(out, sample, packed / 1000, packed % 1000);
 }
 
-void ClipMidiSource::endClip(juce::MidiBuffer& out, int sample, ClipId clipId) {
+void ClipMidiSource::endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId) {
     scratch_.clear();
     active_.forEach([this, clipId](int channel, int note) {
         if (active_.owner(channel, note) == clipId)
@@ -144,7 +144,7 @@ void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
         active_.startBeat(channel, note) == timelineBeat)
         return;
 
-    emit(out, block.sampleForBeat(timelineBeat), event);
+    emit(out, block.eventForBeat(timelineBeat), event);
 
     if (!active_.active(channel, note))
         ++activeCount_;
@@ -156,7 +156,7 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
                                const MidiClipPlayback& clip, const MidiFoldPass& pass,
                                double timelineBeat) {
     const auto contentBeat = timelineBeat - pass.timelineOfContentZero;
-    const auto sample = block.sampleForBeat(timelineBeat);
+    const auto sample = block.eventForBeat(timelineBeat);
 
     // Controllers first, so a note struck below lands on a configured synth.
     //
@@ -327,7 +327,10 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     const auto onBeat = active_.startBeat(channel, note);
                     const auto at = std::clamp(timelineBeat, onBeat, passEndBeat);
 
-                    endNote(out, block.sampleForBeat(at), channel, note);
+                    // The end of a note's stretch, so an edge: one that falls
+                    // on the block boundary is heard a sample early rather than
+                    // written past the buffer (RenderContext.hpp).
+                    endNote(out, block.soundsAt(block.edgeForBeat(at)), channel, note);
                     continue;
                 }
 
@@ -339,7 +342,7 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     continue;
                 }
 
-                emit(out, block.sampleForBeat(timelineBeat), event);
+                emit(out, block.eventForBeat(timelineBeat), event);
             }
         }
 
@@ -347,7 +350,8 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         // it. This is what the fold owes the invariant: every note that sounded
         // in a pass is ended inside the same pass.
         if (pass.endsPass)
-            endClip(out, block.sampleForBeat(pass.timelineOfContentZero + pass.windowEnd),
+            endClip(out,
+                    block.soundsAt(block.edgeForBeat(pass.timelineOfContentZero + pass.windowEnd)),
                     clip.clipId);
     }
 
@@ -391,7 +395,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // looping off does not shorten a clip the way MidiClip::disableLooping
         // does.
         if (clip.span.beats.end > from && clip.span.beats.end <= to)
-            endClip(out, block.sampleForBeat(clip.span.beats.end), clip.clipId);
+            endClip(out, block.soundsAt(block.edgeForBeat(clip.span.beats.end)), clip.clipId);
     }
 }
 
@@ -426,7 +430,7 @@ void ClipMidiSource::expectLane(juce::MidiBuffer& out, const BlockInfo& block,
             // leaving it: ending first keeps the receiver's count right, and
             // striking it again is what makes the new clip's own note-off
             // legal when it arrives instead of rejected for the wrong owner.
-            endNote(out, 0, channel, note);
+            endNote(out, EventSample{0}, channel, note);
             startNote(out, block, clip, index, from);
         }
     }
@@ -442,10 +446,11 @@ void ClipMidiSource::endUnexpected(juce::MidiBuffer& out, const NoteMask& expect
     });
 
     for (std::size_t i = 0; i < scratch_.size(); ++i)
-        endNote(out, 0, scratch_[i] / 1000, scratch_[i] % 1000);
+        endNote(out, EventSample{0}, scratch_[i] / 1000, scratch_[i] % 1000);
 }
 
-void ClipMidiSource::endSlot(juce::MidiBuffer& out, int sample, const SessionSlotPlayback& slot) {
+void ClipMidiSource::endSlot(juce::MidiBuffer& out, EventSample sample,
+                             const SessionSlotPlayback& slot) {
     for (const auto& clip : slot.midi)
         endClip(out, sample, clip.clipId);
 }
@@ -489,21 +494,21 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
         endUnexpected(out, expected);
     }
 
-    forEachSlot(*handles.get(), track,
-                [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
-                    eachPlaying(status, [&](const BlockInfo& material, double from, double to) {
-                        playLane(out, material, slot.midi, from, to);
-                    });
+    forEachSlot(
+        *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+            eachPlaying(status, [&](const BlockInfo& material, double from, double to) {
+                playLane(out, material, slot.midi, from, to);
+            });
 
-                    // The session's own way for a note to end: a stop is not a hole,
-                    // not a snapshot swap and not the end of a span.
-                    //
-                    // Unconditional rather than edge-triggered. An already stopped
-                    // slot holds nothing, so this emits nothing and needs no memory
-                    // of the previous block.
-                    if (!status.playingAtEnd())
-                        endSlot(out, status.afterEvent ? splitSample(block, status) : 0, slot);
-                });
+            // The session's own way for a note to end: a stop is not a hole,
+            // not a snapshot swap and not the end of a span.
+            //
+            // Unconditional rather than edge-triggered. An already stopped
+            // slot holds nothing, so this emits nothing and needs no memory
+            // of the previous block.
+            if (!status.playingAtEnd())
+                endSlot(out, EventSample{status.afterEvent ? status.event.sample : 0}, slot);
+        });
 
     return true;
 }
@@ -525,7 +530,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     const auto* live = snapshot.get();
 
     if (live == nullptr) {
-        endAll(out, 0);
+        endAll(out, EventSample{0});
         lastSnapshot_ = nullptr;
         return;
     }
@@ -560,13 +565,13 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // A stopped transport does not advance the timeline, so nothing new sounds;
     // what was sounding still has to end. The graph keeps running either way.
     if (!block.playing || track == nullptr || block.numSamples <= 0) {
-        endAll(out, 0);
+        endAll(out, EventSample{0});
         lastSnapshot_ = live;
         return;
     }
 
     if (!block.continuous)
-        endAll(out, 0);
+        endAll(out, EventSample{0});
 
     // A swap that moved or deleted what was sounding. Everything the new
     // snapshot agrees should be sounding here is left alone; the rest is
@@ -583,7 +588,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     if (handles_ != nullptr) {
         if (!renderSession(out, block, *track, swapped))
-            endAll(out, 0);  // no handles published yet: nothing can be playing
+            endAll(out, EventSample{0});  // no handles published yet: nothing can be playing
 
         lastSnapshot_ = live;
         return;

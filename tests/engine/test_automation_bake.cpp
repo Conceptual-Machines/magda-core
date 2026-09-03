@@ -105,6 +105,9 @@ ParamKey deviceParam(TrackId track, DeviceId device, int index) {
     return key;
 }
 
+/// A block in beats alone, which is what a resolver walk is about: no seconds
+/// face and no map, so a knot is placed along the block's own beat line
+/// (RenderContext::offsetForBeat).
 magda::engine::BlockInfo blockAt(double startBeat, double beats = 1.0, int numSamples = 64) {
     magda::engine::BlockInfo block;
     block.numSamples = numSamples;

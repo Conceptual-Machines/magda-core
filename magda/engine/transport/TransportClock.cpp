@@ -9,11 +9,6 @@ namespace {
 
 constexpr double kBeatEpsilon = 1.0e-9;
 
-/// A boundary this close to the cursor is the cursor. Rounding up to the first
-/// sample at or past a musical position would otherwise turn the position the
-/// clock just anchored to into a boundary one sample ahead of itself.
-constexpr double kSampleEpsilon = 1.0e-2;
-
 }  // namespace
 
 void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
@@ -33,6 +28,9 @@ double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) co
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
+    // A boundary within the epsilon of the cursor is the cursor: rounding up to
+    // the first sample at or past a musical position would otherwise turn the
+    // position just anchored to into a boundary one sample ahead of itself.
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
@@ -127,6 +125,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.monotonicSeconds.end = monotonicSeconds_;
         segment.block.monotonicSamples.start = monotonicSamples_;
         segment.block.monotonicSamples.end = monotonicSamples_;
+        segment.block.sampleRate = sampleRate_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -234,8 +233,10 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // longer one conversion apart, and this side of it is the one that did
         // not move (#2332).
         segment.block.monotonicSamples.start = monotonicSamples_;
-        monotonicSamples_ += samples;
+        monotonicSamples_ += SampleDuration{samples};
         segment.block.monotonicSamples.end = monotonicSamples_;
+
+        segment.block.sampleRate = sampleRate_;
 
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
