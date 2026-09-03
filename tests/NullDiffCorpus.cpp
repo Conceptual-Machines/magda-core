@@ -2392,6 +2392,40 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    {
+        // The same chain with MIDI thru on, which is the toggle above turned
+        // the other way and the only case in the corpus that holds it there.
+        //
+        // Thru belongs to the host: no plugin format lets a plugin hand its
+        // MIDI input back -- every one of them replaces the host's buffer with
+        // what the plugin declared -- so both engines have to offer the raw
+        // stream themselves, beside the plugin's output. The native leg merges
+        // it into the chain behind the device and the fork wires it across the
+        // instrument's rack, and this is where the two are held to the same
+        // answer (#2345).
+        //
+        // What the echo renders says which notes reached it and at what
+        // strength. The chain's own note arrives at full velocity and the
+        // relay's an octave up at half, so a leg that dropped one, or sent
+        // either twice, renders a level nothing here can otherwise produce.
+        auto track = plainTrack();
+        auto relay = hostedDevice(981, HostedRole::InstrumentMidiOut);
+        relay.midiInThru = true;
+        track.chain.fxChainElements.emplace_back(std::move(relay));
+        track.chain.fxChainElements.emplace_back(hostedDevice(982, HostedRole::Echo));
+
+        auto value = newCase("plugin.instrument.midiout.thru",
+                             "MIDI thru beside an instrument's own MIDI output", std::move(track));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(341, 0.0, 8.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
     return corpus;
 }
 

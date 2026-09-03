@@ -592,6 +592,7 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"plugin.wetdry.dry", {deviceWrapperMix()}},
         {"plugin.sidechain", {deviceSidechain()}},
         {"plugin.instrument.midiout", {deviceMidiPorts()}},
+        {"plugin.instrument.midiout.thru", {deviceMidiPorts()}},
         {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},

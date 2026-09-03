@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "NullDiffGain.hpp"
@@ -14,6 +15,7 @@
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/InternalPluginRegistry.hpp"
+#include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -413,133 +415,116 @@ TEST_CASE("a device writing past the port's byte budget is cut off at the bytes"
     CHECK(out.getNumEvents() > 0);
 }
 
-TEST_CASE("a step sequencer passing MIDI through keeps the whole legal block",
-          "[engine][devices][2335]") {
-    // The device stopped holding its input aside, so this is the guarantee that
-    // replaced the fixed-size store: everything a port may legally carry
-    // reaches the instrument downstream, through the real adapter rather than a
-    // test double.
+TEST_CASE("a step sequencer's MIDI output is its own", "[engine][devices][2345]") {
+    // The device reads its input and swallows it. What its MIDI output port
+    // carries is what the sequencer played, and nothing it was handed.
     //
-    // The densest legal block, and no denser. A clock is one byte of data and
+    // Thru is the plan's merge behind the device (DeviceInfo::midiInThru), the
+    // only way a host can offer it over a plugin it did not write. The device
+    // used to do it as well, so a thru-enabled sequencer sent every note twice
+    // and every reservation downstream counted one stream as two (#2345).
+    //
+    // The densest legal block, and no denser: a clock is one byte of data and
     // costs seven against the budget, a note costs nine, so a note-on, 582
-    // clocks and a note-off come to 4092 of the 4096 a port allows - past the
-    // 512 the device used to keep, and past the ~450 a note-sized division of
-    // the budget suggests.
+    // clocks and a note-off come to 4092 of the 4096 a port allows. Dense
+    // because the adapter decodes all of it before the device can drop it -- a
+    // scratch sized by events rather than bytes would truncate here, and the
+    // sequencer would never see the tail it reads for step recording (#2335).
     constexpr int kClocks = 582;
 
-    auto sequencer = std::make_unique<magda::daw::audio::StepSequencerPlugin>();
-    sequencer->midiThru.store(true);
+    const auto runOneBlock = [](std::unique_ptr<magda::daw::audio::MagdaDevice> sequencer,
+                                juce::MidiBuffer& out) {
+        adapter::EngineMagdaDevice hosted(std::move(sequencer), /*offlineRender=*/false);
+        const auto context = contextFor();
+        hosted.prepare(context);
 
-    adapter::EngineMagdaDevice hosted(std::move(sequencer), /*offlineRender=*/false);
-    const auto context = contextFor();
-    hosted.prepare(context);
+        // What the executor tells a device fed by one producer, now that a
+        // device is a producer and only a producer: a port's worth in, and a
+        // port's worth out for what it makes of its own (#2341, #2345).
+        hosted.setMidiInputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+        hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
 
-    // What the executor tells a device fed by one producer: a port's worth in,
-    // and that carried through plus a producer's worth of its own on the way
-    // out. Said rather than assumed, which is the whole of #2341 -- the block
-    // below fills the input port to the byte, and the all-notes-off a freshly
-    // prepared device owes is what tipped the total past a flat
-    // kMaxMidiBytesPerPort and was refused. This test used to spend that
-    // all-notes-off on a warm-up block to stay out of its way.
-    hosted.setMidiInputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
-    hosted.setMidiOutputBoundBytes(2 * magda::engine::kMaxMidiBytesPerPort);
+        Block block(context);
+        // Stopped, so the sequencer plays nothing and what comes out is
+        // whatever it decided to pass on.
+        block.info.playing = false;
+        block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
+        for (int i = 0; i < kClocks; ++i)
+            block.midi.addEvent(juce::MidiMessage::midiClock(), i % context.maxBlockSize);
+        block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
 
-    Block block(context);
-    // Stopped, so the sequencer writes nothing of its own and what comes out is
-    // exactly what thru let through.
-    block.info.playing = false;
-    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
-    for (int i = 0; i < kClocks; ++i)
-        block.midi.addEvent(juce::MidiMessage::midiClock(), i % context.maxBlockSize);
-    block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
+        REQUIRE(budgetCostOf(block.midi) <= magda::engine::kMaxMidiBytesPerPort);
+        REQUIRE(block.midi.getNumEvents() == kClocks + 2);
 
-    REQUIRE(budgetCostOf(block.midi) <= magda::engine::kMaxMidiBytesPerPort);
-    REQUIRE(block.midi.getNumEvents() == kClocks + 2);
+        auto deviceBlock = block.deviceBlock();
+        deviceBlock.midiOut = &out;
+        hosted.process(deviceBlock);
+    };
 
-    juce::MidiBuffer out;
-    auto deviceBlock = block.deviceBlock();
-    deviceBlock.midiOut = &out;
-    hosted.process(deviceBlock);
+    // Everything on the port that did not come from the device itself. The
+    // all-notes-off a freshly prepared device owes is its own, and is counted
+    // apart so its absence cannot pass for a port that was written correctly.
+    const auto carriedAndOwn = [](const juce::MidiBuffer& out) {
+        std::pair<int, int> counts{0, 0};
+        for (const auto metadata : out) {
+            if (metadata.getMessage().isAllNotesOff())
+                ++counts.second;
+            else
+                ++counts.first;
+        }
+        return counts;
+    };
 
-    int clocks = 0;
-    int noteOffs = 0;
-    int allNotesOffs = 0;
-    for (const auto metadata : out) {
-        const auto message = metadata.getMessage();
-        if (message.isMidiClock())
-            ++clocks;
-        else if (message.isAllNotesOff())
-            ++allNotesOffs;
-        else if (message.isNoteOff())
-            ++noteOffs;
+    SECTION("mono") {
+        juce::MidiBuffer out;
+        runOneBlock(std::make_unique<magda::daw::audio::StepSequencerPlugin>(), out);
+
+        const auto [carried, own] = carriedAndOwn(out);
+        CHECK(carried == 0);
+        CHECK(own == 1);
     }
 
-    CHECK(clocks == kClocks);
-    // The note-off is the last event in. Losing it is what leaves the
-    // instrument downstream holding the note.
-    CHECK(noteOffs == 1);
-    // And the device's own event survived a block that already filled the input
-    // port, because the output port was told it had room for it.
-    CHECK(allNotesOffs == 1);
+    SECTION("poly") {
+        juce::MidiBuffer out;
+        runOneBlock(std::make_unique<magda::daw::audio::PolyStepSequencerPlugin>(), out);
+
+        const auto [carried, own] = carriedAndOwn(out);
+        CHECK(carried == 0);
+        CHECK(own == 1);
+    }
 }
 
-TEST_CASE("a device passing a merged input through emits all of it", "[engine][devices][2341]") {
-    // A device's input port is often a merge, and the executor sums the bound
-    // across the producers feeding it for that reason. Its output port is the
-    // same stream on the way out whenever the device passes MIDI through, and
-    // an output held to one producer's budget dropped everything past the
-    // halfway point of a legal two-source block -- at the adapter, where the
-    // device has no say in what goes.
+TEST_CASE("a device nothing feeds still emits its whole producer's worth",
+          "[engine][devices][2341]") {
+    // The scratch serves both directions, and the two bounds it is sized from
+    // are independent now that thru is the plan's (#2345): a device may read a
+    // merged stream far larger than one producer's budget, and a device nothing
+    // feeds at all still writes a full one. Sized from the input alone, a step
+    // sequencer on a track with no MIDI source would have room for nothing and
+    // play silence.
     //
-    // Two producers' worth of clocks, which no arrangement of one producer can
-    // reach.
-    constexpr int kEventOverheadBytes = magda::engine::kMidiShortMessageBytes - 3;
-    constexpr int kInputBound = 2 * magda::engine::kMaxMidiBytesPerPort;
-    constexpr int kClocks = kInputBound / (kEventOverheadBytes + 1);
+    // A payload rather than a bare short message, so what is filled is the byte
+    // budget rather than an event count that happens to match it.
+    constexpr int kPayloadBytes = 3;
+    constexpr int kSysExRawBytes = kPayloadBytes + 2;  // the 0xF0 and the 0xF7
+    constexpr int kCostPerEvent = (magda::engine::kMidiShortMessageBytes - 3) + kSysExRawBytes;
+    constexpr int kEvents = magda::engine::kMaxMidiBytesPerPort / kCostPerEvent;
 
-    auto sequencer = std::make_unique<magda::daw::audio::StepSequencerPlugin>();
-    sequencer->midiThru.store(true);
-
-    adapter::EngineMagdaDevice hosted(std::move(sequencer), /*offlineRender=*/false);
+    auto emitting = std::make_unique<EmittingDevice>(kEvents, kPayloadBytes);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
     const auto context = contextFor();
     hosted.prepare(context);
-    hosted.setMidiInputBoundBytes(kInputBound);
-    hosted.setMidiOutputBoundBytes(kInputBound + magda::engine::kMaxMidiBytesPerPort);
+    hosted.setMidiInputBoundBytes(0);
+    hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
 
     Block block(context);
-    // Stopped, so what comes out is the input plus the all-notes-off the device
-    // owes, and nothing it decided to play.
-    block.info.playing = false;
-    for (int event = 0; event < kClocks; ++event)
-        block.midi.addEvent(juce::MidiMessage::midiClock(), event % context.maxBlockSize);
-
-    REQUIRE(block.midi.getNumEvents() == kClocks);
-    REQUIRE(budgetCostOf(block.midi) <= kInputBound);
-    REQUIRE(budgetCostOf(block.midi) > magda::engine::kMaxMidiBytesPerPort);
-
     juce::MidiBuffer out;
     auto deviceBlock = block.deviceBlock();
     deviceBlock.midiOut = &out;
     hosted.process(deviceBlock);
 
-    int clocks = 0;
-    int allNotesOffs = 0;
-    for (const auto metadata : out) {
-        const auto message = metadata.getMessage();
-        if (message.isMidiClock())
-            ++clocks;
-        else if (message.isAllNotesOff())
-            ++allNotesOffs;
-    }
-
-    CHECK(clocks == kClocks);
-
-    // And the device's own event on top of that, which is what the headroom
-    // above the input's bound is for. The adapter decodes the block into one
-    // scratch and the device writes its own events back into the same one, so
-    // a scratch sized from the input alone refuses this even where the output
-    // port has room for it.
-    CHECK(allNotesOffs == 1);
+    CHECK(out.getNumEvents() == kEvents);
+    CHECK(budgetCostOf(out) <= magda::engine::kMaxMidiBytesPerPort);
 }
 
 TEST_CASE("the adapter carries a merged input, not one producer's worth",
@@ -618,18 +603,17 @@ TEST_CASE("the executor tells a device what can reach its MIDI input", "[engine]
     CHECK(gainProbe.bound == 0);
 }
 
-TEST_CASE("the executor tells a device what it may write, its input carried through",
-          "[engine][devices][2341]") {
-    // The other half of the same fact, and the half nothing used to say. A
-    // device is a conduit as well as a producer: with MIDI thru on it hands its
-    // whole input to the port and places its own events among them, so what it
-    // may write is what reached it plus one producer's worth. A flat
-    // kMaxMidiBytesPerPort is a producer's budget, and it is what the adapter
-    // truncated a legal merged block against.
+TEST_CASE("the executor tells a device what it may write, apart from what it may read",
+          "[engine][devices][2341][2345]") {
+    // The other half of the same fact, and the half nothing used to say. The
+    // two figures are independent: a device's input port is often a merge and
+    // its output port is one producer's worth, because a device emits what it
+    // made and thru is the plan's merge behind it (#2345).
     //
-    // Clips and a hardware input both merge onto this track, so the figure
-    // being propagated is two producers' worth rather than one -- exactly the
-    // sum a device could not have worked out for itself.
+    // Clips and a hardware input both merge onto this track, so what reaches
+    // the device is two producers' worth rather than one -- exactly the sum a
+    // device could not have worked out for itself, and exactly the figure it
+    // must not size its own writing from.
     magda::TrackInfo instrument;
     instrument.id = 1;
     instrument.type = magda::TrackType::Media;
@@ -669,7 +653,7 @@ TEST_CASE("the executor tells a device what it may write, its input carried thro
     REQUIRE(executor.isPrepared());
 
     REQUIRE(synthProbe.bound == 2 * magda::engine::kMaxMidiBytesPerPort);
-    CHECK(synthProbe.outBound == synthProbe.bound + magda::engine::kMaxMidiBytesPerPort);
+    CHECK(synthProbe.outBound == magda::engine::kMaxMidiBytesPerPort);
 
     // The gain emits no MIDI at all, and is told so rather than being left at
     // whatever it assumed.

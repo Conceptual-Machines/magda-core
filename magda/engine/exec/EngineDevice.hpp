@@ -76,8 +76,12 @@ struct DeviceBlock {
 
     /// Where a MIDI-producing device writes, cleared before the call. Null when
     /// the plan gave the device no MIDI output port. At most what
-    /// setMidiOutputBoundBytes said, which for a device that passes its input
-    /// through is more than kMaxMidiBytesPerPort; past it the buffer allocates.
+    /// setMidiOutputBoundBytes said; past it the buffer allocates.
+    ///
+    /// What the device produced, not what it was handed. MIDI thru is the
+    /// plan's merge behind the device (DeviceInfo::midiInThru), so a device
+    /// that also passed its input on would send every note twice and leave
+    /// every reservation downstream counting one stream as two (#2345).
     juce::MidiBuffer* midiOut = nullptr;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
@@ -168,16 +172,17 @@ class EngineDevice {
      * executor and for the same reason: the figure belongs to the plan and no
      * device can work it out for itself.
      *
-     * Not kMaxMidiBytesPerPort either. A device that passes its MIDI input
-     * through is a conduit, and a conduit fed a merge emits a merge: held to
-     * one producer's budget it would drop half of a legal two-source stream on
-     * the way out, and no choice about which half is a good one. So the
-     * executor reserves a device's MIDI output port its input's bound plus one
-     * producer's worth on top, and that sum is what arrives here. The headroom
-     * is for what the device adds of its own -- a pattern, an arpeggio, the
-     * all-notes-off it owes after a prepare -- which is the same budget every
-     * other producer in the graph is held to. Zero for a device the plan gave
+     * A device is a producer and only a producer -- thru is the plan's merge,
+     * not the device's (#2345) -- so what arrives here is one producer's worth,
+     * for what the device makes of its own: a pattern, an arpeggio, the
+     * all-notes-off it owes after a prepare. It is said rather than assumed
+     * because the figure is the port's and the plan owns the port: a device
+     * reading the constant instead would be right today and silently wrong the
+     * day an op behind it reserves differently. Zero for a device the plan gave
      * no MIDI output.
+     *
+     * Deliberately not the input bound, which is often larger: a device may
+     * read a whole merged stream and still emit only its own.
      *
      * Ignored by default, because a device that writes what it means to write
      * and no more never comes near it.

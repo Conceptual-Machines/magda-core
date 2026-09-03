@@ -18,7 +18,6 @@
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
-#include "plugins/MidiInThruSync.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -607,7 +606,6 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
     if (auto tePlugin = pluginManager_.getPlugin(devicePath)) {
         tePlugin->setEnabled(effectiveEnabled);
         tePlugin->setDeltaSoloEnabled(device->deltaSolo);
-        daw::audio::syncPluginMidiInThru(tePlugin.get(), device->midiInThru);
     }
 
     // Wrapped instruments consume MIDI while active. Only top-level devices own

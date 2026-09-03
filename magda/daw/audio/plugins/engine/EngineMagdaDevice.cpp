@@ -290,10 +290,10 @@ void EngineMagdaDevice::sizeMidiScratch() {
     // tells us the real ones straight after.
     //
     // From the wider of the two, because the device reads its input out of this
-    // vector and writes its own events back into the same one. Sized from the
-    // input alone, a device handed a block that fills its input port had
-    // nowhere to put the all-notes-off it owes after a prepare (#2341). A
-    // device the plan gave neither port is told zero twice and keeps nothing.
+    // vector and writes its own events back into the same one: it has to hold
+    // a full input on the way in and a full output on the way out, and which of
+    // those is larger is the plan's business rather than this vector's (#2341).
+    // A device the plan gave neither port is told zero twice and keeps nothing.
     midiCapacity_ = midiEventsWithin(std::max(midiInputBoundBytes_, midiOutputBoundBytes_));
 
     midiScratch_.clear();
@@ -414,10 +414,12 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     // executor reserved once and a delay line downstream sized to match.
     //
     // Against what the executor reserved for this port, never the flat
-    // constant. The port carries this device's input through plus what it adds
-    // of its own, so a device with MIDI thru on a track with two sources may
-    // legally write more than one producer's worth; capping at the constant
-    // dropped half of it here, whatever the plan had made room for (#2341).
+    // constant: the figure is the port's and the plan owns the port (#2341).
+    //
+    // What is in the scratch is what the device produced. A device that left
+    // its input in there would be sending a second copy of a stream the plan
+    // already merges behind it (#2345), and would be over this budget as soon
+    // as more than one source fed the track.
     int bytesWritten = 0;
 
     for (const auto& event : midiScratch_) {

@@ -10,7 +10,6 @@ namespace magda::daw::audio {
 const char* StepSequencerPlugin::xmlTypeName = "stepsequencer";
 
 const juce::Identifier StepSequencerPlugin::SettingIDs::numSteps("seqNumSteps");
-const juce::Identifier StepSequencerPlugin::SettingIDs::midiThru("seqMidiThru");
 const juce::Identifier StepSequencerPlugin::SettingIDs::rampCycles("seqRampCycles");
 const juce::Identifier StepSequencerPlugin::SettingIDs::hardAngle("seqHardAngle");
 const juce::Identifier StepSequencerPlugin::SettingIDs::quantize("seqQuantize");
@@ -184,7 +183,6 @@ sequencer::MonoPattern StepSequencerPlugin::pattern() const {
 }
 
 void StepSequencerPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty(SettingIDs::midiThru, midiThru.load(std::memory_order_relaxed), nullptr);
     state.setProperty(SettingIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
     state.setProperty(SettingIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
     state.setProperty(SettingIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
@@ -220,8 +218,11 @@ void StepSequencerPlugin::flushState(juce::ValueTree& state) {
 }
 
 void StepSequencerPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* value = state.getPropertyPointer(SettingIDs::midiThru))
-        midiThru.store(static_cast<bool>(*value), std::memory_order_relaxed);
+    // A project saved before MIDI thru moved to the plan carries a seqMidiThru
+    // property here. Nothing reads it: the toggle it stood for is
+    // DeviceInfo::midiInThru, which the model saves and the compiler acts on
+    // (#2345). An unread property is simply left behind, which is what keeps
+    // such a project loading.
     if (const auto* value = state.getPropertyPointer(SettingIDs::rampCycles))
         rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
     if (const auto* value = state.getPropertyPointer(SettingIDs::hardAngle))
@@ -327,23 +328,21 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
         }
     }
 
-    // --- Incoming MIDI: passed through in place, or swallowed here ---
+    // --- Incoming MIDI: read above, and swallowed here ---
     //
-    // Passing it through means LEAVING it in the buffer. Holding it aside would
-    // mean a fixed-size store, and a device cannot size one: a MIDI port's
-    // bound is bytes rather than events, the cheapest message is one byte of
-    // data, and a device fed by a merge is fed the sum of several producers -
-    // the executor has to tell EngineMagdaDevice its real bound for exactly
-    // this reason. Any event count is therefore a count some legal block
-    // exceeds, and the tail it dropped could be the note-off that leaves the
-    // instrument downstream holding a note (#2335).
+    // The buffer the SDK hands a device serves both directions, so what is left
+    // in it is what the device's MIDI output port carries. This sequencer's
+    // output is its own notes, which is what every other MIDI device here does
+    // (ArpeggiatorPlugin, MidiStrumPlugin, MidiChordEnginePlugin) and what a
+    // hosted plugin does whether it means to or not - every JUCE format
+    // replaces the host's buffer with the plugin's declared output.
     //
-    // The sequencer's own notes are appended after whatever was already there.
-    // The buffer was never in timestamp order anyway - it used to end with the
-    // incoming events, whose positions are their own - so what reads it reads
-    // the timestamps.
-    if (!midiThru.load(std::memory_order_relaxed))
-        midi.clear();
+    // MIDI thru is the plan's, not the device's: with DeviceInfo::midiInThru on
+    // the compiler merges the chain's raw MIDI with this port downstream
+    // (OpRole::ChainMidiMerge). A device that also passed its input through
+    // made that a second copy, so a thru-enabled sequencer played every note
+    // twice and every computation over the port's contents was wrong (#2345).
+    midi.clear();
 
     // Clear anything a re-prepared device left sounding under it.
     if (needsAllNotesOff_) {
