@@ -603,16 +603,15 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // the two are on the same side of every switch.
     auto lane = block;
     auto until = block.numSamples;
-    auto handedBack = false;
-    auto sessionOwnedStart = false;
+    auto lost = false;
 
     if (handles_ != nullptr) {
         const LaunchHandleFeed::Reader handles(*handles_);
-        const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
+        const auto hold =
+            handles ? sectionHold(*handles.get(), trackId_, block.numSamples) : SectionHold{};
 
-        until = std::clamp(hold.arrangementUntil(block.numSamples).value, 0, block.numSamples);
-        handedBack = hold.handedBack && hold.atStart == Section::Arrangement;
-        sessionOwnedStart = hold.atStart == Section::Session;
+        until = std::clamp(hold.until.value, 0, block.numSamples);
+        lost = hold.lost;
 
         // Taking the track back is a discontinuity even though the transport
         // never moved: the arrangement's notes were ended when it lost the
@@ -620,17 +619,16 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         // chase leaves a sustained pad silent, and every controller at whatever
         // it was before, until the next event happens to arrive. That is the
         // case playLane already answers for a locate.
-        if (handedBack)
+        if (hold.gained)
             lane.continuous = false;
     }
 
-    // The session owns every sample of the block. Whether the arrangement owes
-    // anything turns on which block this is: it owes note-offs on the one where
-    // it lost the track, even when that happened on the first sample and it
-    // sounded none of it, and nothing on the blocks after, where what it had
-    // was ended already.
+    // The session owns every sample of the block. What the arrangement owes is
+    // whether it lost the track here: note-offs on the block it loses it, even
+    // when it loses it on the first sample and sounds none of that block, and
+    // nothing on the blocks after, where what it had was ended already.
     if (until == 0) {
-        if (!sessionOwnedStart)
+        if (lost)
             endAll(out, EventSample{0});
 
         lastSnapshot_ = live;
@@ -653,7 +651,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // owes note-offs there: the session's own notes start on that sample, and
     // one the arrangement left holding would sound under them until the
     // transport stopped.
-    if (until < block.numSamples)
+    if (lost)
         endAll(out, EventSample{std::min(until, block.numSamples - 1)});
 
     lastSnapshot_ = live;

@@ -1409,6 +1409,55 @@ TEST_CASE("A release on its own still hands the track back", "[engine][clip][ses
     CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(0.0f).margin(1e-5));
 }
 
+TEST_CASE("A slot swap on a boundary leaves no ghost of the arrangement",
+          "[engine][clip][session][section]") {
+    // The arrangement owns nothing in this block: one slot is released and
+    // another launches on the same sample, so its span is zero samples long.
+    // Expressed as endpoints plus flags that reads as "handed back, then lost
+    // at zero", and the stop ramp decayed whatever the arrangement last
+    // pushed, which was from before the session ever took the track
+    // (#2344 review).
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.giveSlot(3, 400.0, 0.5f, kScene + 1);
+    rig.publish();
+
+    // The arrangement sounds first, so there is a stale sample to leak.
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementAt(0) == Approx(1.0f));
+
+    // Then the session takes the track and keeps it for a while.
+    rig.handle.play(std::nullopt);
+    rig.roll(2, 4);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+    REQUIRE(rig.sessionAt(0) == Approx(0.5f));
+
+    // Release one slot and launch the other, both as soon as possible, so both
+    // land on this block's first sample.
+    rig.handle.releaseSection();
+    rig.second.play(std::nullopt);
+    rig.render(5);
+
+    SECTION("the arrangement stays silent") {
+        CHECK(rig.arrangementPeak() == 0.0f);
+    }
+
+    SECTION("and the track is the two slots swapping, and nothing else") {
+        // The outgoing slot's own ramp is there and belongs there: its voice
+        // carries its 0.5 down while the incoming slot's 0.5 sounds under it.
+        // What must not be there is a third thing.
+        CHECK(rig.sessionAt(0) == Approx(1.0f));
+        CHECK(rig.sessionAt(kSectionDeClickSamples) == Approx(0.5f));
+        CHECK(rig.sessionAt(kBlockSize - 1) == Approx(0.5f));
+
+        for (auto sample = 0; sample < kBlockSize; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.trackAt(sample) == Approx(rig.sessionAt(sample)));
+        }
+    }
+}
+
 TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {
     // The property the switch exists for. The two sections are summed into one
     // track input, so a sample both contribute material to is a track playing

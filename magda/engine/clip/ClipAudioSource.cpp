@@ -161,16 +161,15 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
 }
 
 void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
-    const LaunchHandleFeed::Reader handles(*handles_);
-    const auto hold = handles ? sectionHold(*handles.get(), trackId_) : SectionHold{};
-
     const auto numSamples = static_cast<int>(out.getNumSamples());
-    const auto until = std::clamp(hold.arrangementUntil(numSamples).value, 0, numSamples);
+
+    const LaunchHandleFeed::Reader handles(*handles_);
+    const auto hold = handles ? sectionHold(*handles.get(), trackId_, numSamples) : SectionHold{};
+
+    const auto until = std::clamp(hold.until.value, 0, numSamples);
 
     // What it rendered and gets to keep, before anything corrects it, which is
-    // the order StopDeClick::push asks for. Empty when the session already owned
-    // the first sample, and the ramp then carries down what the block before
-    // pushed, which is the same sample on the other side of a boundary.
+    // the order StopDeClick::push asks for.
     if (until > 0)
         handOver_.push(out.getSubBlock(0, static_cast<std::size_t>(until)));
 
@@ -183,7 +182,7 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
 
     // Taking the track back lands mid-material, which is the same step a voice
     // starting mid-file leaves and comes out the same way.
-    if (hold.handedBack && hold.atStart == Section::Arrangement)
+    if (hold.gained)
         handBack_.begin(out, kSectionDeClickSamples);
     else
         handBack_.advance(out);
@@ -191,7 +190,7 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     // Losing it leaves the other step. A ramp still running from an earlier
     // block finishes into whatever is here now rather than being cut off, which
     // would be the click it exists to remove.
-    if (until < numSamples && hold.atStart == Section::Arrangement)
+    if (hold.lost)
         handOver_.begin(out, until, kSectionDeClickSamples);
     else
         handOver_.advance(out);
