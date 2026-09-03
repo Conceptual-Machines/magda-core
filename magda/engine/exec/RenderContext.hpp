@@ -187,6 +187,29 @@ struct BlockInfo {
     }
 
     /**
+     * @brief Which beat to ask the map about this block's own tempo, signature
+     * or bar.
+     *
+     * Not the block's start, which is where anything reading one of those would
+     * naturally look. A block covers one tempo section, because the transport
+     * cuts a callback at every boundary (TransportClock.cpp), but a cut lands
+     * on the first sample at or after the boundary, so the block can begin a
+     * fraction of a sample before it. The beat at its start is then in the
+     * section it is leaving while every sample it renders is in the next, and a
+     * consumer that takes one rate for the whole block takes the wrong one: an
+     * LFO runs the block at the tempo it just left, a hosted plugin is told the
+     * old signature for the whole call.
+     *
+     * The middle is inside the section on every alignment. This answers "which
+     * section is this block in" and nothing else; where the block *is* stays
+     * @ref beats and @ref seconds, and a position derived under this section is
+     * projected back to them by the caller (#2336).
+     */
+    double sectionBeat() const {
+        return beats.start + (0.5 * beats.length());
+    }
+
+    /**
      * @brief How many samples into this block @p moment falls, unrounded.
      *
      * By counting samples, which is the one step that needs no tempo: a block

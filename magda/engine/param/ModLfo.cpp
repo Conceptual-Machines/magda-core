@@ -121,8 +121,21 @@ float laneValueFromRateType(int rateType) {
 
 double modBarPosition(const BlockInfo& block, const ModTiming& timing) {
     if (block.tempo != nullptr) {
-        const auto grid = block.tempo->barsAndBeatsAt(block.beats.start);
-        return grid.bar + grid.beat / std::max(grid.numerator, 1);
+        // The bar grid the block renders in, which is the section's rather than
+        // the one its first beat happens to sit in (BlockInfo::sectionBeat).
+        // A signature the epsilon swallowed would otherwise run this whole
+        // block at the old bar fraction instead of restarting on the new bar:
+        // four four to three four at the boundary is a bar-rate LFO a quarter
+        // of a cycle out for the length of the block.
+        const auto inside = block.sectionBeat();
+        const auto grid = block.tempo->barsAndBeatsAt(inside);
+        const auto barBeats = 4.0 * grid.numerator / std::max(1, grid.denominator);
+
+        // Back to the block's own first sample, under that grid. The phase is
+        // the value the block opens on, and the section is only what says how
+        // long a bar is there.
+        const auto atSectionBeat = grid.bar + (grid.beat / std::max(grid.numerator, 1));
+        return atSectionBeat - ((inside - block.beats.start) / std::max(barBeats, 1.0e-6));
     }
 
     const auto barBeats = 4.0 * timing.numerator / timing.denominator;
@@ -137,15 +150,10 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
     //
-    // Asked at the middle of the block rather than at its start. This is one
-    // rate for the whole block, which is sound because the transport cuts a
-    // callback at every tempo section (TransportClock.cpp); what the start is
-    // not, is reliably inside that section. A cut lands on the first sample at
-    // or after the boundary, so a block can open a fraction of a sample before
-    // one and read the tempo it is leaving for every sample it renders. The
-    // middle is inside the section on every alignment.
+    // Asked about the section the block renders in rather than about its first
+    // beat, which is not reliably in it (BlockInfo::sectionBeat).
     if (block.tempo != nullptr) {
-        const auto inside = block.beats.start + (0.5 * block.beats.length());
+        const auto inside = block.sectionBeat();
         const auto signature = block.tempo->barsAndBeatsAt(inside);
         timing.bpm = block.tempo->bpmAt(inside);
         timing.numerator = signature.numerator;

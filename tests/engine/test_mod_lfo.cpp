@@ -1133,3 +1133,48 @@ TEST_CASE("An LFO moves a device parameter through a live session", "[engine][mo
         CHECK(render() == approx(0.5f * gain));
     }
 }
+
+TEST_CASE("A bar-rate LFO reads the bar the block renders in", "[engine][mod][lfo][2336]") {
+    // The other half of a block being one section. The tempo and the signature
+    // a block runs at come from inside it (BlockInfo::sectionBeat), and so does
+    // the bar its phase is measured against, or an LFO locked to the bar reads
+    // one grid and runs at another.
+    //
+    // Four four to three four at beat 1, which is not a bar line of either, and
+    // a block that opens a hundredth of a sample before it. Every sample it
+    // renders is in the three four bar that starts there; its first beat is
+    // still a quarter of the way through a four four bar.
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4},
+                                         {.startBeat = 1.0, .numerator = 3, .denominator = 4}});
+
+    // 24000 samples to the beat at 120 bpm and 48 kHz.
+    constexpr auto kNudge = 0.01 / 24000.0;
+
+    BlockInfo block;
+    block.numSamples = 512;
+    block.sampleRate = kSampleRate;
+    block.playing = true;
+    block.beats.start = 1.0 - kNudge;
+    block.beats.end = block.beats.start + (512.0 / 24000.0);
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.tempo = &tempo;
+
+    LfoState state;
+    LfoSettings settings;
+    settings.wave = LFOWaveform::Saw;
+    settings.sync = ModSync::Transport;
+    settings.tempoSync = true;
+    settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+    const auto value = step(state, settings, block, {}, modTimingFor(block, kSampleRate));
+
+    // On the bar line, which for a saw is either end of its cycle: the block
+    // opens a hundredth of a sample before one, so both are the same instant.
+    // What is not the same instant is a quarter of the way through a bar, which
+    // is what reading the grid at the block's first beat gives.
+    const auto fromTheBarLine = std::min(value, 1.0f - value);
+
+    CHECK(fromTheBarLine < 0.001f);
+}
