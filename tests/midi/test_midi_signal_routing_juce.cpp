@@ -15,6 +15,7 @@
 #include "magda/daw/audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/SidechainMonitorPlugin.hpp"
 #include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
 #include "magda/daw/audio/sequencer/StepClock.hpp"
@@ -1182,7 +1183,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
     }
 
     void testStepSequencerLoadsAProjectSavedWithMidiThru() {
-        beginTest("Step sequencer loads a project saved with seqMidiThru");
+        beginTest("Step sequencer loads a project saved with seqMidiThru, and drops it");
 
         auto& wrapper = magda::test::getSharedEngine();
         auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
@@ -1190,32 +1191,43 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         if (!edit)
             return;
 
-        auto plugin =
-            createCustomPlugin(*edit, magda::daw::audio::StepSequencerPlugin::xmlTypeName);
-        auto* seq = sequencerDevice(plugin);
-        expect(seq != nullptr, "Step sequencer device must be created");
-        if (seq == nullptr)
-            return;
-
-        // MIDI thru left the device for the plan (#2345), so the property a
-        // project saved before that carries is one nothing reads. It must not
-        // stop the settings beside it loading, and it must not come back on the
-        // way out: the toggle it stood for is DeviceInfo::midiInThru, which the
-        // model saves.
+        // The load path a project takes, not a restore onto a plugin built
+        // fresh: PluginManager::createInternalPlugin hands the saved tree to the
+        // cache, so the tree the project was saved on IS the plugin's live
+        // state. That is what makes leaving the retired property alone
+        // insufficient - captureInternalDeviceState() copies whatever the tree
+        // holds, so a property nothing writes still comes back on every save
+        // until something takes it off (#2345).
         juce::ValueTree saved(te::IDs::PLUGIN);
         saved.setProperty(te::IDs::type, magda::daw::audio::StepSequencerPlugin::xmlTypeName,
                           nullptr);
         saved.setProperty("seqMidiThru", false, nullptr);
         saved.setProperty("seqRampCycles", 5, nullptr);
-        plugin->restorePluginStateFromValueTree(saved);
 
+        auto plugin = edit->getPluginCache().createNewPlugin(saved);
+        expect(plugin != nullptr, "Step sequencer must load from the saved tree");
+        if (plugin == nullptr)
+            return;
+
+        auto* seq = sequencerDevice(plugin);
+        expect(seq != nullptr, "Step sequencer device must be created");
+        if (seq == nullptr)
+            return;
+
+        plugin->restorePluginStateFromValueTree(saved);
         expectEquals(seq->rampCycles.load(), 5,
                      "A setting saved beside the retired property must still restore");
 
-        juce::ValueTree flushed(te::IDs::PLUGIN);
-        seq->flushState(flushed);
-        expect(!flushed.hasProperty("seqMidiThru"),
-               "A saved project must not gain a device-level MIDI thru flag again");
+        namespace bridge = magda::daw::audio::tracktion_adapter;
+        const auto captured = bridge::captureInternalDeviceState(*plugin, {});
+        expect(captured.isNotEmpty(), "Capturing the device's state must produce a document");
+
+        const auto reloaded = bridge::devicePluginTreeFromState(captured);
+        expect(reloaded.isValid(), "The captured document must load back");
+        expect(!reloaded.hasProperty("seqMidiThru"),
+               "Saving a project that had a device-level MIDI thru flag must not keep it");
+        expectEquals(static_cast<int>(reloaded.getProperty("seqRampCycles")), 5,
+                     "The settings the device still owns must survive the same capture");
     }
 
     void testDrumGridLoadsInternalInstrumentAsPadVoice() {

@@ -17,6 +17,13 @@ const juce::Identifier StepSequencerPlugin::SettingIDs::quantizeSub("seqQuantize
 
 namespace {
 
+// MIDI thru left the device for the plan (#2345). A project saved before that
+// carries this property, and a plugin built from such a project holds it on the
+// very tree flushState() writes into, so it has to be taken off rather than
+// merely not written: captureInternalDeviceState() copies whatever is on the
+// tree, and an unwritten property would ride along through every later save.
+const juce::Identifier kRetiredMidiThru("seqMidiThru");
+
 // The pattern's element and property names. Frozen: saved projects carry them,
 // and the model writes the same spellings (core/StepPatternState.cpp).
 const juce::Identifier kStepTree("STEP");
@@ -183,6 +190,10 @@ sequencer::MonoPattern StepSequencerPlugin::pattern() const {
 }
 
 void StepSequencerPlugin::flushState(juce::ValueTree& state) {
+    // The retired device-level flag, off the tree a project came back on. See
+    // kRetiredMidiThru.
+    state.removeProperty(kRetiredMidiThru, nullptr);
+
     state.setProperty(SettingIDs::rampCycles, rampCycles.load(std::memory_order_relaxed), nullptr);
     state.setProperty(SettingIDs::hardAngle, hardAngle.load(std::memory_order_relaxed), nullptr);
     state.setProperty(SettingIDs::quantize, quantize.load(std::memory_order_relaxed), nullptr);
@@ -218,11 +229,10 @@ void StepSequencerPlugin::flushState(juce::ValueTree& state) {
 }
 
 void StepSequencerPlugin::restoreState(const juce::ValueTree& state) {
-    // A project saved before MIDI thru moved to the plan carries a seqMidiThru
-    // property here. Nothing reads it: the toggle it stood for is
-    // DeviceInfo::midiInThru, which the model saves and the compiler acts on
-    // (#2345). An unread property is simply left behind, which is what keeps
-    // such a project loading.
+    // No seqMidiThru here. The toggle it stood for is DeviceInfo::midiInThru,
+    // which the model saves and the compiler acts on (#2345), so a project that
+    // has one loads with the property simply unread - and flushState() takes it
+    // off the tree on the way back out.
     if (const auto* value = state.getPropertyPointer(SettingIDs::rampCycles))
         rampCycles.store(static_cast<int>(*value), std::memory_order_relaxed);
     if (const auto* value = state.getPropertyPointer(SettingIDs::hardAngle))
