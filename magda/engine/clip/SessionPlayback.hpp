@@ -173,11 +173,30 @@ struct SectionHold {
     bool sounds() const {
         return until.value > 0;
     }
+
+    /// The whole of a block, with no edges: a track nothing can launch on.
+    ///
+    /// Named rather than left to a default, because the right answer is the
+    /// block's length and a default cannot know it. Defaulting to zero says the
+    /// session owns everything, which is the opposite of what a track with no
+    /// handles is, and silences its arrangement (#2344 review).
+    static SectionHold arrangement(int numSamples) {
+        return SectionHold{EdgeSample{numSamples}, false, false};
+    }
 };
 
-/// @copydoc SectionHold
-inline SectionHold sectionHold(const LaunchHandleTable& handles, TrackId trackId, int numSamples) {
-    const auto [first, last] = handles.rangeFor(trackId);
+/**
+ * @copydoc SectionHold
+ *
+ * @p handles is null until the store has published a table, which is a session
+ * whose slots have no handles yet rather than an error (SessionLauncher.hpp).
+ * Nothing can hold a track then, so the arrangement has all of it.
+ */
+inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId, int numSamples) {
+    if (handles == nullptr)
+        return SectionHold::arrangement(numSamples);
+
+    const auto [first, last] = handles->rangeFor(trackId);
 
     // Who owned the track before anything in this block, who owns its first
     // sample once releases have applied, and who owns its last.

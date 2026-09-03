@@ -607,8 +607,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
 
     if (handles_ != nullptr) {
         const LaunchHandleFeed::Reader handles(*handles_);
-        const auto hold =
-            handles ? sectionHold(*handles.get(), trackId_, block.numSamples) : SectionHold{};
+        const auto hold = sectionHold(handles.get(), trackId_, block.numSamples);
 
         until = std::clamp(hold.until.value, 0, block.numSamples);
         lost = hold.lost;

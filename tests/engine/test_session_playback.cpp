@@ -447,10 +447,13 @@ ClipInfo arrangementMidiClip(magda::ClipId id, double start, double lengthBeats,
 
 /// One track's MIDI in both sections, with a source for each (#2302).
 struct MidiSwitchRig {
-    MidiSwitchRig() {
+    /// @copydoc SwitchRig
+    explicit MidiSwitchRig(bool publishHandles = true) {
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
-        handles.publish(std::make_shared<const LaunchHandleTable>(table));
+
+        if (publishHandles)
+            handles.publish(std::make_shared<const LaunchHandleTable>(table));
         arrangement.prepare(context());
         session.prepare(context());
     }
@@ -723,10 +726,15 @@ TEST_CASE("A stop quantized inside a block ends on its beat", "[engine][clip][se
  * hand-over between them sounds.
  */
 struct SwitchRig {
-    SwitchRig() {
+    /// @p publishHandles false leaves the feed as it is before the store has
+    /// ever published, which the contract permits and which a track's sources
+    /// have to survive.
+    explicit SwitchRig(bool publishHandles = true) {
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
         table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
-        handles.publish(std::make_shared<const LaunchHandleTable>(table));
+
+        if (publishHandles)
+            handles.publish(std::make_shared<const LaunchHandleTable>(table));
 
         arrangement.prepare(context());
         session.prepare(context());
@@ -1456,6 +1464,42 @@ TEST_CASE("A slot swap on a boundary leaves no ghost of the arrangement",
             REQUIRE(rig.trackAt(sample) == Approx(rig.sessionAt(sample)));
         }
     }
+}
+
+TEST_CASE("A track whose handles have not been published yet plays its arrangement",
+          "[engine][clip][session][section]") {
+    // The feed is null until the store publishes, which the contract permits
+    // and which is a session whose slots have no handles yet rather than an
+    // error. Nothing can hold a track then, so the arrangement has all of it:
+    // a fallback that said otherwise would silence every arrangement on the
+    // blocks before the first publish (#2344 review).
+    SwitchRig rig{false};
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 400.0, 0.5f, kScene);
+    rig.publish();
+
+    // Requested anyway, which changes nothing: no table means no handle the
+    // sources can reach.
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+
+    CHECK(rig.arrangementAt(0) == Approx(1.0f));
+    CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(1.0f));
+    CHECK(rig.sessionPeak() == 0.0f);
+}
+
+TEST_CASE("The same track's MIDI plays its arrangement too", "[engine][clip][session][section]") {
+    MidiSwitchRig rig{false};
+    rig.publish({arrangementMidiClip(1, 0.0, 16.0, {MidiNote{64, 100, 0.3, 1.0, 0, {}}})},
+                {sessionMidiClip(2, 16.0, {MidiNote{67, 100, 0.0, 16.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 4);
+
+    const auto ons = rig.notesOn(rig.fromArrangement);
+    REQUIRE(ons.size() == 1);
+    CHECK(ons.front().message.getNoteNumber() == 64);
+    CHECK(rig.notesOn(rig.fromSession).empty());
 }
 
 TEST_CASE("A track never sounds both of its sections", "[engine][clip][session][section]") {

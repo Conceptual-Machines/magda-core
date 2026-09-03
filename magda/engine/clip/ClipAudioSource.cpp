@@ -164,7 +164,7 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     const auto numSamples = static_cast<int>(out.getNumSamples());
 
     const LaunchHandleFeed::Reader handles(*handles_);
-    const auto hold = handles ? sectionHold(*handles.get(), trackId_, numSamples) : SectionHold{};
+    const auto hold = sectionHold(handles.get(), trackId_, numSamples);
 
     const auto until = std::clamp(hold.until.value, 0, numSamples);
 
