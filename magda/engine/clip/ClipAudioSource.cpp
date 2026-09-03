@@ -270,12 +270,17 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     else
         gather(track->audio, lane, 0, table, sounding, soundingCount);
 
-    const auto stopping = [&](const ClipVoice& voice) {
-        const auto* found =
-            std::find_if(stopping_.begin(), stopping_.begin() + stoppingCount_,
-                         [&](const Stopping& s) { return voice.playing(s.clipId, s.eventId); });
+    // Pointers rather than the array's own iterators, which are a class type on
+    // MSVC and a pointer on libc++: deducing `const auto*` from one compiles on
+    // exactly one of the two.
+    const auto stopping = [&](const ClipVoice& voice) -> const Stopping* {
+        const auto* first = stopping_.data();
+        const auto* last = first + stoppingCount_;
 
-        return found != stopping_.begin() + stoppingCount_ ? found : nullptr;
+        const auto* found = std::find_if(
+            first, last, [&](const Stopping& s) { return voice.playing(s.clipId, s.eventId); });
+
+        return found != last ? found : nullptr;
     };
 
     for (auto& voice : voices_) {
