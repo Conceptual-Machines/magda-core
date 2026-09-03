@@ -1,7 +1,9 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
 #include <cmath>
+#include <utility>
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
@@ -397,7 +399,85 @@ class FaustInstrumentSampleRateTest final : public juce::UnitTest {
     }
 };
 
+// The host's three parameters persist under the retired plugin's own property
+// names. Without a stableId the wrapper keys them on "<pluginId>_param_<n>",
+// which neither reads what flushState writes nor matches a project saved before
+// the port -- and syncParametersToDevice() then pushes the default back over
+// whatever restoreState() recovered (#2315).
+class FaustInstrumentHostParamStateTest final : public juce::UnitTest {
+  public:
+    FaustInstrumentHostParamStateTest()
+        : juce::UnitTest("Faust Instrument Host Parameter State Tests", "magda") {}
+
+    void runTest() override {
+        beginTest("Voice Mode, Glide and Bend Range persist under their released names");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit should be created");
+        if (!edit)
+            return;
+
+        auto plugin = createFaustInstrument(*edit);
+        auto* instrument =
+            audio::tracktion_adapter::deviceFromPlugin<audio::FaustInstrumentPlugin>(plugin.get());
+        expect(instrument != nullptr, "Faust instrument should be created");
+        if (instrument == nullptr)
+            return;
+
+        const std::array<std::pair<const char*, int>, 3> hostParams{
+            {{"voiceMode", audio::FaustInstrumentPlugin::kVoiceModeParamIndex},
+             {"glide", audio::FaustInstrumentPlugin::kGlideParamIndex},
+             {"bendRange", audio::FaustInstrumentPlugin::kBendRangeParamIndex}}};
+
+        auto params = plugin->getAutomatableParameters();
+        for (const auto& [name, index] : hostParams) {
+            expect(index < params.size() && params[index] != nullptr,
+                   juce::String(name) + " must have a host parameter");
+            if (index >= params.size() || params[index] == nullptr)
+                return;
+            expectEquals(params[index]->paramID, juce::String(name),
+                         "The host parameter must carry the released id, not a generated one");
+        }
+
+        // A value the defaults cannot produce, so what comes back could only
+        // have been restored.
+        for (const auto& [name, index] : hostParams) {
+            juce::ignoreUnused(name);
+            params[index]->setParameterFromHost(0.375f, juce::sendNotificationSync);
+        }
+
+        plugin->flushPluginStateToValueTree();
+        for (const auto& [name, index] : hostParams) {
+            juce::ignoreUnused(index);
+            expect(plugin->state.hasProperty(juce::Identifier(name)),
+                   juce::String("The saved state must name ") + name);
+        }
+
+        auto reloaded = createFaustInstrument(*edit);
+        auto* restored = audio::tracktion_adapter::deviceFromPlugin<audio::FaustInstrumentPlugin>(
+            reloaded.get());
+        expect(restored != nullptr, "The reloaded instrument should be created");
+        if (restored == nullptr)
+            return;
+
+        reloaded->restorePluginStateFromValueTree(plugin->state);
+
+        // Read through the wrapper, which is what the audio thread is pushed
+        // from: a device that restored correctly but a host that did not is the
+        // failure this is here for.
+        auto reloadedParams = reloaded->getAutomatableParameters();
+        for (const auto& [name, index] : hostParams) {
+            expectWithinAbsoluteError(reloadedParams[index]->getCurrentValue(), 0.375f, 1.0e-6f,
+                                      juce::String(name) + " must survive a save and reload");
+            expectWithinAbsoluteError(restored->parameterValue(index), 0.375f, 1.0e-6f,
+                                      juce::String(name) + " must reach the device too");
+        }
+    }
+};
+
 FaustInstrumentVoiceModeTest faustInstrumentVoiceModeTest;
 FaustInstrumentSampleRateTest faustInstrumentSampleRateTest;
+FaustInstrumentHostParamStateTest faustInstrumentHostParamStateTest;
 
 }  // namespace

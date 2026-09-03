@@ -959,6 +959,10 @@ void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
             stageSourceForEditing(savedName.isNotEmpty() ? savedName : juce::String("Loaded"),
                                   savedSource);
         }
+    } else if (savedName.isNotEmpty()) {
+        // The name is state of its own: a patch renamed without being edited
+        // needs no recompile and would otherwise keep the default's name.
+        dspName_ = savedName;
     }
 
     // Stable ids (param_01 ... param_64), so a macro or automation lane keeps

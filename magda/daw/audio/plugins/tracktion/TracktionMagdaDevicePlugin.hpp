@@ -25,6 +25,15 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     }
     te::AutomatableParameter* parameterForDeviceSlot(int slotIndex) const;
 
+    /// Take the device's own parameter values back into the host's.
+    ///
+    /// The host is the authority every other block -- syncParametersToDevice()
+    /// pushes on every applyToBuffer -- so a device that changes its own values
+    /// has them overwritten unless something pulls. A runtime Faust patch swap
+    /// is the case: rebinding the pool assigns new defaults to slots whose
+    /// control changed identity. Message thread only.
+    void pullParametersFromDevice();
+
     juce::String getName() const override;
     juce::String getPluginType() override;
     juce::String getShortName(int) override;
