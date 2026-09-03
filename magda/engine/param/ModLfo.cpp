@@ -119,23 +119,39 @@ float laneValueFromRateType(int rateType) {
         std::max(rateType, static_cast<int>(magda::ModRateType::SixteenBars)) - 1);
 }
 
+double modBeatsElapsed(const BlockInfo& block, const ModTiming& timing) {
+    // The map's own answer for this stretch, which is what the clock derived
+    // the block's beat ends from. Right across a tempo change inside the block,
+    // where seconds times one bpm is not.
+    if (block.playing && !block.beats.empty())
+        return block.beats.length();
+
+    // A stopped block covers no beats and still has to turn a free-running
+    // modifier, so it keeps its own time at the tempo the cursor sits on. One
+    // beat, one bpm, and no conversion to be wrong about.
+    const auto seconds =
+        static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
+    return seconds * timing.bpm / 60.0;
+}
+
 double modBarPosition(const BlockInfo& block, const ModTiming& timing) {
     if (block.tempo != nullptr) {
-        // The bar grid the block renders in, which is the section's rather than
-        // the one its first beat happens to sit in (BlockInfo::sectionBeat).
-        // A signature the epsilon swallowed would otherwise run this whole
-        // block at the old bar fraction instead of restarting on the new bar:
-        // four four to three four at the boundary is a bar-rate LFO a quarter
-        // of a cycle out for the length of the block.
-        const auto inside = block.sectionBeat();
-        const auto grid = block.tempo->barsAndBeatsAt(inside);
+        // The bar grid the block renders in, which is the one its first sample
+        // sounds under rather than the one its first beat happens to sit in
+        // (BlockInfo::openingBeat). A signature the epsilon swallowed would
+        // otherwise run this whole block at the old bar fraction instead of
+        // restarting on the new bar: four four to three four at the boundary is
+        // a bar-rate LFO a quarter of a cycle out for the length of the block.
+        const auto opening = block.openingBeat();
+        const auto grid = block.tempo->barsAndBeatsAt(opening);
         const auto barBeats = 4.0 * grid.numerator / std::max(1, grid.denominator);
 
-        // Back to the block's own first sample, under that grid. The phase is
-        // the value the block opens on, and the section is only what says how
-        // long a bar is there.
-        const auto atSectionBeat = grid.bar + (grid.beat / std::max(grid.numerator, 1));
-        return atSectionBeat - ((inside - block.beats.start) / std::max(barBeats, 1.0e-6));
+        // Back to the block's own first sample, under that grid. A hundredth of
+        // a sample at most, since that is all the opening beat is nudged by,
+        // but the phase is the value the block opens on and the grid is only
+        // what says how long a bar is there.
+        const auto atOpeningBeat = grid.bar + (grid.beat / std::max(grid.numerator, 1));
+        return atOpeningBeat - ((opening - block.beats.start) / std::max(barBeats, 1.0e-6));
     }
 
     const auto barBeats = 4.0 * timing.numerator / timing.denominator;
@@ -150,12 +166,17 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
     //
-    // Asked about the section the block renders in rather than about its first
-    // beat, which is not reliably in it (BlockInfo::sectionBeat).
+    // Asked at the beat the block's first sample sounds on rather than at its
+    // first beat, which is not reliably in the same section
+    // (BlockInfo::openingBeat).
+    //
+    // The bpm here is what a stopped block keeps time at. A rolling one reads
+    // the beats it covers instead (modBeatsElapsed), so a block spanning a
+    // tempo change is not this reading's problem.
     if (block.tempo != nullptr) {
-        const auto inside = block.sectionBeat();
-        const auto signature = block.tempo->barsAndBeatsAt(inside);
-        timing.bpm = block.tempo->bpmAt(inside);
+        const auto opening = block.openingBeat();
+        const auto signature = block.tempo->barsAndBeatsAt(opening);
+        timing.bpm = block.tempo->bpmAt(opening);
         timing.numerator = signature.numerator;
         timing.denominator = signature.denominator;
     }
@@ -277,12 +298,16 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     // which is the order the fork's timer uses: the value a block renders with
     // is the value at its first sample.
     if (settings.sync != ModSync::Transport && !holding && !zeroed) {
-        const double blockSeconds =
-            static_cast<double>(std::max(block.numSamples, 0)) / timing.sampleRate;
-        const double periodSeconds =
-            settings.tempoSync ? beatsPerCycle * 60.0 / timing.bpm : 1.0 / hz;
-
-        state.cycles += blockSeconds / std::max(periodSeconds, 1.0e-9);
+        if (settings.tempoSync) {
+            // The beats the block covered over the beats a cycle lasts. Off the
+            // block rather than through a bpm, so a block spanning a tempo
+            // change advances by what the map says it covered (#2340).
+            state.cycles += modBeatsElapsed(block, timing) / beatsPerCycle;
+        } else {
+            const double blockSeconds = static_cast<double>(std::max(block.numSamples, 0)) /
+                                        std::max(timing.sampleRate, 1.0);
+            state.cycles += blockSeconds * hz;
+        }
     }
 
     // Kept bounded, so an LFO left running for hours is as precise as one that

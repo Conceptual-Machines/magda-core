@@ -10,6 +10,7 @@
 #include "param/ParamResolve.hpp"
 #include "param/ParamTableCompiler.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "transport/TempoMap.hpp"
 
 /**
  * @file test_mod_adsr.cpp
@@ -39,6 +40,7 @@ using magda::engine::ModKind;
 using magda::engine::ModRuntime;
 using magda::engine::ModSync;
 using magda::engine::ModTiming;
+using magda::engine::modTimingFor;
 using magda::engine::ParamKey;
 using magda::engine::ParamSegment;
 using magda::engine::ParamTable;
@@ -387,6 +389,42 @@ TEST_CASE("A stage with no time in it is instant", "[engine][mod][adsr]") {
         CHECK(value >= 0.0f);
         CHECK(value <= 1.0f);
     }
+}
+
+TEST_CASE("A synced stage lasts the map's beats across a tempo step", "[engine][mod][adsr][2340]") {
+    // 120 held to beat 2, then 60, and a block from beat 1.5 to 2.5: half a
+    // beat either side of the step, a quarter of a second at 120 and half a
+    // second at 60, three quarters of a second in all.
+    //
+    // A stage of one half note is two beats and the block covered one of them,
+    // so the envelope is halfway up the attack. Three quarters of a second
+    // against a stage the opening tempo makes a second long would have put it
+    // three quarters of the way up (#2340).
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 60.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4}});
+
+    BlockInfo block;
+    block.playing = true;
+    block.beats.start = 1.5;
+    block.beats.end = 2.5;
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.numSamples =
+        static_cast<int>(std::llround((block.seconds.end - block.seconds.start) * kSampleRate));
+    block.sampleRate = kSampleRate;
+    block.tempo = &tempo;
+
+    AdsrSettings settings;
+    settings.sync = ModSync::Free;
+    settings.tempoSync = true;
+    settings.rateType = static_cast<int>(ModRateType::Half);
+
+    AdsrState state;
+
+    CHECK(step(state, settings, block, modTimingFor(block, kSampleRate)) == approx(0.5f));
+    CHECK(state.stage == AdsrStage::Attack);
 }
 
 TEST_CASE("A block longer than a stage lands in the stage after it", "[engine][mod][adsr]") {

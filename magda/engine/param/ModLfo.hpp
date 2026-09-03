@@ -253,12 +253,18 @@ struct LfoState {
  *
  * The sample rate, because a free-running LFO advances by how long the block
  * lasted rather than by how far the timeline moved, and the two are different
- * things while the transport is stopped. The tempo and the whole signature,
- * because a musical division is a fraction of a bar and a bar is none of those
- * on its own.
+ * things while the transport is stopped. The tempo, because a stopped block
+ * covers no beats and a free-running modifier still has to keep musical time.
+ * And the whole signature, because a musical division is a fraction of a bar
+ * and a bar is neither number on its own.
  */
 struct ModTiming {
     double sampleRate = 44100.0;
+
+    /// The tempo the block opens at. What a stopped block keeps time at, and
+    /// nothing else: a rolling block says how many beats it covers, and that is
+    /// the map's own answer across a tempo change inside it (@ref
+    /// modBeatsElapsed).
     double bpm = 120.0;
 
     /// The signature at the block's first beat. Both halves of it, because a
@@ -294,6 +300,26 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate);
  * would be two answers to one question.
  */
 double modBarPosition(const BlockInfo& block, const ModTiming& timing);
+
+/**
+ * @brief How many beats @p block covers, for a modifier advancing its own ramp.
+ *
+ * The block's own beat length while the transport rolls. That is the map's
+ * answer for exactly this stretch, derived once by the clock, so it is right
+ * across a tempo step or a baked ramp boundary inside the block; block seconds
+ * scaled by a single bpm read anywhere in the block is not, and runs the rest
+ * of a block that spans a step at the tempo it opened on (#2340).
+ *
+ * A stopped block is the one that still needs a tempo. It covers no beats at
+ * all, and a free-running modifier goes on turning through it, so there the
+ * beats are how long the block lasted at the tempo the cursor is sitting on. A
+ * stopped cursor is on one beat, so one bpm is exact there.
+ *
+ * Shared because the LFO, the random walk and the envelope all ask it, and two
+ * answers to one question is what a modifier drifting from the one beside it
+ * would be.
+ */
+double modBeatsElapsed(const BlockInfo& block, const ModTiming& timing);
 
 /**
  * @brief How much of a bar one rate type is.

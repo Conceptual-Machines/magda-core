@@ -301,6 +301,68 @@ TEST_CASE("A free-running LFO keeps turning while the transport is stopped", "[e
     step(state, settings, block);
 
     CHECK(step(state, settings, block) == approx(0.25f));
+
+    SECTION("and so does a tempo-synced one, at the tempo the cursor sits on") {
+        LfoSettings synced;
+        synced.wave = LFOWaveform::Saw;
+        synced.sync = ModSync::Free;
+        synced.tempoSync = true;
+        synced.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+        // A stopped block covers no beats, so what it is worth is how long it
+        // lasted at the tempo the cursor is on: a quarter of a second at 120 is
+        // half a beat, which is an eighth of a four four bar.
+        LfoState turning;
+        step(turning, synced, block);
+
+        CHECK(step(turning, synced, block) == approx(0.125f));
+    }
+}
+
+TEST_CASE("A free-running synced LFO turns by the map's beats, not the opening tempo's",
+          "[engine][mod][lfo][2340]") {
+    // 120 held to beat 2, then 60. Two changes at the one beat, which is how a
+    // step is written rather than a ramp to it.
+    //
+    // A block from beat 1.5 to 2.5 is half a beat either side of it: a quarter
+    // of a second at 120 and half a second at 60, three quarters of a second in
+    // all. What it covers is one beat, which is what the map says and what the
+    // block carries. Three quarters of a second at the tempo it opened on would
+    // say one and a half, and the LFO would turn half as far again as the music
+    // did (#2340).
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 120.0},
+                                         {.startBeat = 2.0, .bpm = 60.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4}});
+
+    BlockInfo block;
+    block.playing = true;
+    block.beats.start = 1.5;
+    block.beats.end = 2.5;
+    block.seconds.start = tempo.beatToTime(block.beats.start);
+    block.seconds.end = tempo.beatToTime(block.beats.end);
+    block.numSamples =
+        static_cast<int>(std::llround((block.seconds.end - block.seconds.start) * kSampleRate));
+    block.sampleRate = kSampleRate;
+    block.tempo = &tempo;
+
+    LfoSettings settings;
+    settings.wave = LFOWaveform::Saw;
+    settings.sync = ModSync::Free;
+    settings.tempoSync = true;
+    settings.rate.rateType = static_cast<int>(ModRateType::Bar);
+
+    LfoState state;
+    const auto timings = modTimingFor(block, kSampleRate);
+
+    // The value a block renders with is the one it opens on, so the turn shows
+    // up on the block after the one that made it.
+    CHECK(step(state, settings, block, {}, timings) == approx(0.0f));
+
+    // One beat of a four-beat bar. The opening tempo's one and a half beats
+    // would have put it three eighths of the way round.
+    CHECK(state.cycles == Catch::Approx(0.25));
+    CHECK(step(state, settings, block, {}, timings) == approx(0.25f));
 }
 
 TEST_CASE("A transport-locked LFO is a function of where the block is", "[engine][mod][lfo]") {
@@ -1135,10 +1197,10 @@ TEST_CASE("An LFO moves a device parameter through a live session", "[engine][mo
 }
 
 TEST_CASE("A bar-rate LFO reads the bar the block renders in", "[engine][mod][lfo][2336]") {
-    // The other half of a block being one section. The tempo and the signature
-    // a block runs at come from inside it (BlockInfo::sectionBeat), and so does
-    // the bar its phase is measured against, or an LFO locked to the bar reads
-    // one grid and runs at another.
+    // The other half of a block's first sample deciding its section. The tempo
+    // and the signature a block runs at come from the beat that sample sounds
+    // on (BlockInfo::openingBeat), and so does the bar its phase is measured
+    // against, or an LFO locked to the bar reads one grid and runs at another.
     //
     // Four four to three four at beat 1, which is not a bar line of either, and
     // a block that opens a hundredth of a sample before it. Every sample it

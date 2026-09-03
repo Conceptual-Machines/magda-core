@@ -257,14 +257,6 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
     }
 }
 
-double TempoMap::nextSectionBoundaryAfter(double beat) const {
-    const auto next = std::upper_bound(
-        sections_.begin(), sections_.end(), beat + kBeatEpsilon,
-        [](double value, const Section& section) { return value < section.startBeat; });
-
-    return next == sections_.end() ? std::numeric_limits<double>::infinity() : next->startBeat;
-}
-
 const TempoMap::Section& TempoMap::sectionForBeat(double beat) const {
     // Before the first section is the first section extended backwards: the
     // timeline exists before beat zero and has to have a tempo there.

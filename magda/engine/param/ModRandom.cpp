@@ -145,12 +145,17 @@ float advanceRandom(RandomState& state, const RandomSettings& settings, const Bl
     // order and the fork's: the value a block renders with is the value at its
     // first sample.
     if (settings.sync != ModSync::Transport) {
-        const double blockSeconds =
-            static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
-        const double periodSeconds =
-            settings.tempoSync ? beatsPerCycle * 60.0 / timing.bpm : 1.0 / hz;
-
-        state.cycles += blockSeconds / std::max(periodSeconds, 1.0e-9);
+        if (settings.tempoSync) {
+            // The beats the block covered over the beats a step lasts, off the
+            // block rather than through a bpm, which is the LFO's advance and
+            // is what makes a step across a tempo change the map's length
+            // rather than the opening tempo's (#2340).
+            state.cycles += modBeatsElapsed(block, timing) / beatsPerCycle;
+        } else {
+            const double blockSeconds = static_cast<double>(std::max(block.numSamples, 0)) /
+                                        std::max(timing.sampleRate, 1.0);
+            state.cycles += blockSeconds * hz;
+        }
     }
 
     // Kept bounded, so a walk left running for hours steps as precisely as one

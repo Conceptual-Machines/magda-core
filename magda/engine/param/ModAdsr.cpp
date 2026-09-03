@@ -100,33 +100,74 @@ void enterStage(AdsrState& state, AdsrStage stage, float startValue) {
     state.stageStartValue = startValue;
 }
 
+/// Whether an envelope's stages are a musical length rather than a duration. A
+/// division of Hertz is not a division, and falls back to the milliseconds,
+/// which is the fork's rule (adsrStageSeconds says so).
+bool runsInBeats(const AdsrSettings& settings) {
+    return settings.tempoSync && settings.rateType != static_cast<int>(magda::ModRateType::Hertz);
+}
+
 /**
- * @brief Run the stage machine forward by @p seconds.
+ * @brief The three timed stages of one envelope, and the floor below which a
+ *        stage is instant.
+ *
+ * All four in one unit: seconds for an envelope whose stages are milliseconds,
+ * beats for one whose stages are a division. The machine below only compares an
+ * elapsed amount against a length and divides one by the other, so it does not
+ * care which, and running a synced envelope in beats is what lets the block say
+ * how far it moved rather than a bpm (#2340).
+ */
+struct StageLengths {
+    double attack = 0.0;
+    double decay = 0.0;
+    double release = 0.0;
+    double instant = 0.0;
+};
+
+StageLengths stageLengthsFor(const AdsrSettings& settings, const ModTiming& timing) {
+    if (runsInBeats(settings)) {
+        // One division for all three stages, which is what the model carries.
+        const auto beats = cycleBeats(settings.rateType, timing.numerator, timing.denominator);
+
+        // The same instant the seconds floor stands for, converted once at the
+        // tempo the block opens on: what counts as no time at all is a duration
+        // rather than a musical length, and a hundredth of a millisecond is far
+        // below any division a project can name.
+        return {beats, beats, beats, kMinStageSeconds * timing.bpm / 60.0};
+    }
+
+    return {adsrStageSeconds(settings.attackMs, settings, timing),
+            adsrStageSeconds(settings.decayMs, settings, timing),
+            adsrStageSeconds(settings.releaseMs, settings, timing), kMinStageSeconds};
+}
+
+/**
+ * @brief Run the stage machine forward by @p elapsed.
  *
  * The fork's own loop. A stage that ends inside the block hands what is left of
  * it to the next one, so a block longer than the attack arrives somewhere in
  * the decay rather than being clamped at the top of it.
+ *
+ * @p elapsed and @p lengths are in the same unit and the machine never asks
+ * which (@ref StageLengths).
  */
-void advanceStages(AdsrState& state, const AdsrSettings& settings, const ModTiming& timing,
-                   double seconds, bool freeRunning, bool gateOpen) {
-    const double attackSeconds = adsrStageSeconds(settings.attackMs, settings, timing);
-    const double decaySeconds = adsrStageSeconds(settings.decayMs, settings, timing);
-    const double releaseSeconds = adsrStageSeconds(settings.releaseMs, settings, timing);
+void advanceStages(AdsrState& state, const AdsrSettings& settings, const StageLengths& lengths,
+                   double elapsed, bool freeRunning, bool gateOpen) {
     const float sustain = std::clamp(settings.sustain, 0.0f, 1.0f);
 
     /// One timed stage: what it travels from, what it arrives at, how long it
     /// takes, how it is bent, and where it goes when it is through.
     const auto run = [&](double length, float destination, float curve, AdsrStage next) {
-        if (length <= kMinStageSeconds) {
+        if (length <= lengths.instant) {
             state.value = destination;
             enterStage(state, next, destination);
             return true;
         }
 
-        state.timeInStage += seconds;
+        state.timeInStage += elapsed;
 
         if (state.timeInStage >= length) {
-            seconds = state.timeInStage - length;
+            elapsed = state.timeInStage - length;
             state.value = destination;
             enterStage(state, next, destination);
             return true;
@@ -152,12 +193,12 @@ void advanceStages(AdsrState& state, const AdsrSettings& settings, const ModTimi
                 return;
 
             case AdsrStage::Attack:
-                if (run(attackSeconds, 1.0f, settings.attackCurve, AdsrStage::Decay))
+                if (run(lengths.attack, 1.0f, settings.attackCurve, AdsrStage::Decay))
                     continue;
                 return;
 
             case AdsrStage::Decay:
-                if (run(decaySeconds, sustain, settings.decayCurve, AdsrStage::Sustain))
+                if (run(lengths.decay, sustain, settings.decayCurve, AdsrStage::Sustain))
                     continue;
                 return;
 
@@ -176,7 +217,7 @@ void advanceStages(AdsrState& state, const AdsrSettings& settings, const ModTimi
                 return;
 
             case AdsrStage::Release:
-                if (run(releaseSeconds, 0.0f, settings.releaseCurve, AdsrStage::Idle))
+                if (run(lengths.release, 0.0f, settings.releaseCurve, AdsrStage::Idle))
                     continue;
                 return;
         }
@@ -189,7 +230,7 @@ double adsrStageSeconds(float milliseconds, const AdsrSettings& settings, const 
     // A division of Hertz is not a division. The model reaches that state by
     // having tempo sync on with nothing musical selected, and the fork's answer
     // is to fall back to the milliseconds rather than to invent a period.
-    if (settings.tempoSync && settings.rateType != static_cast<int>(magda::ModRateType::Hertz)) {
+    if (runsInBeats(settings)) {
         const auto beats = cycleBeats(settings.rateType, timing.numerator, timing.denominator);
         return beats * 60.0 / std::max(timing.bpm, 1.0e-6);
     }
@@ -265,10 +306,18 @@ float advanceAdsr(AdsrState& state, const AdsrSettings& settings, const BlockInf
 
     state.lastGate = gateOpen;
 
-    const double blockSeconds =
-        static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
+    const auto lengths = stageLengthsFor(settings, timing);
 
-    advanceStages(state, settings, timing, blockSeconds, freeRunning, gateOpen);
+    // A synced envelope's stages are a number of beats, so the block moves it on
+    // by the beats it covered, which the map answered for exactly this stretch.
+    // A millisecond envelope is a duration and moves on by how long the block
+    // lasted (#2340).
+    const double elapsed =
+        runsInBeats(settings)
+            ? modBeatsElapsed(block, timing)
+            : static_cast<double>(std::max(block.numSamples, 0)) / std::max(timing.sampleRate, 1.0);
+
+    advanceStages(state, settings, lengths, elapsed, freeRunning, gateOpen);
 
     // Advanced first and published after, which is the fork's ADSR timer and
     // the opposite of its LFO timer: the value a block renders with is where

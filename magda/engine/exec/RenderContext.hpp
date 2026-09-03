@@ -187,26 +187,31 @@ struct BlockInfo {
     }
 
     /**
-     * @brief Which beat to ask the map about this block's own tempo, signature
-     * or bar.
+     * @brief The beat sample zero sounds on, to the tolerance the clock uses.
      *
-     * Not the block's start, which is where anything reading one of those would
-     * naturally look. A block covers one tempo section, because the transport
-     * cuts a callback at every boundary (TransportClock.cpp), but a cut lands
-     * on the first sample at or after the boundary, so the block can begin a
-     * fraction of a sample before it. The beat at its start is then in the
-     * section it is leaving while every sample it renders is in the next, and a
-     * consumer that takes one rate for the whole block takes the wrong one: an
-     * LFO runs the block at the tempo it just left, a hosted plugin is told the
-     * old signature for the whole call.
+     * Not quite the block's start, which is where anything asking the map about
+     * this block's tempo, signature or bar would naturally look. A musical
+     * position within a hundredth of a sample of the cursor is the cursor as
+     * far as the clock is concerned (TransportClock::samplesUntil), so a block
+     * can open that close before a boundary while every sample it renders is
+     * past it. The beat at its start is then in the section it has already
+     * left, and a consumer that takes one signature or one bar for the whole
+     * block takes the wrong one.
      *
-     * The middle is inside the section on every alignment. This answers "which
-     * section is this block in" and nothing else; where the block *is* stays
-     * @ref beats and @ref seconds, and a position derived under this section is
-     * projected back to them by the caller (#2336).
+     * So this is the start nudged forward by that same hundredth of a sample,
+     * in beats at the block's own rate: a block opening that close before a
+     * boundary reads the section on the far side of it, and every other block
+     * reads the section its start is in.
+     *
+     * Where the block *is* stays @ref beats and @ref seconds. This only says
+     * which side of a boundary its first sample is on, and a position derived
+     * under that section is projected back by the caller (#2336).
      */
-    double sectionBeat() const {
-        return beats.start + (0.5 * beats.length());
+    double openingBeat() const {
+        if (numSamples <= 0 || beats.empty())
+            return beats.start;
+
+        return beats.start + (kSampleEpsilon * (beats.length() / numSamples));
     }
 
     /**
