@@ -1,7 +1,5 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
-
 #include <array>
 #include <atomic>
 #include <memory>
@@ -10,6 +8,8 @@
 #include "FaustParamInfo.hpp"
 #include "FaustParamPool.hpp"
 #include "IFaustEditorModel.hpp"
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 // libfaust types are forward-declared so consumers don't need the Faust
 // runtime headers on their include path. Implementation pulls them in.
@@ -19,22 +19,26 @@ class dsp_poly;
 
 namespace magda::daw::audio {
 
-namespace te = tracktion::engine;
-
 // A Faust-based polyphonic *instrument*. Sibling of FaustPlugin (the
 // effect host) — it shares the same runtime-compile + FaustParamPool design,
 // but reports as a synth, wraps the compiled DSP in a polyphonic voice
 // allocator (mydsp_poly), and drives note allocation from the MIDI in the
-// PluginRenderContext. The .dsp source is expected to follow the Faust
+// process context. The .dsp source is expected to follow the Faust
 // polyphonic convention: the reserved controls `freq`, `gain`, `gate` are
 // driven per-voice by the allocator and are NOT exposed as user parameters.
+//
+// A MagdaDevice since #2315, like its effect sibling: one instrument, whichever
+// engine is running it. The compiled factory and its voices live for as long as
+// the device does, which is the runtime store's lifetime rather than the plan's
+// - so recompiling a plan because a fader moved never rebuilds a voice
+// mid-note.
 //
 // Shared scaffolding (UIHarvester, pool rebind, atomic state swap, retire
 // timer) is still copied from FaustPlugin rather than shared; a future
 // refactor can extract a common base. See docs/architecture/faust-param-pool.md.
-class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
+class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
   public:
-    FaustInstrumentPlugin(const te::PluginCreationInfo& info);
+    FaustInstrumentPlugin();
     ~FaustInstrumentPlugin() override;
 
     static const char* getPluginName() {
@@ -42,43 +46,24 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "FaustInst";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
-    }
+    DeviceProperties properties() const override;
 
-    void initialise(const te::PluginInitialisationInfo& info) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext& fc) override;
+    // The pool's stable slots, then the three the host owns. See
+    // kVoiceModeParamIndex below: a patch keeps all 64 of its own.
+    int parameterCount() const override {
+        return FaustParamPool::kSize + kHostParamCount;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
 
-    // Instrument reporting: consumes MIDI, generates audio, no audio input.
-    bool takesMidiInput() override {
-        return true;
-    }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
     // Compile `source`, wrap it in a fresh poly voice allocator, swap it in,
     // and persist source+name to plugin state. Returns true on success; on
@@ -192,6 +177,9 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
     void initialiseUnsetPoolValues(
         const std::vector<FaustParamPool::ActiveBindingDescriptor>& bindings,
         const std::array<FaustParamSlot, FaustParamPool::kSize>& previousSlots);
+    /// Re-cache the conversion domain of every pool slot, so process() never
+    /// builds one. Called whenever the slot table changes.
+    void refreshPoolDomains();
 
     // Active dsp + factory + binding bundle. Read/written via the std::shared_ptr
     // atomic free functions (libc++ lacks std::atomic<std::shared_ptr<T>>).
@@ -199,19 +187,29 @@ class FaustInstrumentPlugin : public te::Plugin, public IFaustEditorModel {
 
     // Lifetime-stable parameter pool (macro/mod/automation links pin to slots).
     FaustParamPool pool_;
-    std::vector<te::AutomatableParameter::Ptr> poolParams_;
-    std::array<juce::CachedValue<float>, FaustParamPool::kSize> poolCached_;
+    // Normalised 0..1 per slot, written by the host and read on the audio
+    // thread. Relaxed atomics rather than a lock: a torn read is a value one
+    // block stale, which a parameter already is.
+    std::array<std::atomic<float>, FaustParamPool::kSize> poolValues_{};
+    std::array<ParameterUtils::ParameterDomain, FaustParamPool::kSize> poolDomains_{};
     std::array<bool, FaustParamPool::kSize> poolValueWasRestored_{};
 
     // ---- Host-owned voice allocation -------------------------------------
-    // Added after the pool params, so their TE parameter indices are
-    // kVoiceModeParamIndex / kGlideParamIndex and nothing in the pool moves.
-    te::AutomatableParameter::Ptr voiceModeParam_;
-    te::AutomatableParameter::Ptr glideParam_;
-    te::AutomatableParameter::Ptr bendRangeParam_;
-    juce::CachedValue<float> voiceModeCached_;
-    juce::CachedValue<float> glideCached_;
-    juce::CachedValue<float> bendRangeCached_;
+    // Addressed past the end of the pool, so their indices are
+    // kVoiceModeParamIndex / kGlideParamIndex / kBendRangeParamIndex and
+    // nothing in the pool moves. Normalised like every other parameter here;
+    // faustInstrumentHostParamInfo() carries the real ranges for display.
+    std::array<std::atomic<float>, kHostParamCount> hostValues_{};
+
+    /// One of the three host-owned parameters, normalised, by its parameter
+    /// index (kVoiceModeParamIndex and friends) rather than its slot in the
+    /// array - every caller has the index to hand and none has the offset.
+    float hostValue(int parameterIndex) const {
+        const auto slot = static_cast<std::size_t>(parameterIndex - FaustParamPool::kSize);
+        if (slot >= hostValues_.size())
+            return 0.0f;
+        return hostValues_[slot].load(std::memory_order_relaxed);
+    }
 
     int readVoiceMode() const;
     // Frequency multiplier for the current wheel position, 1.0 when centred.

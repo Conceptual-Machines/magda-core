@@ -10,8 +10,10 @@
 #include "NullDiffMaterial.hpp"
 #include "core/ChainWalk.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/DeviceState.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
+#include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
@@ -605,6 +607,55 @@ void expectsPrimingShift(Case& value) {
 }
 
 }  // namespace
+
+/// A runtime Faust instrument carrying @p source, as a project would save it.
+///
+/// The patch is spelled out here rather than left at the device's default
+/// because the default imports stdfaust.lib, and the target this corpus runs in
+/// has no faustlibraries directory beside it (#2238). A source that mentions
+/// the library in a comment skips the automatic import, which is the same trick
+/// the device's own tests use -- so the DSP is self-contained arithmetic and
+/// both legs compile exactly it.
+magda::DeviceInfo faustInstrumentDevice(magda::DeviceId id, const char* source) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Faust Instrument";
+    device.pluginId = magda::daw::audio::FaustInstrumentPlugin::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    // The source travels as saved device state, which is the path a project
+    // takes: the engine factory restores it before the adapter reads any
+    // parameter metadata, and the fork's wrapper restores the same document.
+    magda::device_state::Doc doc;
+    doc.deviceType = device.pluginId;
+    doc.root.props.set("dspName", "Null Diff Faust Synth");
+    doc.root.props.set("dspSource", source);
+    device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// A gated DC level per voice, scaled by the note. No oscillator and no
+/// envelope: what this case is about is the host's voice allocation - which
+/// note reached which voice, when it was gated on and when it was released -
+/// and a level that changes only on a gate edge shows exactly that, at the
+/// sample it happened. An oscillator would bury the same information under a
+/// waveform the two legs would then have to agree about phase on.
+constexpr const char* kNullDiffFaustSynthDsp = R"FAUST(
+// Self-contained: the literal "stdfaust.lib" here is load-bearing, since the
+// compiler only skips its automatic import when the source already names it.
+freq = hslider("freq", 440, 20, 20000, 0.01);
+gain = hslider("gain", 0.5, 0, 1, 0.01);
+gate = button("gate");
+
+voice = (freq / 20000.0) * gain * gate;
+process = voice <: _, _;
+)FAUST";
 
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     scratchDirectory.createDirectory();
@@ -2421,6 +2472,53 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         auto clip = midiClip(341, 0.0, 8.0);
         for (auto index = 0; index < 8; ++index)
             clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The runtime Faust instrument, on both legs (#2315). ~1300 lines of
+        // voice management around libfaust is exactly where a silent drift
+        // hides, and nothing else in the corpus reaches it: the compiled Faust
+        // devices are a different host and the hosted plugins are a different
+        // format.
+        //
+        // Chords rather than a line, so the poly allocator has to hold several
+        // voices at once and release the right one - the level at any sample is
+        // the sum of the notes gated on, and a leg that allocated, stole or
+        // released a voice differently reads off as a different level.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(
+            faustInstrumentDevice(983, kNullDiffFaustSynthDsp));
+
+        auto value = newCase("plugin.faust.instrument",
+                             "a runtime Faust instrument's voice allocation", std::move(track));
+        value.endBeat = 8.0;
+
+        // The first case in the corpus whose audio changes when a note ENDS.
+        // Every instrument here until now answered a note-on with an impulse
+        // and ignored the off, so the fork's note-end nudge lived entirely in
+        // the MIDI comparison. A sustaining synth hears it: the two legs
+        // release four samples apart, and those four samples are the whole
+        // note. See Case::audioChangesAtNoteEnds.
+        value.audioChangesAtNoteEnds = true;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime nudges the "
+            "note-off back to keep an off ahead of an on at the same instant); the engine orders "
+            "events when it compiles them and keeps the authored length. The four samples between "
+            "the two releases are named per note and taken out of the residual; every other "
+            "sample, note-ons included, is held to bit identity";
+
+        auto clip = midiClip(342, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Overlapping releases: the third note is still sounding when the
+            // next chord starts, so voices are reused rather than always free.
+            clip.midiNotes.push_back(note(48 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(64 + index, at, 2.5, 100));
+        }
         value.clips.push_back(std::move(clip));
 
         corpus.push_back(std::move(value));

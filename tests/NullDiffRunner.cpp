@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
+#include <utility>
 
 #include "AssertionWatch.hpp"
 #include "NullDiffHostedPlugin.hpp"
@@ -299,6 +301,61 @@ bool judgeStretched(const Case& value, const NativeRender& native, const Incumbe
     return held;
 }
 
+/**
+ * @brief The samples the fork's note-end nudge makes unanswerable, or none.
+ *
+ * MidiNote::getPlaybackTime ends every note 0.0001 s early "to make sure the
+ * ordering is correct" (tracktion_MidiList.cpp:829). The engine orders its
+ * events when it compiles them and keeps the length the note was drawn at, so
+ * the two legs release a note four samples apart at 44.1 kHz. The corpus has
+ * always known the figure -- Case::incumbentNoteEndEarlySeconds -- and the MIDI
+ * comparison has always subtracted it. The audio comparison could not: until a
+ * case rendered an instrument that sustains, no audio depended on when a note
+ * ended, and the difference had nowhere to show.
+ *
+ * Derived from the authored notes rather than found in the residual, which is
+ * the whole difference between naming a known window and widening a tolerance
+ * until a case passes. Each range is [end - nudge, end): the samples where one
+ * leg has released and the other has not. Every other sample of the case,
+ * note-ons included, is still held to bit identity.
+ */
+std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case& value) {
+    if (!value.audioChangesAtNoteEnds)
+        return {};
+
+    const auto nudge = static_cast<std::int64_t>(
+        std::llround(value.incumbentNoteEndEarlySeconds * value.sampleRate));
+    if (nudge <= 0)
+        return {};
+
+    const auto samplesPerBeat = 60.0 / value.startBpm() * value.sampleRate;
+
+    std::vector<std::pair<std::int64_t, std::int64_t>> ranges;
+    for (const auto& clip : value.clips) {
+        for (const auto& note : clip.midiNotes) {
+            // A note is authored inside its clip and a clip cuts it off, which
+            // is where the fork takes its own minimum too.
+            const auto endBeat =
+                std::min(clip.placement.startBeat + note.startBeat + note.lengthBeats,
+                         clip.placement.endBeat());
+            const auto end = static_cast<std::int64_t>(std::llround(endBeat * samplesPerBeat));
+            ranges.emplace_back(std::max<std::int64_t>(0, end - nudge), end);
+        }
+    }
+
+    // Sorted and merged: the residual loop walks them with a cursor, and two
+    // notes released together would otherwise have it skip only the first.
+    std::sort(ranges.begin(), ranges.end());
+    std::vector<std::pair<std::int64_t, std::int64_t>> merged;
+    for (const auto& range : ranges) {
+        if (!merged.empty() && range.first <= merged.back().second)
+            merged.back().second = std::max(merged.back().second, range.second);
+        else
+            merged.push_back(range);
+    }
+    return merged;
+}
+
 }  // namespace
 
 juce::File nullDiffScratchDirectory() {
@@ -582,6 +639,7 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
     options.sampleRate = value.sampleRate;
     options.measureShift = value.tier == AudioTier::Spectral;
     options.maxShiftSamples = value.maxShiftSamples;
+    options.excludedRanges = noteEndNudgeRanges(value);
 
     report.hasAudio = true;
     report.audio = compareAudio(aligned, incumbent.audio, options);

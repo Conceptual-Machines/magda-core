@@ -207,14 +207,18 @@ FaustInstrumentProcessor::FaustInstrumentProcessor(DeviceId deviceId, te::Plugin
     : DeviceProcessor(deviceId, std::move(plugin)) {}
 
 int FaustInstrumentProcessor::getParameterCount() const {
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustInstrumentPlugin>(
+            plugin_.get());
     if (faust == nullptr)
         return 0;
     return faust->getPool().activeCount();
 }
 
 ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustInstrumentPlugin>(
+            plugin_.get());
     if (faust == nullptr || index < 0)
         return {};
     // Voice Mode and Glide sit past the pool: they belong to the host, not to
@@ -230,7 +234,9 @@ ParameterInfo FaustInstrumentProcessor::getParameterInfo(int index) const {
 
 void FaustInstrumentProcessor::populateParametersFromEngine(DeviceInfo& info) const {
     info.parameters.clear();
-    auto* faust = dynamic_cast<daw::audio::FaustInstrumentPlugin*>(plugin_.get());
+    auto* faust =
+        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustInstrumentPlugin>(
+            plugin_.get());
     if (faust == nullptr)
         return;
     // Only push active, non-hidden slots; each ParameterInfo carries its real

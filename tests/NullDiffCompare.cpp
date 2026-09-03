@@ -686,11 +686,30 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
     auto peak = 0.0;
     auto sumOfSquares = 0.0;
 
+    // Samples the corpus named and took out, counted once rather than per
+    // channel: what is skipped is an instant in the render, not a sample in a
+    // buffer. Ranges arrive sorted, so a cursor walks them alongside the index
+    // instead of searching for each one.
+    std::int64_t excludedSamples = 0;
+
     for (auto channel = 0; channel < native.getNumChannels(); ++channel) {
         const auto* a = native.getReadPointer(channel);
         const auto* b = incumbent.getReadPointer(channel);
 
+        std::size_t range = 0;
+
         for (auto index = begin; index < end; ++index) {
+            while (range < options.excludedRanges.size() &&
+                   options.excludedRanges[range].second <= index)
+                ++range;
+
+            if (range < options.excludedRanges.size() &&
+                index >= options.excludedRanges[range].first) {
+                if (channel == 0)
+                    ++excludedSamples;
+                continue;
+            }
+
             const auto left = static_cast<double>(a[index]);
             const auto right = static_cast<double>(b[index + shift]);
 
@@ -706,7 +725,7 @@ AudioComparison compareAudio(const juce::AudioBuffer<float>& native,
         }
     }
 
-    result.comparedSamples = end - begin;
+    result.comparedSamples = end - begin - excludedSamples;
     result.peakDb = toDb(peak);
 
     const auto count =

@@ -207,6 +207,24 @@ struct Case {
     /// it the corpus says so rather than absorbing it.
     double incumbentNoteEndEarlySeconds = 0.0001;
 
+    /// Whether this case's AUDIO changes at a note's end, and not only at its
+    /// start.
+    ///
+    /// Almost none do. A corpus instrument answers a note-on with an impulse
+    /// and ignores the off (NullDiffHostedPlugin's voice), so the nudge above
+    /// -- which the fork applies to every note-off there has ever been -- shows
+    /// up in the MIDI comparison, where it is declared and absorbed, and nowhere
+    /// in the audio. A sustaining instrument is the case that hears it: the two
+    /// legs hold the note for a different four samples, and the residual is the
+    /// whole note.
+    ///
+    /// Set here rather than detected, because the harness cannot tell a synth
+    /// that sustains from one that does not, and guessing wrong in the
+    /// permissive direction would quietly stop comparing note ends everywhere.
+    /// A case that sets it takes the fork's four samples out of its own audio
+    /// comparison by naming them, and is held to bit identity everywhere else.
+    bool audioChangesAtNoteEnds = false;
+
     /// The largest step this case's material may take from one sample to the
     /// next, for a case in the Invariants tier. Required there and refused
     /// without, because the tier has no residual to fall back on: a bound

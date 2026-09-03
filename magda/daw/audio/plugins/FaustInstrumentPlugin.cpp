@@ -431,10 +431,8 @@ std::shared_ptr<FaustInstrumentPlugin::FaustState> FaustInstrumentPlugin::compil
 }
 
 int FaustInstrumentPlugin::readVoiceMode() const {
-    if (!voiceModeParam_)
-        return Poly;
     // The parameter is normalised 0..1 over three modes.
-    const float real = voiceModeParam_->getCurrentValue() * 2.0f;
+    const float real = hostValue(kVoiceModeParamIndex) * 2.0f;
     return juce::jlimit(0, 2, static_cast<int>(std::lround(real)));
 }
 
@@ -463,8 +461,7 @@ void FaustInstrumentPlugin::resetAllVoices(const std::shared_ptr<FaustState>& st
 float FaustInstrumentPlugin::readBendRatio() const {
     if (bendNormalised_ == 0.0f)
         return 1.0f;
-    const float semitones =
-        (bendRangeParam_ ? bendRangeParam_->getCurrentValue() : 0.0f) * kMaxBendSemitones;
+    const float semitones = hostValue(kBendRangeParamIndex) * kMaxBendSemitones;
     return std::pow(2.0f, bendNormalised_ * semitones / 12.0f);
 }
 
@@ -554,7 +551,6 @@ void FaustInstrumentPlugin::handleMonoNoteOff(const std::shared_ptr<FaustState>&
 void FaustInstrumentPlugin::initialiseUnsetPoolValues(
     const std::vector<FaustParamPool::ActiveBindingDescriptor>& bindings,
     const std::array<FaustParamSlot, FaustParamPool::kSize>& previousSlots) {
-    auto* um = getUndoManager();
     for (const auto& binding : bindings) {
         const int slotIndex = binding.slotIndex;
         if (slotIndex < 0 || slotIndex >= FaustParamPool::kSize)
@@ -567,73 +563,41 @@ void FaustInstrumentPlugin::initialiseUnsetPoolValues(
         if (sameControl || restoredBeforeFirstBind)
             continue;
 
-        const float normalisedDefault = normaliseDefaultForSlot(pool_.slot(slotIndex));
-        auto& cached = poolCached_[static_cast<size_t>(slotIndex)];
-        cached.setValue(normalisedDefault, um);
-
-        auto& param = poolParams_[static_cast<size_t>(slotIndex)];
-        if (param)
-            param->updateFromAttachedValue();
+        poolValues_[static_cast<size_t>(slotIndex)].store(
+            normaliseDefaultForSlot(pool_.slot(slotIndex)), std::memory_order_relaxed);
     }
+    refreshPoolDomains();
 }
 
-FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
-    : te::Plugin(info) {
-    // Mono/legato note-ons push onto this from applyToBuffer. MIDI cannot hold
-    // more than 128 notes down at once, so reserving here means the audio
-    // thread never grows it.
+FaustInstrumentPlugin::FaustInstrumentPlugin() {
+    // Mono/legato note-ons push onto this from process(). MIDI cannot hold more
+    // than 128 notes down at once, so reserving here means the audio thread
+    // never grows it.
     heldNotes_.reserve(128);
-    poolParams_.resize(FaustParamPool::kSize);
-    auto* um = getUndoManager();
-    juce::NormalisableRange<float> normalisedRange{0.0f, 1.0f};
-    for (int i = 0; i < FaustParamPool::kSize; ++i) {
-        const auto id = poolParamId(i);
-        poolValueWasRestored_[static_cast<size_t>(i)] = state.hasProperty(juce::Identifier(id));
-        poolCached_[static_cast<size_t>(i)].referTo(this->state, juce::Identifier(id), um, 0.0f);
-        poolParams_[static_cast<size_t>(i)] = addParam(id, id, normalisedRange);
-        poolParams_[static_cast<size_t>(i)]->attachToCurrentValue(
-            poolCached_[static_cast<size_t>(i)]);
-    }
 
-    // Host-owned voice allocation, added after the pool so the pool's parameter
-    // indices stay put. Both are normalised 0..1 like every other TE parameter;
-    // faustInstrumentHostParamInfo() carries the real ranges for display.
-    voiceModeCached_.referTo(this->state, juce::Identifier("voiceMode"), um, 0.0f);
-    voiceModeParam_ = addParam("voiceMode", "Voice Mode", normalisedRange);
-    voiceModeParam_->attachToCurrentValue(voiceModeCached_);
+    for (auto& value : poolValues_)
+        value.store(0.0f, std::memory_order_relaxed);
 
-    glideCached_.referTo(this->state, juce::Identifier("glide"), um, 0.0f);
-    glideParam_ = addParam("glide", "Glide", normalisedRange);
-    glideParam_->attachToCurrentValue(glideCached_);
+    hostValues_[0].store(0.0f, std::memory_order_relaxed);  // Poly
+    hostValues_[1].store(0.0f, std::memory_order_relaxed);  // no glide
+    // 2 semitones, the near-universal synth default, normalised against
+    // kMaxBendSemitones like every other parameter here.
+    hostValues_[2].store(2.0f / kMaxBendSemitones, std::memory_order_relaxed);
 
-    // Default 2 semitones, the near-universal synth default, stored normalised
-    // against kMaxBendSemitones like every other parameter here.
-    constexpr float kDefaultBendNorm = 2.0f / kMaxBendSemitones;
-    bendRangeCached_.referTo(this->state, juce::Identifier("bendRange"), um, kDefaultBendNorm);
-    bendRangeParam_ = addParam("bendRange", "Bend Range", normalisedRange);
-    bendRangeParam_->attachToCurrentValue(bendRangeCached_);
-
-    const auto savedSource = state.getProperty("dspSource", juce::String()).toString();
-    const auto savedName = state.getProperty("dspName", juce::String()).toString();
-
+    // The pool is lifetime-stable and starts empty; a saved source arrives
+    // later through restoreState(), which recompiles and rebinds onto the same
+    // slots. Construction settles on the default patch so the device is
+    // answerable before any project has been loaded into it.
     juce::String err;
-    auto compiled = compileAndRebind(
-        savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource), err);
-    if (!compiled) {
-        DBG("FaustInstrumentPlugin: failed to compile saved source: " << err << " - using default");
-        compiled = compileAndRebind(kDefaultDspSource, err);
-    }
+    auto compiled = compileAndRebind(kDefaultDspSource, err);
 
-    dspSource_ = savedSource.isNotEmpty() ? savedSource : juce::String(kDefaultDspSource);
-    dspName_ = savedName.isNotEmpty() ? savedName : juce::String("Simple Synth");
+    dspSource_ = kDefaultDspSource;
+    dspName_ = "Simple Synth";
     // Derived, not restored: the source is the only thing that has to persist.
     viewName_ = readCustomViewName(dspSource_);
 
     reservePointerScratch(compiled);
     std::atomic_store(&active_, compiled);
-
-    state.setProperty("dspSource", dspSource_, nullptr);
-    state.setProperty("dspName", dspName_, nullptr);
 
     retireTimer_.startTimer(100);
 
@@ -643,16 +607,7 @@ FaustInstrumentPlugin::FaustInstrumentPlugin(const te::PluginCreationInfo& info)
 }
 
 FaustInstrumentPlugin::~FaustInstrumentPlugin() {
-    notifyListenersOfDeletion();
     retireTimer_.stopTimer();
-    for (auto& p : poolParams_) {
-        if (p)
-            p->detachFromCurrentValue();
-    }
-    if (voiceModeParam_)
-        voiceModeParam_->detachFromCurrentValue();
-    if (glideParam_)
-        glideParam_->detachFromCurrentValue();
     std::atomic_store(&active_, std::shared_ptr<FaustState>{});
     {
         const juce::ScopedLock lk(retiredLock_);
@@ -695,8 +650,6 @@ bool FaustInstrumentPlugin::loadDspSource(const juce::String& name, const juce::
     dspName_ = name;
     dspSource_ = source;
     viewName_ = readCustomViewName(source);
-    state.setProperty("dspName", dspName_, getUndoManager());
-    state.setProperty("dspSource", dspSource_, getUndoManager());
 
     DBG("FaustInstrumentPlugin::loadDspSource ok name=" << name << " out=" << compiled->dspOut
                                                         << " active=" << pool_.activeCount());
@@ -709,12 +662,30 @@ void FaustInstrumentPlugin::stageSourceForEditing(const juce::String& name,
     // without replacing the audible polyphonic DSP or its parameter pool.
     dspName_ = name;
     dspSource_ = source;
-    state.setProperty("dspName", dspName_, getUndoManager());
-    state.setProperty("dspSource", dspSource_, getUndoManager());
 }
 
-void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info) {
-    currentSampleRate_ = static_cast<int>(info.sampleRate);
+DeviceProperties FaustInstrumentPlugin::properties() const {
+    // The output count is the compiled dsp's own. No audio input at all: this
+    // is a source, and the plan mixes what it writes into the chain's bus.
+    const auto active = std::atomic_load(&active_);
+
+    return {
+        .pluginId = xmlTypeName,
+        .name = getPluginName(),
+        .shortName = "FaustInst",
+        .takesMidiInput = true,
+        .takesAudioInput = false,
+        .isSynth = true,
+        .producesAudioWithoutInput = true,
+        .outputChannelCount = active && active->dspOut > 0 ? active->dspOut : 2,
+        .inputChannelCount = 0,
+    };
+}
+
+void FaustInstrumentPlugin::release() {}
+
+void FaustInstrumentPlugin::prepare(const DevicePrepareContext& context) {
+    currentSampleRate_ = static_cast<int>(context.sampleRate);
 
     if (auto state = std::atomic_load(&active_)) {
         if (state->poly)
@@ -730,19 +701,16 @@ void FaustInstrumentPlugin::initialise(const te::PluginInitialisationInfo& info)
     }
 
     const int dspOut = std::atomic_load(&active_) ? std::atomic_load(&active_)->dspOut : 2;
-    scratchOut_.setSize(std::max(dspOut, 2), info.blockSizeSamples, false, true, false);
+    scratchOut_.setSize(std::max(dspOut, 2), context.maximumBlockSize, false, true, false);
 
-    DBG("FaustInstrumentPlugin::initialise sr=" << currentSampleRate_
-                                                << " blockSize=" << info.blockSizeSamples);
+    DBG("FaustInstrumentPlugin::prepare sr=" << currentSampleRate_
+                                             << " blockSize=" << context.maximumBlockSize);
 }
 
-void FaustInstrumentPlugin::deinitialise() {}
-
 void FaustInstrumentPlugin::reset() {
-    // Called from the message thread (TE's plugin API, and AudioBridge's
-    // resetSynthsOnTrack after a record pass) while the audio thread may be
-    // inside compute(). Only raise the flag; the flush runs at the top of the
-    // next applyToBuffer.
+    // Called from the message thread while the audio thread may be inside
+    // compute(). Only raise the flag; the flush runs at the top of the next
+    // process().
     pendingVoiceFlush_.store(true, std::memory_order_release);
 }
 
@@ -752,8 +720,8 @@ void FaustInstrumentPlugin::reservePointerScratch(const std::shared_ptr<FaustSta
     outPtrs_.reserve(static_cast<size_t>(std::max(0, state->dspOut)));
 }
 
-void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    if (!fc.destBuffer || fc.bufferNumSamples <= 0)
+void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
+    if (context.audio == nullptr || context.numSamples <= 0)
         return;
 
     auto active = std::atomic_load(&active_);
@@ -767,9 +735,9 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 
     // Stopping mid-note delivers no note-offs, so a sounding clip voice would
     // hang gated on. Flush on the playing -> stopped edge.
-    if (wasPlaying_ && !fc.isPlaying)
+    if (wasPlaying_ && !context.isPlaying)
         resetAllVoices(active);
-    wasPlaying_ = fc.isPlaying;
+    wasPlaying_ = context.isPlaying;
 
     // Apply user parameter values: denormalize once per slot, then fan the
     // value out to every voice's zone (plain pointer writes — RT-safe). The
@@ -780,10 +748,9 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             continue;
         if (b.slotIndex < 0 || b.slotIndex >= FaustParamPool::kSize)
             continue;
-        const auto& param = poolParams_[static_cast<size_t>(b.slotIndex)];
-        if (!param)
-            continue;
-        const float value = static_cast<float>(denormalizeForBinding(b, param->getCurrentValue()));
+        const float normalised =
+            poolValues_[static_cast<size_t>(b.slotIndex)].load(std::memory_order_relaxed);
+        const float value = static_cast<float>(denormalizeForBinding(b, normalised));
         for (FAUSTFLOAT* zone : active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)]) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(value);
@@ -804,8 +771,11 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         const auto& zones = active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)];
         if (zones.empty())
             continue;
-        if (cachedBpm < 0.0)
-            cachedBpm = edit.tempoSequence.getBpmAt(fc.editTime.getStart());
+        if (cachedBpm < 0.0) {
+            cachedBpm = context.tempoMap != nullptr
+                            ? context.tempoMap->bpmAtSeconds(context.timelineStartSeconds)
+                            : 120.0;
+        }
         for (FAUSTFLOAT* zone : zones) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(cachedBpm);
@@ -814,9 +784,9 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             *monoZone = static_cast<FAUSTFLOAT>(cachedBpm);
     }
 
-    const int hostChannels = fc.destBuffer->getNumChannels();
-    const int n = fc.bufferNumSamples;
-    const int start = fc.bufferStartSample;
+    const int hostChannels = context.audio->getNumChannels();
+    const int n = context.numSamples;
+    const int start = context.startSample;
     const int dspOut = active->dspOut;
 
     if (hostChannels <= 0 || dspOut <= 0 || scratchOut_.getNumSamples() <= 0)
@@ -839,7 +809,7 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // get from si.smooth(ba.tau2pole(glide)) inside their DSP. Here the host
     // owns the ramp instead, because a runtime patch reads `freq` directly and
     // cannot be assumed to smooth anything itself.
-    const float glideMs = glideParam_ ? glideParam_->getCurrentValue() * 2000.0f : 0.0f;
+    const float glideMs = hostValue(kGlideParamIndex) * 2000.0f;
     const float glideTau = glideMs * 0.001f;
 
     outPtrs_.resize(static_cast<size_t>(dspOut));
@@ -888,7 +858,7 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
             for (int ch = 0; ch < hostChannels; ++ch) {
                 // One-output ("mono") DSP drives both channels; else channel-map.
                 const int srcCh = (dspOut == 1) ? 0 : (ch % dspOut);
-                fc.destBuffer->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
+                context.audio->addFrom(ch, start + segStart + done, scratchOut_, srcCh, 0, chunk);
             }
             done += chunk;
         }
@@ -898,8 +868,9 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     // Mono retrigger depends on this: its envelope restarts on a gate edge, and
     // an edge only exists if samples are rendered either side of it.
     int cursor = 0;
-    if (fc.bufferForMidiMessages != nullptr && !fc.bufferForMidiMessages->isEmpty()) {
-        for (auto& m : *fc.bufferForMidiMessages) {
+    if (context.midi != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
+            const auto& m = context.midi->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * currentSampleRate_);
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);
@@ -962,7 +933,22 @@ void FaustInstrumentPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     renderSegment(cursor, n - cursor);
 }
 
-void FaustInstrumentPlugin::restorePluginStateFromValueTree(const juce::ValueTree& v) {
+void FaustInstrumentPlugin::flushState(juce::ValueTree& state) {
+    state.setProperty("dspName", dspName_, nullptr);
+    state.setProperty("dspSource", dspSource_, nullptr);
+    for (int i = 0; i < FaustParamPool::kSize; ++i)
+        state.setProperty(juce::Identifier(poolParamId(i)),
+                          poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
+                          nullptr);
+
+    // The host's three, under the spellings the retired plugin registered, so
+    // a project saved before the port reads back onto the same controls.
+    state.setProperty("voiceMode", hostValue(kVoiceModeParamIndex), nullptr);
+    state.setProperty("glide", hostValue(kGlideParamIndex), nullptr);
+    state.setProperty("bendRange", hostValue(kBendRangeParamIndex), nullptr);
+}
+
+void FaustInstrumentPlugin::restoreState(const juce::ValueTree& v) {
     const auto savedSource = v.getProperty("dspSource", juce::String()).toString();
     const auto savedName = v.getProperty("dspName", juce::String()).toString();
 
@@ -971,20 +957,75 @@ void FaustInstrumentPlugin::restorePluginStateFromValueTree(const juce::ValueTre
         if (!loadDspSource(savedName.isNotEmpty() ? savedName : juce::String("Loaded"), savedSource,
                            err)) {
             DBG("FaustInstrumentPlugin::restore: compile failed: " << err);
+
+            // Staged rather than dropped, as the effect does: the source stays
+            // editable so whoever opens the project sees what failed and can
+            // repair it, instead of the patch silently becoming the default.
+            stageSourceForEditing(savedName.isNotEmpty() ? savedName : juce::String("Loaded"),
+                                  savedSource);
         }
     }
 
-    for (size_t i = 0; i < poolCached_.size(); ++i) {
-        const auto id = poolParamId(static_cast<int>(i));
-        if (auto p = v.getPropertyPointer(juce::Identifier(id)))
-            poolCached_[i] = static_cast<float>(*p);
-        else
-            poolCached_[i].resetToDefault();
+    // Pool values are saved under stable ids (param_01 ... param_64), which is
+    // what lets a macro or automation lane keep pointing at the same control
+    // across a recompile.
+    for (int i = 0; i < FaustParamPool::kSize; ++i) {
+        const auto* saved = v.getPropertyPointer(juce::Identifier(poolParamId(i)));
+        poolValueWasRestored_[static_cast<size_t>(i)] = saved != nullptr;
+        poolValues_[static_cast<size_t>(i)].store(
+            saved != nullptr ? static_cast<float>(*saved) : 0.0f, std::memory_order_relaxed);
     }
-    for (auto& p : poolParams_) {
-        if (p)
-            p->updateFromAttachedValue();
+    refreshPoolDomains();
+
+    // A property the project does not name keeps what the constructor set,
+    // which for the bend range is two semitones rather than none: absent and
+    // zero have to stay different, or every older project would open with the
+    // wheel doing nothing.
+    const auto restoreHost = [&v, this](const char* id, int parameterIndex) {
+        if (const auto* saved = v.getPropertyPointer(juce::Identifier(id)))
+            setParameterValue(parameterIndex, static_cast<float>(*saved));
+    };
+    restoreHost("voiceMode", kVoiceModeParamIndex);
+    restoreHost("glide", kGlideParamIndex);
+    restoreHost("bendRange", kBendRangeParamIndex);
+}
+
+void FaustInstrumentPlugin::refreshPoolDomains() {
+    for (int i = 0; i < FaustParamPool::kSize; ++i)
+        poolDomains_[static_cast<size_t>(i)] =
+            ParameterUtils::domainOf(paramInfoFromSlot(pool_.slot(i)));
+}
+
+ParameterInfo FaustInstrumentPlugin::parameterInfo(int index) const {
+    if (index >= FaustParamPool::kSize && index < parameterCount())
+        return faustInstrumentHostParamInfo(index - FaustParamPool::kSize);
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return {};
+
+    auto info = paramInfoFromSlot(pool_.slot(index));
+    info.paramIndex = index;
+    info.stableId = poolParamId(index);
+    return info;
+}
+
+float FaustInstrumentPlugin::parameterValue(int index) const {
+    if (index >= FaustParamPool::kSize && index < parameterCount())
+        return hostValue(index);
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return 0.0f;
+    return poolValues_[static_cast<size_t>(index)].load(std::memory_order_relaxed);
+}
+
+void FaustInstrumentPlugin::setParameterValue(int index, float value) {
+    const float clamped = juce::jlimit(0.0f, 1.0f, value);
+    if (index >= FaustParamPool::kSize && index < parameterCount()) {
+        hostValues_[static_cast<size_t>(index - FaustParamPool::kSize)].store(
+            clamped, std::memory_order_relaxed);
+        return;
     }
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return;
+    poolValues_[static_cast<size_t>(index)].store(clamped, std::memory_order_relaxed);
 }
 
 }  // namespace magda::daw::audio
