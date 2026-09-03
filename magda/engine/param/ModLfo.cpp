@@ -136,9 +136,18 @@ ModTiming modTimingFor(const BlockInfo& block, double sampleRate) {
     // The map where there is one. A block assembled by hand carries none, and
     // what it gets is what a session that has never seen a transport renders
     // at: 120 in four four, which is the same default TransportState holds.
+    //
+    // Asked at the middle of the block rather than at its start. This is one
+    // rate for the whole block, which is sound because the transport cuts a
+    // callback at every tempo section (TransportClock.cpp); what the start is
+    // not, is reliably inside that section. A cut lands on the first sample at
+    // or after the boundary, so a block can open a fraction of a sample before
+    // one and read the tempo it is leaving for every sample it renders. The
+    // middle is inside the section on every alignment.
     if (block.tempo != nullptr) {
-        const auto signature = block.tempo->barsAndBeatsAt(block.beats.start);
-        timing.bpm = block.tempo->bpmAt(block.beats.start);
+        const auto inside = block.beats.start + (0.5 * block.beats.length());
+        const auto signature = block.tempo->barsAndBeatsAt(inside);
+        timing.bpm = block.tempo->bpmAt(inside);
         timing.numerator = signature.numerator;
         timing.denominator = signature.denominator;
     }

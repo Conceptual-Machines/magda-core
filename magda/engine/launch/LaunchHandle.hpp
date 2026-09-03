@@ -460,7 +460,11 @@ class LaunchHandle {
     /// How long the run had been going when @p piece began.
     double elapsedSecondsAt(const SyncRange& piece) const;
 
-    /// Re-count the origin when the device changes rate under a running slot.
+    /// Re-count @p run's origin at @p piece's rate, keeping its elapsed time.
+    static void recountRun(Run& run, const SyncRange& piece);
+
+    /// Follow the device's rate on every run this handle holds: the one it is
+    /// playing, and the one a queued synced launch is waiting to join.
     void followRate(const SyncRange& piece);
 
     /// Apply whatever the block ran into, at the instant it ran into it.

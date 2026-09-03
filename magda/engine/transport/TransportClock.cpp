@@ -188,11 +188,20 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         // run at the tempo it opened on for the rest of it. The cut is what
         // makes that reading exact rather than nearly right, and it costs one
         // extra segment per tempo change (#2333).
-        const auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
-        if (std::isfinite(boundary)) {
-            if (const auto untilBoundary = samplesUntil(tempo, boundary); untilBoundary > 0)
-                samples = std::min(samples, untilBoundary);
-        }
+        //
+        // Past a boundary the epsilon has already swallowed, or the guarantee
+        // has a hole exactly where it is hardest to see. A boundary within a
+        // hundredth of a sample ahead of the cursor counts as zero samples
+        // away, and a zero cut is no cut: the segment would then run to
+        // whatever else ends it, through that boundary and every later one in
+        // the callback. The cursor is on that boundary for all practical
+        // purposes, so the one to cut at is the next one after it.
+        auto boundary = tempo.nextSectionBoundaryAfter(beatAfter(tempo, samplesSinceAnchor_));
+        while (std::isfinite(boundary) && samplesUntil(tempo, boundary) <= 0)
+            boundary = tempo.nextSectionBoundaryAfter(boundary);
+
+        if (std::isfinite(boundary))
+            samples = std::min(samples, samplesUntil(tempo, boundary));
 
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from

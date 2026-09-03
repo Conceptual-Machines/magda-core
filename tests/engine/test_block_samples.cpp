@@ -1,5 +1,7 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
 #include "exec/RenderContext.hpp"
 
@@ -122,24 +124,43 @@ TEST_CASE("A beat is placed through the map, not along the block's line",
     // holds whatever the clock does about cutting (#2333).
     const TempoMap ramp({{0.0, 20.0, 0.0f}, {1.0, 300.0, 0.0f}}, {});
 
+    // Long enough to cross the baked boundary at 0.75, which is where the slope
+    // changes: the map cuts a ramp four ways to the beat. A block of the usual
+    // few hundred samples sits inside one section, where the line is the map.
+    const auto from = ramp.beatToTime(0.5);
+    const auto to = ramp.beatToTime(0.85);
+
     BlockInfo block;
-    block.numSamples = kBlockSize;
+    block.numSamples = static_cast<int>(std::lround((to - from) * kSampleRate));
     block.sampleRate = kSampleRate;
     block.playing = true;
-    block.seconds.start = ramp.beatToTime(0.5);
-    block.seconds.end = block.seconds.start + (kBlockSize / kSampleRate);
-    block.beats.start = ramp.timeToBeat(block.seconds.start);
-    block.beats.end = ramp.timeToBeat(block.seconds.end);
+    block.seconds.start = from;
+    block.seconds.end = to;
+    block.beats.start = ramp.timeToBeat(from);
+    block.beats.end = ramp.timeToBeat(to);
     block.tempo = &ramp;
+
+    auto worstOnTheLine = 0.0;
 
     for (const auto through : {0.25, 0.5, 0.75}) {
         const auto beat = block.beats.start + (through * block.beats.length());
+        const auto exact = (ramp.beatToTime(beat) - block.seconds.start) * kSampleRate;
 
-        const auto exact =
-            static_cast<int>((ramp.beatToTime(beat) - block.seconds.start) * kSampleRate);
+        // Where the block's own two ends would have put it, which is what the
+        // conversion used to do.
+        const auto onTheLine = through * block.numSamples;
+        worstOnTheLine = std::max(worstOnTheLine, std::abs(onTheLine - exact));
 
-        CHECK(block.eventForBeat(beat).value == exact);
+        // To the sample, rather than to the exact integer: which side of a
+        // fractional answer a rounding rule lands on is the rule's business
+        // (TimeDomains::eventAt), and asserting it here would be asserting the
+        // rule twice.
+        CHECK(std::abs(static_cast<double>(block.eventForBeat(beat).value) - exact) <= 1.0);
     }
+
+    // And this is a block where the map and the line differ, or the case above
+    // would pass on one that could not tell them apart.
+    CHECK(worstOnTheLine > 1.0);
 }
 
 TEST_CASE("A block with beats alone places along its own line", "[engine][block][samples]") {

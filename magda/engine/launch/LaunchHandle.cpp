@@ -34,28 +34,49 @@ double LaunchHandle::virtualStartSeconds(const SyncRange& piece) const {
     return piece.seconds.start - elapsedSecondsAt(piece);
 }
 
+void LaunchHandle::recountRun(Run& run, const SyncRange& piece) {
+    // The device changed rate under a run. The origin is a count of samples and
+    // the samples are not the same length any more, so holding the number would
+    // silently change how far into its material the run is. What is kept
+    // instead is the elapsed time it has actually had, and the origin is
+    // re-counted behind the block at the new rate.
+    if (run.sampleRate > 0.0) {
+        const auto elapsed = (piece.monotonicSamples.start - run.origin).seconds(run.sampleRate);
+        run.origin =
+            piece.monotonicSamples.start - SampleDuration::ofSeconds(elapsed, piece.rate());
+        run.through = std::max(run.through, run.origin);
+    }
+
+    run.sampleRate = piece.rate();
+}
+
 void LaunchHandle::followRate(const SyncRange& piece) {
-    if (!run_ || piece.rate() <= 0.0 || piece.rate() == run_->sampleRate)
+    if (piece.rate() <= 0.0)
         return;
 
-    // The device changed rate under a slot that is playing. The origin is a
-    // count of samples and the samples are not the same length any more, so
-    // holding the number would silently change how far into its material the
-    // run is. What is kept instead is the elapsed time it has actually had, and
-    // the origin is re-counted behind the block at the new rate.
-    //
     // Which depends on this block being the first at the new rate, and that is
     // an invariant rather than a guess: advanceLaunchHandles advances every
     // handle over every block before anything renders (SessionLauncher.hpp), so
     // a handle cannot miss the block a change arrives on.
-    if (run_->sampleRate > 0.0) {
-        const auto elapsed = elapsedSecondsAt(piece);
-        run_->origin =
-            piece.monotonicSamples.start - SampleDuration::ofSeconds(elapsed, piece.rate());
-        run_->through = std::max(run_->through, run_->origin);
-    }
+    if (run_ && piece.rate() != run_->sampleRate)
+        recountRun(*run_, piece);
 
-    run_->sampleRate = piece.rate();
+    // The run a synced launch is waiting to join, on the same blocks. It was
+    // copied when the launch was requested and is joined whenever its beat
+    // arrives, and a rate change in between would otherwise leave the follower
+    // adopting an origin counted in samples of another length: at 44.1 to 48
+    // kHz with a second between the two, the follower would sit about 90 ms off
+    // the leader for the rest of the run.
+    //
+    // Carried rather than re-read from the leader at the launch instant, which
+    // would be the other way to keep it current. A handle has no safe way to
+    // name another one across the blocks in between: the store frees a handle
+    // the next published table does not name, and a pending request holding a
+    // pointer to one would be holding it after it went. Lockstep gets the same
+    // answer, because the copy and the leader's own run start identical and
+    // every handle is advanced over every block.
+    if (pending_ && pending_->synced && piece.rate() != pending_->synced->sampleRate)
+        recountRun(*pending_->synced, piece);
 }
 
 std::optional<LaunchHandle::QueueState> LaunchHandle::queuedState() const {

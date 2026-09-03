@@ -820,16 +820,71 @@ TEST_CASE("A block is one tempo, which is what a rate-synced modifier reads",
     for (const auto& segment : rendered.segments) {
         const auto& block = segment.block;
 
-        // At the last sample as well as the first. The end beat itself is
-        // excluded and can sit a fraction of a sample past the boundary, since
-        // a cut lands on the first sample at or after it; what has to be one
-        // tempo is every sample the block actually renders.
+        // Read where the consumer reads, which is the middle of the block. Not
+        // its start: a cut lands on the first sample at or after a boundary, so
+        // a block can open a fraction of a sample before one, and the beat at
+        // its start is then in the section it is leaving while every sample it
+        // renders is in the next.
+        const auto inside = block.beats.start + (0.5 * block.beats.length());
+
+        const auto first = snapshot.tempo.timeToBeat(block.seconds.start);
         const auto last =
             snapshot.tempo.timeToBeat(block.seconds.start + ((block.numSamples - 1) / kSampleRate));
 
-        const auto opening = snapshot.tempo.bpmAt(block.beats.start);
-        const auto closing = snapshot.tempo.bpmAt(last);
+        // Every sample the block renders is at the tempo that reading gives.
+        // The end beat is excluded and may sit past the boundary, which is why
+        // the far end is asked about by its last sample rather than by it.
+        const auto bpm = snapshot.tempo.bpmAt(inside);
 
-        CHECK(closing == approx(opening));
+        CHECK(snapshot.tempo.bpmAt(first) == approx(bpm));
+        CHECK(snapshot.tempo.bpmAt(last) == approx(bpm));
+    }
+}
+
+TEST_CASE("A boundary the epsilon swallows is still cut at",
+          "[engine][transport][clock][tempo][2336]") {
+    // The hole in the guarantee above, and it is the epsilon's. A boundary
+    // within a hundredth of a sample ahead of the cursor is zero samples away,
+    // and a zero cut is no cut: the segment then runs to whatever else ends it,
+    // through that boundary and every later one in the callback. What comes out
+    // is exactly the block the cut exists to prevent, on exactly the alignment
+    // nobody would think to try.
+    //
+    // Built by choosing a tempo that puts the first boundary a hundredth of a
+    // sample past a sample, so the cut at it leaves the cursor a hundredth of a
+    // sample short of it. Swept over several fractions, because which of them
+    // the arithmetic actually lands on is not the point.
+    for (const auto fraction : {0.001, 0.005, 0.009}) {
+        // 24000 samples to the first boundary, plus the fraction of one.
+        const auto bpm = 60.0 * kSampleRate / (24000.0 + fraction);
+
+        TransportClock clock;
+        auto snapshot = playing(0.0);
+
+        // Two steps: one at beat 1, one at beat 1.5. A step is two changes at
+        // the one beat, which is how it is written rather than a ramp to it.
+        snapshot.tempo = TempoMap({{0.0, bpm, 0.0f},
+                                   {1.0, bpm, 0.0f},
+                                   {1.0, 240.0, 0.0f},
+                                   {1.5, 240.0, 0.0f},
+                                   {1.5, 60.0, 0.0f}},
+                                  {});
+
+        // Past both boundaries, so a segment that missed the first has the
+        // second to run through.
+        const auto rendered = advance(clock, snapshot, 32768);
+        requireCovers(rendered, 32768);
+
+        for (const auto& segment : rendered.segments) {
+            const auto& block = segment.block;
+
+            const auto inside = block.beats.start + (0.5 * block.beats.length());
+            const auto last = snapshot.tempo.timeToBeat(block.seconds.start +
+                                                        ((block.numSamples - 1) / kSampleRate));
+
+            INFO("fraction " << fraction << " block " << block.beats.start << ".."
+                             << block.beats.end);
+            CHECK(snapshot.tempo.bpmAt(last) == approx(snapshot.tempo.bpmAt(inside)));
+        }
     }
 }

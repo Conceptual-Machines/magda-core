@@ -633,3 +633,63 @@ TEST_CASE("A run's origin is the same sample after the timeline wraps", "[launch
     // And the run has got as far as the count says, whatever the cursor did.
     CHECK(handle.playedSampleRange()->length() == SampleDuration{samplesFor(6.0)});
 }
+
+TEST_CASE("A synced launch joins the run as the rate left it", "[launch][2336]") {
+    // A scene launch is a request now and a launch at the quantized beat, and
+    // between the two the device can change rate. The run to join is held as a
+    // copy, and a copy counted in samples of one length adopted at another puts
+    // the follower somewhere the leader is not: at 44.1 to 48 kHz with a second
+    // in between it is about 90 ms, for the rest of the run.
+    //
+    // So the copy follows the rate on the same blocks the leader's own run
+    // does, which is what makes joining at the launch instant and joining a
+    // copy the same answer.
+    LaunchHandle leader;
+    LaunchHandle follower;
+
+    leader.play({});
+    leader.advance(block(0.0, 2.0));  // one second at 48 kHz
+
+    // Queued for a beat that has not arrived, which is what a scene launch is.
+    follower.playSynced(leader, 4.0);
+
+    // The device doubles its rate. The transport's count carries straight on;
+    // what changes is what each sample is worth.
+    const auto doubled = [](double from, double to, std::int64_t fromSample) {
+        return SyncRange{BeatRange{from, to},
+                         BeatRange{from, to},
+                         SecondsRange{from * kSecondsPerBeat, to * kSecondsPerBeat},
+                         SampleRange{SamplePosition{fromSample},
+                                     SamplePosition{fromSample + static_cast<std::int64_t>(
+                                                                     (to - from) * kSecondsPerBeat *
+                                                                     2.0 * kSampleRate)}},
+                         static_cast<int>((to - from) * kSecondsPerBeat * 2.0 * kSampleRate),
+                         2.0 * kSampleRate};
+    };
+
+    const auto second = doubled(2.0, 3.0, 48000);
+    leader.advance(second);
+    follower.advance(second);
+
+    // And now the launch beat arrives.
+    const auto third = doubled(3.0, 5.0, 96000);
+    const auto leading = leader.advance(third);
+    const auto following = follower.advance(third);
+
+    REQUIRE(follower.playedSampleRange().has_value());
+    REQUIRE(leader.playedSampleRange().has_value());
+
+    // The same origin, which is the whole point of a synced launch: the same
+    // sample, not merely the same bar.
+    CHECK(follower.playedSampleRange()->start == leader.playedSampleRange()->start);
+
+    REQUIRE(following.afterEvent.has_value());
+    REQUIRE(following.afterEvent->origin.has_value());
+    REQUIRE(leading.beforeEvent.origin.has_value());
+
+    // And what a source is handed says the same thing on both axes. The origin
+    // is where the run began in absolute terms, so the two agree whatever piece
+    // of the block each was worked out over.
+    CHECK(following.afterEvent->origin->beat == Approx(leading.beforeEvent.origin->beat));
+    CHECK(following.afterEvent->origin->seconds == Approx(leading.beforeEvent.origin->seconds));
+}
