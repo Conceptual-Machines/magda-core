@@ -349,16 +349,19 @@ void EngineExternalDevice::readMidiIn(const juce::MidiBuffer& in) {
 }
 
 void EngineExternalDevice::writeMidiOut(juce::MidiBuffer& out, int numSamples) const {
-    // Whatever the plugin left in the buffer, which for most plugins is what
-    // went in. That is the fork's behaviour and not an accident of it: JUCE
-    // hands a plugin one buffer for both directions, the fork writes back what
-    // is in it afterwards, and a chain that wanted the raw input as well asks
-    // the plan for it (DeviceInfo::midiInThru) rather than asking the plugin.
+    // The plugin's own output: JUCE hands it one buffer for both directions and
+    // refills it before returning. A chain that wants the raw input asks the
+    // plan for it (DeviceInfo::midiInThru) rather than asking the plugin.
     //
-    // Counted in bytes against what the executor reserved for this port, which
-    // is the plan's figure rather than the flat constant (#2341). A plugin that
-    // did hand its input back would be over it as soon as more than one source
-    // fed the track, and the assertion below is where that shows.
+    // JUCE's AU path refills only under wantsMidiMessages, so for a plugin with
+    // no MIDI of its own the buffer is still the input, and writing that back
+    // doubles it behind a ChainMidiMerge (#2348).
+    const bool pluginHasMidiOfItsOwn = instance_->acceptsMidi() || instance_->producesMidi();
+    if (!pluginHasMidiOfItsOwn)
+        return;
+
+    // Counted in bytes against what the executor reserved for this port, rather
+    // than the flat constant (#2341).
     int bytesWritten = 0;
 
     for (const auto metadata : midi_) {

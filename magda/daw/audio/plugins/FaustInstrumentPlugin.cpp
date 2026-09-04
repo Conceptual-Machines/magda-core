@@ -507,6 +507,14 @@ bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& 
                                              int velocity, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
     const bool wasEmpty = heldNotes_.empty();
+
+    // One entry per pitch, as MagdaCompiledPolyInstrument does: otherwise a
+    // duplicate note-on strands a pitch that only gets one note-off (#2351).
+    for (auto it = heldNotes_.begin(); it != heldNotes_.end(); ++it)
+        if (it->note == note) {
+            heldNotes_.erase(it);
+            break;
+        }
     heldNotes_.push_back({note, g});
 
     glideTargetHz_ = midiNoteToHz(note);
@@ -532,8 +540,6 @@ bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& 
 }
 
 void FaustInstrumentPlugin::handleMonoNoteOff(const std::shared_ptr<FaustState>& state, int note) {
-    // Search from the top so releasing one of a repeated pitch drops the most
-    // recent, leaving any earlier hold of the same note intact.
     for (auto it = heldNotes_.rbegin(); it != heldNotes_.rend(); ++it)
         if (it->note == note) {
             heldNotes_.erase(std::next(it).base());
@@ -570,8 +576,7 @@ void FaustInstrumentPlugin::initialiseUnsetPoolValues(
 }
 
 FaustInstrumentPlugin::FaustInstrumentPlugin() {
-    // Reserved so process() never grows it. See #2351: without a dedup this
-    // bound is note-ons rather than held notes, and can be exceeded.
+    // 128 held pitches, never note-ons, thanks to handleMonoNoteOn's dedup (#2351).
     heldNotes_.reserve(128);
 
     for (auto& value : poolValues_)
