@@ -18,7 +18,11 @@ namespace magda::daw::audio {
 struct SamplerSound : public juce::SynthesiserSound {
     juce::AudioBuffer<float> audioData;
     double sourceSampleRate = 44100.0;
-    int rootNote = 60;
+
+    /// Read on the audio thread, in SamplerVoice::startNote, and written by
+    /// setRootNote off it. Atomic because a note starting during that write is
+    /// otherwise a data race, whatever the hot path does (#2383 review).
+    std::atomic<int> rootNote{60};
 
     bool appliesToNote(int) override {
         return true;
@@ -301,9 +305,9 @@ class MagdaSamplerPlugin : public MagdaDevice {
     /// applyToBuffer (#2378).
     SamplerSound* currentSound = nullptr;
 
-    /// What the audio thread needs of the loaded sound, which is only these two
-    /// numbers. Published by the message thread once the synthesiser holds the
-    /// sound they describe.
+    /// What the audio thread needs of the loaded sound besides its root note,
+    /// which the sound carries atomically. Published by the message thread once
+    /// the synthesiser holds the sound they describe.
     ///
     /// Two words rather than one: they are read to clamp marker ranges and to
     /// scale a playhead, so a pair torn across a load costs one block's clamp

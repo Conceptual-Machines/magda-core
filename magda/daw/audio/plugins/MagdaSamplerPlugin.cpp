@@ -240,7 +240,8 @@ double SamplerVoice::pitchRatioForNote(int midiNoteNumber, const SamplerSound& s
     if (fractional != 0.0)  // fractional semitones -> exponential
         noteHz *= std::pow(2.0, fractional / 12.0);
 
-    double rootHz = juce::MidiMessage::getMidiNoteInHertz(sound.rootNote);
+    double rootHz =
+        juce::MidiMessage::getMidiNoteInHertz(sound.rootNote.load(std::memory_order_relaxed));
     return (noteHz / rootHz) * (sound.sourceSampleRate / getSampleRate());
 }
 
@@ -740,7 +741,7 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     auto* newSound = new SamplerSound();
     newSound->audioData = std::move(newBuffer);
     newSound->sourceSampleRate = sourceSR;
-    newSound->rootNote = detectedRootNote;
+    newSound->rootNote.store(detectedRootNote, std::memory_order_relaxed);
 
     synthesiser.clearSounds();
     synthesiser.addSound(newSound);
@@ -855,10 +856,10 @@ int MagdaSamplerPlugin::getRootNote() const {
 
 void MagdaSamplerPlugin::setRootNote(int note) {
     rootNote_ = juce::jlimit(0, 127, note);
-    // rootNote is only read in startNote (not in renderNextBlock hot path),
-    // so a plain write is safe here.
+    // Published rather than assigned: startNote is the audio thread, so a note
+    // arriving during this write would otherwise race it.
     if (currentSound != nullptr)
-        currentSound->rootNote = rootNote_;
+        currentSound->rootNote.store(rootNote_, std::memory_order_relaxed);
 }
 
 }  // namespace magda::daw::audio
