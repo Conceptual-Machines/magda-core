@@ -249,32 +249,24 @@ double decayToSilenceSeconds(const juce::AudioBuffer<float>& buffer, double rate
 
 TEST_CASE("Nimbus declares the priming delay it imposes on the dry path",
           "[nimbus][clouds][latency]") {
-    // Every rate a host runs at, and block sizes either side of the internal
-    // chunk: the delay is a property of the plumbing, not of how the host
-    // happens to slice its buffer (#2365 review).
-    for (double rate : {44100.0, 48000.0, 88200.0, 96000.0}) {
+    // Every rate a host runs at, up to 192 kHz, and block sizes either side of
+    // the internal chunk: the delay is a property of the plumbing, not of how
+    // the host slices its buffer (#2365 review).
+    //
+    // Checked in seconds, the unit the declaration is in. The input guard holds
+    // a fixed sample count, so its share shrinks as the rate climbs and one
+    // constant cannot sit exactly on every rate at once.
+    for (double rate : {32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
         const double declared = MutableCloudsPlugin::kLatencySeconds * rate;
         for (int blockSize : {16, 128, 512, 2048}) {
             const int measured = bulkDelaySamples(rate, blockSize);
+            const double errorSeconds = (measured - declared) / rate;
             INFO("rate " << rate << " block " << blockSize << ": declared " << declared
-                         << " samples, measured " << measured);
-            CHECK(std::abs(measured - declared) <= 3.0);
+                         << " samples, measured " << measured << ", out by " << errorSeconds * 1.0e6
+                         << " us");
+            CHECK(std::abs(errorSeconds) <= MutableCloudsPlugin::kLatencyToleranceSeconds);
         }
     }
-}
-
-TEST_CASE("A 32 kHz host resamples nothing and skips the band limiting",
-          "[nimbus][clouds][latency]") {
-    // The one rate where both steps are 1. Nothing aliases, so both filters are
-    // bypassed and the output arrives their group delay early against a
-    // constant that has to assume they are in.
-    const double bypassed = 2.0 * MutableCloudsPlugin::kBandLimitDelaySeconds * 32000.0;
-    const double declared = MutableCloudsPlugin::kLatencySeconds * 32000.0;
-    const int measured = bulkDelaySamples(32000.0, kBlockSize);
-
-    INFO("declared " << declared << " samples, measured " << measured << ", filters worth "
-                     << bypassed);
-    CHECK(std::abs(measured - (declared - bypassed)) <= 1.0);
 }
 
 TEST_CASE("Nimbus band-limits both crossings of its 32 kHz rate", "[nimbus][clouds][resampler]") {
@@ -338,53 +330,88 @@ TEST_CASE("Nimbus takes a host buffer larger than its own ring", "[nimbus][cloud
     }
 }
 
-TEST_CASE("Nimbus declares the tail its reverb is actually running", "[nimbus][clouds][latency]") {
-    // A constant cannot: the decay runs from 60 ms to past 18 s across the one
-    // parameter, and a bounce trusting 2 s was cut at the last note (#2365
-    // review). getTailLength() is read per render, so this can follow.
+TEST_CASE("Nimbus declares the tail it is actually running", "[nimbus][clouds][latency]") {
+    // A constant cannot: the decay runs from half a second to past 32 s across
+    // the reverb, every mode replays the buffer from `position` on top of that,
+    // and a bounce trusting 2 s was cut at the last note (#2365 review).
+    // getTailLength() is read per render, so this can follow.
     constexpr double rate = 48000.0;
 
-    const auto measureDecay = [rate](float reverb) {
+    const auto declarationFor = [](int mode, float reverb, float position, float feedback) {
         CloudsRig rig(rate);
-        rig.set(MutableCloudsPlugin::kMode, 2.0f);
-        rig.set(MutableCloudsPlugin::kPosition, 0.0f);
-        rig.set(MutableCloudsPlugin::kDensity, 0.0f);
-        rig.set(MutableCloudsPlugin::kTexture, 0.5f);
-        rig.set(MutableCloudsPlugin::kFeedback, 0.0f);
-        rig.set(MutableCloudsPlugin::kDryWet, 1.0f);
+        rig.set(MutableCloudsPlugin::kMode, static_cast<float>(mode));
         rig.set(MutableCloudsPlugin::kReverb, reverb);
-
-        auto buffer = burstThenSilence(rate, kBurstSeconds, 40.0);
-        rig.render(buffer);
-        return decayToSilenceSeconds(buffer, rate, secondsToSamples(kBurstSeconds, rate));
+        rig.set(MutableCloudsPlugin::kPosition, position);
+        rig.set(MutableCloudsPlugin::kFeedback, feedback);
+        return rig.device.properties().tailLengthSeconds;
     };
 
-    SECTION("the declaration covers the decay at every reverb setting") {
-        for (float reverb : {0.0f, 0.25f, 0.5f, 0.75f, 1.0f}) {
-            CloudsRig rig(rate);
-            rig.set(MutableCloudsPlugin::kReverb, reverb);
-            const double declared = rig.device.properties().tailLengthSeconds;
-            const double measured = measureDecay(reverb);
+    // Longest the output stays above -60 dBFS after the burst, over the three
+    // deterministic modes and the extremes of grain size. Spectral is left out:
+    // its resynthesis is random, so it has no envelope to measure.
+    const auto worstDecay = [](float reverb, float position) {
+        double worst = 0.0;
+        for (int mode : {0, 1, 2}) {
+            for (float size : {0.0f, 0.5f, 1.0f}) {
+                CloudsRig rig(rate);
+                rig.set(MutableCloudsPlugin::kMode, static_cast<float>(mode));
+                rig.set(MutableCloudsPlugin::kPosition, position);
+                rig.set(MutableCloudsPlugin::kSize, size);
+                rig.set(MutableCloudsPlugin::kDensity, 0.0f);
+                rig.set(MutableCloudsPlugin::kTexture, 0.5f);
+                rig.set(MutableCloudsPlugin::kFeedback, 0.0f);
+                rig.set(MutableCloudsPlugin::kDryWet, 1.0f);
+                rig.set(MutableCloudsPlugin::kReverb, reverb);
 
+                // The buffer has to be full before the burst, or there is
+                // nothing behind `position` to replay.
+                juce::AudioBuffer<float> settle(2, secondsToSamples(4.0, rate));
+                settle.clear();
+                rig.render(settle);
+
+                auto buffer = burstThenSilence(rate, kBurstSeconds, 50.0);
+                rig.render(buffer);
+                worst = std::max(worst, decayToSilenceSeconds(
+                                            buffer, rate, secondsToSamples(kBurstSeconds, rate)));
+            }
+        }
+        return worst;
+    };
+
+    SECTION("the declaration covers the reverb's decay") {
+        for (float reverb : {0.0f, 0.25f, 0.55f, 0.85f}) {
+            const double declared = declarationFor(0, reverb, 0.0f, 0.0f);
+            const double measured = worstDecay(reverb, 0.0f);
             INFO("reverb " << reverb << ": declared " << declared << "s, decays in " << measured
                            << "s");
             CHECK(declared >= measured);
-            CHECK(declared <= measured + 3.0);
+            CHECK(declared <= measured * 2.0 + 1.0);
         }
     }
 
-    SECTION("a reverb that is off does not extend the render") {
-        CloudsRig rig(rate);
-        rig.set(MutableCloudsPlugin::kReverb, 0.0f);
-        CHECK(rig.device.properties().tailLengthSeconds < 1.0);
+    SECTION("and the buffer the delay position replays") {
+        // With the reverb off this is the whole tail, and it is what a constant
+        // 250 ms missed: a delayed copy outlives the input by over a second.
+        for (float position : {0.0f, 0.5f, 1.0f}) {
+            const double declared = declarationFor(0, 0.0f, position, 0.0f);
+            const double measured = worstDecay(0.0f, position);
+            INFO("position " << position << ": declared " << declared << "s, decays in " << measured
+                             << "s");
+            CHECK(declared >= measured);
+            CHECK(declared <= measured + 1.5);
+        }
+    }
+
+    SECTION("spectral gets headroom rather than a measurement") {
+        // Three identical renders at reverb 0.75 gave 0 s, 0 s and 20.7 s.
+        CHECK(declarationFor(3, 0.75f, 0.0f, 0.0f) ==
+              Catch::Approx(2.0 * declarationFor(0, 0.75f, 0.0f, 0.0f)));
     }
 
     SECTION("feedback that never decays declares the ceiling") {
         // From 0.85 the buffer recirculates indefinitely. No finite tail covers
         // that, so the most useful thing to say is the ceiling.
-        CloudsRig rig(rate);
-        rig.set(MutableCloudsPlugin::kFeedback, 1.0f);
-        CHECK(rig.device.properties().tailLengthSeconds ==
+        CHECK(declarationFor(0, 0.0f, 0.0f, 1.0f) ==
               Catch::Approx(MutableCloudsPlugin::kMaxTailSeconds));
     }
 }

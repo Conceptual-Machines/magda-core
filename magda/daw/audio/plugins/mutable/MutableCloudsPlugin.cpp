@@ -50,9 +50,9 @@ struct Biquad {
         a2 = static_cast<float>((1.0 - alpha) / a0);
     }
     float process(float x) {
-        const float y = b0 * x + z1;
-        z1 = b1 * x - a1 * y + z2;
-        z2 = b2 * x - a2 * y;
+        const float y = (b0 * x) + z1;
+        z1 = (b1 * x) - (a1 * y) + z2;
+        z2 = (b2 * x) - (a2 * y);
         return y;
     }
 };
@@ -63,8 +63,8 @@ constexpr double kBandLimitHz = MutableCloudsPlugin::kBandLimitHz;
 
 // A section's DC group delay is 1/(Q w0), so the filter's is sum(1/Q)/w0. The
 // header declares the latency from it and cannot see this table, so tie them.
-constexpr double kQSum = 1.0 / kButterworthQ[0] + 1.0 / kButterworthQ[1] + 1.0 / kButterworthQ[2] +
-                         1.0 / kButterworthQ[3];
+constexpr double kQSum = (1.0 / kButterworthQ[0]) + (1.0 / kButterworthQ[1]) +
+                         (1.0 / kButterworthQ[2]) + (1.0 / kButterworthQ[3]);
 static_assert(kQSum > MutableCloudsPlugin::kBandLimitQSum - 1e-6 &&
                   kQSum < MutableCloudsPlugin::kBandLimitQSum + 1e-6,
               "the declared latency is derived from these pole Qs");
@@ -73,15 +73,14 @@ static_assert(kBlock == 32, "kLatencySeconds counts a 32-sample grain block");
 // The 32 kHz DSP is band-limited to 16 kHz and the cubic interpolators do not
 // enforce it: unfiltered, a 20 kHz tone folds to 12 kHz louder than it left,
 // and a 10 kHz tone's image sits 17 dB down coming back up. One lowpass per
-// crossing, both at host rate, both idle at 32 kHz where neither leg resamples.
+// crossing, both at host rate.
 struct BandLimit {
     Biquad l[4], r[4];
-    bool active = false;
 
     void prepare(double hostRate) {
-        active = hostRate > static_cast<double>(kInternalRate) + 1.0;
-        if (!active)
-            return;
+        // At every rate, 32 kHz included. Bypassing where nothing resamples
+        // would save a filter nobody hears and put the declared latency 3
+        // samples out at that rate (#2365 review).
         for (int i = 0; i < 4; ++i) {
             l[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
             r[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
@@ -95,8 +94,6 @@ struct BandLimit {
         }
     }
     void process(float& L, float& R) {
-        if (!active)
-            return;
         for (int i = 0; i < 4; ++i) {
             L = l[i].process(L);
             R = r[i].process(R);
@@ -182,17 +179,17 @@ struct Desc {
 };
 
 const std::array<Desc, MutableCloudsPlugin::kNumParams> kDescs = {{
-    {"position", "Position", 0.5f, Kind::Normalised},
-    {"size", "Size", 0.5f, Kind::Normalised},
-    {"pitch", "Pitch", 0.0f, Kind::Pitch},
-    {"density", "Density", 0.4f, Kind::Normalised},
-    {"texture", "Texture", 0.5f, Kind::Normalised},
-    {"dryWet", "Dry/Wet", 0.5f, Kind::Normalised},
-    {"spread", "Spread", 0.5f, Kind::Normalised},
-    {"feedback", "Feedback", 0.0f, Kind::Normalised},
-    {"reverb", "Reverb", 0.0f, Kind::Normalised},
-    {"mode", "Mode", 0.0f, Kind::Mode},
-    {"freeze", "Freeze", 0.0f, Kind::Freeze},
+    {.id = "position", .name = "Position", .def = 0.5f, .kind = Kind::Normalised},
+    {.id = "size", .name = "Size", .def = 0.5f, .kind = Kind::Normalised},
+    {.id = "pitch", .name = "Pitch", .def = 0.0f, .kind = Kind::Pitch},
+    {.id = "density", .name = "Density", .def = 0.4f, .kind = Kind::Normalised},
+    {.id = "texture", .name = "Texture", .def = 0.5f, .kind = Kind::Normalised},
+    {.id = "dryWet", .name = "Dry/Wet", .def = 0.5f, .kind = Kind::Normalised},
+    {.id = "spread", .name = "Spread", .def = 0.5f, .kind = Kind::Normalised},
+    {.id = "feedback", .name = "Feedback", .def = 0.0f, .kind = Kind::Normalised},
+    {.id = "reverb", .name = "Reverb", .def = 0.0f, .kind = Kind::Normalised},
+    {.id = "mode", .name = "Mode", .def = 0.0f, .kind = Kind::Mode},
+    {.id = "freeze", .name = "Freeze", .def = 0.0f, .kind = Kind::Freeze},
 }};
 
 /// One slot's metadata, from the descriptor table. The ids, order and display
@@ -384,18 +381,21 @@ float MutableCloudsPlugin::parameterValue(int index) const {
     return values_[static_cast<size_t>(index)];
 }
 
-double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool freeze) {
+double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool freeze,
+                                           float position, int mode) {
     // Upstream's own reverb_amount (granular_processor.cc): feedback only joins
     // it once frozen, and reverb alone tops out at 0.95.
     const float amount =
-        juce::jlimit(0.0f, 1.0f, reverb * 0.95f + (freeze ? feedback * (2.0f - feedback) : 0.0f));
+        juce::jlimit(0.0f, 1.0f, (reverb * 0.95f) + (freeze ? feedback * (2.0f - feedback) : 0.0f));
 
-    // Measured 90%-decay against reverb, +25% headroom (see the test). A curve
-    // rather than a formula: the decay is not a single exponential, so a fitted
-    // one is either wrong in the middle or absurd at the top.
+    // Measured decay to -60 dBFS against reverb, +20% headroom, in granular at
+    // grain size 1: that is the longest of the four modes by about 60%, and the
+    // curve has to cover the worst. A table rather than a formula, because the
+    // decay is not a single exponential and a fit is either wrong in the middle
+    // or absurd at the top.
     constexpr float kAmount[] = {0.0f,   0.095f,  0.2375f, 0.38f, 0.5225f,
                                  0.665f, 0.8075f, 0.95f,   1.0f};
-    constexpr double kSeconds[] = {0.1, 1.3, 2.3, 3.2, 4.2, 6.2, 10.7, 20.0, 20.0};
+    constexpr double kSeconds[] = {0.7, 2.8, 3.8, 5.4, 7.3, 10.1, 16.4, 39.0, 40.0};
     constexpr int kPoints = static_cast<int>(std::size(kAmount));
 
     double seconds = kSeconds[kPoints - 1];
@@ -406,6 +406,19 @@ double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool fr
             break;
         }
     }
+
+    // Every mode replays the buffer from `position`, so a delayed copy outlives
+    // the input on top of the decay above: 0.51 s at position 0, which the
+    // curve's first point already carries, rising to 1.10 s at position 1. Rate
+    // independent, longest at grain size 1.
+    seconds += 0.8 * position;
+
+    // Spectral resynthesis is not deterministic: three identical renders at
+    // reverb 0.75 gave 0 s, 0 s and 20.7 s, where the curve above says 11.9.
+    // Nothing measurable to fit, so double it and let the ceiling catch the
+    // rest.
+    if (mode == 3)
+        seconds *= 2.0;
 
     // Unfrozen feedback recirculates on its own: below 0.7 it dies with the
     // grain, from 0.85 it never does. Declare the ceiling rather than a decay
@@ -421,9 +434,11 @@ void MutableCloudsPlugin::setParameterValue(int index, float value) {
         return;
     values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
 
-    if (index == kReverb || index == kFeedback || index == kFreeze)
+    if (index == kReverb || index == kFeedback || index == kFreeze || index == kPosition ||
+        index == kMode)
         tailSeconds_.store(tailSecondsFor(displayValue(kReverb), displayValue(kFeedback),
-                                          displayValue(kFreeze) > 0.5f),
+                                          displayValue(kFreeze) > 0.5f, displayValue(kPosition),
+                                          juce::roundToInt(displayValue(kMode))),
                            std::memory_order_relaxed);
 }
 

@@ -64,14 +64,21 @@ class MutableCloudsPlugin : public MagdaDevice {
         kBandLimitQSum / (2.0 * juce::MathConstants<double>::pi * kBandLimitHz);
 
     /// The 32-sample grain block and a sample of resampler delay at 32 kHz, plus
-    /// both filters. In seconds because properties() is a construction-time
-    /// snapshot; the dry path carries it too, since Clouds mixes dry itself. A
-    /// 32 kHz host bypasses the filters and lands ~3 samples early against it.
+    /// both filters, which run at every rate so this holds at every rate. In
+    /// seconds because properties() is a construction-time snapshot; the dry
+    /// path carries it too, since Clouds mixes dry itself.
     static constexpr double kLatencySeconds = 33.0 / 32000.0 + 2.0 * kBandLimitDelaySeconds;
 
-    /// Past this the device is sustaining rather than decaying: feedback from
-    /// 0.85 recirculates indefinitely, which no finite tail covers.
-    static constexpr double kMaxTailSeconds = 20.0;
+    /// The input guard holds 3 + ceil(step) samples, a fixed count and so a
+    /// shrinking duration as the rate climbs, 125 us at 32 kHz against 47 us at
+    /// 192 kHz. That spread lands in a delay declared in seconds, so the real
+    /// figure sits within this of the constant rather than on it.
+    static constexpr double kLatencyToleranceSeconds = 80.0e-6;
+
+    /// Past this the device sustains rather than decays: feedback from 0.85
+    /// recirculates indefinitely. Granular at full reverb rings for 32 s, so
+    /// the ceiling has to clear that.
+    static constexpr double kMaxTailSeconds = 40.0;
 
     //==============================================================================
     DeviceProperties properties() const override {
@@ -86,8 +93,11 @@ class MutableCloudsPlugin : public MagdaDevice {
         };
     }
 
-    /// @brief The tail those three parameters imply, in seconds.
-    static double tailSecondsFor(float reverb, float feedback, bool freeze);
+    /// @brief The tail those parameters imply, in seconds. `position` because
+    ///        every mode replays the buffer from there, `mode` because spectral
+    ///        rings unpredictably.
+    static double tailSecondsFor(float reverb, float feedback, bool freeze, float position,
+                                 int mode);
 
     void prepare(const DevicePrepareContext& context) override;
     void reset() override;
@@ -124,7 +134,7 @@ class MutableCloudsPlugin : public MagdaDevice {
 
     /// setParameterValue writes it, getTailLength() reads it off the message
     /// thread.
-    std::atomic<double> tailSeconds_{tailSecondsFor(0.0f, 0.0f, false)};
+    std::atomic<double> tailSeconds_{tailSecondsFor(0.0f, 0.0f, false, 0.5f, 0)};
 
     // Input-envelope decimation state (audio thread).
     AudioTapBuffer inputEnvelope_{1024};
