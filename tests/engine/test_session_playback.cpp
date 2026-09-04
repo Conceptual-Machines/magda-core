@@ -294,7 +294,7 @@ struct AudioRig {
     /// The same, for a block a case assembled itself.
     void renderBlock(const BlockInfo& block) {
         fill();
-        magda::engine::advanceLaunchHandles(handles, block);
+        magda::engine::advanceLaunchHandles(handles, requests, block);
         source.render(block, juce::dsp::AudioBlock<float>(output));
     }
 
@@ -327,6 +327,7 @@ struct AudioRig {
     LaunchHandle handle;
     LaunchHandleTable table;
     LaunchHandleFeed handles;
+    magda::engine::LaunchRequestQueue requests;
     ClipAudioSource source{kTrack, clips, streams, handles, Section::Session};
     ClipStreamTable streamTable;
     juce::AudioBuffer<float> output;
@@ -378,7 +379,7 @@ struct MidiRig {
     void roll(int first, int last) {
         for (auto index = first; index <= last; ++index) {
             const auto block = blockAt(index, index != first);
-            magda::engine::advanceLaunchHandles(handles, block);
+            magda::engine::advanceLaunchHandles(handles, requests, block);
 
             juce::MidiBuffer buffer;
             source.render(block, buffer);
@@ -428,6 +429,7 @@ struct MidiRig {
     LaunchHandle handle;
     LaunchHandleTable table;
     LaunchHandleFeed handles;
+    magda::engine::LaunchRequestQueue requests;
     ClipMidiSource source{kTrack, clips, handles, Section::Session};
     std::vector<Captured> captured;
 };
@@ -478,7 +480,7 @@ struct MidiSwitchRig {
             const auto block = blockAt(index, rolled_);
             rolled_ = true;
 
-            magda::engine::advanceLaunchHandles(handles, block);
+            magda::engine::advanceLaunchHandles(handles, requests, block);
 
             capture(arrangement, block, index, fromArrangement);
             capture(session, block, index, fromSession);
@@ -528,6 +530,7 @@ struct MidiSwitchRig {
 
     LaunchHandleTable table;
     LaunchHandleFeed handles;
+    magda::engine::LaunchRequestQueue requests;
 
     ClipMidiSource arrangement{kTrack, clips, handles, Section::Arrangement};
     ClipMidiSource session{kTrack, clips, handles, Section::Session};
@@ -774,7 +777,7 @@ struct SwitchRig {
         const auto block = blockAt(index, continuous);
 
         fill();
-        magda::engine::advanceLaunchHandles(handles, block);
+        magda::engine::advanceLaunchHandles(handles, requests, block);
         arrangement.render(block, juce::dsp::AudioBlock<float>(arrangementOut));
         session.render(block, juce::dsp::AudioBlock<float>(sessionOut));
     }
@@ -787,7 +790,7 @@ struct SwitchRig {
     /// The session alone, over a block the case assembled itself.
     void renderSession(const BlockInfo& block) {
         fill();
-        magda::engine::advanceLaunchHandles(handles, block);
+        magda::engine::advanceLaunchHandles(handles, requests, block);
         session.render(block, juce::dsp::AudioBlock<float>(sessionOut)
                                   .getSubBlock(0, static_cast<std::size_t>(block.numSamples)));
     }
@@ -831,6 +834,7 @@ struct SwitchRig {
 
     LaunchHandleTable table;
     LaunchHandleFeed handles;
+    magda::engine::LaunchRequestQueue requests;
 
     ClipAudioSource arrangement{kTrack, clips, streams, handles, Section::Arrangement};
     ClipAudioSource session{kTrack, clips, streams, handles, Section::Session};
@@ -866,7 +870,7 @@ TEST_CASE("The arrangement and the session are different sections of one track",
     rig.handle.play(std::nullopt);
 
     const auto block = blockAt(0);
-    magda::engine::advanceLaunchHandles(rig.handles, block);
+    magda::engine::advanceLaunchHandles(rig.handles, rig.requests, block);
 
     juce::AudioBuffer<float> out(2, kBlockSize);
     rig.fill();
@@ -1717,10 +1721,11 @@ TEST_CASE("A handle is advanced once per block however many sources read it",
 
     LaunchHandleFeed feed;
     feed.publish(std::make_shared<const LaunchHandleTable>(table));
+    magda::engine::LaunchRequestQueue requests;
 
     handle.play(std::nullopt);
-    magda::engine::advanceLaunchHandles(feed, blockAt(0));
-    magda::engine::advanceLaunchHandles(feed, blockAt(1));
+    magda::engine::advanceLaunchHandles(feed, requests, blockAt(0));
+    magda::engine::advanceLaunchHandles(feed, requests, blockAt(1));
 
     // Two blocks of a quarter beat each. Advanced per source it would have
     // moved twice as far, and a slot's audio and MIDI would disagree.
@@ -1837,8 +1842,9 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
+    magda::engine::LaunchRequestQueue requests;
 
-    const auto first = store.publishHandles(snapshotWithSlots({2, 0, 1}), feed);
+    const auto first = store.publishHandles(snapshotWithSlots({2, 0, 1}), feed, requests);
     REQUIRE(first->entries.size() == 3);
     CHECK(first->entries[0].key.sceneIndex == 0);
     CHECK(first->entries[1].key.sceneIndex == 1);
@@ -1853,7 +1859,7 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     playing->advance(magda::engine::syncRangeFor(blockAt(0)));
     REQUIRE(playing->playState() == LaunchHandle::PlayState::playing);
 
-    const auto second = store.publishHandles(snapshotWithSlots({0, 1, 2}), feed);
+    const auto second = store.publishHandles(snapshotWithSlots({0, 1, 2}), feed, requests);
 
     // Same slots, same handles: a clip edit that did not touch the session must
     // not make the callback wait.
@@ -1868,8 +1874,9 @@ TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][cl
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
+    magda::engine::LaunchRequestQueue requests;
 
-    store.publishHandles(snapshotWithSlots({0, 1}), feed);
+    store.publishHandles(snapshotWithSlots({0, 1}), feed, requests);
 
     auto* playing = store.findHandle(SlotKey{kTrack, 0});
     REQUIRE(playing != nullptr);
@@ -1877,10 +1884,10 @@ TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][cl
     playing->advance(magda::engine::syncRangeFor(blockAt(0)));
     REQUIRE(playing->playState() == LaunchHandle::PlayState::playing);
 
-    store.publishHandles(snapshotWithSlots({1}), feed);
+    store.publishHandles(snapshotWithSlots({1}), feed, requests);
     CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
 
-    store.publishHandles(snapshotWithSlots({0, 1}), feed);
+    store.publishHandles(snapshotWithSlots({0, 1}), feed, requests);
 
     auto* refilled = store.findHandle(SlotKey{kTrack, 0});
     REQUIRE(refilled != nullptr);

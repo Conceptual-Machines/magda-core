@@ -160,15 +160,25 @@ class EngineSession {
     }
 
     /**
-     * @brief The handle for one slot, or null. On the publishing thread.
+     * @brief Where a launch is asked for, from off the audio thread (#2305).
      *
-     * What drives a launch until the request lane exists (#2305). A handle
-     * is advanced on the audio thread, so asking one for a change from here
-     * races the callback: safe only while nothing is rendering.
-     *
-     * Null until publishClips() has named the slot.
+     * Ask through a `LaunchRequestQueue::Gesture`: everything inside its scope
+     * reaches the audio thread together, so a scene launches on one sample.
+     * A request names a slot, so asking for one that has gone does nothing.
      */
-    LaunchHandle* launchHandle(const SlotKey& key) const {
+    LaunchRequestQueue& launchRequests() {
+        return requests_;
+    }
+
+    /**
+     * @brief The handle for @p key, or null. On the publishing thread.
+     *
+     * To read, and only to read: a handle is advanced on the audio thread, so
+     * changing one from here races the callback. Every change goes through
+     * @ref launchRequests. Reading is itself only nearly safe, and is what
+     * there is until the read-back path is built (#2303).
+     */
+    const LaunchHandle* launchHandle(const SlotKey& key) const {
         return store_.findHandle(key);
     }
 
@@ -309,6 +319,11 @@ class EngineSession {
 
     /// Where the audio thread finds a slot's handle. Travels with the clips.
     LaunchHandleFeed handles_;
+
+    /// What has been asked of those handles and not applied yet. Outside every
+    /// epoch, like the feed it is read beside: a request made while a plan was
+    /// being compiled is still a request when the new one is live.
+    LaunchRequestQueue requests_;
 
     /// The cursor. Not published and not swapped: it's where the timeline
     /// is, a property of the session rather than of any plan, and a plan

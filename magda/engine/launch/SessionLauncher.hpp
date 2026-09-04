@@ -9,6 +9,7 @@
 #include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
 #include "launch/LaunchHandle.hpp"
+#include "launch/LaunchRequests.hpp"
 
 /**
  * @file SessionLauncher.hpp
@@ -25,9 +26,10 @@
  * sources read `LaunchHandle::blockStatus`. That also keeps a scene coherent,
  * since every handle sees the same block.
  *
- * Requests are not here. The lane carrying `play`, `stop` and `setLooping` from
- * off the audio thread is #2305's; until then a handle is driven directly,
- * which is safe only when nothing is rendering.
+ * Requests arrive on the queue in LaunchRequests.hpp and are applied in that
+ * same pass, which is why it is one call and not two: a request applied after
+ * a handle had already been advanced would take effect a block late, and one
+ * applied to some handles and not others would split a scene.
  */
 
 namespace magda::engine {
@@ -45,18 +47,30 @@ struct LaunchHandleTable {
         SlotKey key;
         LaunchHandle* handle = nullptr;
 
+        /// Which handle this slot is on: a slot emptied and refilled is the
+        /// same key on a different clip. Assigned by
+        /// RuntimeStateStore::publishHandles, and never reused (#2305).
+        std::uint64_t incarnation = 0;
+
         bool operator==(const Entry&) const = default;
     };
 
     std::vector<Entry> entries;
 
-    /// The half-open range of entries belonging to @p trackId, in scene order.
-    /// Empty for a track with no slots. On the audio thread: a binary search
-    /// over a sorted vector.
+    /**
+     * @brief The half-open range of entries belonging to @p trackId, in scene
+     *        order, or an empty range for a track with no slots.
+     *
+     * On the audio thread: a binary search over a sorted vector.
+     */
     std::pair<const Entry*, const Entry*> rangeFor(TrackId trackId) const;
 
-    /// The handle for one slot, or null.
+    /// @brief The handle for @p key, or null.
     LaunchHandle* find(const SlotKey& key) const;
+
+    /// @brief The whole entry for @p key, or null, for a caller that has to
+    ///        check the incarnation as well as find the handle.
+    const Entry* findEntry(const SlotKey& key) const;
 };
 
 class LaunchHandleFeed {
@@ -103,9 +117,17 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
                      block.numSamples, block.rate(),         block.tempo};
 }
 
-/// Advance every handle over @p block, once, before anything renders. On the
-/// audio thread. Every handle: a stopped one may have a launch queued inside
-/// this block.
-void advanceLaunchHandles(LaunchHandleFeed& handles, const BlockInfo& block);
+/**
+ * @brief Apply what has been asked, then advance every handle over @p block.
+ *
+ * On the audio thread, once per block, before anything renders. Every handle,
+ * because a stopped one may have a launch queued inside this block.
+ *
+ * One call rather than two: @p requests is drained whole first, so a launch
+ * lands in the block it was asked in and a scene reaches every handle before
+ * any of them has moved.
+ */
+void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
+                          const BlockInfo& block);
 
 }  // namespace magda::engine

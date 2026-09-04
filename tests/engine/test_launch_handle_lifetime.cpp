@@ -51,8 +51,9 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     NoFactory factory;
     RuntimeStateStore store(factory);
     LaunchHandleFeed feed;
+    LaunchRequestQueue requests;
 
-    store.publishHandles(snapshotWithScenes({0, 2}), feed);
+    store.publishHandles(snapshotWithScenes({0, 2}), feed, requests);
 
     auto* first = store.findHandle(SlotKey{kTrack, 0});
     REQUIRE(first != nullptr);
@@ -62,7 +63,7 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     SECTION("a snapshot that still names it keeps the handle it had") {
         // An edit elsewhere republishes the snapshot, and a playing clip goes
         // on playing.
-        store.publishHandles(snapshotWithScenes({0, 2}), feed);
+        store.publishHandles(snapshotWithScenes({0, 2}), feed, requests);
 
         auto* kept = store.findHandle(SlotKey{kTrack, 0});
         REQUIRE(kept == first);
@@ -70,7 +71,7 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     }
 
     SECTION("emptying one slot does not disturb the others") {
-        store.publishHandles(snapshotWithScenes({0}), feed);
+        store.publishHandles(snapshotWithScenes({0}), feed, requests);
 
         CHECK(store.findHandle(SlotKey{kTrack, 0}) == first);
         CHECK(store.findHandle(SlotKey{kTrack, 2}) == nullptr);
@@ -80,10 +81,10 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
         // Why retirement is here rather than at a plan publish: emptying and
         // refilling is two clip edits and no structural one, so the new clip
         // would come up already playing.
-        store.publishHandles(snapshotWithScenes({2}), feed);
+        store.publishHandles(snapshotWithScenes({2}), feed, requests);
         CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
 
-        store.publishHandles(snapshotWithScenes({0, 2}), feed);
+        store.publishHandles(snapshotWithScenes({0, 2}), feed, requests);
 
         auto* refilled = store.findHandle(SlotKey{kTrack, 0});
         REQUIRE(refilled != nullptr);
@@ -93,7 +94,7 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     }
 
     SECTION("a slot whose track is gone goes with it") {
-        store.publishHandles(snapshotWithScenes({0, 2}, kTrack + 1), feed);
+        store.publishHandles(snapshotWithScenes({0, 2}, kTrack + 1), feed, requests);
 
         CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
         CHECK(store.findHandle(SlotKey{kTrack, 2}) == nullptr);
@@ -101,7 +102,7 @@ TEST_CASE("A slot's handle does not outlive the slot", "[engine][session][launch
     }
 
     SECTION("a project with nothing in it keeps nothing") {
-        store.publishHandles(ClipSnapshot{}, feed);
+        store.publishHandles(ClipSnapshot{}, feed, requests);
 
         CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
         CHECK(store.findHandle(SlotKey{kTrack, 2}) == nullptr);
@@ -115,8 +116,9 @@ TEST_CASE("A plan publish is not what retires a handle", "[engine][session][laun
     NoFactory factory;
     RuntimeStateStore store(factory);
     LaunchHandleFeed feed;
+    LaunchRequestQueue requests;
 
-    store.publishHandles(snapshotWithScenes({0, 1}), feed);
+    store.publishHandles(snapshotWithScenes({0, 1}), feed, requests);
     const auto before = store.size();
 
     const RenderPlan empty;

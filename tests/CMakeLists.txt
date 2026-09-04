@@ -381,6 +381,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # Which slot handles survive a publish (#2301): the plan is per track and a
     # handle is per slot, so the snapshot is what names them.
     list(APPEND TEST_SOURCES engine/test_launch_handle_lifetime.cpp)
+    # The lane a launch arrives on (#2305): the block it lands in, the order it
+    # keeps, and that it cannot be applied twice or reach a slot that has gone.
+    list(APPEND TEST_SOURCES engine/test_launch_requests.cpp)
     list(APPEND TEST_SOURCES audio/test_click_generator.cpp)
     list(APPEND TEST_SOURCES audio/test_prefetch_stream.cpp)
     list(APPEND TEST_SOURCES audio/test_source_readers.cpp)
