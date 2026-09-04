@@ -107,12 +107,70 @@ int peakIndex(const juce::AudioBuffer<float>& buffer) {
     return index;
 }
 
-void prepareForRender(te::Plugin& plugin) {
+/// The RMS of `measureCycles` complete cycles of a `frequency` Hz sine at
+/// `sampleRate`, rendered after `settleBlocks` warm-up blocks (the biquads'
+/// own filter state starts at zero and needs a few blocks to reach steady
+/// state - the convolution engine itself does not: prepare() installs it
+/// directly, with no crossfade, per Convolution::Impl::prepare()).
+///
+/// Measuring a whole number of cycles matters: `frequency` must divide
+/// `sampleRate` exactly, or the last block ends mid-cycle and its RMS carries
+/// a windowing residual large enough on its own to swallow the bug this test
+/// is for - e.g. one block of a 100 Hz tone's last-256-samples RMS is ~0.749
+/// at 44.1 kHz vs ~0.705 at 48 kHz, a gap from the window alone that is
+/// comparable to the bug's. 300 Hz divides both 44100 and 48000 exactly (147
+/// and 160 samples/cycle), so the measured window has no residual, and the
+/// result is compared to the sine's own exact RMS rather than to a render at
+/// another rate - independent of that rate's filter coefficients entirely.
+float steadyStateSineRms(te::Plugin& plugin, double sampleRate, double frequency, int settleBlocks,
+                         int measureCycles) {
+    juce::AudioBuffer<float> buffer(2, kBlockSize);
+    te::MidiMessageArray midi;
+    double phase = 0.0;
+    const double phaseIncrement = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+
+    const auto renderBlock = [&] {
+        for (int i = 0; i < kBlockSize; ++i) {
+            const auto sample = static_cast<float>(std::sin(phase));
+            buffer.setSample(0, i, sample);
+            buffer.setSample(1, i, sample);
+            phase += phaseIncrement;
+        }
+        te::PluginRenderContext context(&buffer, juce::AudioChannelSet::stereo(), 0, kBlockSize,
+                                        &midi, 0.0, tracktion::TimeRange(), true, false, false,
+                                        true);
+        plugin.applyToBuffer(context);
+    };
+
+    for (int block = 0; block < settleBlocks; ++block)
+        renderBlock();
+
+    const int samplesPerCycle = juce::roundToInt(sampleRate / frequency);
+    const int measureSamples = measureCycles * samplesPerCycle;
+    double sumSquares = 0.0;
+    int measured = 0;
+    while (measured < measureSamples) {
+        renderBlock();
+        const int take = std::min(kBlockSize, measureSamples - measured);
+        for (int i = 0; i < take; ++i) {
+            const auto sample = buffer.getSample(0, i);
+            sumSquares += sample * sample;
+        }
+        measured += take;
+    }
+    return std::sqrt(static_cast<float>(sumSquares / measured));
+}
+
+void prepareForRenderAtSampleRate(te::Plugin& plugin, double sampleRate) {
     te::PluginInitialisationInfo info;
     info.startTime = tracktion::TimePosition();
-    info.sampleRate = kSampleRate;
+    info.sampleRate = sampleRate;
     info.blockSizeSamples = kBlockSize;
     plugin.baseClassInitialise(info);
+}
+
+void prepareForRender(te::Plugin& plugin) {
+    prepareForRenderAtSampleRate(plugin, kSampleRate);
 }
 
 class ConvolutionDeviceTest final : public juce::UnitTest {
@@ -134,6 +192,7 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         testImpulseResponseSurvivesSaveAndReload(*edit);
         testRestoringAStatelessDocumentUnloadsTheImpulseResponse(*edit);
         testDryPassesThroughUntouched(*edit);
+        testNoIrIsAPassThroughAtANonDefaultSampleRate(*edit);
     }
 
   private:
@@ -379,6 +438,43 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         expectEquals(peakIndex(rendered), 0);
 
         holder->deleteFromParent();
+    }
+
+    // restoreState() stamps the no-IR dirac at its 44100 default before the
+    // first prepare() ever runs (both hosts restore before preparing), so a
+    // session at any other rate must not hear that stamp resampled (#2360).
+    // 300 Hz sits far enough inside the low-cut/high-cut defaults (10 Hz/20
+    // kHz) that their coefficients are close enough to flat, at either rate,
+    // to not be the source of a gain error here - unlike a broadband
+    // impulse, whose peak the high-cut colours differently simply because
+    // 20 kHz sits closer to Nyquist at 44.1 kHz than it does at 48 kHz.
+    void testNoIrIsAPassThroughAtANonDefaultSampleRate(te::Edit& edit) {
+        beginTest("No IR is a pass-through on a session that is not 44.1 kHz");
+
+        constexpr double kToneHz = 300.0;
+        constexpr int kSettleBlocks = 4;
+        constexpr int kMeasureCycles = 20;
+        const float kExpectedRms = std::sqrt(0.5f);
+
+        for (const double rate : {kSampleRate, 48000.0}) {
+            te::Plugin::Ptr holder;
+            auto* convolution = createConvolution(edit, holder);
+            expect(convolution != nullptr);
+            if (convolution == nullptr)
+                continue;
+
+            setSlotDisplayValue(*holder, *convolution, audio::MagdaConvolutionPlugin::kMix, 1.0f);
+            prepareForRenderAtSampleRate(*holder, rate);
+            const auto rms =
+                steadyStateSineRms(*holder, rate, kToneHz, kSettleBlocks, kMeasureCycles);
+
+            expectWithinAbsoluteError(rms, kExpectedRms, 0.005f,
+                                      "the pass-through dirac was resampled from the 44100 "
+                                      "default at " +
+                                          juce::String(rate));
+
+            holder->deleteFromParent();
+        }
     }
 };
 

@@ -213,6 +213,18 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t 
 void MagdaConvolutionPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
 
+    // restoreState() runs before the first prepare() in both hosts, so a
+    // device restored with no IR queued its pass-through dirac stamped at
+    // the 44100 default (#2360). juce::dsp::Convolution loads impulse
+    // responses through a background queue, but chain_.prepare() below pops
+    // it synchronously before rebuilding the convolution engine for the
+    // now-real sampleRate_ - reinstalling here, before that pop, replaces
+    // the stale stamp in time for that same rebuild, rather than racing a
+    // background thread to replace it after. Skipped once a real IR is
+    // loaded: its source rate came from the file, not this default.
+    if (irData_.getSize() == 0)
+        loadImpulseResponseFromData();
+
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = context.sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(std::max(1, context.maximumBlockSize));
