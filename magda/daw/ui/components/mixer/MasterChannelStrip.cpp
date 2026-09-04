@@ -142,7 +142,7 @@ class MasterChannelStrip::DbScale : public juce::Component {
         float paddingBottom = metrics.labelTextHeight / 2.0f;
         float top = paddingTop;
         float height = static_cast<float>(bounds.getHeight()) - paddingTop - paddingBottom;
-        float totalWidth = static_cast<float>(bounds.getWidth());
+        auto totalWidth = static_cast<float>(bounds.getWidth());
 
         const float tickShort = metrics.tickWidth();
         const float tickLong = tickShort * 1.8f;

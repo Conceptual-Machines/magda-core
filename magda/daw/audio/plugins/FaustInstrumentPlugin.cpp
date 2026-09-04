@@ -751,7 +751,7 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
             continue;
         const float normalised =
             poolValues_[static_cast<size_t>(b.slotIndex)].load(std::memory_order_relaxed);
-        const float value = static_cast<float>(denormalizeForBinding(b, normalised));
+        const auto value = static_cast<float>(denormalizeForBinding(b, normalised));
         for (FAUSTFLOAT* zone : active->voiceZonesBySlot[static_cast<size_t>(b.slotIndex)]) {
             if (zone)
                 *zone = static_cast<FAUSTFLOAT>(value);

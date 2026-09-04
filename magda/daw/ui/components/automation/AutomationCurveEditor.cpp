@@ -262,7 +262,7 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     }
 
     auto bounds = getLocalBounds();
-    float width = static_cast<float>(bounds.getWidth());
+    auto width = static_cast<float>(bounds.getWidth());
 
     // For bipolar parameters the neutral-value line (0 dB, 0 st, …) should
     // read as the rest position. Draw it noticeably brighter than the rest

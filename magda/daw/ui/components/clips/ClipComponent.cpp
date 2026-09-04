@@ -257,12 +257,12 @@ juce::Path makeClippedRoundedRectPath(juce::Rectangle<int> bounds, juce::Rectang
         return path;
     }
 
-    const float left = static_cast<float>(region.getX());
-    const float right = static_cast<float>(region.getRight());
-    const float top = static_cast<float>(region.getY());
-    const float bottom = static_cast<float>(region.getBottom());
-    const float boundsLeft = static_cast<float>(bounds.getX());
-    const float boundsRight = static_cast<float>(bounds.getRight());
+    const auto left = static_cast<float>(region.getX());
+    const auto right = static_cast<float>(region.getRight());
+    const auto top = static_cast<float>(region.getY());
+    const auto bottom = static_cast<float>(region.getBottom());
+    const auto boundsLeft = static_cast<float>(bounds.getX());
+    const auto boundsRight = static_cast<float>(bounds.getRight());
     const float r = juce::jmin(radius, 0.5f * static_cast<float>(region.getHeight()),
                                0.5f * static_cast<float>(region.getWidth()));
 
@@ -453,7 +453,7 @@ void ClipComponent::paint(juce::Graphics& g) {
         // Calculate pixel spacing between loop boundaries to scale indicators
         float loopPixelWidth =
             static_cast<float>(loopLengthBeats / beatRange) * clipBounds.getWidth();
-        float clipHeight = static_cast<float>(clipBounds.getHeight());
+        auto clipHeight = static_cast<float>(clipBounds.getHeight());
 
         // Below this per-loop pixel width the markers pack so densely they
         // turn the clip into a solid black mass — hide them entirely.
@@ -472,8 +472,8 @@ void ClipComponent::paint(juce::Graphics& g) {
             // Shadow gradient on right side of boundary (fold effect)
             float shadeWidth = juce::jmin(6.0f, loopPixelWidth * 0.15f);
             if (shadeWidth >= 1.0f) {
-                float top = static_cast<float>(clipBounds.getY());
-                float bot = static_cast<float>(clipBounds.getBottom());
+                auto top = static_cast<float>(clipBounds.getY());
+                auto bot = static_cast<float>(clipBounds.getBottom());
                 juce::ColourGradient shade(juce::Colours::black.withAlpha(0.45f), bx, 0.0f,
                                            juce::Colours::transparentBlack, bx + shadeWidth, 0.0f,
                                            false);
@@ -492,7 +492,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             if (cutSize < 2.0f)
                 continue;  // Too small to draw meaningfully
 
-            float top = static_cast<float>(clipBounds.getY());
+            auto top = static_cast<float>(clipBounds.getY());
             juce::Path cut;
             // Left triangle
             cut.addTriangle(bx - cutSize, top, bx, top, bx, top + cutSize);
@@ -526,7 +526,7 @@ void ClipComponent::paint(juce::Graphics& g) {
             // Diagonal hatch, one line every 6px, running the full height so it
             // reads at any clip size.
             g.setColour(juce::Colours::white.withAlpha(0.10f));
-            const float height = static_cast<float>(region.getHeight());
+            const auto height = static_cast<float>(region.getHeight());
             for (float x = static_cast<float>(region.getX()) - height;
                  x < static_cast<float>(region.getRight()); x += 6.0f) {
                 g.drawLine(x, static_cast<float>(region.getBottom()), x + height,
@@ -1145,11 +1145,11 @@ void ClipComponent::paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
                                       const EffectiveFades& fades,
                                       juce::Rectangle<int> waveformArea, double pixelsPerSecond) {
     constexpr int NUM_STEPS = 32;
-    float areaTop = static_cast<float>(waveformArea.getY());
-    float areaBottom = static_cast<float>(waveformArea.getBottom());
+    auto areaTop = static_cast<float>(waveformArea.getY());
+    auto areaBottom = static_cast<float>(waveformArea.getBottom());
     float areaHeight = areaBottom - areaTop;
-    float areaLeft = static_cast<float>(waveformArea.getX());
-    float areaRight = static_cast<float>(waveformArea.getRight());
+    auto areaLeft = static_cast<float>(waveformArea.getX());
+    auto areaRight = static_cast<float>(waveformArea.getRight());
 
     // The counterpart curve of a crossfade (the other clip's fade across the
     // same overlap) — drawn by both components of the pair so the X reads the
@@ -1295,16 +1295,16 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
     if (pixelsPerSecond <= 0.0)
         return;
 
-    float hs = static_cast<float>(FADE_HANDLE_SIZE);
+    auto hs = static_cast<float>(FADE_HANDLE_SIZE);
     float half = hs * 0.5f;
-    float waveTop = static_cast<float>(waveformArea.getY());
+    auto waveTop = static_cast<float>(waveformArea.getY());
 
     auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_ATTENTION);
     const auto fades = computeEffectiveFades(clip);
 
     // Fade-in handle: only visible on hover
     if (hoverFadeIn_) {
-        float fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
+        auto fadeInPx = static_cast<float>(fades.fadeInSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getX()) + fadeInPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -1312,7 +1312,7 @@ void ClipComponent::paintFadeHandles(juce::Graphics& g, const ClipInfo& clip,
 
     // Fade-out handle: only visible on hover
     if (hoverFadeOut_) {
-        float fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
+        auto fadeOutPx = static_cast<float>(fades.fadeOutSeconds * pixelsPerSecond);
         float cx = static_cast<float>(waveformArea.getRight()) - fadeOutPx;
         g.setColour(handleColour);
         g.fillRect(cx - half, waveTop, hs, hs);
@@ -2293,7 +2293,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
             if (pps > 0.0) {
-                double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                auto fadeInPx = static_cast<double>(e.x - wfArea.getX());
                 double newFadeIn = juce::jmax(0.0, fadeInPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeIn =
@@ -2325,7 +2325,7 @@ void ClipComponent::mouseDrag(const juce::MouseEvent& e) {
                              ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                              : 0.0;
             if (pps > 0.0) {
-                double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                auto fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
                 double newFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                 const auto* ci = getClipInfo();
                 double maxFadeOut =
@@ -2710,7 +2710,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
                     if (pps > 0.0) {
-                        double fadeInPx = static_cast<double>(e.x - wfArea.getX());
+                        auto fadeInPx = static_cast<double>(e.x - wfArea.getX());
                         finalFadeIn = juce::jmax(0.0, fadeInPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeIn = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -
@@ -2770,7 +2770,7 @@ void ClipComponent::mouseUp(const juce::MouseEvent& e) {
                                      ? static_cast<double>(wfArea.getWidth()) / dragStartLength_
                                      : 0.0;
                     if (pps > 0.0) {
-                        double fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
+                        auto fadeOutPx = static_cast<double>(wfArea.getRight() - e.x);
                         finalFadeOut = juce::jmax(0.0, fadeOutPx / pps);
                         const auto* ci = getClipInfo();
                         double maxFadeOut = ci ? timelineLengthSeconds(*ci, commitTempoBPM) -

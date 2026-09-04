@@ -120,7 +120,7 @@ void ZoomScrollBar::mouseDown(const juce::MouseEvent& event) {
 void ZoomScrollBar::mouseDrag(const juce::MouseEvent& event) {
     reveal();
     auto trackBounds = getTrackBounds();
-    double trackPrimarySize = static_cast<double>(getPrimarySize(trackBounds));
+    auto trackPrimarySize = static_cast<double>(getPrimarySize(trackBounds));
 
     if (trackPrimarySize <= 0)
         return;

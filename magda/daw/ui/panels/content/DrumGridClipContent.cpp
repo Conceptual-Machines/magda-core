@@ -532,7 +532,7 @@ class DrumGridClipGrid : public juce::Component,
         {
             double beatsVisible =
                 static_cast<double>(bounds.getWidth() - GRID_LEFT_PADDING) / pixelsPerBeat_;
-            float gridBottom = static_cast<float>(numRows * rowHeight_);
+            auto gridBottom = static_cast<float>(numRows * rowHeight_);
             int maxX = bounds.getWidth();
             int tsNum = timeSigNumerator_;
 
@@ -2891,8 +2891,8 @@ void DrumGridClipContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> ar
     const int topDividerY = topClusterBottom + padding / 2;
     const int bottomDividerY = bottomClusterTop - padding / 2;
 
-    const float x1 = static_cast<float>(area.getX() + 5);
-    const float x2 = static_cast<float>(area.getRight() - 5);
+    const auto x1 = static_cast<float>(area.getX() + 5);
+    const auto x2 = static_cast<float>(area.getRight() - 5);
     if (foldToggle_ && bottomDividerY - topDividerY > padding) {
         g.drawHorizontalLine(topDividerY, x1, x2);
         g.drawHorizontalLine(bottomDividerY, x1, x2);

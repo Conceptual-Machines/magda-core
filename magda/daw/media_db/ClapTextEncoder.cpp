@@ -95,7 +95,7 @@ std::vector<float> ClapTextEncoder::embedTokens(const std::vector<int64_t>& inpu
         throw ClapTextEncoderError("inputIds and attentionMask must be the same non-zero length");
     }
 
-    const int64_t seqLen = static_cast<int64_t>(inputIds.size());
+    const auto seqLen = static_cast<int64_t>(inputIds.size());
     const std::array<int64_t, 2> shape{1, seqLen};
 
     // ORT's input order matches what session.GetInputNameAllocated returned;
@@ -126,7 +126,7 @@ std::vector<float> ClapTextEncoder::embedTokens(const std::vector<int64_t>& inpu
         throw ClapTextEncoderError("Ort produced no output");
     }
 
-    const float* outData = outputs[0].GetTensorData<float>();
+    const auto* outData = outputs[0].GetTensorData<float>();
     std::vector<float> result(outData, outData + impl_->outputDim);
 
     // The exported text encoder already L2-normalizes via the wrapper from

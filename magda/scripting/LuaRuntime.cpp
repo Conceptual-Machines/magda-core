@@ -171,7 +171,7 @@ std::optional<long long> LuaRuntime::evalToInt(const juce::String& chunk) {
         lastError_ = "result is not an integer";
         return std::nullopt;
     }
-    long long result = static_cast<long long>(lua_tointeger(L_, -1));
+    auto result = static_cast<long long>(lua_tointeger(L_, -1));
     lua_pop(L_, 1);
     return result;
 }

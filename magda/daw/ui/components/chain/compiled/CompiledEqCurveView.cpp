@@ -744,7 +744,7 @@ void CompiledEqCurveView::drawSpectrumOverlay(juce::Graphics& g, juce::Rectangle
     if (sampleRate <= 0.0)
         return;
 
-    const float binHz = static_cast<float>(sampleRate / static_cast<double>(kSpectrumFftSize));
+    const auto binHz = static_cast<float>(sampleRate / static_cast<double>(kSpectrumFftSize));
     auto dbToSpectrumY = [area](float db) {
         const float t = (db - kSpectrumMinDb) / (kSpectrumMaxDb - kSpectrumMinDb);
         return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();

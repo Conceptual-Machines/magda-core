@@ -137,7 +137,7 @@ void l2NormalizeInPlace(float* v, std::size_t n) {
     for (std::size_t i = 0; i < n; ++i) {
         sumSq += static_cast<double>(v[i]) * static_cast<double>(v[i]);
     }
-    const float norm = static_cast<float>(std::sqrt(sumSq));
+    const auto norm = static_cast<float>(std::sqrt(sumSq));
     if (norm <= 0.0F) {
         return;
     }
@@ -232,7 +232,7 @@ std::vector<std::pair<std::string, float>> ZeroShotTagger::scoreEmbedding(
             dot += static_cast<double>(promptMatrix_[rowStart + j]) *
                    static_cast<double>(audioEmbedding[j]);
         }
-        const float score = static_cast<float>(dot);
+        const auto score = static_cast<float>(dot);
         if (score >= threshold) {
             hits.emplace_back(labels_[i], score);
         }

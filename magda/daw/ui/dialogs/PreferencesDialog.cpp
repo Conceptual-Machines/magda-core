@@ -1079,12 +1079,12 @@ class AppearancePage : public juce::Component {
 
     std::string themeValueForId(int id) const {
         if (id >= kUserThemeIdBase) {
-            const size_t index = static_cast<size_t>(id - kUserThemeIdBase);
+            const auto index = static_cast<size_t>(id - kUserThemeIdBase);
             if (index < userThemes_.size())
                 return userThemes_[index].id;
         }
         if (id >= kFactoryThemeIdBase) {
-            const size_t index = static_cast<size_t>(id - kFactoryThemeIdBase);
+            const auto index = static_cast<size_t>(id - kFactoryThemeIdBase);
             if (index < factoryThemes_.size())
                 return factoryThemes_[index].id;
         }

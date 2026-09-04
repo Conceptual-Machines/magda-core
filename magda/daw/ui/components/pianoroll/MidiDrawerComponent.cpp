@@ -239,8 +239,8 @@ void MidiDrawerComponent::paintLaneHeaders(juce::Graphics& g) {
         if (removable) {
             // Close button "x" in the top-right corner of the lane's header column
             g.setColour(textColour.withAlpha(0.6f));
-            float closeX = static_cast<float>(leftMargin_ - 11);
-            float closeY = static_cast<float>(row.getY() + 11);
+            auto closeX = static_cast<float>(leftMargin_ - 11);
+            auto closeY = static_cast<float>(row.getY() + 11);
             g.drawLine(closeX - 2.5f, closeY - 2.5f, closeX + 2.5f, closeY + 2.5f, 1.0f);
             g.drawLine(closeX + 2.5f, closeY - 2.5f, closeX - 2.5f, closeY + 2.5f, 1.0f);
         }

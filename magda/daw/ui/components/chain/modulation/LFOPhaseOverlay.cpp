@@ -70,8 +70,8 @@ void LFOPhaseOverlay::paintCurve(juce::Graphics& g) {
         return;
 
     const auto bounds = getLocalBounds();
-    const float width = static_cast<float>(bounds.getWidth());
-    const float height = static_cast<float>(bounds.getHeight());
+    const auto width = static_cast<float>(bounds.getWidth());
+    const auto height = static_cast<float>(bounds.getHeight());
 
     juce::Path curvePath;
     const auto& points = mod->curvePoints;
@@ -91,7 +91,7 @@ void LFOPhaseOverlay::paintCurve(juce::Graphics& g) {
         float x2 = p2.phase * width;
         float y2 = (1.0f - p2.value) * height;
 
-        double tension = static_cast<double>(p1.tension);
+        auto tension = static_cast<double>(p1.tension);
 
         if (std::abs(tension) < 0.001) {
             // Pure linear

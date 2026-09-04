@@ -519,8 +519,8 @@ void PianoRollGridComponent::paintBeatLines(juce::Graphics& g, juce::Rectangle<i
     if (gridRes <= 0.0)
         return;
 
-    const float top = static_cast<float>(area.getY());
-    const float bottom = static_cast<float>(area.getBottom());
+    const auto top = static_cast<float>(area.getY());
+    const auto bottom = static_cast<float>(area.getBottom());
     const int left = area.getX();
     const int right = area.getRight();
     const int tsNum = timeSignatureNumerator_;
@@ -2965,7 +2965,7 @@ double PianoRollGridComponent::expressionRelBeatForX(ClipId clipId, const MidiNo
 juce::Point<float> PianoRollGridComponent::expressionPointToScreen(
     ClipId clipId, const MidiNote& note, const MidiPitchExpressionPoint& point) const {
     const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
-    const float x = static_cast<float>(beatToPixel(noteStartDisplayBeat + point.beat));
+    const auto x = static_cast<float>(beatToPixel(noteStartDisplayBeat + point.beat));
     const float centerY =
         static_cast<float>(noteNumberToY(note.noteNumber)) + static_cast<float>(noteHeight_) * 0.5f;
     const float y = centerY - static_cast<float>(point.semitones * noteHeight_);
@@ -3382,8 +3382,8 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
                 continue;
 
             const double noteStartDisplayBeat = displayBeatForClipBeat(clipId, note.startBeat);
-            const float startX = static_cast<float>(beatToPixel(noteStartDisplayBeat));
-            const float endX =
+            const auto startX = static_cast<float>(beatToPixel(noteStartDisplayBeat));
+            const auto endX =
                 static_cast<float>(beatToPixel(noteStartDisplayBeat + note.lengthBeats));
             const float centerY = static_cast<float>(noteNumberToY(note.noteNumber)) +
                                   static_cast<float>(noteHeight_) * 0.5f;
@@ -3395,7 +3395,7 @@ void PianoRollGridComponent::paintPitchExpression(juce::Graphics& g) {
             juce::Path path;
             path.startNewSubPath(startX, yForSemitones(evaluatePitchExpression(points, 0.0)));
             for (size_t p = 0; p < points.size(); ++p) {
-                const float px =
+                const auto px =
                     static_cast<float>(beatToPixel(noteStartDisplayBeat + points[p].beat));
                 const float clampedX = juce::jlimit(startX, endX, px);
 

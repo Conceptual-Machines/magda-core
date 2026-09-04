@@ -1729,7 +1729,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         }
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(triAlpha));
         // Fill the playhead row: top edge at y0, tip at the row bottom.
-        const float ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
+        const auto ph = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         juce::Path triangle;
         triangle.addTriangle(editX - 6, 0.0f, editX + 6, 0.0f, editX, ph);
         g.fillPath(triangle);
@@ -1741,7 +1741,7 @@ void MainView::PlayheadComponent::paint(juce::Graphics& g) {
         // Draw thin vertical line extending the full track area, starting at the
         // top of the track content (just below the playhead/triangle row).
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.85f));
-        const float lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
+        const auto lineTop = static_cast<float>(LayoutConfig::getInstance().playheadRowHeight);
         g.drawLine(static_cast<float>(playX), lineTop, static_cast<float>(playX),
                    static_cast<float>(getHeight()), 1.5f);
     }
@@ -2510,7 +2510,7 @@ void MainView::MasterHeaderPanel::setupControls() {
     volumeLabel->setFillProportionMapper(level_meter_scale::dbFillProportion);
     volumeLabel->setDoubleClickResetsValue(true);
     volumeLabel->onValueChange = [this]() {
-        const float db = static_cast<float>(volumeLabel->getValue());
+        const auto db = static_cast<float>(volumeLabel->getValue());
         UndoManager::getInstance().executeCommand(
             std::make_unique<SetMasterVolumeCommand>(dbToGain(db)));
     };
@@ -2822,7 +2822,7 @@ void MainView::AuxHeadersPanel::rebuildAuxRows() {
         TrackId tid = track.id;
         auto* volLabelPtr = row->volumeLabel.get();
         row->volumeLabel->onValueChange = [tid, volLabelPtr]() {
-            float newDb = static_cast<float>(volLabelPtr->getValue());
+            auto newDb = static_cast<float>(volLabelPtr->getValue());
             float gain = dbToGain(newDb);
             UndoManager::getInstance().executeCommand(
                 std::make_unique<SetTrackVolumeCommand>(tid, gain));

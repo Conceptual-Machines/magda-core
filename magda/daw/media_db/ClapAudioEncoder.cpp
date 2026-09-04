@@ -138,7 +138,7 @@ std::vector<float> ClapAudioEncoder::embed(const float* mono, int numSamples) {
             throw ClapEncoderError("Ort produced no output");
         }
 
-        const float* outData = outputs[0].GetTensorData<float>();
+        const auto* outData = outputs[0].GetTensorData<float>();
         float sumSq = 0.0F;
         for (int i = 0; i < impl_->outputDim; ++i) {
             sumSq += outData[i] * outData[i];

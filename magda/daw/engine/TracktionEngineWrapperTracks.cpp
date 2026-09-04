@@ -44,7 +44,7 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
         // Drop any in-flight recording pass for this track so a deletion
         // mid-record cannot leave a stale preview/target behind.
         try {
-            TrackId magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
+            auto magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
             recordingPreviews_.erase(magdaTrackId);
             sessionSlotRecordingTargets_.erase(magdaTrackId);
         } catch (const std::exception&) {

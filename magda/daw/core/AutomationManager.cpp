@@ -185,7 +185,7 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
                 if (mod->tempoSync) {
                     // Lane stores 0-based display index (TE ordinal − 1) so
                     // it never resolves "Hertz" (TE ordinal 0) at the bottom.
-                    float displayIdx =
+                    auto displayIdx =
                         static_cast<float>(syncDivisionToTeRateOrdinal(mod->syncDivision) - 1);
                     return static_cast<double>(
                         ParameterUtils::realToNormalized(displayIdx, paramInfo));
@@ -233,7 +233,7 @@ void AutomationManager::trackPropertyChanged(int trackId) {
 
     // When a track's volume or pan changes, update any automation lanes
     // that target those parameters (if they have points)
-    TrackId tid = static_cast<TrackId>(trackId);
+    auto tid = static_cast<TrackId>(trackId);
 
     for (auto& lane : lanes_) {
         // Only update lanes for this track

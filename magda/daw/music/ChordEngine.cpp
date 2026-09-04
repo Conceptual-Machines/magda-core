@@ -156,7 +156,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
     std::vector<ChordCandidate> candidates;
 
     for (int rootOffset = 0; rootOffset < 12; rootOffset++) {
-        ChordRoot candidateRoot = static_cast<ChordRoot>(rootOffset);
+        auto candidateRoot = static_cast<ChordRoot>(rootOffset);
 
         std::vector<ChordQuality> qualities = {
             ChordQuality::Major,     ChordQuality::Minor,     ChordQuality::Diminished,
@@ -502,7 +502,7 @@ std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
                 unionSet.empty() ? 0.0 : static_cast<double>(intersection.size()) / unionSet.size();
 
             if (similarity >= 0.5) {
-                ChordRoot candidateRoot = static_cast<ChordRoot>(rootOffset);
+                auto candidateRoot = static_cast<ChordRoot>(rootOffset);
                 ChordSpec spec(candidateRoot, quality, 0);
                 juce::String chordName = chordSpecToString(spec, false);
                 results.emplace_back(chordName, static_cast<float>(similarity));

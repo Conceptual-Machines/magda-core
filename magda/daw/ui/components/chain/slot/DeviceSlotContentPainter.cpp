@@ -33,8 +33,8 @@ void paintSeparators(juce::Graphics& g, juce::Rectangle<int> contentArea,
                            static_cast<float>(contentArea.getBottom() - 2));
     }
 
-    const float left = static_cast<float>(contentArea.getX() + 2);
-    const float right = static_cast<float>(contentArea.getRight() - 2);
+    const auto left = static_cast<float>(contentArea.getX() + 2);
+    const auto right = static_cast<float>(contentArea.getRight() - 2);
     const int headerBottom = contentArea.getY() + contentHeaderHeight;
     if (!skipContentHeader) {
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));

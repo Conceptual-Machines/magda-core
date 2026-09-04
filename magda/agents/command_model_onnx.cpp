@@ -42,7 +42,7 @@ constexpr int kMaxLen = 64;  // subwords, matching model/data_encoder.py MAX_LEN
 // to command_model.cpp's tokenizer — both consume the same Python reference,
 // and tests/test_command_model.cpp locks that one to it.
 bool isCore(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || c == '_' ||
            c == '\'' || c == '-';
 }
@@ -50,7 +50,7 @@ bool isCore(char c) {
 std::string toLowerAscii(const std::string& s) {
     std::string out(s);
     for (auto& c : out) {
-        unsigned char u = static_cast<unsigned char>(c);
+        auto u = static_cast<unsigned char>(c);
         if (u >= 'A' && u <= 'Z')
             c = static_cast<char>(u - 'A' + 'a');
     }
@@ -233,7 +233,7 @@ CommandModel::Prediction CommandModelOnnx::predict(const std::string& text) cons
         canoned.push_back(canonForEncoder(w));
 
     const auto enc = impl_->tokenizer.encodeWords(canoned, kMaxLen);
-    const int64_t seq = static_cast<int64_t>(enc.inputIds.size());
+    const auto seq = static_cast<int64_t>(enc.inputIds.size());
     const std::array<int64_t, 2> shape{1, seq};
 
     auto& mem = impl_->memoryInfo;
@@ -250,7 +250,7 @@ CommandModel::Prediction CommandModelOnnx::predict(const std::string& text) cons
                                       inputs.size(), kOutputNames, 2);
 
     // intent: argmax over [1, n_intents]
-    const float* intentLogits = outputs[0].GetTensorData<float>();
+    const auto* intentLogits = outputs[0].GetTensorData<float>();
     const auto intentCount = outputs[0].GetTensorTypeAndShapeInfo().GetShape().back();
     int bestIntent = 0;
     for (int64_t i = 1; i < intentCount; ++i)
@@ -261,7 +261,7 @@ CommandModel::Prediction CommandModelOnnx::predict(const std::string& text) cons
 
     // slots: argmax per position over [1, seq, n_tags], read at each word's
     // FIRST subword so there is exactly one tag per word (see the header note).
-    const float* slotLogits = outputs[1].GetTensorData<float>();
+    const auto* slotLogits = outputs[1].GetTensorData<float>();
     const auto slotShape = outputs[1].GetTensorTypeAndShapeInfo().GetShape();
     const int64_t nTags = slotShape.back();
 

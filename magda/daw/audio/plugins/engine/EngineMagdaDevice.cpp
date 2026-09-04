@@ -126,7 +126,7 @@ class EngineMidiBufferView final : public DeviceMidiBuffer {
         // Walked to the back by swapping, which exchanges pointers and touches
         // no heap. A copy shift would realloc every entry it passed, and it was
         // only there because vector::erase moves.
-        for (std::size_t at = static_cast<std::size_t>(index); at + 1 < events_.size(); ++at)
+        for (auto at = static_cast<std::size_t>(index); at + 1 < events_.size(); ++at)
             std::swap(events_[at], events_[at + 1]);
 
         // The removed message is at the back now, and pop_back destroys it: the

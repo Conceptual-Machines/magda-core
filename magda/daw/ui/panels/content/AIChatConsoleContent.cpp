@@ -1571,7 +1571,7 @@ void AIChatConsoleContent::paint(juce::Graphics& g) {
         g.drawRoundedRectangle(combined, 4.0f, 1.0f);
 
         // Thin horizontal border between input and bottom bar
-        float separatorY = static_cast<float>(inputBounds.getBottom());
+        auto separatorY = static_cast<float>(inputBounds.getBottom());
         g.drawHorizontalLine(static_cast<int>(separatorY), combined.getX() + 1.0f,
                              combined.getRight() - 1.0f);
 

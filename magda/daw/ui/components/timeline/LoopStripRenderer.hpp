@@ -26,8 +26,8 @@ inline void draw(juce::Graphics& g, float xStart, float xEnd, int stripTop, int 
 
     const auto base =
         enabled ? DarkTheme::getColour(DarkTheme::LOOP_MARKER) : juce::Colour(0xFF808080);
-    const float top = static_cast<float>(stripTop);
-    const float bottom = static_cast<float>(stripTop + stripHeight);
+    const auto top = static_cast<float>(stripTop);
+    const auto bottom = static_cast<float>(stripTop + stripHeight);
     const float mid = (top + bottom) * 0.5f;
     const int railH = juce::jmax(2, stripHeight / 3);
     const float railTop = mid - static_cast<float>(railH) / 2.0f;

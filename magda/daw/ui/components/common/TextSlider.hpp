@@ -351,7 +351,7 @@ class TextSlider : public juce::Component,
             // Fader-over-meter mode: paint nothing behind so the LevelMeter
             // sitting underneath shows through, then draw the thumb as a thin
             // pale horizontal bar at the value position.
-            float norm = static_cast<float>(getNormalizedValue());
+            auto norm = static_cast<float>(getNormalizedValue());
             int fillHeight = static_cast<int>(std::round(bounds.getHeight() * norm));
             int handleY = bounds.getBottom() - fillHeight;
 
@@ -373,7 +373,7 @@ class TextSlider : public juce::Component,
             g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 2.0f, 1.0f);
 
             if (meterPeakL_ > 0.001f || meterPeakR_ > 0.001f) {
-                float w = static_cast<float>(bounds.getWidth());
+                auto w = static_cast<float>(bounds.getWidth());
 
                 auto gainToWidth = [w](float gain) -> float {
                     float db = juce::Decibels::gainToDecibels(gain, -60.0f);
@@ -690,7 +690,7 @@ class TextSlider : public juce::Component,
         mgr.beginTargetGesture(automationTarget_);
         mgr.setTargetUserTouched(automationTarget_, true);
         const auto info = magda::getParameterInfoForTarget(automationTarget_);
-        const double normalized = static_cast<double>(
+        const auto normalized = static_cast<double>(
             magda::ParameterUtils::realToNormalized(static_cast<float>(baselineValue), info));
         mgr.setTouchBaseline(automationTarget_, normalized);
     }
@@ -810,7 +810,7 @@ class TextSlider : public juce::Component,
         if (bounds.isEmpty())
             return {};
 
-        const float norm = static_cast<float>(getNormalizedValue());
+        const auto norm = static_cast<float>(getNormalizedValue());
         const int handleY =
             bounds.getBottom() - static_cast<int>(std::round(bounds.getHeight() * norm));
         constexpr int editorW = 32;

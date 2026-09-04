@@ -112,7 +112,7 @@ std::vector<MidiNoteStartBeat> calculateBentMidiNoteStartBeats(
     }
 
     const int noteCount = static_cast<int>(validStarts.size());
-    const double ordinalDenom = static_cast<double>(noteCount - 1);
+    const auto ordinalDenom = static_cast<double>(noteCount - 1);
 
     std::vector<MidiNoteStartBeat> bentStarts;
     bentStarts.reserve(validStarts.size());

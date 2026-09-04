@@ -33,7 +33,7 @@ float freqToX(float hz, const juce::Rectangle<float>& plot) {
 // Bipolar carrier sample given a phase in [0,1). Mirrors the DSP's
 // carrierAt(off) selectn over Sine / Triangle / Square.
 float carrierSample(int shape, double phase) {
-    const float p = static_cast<float>(phase - std::floor(phase));
+    const auto p = static_cast<float>(phase - std::floor(phase));
     switch (shape) {
         case 1:
             return 4.0f * std::abs(p - 0.5f) - 1.0f;

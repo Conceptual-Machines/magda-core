@@ -31,25 +31,25 @@ namespace d = cmdmodel::data;
 // inputs the model sees).
 // ---------------------------------------------------------------------------
 bool isCore(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || c == '_' ||
            c == '\'' || c == '-';
 }
 
 bool isWordChar(char c) {  // Python regex \w (ASCII)
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9') || c == '_';
 }
 
 char lowerCh(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     if (u >= 'A' && u <= 'Z')
         return static_cast<char>(u - 'A' + 'a');
     return c;
 }
 
 char upperCh(char c) {
-    unsigned char u = static_cast<unsigned char>(c);
+    auto u = static_cast<unsigned char>(c);
     if (u >= 'a' && u <= 'z')
         return static_cast<char>(u - 'a' + 'A');
     return c;
@@ -91,7 +91,7 @@ std::string join(const std::vector<std::string>& parts, const std::string& sep) 
 bool isLowerWord(const std::string& w) {
     bool anyLower = false;
     for (char c : w) {
-        unsigned char u = static_cast<unsigned char>(c);
+        auto u = static_cast<unsigned char>(c);
         if (u >= 'A' && u <= 'Z')
             return false;
         if (u >= 'a' && u <= 'z')

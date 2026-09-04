@@ -388,7 +388,7 @@ void AIPanelComponent::paint(juce::Graphics& g) {
     if (mcpStripVisible_ && !mcpStripBounds_.isEmpty()) {
         const float r = 6.0f;
         const float cx = static_cast<float>(mcpStripBounds_.getX()) + r * 0.5f + 2.0f;
-        const float cy = static_cast<float>(mcpStripBounds_.getCentreY());
+        const auto cy = static_cast<float>(mcpStripBounds_.getCentreY());
         const auto dot = !mcpEnabled_
                              ? DarkTheme::getColour(DarkTheme::TEXT_PRIMARY).withAlpha(0.3f)
                              : (mcpRunning_ ? juce::Colours::limegreen

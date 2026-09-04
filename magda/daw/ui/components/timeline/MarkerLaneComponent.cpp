@@ -270,7 +270,7 @@ void MarkerLaneComponent::showMarkerMenu(int markerId, juce::Point<int> screenPo
                 if (idx < defaultCount) {
                     colour = juce::Colour(Config::getDefaultColour(idx));
                 } else {
-                    const size_t customIdx = static_cast<size_t>(idx - defaultCount);
+                    const auto customIdx = static_cast<size_t>(idx - defaultCount);
                     if (customIdx >= customPalette.size())
                         return;
                     colour = juce::Colour(customPalette[customIdx].colour);

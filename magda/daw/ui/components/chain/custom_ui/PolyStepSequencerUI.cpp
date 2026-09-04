@@ -50,8 +50,8 @@ void drawStepRuler(juce::Graphics& g, juce::Rectangle<int> timelineArea,
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(timelineArea);
 
-    const float top = static_cast<float>(timelineArea.getY());
-    const float bottom = static_cast<float>(timelineArea.getBottom());
+    const auto top = static_cast<float>(timelineArea.getY());
+    const auto bottom = static_cast<float>(timelineArea.getBottom());
 
     // Highlight the playing step.
     if (playStep >= 0 && playStep < count) {
@@ -460,8 +460,8 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
 
         g.setColour(canShift ? DarkTheme::getTextColour()
                              : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
         juce::Path arrow;
         if (isUp) {
@@ -490,8 +490,8 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
 
         g.setColour(enabled ? DarkTheme::getTextColour()
                             : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float s = 3.0f;
         g.drawLine(cx - s, cy, cx + s, cy, 1.0f);  // minus / plus horizontal bar
         if (isIn)
@@ -967,8 +967,8 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
         g.setColour(canShift ? DarkTheme::getTextColour()
                              : DarkTheme::getSecondaryTextColour().withAlpha(0.3f));
-        const float cx = static_cast<float>(btn.getCentreX());
-        const float cy = static_cast<float>(btn.getCentreY());
+        const auto cx = static_cast<float>(btn.getCentreX());
+        const auto cy = static_cast<float>(btn.getCentreY());
         constexpr float arrowSize = 4.0f;
         juce::Path arrow;
         if (isUp) {

@@ -260,7 +260,7 @@ class ClipSlotButton : public juce::TextButton {
 
             // Draw progress bar for playing clips
             if (clipIsPlaying && clipLength > 0.0 && sessionPlayheadPos >= 0.0) {
-                float progress = static_cast<float>(sessionPlayheadPos / clipLength);
+                auto progress = static_cast<float>(sessionPlayheadPos / clipLength);
                 progress = juce::jlimit(0.0f, 1.0f, progress);
 
                 auto progressBar = contentArea.toFloat();
@@ -482,7 +482,7 @@ class MiniDbScale : public juce::Component {
 
         static constexpr float PADDING = 4.0f;
         float height = static_cast<float>(bounds.getHeight()) - 2.0f * PADDING;
-        float width = static_cast<float>(bounds.getWidth());
+        auto width = static_cast<float>(bounds.getWidth());
 
         if (height <= 0.0f)
             return;

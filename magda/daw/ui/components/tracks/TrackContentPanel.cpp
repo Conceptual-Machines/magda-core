@@ -854,7 +854,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
             // Draw audio waveform (symmetric around vertical center)
             g.setColour(baseColour.brighter(0.3f));
 
-            float centerY = static_cast<float>(noteArea.getCentreY());
+            auto centerY = static_cast<float>(noteArea.getCentreY());
             float halfHeight = noteArea.getHeight() * 0.5f;
             int numPeaks = static_cast<int>(preview.audioPeaks.size());
 
@@ -1006,9 +1006,9 @@ void TrackContentPanel::paintEditCursor(juce::Graphics& g) {
     }
 
     // Draw edit cursor as a prominent white line
-    float top = static_cast<float>(trackArea.getY());
-    float bottom = static_cast<float>(trackArea.getBottom());
-    float x = static_cast<float>(cursorX);
+    auto top = static_cast<float>(trackArea.getY());
+    auto bottom = static_cast<float>(trackArea.getBottom());
+    auto x = static_cast<float>(cursorX);
 
     // Draw glow/shadow for visibility over grid lines
     g.setColour(juce::Colours::black.withAlpha(0.5f));

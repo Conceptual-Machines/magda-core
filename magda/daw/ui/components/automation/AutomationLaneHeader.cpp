@@ -404,7 +404,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
         int contentBottom =
             y + laneHeight - AutomationLaneComponent::RESIZE_HANDLE_HEIGHT - curvePadding;
         int contentHeight = contentBottom - contentTop;
-        float rightEdge = static_cast<float>(width);
+        auto rightEdge = static_cast<float>(width);
         constexpr float tickLen = 5.0f;
 
         if (contentHeight > 20) {
@@ -543,7 +543,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                 if (maxLabels == 1) {
                     thinned.push_back(gridValues[gridValues.size() / 2]);
                 } else {
-                    const double srcMax = static_cast<double>(gridValues.size() - 1);
+                    const auto srcMax = static_cast<double>(gridValues.size() - 1);
                     for (int i = 0; i < maxLabels; ++i) {
                         int srcIdx = static_cast<int>(
                             std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));

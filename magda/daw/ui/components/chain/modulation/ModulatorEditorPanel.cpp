@@ -1251,7 +1251,7 @@ void ModulatorEditorPanel::paintOverChildren(juce::Graphics& g) {
     float currentNorm = 0.0f;
     if (currentMod_.tempoSync) {
         constexpr float kSyncMin = 0.0f;
-        const float kSyncMax = static_cast<float>(std::size(kSyncDivisionOrder) - 1);
+        const auto kSyncMax = static_cast<float>(std::size(kSyncDivisionOrder) - 1);
         if (kSyncMax > kSyncMin)
             currentNorm = juce::jlimit(0.0f, 1.0f,
                                        (static_cast<float>(visibleSlider.getValue()) - kSyncMin) /

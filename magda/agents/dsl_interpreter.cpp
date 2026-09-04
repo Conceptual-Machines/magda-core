@@ -1015,7 +1015,7 @@ bool Interpreter::executeSetTrack(const Params& params) {
 
         if (params.has("volume_db")) {
             double db = params.getFloat("volume_db");
-            float vol = static_cast<float>(std::pow(10.0, db / 20.0));
+            auto vol = static_cast<float>(std::pow(10.0, db / 20.0));
             tm.setTrackVolume(trackId, vol);
         }
 

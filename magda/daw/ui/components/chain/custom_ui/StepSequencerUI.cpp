@@ -461,8 +461,8 @@ void StepSequencerUI::drawTimeline(juce::Graphics& g, juce::Rectangle<int> area)
 
     const int count = pattern_.playingLength();
     const float colW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
-    const float top = static_cast<float>(area.getY());
-    const float bottom = static_cast<float>(area.getBottom());
+    const auto top = static_cast<float>(area.getY());
+    const auto bottom = static_cast<float>(area.getBottom());
 
     g.setColour(DarkTheme::getColour(DarkTheme::BACKGROUND).brighter(0.04f));
     g.fillRect(area);
@@ -552,7 +552,7 @@ void StepSequencerUI::drawAccentRow(juce::Graphics& g, juce::Rectangle<int> area
     g.setColour(DarkTheme::getSecondaryTextColour());
     g.drawText("ACC", area.removeFromLeft(24), juce::Justification::centredLeft);
 
-    float startX = static_cast<float>(area.getX());
+    auto startX = static_cast<float>(area.getX());
     boxW = static_cast<float>(area.getWidth()) / static_cast<float>(count);
 
     for (int i = 0; i < count; ++i) {
@@ -622,7 +622,7 @@ void StepSequencerUI::drawKeyboard(juce::Graphics& g, juce::Rectangle<int> area)
     static constexpr int NUM_OCTAVES = 2;
     int totalWhiteKeys = WHITE_KEYS_PER_OCTAVE * NUM_OCTAVES;
     float whiteKeyW = static_cast<float>(area.getWidth()) / static_cast<float>(totalWhiteKeys);
-    float whiteKeyH = static_cast<float>(area.getHeight());
+    auto whiteKeyH = static_cast<float>(area.getHeight());
     float blackKeyW = whiteKeyW * 0.65f;
     float blackKeyH = whiteKeyH * 0.6f;
 
