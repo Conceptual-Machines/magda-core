@@ -72,8 +72,10 @@ class MutableCloudsPlugin : public MagdaDevice {
     /// The input guard holds 3 + ceil(step) samples, a fixed count and so a
     /// shrinking duration as the rate climbs, 125 us at 32 kHz against 47 us at
     /// 192 kHz. That spread lands in a delay declared in seconds, so the real
-    /// figure sits within this of the constant rather than on it.
-    static constexpr double kLatencyToleranceSeconds = 80.0e-6;
+    /// figure sits within this of the constant from 22.05 kHz to 192 kHz rather
+    /// than on it. A bound, not an exactness: closing it needs a compensating
+    /// output delay sized from a probe at prepare().
+    static constexpr double kLatencyToleranceSeconds = 90.0e-6;
 
     /// Past this the device sustains rather than decays: feedback from 0.85
     /// recirculates indefinitely. Granular at full reverb rings for 32 s, so

@@ -249,14 +249,15 @@ double decayToSilenceSeconds(const juce::AudioBuffer<float>& buffer, double rate
 
 TEST_CASE("Nimbus declares the priming delay it imposes on the dry path",
           "[nimbus][clouds][latency]") {
-    // Every rate a host runs at, up to 192 kHz, and block sizes either side of
+    // Every rate a host runs at, the 22.05 kHz analysis render included, and
+    // block sizes either side of
     // the internal chunk: the delay is a property of the plumbing, not of how
     // the host slices its buffer (#2365 review).
     //
     // Checked in seconds, the unit the declaration is in. The input guard holds
     // a fixed sample count, so its share shrinks as the rate climbs and one
     // constant cannot sit exactly on every rate at once.
-    for (double rate : {32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    for (double rate : {22050.0, 32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
         const double declared = MutableCloudsPlugin::kLatencySeconds * rate;
         for (int blockSize : {16, 128, 512, 2048}) {
             const int measured = bulkDelaySamples(rate, blockSize);
@@ -402,6 +403,38 @@ TEST_CASE("Nimbus declares the tail it is actually running", "[nimbus][clouds][l
         }
     }
 
+    SECTION("and the repeats feedback keeps alive") {
+        // Feedback is a delay line: it contributes nothing at position 0 and
+        // many seconds at position 1, which a threshold on feedback alone
+        // missed entirely (#2365 review).
+        for (float feedback : {0.3f, 0.5f, 0.7f}) {
+            for (float position : {0.25f, 1.0f}) {
+                CloudsRig rig(rate);
+                rig.set(MutableCloudsPlugin::kMode, 2.0f);  // Looping Delay
+                rig.set(MutableCloudsPlugin::kPosition, position);
+                rig.set(MutableCloudsPlugin::kDensity, 0.0f);
+                rig.set(MutableCloudsPlugin::kTexture, 0.5f);
+                rig.set(MutableCloudsPlugin::kDryWet, 1.0f);
+                rig.set(MutableCloudsPlugin::kReverb, 0.0f);
+                rig.set(MutableCloudsPlugin::kFeedback, feedback);
+
+                juce::AudioBuffer<float> settle(2, secondsToSamples(5.0, rate));
+                settle.clear();
+                rig.render(settle);
+
+                auto buffer = burstThenSilence(rate, kBurstSeconds, 45.0);
+                rig.render(buffer);
+                const double measured =
+                    decayToSilenceSeconds(buffer, rate, secondsToSamples(kBurstSeconds, rate));
+
+                INFO("feedback " << feedback << " position " << position << ": declared "
+                                 << rig.device.properties().tailLengthSeconds << "s, decays in "
+                                 << measured << "s");
+                CHECK(rig.device.properties().tailLengthSeconds >= measured);
+            }
+        }
+    }
+
     SECTION("spectral gets headroom rather than a measurement") {
         // Three identical renders at reverb 0.75 gave 0 s, 0 s and 20.7 s.
         CHECK(declarationFor(3, 0.75f, 0.0f, 0.0f) ==
@@ -409,9 +442,36 @@ TEST_CASE("Nimbus declares the tail it is actually running", "[nimbus][clouds][l
     }
 
     SECTION("feedback that never decays declares the ceiling") {
-        // From 0.85 the buffer recirculates indefinitely. No finite tail covers
-        // that, so the most useful thing to say is the ceiling.
-        CHECK(declarationFor(0, 0.0f, 0.0f, 1.0f) ==
+        // From 0.75 the buffer recirculates indefinitely: 0.79 was still above
+        // -60 dBFS after 45 s. No finite tail covers that.
+        CHECK(declarationFor(0, 0.0f, 0.0f, 0.79f) ==
               Catch::Approx(MutableCloudsPlugin::kMaxTailSeconds));
+    }
+}
+
+TEST_CASE("Nimbus stays finite at the offline analysis rate", "[nimbus][clouds][resampler]") {
+    // OfflineMixAnalysis renders at 22.05 kHz with plugins in. A 15 kHz corner
+    // is above Nyquist there, and the biquads it produces are unstable: the
+    // output reached 1e37 and then stopped being a number (#2365 review).
+    for (double rate : {22050.0, 24000.0, 32000.0}) {
+        CloudsRig rig(rate);
+        makeDryPath(rig);
+
+        auto buffer = steadyTone(rate, 1000.0, 0.1);
+        rig.render(buffer);
+
+        int nonFinite = 0;
+        float peak = 0.0f;
+        for (int i = 0; i < buffer.getNumSamples(); ++i) {
+            const float sample = buffer.getSample(0, i);
+            if (!std::isfinite(sample))
+                ++nonFinite;
+            else
+                peak = std::max(peak, std::abs(sample));
+        }
+
+        INFO("rate " << rate << ": " << nonFinite << " non-finite, peak " << peak);
+        CHECK(nonFinite == 0);
+        CHECK(peak < 1.0f);
     }
 }

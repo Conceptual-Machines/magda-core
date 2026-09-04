@@ -61,6 +61,9 @@ struct Biquad {
 constexpr double kButterworthQ[4] = {0.50979558, 0.60134489, 0.89997622, 2.56291545};
 constexpr double kBandLimitHz = MutableCloudsPlugin::kBandLimitHz;
 
+// Feedback at or above this never decays, so no finite tail describes it.
+constexpr float kFeedbackSustains = 0.75f;
+
 // A section's DC group delay is 1/(Q w0), so the filter's is sum(1/Q)/w0. The
 // header declares the latency from it and cannot see this table, so tie them.
 constexpr double kQSum = (1.0 / kButterworthQ[0]) + (1.0 / kButterworthQ[1]) +
@@ -78,12 +81,15 @@ struct BandLimit {
     Biquad l[4], r[4];
 
     void prepare(double hostRate) {
-        // At every rate, 32 kHz included. Bypassing where nothing resamples
-        // would save a filter nobody hears and put the declared latency 3
-        // samples out at that rate (#2365 review).
+        // At every rate, 32 kHz included: bypassing where nothing resamples
+        // puts the declared latency 3 samples out at that rate. Below Nyquist
+        // at every rate too. OfflineMixAnalysis renders at 22.05 kHz with
+        // plugins in, and a 15 kHz corner there is an unstable biquad: it took
+        // the output to 1e37 and then to NaN (#2365 review).
+        const double corner = std::min(kBandLimitHz, 0.45 * hostRate);
         for (int i = 0; i < 4; ++i) {
-            l[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
-            r[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
+            l[i].setLowpass(corner, hostRate, kButterworthQ[i]);
+            r[i].setLowpass(corner, hostRate, kButterworthQ[i]);
         }
         clear();
     }
@@ -420,10 +426,19 @@ double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool fr
     if (mode == 3)
         seconds *= 2.0;
 
-    // Unfrozen feedback recirculates on its own: below 0.7 it dies with the
-    // grain, from 0.85 it never does. Declare the ceiling rather than a decay
-    // the device is not performing.
-    if (feedback >= 0.8f)
+    // Unfrozen feedback is a delay line: the buffer repeats every `position`
+    // seconds at that gain, so the tail is however many repeats reach -60 dB.
+    // Analytic rather than measured, which over-declares by up to 2x at low
+    // feedback and covers it at high (#2365 review).
+    if (feedback > 0.01f && feedback < kFeedbackSustains) {
+        const double delaySeconds = 0.1 + 1.02 * position;
+        seconds = std::max(seconds, delaySeconds * 3.0 / -std::log10(feedback));
+    }
+
+    // Past that it stops decaying at all: 0.7 with a full delay runs 17 s, 0.79
+    // was still above -60 dBFS after 45. Declare the ceiling rather than a
+    // decay the device is not performing.
+    if (feedback >= kFeedbackSustains)
         seconds = kMaxTailSeconds;
 
     return juce::jlimit(0.25, kMaxTailSeconds, seconds);
