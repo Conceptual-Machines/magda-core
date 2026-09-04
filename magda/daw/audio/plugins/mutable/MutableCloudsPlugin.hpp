@@ -55,27 +55,35 @@ class MutableCloudsPlugin : public MagdaDevice {
     }
     static const char* xmlTypeName;
 
-    /// The lowpass either side of the 32 kHz DSP, and its DC group delay,
-    /// sum(1/Q)/w0 over an 8th-order Butterworth. The .cpp asserts its filter
-    /// table against both.
+    /// The lowpass either side of the 32 kHz DSP. Its corner drops to stay
+    /// under Nyquist at low rates, so the .cpp designs it per rate.
     static constexpr double kBandLimitHz = 15000.0;
-    static constexpr double kBandLimitQSum = 5.12583089;
-    static constexpr double kBandLimitDelaySeconds =
-        kBandLimitQSum / (2.0 * juce::MathConstants<double>::pi * kBandLimitHz);
 
-    /// The 32-sample grain block and a sample of resampler delay at 32 kHz, plus
-    /// both filters, which run at every rate so this holds at every rate. In
-    /// seconds because properties() is a construction-time snapshot; the dry
-    /// path carries it too, since Clouds mixes dry itself.
-    static constexpr double kLatencySeconds = 33.0 / 32000.0 + 2.0 * kBandLimitDelaySeconds;
+    /// Output lag: the grain block, the resampler priming and both filters.
+    ///
+    /// Measured, not derived. The obvious derivation is wrong: the filters'
+    /// group delay is not the analog prototype's sum(1/Q)/w0, because the
+    /// bilinear transform collapses it as the corner nears Nyquist, from 53 us
+    /// at 192 kHz to 13 us at 32 kHz. It is not one number either, varying 36
+    /// to 88 us across the band at 48 kHz, so no single figure cancels an IIR
+    /// at every frequency.
+    ///
+    /// In seconds because properties() is a construction-time snapshot, taken
+    /// before the host rate is known; the dry path carries it too, since Clouds
+    /// mixes dry itself.
+    static constexpr double kLatencySeconds = 1120.8e-6;
 
-    /// The input guard holds 3 + ceil(step) samples, a fixed count and so a
-    /// shrinking duration as the rate climbs, 125 us at 32 kHz against 47 us at
-    /// 192 kHz. That spread lands in a delay declared in seconds, so the real
-    /// figure sits within this of the constant from 22.05 kHz to 192 kHz rather
-    /// than on it. A bound, not an exactness: closing it needs a compensating
-    /// output delay sized from a probe at prepare().
-    static constexpr double kLatencyToleranceSeconds = 90.0e-6;
+    /// The real delay spans 1062 to 1179 us from 32 kHz to 192 kHz, so this is
+    /// the tightest a single constant can be: a bound, not an exactness.
+    /// Closing it needs a rate-aware declaration or a compensating output delay
+    /// sized at prepare(), neither of which fits in the device's current
+    /// construction-time properties() contract.
+    static constexpr double kLatencyToleranceSeconds = 60.0e-6;
+
+    /// OfflineMixAnalysis renders here, where the delay is 104 us past the
+    /// constant. Analysis is a measurement pass with nothing to align against,
+    /// so it sits outside the compensation contract above.
+    static constexpr double kAnalysisRate = 22050.0;
 
     /// Past this the device sustains rather than decays: feedback from 0.85
     /// recirculates indefinitely. Granular at full reverb rings for 32 s, so

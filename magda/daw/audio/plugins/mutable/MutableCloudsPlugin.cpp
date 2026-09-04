@@ -64,14 +64,7 @@ constexpr double kBandLimitHz = MutableCloudsPlugin::kBandLimitHz;
 // Feedback at or above this never decays, so no finite tail describes it.
 constexpr float kFeedbackSustains = 0.75f;
 
-// A section's DC group delay is 1/(Q w0), so the filter's is sum(1/Q)/w0. The
-// header declares the latency from it and cannot see this table, so tie them.
-constexpr double kQSum = (1.0 / kButterworthQ[0]) + (1.0 / kButterworthQ[1]) +
-                         (1.0 / kButterworthQ[2]) + (1.0 / kButterworthQ[3]);
-static_assert(kQSum > MutableCloudsPlugin::kBandLimitQSum - 1e-6 &&
-                  kQSum < MutableCloudsPlugin::kBandLimitQSum + 1e-6,
-              "the declared latency is derived from these pole Qs");
-static_assert(kBlock == 32, "kLatencySeconds counts a 32-sample grain block");
+static_assert(kBlock == 32, "the measured latency assumes a 32-sample grain block");
 
 // The 32 kHz DSP is band-limited to 16 kHz and the cubic interpolators do not
 // enforce it: unfiltered, a 20 kHz tone folds to 12 kHz louder than it left,

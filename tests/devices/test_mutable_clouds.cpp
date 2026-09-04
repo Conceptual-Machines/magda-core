@@ -249,15 +249,11 @@ double decayToSilenceSeconds(const juce::AudioBuffer<float>& buffer, double rate
 
 TEST_CASE("Nimbus declares the priming delay it imposes on the dry path",
           "[nimbus][clouds][latency]") {
-    // Every rate a host runs at, the 22.05 kHz analysis render included, and
-    // block sizes either side of
-    // the internal chunk: the delay is a property of the plumbing, not of how
-    // the host slices its buffer (#2365 review).
-    //
-    // Checked in seconds, the unit the declaration is in. The input guard holds
-    // a fixed sample count, so its share shrinks as the rate climbs and one
-    // constant cannot sit exactly on every rate at once.
-    for (double rate : {22050.0, 32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
+    // Every host rate inside the compensation contract, and block sizes either
+    // side of the internal chunk: the delay is a property of the plumbing, not
+    // of how the host slices its buffer (#2365 review). The analysis rate sits
+    // outside it, and has its own case below.
+    for (double rate : {32000.0, 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0}) {
         const double declared = MutableCloudsPlugin::kLatencySeconds * rate;
         for (int blockSize : {16, 128, 512, 2048}) {
             const int measured = bulkDelaySamples(rate, blockSize);
