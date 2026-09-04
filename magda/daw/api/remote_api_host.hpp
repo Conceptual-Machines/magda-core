@@ -23,55 +23,28 @@ class SubscriptionHub;
 /**
  * @brief Owns the remote API for the lifetime of a running MAGDA (#1856, #1858).
  *
- * The dispatcher, the model bridge that feeds it local edits, and the two
- * transports are objects with one lifetime and a required construction order, so
- * something has to own them together. This is that something, and it is the only
- * place in the app that knows the remote API exists at all.
- *
- * Both transports share one dispatcher and one subscription hub. That is the
- * point of the layering rather than an optimisation: two dispatchers would be
- * two revision counters and two undo groupings over one project, and two hubs
- * would be two projections of the same model drifting apart.
+ * Owns the dispatcher, the model bridge that feeds it local edits, and the two
+ * transports, which share one required construction order. Both transports
+ * share one dispatcher and one subscription hub, not as an optimization: two
+ * dispatchers would be two revision counters and two undo groupings over one
+ * project, and two hubs would be two projections of the model drifting apart.
  *
  * Construct and destroy on the message thread: `ModelChangeBridge` attaches to
  * the model singletons, which notify there.
  *
- * ## The token
- *
- * Generated per run, never persisted to config. A config file gets copied
- * between machines, committed by accident, and pasted into bug reports; a
- * credential in one is a credential that leaks eventually. Instead the token
- * lives in a file beside the other app data, written with owner-only
- * permissions and deleted on shutdown, carrying the port alongside it:
+ * The auth token is generated per run, never persisted to config, and lives
+ * in an owner-only file beside the other app data, named after the process
+ * and deleted on shutdown so a client can find it with no configuration:
  *
  *     remote-api-<pid>.json
- *     {"port":51734,"token":"…","url":"ws://127.0.0.1:51734/rpc",
+ *     {"port":51734,"token":"...","url":"ws://127.0.0.1:51734/rpc",
  *      "mcpPort":51735,"mcpUrl":"http://127.0.0.1:51735/mcp","pid":4021}
  *
- * A client reads that file to learn where to connect and what to present. This
- * is the same shape Jupyter uses for its local server, and it means a client on
- * the machine needs no configuration while a process elsewhere gets nothing.
- *
- * Both transports are named because a client picks one: an MCP host wants
- * `mcpUrl`, a script that needs pushed state wants `url`. The token is the same
- * for both — it authenticates the user at the keyboard, not a protocol.
- *
- * The record is named after the process because MAGDA allows more than one
- * instance. One shared file would mean the second instance to start hides the
- * first, and the first to stop deletes the record of the one still running —
- * and with a fixed port, where SO_REUSEPORT lets both listeners bind, a client
- * could hold one instance's token and be routed to the other. A client that
- * finds several records is looking at several running instances and has to
- * choose; each is independently valid for the port it names.
- *
- * A record whose process is gone is debris from a crash, and any instance's
- * `start()` will collect it. An instance only ever deletes its own live record.
- *
- * ## Disabled means disabled
- *
- * `start()` returns false and opens no socket when the feature is off in
- * config, when no token could be generated, or when the port is taken. There is
- * no partial state where MAGDA is listening but unauthenticated.
+ * See docs/architecture/remote-api-host.md for why (crash recovery, multiple
+ * instances, why the token isn't in config). `start()` returns false and
+ * opens no socket when the feature is off, no token could be generated, or
+ * the port is taken -- there is no partial state where MAGDA is listening
+ * but unauthenticated.
  */
 /// Which listener. Both are carried by one `RemoteApiHost`, but they are
 /// started, stopped, and credentialled independently (#2142).
@@ -83,10 +56,8 @@ class RemoteApiHost {
      * @brief Construct the remote API over a facade, and optionally an engine.
      *
      * `engine` is what the `meters` subscription reads (#1857) and the only
-     * thing it is used for. Passing nothing is a supported configuration, not a
-     * degraded one: the whole API works, and `meters` delivers empty samples
-     * rather than failing — a host with no audio engine is not something a
-     * remote client can detect or act on.
+     * thing it is used for. Passing nothing is supported, not degraded: the
+     * whole API works and `meters` delivers empty samples instead of failing.
      */
     explicit RemoteApiHost(MagdaApi& api, AudioEngine* engine = nullptr);
     ~RemoteApiHost();
@@ -97,84 +68,60 @@ class RemoteApiHost {
     /**
      * @brief Start whichever transports config enables, and publish the record.
      *
-     * Each transport is independent: one that is disabled is skipped, and one
-     * that fails to bind does not take the other down. Returns true when at
-     * least one listener came up, so false means nothing is answering — which is
-     * also what it returns when both are switched off.
+     * Each transport is independent: a disabled one is skipped, and a failed
+     * bind does not take the other down. Returns true when at least one
+     * listener came up.
      */
     bool start();
 
     /**
      * @brief Open one transport, leaving the other exactly as it is (#2142).
      *
-     * What a settings toggle needs. Mints that transport's credential, binds its
-     * port, and rewrites the discovery record to add it; the other transport's
-     * entry and token in that record are untouched, so a client already
-     * connected over it never notices.
-     *
-     * Returns false when config has this transport switched off, when it is
-     * already running, or when the port could not be bound.
-     *
-     * Message thread only, like `start()`.
+     * Mints that transport's credential, binds its port, and rewrites the
+     * discovery record to add it without touching the other transport's
+     * entry. Returns false when config has it off, it is already running, or
+     * the port could not be bound. Message thread only, like `start()`.
      */
     bool startTransport(Transport transport);
 
     /**
      * @brief Close one transport, leaving the other listening.
      *
-     * Withdraws that transport's credential and its entry in the discovery
-     * record, and drops the connections it was carrying. Idempotent. When it is
-     * the last one listening the record goes away entirely, because a record
-     * with neither transport in it advertises nothing.
+     * Withdraws its credential and discovery-record entry, and drops its
+     * connections. Idempotent. Removes the record entirely once neither
+     * transport is up.
      */
     void stopTransport(Transport transport);
 
     /**
      * @brief Close the listeners and withdraw the credential, permanently.
      *
-     * Shuts the dispatcher and the subscription hub down as well, which is
-     * one-way: `RemoteApiService::shutdown()` retires its execution state and
-     * never comes back. This is the destruction path, and `start()` must not be
-     * called afterwards — it would bind listeners around a dispatcher that
-     * answers every request with `Cancelled`.
-     *
-     * Idempotent; the destructor calls it. To turn the feature off and leave it
-     * restartable, use `stopListening()`.
+     * Also shuts the dispatcher and subscription hub down, one-way
+     * (`RemoteApiService::shutdown()` never comes back) -- this is the
+     * destruction path, and `start()` must not be called afterwards. Use
+     * `stopListening()` to turn the feature off and leave it restartable.
      */
     void stop();
 
     /**
      * @brief Close the listeners and withdraw the credential, reversibly.
      *
-     * What the settings toggle needs: no socket and no published token, but the
-     * dispatcher, the model bridge, and the subscription hub all still alive, so
-     * a later `start()` produces a working server rather than one whose every
-     * operation is already cancelled.
-     *
-     * Idempotent, and safe to call when nothing is listening.
+     * What the settings toggle needs: no socket, no published token, but the
+     * dispatcher, model bridge, and subscription hub stay alive so a later
+     * `start()` works again. Idempotent.
      */
     void stopListening();
 
     /**
      * @brief Throw the current credential away and issue a new one (#1860).
      *
-     * Every connected client is disconnected, because that is what rotation
-     * means: a token that still admitted the sessions it was replacing would
-     * not have been revoked. Clients reconnect by re-reading the discovery
-     * record, which this rewrites before returning — so a well-behaved one
-     * recovers on its own and a stale copy of the old token never works again.
-     *
-     * A no-op returning false when this transport is not listening: there is no
-     * credential to rotate, and minting one without a listener would publish a
-     * record for a port nobody is answering on.
-     *
-     * Per transport since #2142. The two hold separate tokens, so rotating one
-     * leaves the other's clients connected — re-credentialling a misbehaving
-     * script no longer drops an AI host mid-conversation. It buys granularity,
-     * not isolation: both tokens live in the same owner-only file and both doors
-     * open onto the same dispatcher and the same grants.
-     *
-     * Message thread only, like `start()`.
+     * Every connected client is disconnected, since that is what rotation
+     * means. Clients reconnect by re-reading the discovery record, rewritten
+     * before this returns. A no-op returning false when this transport is
+     * not listening. Each transport holds a separate token (#2142), so
+     * re-credentialling one doesn't drop the other's clients -- that buys
+     * granularity, not isolation, since both still live in the same
+     * owner-only file. Message thread only, like `start()`.
      */
     bool rotateToken(Transport transport);
 
@@ -187,29 +134,27 @@ class RemoteApiHost {
     /// The WebSocket port actually bound, or 0 when not running.
     int boundPort() const;
 
-    /// The MCP port actually bound, or 0 when it is not listening. Zero with a
-    /// live WebSocket is a supported state, not a broken one — see `start()`.
+    /// The MCP port actually bound, or 0 when not listening. Zero with a live
+    /// WebSocket is a supported state, not a broken one -- see `start()`.
     int mcpPort() const;
 
     /// Where the token was published, whether or not it currently exists.
     juce::File tokenFile() const;
 
-    /// The dispatcher, shared by both transports: it must be one instance, or
-    /// revisions, undo grouping, and idempotency would each exist twice over one
-    /// project.
+    /// The dispatcher, shared by both transports so revisions, undo grouping,
+    /// and idempotency each exist once per project, not twice.
     RemoteApiService& service();
 
-    /// The subscription hub, for the same reason: MCP resource updates and
-    /// WebSocket subscriptions have to be fed by one projection of the model,
-    /// not two.
+    /// The subscription hub, for the same reason: one projection of the
+    /// model feeding both MCP resource updates and WebSocket subscriptions.
     SubscriptionHub& subscriptions();
 
     /**
      * @brief Who may do what, and who is connected right now (#1860).
      *
-     * Shared by both transports and edited by the settings dialog. Outlives the
-     * listeners deliberately: a grant is the user's decision about a client, and
-     * switching the feature off and on again must not silently forget it.
+     * Shared by both transports and edited by the settings dialog. Outlives
+     * the listeners deliberately: switching the feature off and on must not
+     * silently forget a grant.
      */
     RemoteClientRegistry& clients();
 
@@ -220,54 +165,34 @@ class RemoteApiHost {
     /**
      * @brief Mirror the registry's grants into the config file.
      *
-     * Wired as the registry's change handler, so a grant made in the settings
-     * dialog and one created by a client connecting for the first time are
-     * persisted by the same path — which means this is called from transport
-     * threads as well as the message thread.
+     * Wired as the registry's change handler, so a grant from the settings
+     * dialog and one from a client's first connection are persisted by the
+     * same path -- called from transport threads as well as the message
+     * thread.
      */
     void persistGrants();
 
     /**
      * @brief The pending config write, shared by every thread that asks for one.
      *
-     * A slot rather than a value captured per call, because the writes have to
-     * be ordered and there is more than one writer. A transport thread can
-     * snapshot the grants, the user can then revoke a scope and have that saved,
-     * and the transport's older snapshot would otherwise land last and restore
-     * what was just revoked — in the file the next launch reads.
-     *
-     * Whoever finds `posted` false owns the hop; everyone after simply replaces
-     * `latest`, which the pending task re-reads when it runs. So the newest
-     * state always wins and a burst of changes costs one write.
-     *
-     * Held by `shared_ptr` so a queued write can outlive this host without
-     * reaching into it.
+     * A slot rather than a value captured per call, because writes must be
+     * ordered across more than one writer. See
+     * docs/architecture/remote-api-host.md for the two-mutex protocol.
+     * Held by `shared_ptr` so a queued write can outlive this host.
      */
     struct GrantWriter {
         /// Guards `latest` and `posted`. Held briefly, never across I/O.
         std::mutex mutex;
-        /// Serialises the config write itself. Separate from `mutex` so a
-        /// transport thread recording a newer grant is never blocked behind a
-        /// file save — it leaves `latest` for whoever is inside the write to
-        /// pick up. Always taken before `mutex`, never after.
+        /// Serializes the config write itself. Always taken before `mutex`,
+        /// never after.
         std::mutex applyMutex;
         juce::var latest;
         bool posted = false;
     };
     std::shared_ptr<GrantWriter> grantWriter_ = std::make_shared<GrantWriter>();
-    // Declaration order is destruction order reversed, and it is load-bearing:
-    // a transport's connections deregister from the hub, the hub listens to the
-    // service's change source, and the bridge writes into the service. Each has
-    // to outlive the thing that talks to it.
-    //
-    // The client registry comes first because both transports hold a raw
-    // pointer to it, so it has to outlive them.
-    //
-    // The audit log is a `shared_ptr` rather than a `unique_ptr` because
-    // declaration order is not enough for it: a dispatch completion carrying it
-    // can still be queued on the message thread when this whole object is
-    // destroyed, and ordering members only decides what happens *inside* the
-    // destructor. Whoever still holds a share keeps it alive.
+
+    // Declaration order is destruction order reversed, and it is load-bearing.
+    // See docs/architecture/remote-api-host.md ("Member declaration order").
     std::shared_ptr<RemoteAuditLog> audit_;
     std::unique_ptr<RemoteClientRegistry> clients_;
     std::unique_ptr<RemoteApiService> service_;
@@ -284,39 +209,30 @@ class RemoteApiHost {
     /**
      * @brief Rewrite the discovery record from whatever is listening right now.
      *
-     * Called after every start, stop, and rotation, because the record is a
-     * projection of live state rather than of config: a port in it that nothing
-     * is answering on is the one failure mode it exists to prevent. Deletes the
-     * file instead when neither transport is up.
-     *
-     * Returns false when the record could not be written, which the callers
-     * treat as fatal to the listeners they just brought up — a listener whose
-     * token nobody can read is useless and still a listener.
+     * Called after every start, stop, and rotation: the record is a
+     * projection of live state, not of config, so a port in it that nothing
+     * answers on is exactly the failure mode it exists to prevent. Deletes
+     * the file when neither transport is up. Returns false when the record
+     * could not be written, which callers treat as fatal to the listeners
+     * they just brought up.
      */
     bool publishRecord();
 
-    /// Drop the connections one transport was carrying. Its sockets are gone by
-    /// the time this runs, so anything still listed is a phantom row in the
-    /// settings table with a disconnect button that would answer false.
+    /// Drop the connections one transport was carrying.
     void forgetConnections(Transport transport);
 };
 
 /**
  * @brief The host the running application owns, or nullptr.
  *
- * The settings UI has to be able to turn the remote API on and off while MAGDA
- * is running — a toggle that only took effect after a restart would be a worse
- * answer than no toggle. The dialog is constructed from a static entry point
- * with no context to thread a pointer through, so the one instance the app owns
- * registers itself here.
+ * The settings UI needs to toggle the remote API at runtime, so the one
+ * instance the app owns registers itself here rather than being threaded
+ * through the dialog's static entry point.
  *
- * Message thread only, and last-constructed-wins. The application creates
- * exactly one; tests create several in sequence, and each destructor clears this
- * only if it is still the registered one, so an earlier host outliving a later
- * one cannot leave a dangling pointer behind.
- *
- * Returns nullptr in the headless CLI, in tests, and before the app has finished
- * starting — callers must check.
+ * Message thread only, last-constructed-wins: the application creates
+ * exactly one, tests create several in sequence, and each destructor clears
+ * this only if it is still the registered one. Returns nullptr in the
+ * headless CLI, in tests, and before the app has finished starting.
  */
 RemoteApiHost* activeHost();
 

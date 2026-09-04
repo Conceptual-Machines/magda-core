@@ -610,10 +610,10 @@ TEST_CASE("the executor tells a device what it may write, apart from what it may
     // its output port is one producer's worth, because a device emits what it
     // made and thru is the plan's merge behind it (#2345).
     //
-    // Clips and a hardware input both merge onto this track, so what reaches
-    // the device is two producers' worth rather than one -- exactly the sum a
-    // device could not have worked out for itself, and exactly the figure it
-    // must not size its own writing from.
+    // Clips, the session launcher and a hardware input all merge onto this
+    // track, so what reaches the device is three producers' worth -- the sum a
+    // device could not have worked out for itself, and the figure it must not
+    // size its own writing from. Session sources joined the merge in #2318.
     magda::TrackInfo instrument;
     instrument.id = 1;
     instrument.type = magda::TrackType::Media;
@@ -652,7 +652,7 @@ TEST_CASE("the executor tells a device what it may write, apart from what it may
     executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
     REQUIRE(executor.isPrepared());
 
-    REQUIRE(synthProbe.bound == 2 * magda::engine::kMaxMidiBytesPerPort);
+    REQUIRE(synthProbe.bound == 3 * magda::engine::kMaxMidiBytesPerPort);
     CHECK(synthProbe.outBound == magda::engine::kMaxMidiBytesPerPort);
 
     // The gain emits no MIDI at all, and is told so rather than being left at

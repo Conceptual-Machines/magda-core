@@ -149,7 +149,7 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     // A null snapshot publishes an empty table rather than skipping, or the
     // previous one would keep handles for slots the engine no longer knows.
     static const ClipSnapshot kNothing;
-    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_);
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_);
 
     clips_.publish(std::move(clips));
 }
@@ -158,7 +158,18 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
     output.clear();
 
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
-    if (*render == nullptr || numSamples <= 0)
+
+    // Nothing to launch into. Dropped rather than kept: holding a request until
+    // a plan appeared would start a clip at whatever moment that turned out to
+    // be.
+    if (*render == nullptr) {
+        requests_.drain([](const LaunchRequest&) {});
+        return;
+    }
+
+    // A callback of no samples is not a block, so whatever has been asked is
+    // still asked at the next real one.
+    if (numSamples <= 0)
         return;
 
     // The executor asserts on a block longer than the plan was prepared for.
@@ -204,8 +215,9 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
 
         // Before the plan, and over every handle rather than the ones this plan
         // renders: a handle must see each block exactly once and a slot has two
-        // sources reading it (SessionLauncher.hpp).
-        advanceLaunchHandles(handles_, segment.block);
+        // sources reading it. What has been asked since the last block is
+        // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
+        advanceLaunchHandles(handles_, requests_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 

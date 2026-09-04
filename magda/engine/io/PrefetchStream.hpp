@@ -22,16 +22,16 @@
  * @file PrefetchStream.hpp
  * @brief One file, read ahead of the callback that plays it.
  *
- * The audio thread cannot wait for a disk, so it never touches one: a thread
- * that is allowed to block reads whole chunks ahead of where playback is, and
- * the callback copies out of what is already in memory. What arrives on the
- * audio thread is therefore a pointer swap and a copy, and nothing else.
+ * The audio thread can't wait for a disk, so it never touches one: a thread
+ * allowed to block reads whole chunks ahead of where playback is, and the
+ * callback copies out of what's already in memory -- a pointer swap and a
+ * copy, nothing else.
  *
- * Chunks rather than a ring of samples, because a chunk can be stamped. A seek
- * makes everything already read wrong, and the stamp is how the callback knows
- * that without the reader having to reach into a buffer the callback is using:
- * stale chunks are recognised on the way out and dropped, which is the same
- * epoch discipline the plan swap uses.
+ * Chunks rather than a ring of samples, because a chunk can be stamped. A
+ * seek makes everything already read wrong, and the stamp lets the callback
+ * recognise and drop stale chunks on the way out without the reader having
+ * to reach into a buffer the callback is using -- the same epoch discipline
+ * the plan swap uses.
  *
  * Threading: read() on the audio thread, fill() on the prefetch thread,
  * everything else before either is running. One stream is one reader and is
@@ -64,10 +64,10 @@ class PrefetchStream {
      * On the audio thread. Returns how many samples were there to give; the
      * rest of the destination is silent.
      *
-     * A start that is not where the last read left off is a seek: what has been
-     * read ahead is for somewhere else, so it is dropped and the reader is
-     * pointed at the new position. Nothing plays until it has caught up, which
-     * is what @ref underruns counts.
+     * A start that isn't where the last read left off is a seek: what's
+     * been read ahead is for somewhere else, so it's dropped and the reader
+     * is pointed at the new position. Nothing plays until it catches up,
+     * which is what @ref underruns counts.
      */
     int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples);
 
@@ -83,17 +83,15 @@ class PrefetchStream {
      * @brief Point the reader before anything is reading it at all.
      *
      * Before the stream is registered with a prefetch thread and before any
-     * block has read from it, on the thread that made it. Not a seek and not a
-     * cue: it moves both cursors while there is nobody to disagree with, so
-     * there is no generation to bump, nothing in flight to throw away, and no
-     * block to wait for.
+     * block has read from it, on the thread that made it. Not a seek and
+     * not a cue: it moves both cursors while there's nobody to disagree
+     * with, so there's no generation to bump and nothing in flight to
+     * throw away.
      *
-     * What it is for is that a stream is made for a clip, and a clip starts
-     * somewhere. Without this a new stream spends its first reads on the
-     * material at sample zero, which is not what it was opened for, and the
-     * cue that redirects it cannot be taken up until a callback has run
-     * (@ref applyPendingCue). Every one of those reads would then be thrown
-     * away, and the reader would start again from behind.
+     * Without this, a new stream spends its first reads on the material at
+     * sample zero -- not what it was opened for -- and a cue can't be taken
+     * up until a callback has run (@ref applyPendingCue), so those reads
+     * would be thrown away and the reader would start again from behind.
      */
     void startAt(std::int64_t sourceStart);
 
@@ -101,58 +99,55 @@ class PrefetchStream {
      * @brief Point the reader at a position before anything asks for it.
      *
      * From any thread that is not the audio thread, at any time: whoever
-     * schedules material knows where playback will be before the callback does,
-     * and a stream told in advance is one that does not have to seek in the
-     * block that needs the samples.
+     * schedules material knows where playback will be before the callback
+     * does, so a stream told in advance doesn't have to seek in the block
+     * that needs the samples.
      *
-     * Nothing here touches what the callback owns. It publishes a cue, and the
-     * callback picks it up at the top of its next block through
-     * @ref applyPendingCue, so the seek itself happens where every other seek
-     * happens. That is a block's delay before the reader starts moving, which
-     * is nothing against the reason to cue at all: a clip scheduled a moment
-     * ahead is read ahead long before it plays.
+     * Nothing here touches what the callback owns. It publishes a cue, and
+     * the callback picks it up at the top of its next block through
+     * @ref applyPendingCue, so the seek happens where every other seek
+     * does -- a block's delay, which is nothing against the reason to cue
+     * at all.
      *
-     * A cue points a stream that is not sounding. One that is keeps playing and
-     * takes the cue up when it stops, because a single reader cannot be in two
-     * places: pointing it somewhere else would abandon the material still
-     * playing and hand back the pool holding it, for a position the next read
-     * would immediately override.
+     * A cue points a stream that isn't sounding. One that is keeps playing
+     * and takes the cue up when it stops, since a single reader can't be in
+     * two places: pointing it elsewhere would abandon the material still
+     * playing for a position the next read would immediately override.
      *
-     * A clip's loop does not come through here at all, which is what it took to
-     * make its return seamless. Reading the top of a loop through a cue would
-     * mean holding two positions at once, a second fill cursor and a second
-     * pool; instead the tiling happens below this, in what the stream reads
-     * (io/SourceReaders.hpp), so a wrap is a discontinuity in the material and
-     * a position like any other to everything here.
+     * A clip's loop doesn't come through here: reading the top of a loop
+     * through a cue would mean holding two positions at once. Instead
+     * tiling happens below this, in what the stream reads
+     * (io/SourceReaders.hpp), so a wrap is just a discontinuity in the
+     * material and a position like any other to everything here.
      */
     void seek(std::int64_t sourceStart);
 
     /**
      * @brief Take up a cue, if one is waiting. On the audio thread.
      *
-     * Once per block, at the top of it, by whoever drives the stream. Not done
-     * inside read(), and the difference matters: what decides whether a cue is
-     * taken up now or waits is whether this stream is sounding, and that
-     * question is only answerable at a block boundary. Asked again halfway
-     * through, a stream that simply has not reached its read yet looks exactly
-     * like one that is silent.
+     * Once per block, at the top of it, by whoever drives the stream. Not
+     * done inside read(): whether a cue is taken up now or waits depends on
+     * whether this stream is sounding, and that's only answerable at a
+     * block boundary -- asked mid-block, a stream that simply hasn't
+     * reached its read yet looks exactly like a silent one.
      *
-     * It has to be a separate call for the same reason. The stream a cue is
-     * most useful to is one nobody is reading from: a clip that has not started
-     * would otherwise not hear about it until the material was already due.
+     * It's a separate call for the same reason: the stream a cue is most
+     * useful to is one nobody is reading from, and a clip that hasn't
+     * started would otherwise not hear about it until the material was
+     * already due.
      */
     void applyPendingCue();
 
     /**
      * @brief Blocks the callback could not be given the samples for.
      *
-     * A seek costs at least one, because a disk cannot be read inside a
-     * callback. Anything beyond that is the reader failing to keep up, which is
-     * a property of the machine rather than of the music, and it has to be
-     * visible: silence that nobody counted is indistinguishable from a gap in
-     * the material.
+     * A seek costs at least one, since a disk can't be read inside a
+     * callback. Anything beyond that is the reader failing to keep up -- a
+     * property of the machine rather than the music -- and has to be
+     * visible, since silence nobody counted is indistinguishable from a gap
+     * in the material.
      *
-     * The end of the file is not an underrun. There is nothing late about
+     * The end of the file is not an underrun; there's nothing late about
      * silence past the last sample.
      */
     int underruns() const {

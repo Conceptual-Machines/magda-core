@@ -19,15 +19,12 @@ namespace te = tracktion;
 class AudioBridge;
 
 /**
- * @brief Bridges MAGDA's MIDI model to Tracktion Engine's MIDI system
+ * @brief Bridges MAGDA's MIDI model to Tracktion Engine's MIDI system.
  *
- * Responsibilities:
- * - Enumerate and manage MIDI input devices
- * - Route MIDI inputs to tracks
- * - Monitor MIDI activity for visualization
- * - Thread-safe communication between UI and audio threads
- *
- * Similar to AudioBridge, but for MIDI.
+ * Enumerates and manages MIDI input/output devices, routes inputs to tracks,
+ * and monitors MIDI activity for visualization, with thread-safe
+ * communication between the UI and audio threads. The MIDI counterpart to
+ * AudioBridge.
  */
 // ============================================================================
 // RawMidiListener
@@ -65,22 +62,23 @@ class MidiBridge : public juce::MidiInputCallback {
     MidiBridge& operator=(MidiBridge&&) = delete;
 
     /**
-     * @brief Set AudioBridge reference for triggering MIDI activity and track lookup
-     * Must be called after AudioBridge is created
+     * @brief Set the AudioBridge reference used for triggering MIDI activity
+     * and track lookup. Must be called after AudioBridge is created.
      */
     void setAudioBridge(AudioBridge* audioBridge);
 
     /**
-     * @brief Clear the AudioBridge pointer before it's destroyed
-     * Prevents dangling pointer between shutdown steps
+     * @brief Clear the AudioBridge pointer before it's destroyed, to avoid a
+     * dangling pointer between shutdown steps.
      */
     void clearAudioBridge() {
         audioBridge_ = nullptr;
     }
 
     /**
-     * @brief Enable/disable forwarding MIDI to instrument plugins
-     * When enabled, incoming MIDI is injected into Tracktion tracks
+     * @brief Enable/disable forwarding MIDI to instrument plugins.
+     *
+     * When enabled, incoming MIDI is injected into Tracktion tracks.
      * @param enabled True to forward MIDI to plugins
      */
     void setMidiToPluginsEnabled(bool enabled) {

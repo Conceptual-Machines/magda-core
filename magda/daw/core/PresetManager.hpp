@@ -203,9 +203,8 @@ class PresetManager {
     //
     // External producers (the AI sound-design agent, future preset-import
     // flows) can stash a default name keyed by DeviceId so the next save
-    // dialog on that device pre-fills the name field without needing the
-    // user to retype it. Values persist until overwritten or cleared —
-    // they're transient session state, never serialized.
+    // dialog on that device pre-fills it. Transient session state only,
+    // never serialized.
 
     void setSuggestedPresetName(DeviceId deviceId, const juce::String& name);
     juce::String getSuggestedPresetName(DeviceId deviceId) const;

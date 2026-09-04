@@ -46,7 +46,8 @@ class BindingRegistryListener {
  *
  * Thread-safety: mutations happen on the message thread; reads from the MIDI
  * thread are served via an atomic snapshot that is swapped on every mutation
- * across both scopes.
+ * across both scopes. Except where a query is explicitly marked MIDI-thread
+ * safe below, all queries run on the message thread.
  */
 class BindingRegistry {
   public:
@@ -111,11 +112,10 @@ class BindingRegistry {
     /**
      * @brief Find all bindings whose target resolves to a given ControlTarget.
      *
-     * Resolves each binding's target using a DefaultChainContext + TargetResolver.
-     * Must be called on the message thread.
-     *
-     * Kind-filtered so a macro-targeted binding at (path, 0, DeviceMacro) does NOT
-     * match a plugin-param query at (path, 0, PluginParam).
+     * Resolves each binding's target using a DefaultChainContext +
+     * TargetResolver, kind-filtered so a macro-targeted binding at (path, 0,
+     * DeviceMacro) does not match a plugin-param query at (path, 0,
+     * PluginParam).
      *
      * @return All matching bindings from both Global and Project scopes.
      */
@@ -123,115 +123,95 @@ class BindingRegistry {
 
     /**
      * @brief Remove all bindings whose target resolves to the given ControlTarget.
-     *
-     * Convenience wrapper: calls findFor, then removes each match from its scope.
-     * Must be called on the message thread.
-     *
      * @return Number of bindings removed.
      */
     int removeFor(const ControlTarget& target);
 
     /**
-     * @brief Return true if any binding (Global + Project) resolves to a target
-     * on this devicePath with the given owner kind AND has an active source.
+     * @brief True if any binding (Global + Project) resolves to a target on
+     * this devicePath with the given owner kind AND has an active source.
      *
-     * Used by device-header indicators to answer "is this device actively
-     * being driven by a controller?". Bindings whose source controller is
-     * registered but disabled are skipped so the indicator matches the
-     * ControllerRouter's actual routing behavior. Port-only bindings (no
-     * controllerId, from the Learn path) always count.
-     *
-     * Must be called on the message thread.
+     * For the "is this device actively driven by a controller?" device-header
+     * indicator. Bindings whose source controller is registered but disabled
+     * are skipped, to match ControllerRouter's actual routing. Port-only
+     * bindings (no controllerId, from the Learn path) always count.
      */
     bool hasBindingForDevice(const ChainNodePath& devicePath, ControlTarget::Kind owner) const;
 
     /**
-     * @brief Return true if any active focused-device-macro resolver binding
-     * currently resolves to this device — i.e. the device has automap-profile
-     * coverage, regardless of any user Learn'd bindings on top.
+     * @brief True if an active focused-device-macro resolver binding
+     * resolves to this device: automap-profile coverage, regardless of user
+     * Learn'd bindings on top.
      */
     bool hasResolverBindingForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return the owning controller of the first resolver (automap)
-     * binding that resolves to this device, or nullopt if none.
+     * @brief The owning controller of the first resolver (automap) binding
+     * that resolves to this device, or nullopt.
      *
      * Lets the caller gate the automap indicator on that controller's live
-     * connection / activation state instead of merely whether a profile
-     * mapping exists in config. See magda::controllers::isDeviceAutomapLive.
+     * connection/activation state rather than just config having a profile
+     * mapping. See magda::controllers::isDeviceAutomapLive.
      */
     std::optional<ControllerId> resolverControllerForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return true if any active explicit user mapping (ControlTarget or
-     * AliasRef) targets a parameter / macro / mod on this device. Excludes
+     * @brief True if any active explicit user mapping (ControlTarget or
+     * AliasRef) targets a parameter/macro/mod on this device. Excludes
      * resolver-based automap-profile bindings.
      */
     bool hasUserMappingForDevice(const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return the owning controller of the first explicit user mapping
-     * (ControlTarget / AliasRef, excluding resolver automap) that targets this
-     * device, or nullopt if none. Counterpart to resolverControllerForDevice
-     * for the pinned (user-mapped) indicator.
+     * @brief The owning controller of the first explicit user mapping
+     * (excluding resolver automap) targeting this device, or nullopt.
+     * Counterpart to resolverControllerForDevice, for the pinned
+     * (user-mapped) indicator.
      */
     std::optional<ControllerId> userMappingControllerForDevice(
         const ChainNodePath& devicePath) const;
 
     /**
-     * @brief Return true if any active binding (Global + Project) resolves to the
+     * @brief True if any active binding (Global + Project) resolves to the
      * given ControlTarget.
      *
-     * Same "active" semantics as hasBindingForDevice — bindings whose source
-     * controller is registered but disabled are skipped. Use this for
-     * per-parameter indicators (macro knobs, param slots, linkable sliders)
-     * instead of `!findFor(...).empty()` so the indicator disappears when the
-     * binding's controller is disabled.
-     *
-     * Must be called on the message thread.
+     * Same "active" semantics as hasBindingForDevice. Use for per-parameter
+     * indicators (macro knobs, param slots, linkable sliders) instead of
+     * `!findFor(...).empty()`, so the indicator drops when the binding's
+     * controller is disabled.
      */
     bool hasActiveBindingFor(const ControlTarget& target) const;
 
     /**
-     * @brief Return true if any active binding (Global + Project) for this macro
-     * is an explicit static target (ControlTarget owner=DeviceMacro) — i.e. came
-     * from a user MIDI Learn gesture, not an automap profile resolver.
-     *
-     * Used to paint the macro indicator orange (Learn override) vs green (profile
-     * default). Same "active" semantics as hasActiveBindingFor.
+     * @brief True if any active binding for this macro is an explicit static
+     * target (owner=DeviceMacro) from a user Learn gesture, rather than an
+     * automap resolver. Paints the macro indicator orange (Learn override)
+     * vs green (profile default).
      */
     bool hasActiveStaticBindingForMacro(const ChainNodePath& devicePath, int macroIndex) const;
 
     /**
-     * @brief Remove only user Learn'd static DeviceMacro bindings on (path, macroIndex).
-     *
-     * Mirrors hasActiveStaticBindingForMacro: leaves focused-device-macro
-     * resolver bindings (automap profile defaults) alone so the macro falls
-     * back to its profile mapping after the user clears their override.
+     * @brief Remove only user Learn'd static DeviceMacro bindings on (path,
+     * macroIndex), leaving resolver (automap profile) bindings alone so the
+     * macro falls back to its profile mapping.
      */
     int removeStaticBindingsForMacro(const ChainNodePath& devicePath, int macroIndex);
 
     /**
-     * @brief Return true when an automap profile binding (focused-device-macro
-     * resolver) targeting this (devicePath, macroIndex) is shadowed by an
-     * overlapping static PluginParam binding — i.e. a MIDI Learn override is
-     * stealing the CC and the green automap dot should drop.
-     *
-     * Must be called on the message thread.
+     * @brief True when an automap resolver binding at (devicePath,
+     * macroIndex) is shadowed by an overlapping static PluginParam binding:
+     * a Learn override is stealing the CC and the green automap dot should
+     * drop.
      */
     bool isAutomapShadowedForMacro(const ChainNodePath& devicePath, int macroIndex) const;
 
     /**
-     * @brief Return true when a static PluginParam binding at (devicePath,
-     * paramIndex) is overriding an overlapping focused-device-macro resolver
-     * binding — i.e. the param is stealing the CC from a profile-mapped macro
-     * and should paint a red override dot.
-     *
-     * The resolver-side binding is matched by its declared kind, regardless of
-     * whether it currently resolves to a focused device, so the indicator is
+     * @brief True when a static PluginParam binding at (devicePath,
+     * paramIndex) overrides an overlapping resolver binding: the param is
+     * stealing the CC from a profile-mapped macro and should paint a red
+     * override dot. The resolver side is matched by declared kind regardless
+     * of whether it currently resolves to a focused device, so this stays
      * stable across focus changes.
-     *
-     * Must be called on the message thread.
      */
     bool isPluginParamOverridingMacro(const ChainNodePath& devicePath, int paramIndex) const;
 
