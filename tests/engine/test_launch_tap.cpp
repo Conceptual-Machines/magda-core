@@ -9,10 +9,6 @@
 /**
  * @file test_launch_tap.cpp
  * @brief What a slot publishes about itself, and when (#2303).
- *
- * That the reading is the block's own rather than a frame behind it, that a
- * position and the state beside it are never from different blocks, and that a
- * slot nobody has rendered reads as the truth rather than as nothing.
  */
 
 using namespace magda;
@@ -82,8 +78,7 @@ struct Rig {
 }  // namespace
 
 TEST_CASE("A slot nobody has rendered reads as stopped", "[engine][session][launch][tap]") {
-    // Why the tap needs no write count: the default reading is already true, so
-    // there is nothing for one to disambiguate.
+    // Why the tap needs no write count.
     const LaunchTap tap;
     const auto reading = tap.read();
 
@@ -94,8 +89,6 @@ TEST_CASE("A slot nobody has rendered reads as stopped", "[engine][session][laun
 }
 
 TEST_CASE("A launch is published by the block that made it", "[engine][session][launch][tap]") {
-    // The whole of what replaces the poll: no frame of delay, and no second
-    // entry point for the case where that delay was noticed.
     Rig rig(1);
 
     {
@@ -110,8 +103,6 @@ TEST_CASE("A launch is published by the block that made it", "[engine][session][
 }
 
 TEST_CASE("A queued launch is visible before it sounds", "[engine][session][launch][tap]") {
-    // What a slot button blinks on. Queued at a beat two blocks out, so there
-    // are blocks in which the slot is queued and not yet playing.
     Rig rig(1);
 
     {
@@ -140,8 +131,7 @@ TEST_CASE("A queued launch is visible before it sounds", "[engine][session][laun
 
 TEST_CASE("A pending stop is visible while the slot still sounds",
           "[engine][session][launch][tap]") {
-    // What isSessionTrackStopPending answers by comparing intent against a
-    // polled state. Here the slot says so itself.
+    // What isSessionTrackStopPending answers by polling, asked of the slot.
     Rig rig(1);
 
     {
@@ -175,15 +165,12 @@ TEST_CASE("The published position is what the run has covered", "[engine][sessio
     rig.roll(1);
     rig.roll(2);
 
-    // Three blocks of a quarter beat. Unlooped, because wrapping it against the
-    // clip's own length is the UI's, and the length is the model's.
+    // Three blocks of a quarter beat, unlooped.
     CHECK(rig.reading().elapsedBeats == Catch::Approx(3.0 * kBeatsPerBlock).margin(1e-5));
 }
 
 TEST_CASE("A stop leaves the track held, and says so", "[engine][session][launch][tap]") {
-    // The #2302 distinction, read back: silence after a stop is the session
-    // still holding the track, and a UI that drew the arrangement as live would
-    // be drawing the opposite of what is sounding.
+    // #2302: silence after a stop is the session still holding the track.
     Rig rig(1);
 
     {
@@ -212,9 +199,7 @@ TEST_CASE("A stop leaves the track held, and says so", "[engine][session][launch
 }
 
 TEST_CASE("A reading is one block's own", "[engine][session][launch][tap]") {
-    // The reason the position and the state are one word. A slot launched this
-    // block must not read as playing beside a position from before it started,
-    // nor as stopped beside one that has moved.
+    // Why position and state are one word.
     Rig rig(1);
 
     {
@@ -254,9 +239,7 @@ TEST_CASE("Every slot of a scene publishes the same position", "[engine][session
 
 TEST_CASE("A slot goes on publishing while the transport is stopped",
           "[engine][session][launch][tap]") {
-    // A stopped engine renders no blocks, so the tap holds. Holding is the
-    // right answer: the slot really is where it was left, and a UI that
-    // simulated one forward would diverge from the audio at the next launch.
+    // A stopped engine renders no blocks, so the tap holds where it was left.
     Rig rig(1);
 
     {

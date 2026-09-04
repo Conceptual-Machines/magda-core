@@ -266,12 +266,8 @@ class RuntimeStateStore {
     /// @brief The handle for @p key, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
-    /**
-     * @brief Where @p key's state is published, or null (#2303).
-     *
-     * Made and retired with the handle beside it, so a pointer taken from here
-     * is good until the next publishHandles() that stops naming the slot.
-     */
+    /// @brief Where @p key's state is published, or null (#2303). Made and
+    ///        retired with the handle beside it.
     const LaunchTap* launchTap(const SlotKey& key) const;
 
     /// @brief Objects currently owned, for tests and diagnostics.
@@ -303,8 +299,8 @@ class RuntimeStateStore {
         std::unique_ptr<LaunchHandle> handle;
         std::uint64_t incarnation = 0;
 
-        /// Beside the handle rather than in the table, so the address a host
-        /// read stays put across a publish that did not retire the slot.
+        /// Beside the handle, so a host's pointer survives a publish that did
+        /// not retire the slot.
         std::unique_ptr<LaunchTap> tap;
     };
 
