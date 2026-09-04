@@ -1378,3 +1378,43 @@ TEST_CASE("A structural edit under a playing slot does not restart it",
     // and the clip half a bar ahead of the transport.
     CHECK(still->end == running->end + magda::engine::SampleDuration{3 * kBlockSize});
 }
+
+TEST_CASE("A slot's state is readable off the session as the block leaves it",
+          "[engine][session][launch][tap]") {
+    // The store makes a tap with the handle and the launcher writes it, so a
+    // host reads what the block decided rather than polling for it (#2303).
+    LauncherFactory factory;
+    EngineSession session(factory);
+    factory.handles = &session.launchHandleFeed();
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    REQUIRE(publish(session, compile(tracks), tracks).published);
+
+    session.publishTransport(rolling(0.0));
+    session.publishClips(snapshotWithSlot(1, 0));
+
+    const auto slot = magda::engine::SlotKey{1, 0};
+    const auto* tap = session.launchTap(slot);
+    REQUIRE(tap != nullptr);
+    CHECK(session.launchTap(magda::engine::SlotKey{1, 3}) == nullptr);
+
+    CHECK_FALSE(tap->read().playing);
+
+    {
+        magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
+        gesture.play(slot);
+    }
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    session.process(kBlockSize, output);
+
+    const auto playing = tap->read();
+    CHECK(playing.playing);
+    CHECK(playing.holdsSection);
+    CHECK(playing.elapsedBeats > 0.0f);
+
+    // The same publish again keeps the tap the host is already reading: an edit
+    // elsewhere must not hand it a pointer to nothing.
+    session.publishClips(snapshotWithSlot(1, 0));
+    CHECK(session.launchTap(slot) == tap);
+}

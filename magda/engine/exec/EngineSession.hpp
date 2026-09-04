@@ -171,12 +171,26 @@ class EngineSession {
     }
 
     /**
+     * @brief Where @p key's state is published for the UI, or null (#2303).
+     *
+     * What a slot button and a session playhead draw from. Read from any
+     * thread, as often as a repaint likes; the block that decided the state is
+     * what published it, so nothing polls and nothing is a frame behind.
+     *
+     * The pointer belongs to the publishing thread and is good until a
+     * publishClips() stops naming the slot, which is the same lifetime
+     * valueTap() hands out. Null until publishClips() has named it.
+     */
+    const LaunchTap* launchTap(const SlotKey& key) const {
+        return store_.launchTap(key);
+    }
+
+    /**
      * @brief The handle for @p key, or null. On the publishing thread.
      *
-     * To read, and only to read: a handle is advanced on the audio thread, so
-     * changing one from here races the callback. Every change goes through
-     * @ref launchRequests. Reading is itself only nearly safe, and is what
-     * there is until the read-back path is built (#2303).
+     * For tests and diagnostics. What the state is belongs to @ref launchTap
+     * and what changes it belongs to @ref launchRequests; a handle is advanced
+     * on the audio thread, so reading one from here races the callback.
      */
     const LaunchHandle* launchHandle(const SlotKey& key) const {
         return store_.findHandle(key);

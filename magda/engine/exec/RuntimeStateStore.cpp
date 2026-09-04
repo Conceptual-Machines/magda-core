@@ -333,10 +333,11 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
                 // the handle that was here can never match its replacement.
                 made.handle = std::make_unique<LaunchHandle>();
                 made.incarnation = ++nextIncarnation_;
+                made.tap = std::make_unique<LaunchTap>();
             }
 
             table->entries.push_back(
-                LaunchHandleTable::Entry{key, made.handle.get(), made.incarnation});
+                LaunchHandleTable::Entry{key, made.handle.get(), made.incarnation, made.tap.get()});
         }
 
     // Sorted on arrival, since a snapshot holds tracks by id and slots by
@@ -376,6 +377,11 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
 LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
     const auto it = handles_.find(key);
     return it == handles_.end() ? nullptr : it->second.handle.get();
+}
+
+const LaunchTap* RuntimeStateStore::launchTap(const SlotKey& key) const {
+    const auto it = handles_.find(key);
+    return it == handles_.end() ? nullptr : it->second.tap.get();
 }
 
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {

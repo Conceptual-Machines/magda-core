@@ -114,8 +114,14 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
     const auto range = syncRangeFor(block);
 
     for (const auto& entry : table->entries)
-        if (entry.handle != nullptr)
+        if (entry.handle != nullptr) {
             entry.handle->advance(range);
+
+            // Published by the block that decided it, so the UI is never a
+            // frame behind the audio and has nothing to poll (#2303).
+            if (entry.tap != nullptr)
+                entry.tap->write(*entry.handle);
+        }
 }
 
 }  // namespace magda::engine
