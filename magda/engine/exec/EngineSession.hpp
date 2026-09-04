@@ -162,27 +162,21 @@ class EngineSession {
     /**
      * @brief Where a launch is asked for, from off the audio thread (#2305).
      *
-     * Ask through a `LaunchRequestQueue::Gesture`, which is what decides where
-     * one gesture ends: everything inside its scope reaches the audio thread
-     * together, so a scene launches on one sample.
-     *
-     * A request names a slot, so asking for one that does not exist is a
-     * request that does nothing rather than a pointer into a retired handle.
+     * Ask through a `LaunchRequestQueue::Gesture`: everything inside its scope
+     * reaches the audio thread together, so a scene launches on one sample.
+     * A request names a slot, so asking for one that has gone does nothing.
      */
     LaunchRequestQueue& launchRequests() {
         return requests_;
     }
 
     /**
-     * @brief The handle for one slot, or null. On the publishing thread.
+     * @brief The handle for @p key, or null. On the publishing thread.
      *
      * To read, and only to read: a handle is advanced on the audio thread, so
      * changing one from here races the callback. Every change goes through
-     * @ref launchRequests.
-     *
-     * Reading is itself only nearly safe, and it is what there is until the
-     * read-back path is built (#2303). Null until publishClips() has named the
-     * slot.
+     * @ref launchRequests. Reading is itself only nearly safe, and is what
+     * there is until the read-back path is built (#2303).
      */
     const LaunchHandle* launchHandle(const SlotKey& key) const {
         return store_.findHandle(key);

@@ -23,11 +23,9 @@
  * header is explicit that the fork owns the state and MAGDA only sends it
  * commands. Replacing that state is what this is for.
  *
- * Threading is not decided here, and still is not: this is a plain object,
- * requested and then advanced, with no synchronisation of its own. What made
- * that safe is that nothing calls it from two threads. The audio thread
- * advances it; every request reaches it down the queue in LaunchRequests.hpp
- * and is applied on that same thread, in the same pass, before any advance
+ * No synchronisation of its own, because nothing calls it from two threads: the
+ * audio thread advances it, and every request reaches it down the queue in
+ * LaunchRequests.hpp and is applied on that same thread ahead of the advance
  * (#2305). Its lifetime is the plan-swap epoch's, in
  * RuntimeStateStore::publishHandles.
  */

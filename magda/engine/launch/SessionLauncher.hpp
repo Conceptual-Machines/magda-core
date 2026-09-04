@@ -47,11 +47,9 @@ struct LaunchHandleTable {
         SlotKey key;
         LaunchHandle* handle = nullptr;
 
-        /// Which handle this slot is on. A slot emptied and refilled is the
-        /// same key and a different clip, so a request made against the one
-        /// that has gone has to be told apart from one made against this one
-        /// (#2305 review). Assigned by RuntimeStateStore::publishHandles when
-        /// it makes a handle, and never reused.
+        /// Which handle this slot is on: a slot emptied and refilled is the
+        /// same key on a different clip. Assigned by
+        /// RuntimeStateStore::publishHandles, and never reused (#2305).
         std::uint64_t incarnation = 0;
 
         bool operator==(const Entry&) const = default;
@@ -59,16 +57,19 @@ struct LaunchHandleTable {
 
     std::vector<Entry> entries;
 
-    /// The half-open range of entries belonging to @p trackId, in scene order.
-    /// Empty for a track with no slots. On the audio thread: a binary search
-    /// over a sorted vector.
+    /**
+     * @brief The half-open range of entries belonging to @p trackId, in scene
+     *        order, or an empty range for a track with no slots.
+     *
+     * On the audio thread: a binary search over a sorted vector.
+     */
     std::pair<const Entry*, const Entry*> rangeFor(TrackId trackId) const;
 
-    /// The handle for one slot, or null.
+    /// @brief The handle for @p key, or null.
     LaunchHandle* find(const SlotKey& key) const;
 
-    /// The whole entry for one slot, or null, which is what a caller needs when
-    /// it has to check the incarnation as well as find the handle.
+    /// @brief The whole entry for @p key, or null, for a caller that has to
+    ///        check the incarnation as well as find the handle.
     const Entry* findEntry(const SlotKey& key) const;
 };
 
@@ -119,12 +120,12 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
 /**
  * @brief Apply what has been asked, then advance every handle over @p block.
  *
- * On the audio thread, once per block, before anything renders. Every handle: a
- * stopped one may have a launch queued inside this block.
+ * On the audio thread, once per block, before anything renders. Every handle,
+ * because a stopped one may have a launch queued inside this block.
  *
- * The two halves are one call because the order between them is the whole of
- * what makes a launch land in the block it was asked in. @p requests is drained
- * whole first, so a scene reaches every handle before any of them has moved.
+ * One call rather than two: @p requests is drained whole first, so a launch
+ * lands in the block it was asked in and a scene reaches every handle before
+ * any of them has moved.
  */
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
                           const BlockInfo& block);

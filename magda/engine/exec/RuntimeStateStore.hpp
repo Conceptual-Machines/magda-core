@@ -254,15 +254,19 @@ class RuntimeStateStore {
      * Nothing is swapped or retired when the slots haven't moved, so a drag
      * republishing the snapshot at gesture speed with the same slots is
      * free.
+     *
+     * @p requests is told the incarnations this publish assigns, so a launch
+     * asked for against a handle that has gone is dropped rather than applied
+     * to the one that replaced it (#2305).
      */
     std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
                                                             LaunchHandleFeed& feed,
                                                             LaunchRequestQueue& requests);
 
-    /// The handle for one slot, or null when no published snapshot names it.
+    /// @brief The handle for @p key, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
-    /// Objects currently owned, for tests and diagnostics.
+    /// @brief Objects currently owned, for tests and diagnostics.
     std::size_t size() const;
 
   private:
@@ -285,9 +289,8 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> sessionMidi_;
 
-    /// A slot's handle and which handle it is. The incarnation is what tells a
-    /// request made against the clip that was here from one made against the
-    /// clip that replaced it, since the key is the same either way (#2305).
+    /// A slot's handle and which handle it is, since a request made against the
+    /// clip that was here has the same key as one made against its replacement.
     struct Slot {
         std::unique_ptr<LaunchHandle> handle;
         std::uint64_t incarnation = 0;
@@ -299,7 +302,7 @@ class RuntimeStateStore {
     std::map<SlotKey, Slot> handles_;
 
     /// Never reused, so an incarnation names one handle for the life of the
-    /// session rather than one handle per slot at a time.
+    /// session.
     std::uint64_t nextIncarnation_ = 0;
 
     /// What was last published, so a publish that changes nothing is skipped.

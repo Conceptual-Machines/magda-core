@@ -159,17 +159,16 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
 
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
 
-    // Nothing to launch into. Dropped rather than kept, for the reason a
-    // request for a slot that has gone is dropped: holding one until a plan
-    // appeared would start a clip at whatever moment that turned out to be.
+    // Nothing to launch into. Dropped rather than kept: holding a request until
+    // a plan appeared would start a clip at whatever moment that turned out to
+    // be.
     if (*render == nullptr) {
         requests_.drain([](const LaunchRequest&) {});
         return;
     }
 
-    // A callback of no samples is not a block, so nothing is applied and
-    // nothing is advanced: whatever has been asked is still asked at the next
-    // real one.
+    // A callback of no samples is not a block, so whatever has been asked is
+    // still asked at the next real one.
     if (numSamples <= 0)
         return;
 
@@ -216,8 +215,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
 
         // Before the plan, and over every handle rather than the ones this plan
         // renders: a handle must see each block exactly once and a slot has two
-        // sources reading it (SessionLauncher.hpp). What has been asked since
-        // the last block is applied in the same pass, ahead of every advance.
+        // sources reading it. What has been asked since the last block is
+        // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
         advanceLaunchHandles(handles_, requests_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);

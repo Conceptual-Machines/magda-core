@@ -35,16 +35,15 @@ LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
 
 namespace {
 
-/// One request against the table that is live now. A slot the table does not
-/// name is one emptied between the ask and this block, and there is nothing
-/// left to ask.
-///
-/// The incarnation is the rest of that question. A slot emptied and refilled
-/// between the ask and this block is the same key on a different clip, and
-/// applying the launch to it would start something the user never clicked
-/// (#2305 review). The key alone cannot tell those apart; the incarnation can,
-/// and it is a number rather than a pointer, so nothing here holds a handle
-/// that could have been retired.
+/**
+ * @brief Apply @p request against the table that is live now.
+ *
+ * Dropped when the slot has gone, and equally when it was emptied and refilled:
+ * that is the same key on a different clip, and launching it would start
+ * something the user never clicked. The incarnation is what tells those apart,
+ * and it is a number rather than a pointer, so nothing here can name a retired
+ * handle.
+ */
 void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
     const auto* entry = table.findEntry(request.key);
     if (entry == nullptr || entry->handle == nullptr || entry->incarnation != request.incarnation)
@@ -55,21 +54,15 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
     switch (request.kind) {
         case LaunchRequest::Kind::play:
             if (request.syncTo) {
-                // The run to join is the one that handle holds now, which is
-                // why the request carries a slot and not a run: a scene launch
-                // decided on the message thread would join where the leader was
-                // a block ago.
+                // A slot and not a run, so the run joined is the one the leader
+                // holds now rather than where it was when the gesture was made.
                 if (const auto* with = table.find(*request.syncTo); with != nullptr) {
-                    // Unless the leader has a launch of its own still queued, in
-                    // which case it has no run to join yet: the one it is about
-                    // to begin is the one the follower means. Joining what it is
-                    // playing now would put the follower on the run the leader
-                    // is leaving, and a scene relaunched while it was already
-                    // playing would come back out of phase with itself.
-                    //
-                    // Both then begin fresh on the same instant, which is the
-                    // same origin, because a run's origin is the sample it
-                    // started on and nothing else (#2336).
+                    // A leader with a launch of its own still queued has no run
+                    // to join yet, and the one it is about to begin is the one
+                    // the follower means. Both then begin on the same instant,
+                    // which is the same origin (#2336); joining what it is
+                    // playing would leave a relaunched scene out of phase with
+                    // itself.
                     if (with->queuedState() == LaunchHandle::QueueState::playQueued) {
                         handle->play(with->queuedPosition());
                         return;
@@ -79,9 +72,8 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
                     return;
                 }
 
-                // The leader's slot was emptied in between. Starting alone is
-                // the honest answer: the clip was asked to play, and there is
-                // no longer anything for it to be in phase with.
+                // The leader's slot was emptied in between, so there is nothing
+                // left to be in phase with.
             }
 
             handle->play(request.position);
@@ -107,16 +99,16 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
                           const BlockInfo& block) {
     const LaunchHandleFeed::Reader table(handles);
 
-    // Drained whether or not there is a table to apply it to. A queue left
-    // filling while no session is published would deliver a launch made minutes
-    // ago at whatever moment one appeared.
+    // Drained whether or not there is a table to apply it to: a queue left
+    // filling would deliver a launch made minutes ago at whatever moment a
+    // session appeared.
     if (!table) {
         requests.drain([](const LaunchRequest&) {});
         return;
     }
 
     // Every request before any advance, so a scene reaches all of its handles
-    // while they are still on the same block.
+    // on the same block.
     requests.drain([&table](const LaunchRequest& request) { apply(request, *table.get()); });
 
     const auto range = syncRangeFor(block);

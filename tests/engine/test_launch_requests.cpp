@@ -10,9 +10,9 @@
  * @brief What a launch asked for off the audio thread does when it gets there
  *        (#2305).
  *
- * The lane, not the state machine: that a request lands in the block it was
- * asked in, keeps its order, cannot be applied twice, and cannot reach a slot
- * that has gone. LaunchHandle's own behaviour is test_launch_handle.cpp's.
+ * The lane, not the state machine: the block a request lands in, the order it
+ * keeps, and that it cannot be applied twice or reach a slot that has gone.
+ * LaunchHandle's own behaviour is test_launch_handle.cpp's.
  */
 
 using namespace magda;
@@ -44,8 +44,8 @@ BlockInfo blockAt(int index) {
     return block;
 }
 
-/// A published table over handles the case owns, which is what the store makes
-/// for real. Handles are held by the caller so a case can read one directly.
+/// A published table over handles the case owns, so a case can read one
+/// directly.
 struct Rig {
     /// @p scenes on kTrack, one handle each.
     explicit Rig(int scenes) : handles(static_cast<std::size_t>(scenes)) {
@@ -64,8 +64,8 @@ struct Rig {
         advanceLaunchHandles(feed, requests, blockAt(index));
     }
 
-    /// Republish this rig's handles under @p incarnation, and tell the queue,
-    /// which is the pair RuntimeStateStore::publishHandles keeps in step.
+    /// Republish under @p incarnation and tell the queue: the pair
+    /// RuntimeStateStore::publishHandles keeps in step.
     void publishWithIncarnation(std::uint64_t incarnation) {
         auto table = std::make_shared<LaunchHandleTable>();
         std::map<SlotKey, std::uint64_t> stamped;
@@ -122,8 +122,8 @@ TEST_CASE("A request reaches its handle on the next block and no earlier",
 }
 
 TEST_CASE("A request is applied once and not again", "[engine][session][launch]") {
-    // The whole reason the lane is a queue rather than a published table: a
-    // request left standing would retrigger the clip every block.
+    // Why the lane is a queue and not a published table: a request left
+    // standing would retrigger the clip every block.
     Rig rig(1);
 
     {
@@ -201,10 +201,9 @@ TEST_CASE("A scene launch arrives as one thing", "[engine][session][launch]") {
 
 TEST_CASE("Relaunching a scene whose leader is already playing keeps it in phase",
           "[engine][session][launch]") {
-    // The leader's play() only queues: its run_ is still the old one when the
-    // followers are applied in the same gesture. Joining that run would put the
-    // followers on the run the leader is about to leave, and the scene would
-    // come back out of phase with itself (#2305 review).
+    // The leader's play() only queues, so its run_ is still the old one when
+    // the followers are applied in the same gesture. Joining it would leave the
+    // scene out of phase with itself.
     Rig rig(3);
 
     {
@@ -303,10 +302,9 @@ TEST_CASE("A request for a slot that is not there does nothing", "[engine][sessi
 
 TEST_CASE("A request cannot launch the clip that replaced the one it named",
           "[engine][session][launch]") {
-    // The ordering the first refill case does not reach: the request is still
-    // in the queue when the slot is emptied and refilled, so the drain finds a
-    // live handle under the key it named. The key alone says yes; the
-    // incarnation is what says no (#2305 review).
+    // The request is still queued when the slot is emptied and refilled, so the
+    // drain finds a live handle under the key it named. The key alone says yes;
+    // the incarnation says no.
     Rig rig(1);
 
     // What publishHandles stamps a handle with. The first table's entry carries
@@ -333,7 +331,7 @@ TEST_CASE("A request cannot launch the clip that replaced the one it named",
 
 TEST_CASE("A request still matches the handle it was made against", "[engine][session][launch]") {
     // The other half: an incarnation that has not moved must not drop the
-    // request, or nothing would ever launch.
+    // request.
     Rig rig(1);
     rig.publishWithIncarnation(7);
 
@@ -348,9 +346,8 @@ TEST_CASE("A request still matches the handle it was made against", "[engine][se
 
 TEST_CASE("A slot emptied and refilled does not inherit what was asked of the last one",
           "[engine][session][launch]") {
-    // The property that made this a queue and not a table of intents. A request
-    // is consumed by the block it reaches, so a handle made afterwards has
-    // nothing standing against its slot.
+    // A request is consumed by the block it reaches, so a handle made
+    // afterwards has nothing standing against its slot.
     Rig rig(1);
 
     {
@@ -394,7 +391,7 @@ TEST_CASE("Back to arrangement travels the same lane", "[engine][session][launch
 }
 
 TEST_CASE("A stop leaves the track held until it is given back", "[engine][session][launch]") {
-    // The difference #2302 settled, over the lane: stopping is not handing back.
+    // What #2302 settled, over the lane: stopping is not handing back.
     Rig rig(1);
 
     {
@@ -414,8 +411,8 @@ TEST_CASE("A stop leaves the track held until it is given back", "[engine][sessi
 }
 
 TEST_CASE("A request made while nothing is published is not kept", "[engine][session][launch]") {
-    // A queue filling while no session exists would deliver a launch made
-    // minutes ago at whatever moment one appeared.
+    // A launch made minutes ago must not fire at whatever moment a session
+    // appears.
     Rig rig;
 
     {
@@ -435,8 +432,8 @@ TEST_CASE("A request made while nothing is published is not kept", "[engine][ses
 }
 
 TEST_CASE("A gesture too large for the ring is dropped whole", "[engine][session][launch]") {
-    // Half a scene launching is worse than none: the tracks that made it would
-    // be a bar ahead of the ones that did not for as long as they played.
+    // Half a scene launching leaves those tracks a bar ahead of the rest for as
+    // long as they play.
     Rig rig(1);
 
     {
@@ -477,8 +474,8 @@ TEST_CASE("A gesture that exactly fills the ring is kept", "[engine][session][la
 }
 
 TEST_CASE("The ring is reusable once its requests have been read", "[engine][session][launch]") {
-    // The cursors are counts rather than indices, so the capacity is what is
-    // outstanding and not what has ever been asked.
+    // The cursors are counts, not indices: the capacity bounds what is
+    // outstanding, not what has ever been asked.
     Rig rig(1);
 
     for (auto round = 0; round < 4; ++round) {

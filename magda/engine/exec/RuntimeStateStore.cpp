@@ -329,11 +329,9 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
 
             auto& made = handles_[key];
             if (made.handle == nullptr) {
-                made.handle = std::make_unique<LaunchHandle>();
-
                 // Counted up rather than reused, so a request stamped against
-                // the handle that was here can never match the one that
-                // replaced it (#2305 review).
+                // the handle that was here can never match its replacement.
+                made.handle = std::make_unique<LaunchHandle>();
                 made.incarnation = ++nextIncarnation_;
             }
 
@@ -354,9 +352,8 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
     publishedHandles_ = table;
 
     // Before the swap, so a request made from here on carries the incarnation
-    // the table about to go live names. One made before it carries the old one
-    // and is dropped when it arrives, which is the whole point: the slot it was
-    // aimed at is not the slot that is there now.
+    // the table about to go live names, and one made before it is dropped when
+    // it arrives.
     std::map<SlotKey, std::uint64_t> incarnations;
     for (const auto& entry : table->entries)
         incarnations[entry.key] = entry.incarnation;

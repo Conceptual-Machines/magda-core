@@ -1298,8 +1298,8 @@ TEST_CASE("A launch published with the clips reaches the audio thread", "[engine
     REQUIRE(session.launchHandle(slot) != nullptr);
     CHECK(session.launchHandle(magda::engine::SlotKey{1, 3}) == nullptr);
 
-    // Asked for from off the audio thread and applied by the block it reaches,
-    // which is the lane rather than a pointer into the handle (#2305).
+    // Asked for from off the audio thread and applied by the block it reaches:
+    // the lane rather than a pointer into the handle (#2305).
     {
         magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
         gesture.play(slot);
@@ -1319,10 +1319,9 @@ TEST_CASE("A launch published with the clips reaches the audio thread", "[engine
 
 TEST_CASE("A structural edit under a playing slot does not restart it",
           "[engine][session][launch]") {
-    // #2305's requirement, end to end: a track added while a scene plays
-    // compiles a new plan and swaps it in, and the clip that was sounding goes
-    // on sounding from where it was. Handles live in the store rather than in
-    // the plan, so the swap has nothing of theirs to take.
+    // A track added while a scene plays compiles a new plan and swaps it in,
+    // and the clip that was sounding goes on from where it was: handles live in
+    // the store, so the swap has nothing of theirs to take (#2305).
     LauncherFactory factory;
     EngineSession session(factory);
     factory.handles = &session.launchHandleFeed();
@@ -1375,8 +1374,7 @@ TEST_CASE("A structural edit under a playing slot does not restart it",
     // the launcher has anything to say about.
     CHECK(still->start == running->start);
 
-    // Not doubled: three more blocks is three more blocks. Advanced twice over
-    // a swap, the run would be six blocks long and the clip half a bar ahead of
-    // where the transport says it is.
+    // Not doubled: advanced twice over a swap, the run would be six blocks long
+    // and the clip half a bar ahead of the transport.
     CHECK(still->end == running->end + magda::engine::SampleDuration{3 * kBlockSize});
 }
