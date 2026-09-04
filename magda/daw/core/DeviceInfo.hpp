@@ -4,6 +4,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "KitRow.hpp"
 #include "MacroInfo.hpp"
@@ -452,6 +453,26 @@ struct DeviceInfo {
     bool hasEditorWindow() const {
         return format != PluginFormat::Internal;
     }
+
+    /// Anything upstream MIDI reaches: an instrument, a MIDI effect, or a plugin
+    /// that declared a MIDI input.
+    bool consumesMidi() const {
+        return isInstrument || canReceiveMidi || deviceType == DeviceType::MIDI;
+    }
+
+    /// Its MIDI output port carries what it produced: a MIDI effect, or a plugin
+    /// that declared a MIDI output.
+    bool emitsMidi() const {
+        return producesMidi || deviceType == DeviceType::MIDI;
+    }
+
+    /// Analysis devices are transparent passthroughs: no gain trim, no meter.
+    bool isTransparentTap() const {
+        return deviceType == DeviceType::Analysis;
+    }
+
+    /// Index of the parameter declared under @p stableId, or -1.
+    int paramIndexFor(const std::string& stableId) const;
 };
 
 }  // namespace magda

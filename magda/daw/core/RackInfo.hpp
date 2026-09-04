@@ -88,6 +88,12 @@ struct ChainInfo {
         return lowNote > highNote;
     }
 
+    /// Compiled at all: not bypassed, and on the main output. Aux-routed chains
+    /// are not wired yet.
+    bool isActive() const {
+        return !bypassed && outputIndex == 0;
+    }
+
     // UI state
     bool expanded = true;
 

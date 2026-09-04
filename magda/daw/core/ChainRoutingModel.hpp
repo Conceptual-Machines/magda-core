@@ -77,7 +77,7 @@ inline bool usesExternalMidiSidechain(const DeviceInfo& device) {
 
 inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
     const auto externalMidiSidechain = usesExternalMidiSidechain(device);
-    const auto outputsMidi = device.producesMidi || device.deviceType == DeviceType::MIDI;
+    const auto outputsMidi = device.emitsMidi();
 
     ChainRoutingNode node;
     node.kind = ChainRoutingNodeKind::Device;

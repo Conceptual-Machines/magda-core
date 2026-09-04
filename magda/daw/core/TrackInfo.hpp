@@ -288,6 +288,12 @@ struct TrackInfo {
         return inputMonitor != InputMonitorMode::Off || recordArmed;
     }
 
+    /// Live input reaches the chain: armed, or monitoring set to In. Narrower
+    /// than receivesLiveMidiInput, which answers for the UI's activity light.
+    bool monitorsInput() const {
+        return recordArmed || inputMonitor == InputMonitorMode::In;
+    }
+
     // View settings helpers
     bool isVisibleIn(ViewMode mode) const {
         return viewSettings.isVisible(mode);
