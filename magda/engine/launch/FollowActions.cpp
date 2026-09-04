@@ -9,13 +9,8 @@ namespace magda::engine {
 
 namespace {
 
-/**
- * @brief Which of @p count slots a random action picks, at @p dueBeat.
- *
- * A hash rather than a generator with state, so two renders of one project
- * produce one file (#1896). splitmix64's finaliser: its avalanche is what makes
- * two adjacent beats pick unrelated slots.
- */
+/// Scrambles @p value for @ref randomIndex below, so that inputs one bit apart
+/// come out unrelated. splitmix64's finaliser, whose constants are tuned for it.
 std::uint64_t mix(std::uint64_t value) {
     value += 0x9e3779b97f4a7c15ULL;
     value = (value ^ (value >> 30U)) * 0xbf58476d1ce4e5b9ULL;
@@ -23,6 +18,12 @@ std::uint64_t mix(std::uint64_t value) {
     return value ^ (value >> 31U);
 }
 
+/**
+ * @brief Which of @p count slots a random action picks, at @p dueBeat.
+ *
+ * Drawn by hashing the slot and the instant rather than by a generator with
+ * state, so two renders of one project produce one file (#1896).
+ */
 std::size_t randomIndex(const SlotKey& key, double dueBeat, std::size_t count) {
     auto seed = mix(static_cast<std::uint64_t>(static_cast<std::uint32_t>(key.trackId)));
     seed = mix(seed ^ static_cast<std::uint64_t>(static_cast<std::uint32_t>(key.sceneIndex)));
