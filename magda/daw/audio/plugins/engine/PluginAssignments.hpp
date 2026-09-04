@@ -10,33 +10,28 @@
  * @file PluginAssignments.hpp
  * @brief Who a plugin is being loaded for, owned at runtime (#2261).
  *
- * An asynchronous plugin load takes seconds, and the answer has to be refused
- * when it comes back for a device that is no longer asking. Mutable plugin
- * metadata cannot decide that: resolution deliberately tolerates a moved file,
- * a renamed plugin, a missing vendor and an unreliable imported role, so a
- * comparison of names or paths finds a legitimate correction indistinguishable
- * from a swap. The question needs an identity nothing about the plugin can
- * change.
+ * An async plugin load takes seconds, and a stale answer must be refused
+ * when the device that asked for it is no longer asking. Mutable plugin
+ * metadata can't decide that: resolution deliberately tolerates a moved
+ * file, a renamed plugin, a missing vendor, an unreliable imported role -- so
+ * comparing names or paths can't tell a legitimate correction from a swap.
  *
- * That identity used to live in the model, as a counter on DeviceInfo minted by
- * whichever call site remembered to. It could not hold: DeviceInfo is a value,
- * and C++ copying cannot tell a snapshot from an undo record from a browser
- * template from a duplicate from a paste from a new live placement. The
- * invariant survived only as a habit, missed sites were found one at a time,
- * and a missed one failed the wrong way -- the copy kept the token, so a stale
- * load was *accepted* and one plugin's state was restored onto another.
+ * Identity used to live in the model, as a counter on DeviceInfo minted by
+ * whichever call site remembered to. That failed: DeviceInfo is a value, and
+ * copying it can't distinguish a snapshot from an undo record from a
+ * duplicate from a new live placement. A missed call site failed the wrong
+ * way -- the copy kept the token, so a stale load was accepted and one
+ * plugin's state got restored onto another.
  *
- * So identity is owned here instead, by whoever runs the plugins, and it is a
- * pointer rather than a number. A device that becomes live gets a handle; the
- * request holds a weak reference to it, and to the table it lives in; a load is
- * accepted only if that table still holds that same handle for that same key.
- * Nothing in the model carries it, so no copy, re-key or serialization path can
- * get it wrong, and a device that was never registered has no handle to lend --
- * which rejects its load rather than accepting it.
+ * So identity is owned here, as a pointer rather than a number. A live
+ * device gets a handle; a request holds a weak reference to it and to the
+ * table it lives in; a load is accepted only if the table still holds that
+ * same handle for that same key. Nothing in the model carries it, so no
+ * copy, re-key or serialization path can get it wrong, and an unregistered
+ * device has no handle to lend, so its load is rejected rather than accepted.
  *
- * Message thread only. Registration happens as devices are placed, and JUCE
- * calls an asynchronous load back on the message thread, so both ends of the
- * question are already there.
+ * Message thread only: registration happens as devices are placed, and JUCE
+ * calls an async load back on the message thread too.
  */
 
 namespace magda::daw::audio::engine_adapter {
@@ -44,21 +39,21 @@ namespace magda::daw::audio::engine_adapter {
 /**
  * @brief The identity of one live plugin assignment.
  *
- * Deliberately empty: it is identified by its address and by nothing else, so
- * there is no field a copy could carry and no value a caller could forge. Held
- * by shared_ptr so a request can hold a weak reference that expires on its own
- * when the assignment ends.
+ * Deliberately empty: identified by its address alone, so there's no field a
+ * copy could carry and no value a caller could forge. Held by shared_ptr so
+ * a request can hold a weak reference that expires on its own when the
+ * assignment ends.
  */
 struct AssignmentHandle {};
 
 /**
  * @brief The live set, held apart from the object that manages it.
  *
- * A load in flight outlives things. The project can be closed and the runtime
- * that owns the assignments destroyed while a plugin is still loading, and the
- * completion that arrives afterwards still has to answer -- so it cannot answer
- * by dereferencing the owner. It holds a weak reference to this instead, and a
- * table that is gone is a load nobody is waiting for.
+ * A load in flight can outlive its owner: the project can close and the
+ * runtime destroy the assignments while a plugin is still loading, and the
+ * completion that arrives afterward still has to answer without
+ * dereferencing anything gone. It holds a weak reference to this instead --
+ * a table that's gone is simply a load nobody is waiting for.
  */
 class AssignmentTable {
   public:
@@ -87,23 +82,22 @@ struct ActiveAssignment {
 /**
  * @brief What an asynchronous operation remembers about the device it is for.
  *
- * Both directions carry one. A load is answered by a plugin arriving and asks
- * whether the slot that wanted it still does; a state capture is answered by a
- * snapshot arriving and asks the same thing before writing it into a project
- * (DeviceControl.hpp). It is the same question either way -- is this still the
- * assignment the operation was started against -- so it is one type, and the
- * check is one function rather than a convention each caller reimplements.
+ * Both directions carry one: a load asks whether the slot that wanted it
+ * still does when the plugin arrives, and a state capture asks the same
+ * thing before writing a snapshot into a project (DeviceControl.hpp). Same
+ * question either way -- is this still the assignment the operation started
+ * against -- so it's one type with one check, not a convention every caller
+ * reimplements.
  *
- * Weak at both ends, and for the same reason. An operation must not keep an
- * assignment alive, because an assignment outliving its device is exactly the
- * state in which a stale answer would be accepted; and it must not keep the
- * table alive either, because the runtime that owns it may be gone by the time
- * the answer arrives. Either reference expiring is the answer "no longer
- * wanted", and an unregistered device hands out an already-expired handle, so
- * forgetting to register fails closed.
+ * Weak at both ends, for the same reason: an operation must not keep an
+ * assignment alive (that's exactly the state a stale answer would be
+ * accepted in), and must not keep the table alive either, since the runtime
+ * owning it may be gone by the time the answer arrives. Either reference
+ * expiring means "no longer wanted", and an unregistered device hands out an
+ * already-expired handle, so forgetting to register fails closed.
  *
- * Self-contained on purpose: completion needs nothing but this to decide, so
- * nothing about the runtime has to be captured by an asynchronous callback.
+ * Self-contained on purpose: completion needs nothing else to decide, so no
+ * async callback has to capture anything about the runtime.
  */
 struct AssignmentRequest {
     magda::engine::DeviceKey key;
@@ -113,18 +107,19 @@ struct AssignmentRequest {
     /**
      * @brief Whether a load answering this is still wanted.
      *
-     * True only when the table is still there and still holds, for this key,
-     * the very handle the request was made against. Every part matters: the
-     * weak handle can still be locked by a caller holding the ActiveAssignment
-     * it was given, and a key can be live again under a different assignment.
+     * True only when the table is still there and still holds, for this
+     * key, the exact handle the request was made against. Both parts
+     * matter: the weak handle can still be locked by a caller holding the
+     * ActiveAssignment it was given, and the key can be live again under a
+     * different assignment.
      */
     bool isStillWanted() const;
 
     /**
      * @brief Whether the key is live again under a different assignment.
      *
-     * Only for telling a person which of the two happened: a slot now asking
-     * for a different plugin, against a device that went away. Never the basis
+     * For telling a person which of the two happened -- a slot now wanting
+     * a different plugin, vs. a device that went away -- never as the basis
      * for accepting anything.
      */
     bool keyWasReassigned() const;
@@ -132,12 +127,12 @@ struct AssignmentRequest {
     /**
      * @brief Whether the runtime that owns this assignment is still there.
      *
-     * A different question from isStillWanted(), and the one a caller asks
-     * before *reporting* rather than before accepting. A device deleted while
-     * its runtime lives is a load to refuse and say so about, because something
-     * is waiting to hear it. A runtime that is gone is not: there is nothing to
-     * publish onto and nobody to tell, and a completion callback made by that
-     * runtime is exactly the thing that must not be called now.
+     * A different question from isStillWanted(), asked before *reporting*
+     * rather than before accepting: a device deleted while its runtime
+     * lives is a load to refuse and report, since something is waiting to
+     * hear it. A runtime that's gone is not -- there's nothing to publish
+     * onto and nobody to tell, and its completion callback is exactly what
+     * must not be called now.
      */
     bool runtimeIsAlive() const;
 };

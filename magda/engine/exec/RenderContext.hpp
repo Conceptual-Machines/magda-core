@@ -41,15 +41,15 @@ struct RenderContext {
 /**
  * @brief The stretch of timeline one block covers.
  *
- * Beats, because beats are what the model positions things in. The transport's
- * sample clock is what turns the audio device's sample count into this, once
- * per block, and it is the only thing that reads a tempo map: an op is handed
- * the two ends of its block and needs nothing else to know where it is.
+ * Beats, since beats are what the model positions things in. The transport's
+ * sample clock turns the audio device's sample count into this, once per
+ * block, and is the only thing that reads a tempo map: an op gets the two
+ * ends of its block and needs nothing else to know where it is.
  *
- * A block never spans a jump. The transport cuts a callback at every loop wrap,
- * so what arrives here always runs from one end of @ref beats to the other without
- * interruption, and @ref continuous says whether the previous block ended where
- * this one begins.
+ * A block never spans a jump: the transport cuts a callback at every loop
+ * wrap, so this always runs from one end of @ref beats to the other without
+ * interruption, and @ref continuous says whether the previous block ended
+ * where this one begins.
  */
 struct BlockInfo {
     int numSamples = 0;
@@ -57,23 +57,21 @@ struct BlockInfo {
     /**
      * @brief What one sample of it is worth, in seconds.
      *
-     * Here as well as on the RenderContext because the conversions below are
-     * the block's own and most of what calls them holds a block and nothing
-     * else: a MIDI clip placing a note, a metronome placing a tick.
+     * Here as well as on RenderContext because most callers of the
+     * conversions below hold only a block (a MIDI clip placing a note, a
+     * metronome placing a tick).
      *
-     * Zero says a block did not state one, which is a block assembled by hand,
-     * and the conversions then take it from the two faces the block does have.
-     * That derivation is the rate exactly whenever the block is well formed,
-     * because a block runs at one rate whatever the tempo does. What it cannot
-     * do is answer for a block that covers no time at all, which is a stopped
-     * one, and a stopped block places nothing.
+     * Zero means a hand-assembled block that didn't state one; the
+     * conversions then derive it from the block's two faces, which is exact
+     * whenever the block is well formed (a block runs at one rate whatever
+     * the tempo does) except for a stopped block, which covers no time and
+     * places nothing.
      */
     double sampleRate = 0.0;
 
-    /// Whether the transport is rolling. A stopped block still renders: the
-    /// graph keeps running so tails ring out and live input passes through.
-    /// What a stopped block does not do is advance the timeline, so its start
-    /// and end beats are the same.
+    /// Whether the transport is rolling. A stopped block still renders (the
+    /// graph keeps running so tails ring out and live input passes through);
+    /// it just doesn't advance the timeline, so its start and end beats match.
     bool playing = false;
 
     /// Where on the timeline it is. Goes backwards at a loop wrap and a locate.
@@ -82,34 +80,31 @@ struct BlockInfo {
     /**
      * @brief The same stretch of timeline, in seconds.
      *
-     * Not a second opinion about where the block is: the clock derives the
-     * beats from this, so they are two faces of one instant and the conversion
-     * between them has happened exactly once, in the one place that owns a
-     * tempo map.
+     * Not a second opinion about where the block is -- the clock derives
+     * @ref beats from this, so the two are one instant, converted once in
+     * the one place that owns a tempo map.
      *
-     * Both are here because both are asked for, and by different things.
-     * Beats say where on the timeline something is, which is how the model
-     * positions everything. Seconds say how much audio has gone by, which is
-     * what recorded material is measured in and what a file's samples are
-     * counted in. A source reading a file needs the second question answered
-     * and would otherwise need a tempo map to answer it.
+     * Both faces exist because both are asked for by different things:
+     * beats say where on the timeline something is (how the model positions
+     * everything); seconds say how much audio has gone by (what recorded
+     * material and file samples are counted in). A file-reading source
+     * needs the seconds answer and would otherwise need a tempo map to get it.
      */
     SecondsRange seconds;
 
     /**
      * @brief The same stretch, counted in beats that only ever go forwards.
      *
-     * The timeline beat is where the cursor is, and it goes backwards every
-     * time a loop wraps and every time somebody locates. That is right for
-     * placing material and wrong for scheduling anything against a future
-     * beat: a launch quantized to the next bar, resolved against a beat the
-     * loop is about to take back, fires at the wrong moment or twice.
+     * The timeline beat goes backwards on every wrap and locate, which is
+     * right for placing material and wrong for scheduling against a future
+     * beat -- a launch quantized to the next bar, resolved against a beat
+     * the loop is about to take back, would fire at the wrong moment or
+     * twice.
      *
-     * This is the third face of the same instant, alongside beats and seconds,
-     * and it is derived in the same one place they are. It counts musical time
-     * the transport has actually rolled through since the clock began, so it
-     * survives a wrap, a locate and a tempo edit, and it is the domain a
-     * queued launch names its position in (#2300).
+     * A third face of the same instant, derived alongside beats and
+     * seconds. It counts musical time actually rolled through since the
+     * clock began, so it survives a wrap, a locate and a tempo edit, and is
+     * the domain a queued launch names its position in (#2300).
      *
      * A stopped block does not advance it, for the same reason it does not
      * advance the timeline.
@@ -119,18 +114,17 @@ struct BlockInfo {
     /**
      * @brief The same stretch, in seconds that only ever go forwards.
      *
-     * Accumulated from the samples each block rendered, so it is elapsed time
-     * rather than a position. Nothing derives it from the beat faces and
-     * nothing may: a map converts a position, and after a wrap two monotonic
-     * beats are not in the same cycle (#2324).
+     * Accumulated from the samples each block rendered -- elapsed time, not
+     * a position. Never derived from the beat faces: after a wrap, two
+     * monotonic beats are not in the same cycle, so a map can't convert
+     * between them (#2324).
      *
-     * Kept because it is the one thing @ref monotonicSamples cannot answer: how
-     * long the transport has actually rolled, across a rate change as well as
-     * within one. A count of samples divided by the rate they are being counted
-     * at now is not that, because they were not all worth the same amount of
-     * time. A run's own elapsed time is measured from the samples instead
-     * (LaunchHandle.hpp), and it handles a rate change by re-counting its
-     * origin rather than by reading this.
+     * This is the one thing @ref monotonicSamples can't answer: how long
+     * the transport has actually rolled, across a rate change as well as
+     * within one (a sample count divided by the current rate isn't that,
+     * since the samples weren't all worth the same time). A run's own
+     * elapsed time is instead measured from its samples (LaunchHandle.hpp),
+     * re-counting its origin on a rate change rather than reading this.
      *
      * A stopped block does not advance it.
      */
@@ -139,26 +133,23 @@ struct BlockInfo {
     /**
      * @brief Whether the timeline ran into this block out of the last one.
      *
-     * False on the first block after the transport starts, after a locate, and
-     * after a loop wrap. What that licenses is narrow: anything an op derived
-     * from where the cursor *was* is stale and has to be derived again, which
-     * for a source means seeking.
+     * False on the first block after the transport starts, after a locate,
+     * and after a loop wrap -- meaning anything an op derived from where the
+     * cursor *was* is stale and must be re-derived (for a source, a seek).
      *
-     * What it does not license is a reset. Audio did not stop flowing through
-     * the graph because the cursor moved, so delay lines, reverb tails and
-     * envelopes carry on across a jump exactly as they carry on across any
-     * other block boundary. An op that clears its state here is inventing a gap
-     * the transport never asked for.
+     * It does not mean a reset: audio didn't stop flowing because the
+     * cursor moved, so delay lines, reverb tails and envelopes carry on
+     * across a jump exactly as across any other block boundary. An op
+     * clearing its state here invents a gap the transport never asked for.
      */
     bool continuous = false;
 
     /**
      * @brief What one sample of this block is worth, in seconds.
      *
-     * What the block says, or what its own two faces say when it says nothing.
-     * The derivation is the rate exactly whenever a block is well formed, since
-     * a block runs at one rate whatever the tempo does; zero for a block that
-     * covers no time and states no rate, which converts nothing.
+     * What the block says, or what its own two faces say when it says
+     * nothing. Exact whenever the block is well formed; zero for a block
+     * that covers no time and states no rate, which converts nothing.
      */
     double rate() const {
         if (sampleRate > 0.0)
@@ -170,11 +161,11 @@ struct BlockInfo {
     /**
      * @brief The moment @p beat falls on, on this block's own seconds axis.
      *
-     * The inverse of @ref beatAtTime, through the map for the same reason and
-     * with the same detour through the origin on a shifted block. The one
-     * conversion under everything below: a beat becomes a moment here, and a
-     * moment becomes a sample by counting them, which is the only step that
-     * does not need a tempo (#2336).
+     * The inverse of @ref beatAtTime, through the map for the same reason
+     * and with the same detour through the origin on a shifted block -- the
+     * one conversion under everything below: a beat becomes a moment here,
+     * and a moment becomes a sample by counting, the only step needing no
+     * tempo (#2336).
      */
     double timeForBeat(double beat) const {
         if (tempo != nullptr)
@@ -189,28 +180,26 @@ struct BlockInfo {
     /**
      * @brief The beat sample zero sounds on, to the tolerance the clock uses.
      *
-     * Not quite the block's start, which is where anything asking the map about
-     * this block's tempo, signature or bar would naturally look. A musical
-     * position within a hundredth of a sample of the cursor is the cursor as
-     * far as the clock is concerned (TransportClock::samplesUntil), so a block
-     * can open that close before a boundary while every sample it renders is
-     * past it. The beat at its start is then in the section it has already
-     * left, and a consumer that takes one signature or one bar for the whole
-     * block takes the wrong one.
+     * Not quite the block's start. A musical position within a hundredth of
+     * a sample of the cursor still counts as the cursor
+     * (TransportClock::samplesUntil), so a block can open that close before
+     * a boundary while every sample it renders is past it -- the beat at
+     * its literal start would then be in the section it already left, and a
+     * consumer taking one signature or bar for the whole block would take
+     * the wrong one.
      *
-     * So this is the start nudged forward by that same hundredth of a sample of
-     * seconds, converted to a beat at the tempo the block opens on rather than
-     * at the block's own average slope: through the map, the way @ref
-     * beatAtTime reads any other moment, which is what matters once a block may
-     * span a tempo change. The block-average slope would over-nudge across a
-     * step up and under-nudge across a step down, either of which can land the
-     * nudge on the wrong side of the very boundary it exists to cross (#2340).
-     * A block with no seconds face at all is one assembled by hand from beats,
-     * and the average slope is the only line there is to nudge along.
+     * So this nudges the start forward by that same hundredth of a sample
+     * of seconds, converted to a beat at the tempo the block opens on
+     * rather than at the block's average slope (through the map, the way
+     * @ref beatAtTime reads any other moment) -- the average slope would
+     * over- or under-nudge across a tempo step, landing on the wrong side
+     * of the very boundary this exists to cross (#2340). A block with no
+     * seconds face (assembled by hand) has only the average slope to nudge
+     * along.
      *
-     * Where the block *is* stays @ref beats and @ref seconds. This only says
-     * which side of a boundary its first sample is on, and a position derived
-     * under that section is projected back by the caller (#2336).
+     * Where the block *is* stays @ref beats and @ref seconds; this only
+     * says which side of a boundary its first sample is on, and a position
+     * derived under that section is projected back by the caller (#2336).
      */
     double openingBeat() const {
         if (numSamples <= 0 || beats.empty())
@@ -225,8 +214,8 @@ struct BlockInfo {
     /**
      * @brief How many samples into this block @p moment falls, unrounded.
      *
-     * By counting samples, which is the one step that needs no tempo: a block
-     * runs at one rate whatever the map is doing.
+     * By counting samples, the one step that needs no tempo: a block runs
+     * at one rate whatever the map is doing.
      */
     double offsetForTime(double moment) const {
         return (moment - seconds.start) * rate();
@@ -235,13 +224,11 @@ struct BlockInfo {
     /**
      * @brief How many samples into this block @p beat falls, unrounded.
      *
-     * Through the seconds face, because that is where samples are counted, and
-     * therefore through the map wherever there is one: a beat's distance into
-     * the block is a question about when it happens, and the answer is only a
-     * straight line while the tempo is.
-     *
-     * A block with no seconds face at all is one assembled by hand from beats,
-     * and its own two beat ends are then the only line there is.
+     * Through the seconds face (where samples are counted) and so through
+     * the map wherever there is one -- a beat's distance into the block is
+     * a question about when it happens, a straight line only while the
+     * tempo is. A block with no seconds face (assembled by hand) has only
+     * its own two beat ends as that line.
      */
     double offsetForBeat(double beat) const {
         if (!seconds.empty() && rate() > 0.0)
@@ -274,14 +261,15 @@ struct BlockInfo {
     /**
      * @brief The sample an edge that has to be heard is emitted on.
      *
-     * A note-off is where a note's stretch ends, so it is an edge and lands on
-     * N whenever a clip or a loop pass ends on the block boundary. It is also a
-     * message, and a message at N is written into nobody's buffer: the block
-     * that owns that sample is the next one, and by the time it renders, the
-     * stretch that owed the off has gone. What is left is a note that hangs.
+     * A note-off is where a note's stretch ends, so it's an edge and lands
+     * on N whenever a clip or loop pass ends on the block boundary. It's
+     * also a message, and a message at N is written into nobody's buffer:
+     * the block owning sample N is the next one, and by the time it
+     * renders, the stretch that owed the off has gone -- leaving a note
+     * that hangs.
      *
-     * So an emitted edge at N sounds on N-1 instead. One sample early, against
-     * a note that rings until the session ends.
+     * So an emitted edge at N sounds on N-1 instead: one sample early,
+     * against a note ringing until the session ends.
      */
     EventSample soundsAt(EdgeSample edge) const {
         return EventSample{std::clamp(edge.value, 0, std::max(0, numSamples - 1))};
@@ -290,31 +278,26 @@ struct BlockInfo {
     /**
      * @brief The beat face of a moment inside this block.
      *
-     * The two faces are two views of one stretch of timeline, so a moment given
-     * in one has an answer in the other, and this is the conversion that does
-     * not need a tempo map: the ends are known in both, and a block is short
-     * enough that the curve between them is a straight line to well under a
-     * sample.
+     * The conversion that needs no tempo map: both ends are known in both
+     * faces, and a block is short enough that the curve between them is a
+     * straight line to well under a sample.
      *
-     * What asks is a clip whose material is consumed against beats rather than
-     * against seconds, which is what auto tempo is (clip/EventPlacement.hpp).
-     * The window such a clip plays over is worked out in seconds, because that
-     * is what spans and fades are in, and then has to be asked about in beats.
+     * What asks is a clip whose material is consumed against beats rather
+     * than seconds (auto tempo, clip/EventPlacement.hpp): the window such a
+     * clip plays over is worked out in seconds (what spans and fades use)
+     * and then has to be asked about in beats.
      */
     double beatAtTime(double moment) const {
-        // The map itself where there is one, which matters for the moments that
-        // are not inside this block. A block's own two ends make a straight
-        // line, and that line is exact only while the tempo does not change
-        // along it: anything reading past the block's end, or across a step
-        // inside it, gets the slope this block happened to have rather than the
-        // one the map has there. A clip whose rate follows the tempo is read at
-        // instants beyond the block that produced them (ClipVoice's cells), so
-        // it is exactly the caller that cannot afford the straight line.
+        // The map itself where there is one, which matters for moments
+        // outside this block: a block's own two ends make a straight line,
+        // exact only while the tempo doesn't change along it. A clip whose
+        // rate follows the tempo is read at instants beyond the block that
+        // produced them (ClipVoice's cells), so it can't afford that line.
         //
-        // Through the origin in both directions on a shifted block, which is
-        // what keeps the map usable there: the moment goes back onto the
-        // timeline to be asked about, and the answer comes back onto the run's
-        // own axis. Zero on a timeline block, where this is the map itself.
+        // Through the origin in both directions on a shifted block: the
+        // moment goes back onto the timeline to be asked about, and the
+        // answer comes back onto the run's own axis. Zero on a timeline
+        // block, where this is the map itself.
         if (tempo != nullptr)
             return tempo->timeToBeat(moment + materialOrigin.seconds) - materialOrigin.beat;
 
@@ -328,41 +311,40 @@ struct BlockInfo {
     /**
      * @brief Where the block sits on the transport's own sample count.
      *
-     * The durable coordinate, and the one every other face here is ultimately
-     * an interpretation of (transport/TimeDomains.hpp). A locate does not move
-     * it, a wrap does not take it back and a tempo edit does not rescale it, so
-     * it is the only one of them two blocks can be compared on without knowing
-     * what happened between.
+     * The durable coordinate every other face here interprets
+     * (transport/TimeDomains.hpp): a locate doesn't move it, a wrap doesn't
+     * take it back, a tempo edit doesn't rescale it -- the only face two
+     * blocks can be compared on without knowing what happened between.
      *
      * A stopped block does not advance it, for the same reason it does not
      * advance the timeline: nothing played.
      *
-     * Empty on a block assembled by hand, which is why nothing may assume it is
-     * set (#2332 is what makes it load-bearing).
+     * Empty on a hand-assembled block, which is why nothing may assume it
+     * is set (#2332 is what makes it load-bearing).
      */
     SampleRange monotonicSamples;
 
-    /// The map this block was cut from, or null for a caller that assembles a
-    /// block by hand. Not owned, and it outlives the block: what publishes a
-    /// transport keeps it alive for as long as the callback reading it runs.
+    /// The map this block was cut from, or null for a hand-assembled block.
+    /// Not owned, and outlives the block: whatever publishes a transport
+    /// keeps it alive for as long as the callback reading it runs.
     ///
     /// Always the timeline's, even where the axes above are not: a shifted
-    /// block records the shift below rather than pretending the map is its own.
-    /// Anything reaching for this directly is asking a timeline question and
-    /// has to put @ref materialOrigin back first.
+    /// block records the shift below rather than pretending the map is its
+    /// own. Anything reaching for this directly is asking a timeline
+    /// question and must put @ref materialOrigin back first.
     const TempoMap* tempo = nullptr;
 
     /**
      * @brief What the two axes above were shifted by, or zero on the timeline.
      *
      * A session slot plays over a block moved onto the run's own origin
-     * (clip/SessionPlayback.hpp), and the two faces move by different amounts:
-     * a beat is where something sits and a second is how long a run has
-     * lasted, and under a tempo curve those are not one number (#2324).
+     * (clip/SessionPlayback.hpp), and the two faces move by different
+     * amounts: a beat is a position and a second is elapsed time, and under
+     * a tempo curve those aren't one number (#2324).
      *
-     * Carried so the shift stays undoable. Dropping the map instead would
-     * leave the block's own two ends as the only answer, and that straight
-     * line is exactly what the cell path above cannot afford.
+     * Carried so the shift stays undoable -- dropping the map would leave
+     * the block's own two ends as the only answer, and that straight line
+     * is exactly what the cell path above cannot afford.
      */
     MaterialOrigin materialOrigin;
 };
