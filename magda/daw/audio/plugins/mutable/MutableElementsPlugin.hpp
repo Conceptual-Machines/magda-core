@@ -104,6 +104,11 @@ class MutableElementsPlugin : public MagdaDevice {
 
     double sampleRate_ = 44100.0;
 
+    /// Rendered here, then added into the host buffer (#2370): the DSP writes
+    /// straight into these pointers, so it can't itself sum onto whatever the
+    /// host handed us.
+    juce::AudioBuffer<float> scratch_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MutableElementsPlugin)
 };
 

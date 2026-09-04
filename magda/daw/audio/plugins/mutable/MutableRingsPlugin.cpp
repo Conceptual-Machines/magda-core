@@ -1,5 +1,6 @@
 #include "plugins/mutable/MutableRingsPlugin.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -291,6 +292,7 @@ float MutableRingsPlugin::displayValue(int index) const {
 void MutableRingsPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
     impl_->prepare(sampleRate_);
+    scratch_.setSize(2, std::max(context.maximumBlockSize, 1), false, true, false);
 }
 
 void MutableRingsPlugin::reset() {
@@ -315,8 +317,8 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
 
     auto& buffer = *context.audio;
     const int start = context.startSample;
-    auto* destL = buffer.getWritePointer(0, start);
-    float* destR = buffer.getNumChannels() > 1 ? buffer.getWritePointer(1, start) : nullptr;
+    auto* destL = scratch_.getWritePointer(0);
+    auto* destR = buffer.getNumChannels() > 1 ? scratch_.getWritePointer(1) : nullptr;
 
     int pos = 0;
     auto renderTo = [&](int upto) {
@@ -339,8 +341,14 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
     }
     renderTo(context.numSamples);
 
+    // Add rather than replace (#2370): on the TE leg the buffer may already
+    // carry an audio clip's signal that must not be clobbered. The native
+    // engine clears an instrument's channels before running it, so add is a
+    // no-op difference there.
     const float gain = juce::Decibels::decibelsToGain(displayValue(kLevel));
-    buffer.applyGain(start, context.numSamples, gain);
+    buffer.addFrom(0, start, scratch_, 0, 0, context.numSamples, gain);
+    if (destR != nullptr)
+        buffer.addFrom(1, start, scratch_, 1, 0, context.numSamples, gain);
 }
 
 }  // namespace magda::daw::audio
