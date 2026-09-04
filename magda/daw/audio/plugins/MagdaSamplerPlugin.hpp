@@ -16,13 +16,11 @@ namespace magda::daw::audio {
  * @brief Holds loaded sample data for the sampler
  */
 struct SamplerSound : public juce::SynthesiserSound {
+    /// Immutable once the synthesiser holds it (#2384). Nothing writes a field
+    /// of an installed sound, so what crosses to the audio thread is one thing,
+    /// SamplerPlayback, rather than a mix of fields here and members there.
     juce::AudioBuffer<float> audioData;
     double sourceSampleRate = 44100.0;
-
-    /// Read on the audio thread, in SamplerVoice::startNote, and written by
-    /// setRootNote off it. Atomic because a note starting during that write is
-    /// otherwise a data race, whatever the hot path does (#2383 review).
-    std::atomic<int> rootNote{60};
 
     bool appliesToNote(int) override {
         return true;
@@ -34,6 +32,54 @@ struct SamplerSound : public juce::SynthesiserSound {
     bool hasData() const {
         return audioData.getNumSamples() > 0;
     }
+};
+
+//==============================================================================
+/**
+ * @brief What the audio thread reads about the loaded sound (#2384).
+ *
+ * The sampler's one cross-thread boundary. The message thread publishes here
+ * when it installs a sound or the user moves the root note; the audio thread
+ * reads it per block. An installed SamplerSound is immutable, so auditing what
+ * crosses threads means reading this class and nothing else.
+ *
+ * Three atomics rather than a snapshot behind a seqlock, which would spin the
+ * audio thread waiting on the message thread. They clamp marker ranges and
+ * pitch a note, so a triple torn across a load costs one block's clamp.
+ */
+class SamplerPlayback {
+  public:
+    struct Facts {
+        double sourceRate = 44100.0;
+        double lengthSeconds = 0.0;
+        int rootNote = 60;
+    };
+
+    /// @brief Publish @p facts. Message thread, once the synthesiser holds the
+    ///        sound they describe.
+    void publish(const Facts& facts) {
+        sourceRate_.store(facts.sourceRate, std::memory_order_relaxed);
+        lengthSeconds_.store(facts.lengthSeconds, std::memory_order_relaxed);
+        rootNote_.store(facts.rootNote, std::memory_order_relaxed);
+    }
+
+    /// @brief Republish the root note alone, which is the one field a user
+    ///        changes without loading anything. Message thread.
+    void publishRootNote(int note) {
+        rootNote_.store(note, std::memory_order_relaxed);
+    }
+
+    /// @brief What was last published. Audio thread.
+    Facts read() const {
+        return Facts{sourceRate_.load(std::memory_order_relaxed),
+                     lengthSeconds_.load(std::memory_order_relaxed),
+                     rootNote_.load(std::memory_order_relaxed)};
+    }
+
+  private:
+    std::atomic<double> sourceRate_{44100.0};
+    std::atomic<double> lengthSeconds_{0.0};
+    std::atomic<int> rootNote_{60};
 };
 
 //==============================================================================
@@ -50,6 +96,11 @@ class SamplerVoice : public juce::SynthesiserVoice {
                            double loopStartSeconds, double loopEndSeconds, double sourceSampleRate);
     void setVelocityAmount(float amount) {
         velAmount = amount;
+    }
+    /// The root note to pitch against. Pushed in per block from the published
+    /// facts, so the voice never reads a field of the sound (#2384).
+    void setRootNote(int note) {
+        rootNote = note;
     }
     // Portamento glide time (seconds); 0 = instant pitch change.
     void setGlideSeconds(double s) {
@@ -76,8 +127,10 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
   private:
     // Pitch ratio for `midiNoteNumber`, including the pitch/fine offset, against
-    // the loaded sound's root note and sample rate.
+    // the published root note and the sound's sample rate.
     double pitchRatioForNote(int midiNoteNumber, const SamplerSound& sound) const;
+
+    int rootNote = 60;
     // Arm a glide from the current pitchRatio to targetPitchRatio over glideSeconds.
     void beginGlide();
 
@@ -305,15 +358,8 @@ class MagdaSamplerPlugin : public MagdaDevice {
     /// applyToBuffer (#2378).
     SamplerSound* currentSound = nullptr;
 
-    /// What the audio thread needs of the loaded sound besides its root note,
-    /// which the sound carries atomically. Published by the message thread once
-    /// the synthesiser holds the sound they describe.
-    ///
-    /// Two words rather than one: they are read to clamp marker ranges and to
-    /// scale a playhead, so a pair torn across a load costs one block's clamp
-    /// and never a dereference.
-    std::atomic<double> soundSourceRate_{44100.0};
-    std::atomic<double> soundLengthSeconds_{0.0};
+    /// Everything that crosses to the audio thread (#2384).
+    SamplerPlayback playback_;
     double sampleRate = 44100.0;
     int numVoices = 8;
 
