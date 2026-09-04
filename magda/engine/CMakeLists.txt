@@ -107,6 +107,7 @@ add_library(magda_engine STATIC
     launch/LaunchHandle.cpp
     launch/LaunchHandle.hpp
     launch/LaunchRequests.hpp
+    tap/LaunchTap.hpp
     launch/SessionLauncher.cpp
     launch/SessionLauncher.hpp
     transport/TempoMap.cpp

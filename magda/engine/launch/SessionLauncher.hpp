@@ -10,6 +10,7 @@
 #include "exec/RenderContext.hpp"
 #include "launch/LaunchHandle.hpp"
 #include "launch/LaunchRequests.hpp"
+#include "tap/LaunchTap.hpp"
 
 /**
  * @file SessionLauncher.hpp
@@ -51,6 +52,10 @@ struct LaunchHandleTable {
         /// same key on a different clip. Assigned by
         /// RuntimeStateStore::publishHandles, and never reused (#2305).
         std::uint64_t incarnation = 0;
+
+        /// Where this slot's state is published for the UI to read (#2303).
+        /// Owned by the store, like the handle beside it.
+        LaunchTap* tap = nullptr;
 
         bool operator==(const Entry&) const = default;
     };
