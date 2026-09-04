@@ -88,10 +88,8 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
 
 DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     DeviceMidiCapabilities capabilities;
-    const bool midiInputOverride = hasMidiInputOverride(device);
-    const bool midiOutputOverride = hasMidiOutputOverride(device);
-    capabilities.hasMidiInput = device.isInstrument || device.canReceiveMidi || midiInputOverride;
-    capabilities.hasMidiOutput = device.producesMidi || midiOutputOverride;
+    capabilities.hasMidiInput = device.consumesMidi();
+    capabilities.hasMidiOutput = device.emitsMidi();
     capabilities.hasAudioInput = device.deviceType == DeviceType::Effect || device.canSidechain;
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
     capabilities.supportsMidiInputThruToggle =

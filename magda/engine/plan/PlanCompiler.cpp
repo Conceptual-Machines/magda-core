@@ -37,22 +37,6 @@ struct ChainSite {
     ChainSegment segment = ChainSegment::Fx;
 };
 
-/// Analysis devices are transparent passthroughs with no gain trim and no
-/// meter of their own, so they compile to the process op alone.
-bool isTransparentTap(const DeviceInfo& device) {
-    return device.deviceType == DeviceType::Analysis;
-}
-
-bool consumesMidi(const DeviceInfo& device) {
-    return device.isInstrument || device.canReceiveMidi || device.deviceType == DeviceType::MIDI;
-}
-
-/// True when a chain inside a rack will be compiled at all. Aux-routed chains
-/// are not wired yet, and bypassed ones contribute nothing.
-bool chainIsActive(const ChainInfo& chain) {
-    return !chain.bypassed && chain.outputIndex == 0;
-}
-
 /// Whether anything the compiler will actually emit consumes MIDI. Walks only
 /// the live elements, so a bypassed instrument does not keep the track's MIDI
 /// source ops in the plan with nothing to read them, and neither does anything
@@ -61,7 +45,7 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
     return std::ranges::any_of(elements, [&](const ChainElement& element) {
         if (isDevice(element)) {
             const auto& device = getDevice(element);
-            return !device.bypassed && consumesMidi(device);
+            return !device.bypassed && device.consumesMidi();
         }
         if (isRack(element)) {
             const auto& rack = getRack(element);
@@ -70,7 +54,7 @@ bool elementsConsumeMidi(const std::vector<ChainElement>& elements, RackNesting&
 
             const RackNesting::Scope scope{nesting, rack.id};
             return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
-                return chainIsActive(chain) && elementsConsumeMidi(chain.elements, nesting);
+                return chain.isActive() && elementsConsumeMidi(chain.elements, nesting);
             });
         }
         return false;
@@ -90,7 +74,7 @@ bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
 
     const RackNesting::Scope scope{nesting, rack.id};
     return std::ranges::any_of(rack.chains, [&](const ChainInfo& chain) {
-        if (!chainIsActive(chain))
+        if (!chain.isActive())
             return false;
         return std::ranges::any_of(chain.elements, [&](const ChainElement& element) {
             if (isDevice(element)) {
@@ -108,7 +92,7 @@ bool rackHasInstrument(const RackInfo& rack, RackNesting& nesting) {
 
 bool sectionConsumesMidi(const std::vector<PostFxChainElement>& section) {
     return std::ranges::any_of(section, [](const PostFxChainElement& element) {
-        return !element.device.bypassed && consumesMidi(element.device);
+        return !element.device.bypassed && element.device.consumesMidi();
     });
 }
 
@@ -141,7 +125,7 @@ void collectSidechainSources(const std::vector<ChainElement>& elements,
 
             const RackNesting::Scope scope{nesting, rack.id};
             for (const auto& chain : rack.chains)
-                if (chainIsActive(chain))
+                if (chain.isActive())
                     collectSidechainSources(chain.elements, type, out, nesting);
         }
     }
@@ -168,19 +152,6 @@ void collectSidechainSources(const TrackInfo& track, std::optional<SidechainConf
 
     collectSidechainSources(track.chain.postFxChainElements, type, out);
     collectSidechainSources(track.chain.mixerAnalysisElements, type, out);
-}
-
-/// Whether input reaches the track at all, for either audio or MIDI.
-///
-/// Auto is deliberately not enough on its own: automatic monitoring passes
-/// input only while the track is armed. Including it
-/// unarmed would emit a live input op the current engine keeps silent, and
-/// would mark the whole downstream chain Live, pessimising the anticipative
-/// executor for a track that cannot sound. This is why the compiler does not
-/// use TrackInfo::receivesLiveMidiInput, which answers a broader question for
-/// the UI's input-activity light.
-bool monitorsInput(const TrackInfo& track) {
-    return track.recordArmed || track.inputMonitor == InputMonitorMode::In;
 }
 
 class Compiler {
@@ -403,13 +374,13 @@ bool Compiler::carriesClips(const TrackInfo& track) const {
 }
 
 TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !monitorsInput(track) || track.audioInputDevice.isEmpty())
+    if (!carriesClips(track) || !track.monitorsInput() || track.audioInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.audioInputDevice);
 }
 
 TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !monitorsInput(track) || track.midiInputDevice.isEmpty())
+    if (!carriesClips(track) || !track.monitorsInput() || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
 }
@@ -803,7 +774,7 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // Channel widths, read off the plugin the way RackSyncManager reads them.
     // A transparent tap keeps full stereo: its output is its input, so
     // narrowing it would narrow the chain rather than the device.
-    const bool transparent = isTransparentTap(device);
+    const bool transparent = device.isTransparentTap();
     const bool injector = !transparent && node.injectsAudio();
 
     // An external plugin is handed the bus and adapts its own channels, and
@@ -1074,14 +1045,6 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
     return out;
 }
 
-/// The index of the parameter @p device declares under @p stableId, or -1.
-int deviceParamIndex(const DeviceInfo& device, const std::string& stableId) {
-    const auto found = std::ranges::find_if(device.parameters, [&](const ParameterInfo& param) {
-        return param.stableId.toStdString() == stableId;
-    });
-    return found == device.parameters.end() ? -1 : found->paramIndex;
-}
-
 /// A pad-per-chain device, expanded the way a rack is.
 ///
 /// The device itself never becomes an op. Its pads are chains, and each one is
@@ -1158,8 +1121,8 @@ ChainSignal Compiler::emitPadRack(const DeviceInfo& device, const ChainSite& sit
         // published value.
         if (const auto slot = padParameterSlot(pad); slot >= 0) {
             auto& fader = plan_.ops[static_cast<std::size_t>(faderOp)];
-            fader.padLevelParam = deviceParamIndex(device, "padLevel" + std::to_string(slot));
-            fader.padPanParam = deviceParamIndex(device, "padPan" + std::to_string(slot));
+            fader.padLevelParam = device.paramIndexFor("padLevel" + std::to_string(slot));
+            fader.padPanParam = device.paramIndexFor("padPan" + std::to_string(slot));
         }
 
         busAudio[pad.outputIndex].push_back(PortRef{faderOp, 0});
