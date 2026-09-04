@@ -1294,15 +1294,89 @@ TEST_CASE("A launch published with the clips reaches the audio thread", "[engine
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
 
-    auto* handle = session.launchHandle(magda::engine::SlotKey{1, 0});
-    REQUIRE(handle != nullptr);
+    const auto slot = magda::engine::SlotKey{1, 0};
+    REQUIRE(session.launchHandle(slot) != nullptr);
     CHECK(session.launchHandle(magda::engine::SlotKey{1, 3}) == nullptr);
 
-    handle->play(std::nullopt);
+    // Asked for from off the audio thread and applied by the block it reaches,
+    // which is the lane rather than a pointer into the handle (#2305).
+    {
+        magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
+        gesture.play(slot);
+    }
+
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(1.0f));
 
-    handle->stop(std::nullopt);
+    {
+        magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
+        gesture.stop(slot);
+    }
+
     session.process(kBlockSize, output);
     CHECK(output.getSample(0, 0) == approx(0.0f));
+}
+
+TEST_CASE("A structural edit under a playing slot does not restart it",
+          "[engine][session][launch]") {
+    // #2305's requirement, end to end: a track added while a scene plays
+    // compiles a new plan and swaps it in, and the clip that was sounding goes
+    // on sounding from where it was. Handles live in the store rather than in
+    // the plan, so the swap has nothing of theirs to take.
+    LauncherFactory factory;
+    EngineSession session(factory);
+    factory.handles = &session.launchHandleFeed();
+
+    const std::vector<TrackInfo> before{makeTrack(1)};
+    REQUIRE(publish(session, compile(before), before).published);
+
+    session.publishTransport(rolling(0.0));
+    session.publishClips(snapshotWithSlot(1, 0));
+
+    const auto slot = magda::engine::SlotKey{1, 0};
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    {
+        magda::engine::LaunchRequestQueue::Gesture gesture(session.launchRequests());
+        gesture.play(slot);
+    }
+
+    for (auto block = 0; block < 3; ++block)
+        session.process(kBlockSize, output);
+
+    REQUIRE(output.getSample(0, 0) == approx(1.0f));
+
+    const auto* handle = session.launchHandle(slot);
+    REQUIRE(handle != nullptr);
+
+    const auto running = handle->playedSampleRange();
+    REQUIRE(running.has_value());
+
+    // The structural edit: another track, which is a different plan and a new
+    // epoch. The clips are republished with it, as a real edit would.
+    std::vector<TrackInfo> after{makeTrack(1)};
+    after.push_back(makeTrack(2));
+    REQUIRE(publish(session, compile(after), after).published);
+    session.publishClips(snapshotWithSlot(1, 0));
+
+    for (auto block = 0; block < 3; ++block)
+        session.process(kBlockSize, output);
+
+    // Not dropped.
+    CHECK(output.getSample(0, 0) == approx(1.0f));
+
+    const auto* kept = session.launchHandle(slot);
+    REQUIRE(kept == handle);
+
+    const auto still = kept->playedSampleRange();
+    REQUIRE(still.has_value());
+
+    // Not restarted: the run began where it began, and a swap is not an event
+    // the launcher has anything to say about.
+    CHECK(still->start == running->start);
+
+    // Not doubled: three more blocks is three more blocks. Advanced twice over
+    // a swap, the run would be six blocks long and the clip half a bar ahead of
+    // where the transport says it is.
+    CHECK(still->end == running->end + magda::engine::SampleDuration{3 * kBlockSize});
 }

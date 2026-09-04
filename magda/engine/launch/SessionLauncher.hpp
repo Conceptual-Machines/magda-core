@@ -9,6 +9,7 @@
 #include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
 #include "launch/LaunchHandle.hpp"
+#include "launch/LaunchRequests.hpp"
 
 /**
  * @file SessionLauncher.hpp
@@ -25,9 +26,10 @@
  * sources read `LaunchHandle::blockStatus`. That also keeps a scene coherent,
  * since every handle sees the same block.
  *
- * Requests are not here. The lane carrying `play`, `stop` and `setLooping` from
- * off the audio thread is #2305's; until then a handle is driven directly,
- * which is safe only when nothing is rendering.
+ * Requests arrive on the queue in LaunchRequests.hpp and are applied in that
+ * same pass, which is why it is one call and not two: a request applied after
+ * a handle had already been advanced would take effect a block late, and one
+ * applied to some handles and not others would split a scene.
  */
 
 namespace magda::engine {
@@ -103,9 +105,17 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
                      block.numSamples, block.rate(),         block.tempo};
 }
 
-/// Advance every handle over @p block, once, before anything renders. On the
-/// audio thread. Every handle: a stopped one may have a launch queued inside
-/// this block.
-void advanceLaunchHandles(LaunchHandleFeed& handles, const BlockInfo& block);
+/**
+ * @brief Apply what has been asked, then advance every handle over @p block.
+ *
+ * On the audio thread, once per block, before anything renders. Every handle: a
+ * stopped one may have a launch queued inside this block.
+ *
+ * The two halves are one call because the order between them is the whole of
+ * what makes a launch land in the block it was asked in. @p requests is drained
+ * whole first, so a scene reaches every handle before any of them has moved.
+ */
+void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
+                          const BlockInfo& block);
 
 }  // namespace magda::engine

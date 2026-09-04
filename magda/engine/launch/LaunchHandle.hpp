@@ -23,10 +23,13 @@
  * header is explicit that the fork owns the state and MAGDA only sends it
  * commands. Replacing that state is what this is for.
  *
- * Threading is deliberately not decided here. A handle is advanced by one
- * caller and its requests come from another, and how those two meet is
- * #2305's, along with who owns the handle's lifetime. Until then this is a
- * plain object: request, then advance.
+ * Threading is not decided here, and still is not: this is a plain object,
+ * requested and then advanced, with no synchronisation of its own. What made
+ * that safe is that nothing calls it from two threads. The audio thread
+ * advances it; every request reaches it down the queue in LaunchRequests.hpp
+ * and is applied on that same thread, in the same pass, before any advance
+ * (#2305). Its lifetime is the plan-swap epoch's, in
+ * RuntimeStateStore::publishHandles.
  */
 
 namespace magda::engine {
