@@ -321,6 +321,12 @@ std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case
 
     const auto samplesPerBeat = 60.0 / value.startBpm() * value.sampleRate;
 
+    // The instrument's release carries the difference past the note-off: the
+    // two legs run the same ramp four samples apart, so the whole ramp differs,
+    // not only the gap between the two releases.
+    const auto release = std::max<std::int64_t>(
+        0, static_cast<std::int64_t>(std::llround(value.noteEndReleaseSeconds * value.sampleRate)));
+
     std::vector<std::pair<std::int64_t, std::int64_t>> ranges;
     for (const auto& clip : value.clips) {
         for (const auto& note : clip.midiNotes) {
@@ -330,7 +336,7 @@ std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case
                 std::min(clip.placement.startBeat + note.startBeat + note.lengthBeats,
                          clip.placement.endBeat());
             const auto end = static_cast<std::int64_t>(std::llround(endBeat * samplesPerBeat));
-            ranges.emplace_back(std::max<std::int64_t>(0, end - nudge), end);
+            ranges.emplace_back(std::max<std::int64_t>(0, end - nudge), end + release);
         }
     }
 

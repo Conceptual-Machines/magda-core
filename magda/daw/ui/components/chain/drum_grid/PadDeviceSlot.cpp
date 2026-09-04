@@ -4,6 +4,8 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/tracktion/SamplerHostBinding.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ParameterUtils.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
@@ -154,8 +156,9 @@ void PadDeviceSlot::setPlugin(te::Plugin* plugin) {
     }
 
     // Check if it's a sampler
-    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin)) {
-        setupForSampler(sampler);
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin) !=
+        nullptr) {
+        setupForSampler(plugin);
     } else {
         setupForExternalPlugin(plugin);
     }
@@ -183,8 +186,9 @@ void PadDeviceSlot::setPlugin(te::Plugin* plugin, const magda::DeviceInfo& devic
         return;
     }
 
-    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin)) {
-        setupForSampler(sampler);
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin) !=
+        nullptr) {
+        setupForSampler(plugin);
     } else if (!setupForSharedDeviceUi(plugin, device)) {
         setupForExternalPlugin(plugin);
     }
@@ -199,17 +203,17 @@ void PadDeviceSlot::setPlugin(te::Plugin* plugin, const magda::DeviceInfo& devic
     resized();
 }
 
-void PadDeviceSlot::setSampler(daw::audio::MagdaSamplerPlugin* sampler) {
-    plugin_ = sampler;
+void PadDeviceSlot::setSampler(te::Plugin* samplerPlugin) {
+    plugin_ = samplerPlugin;
     livePluginProvider_ = {};
     resetSharedInlineUi();
-    if (!sampler) {
+    if (!samplerPlugin) {
         clear();
         return;
     }
-    setupForSampler(sampler);
-    onButton_->setToggleState(sampler->isEnabled(), juce::dontSendNotification);
-    onButton_->setActive(sampler->isEnabled());
+    setupForSampler(samplerPlugin);
+    onButton_->setToggleState(samplerPlugin->isEnabled(), juce::dontSendNotification);
+    onButton_->setActive(samplerPlugin->isEnabled());
     resized();
 }
 
@@ -255,7 +259,12 @@ void PadDeviceSlot::resetSharedInlineUi() {
     customUI_.reset();
 }
 
-void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
+void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
+    namespace ta = daw::audio::tracktion_adapter;
+    using Sampler = daw::audio::MagdaSamplerPlugin;
+    auto* sampler = ta::deviceFromPlugin<Sampler>(samplerPlugin);
+    if (sampler == nullptr)
+        return;
     resetSharedInlineUi();
     preferredWidth_ = SAMPLER_SLOT_WIDTH;
     uiButton_->setVisible(false);
@@ -269,18 +278,13 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
     }
 
     // Wire SamplerUI callbacks
-    samplerUI_->onParameterChanged = [sampler](int paramIndex, float value) {
-        auto params = sampler->getAutomatableParameters();
-        if (paramIndex >= 0 && paramIndex < params.size()) {
-            params[paramIndex]->setParameterFromHost(value, juce::sendNotificationSync);
-            // Sync CachedValue for persistence (param and CachedValue are independent)
-            sampler->syncCachedValueFromParam(paramIndex);
-        }
+    samplerUI_->onParameterChanged = [samplerPlugin](int paramIndex, float value) {
+        ta::setSamplerSlotDisplayValue(*samplerPlugin, paramIndex, value,
+                                       juce::sendNotificationSync);
     };
 
     samplerUI_->onLoopEnabledChanged = [sampler](bool enabled) {
-        sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-        sampler->loopEnabledValue = enabled;
+        sampler->setLoopEnabled(enabled);
     };
 
     samplerUI_->onRootNoteChanged = [sampler](int note) { sampler->setRootNote(note); };
@@ -305,13 +309,13 @@ void PadDeviceSlot::setupForSampler(daw::audio::MagdaSamplerPlugin* sampler) {
     if (file.existsAsFile())
         sampleName = file.getFileNameWithoutExtension();
 
+    const auto slot = [sampler](int index) { return sampler->displayValue(index); };
     samplerUI_->updateParameters(
-        sampler->attackValue.get(), sampler->decayValue.get(), sampler->sustainValue.get(),
-        sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
-        sampler->levelValue.get(), sampler->sampleStartValue.get(), sampler->sampleEndValue.get(),
-        sampler->loopEnabledValue.get(), sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-        sampler->velAmountValue.get(), sampleName, sampler->getRootNote(),
-        sampler->voiceModeValue.get(), sampler->glideValue.get());
+        slot(Sampler::kAttack), slot(Sampler::kDecay), slot(Sampler::kSustain),
+        slot(Sampler::kRelease), slot(Sampler::kPitch), slot(Sampler::kFine), slot(Sampler::kLevel),
+        slot(Sampler::kSampleStart), slot(Sampler::kSampleEnd), sampler->loopEnabled(),
+        slot(Sampler::kLoopStart), slot(Sampler::kLoopEnd), slot(Sampler::kVelAmount), sampleName,
+        sampler->getRootNote(), slot(Sampler::kVoiceMode), slot(Sampler::kGlide));
 
     samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                 sampler->getSampleLengthSeconds());
@@ -648,7 +652,9 @@ void PadDeviceSlot::resized() {
     nameLabel_.setVisible(true);
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
     if (plugin_) {
-        bool isSampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin_) != nullptr;
+        bool isSampler =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+                plugin_) != nullptr;
         if (samplerUI_)
             samplerUI_->setVisible(isSampler);
         if (compiledPanel_)

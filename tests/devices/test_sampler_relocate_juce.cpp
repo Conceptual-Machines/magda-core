@@ -6,6 +6,7 @@
 #include "JuceTestStateGuard.hpp"
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace te = tracktion;
@@ -29,12 +30,11 @@ juce::File testScratchDir() {
     return dir;
 }
 
-// Mirrors how the plugin itself moves a marker: through the host-write path,
-// with the CachedValue kept in step, since that is what relocateSample reads.
-void setMarker(const te::AutomatableParameter::Ptr& param, juce::CachedValue<float>& cached,
-               float seconds) {
-    param->setParameterFromHost(seconds, juce::dontSendNotification);
-    cached = seconds;
+// Mirrors how the faceplate itself moves a marker: through the host wrapper's
+// parameter, which is what the device reads its slot back from.
+void setMarker(te::Plugin& plugin, int slot, float seconds) {
+    magda::daw::audio::tracktion_adapter::setSamplerSlotDisplayValue(plugin, slot, seconds,
+                                                                     juce::dontSendNotification);
 }
 
 // One second of sine, long enough that trim markers have somewhere to sit other
@@ -69,6 +69,7 @@ class SamplerRelocateTest final : public juce::UnitTest {
     void runTest() override {
         testRelocatePreservesInterpretation();
         testLoadSampleStillResets();
+        testLoadTakesMarkersIntoHostParameters();
     }
 
   private:
@@ -77,20 +78,21 @@ class SamplerRelocateTest final : public juce::UnitTest {
     MagdaSamplerPlugin* prepare(te::Edit& edit, const juce::File& sampleFile,
                                 te::Plugin::Ptr& keepAlive) {
         keepAlive = createCustomPlugin(edit, MagdaSamplerPlugin::xmlTypeName);
-        auto* sampler = dynamic_cast<MagdaSamplerPlugin*>(keepAlive.get());
+        auto* sampler = magda::daw::audio::tracktion_adapter::deviceFromPlugin<MagdaSamplerPlugin>(
+            keepAlive.get());
         expect(sampler != nullptr, "Sampler plugin must be created");
         if (sampler == nullptr)
             return nullptr;
 
-        sampler->loadSample(sampleFile);
+        magda::daw::audio::tracktion_adapter::loadSamplerSample(*keepAlive, sampleFile);
         expectEquals(sampler->getSampleFile().getFullPathName(), sampleFile.getFullPathName(),
                      "Sampler must have adopted the sample");
 
         sampler->setRootNote(48);
-        setMarker(sampler->sampleStartParam, sampler->sampleStartValue, 0.25f);
-        setMarker(sampler->sampleEndParam, sampler->sampleEndValue, 0.75f);
-        setMarker(sampler->loopStartParam, sampler->loopStartValue, 0.3f);
-        setMarker(sampler->loopEndParam, sampler->loopEndValue, 0.6f);
+        setMarker(*keepAlive, MagdaSamplerPlugin::kSampleStart, 0.25f);
+        setMarker(*keepAlive, MagdaSamplerPlugin::kSampleEnd, 0.75f);
+        setMarker(*keepAlive, MagdaSamplerPlugin::kLoopStart, 0.3f);
+        setMarker(*keepAlive, MagdaSamplerPlugin::kLoopEnd, 0.6f);
         return sampler;
     }
 
@@ -115,19 +117,19 @@ class SamplerRelocateTest final : public juce::UnitTest {
         auto moved = testScratchDir().getNonexistentChildFile("relocate_dest", ".wav");
         expect(original.moveFileTo(moved), "Sample must move");
 
-        sampler->relocateSample(moved);
+        magda::daw::audio::tracktion_adapter::relocateSamplerSample(*keepAlive, moved);
 
         expectEquals(sampler->getSampleFile().getFullPathName(), moved.getFullPathName(),
                      "Sampler must follow the file");
         expectEquals(sampler->getRootNote(), 48, "Root note must survive relocation");
-        expectWithinAbsoluteError(sampler->sampleStartValue.get(), 0.25f, 0.0001f,
-                                  "Sample start must survive relocation");
-        expectWithinAbsoluteError(sampler->sampleEndValue.get(), 0.75f, 0.0001f,
-                                  "Sample end must survive relocation");
-        expectWithinAbsoluteError(sampler->loopStartValue.get(), 0.3f, 0.0001f,
-                                  "Loop start must survive relocation");
-        expectWithinAbsoluteError(sampler->loopEndValue.get(), 0.6f, 0.0001f,
-                                  "Loop end must survive relocation");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kSampleStart), 0.25f,
+                                  0.0001f, "Sample start must survive relocation");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kSampleEnd), 0.75f,
+                                  0.0001f, "Sample end must survive relocation");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kLoopStart), 0.3f,
+                                  0.0001f, "Loop start must survive relocation");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kLoopEnd), 0.6f,
+                                  0.0001f, "Loop end must survive relocation");
 
         moved.deleteFile();
     }
@@ -154,16 +156,65 @@ class SamplerRelocateTest final : public juce::UnitTest {
         auto other = testScratchDir().getNonexistentChildFile("reset_other", ".wav");
         expect(writeTestWav(other), "Second test sample must be written");
 
-        sampler->loadSample(other);
+        magda::daw::audio::tracktion_adapter::loadSamplerSample(*keepAlive, other);
 
         expectEquals(sampler->getRootNote(), 60, "A newly chosen sample resets the root note");
-        expectWithinAbsoluteError(sampler->sampleStartValue.get(), 0.0f, 0.0001f,
-                                  "A newly chosen sample resets the start marker");
-        expectWithinAbsoluteError(sampler->loopStartValue.get(), 0.0f, 0.0001f,
-                                  "A newly chosen sample resets the loop start");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kSampleStart), 0.0f,
+                                  0.0001f, "A newly chosen sample resets the start marker");
+        expectWithinAbsoluteError(sampler->displayValue(MagdaSamplerPlugin::kLoopStart), 0.0f,
+                                  0.0001f, "A newly chosen sample resets the loop start");
 
         original.deleteFile();
         other.deleteFile();
+    }
+
+    void testLoadTakesMarkersIntoHostParameters() {
+        beginTest("A sample load reaches the host's parameters, not only the device");
+
+        // The device derives the trim markers from the audio it just loaded,
+        // and the host is the authority every block: syncParametersToDevice()
+        // pushes on every applyToBuffer. Without the pull back, the host's
+        // stale markers overwrite the derived ones at the next render, and the
+        // sample plays a region that belongs to whatever was loaded before.
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        auto file = testScratchDir().getNonexistentChildFile("host_sync", ".wav");
+        expect(writeTestWav(file), "Test sample must be written");
+
+        te::Plugin::Ptr keepAlive;
+        auto* sampler = prepare(*edit, file, keepAlive);
+        if (sampler == nullptr)
+            return;
+
+        // prepare() moved the markers off the load's defaults; reloading the
+        // same file resets them, which is the change that has to travel.
+        magda::daw::audio::tracktion_adapter::loadSamplerSample(*keepAlive, file);
+
+        auto* devicePlugin =
+            dynamic_cast<magda::daw::audio::tracktion_adapter::TracktionMagdaDevicePlugin*>(
+                keepAlive.get());
+        expect(devicePlugin != nullptr, "The sampler must sit inside the host's device wrapper");
+        if (devicePlugin == nullptr)
+            return;
+
+        for (const int index : {MagdaSamplerPlugin::kSampleStart, MagdaSamplerPlugin::kSampleEnd,
+                                MagdaSamplerPlugin::kLoopStart, MagdaSamplerPlugin::kLoopEnd}) {
+            auto* parameter = devicePlugin->parameterForDeviceSlot(index);
+            expect(parameter != nullptr, "Every sampler slot must have a host parameter");
+            if (parameter == nullptr)
+                continue;
+
+            const float fromHost = magda::ParameterUtils::normalizedToReal(
+                parameter->getCurrentValue(), sampler->parameterInfo(index));
+            expectWithinAbsoluteError(fromHost, sampler->displayValue(index), 0.0001f,
+                                      "The host parameter must carry the marker the load derived");
+        }
+
+        file.deleteFile();
     }
 };
 

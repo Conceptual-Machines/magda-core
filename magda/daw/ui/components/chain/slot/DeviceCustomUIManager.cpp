@@ -860,6 +860,25 @@ void DeviceCustomUIManager::createToneGeneratorUI(const magda::DeviceInfo& devic
     update(device);
 }
 
+namespace {
+
+/// Push every sampler slot into the faceplate, reading each in its display
+/// units off the device. The faceplate's argument order is frozen; the enum
+/// spells out which slot each one is.
+void pushSamplerParameters(SamplerUI& ui, const daw::audio::MagdaSamplerPlugin& sampler,
+                           const juce::String& sampleName) {
+    using Sampler = daw::audio::MagdaSamplerPlugin;
+    const auto slot = [&sampler](int index) { return sampler.displayValue(index); };
+    ui.updateParameters(slot(Sampler::kAttack), slot(Sampler::kDecay), slot(Sampler::kSustain),
+                        slot(Sampler::kRelease), slot(Sampler::kPitch), slot(Sampler::kFine),
+                        slot(Sampler::kLevel), slot(Sampler::kSampleStart),
+                        slot(Sampler::kSampleEnd), sampler.loopEnabled(), slot(Sampler::kLoopStart),
+                        slot(Sampler::kLoopEnd), slot(Sampler::kVelAmount), sampleName,
+                        sampler.getRootNote(), slot(Sampler::kVoiceMode), slot(Sampler::kGlide));
+}
+
+}  // namespace
+
 bool DeviceCustomUIManager::createSamplerUI(const magda::DeviceInfo& device,
                                             juce::Component& parent, const Callbacks& callbacks) {
     if (!device.pluginId.containsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
@@ -1306,7 +1325,9 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         auto& firstPlugin = chain.plugins[0];
         if (firstPlugin == nullptr)
             return {};
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(firstPlugin.get())) {
+        if (auto* sampler =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+                    firstPlugin.get())) {
             auto f = sampler->getSampleFile();
             if (f.existsAsFile())
                 return f.getFileNameWithoutExtension();
@@ -1558,7 +1579,9 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         const int pluginCount = dg->getPadPluginCount(padIndex);
         for (int i = 0; i < pluginCount; ++i) {
             if (auto* plugin = dg->getPadPlugin(padIndex, i)) {
-                sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
+                sampler =
+                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+                        plugin);
                 if (sampler != nullptr)
                     break;
             }
@@ -1588,12 +1611,12 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             return;
 
         const auto file = sampler->getSampleFile();
-        const double startSeconds = sampler->sampleStartParam != nullptr
-                                        ? sampler->sampleStartParam->getCurrentValue()
-                                        : 0.0;
-        const double endSeconds = sampler->sampleEndParam != nullptr
-                                      ? sampler->sampleEndParam->getCurrentValue()
-                                      : sampler->getSampleLengthSeconds();
+        const double startSeconds =
+            sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleStart);
+        const double sampleEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleEnd);
+        // A zero end is the marker never having been set, not a zero-length
+        // region: the whole sample is what the analysis should read.
+        const double endSeconds = sampleEnd > 0.0 ? sampleEnd : sampler->getSampleLengthSeconds();
         const auto trackId = nodePath.trackId;
         const auto deviceId = nodePath.getDeviceId();
         const int noteNumber = daw::audio::DrumGridPlugin::baseNote + padIndex;
@@ -1712,7 +1735,9 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             info.livePlugin = [plugin]() { return plugin; };
             info.deviceId = dg->getPluginDeviceId(chain->index, pluginIndex);
             info.device = projectPadPluginDevice(info.deviceId, plugin);
-            info.isSampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get()) != nullptr;
+            info.isSampler =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+                    plugin.get()) != nullptr;
             info.name = info.device.name.isNotEmpty() ? info.device.name : plugin->getName();
 
             // A pad plugin runs inside the grid, not on the track's graph, so
@@ -1978,14 +2003,13 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& command,
                                                        const juce::var& arguments) {
     auto plugin = getLivePlugin();
-    auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get());
+    auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+        plugin.get());
 
     if (command == kSamplerSetLoopEnabled) {
         if (sampler == nullptr)
             return false;
-        const bool enabled = static_cast<bool>(arguments);
-        sampler->loopEnabledAtomic.store(enabled, std::memory_order_relaxed);
-        sampler->loopEnabledValue = enabled;
+        sampler->setLoopEnabled(static_cast<bool>(arguments));
         return true;
     }
 
@@ -2014,16 +2038,10 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
         return false;
 
     plugin = getLivePlugin();
-    sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get());
+    sampler = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+        plugin.get());
     if (sampler != nullptr && samplerUI_ != nullptr) {
-        samplerUI_->updateParameters(
-            sampler->attackValue.get(), sampler->decayValue.get(), sampler->sustainValue.get(),
-            sampler->releaseValue.get(), sampler->pitchValue.get(), sampler->fineValue.get(),
-            sampler->levelValue.get(), sampler->sampleStartValue.get(),
-            sampler->sampleEndValue.get(), sampler->loopEnabledValue.get(),
-            sampler->loopStartValue.get(), sampler->loopEndValue.get(),
-            sampler->velAmountValue.get(), file.getFileNameWithoutExtension(),
-            sampler->getRootNote(), sampler->voiceModeValue.get(), sampler->glideValue.get());
+        pushSamplerParameters(*samplerUI_, *sampler, file.getFileNameWithoutExtension());
         samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                     sampler->getSampleLengthSeconds());
     }
@@ -2409,15 +2427,17 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
         }
 
         auto plugin = getLivePlugin();
-        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+        if (auto* sampler =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+                    plugin.get())) {
             auto file = sampler->getSampleFile();
             if (file.existsAsFile())
                 sampleName = file.getFileNameWithoutExtension();
-            loopEnabled = sampler->loopEnabledValue.get();
-            sampleStart = sampler->sampleStartParam->getCurrentValue();
-            sampleEnd = sampler->sampleEndParam->getCurrentValue();
-            loopStart = sampler->loopStartParam->getCurrentValue();
-            loopEnd = sampler->loopEndParam->getCurrentValue();
+            loopEnabled = sampler->loopEnabled();
+            sampleStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleStart);
+            sampleEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kSampleEnd);
+            loopStart = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopStart);
+            loopEnd = sampler->displayValue(daw::audio::MagdaSamplerPlugin::kLoopEnd);
             rootNote = sampler->getRootNote();
             if (!samplerUI_->hasWaveform())
                 samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
@@ -2440,8 +2460,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
             for (const auto& chain : dg->getChains()) {
                 juce::String displayName;
                 if (!chain->plugins.empty() && chain->plugins[0] != nullptr) {
-                    if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(
-                            chain->plugins[0].get())) {
+                    if (auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<
+                            daw::audio::MagdaSamplerPlugin>(chain->plugins[0].get())) {
                         auto file = sampler->getSampleFile();
                         if (file.existsAsFile())
                             displayName = file.getFileNameWithoutExtension();

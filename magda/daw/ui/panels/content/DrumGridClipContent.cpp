@@ -16,6 +16,7 @@
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/DrumkitManager.hpp"
 #include "core/GestureRouter.hpp"
@@ -2968,7 +2969,8 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
 
             // Check for MagdaSamplerPlugin with loaded sample
             for (const auto& plugin : chain->plugins) {
-                if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get())) {
+                if (auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<
+                        daw::audio::MagdaSamplerPlugin>(plugin.get())) {
                     auto sampleFile = sampler->getSampleFile();
                     if (sampleFile.existsAsFile())
                         return sampleFile.getFileNameWithoutExtension();
