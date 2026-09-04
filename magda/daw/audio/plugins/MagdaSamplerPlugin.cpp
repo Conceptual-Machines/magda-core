@@ -640,8 +640,11 @@ void MagdaSamplerPlugin::flushState(juce::ValueTree& state) {
 }
 
 void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
-    if (const auto* value = state.getPropertyPointer(StateIDs::loopEnabled))
-        loopEnabled_.store(static_cast<bool>(*value), std::memory_order_relaxed);
+    // Absent means off, as it does for the sample and the root note below: the
+    // document is the whole authored state, so restoring one saved before the
+    // loop was switched on has to switch it back off (#2377).
+    loopEnabled_.store(static_cast<bool>(state.getProperty(StateIDs::loopEnabled, false)),
+                       std::memory_order_relaxed);
 
     const int savedRootNote = state.getPropertyPointer(StateIDs::rootNote) != nullptr
                                   ? static_cast<int>(state[StateIDs::rootNote])
