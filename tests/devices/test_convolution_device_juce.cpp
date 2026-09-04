@@ -107,21 +107,17 @@ int peakIndex(const juce::AudioBuffer<float>& buffer) {
     return index;
 }
 
-/// The RMS of `measureCycles` complete cycles of a `frequency` Hz sine at
-/// `sampleRate`, rendered after `settleBlocks` warm-up blocks (the biquads'
-/// own filter state starts at zero and needs a few blocks to reach steady
-/// state - the convolution engine itself does not: prepare() installs it
-/// directly, with no crossfade, per Convolution::Impl::prepare()).
-///
-/// Measuring a whole number of cycles matters: `frequency` must divide
-/// `sampleRate` exactly, or the last block ends mid-cycle and its RMS carries
-/// a windowing residual large enough on its own to swallow the bug this test
-/// is for - e.g. one block of a 100 Hz tone's last-256-samples RMS is ~0.749
-/// at 44.1 kHz vs ~0.705 at 48 kHz, a gap from the window alone that is
-/// comparable to the bug's. 300 Hz divides both 44100 and 48000 exactly (147
-/// and 160 samples/cycle), so the measured window has no residual, and the
-/// result is compared to the sine's own exact RMS rather than to a render at
-/// another rate - independent of that rate's filter coefficients entirely.
+/**
+ * @brief RMS of a steady-state `frequency` Hz tone through `plugin`.
+ *
+ * `frequency` must divide `sampleRate` evenly (300 Hz fits both 44100 and
+ * 48000) so the measured window is a whole number of cycles - otherwise its
+ * windowing residual can rival the #2360 gain bug this test is for.
+ *
+ * @param settleBlocks Blocks rendered and discarded before measuring, to
+ *                     clear the filters' startup transient.
+ * @param measureCycles Whole tone cycles accumulated into the RMS.
+ */
 float steadyStateSineRms(te::Plugin& plugin, double sampleRate, double frequency, int settleBlocks,
                          int measureCycles) {
     juce::AudioBuffer<float> buffer(2, kBlockSize);
@@ -440,14 +436,9 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         holder->deleteFromParent();
     }
 
-    // restoreState() stamps the no-IR dirac at its 44100 default before the
-    // first prepare() ever runs (both hosts restore before preparing), so a
-    // session at any other rate must not hear that stamp resampled (#2360).
-    // 300 Hz sits far enough inside the low-cut/high-cut defaults (10 Hz/20
-    // kHz) that their coefficients are close enough to flat, at either rate,
-    // to not be the source of a gain error here - unlike a broadband
-    // impulse, whose peak the high-cut colours differently simply because
-    // 20 kHz sits closer to Nyquist at 44.1 kHz than it does at 48 kHz.
+    // No IR must be a pass-through at any session rate, not just 44.1 kHz
+    // (#2360). 300 Hz avoids the low-cut/high-cut colouring near Nyquist
+    // that a broadband impulse would show.
     void testNoIrIsAPassThroughAtANonDefaultSampleRate(te::Edit& edit) {
         beginTest("No IR is a pass-through on a session that is not 44.1 kHz");
 
