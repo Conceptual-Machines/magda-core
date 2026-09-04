@@ -70,6 +70,7 @@ class SamplerRelocateTest final : public juce::UnitTest {
         testRelocatePreservesInterpretation();
         testLoadSampleStillResets();
         testLoadTakesMarkersIntoHostParameters();
+        testRestoreWithoutLoopEnabledSwitchesItOff();
     }
 
   private:
@@ -215,6 +216,27 @@ class SamplerRelocateTest final : public juce::UnitTest {
         }
 
         file.deleteFile();
+    }
+
+    void testRestoreWithoutLoopEnabledSwitchesItOff() {
+        beginTest("A restore that does not name loopEnabled switches looping off");
+
+        // The document is the whole authored state, so a state saved before the
+        // loop was switched on has to switch it back off. Keeping the previous
+        // value leaves a pad looping that the project says does not (#2377).
+        MagdaSamplerPlugin sampler;
+        sampler.setLoopEnabled(true);
+
+        juce::ValueTree state{juce::Identifier("PLUGIN")};
+        state.setProperty(juce::Identifier("type"), MagdaSamplerPlugin::xmlTypeName, nullptr);
+        sampler.restoreState(state);
+
+        expect(!sampler.loopEnabled(), "An absent loopEnabled must restore as off");
+
+        state.setProperty(MagdaSamplerPlugin::StateIDs::loopEnabled, true, nullptr);
+        sampler.restoreState(state);
+
+        expect(sampler.loopEnabled(), "A state that names loopEnabled must still restore it");
     }
 };
 
