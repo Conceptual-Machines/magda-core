@@ -180,6 +180,16 @@ ParameterInfo slotInfo(int index) {
     return info;
 }
 
+/// The root note a file's own metadata names, or middle C when it names none.
+int rootNoteFromMetadata(const juce::AudioFormatReader& reader) {
+    const auto& metadata = reader.metadataValues;
+    if (metadata.containsKey("MidiUnityNote"))
+        return metadata.getValue("MidiUnityNote", "60").getIntValue();
+    if (metadata.containsKey("smpl_MIDIUnityNote"))
+        return metadata.getValue("smpl_MIDIUnityNote", "60").getIntValue();
+    return 60;
+}
+
 }  // namespace
 
 const char* MagdaSamplerPlugin::xmlTypeName = "magdasampler";
@@ -662,6 +672,16 @@ void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
         return;
     }
 
+    // Already holding this audio is not a reload. An authored-state edit is
+    // projected as a whole document, so without this a loop-switch or root-note
+    // write would re-read the file and cut every sounding voice (#2379). A file
+    // that CHANGED under the same name is not the audio this holds, so it falls
+    // through and is read again.
+    if (holdsAudioFrom(savedPath)) {
+        setRootNote(savedRootNote);
+        return;
+    }
+
     // loadSample() re-derives the markers from the file, which is right for a
     // newly chosen sample and wrong here: the document's markers are the
     // authored ones. Take them back afterwards.
@@ -693,6 +713,17 @@ void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
 }
 
 //==============================================================================
+MagdaSamplerPlugin::SampleChoice MagdaSamplerPlugin::readSampleChoice(const juce::File& file) {
+    std::unique_ptr<juce::AudioFormatReader> reader(sampleFormats().createReaderFor(file));
+    if (reader == nullptr || reader->sampleRate <= 0.0)
+        return {};
+
+    const auto seconds =
+        static_cast<float>(static_cast<double>(reader->lengthInSamples) / reader->sampleRate);
+    return {true, rootNoteFromMetadata(*reader),
+            juce::jmin(seconds, slotInfo(kSampleEnd).maxValue)};
+}
+
 void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     std::unique_ptr<juce::AudioFormatReader> reader(sampleFormats().createReaderFor(file));
     if (reader == nullptr)
@@ -702,14 +733,7 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
                                        static_cast<int>(reader->lengthInSamples));
     reader->read(&newBuffer, 0, static_cast<int>(reader->lengthInSamples), 0, true, true);
 
-    // Try to detect root note from metadata
-    int detectedRootNote = 60;
-    auto& metadata = reader->metadataValues;
-    if (metadata.containsKey("MidiUnityNote"))
-        detectedRootNote = metadata.getValue("MidiUnityNote", "60").getIntValue();
-    else if (metadata.containsKey("smpl_MIDIUnityNote"))
-        detectedRootNote = metadata.getValue("smpl_MIDIUnityNote", "60").getIntValue();
-
+    const int detectedRootNote = rootNoteFromMetadata(*reader);
     const double sourceSR = reader->sampleRate;
 
     // Swap in a new sound — synthesiser manages ownership, and
@@ -724,6 +748,8 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     currentSound = newSound;
 
     samplePath_ = file.getFullPathName();
+    sampleFileSize_ = file.getSize();
+    sampleFileModifiedMs_ = file.getLastModificationTime().toMilliseconds();
     rootNote_ = detectedRootNote;
 
     // Markers reset to span the new sample. restoreState() puts the authored
@@ -743,7 +769,20 @@ void MagdaSamplerPlugin::unloadSample() {
     synthesiser.addSound(empty);
     currentSound = empty;
     samplePath_.clear();
+    sampleFileSize_ = 0;
+    sampleFileModifiedMs_ = 0;
     rootNote_ = 60;
+}
+
+bool MagdaSamplerPlugin::holdsAudioFrom(const juce::String& path) const {
+    if (path.isEmpty() || path != samplePath_ || getSampleLengthSeconds() <= 0.0)
+        return false;
+
+    // Size and modification time, not the bytes: a sample is arbitrarily large
+    // and this runs on every projection of the device's document.
+    const juce::File file(path);
+    return file.getSize() == sampleFileSize_ &&
+           file.getLastModificationTime().toMilliseconds() == sampleFileModifiedMs_;
 }
 
 void MagdaSamplerPlugin::relocateSample(const juce::File& file) {

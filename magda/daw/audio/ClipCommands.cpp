@@ -22,7 +22,6 @@
 #include "core/Config.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/DrumGridPads.hpp"
-#include "core/ParameterUtils.hpp"
 #include "core/TrackManager.hpp"
 
 namespace magda {
@@ -2860,38 +2859,29 @@ void prepareDrumGridAdsrMacros(DeviceInfo& drumGridDevice) {
     }
 }
 
-/// Write one sampler slot in its display units, through the HOST WRAPPER's
-/// parameter rather than onto the device. The wrapper mirrors its parameters
-/// into the device on every sync, so a write straight to the device is undone
-/// at the next one. setParameterFromHost, not setParameter: the latter is
-/// silently dropped once a macro or mod is attached to the parameter.
-void setSamplerSlot(te::Plugin& plugin, int index, float displayValue) {
-    auto* sampler =
-        daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(&plugin);
-    if (sampler == nullptr)
-        return;
-
-    auto params = plugin.getAutomatableParameters();
-    if (index < 0 || index >= params.size())
-        return;
-
-    const float normalized =
-        ParameterUtils::realToNormalized(displayValue, sampler->parameterInfo(index));
-    params[index]->setParameterFromHost(normalized, juce::dontSendNotification);
+/// A pad device's own address in the model: `PadRack(grid) > PadChain(pad) >
+/// Device`, rooted at the track whatever the grid is nested in.
+ChainNodePath padDevicePath(TrackId trackId, DeviceId gridDeviceId, ChainId padChainId,
+                            DeviceId padDeviceId) {
+    return ChainNodePath::padChain(trackId, gridDeviceId, padChainId).withDevice(padDeviceId);
 }
 
 /// Flatten the pad sampler's envelope so the DrumGrid ADSR macros, which are
 /// added next, are the only thing shaping it.
-void zeroSamplerAdsrBase(te::Plugin& plugin) {
+///
+/// On the MODEL, which owns a device's parameters and projects them onto the
+/// plugin (#2317). Written onto the plugin instead, the flattened envelope was
+/// gone at the next rebuild while the macros shaping it stayed (#2379).
+void zeroSamplerAdsrBase(const ChainNodePath& samplerPath,
+                         const daw::audio::MagdaSamplerPlugin& sampler) {
     using Sampler = daw::audio::MagdaSamplerPlugin;
-    auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<Sampler>(&plugin);
-    if (sampler == nullptr)
-        return;
+    auto& trackManager = TrackManager::getInstance();
+    const auto lowest = [&sampler](int index) { return sampler.parameterInfo(index).minValue; };
 
-    setSamplerSlot(plugin, Sampler::kAttack, sampler->parameterInfo(Sampler::kAttack).minValue);
-    setSamplerSlot(plugin, Sampler::kDecay, sampler->parameterInfo(Sampler::kDecay).minValue);
-    setSamplerSlot(plugin, Sampler::kSustain, 0.0f);
-    setSamplerSlot(plugin, Sampler::kRelease, sampler->parameterInfo(Sampler::kRelease).minValue);
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kAttack, lowest(Sampler::kAttack));
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kDecay, lowest(Sampler::kDecay));
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kSustain, 0.0f);
+    trackManager.setDeviceParameterValue(samplerPath, Sampler::kRelease, lowest(Sampler::kRelease));
 }
 
 void addSamplerAdsrMacroLinks(DeviceInfo& drumGridDevice, TrackId trackId, int chainIndex,
@@ -2939,14 +2929,18 @@ void linkAssignedDrumGridSamplerAdsrMacros(DeviceInfo& drumGridDevice, TrackId t
             continue;
 
         auto* plugin = chain->plugins[0].get();
-        if (plugin == nullptr ||
-            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
-                plugin) == nullptr)
+        if (plugin == nullptr)
             continue;
 
-        zeroSamplerAdsrBase(*plugin);
-        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index,
-                                 drumGrid.getPluginDeviceId(chain->index, 0), *plugin);
+        const auto* sampler =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin);
+        const auto samplerDeviceId = drumGrid.getPluginDeviceId(chain->index, 0);
+        if (sampler == nullptr || samplerDeviceId == INVALID_DEVICE_ID)
+            continue;
+
+        zeroSamplerAdsrBase(
+            padDevicePath(trackId, drumGridDevice.id, chain->index, samplerDeviceId), *sampler);
+        addSamplerAdsrMacroLinks(drumGridDevice, trackId, chain->index, samplerDeviceId, *plugin);
     }
 }
 
@@ -3015,25 +3009,30 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         return;
     }
 
-    // Load samples to pads and set region boundaries. The pad goes into the
-    // model and the plugin follows by sync; the region boundaries are the
-    // sampler's own parameters and are set on it once it exists (#2207).
+    // Load samples to pads and set region boundaries. Both go into the MODEL
+    // and the plugin follows by sync: the markers are what makes a slice a
+    // slice, and written onto the plugin they would be gone at the next
+    // rebuild, leaving sixteen pads playing the whole file (#2379).
     const auto gridPath = ChainNodePath::topLevelDevice(newTrackId, drumGridDeviceId);
     for (int i = 0; i < numSlices; ++i) {
         const auto& slice = slices[static_cast<size_t>(i)];
-        trackManager.setPadDevice(gridPath, i,
-                                  padSamplerDevice(audioFile.getFullPathName(),
-                                                   daw::audio::DrumGridPlugin::baseNote + i));
+        const auto samplerDeviceId =
+            trackManager.setPadDevice(gridPath, i,
+                                      padSamplerDevice(audioFile.getFullPathName(),
+                                                       daw::audio::DrumGridPlugin::baseNote + i));
 
-        auto* chain = drumGrid->getChainForNote(daw::audio::DrumGridPlugin::baseNote + i);
-        if (chain && !chain->plugins.empty()) {
-            if (auto* plugin = chain->plugins[0].get()) {
-                setSamplerSlot(*plugin, daw::audio::MagdaSamplerPlugin::kSampleStart,
-                               static_cast<float>(slice.sourceStart));
-                setSamplerSlot(*plugin, daw::audio::MagdaSamplerPlugin::kSampleEnd,
-                               static_cast<float>(slice.sourceEnd));
-            }
-        }
+        const auto* pad = trackManager.getPad(gridPath, i);
+        if (samplerDeviceId == INVALID_DEVICE_ID || pad == nullptr)
+            continue;
+
+        const auto samplerPath =
+            padDevicePath(newTrackId, drumGridDeviceId, pad->id, samplerDeviceId);
+        trackManager.setDeviceParameterValue(samplerPath,
+                                             daw::audio::MagdaSamplerPlugin::kSampleStart,
+                                             static_cast<float>(slice.sourceStart));
+        trackManager.setDeviceParameterValue(samplerPath,
+                                             daw::audio::MagdaSamplerPlugin::kSampleEnd,
+                                             static_cast<float>(slice.sourceEnd));
     }
 
     linkAssignedDrumGridSamplerAdsrMacros(*drumGridDevice, newTrackId, *drumGrid);

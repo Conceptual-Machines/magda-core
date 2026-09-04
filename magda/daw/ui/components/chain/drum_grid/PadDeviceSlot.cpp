@@ -4,10 +4,11 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "audio/sampling/SamplerModelEdits.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/TrackManager.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
@@ -277,17 +278,22 @@ void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
         addAndMakeVisible(*samplerUI_);
     }
 
-    // Wire SamplerUI callbacks
-    samplerUI_->onParameterChanged = [samplerPlugin](int paramIndex, float value) {
-        ta::setSamplerSlotDisplayValue(*samplerPlugin, paramIndex, value,
-                                       juce::sendNotificationSync);
+    // Wire SamplerUI callbacks. Every edit goes to the MODEL at this pad's own
+    // path and reaches the plugin by projection (#2317) — written onto the
+    // device they would be gone at the next rebuild and absent from the native
+    // leg's render (#2379). The path is read when the edit happens: the slot is
+    // told it by setLinkContext(), after this runs.
+    samplerUI_->onParameterChanged = [this](int paramIndex, float value) {
+        magda::TrackManager::getInstance().setDeviceParameterValue(devicePath_, paramIndex, value);
     };
 
-    samplerUI_->onLoopEnabledChanged = [sampler](bool enabled) {
-        sampler->setLoopEnabled(enabled);
+    samplerUI_->onLoopEnabledChanged = [this](bool enabled) {
+        magda::sampler_edits::setLoopEnabled(devicePath_, enabled);
     };
 
-    samplerUI_->onRootNoteChanged = [sampler](int note) { sampler->setRootNote(note); };
+    samplerUI_->onRootNoteChanged = [this](int note) {
+        magda::sampler_edits::setRootNote(devicePath_, note);
+    };
 
     samplerUI_->getPlaybackPosition = [sampler]() -> double {
         return sampler->getPlaybackPosition();
