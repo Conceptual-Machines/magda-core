@@ -38,14 +38,6 @@ concurrency:
 
 env:
   VCPKG_COMMIT: a0b1c8d3a477c1cb4813d8e127a56961707ca42b
-  # Hash the compiler's CONTENT, not its mtime, when keying ccache objects.
-  # ccache defaults to compiler_check=mtime, but ephemeral runners reprovision
-  # the VM every run, so the system compiler gets a fresh mtime each time even
-  # though its bytes are identical. With mtime that invalidates 100% of the
-  # restored cache (0% hits, observed on Linux); content makes the same compiler
-  # version hash identically across runs. Covers Linux and the windows-latest
-  # fallback, which lack the global ccache.conf the self-hosted runner carries.
-  CCACHE_COMPILERCHECK: content
 
 jobs:
   # When a release PR into main is open for this branch, the pull_request run
@@ -182,15 +174,18 @@ jobs:
           echo "AWS_SECRET_ACCESS_KEY=${R2_SECRET_ACCESS_KEY}"
         } >> "$GITHUB_ENV"
 
+    # Keyed by the CMake hash alone, no github.sha: actions/cache does not
+    # re-save on a primary-key hit, so this saves once per CMake change
+    # instead of once per push, and stops evicting the rest of the 10 GB
+    # per-repo cache budget on every commit.
     - name: Cache CMake build directory
       uses: actions/cache@v6
       with:
         path: |
           build
           !build/tests/magda_tests
-        key: ${{ runner.os }}-build-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-${{ github.sha }}
+        key: ${{ runner.os }}-build-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}
         restore-keys: |
-          ${{ runner.os }}-build-${{ hashFiles('**/CMakeLists.txt', '**/*.cmake') }}-
           ${{ runner.os }}-build-
 
     # Faust/Mutable prebuilt artifacts (#1669): both are stable, rarely-changing
@@ -788,6 +783,18 @@ jobs:
       github.event.inputs.skip-cpp-build != 'true'
 
     steps:
+    # First step on purpose, mirrors the Linux job: decides whether this run
+    # gets sccache and the vcpkg R2 binary cache, or falls back to an
+    # uncached build. Needs neither the checkout nor any tool.
+    - name: Check R2 credentials
+      id: r2-creds
+      continue-on-error: true
+      shell: powershell
+      env:
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      run: |
+        if ([string]::IsNullOrEmpty($env:R2_ACCESS_KEY_ID)) { exit 1 }
+
     - uses: actions/checkout@v7
       with:
         submodules: recursive
@@ -922,50 +929,88 @@ jobs:
         "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         "VCPKG_DEFAULT_BINARY_CACHE=$binCache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-    - name: Cache vcpkg packages
-      # Only needed on ephemeral GitHub-hosted runners; the self-hosted binary
-      # cache persists locally and needs no upload/download round-trip.
-      if: runner.environment == 'github-hosted'
-      uses: actions/cache@v6
-      with:
-        path: .vcpkg-binary-cache
-        key: ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-${{ hashFiles('vcpkg.json') }}
-        restore-keys: |
-          ${{ runner.os }}-vcpkg-${{ env.VCPKG_COMMIT }}-
+    # vcpkg's S3-compatible binary source, pointed at the same R2 bucket
+    # sccache uses (see infra/sccache/README.md), under a vcpkg/ prefix.
+    # Replaces the actions/cache-backed package cache, which shared the same
+    # evicted 10 GB budget as everything else. Needs the AWS CLI, which
+    # windows-latest ships and the self-hosted runner may not; where it's
+    # missing this is a no-op and vcpkg keeps using its local disk cache
+    # (VCPKG_DEFAULT_BINARY_CACHE, set above). The bucket's 14-day expiry
+    # applies here too, so libxml2 rebuilds from source at most every two
+    # weeks on the runner that lacks the AWS CLI.
+    - name: Setup vcpkg binary cache (R2)
+      if: steps.r2-creds.outcome == 'success'
+      shell: powershell
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+          Write-Host "AWS CLI not found, skipping the vcpkg R2 binary cache"
+          exit 0
+        }
+        # 'default' keeps the local disk cache in front of R2, which is what
+        # the self-hosted runner already has warm.
+        "VCPKG_BINARY_SOURCES=default,readwrite;x-aws,s3://$env:R2_BUCKET/vcpkg/,readwrite" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_ENDPOINT_URL=https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_DEFAULT_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # Newer AWS CLIs send trailing checksums by default, which R2's S3 API
+        # does not accept on every operation; when_required is the older behaviour.
+        "AWS_REQUEST_CHECKSUM_CALCULATION=when_required" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_RESPONSE_CHECKSUM_VALIDATION=when_required" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_ACCESS_KEY_ID=$env:R2_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_SECRET_ACCESS_KEY=$env:R2_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Install libxml2
       shell: powershell
       run: |
         & "$env:VCPKG_ROOT\vcpkg.exe" install --triplet x64-windows
 
-    # ccache for MSVC. The Debug build uses /Z7 (embedded debug info, no shared
-    # PDB), which is what makes MSVC objects cacheable - /Zi could not be cached
-    # and broke the earlier sccache attempt. Mirrors the Linux job.
-    #
-    # No trailing hyphen on the restore key, and that is the whole of it. The
-    # action prefixes every key with its variant and, because append-timestamp
-    # defaults to true, appends a hyphen of its own:
-    #
-    #   restoreKeys = inputs.restoreKeys.map(k => variant + "-" + k + "-")
-    #
-    # so a restore key written with one produced the prefix
-    # "ccache-Windows-ccache-content--" while saves land under
-    # "ccache-Windows-ccache-content-<sha>-<timestamp>". Two hyphens against
-    # one, so the lookup matched nothing: every Windows run since this was added
-    # reported "No cache found." in a third of a second and then compiled all
-    # 1271 objects with ccache reporting a 0% hit rate, on every branch and on
-    # both runners, while saving a gigabyte nothing could ever read back.
-    #
-    # The primary key never matches either, by design: the action appends the
-    # timestamp after it, so restoring is the restore key's job alone.
-    - name: Setup ccache
-      uses: hendrikmuhs/ccache-action@v1.2
-      with:
-        key: ${{ runner.os }}-ccache-content-${{ github.sha }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-content
-        max-size: 3G
-        variant: ccache
+    # Compile cache: sccache backed by Cloudflare R2 (see infra/sccache),
+    # replacing ccache. ccache was branch-scoped via actions/cache and shared
+    # the repo's 10 GB budget with everything else, so most Windows runs built
+    # cold. Same bucket as Linux, windows key prefix so objects don't collide.
+    # MSVC Debug already builds with /Z7 (see CMakeLists.txt), which is what
+    # makes these objects cacheable at all - /Zi cannot be cached.
+    - name: Setup sccache
+      id: sccache
+      if: steps.r2-creds.outcome == 'success'
+      shell: powershell
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      run: |
+        $SCCACHE_VERSION = "v0.8.1"
+        $archive = "sccache-$SCCACHE_VERSION-x86_64-pc-windows-msvc.tar.gz"
+        # Into RUNNER_TEMP, not the checkout: the self-hosted workspace persists.
+        $dest = Join-Path $env:RUNNER_TEMP "sccache"
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        curl.exe -fsSL "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/$archive" -o (Join-Path $dest $archive)
+        tar.exe xf (Join-Path $dest $archive) -C $dest
+        $sccacheDir = (Get-ChildItem -Path $dest -Directory -Filter "sccache-$SCCACHE_VERSION-*").FullName
+        Add-Content -Path $env:GITHUB_PATH -Value $sccacheDir
+        & "$sccacheDir\sccache.exe" --version
+        # A server left running from an earlier run on the self-hosted runner
+        # keeps that run's config; stop it so this run's env is what starts it.
+        # Under the runner's ErrorActionPreference=Stop, native stderr through a
+        # redirect is a terminating error, so relax it for this one call.
+        $ErrorActionPreference = 'Continue'
+        & "$sccacheDir\sccache.exe" --stop-server 2>&1 | Out-Null
+        $ErrorActionPreference = 'Stop'
+        $global:LASTEXITCODE = 0
+        # sccache reads R2 through its S3 backend: bucket + custom endpoint,
+        # region 'auto' (R2 has no regions), credentials via the standard AWS
+        # variables. Written to GITHUB_ENV so the compile steps see them too.
+        "SCCACHE_BUCKET=$env:R2_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "SCCACHE_ENDPOINT=https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_ACCESS_KEY_ID=$env:R2_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "AWS_SECRET_ACCESS_KEY=$env:R2_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Determine Faust/Mutable artifact cache keys
       id: dsp-cache-keys
@@ -1144,8 +1189,8 @@ jobs:
           -DMAGDA_BUILD_TESTS=ON `
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache `
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache `
+          "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" `
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
           ${{ (steps.dsp-prebuilt-self.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_debug_dir)) || (steps.faust-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace)) || '' }} `
@@ -1154,7 +1199,7 @@ jobs:
     # Scoped to magda_tests only: this job doesn't otherwise need
     # magda_daw_app built during the Debug pass, and the Release pass below
     # already builds + verifies the full app on self-hosted, so no app-build
-    # coverage is lost. Windows is the slow platform here (no ccache hits
+    # coverage is lost. Windows is the slow platform here (no sccache hits
     # can help what never gets compiled), so this is worth it; macOS is fast
     # enough already that the same scoping wasn't applied there.
     - name: Build (Debug)
@@ -1174,9 +1219,10 @@ jobs:
           Copy-Item -Recurse -Force "third_party\eurorack\build\lib" "${{ steps.dsp-prebuilt-self.outputs.mutable_debug_dir }}\"
         }
 
-    - name: Show ccache statistics
-      if: always()
-      run: ccache -s
+    - name: Show sccache statistics
+      if: steps.sccache.outcome == 'success'
+      shell: powershell
+      run: sccache --show-stats
 
     # A timeout is here to catch a hang, not to enforce a performance budget.
     # At five minutes it was doing the second job badly: the last green run on
@@ -1215,6 +1261,8 @@ jobs:
           -DMAGDA_BUILD_TESTS=OFF `
           ${{ steps.deps-cache.outputs.lua_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_LUA={0}', steps.deps-cache.outputs.lua_dir) || '' }} `
           ${{ steps.deps-cache.outputs.sqlite_dir != '' && format('-DFETCHCONTENT_SOURCE_DIR_SQLITE3={0}', steps.deps-cache.outputs.sqlite_dir) || '' }} `
+          "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" `
+          "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
           ${{ steps.dsp-prebuilt-self.outputs.faust_release_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_release_dir) || '' }} `

@@ -57,6 +57,14 @@ terraform apply -var cloudflare_account_id=...
 State is local (`terraform.tfstate`, gitignored). The resources are static and
 rarely change; if this grows, migrate to a remote state backend.
 
+## Also used by Windows CI
+
+`build-and-test-windows` uses the same bucket and the same secrets: sccache
+under key prefix `windows` (Linux uses `linux`), and vcpkg's S3-compatible
+binary cache under the `vcpkg/` prefix for its libxml2 archives. No Terraform
+change is needed for either; it is the same bucket and token, just more
+prefixes in it. The 14-day object expiry applies there too.
+
 ## Wiring into CI
 
 Set these repository secrets:
