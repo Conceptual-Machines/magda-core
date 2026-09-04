@@ -540,8 +540,6 @@ bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& 
 }
 
 void FaustInstrumentPlugin::handleMonoNoteOff(const std::shared_ptr<FaustState>& state, int note) {
-    // Search from the top so releasing one of a repeated pitch drops the most
-    // recent, leaving any earlier hold of the same note intact.
     for (auto it = heldNotes_.rbegin(); it != heldNotes_.rend(); ++it)
         if (it->note == note) {
             heldNotes_.erase(std::next(it).base());
