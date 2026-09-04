@@ -240,7 +240,8 @@ double SamplerVoice::pitchRatioForNote(int midiNoteNumber, const SamplerSound& s
     if (fractional != 0.0)  // fractional semitones -> exponential
         noteHz *= std::pow(2.0, fractional / 12.0);
 
-    double rootHz = juce::MidiMessage::getMidiNoteInHertz(sound.rootNote);
+    double rootHz =
+        juce::MidiMessage::getMidiNoteInHertz(sound.rootNote.load(std::memory_order_relaxed));
     return (noteHz / rootHz) * (sound.sourceSampleRate / getSampleRate());
 }
 
@@ -475,6 +476,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin() {
     auto* sound = new SamplerSound();
     currentSound = sound;
     synthesiser.addSound(sound);
+    publishSoundFacts();
 
     for (int i = 0; i < numVoices; ++i)
         synthesiser.addVoice(new SamplerVoice());
@@ -549,10 +551,8 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     const float pitch = displayValue(kPitch);
     const float fine = displayValue(kFine);
 
-    const double sourceSR = (currentSound != nullptr) ? currentSound->sourceSampleRate : 44100.0;
-    const double lengthSeconds = (currentSound != nullptr && currentSound->hasData())
-                                     ? currentSound->audioData.getNumSamples() / sourceSR
-                                     : 0.0;
+    const double sourceSR = soundSourceRate_.load(std::memory_order_relaxed);
+    const double lengthSeconds = soundLengthSeconds_.load(std::memory_order_relaxed);
     const auto maxSec = static_cast<float>(lengthSeconds);
 
     const float sStart = juce::jlimit(0.0f, maxSec, displayValue(kSampleStart));
@@ -624,7 +624,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
 
     // Playhead position from the first sounding voice.
-    const double sourceSR = (currentSound != nullptr) ? currentSound->sourceSampleRate : 44100.0;
+    const double sourceSR = soundSourceRate_.load(std::memory_order_relaxed);
     bool foundActive = false;
     for (int i = 0; i < synthesiser.getNumVoices(); ++i) {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
@@ -741,11 +741,12 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     auto* newSound = new SamplerSound();
     newSound->audioData = std::move(newBuffer);
     newSound->sourceSampleRate = sourceSR;
-    newSound->rootNote = detectedRootNote;
+    newSound->rootNote.store(detectedRootNote, std::memory_order_relaxed);
 
     synthesiser.clearSounds();
     synthesiser.addSound(newSound);
     currentSound = newSound;
+    publishSoundFacts();
 
     samplePath_ = file.getFullPathName();
     sampleFileSize_ = file.getSize();
@@ -763,11 +764,25 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     setDisplayValue(kLoopEnd, juce::jmin(maxLen, slotInfo(kLoopEnd).maxValue));
 }
 
+void MagdaSamplerPlugin::publishSoundFacts() {
+    const auto rate = (currentSound != nullptr && currentSound->sourceSampleRate > 0.0)
+                          ? currentSound->sourceSampleRate
+                          : 44100.0;
+
+    const auto seconds = (currentSound != nullptr && currentSound->hasData())
+                             ? currentSound->audioData.getNumSamples() / rate
+                             : 0.0;
+
+    soundSourceRate_.store(rate, std::memory_order_relaxed);
+    soundLengthSeconds_.store(seconds, std::memory_order_relaxed);
+}
+
 void MagdaSamplerPlugin::unloadSample() {
     auto* empty = new SamplerSound();
     synthesiser.clearSounds();
     synthesiser.addSound(empty);
     currentSound = empty;
+    publishSoundFacts();
     samplePath_.clear();
     sampleFileSize_ = 0;
     sampleFileModifiedMs_ = 0;
@@ -841,10 +856,10 @@ int MagdaSamplerPlugin::getRootNote() const {
 
 void MagdaSamplerPlugin::setRootNote(int note) {
     rootNote_ = juce::jlimit(0, 127, note);
-    // rootNote is only read in startNote (not in renderNextBlock hot path),
-    // so a plain write is safe here.
+    // Published rather than assigned: startNote is the audio thread, so a note
+    // arriving during this write would otherwise race it.
     if (currentSound != nullptr)
-        currentSound->rootNote = rootNote_;
+        currentSound->rootNote.store(rootNote_, std::memory_order_relaxed);
 }
 
 }  // namespace magda::daw::audio

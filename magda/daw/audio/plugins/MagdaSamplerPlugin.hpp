@@ -18,7 +18,11 @@ namespace magda::daw::audio {
 struct SamplerSound : public juce::SynthesiserSound {
     juce::AudioBuffer<float> audioData;
     double sourceSampleRate = 44100.0;
-    int rootNote = 60;
+
+    /// Read on the audio thread, in SamplerVoice::startNote, and written by
+    /// setRootNote off it. Atomic because a note starting during that write is
+    /// otherwise a data race, whatever the hot path does (#2383 review).
+    std::atomic<int> rootNote{60};
 
     bool appliesToNote(int) override {
         return true;
@@ -280,6 +284,10 @@ class MagdaSamplerPlugin : public MagdaDevice {
   private:
     //==============================================================================
     void updateVoiceParameters();
+
+    /// Republish what the audio thread reads of the loaded sound. Message
+    /// thread, after the synthesiser holds it (#2378).
+    void publishSoundFacts();
     /// Put the synthesiser back to holding no audio. What an authored document
     /// with no source means (see restoreState).
     void unloadSample();
@@ -290,7 +298,22 @@ class MagdaSamplerPlugin : public MagdaDevice {
     bool holdsAudioFrom(const juce::String& path) const;
 
     SamplerSynth synthesiser;
-    SamplerSound* currentSound = nullptr;  // owned by synthesiser
+
+    /// Owned by the synthesiser, and only ever read on the message thread. The
+    /// audio thread reads @ref soundSourceRate_ and @ref soundLengthSeconds_
+    /// instead: a load frees this one while a block may still be inside
+    /// applyToBuffer (#2378).
+    SamplerSound* currentSound = nullptr;
+
+    /// What the audio thread needs of the loaded sound besides its root note,
+    /// which the sound carries atomically. Published by the message thread once
+    /// the synthesiser holds the sound they describe.
+    ///
+    /// Two words rather than one: they are read to clamp marker ranges and to
+    /// scale a playhead, so a pair torn across a load costs one block's clamp
+    /// and never a dereference.
+    std::atomic<double> soundSourceRate_{44100.0};
+    std::atomic<double> soundLengthSeconds_{0.0};
     double sampleRate = 44100.0;
     int numVoices = 8;
 
