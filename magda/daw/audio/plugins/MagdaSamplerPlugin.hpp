@@ -284,6 +284,11 @@ class MagdaSamplerPlugin : public MagdaDevice {
     /// with no source means (see restoreState).
     void unloadSample();
 
+    /// True when the audio loaded IS the file at @p path, still as it was when
+    /// it was read. The path alone cannot tell a re-projection of the same
+    /// document from a file replaced in place (#2379).
+    bool holdsAudioFrom(const juce::String& path) const;
+
     SamplerSynth synthesiser;
     SamplerSound* currentSound = nullptr;  // owned by synthesiser
     double sampleRate = 44100.0;
@@ -299,6 +304,9 @@ class MagdaSamplerPlugin : public MagdaDevice {
     std::atomic<double> currentPlaybackPosition_{0.0};
 
     juce::String samplePath_;
+    /// What the file looked like when its audio was read — see holdsAudioFrom().
+    juce::int64 sampleFileSize_ = 0;
+    juce::int64 sampleFileModifiedMs_ = 0;
     int rootNote_ = 60;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaSamplerPlugin)

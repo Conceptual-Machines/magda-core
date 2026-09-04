@@ -37,11 +37,12 @@ void setMarker(te::Plugin& plugin, int slot, float seconds) {
                                                                      juce::dontSendNotification);
 }
 
-// One second of sine, long enough that trim markers have somewhere to sit other
-// than the defaults.
-bool writeTestWav(const juce::File& destination) {
+// A second of sine by default, long enough that trim markers have somewhere to
+// sit other than the defaults. A different length gives a file of a different
+// size at the same pathname.
+bool writeTestWav(const juce::File& destination, double seconds = 1.0) {
     constexpr double sampleRate = 44100.0;
-    constexpr int numSamples = 44100;
+    const int numSamples = static_cast<int>(seconds * sampleRate);
     juce::AudioBuffer<float> buffer(1, numSamples);
     const auto phaseInc =
         static_cast<float>(440.0 * juce::MathConstants<double>::twoPi / sampleRate);
@@ -72,6 +73,7 @@ class SamplerRelocateTest final : public juce::UnitTest {
         testLoadTakesMarkersIntoHostParameters();
         testRestoreWithoutLoopEnabledSwitchesItOff();
         testSameSourceRestoreLeavesTheMarkersAlone();
+        testReplacedFileAtTheSamePathIsReread();
     }
 
   private:
@@ -268,6 +270,34 @@ class SamplerRelocateTest final : public juce::UnitTest {
                                   0.0001f, "The end marker must be left where it was");
         expectWithinAbsoluteError(sampler.displayValue(MagdaSamplerPlugin::kLoopEnd), 0.0f, 0.0001f,
                                   "A zero loop end must not be re-derived from the file");
+
+        file.deleteFile();
+    }
+
+    void testReplacedFileAtTheSamePathIsReread() {
+        beginTest("A file replaced under the same name is read again");
+
+        // The same-source shortcut above must not swallow a genuine reload. A
+        // re-render or an external editor leaves different audio at the same
+        // pathname, and the model authors markers from the NEW file - playback
+        // holding the old buffer would disagree with them (#2379).
+        auto file = testScratchDir().getNonexistentChildFile("replaced_source", ".wav");
+        expect(writeTestWav(file, 1.0), "Test sample must be written");
+
+        MagdaSamplerPlugin sampler;
+        sampler.loadSample(file);
+        expectWithinAbsoluteError(sampler.getSampleLengthSeconds(), 1.0, 0.01,
+                                  "The first sample must be loaded");
+
+        expect(writeTestWav(file, 2.0), "Replacement sample must be written");
+
+        juce::ValueTree state{juce::Identifier("PLUGIN")};
+        state.setProperty(juce::Identifier("type"), MagdaSamplerPlugin::xmlTypeName, nullptr);
+        state.setProperty(MagdaSamplerPlugin::StateIDs::source, file.getFullPathName(), nullptr);
+        sampler.restoreState(state);
+
+        expectWithinAbsoluteError(sampler.getSampleLengthSeconds(), 2.0, 0.01,
+                                  "The replacement must have been read");
 
         file.deleteFile();
     }

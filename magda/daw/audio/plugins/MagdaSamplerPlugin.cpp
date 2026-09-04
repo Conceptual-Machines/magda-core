@@ -674,8 +674,10 @@ void MagdaSamplerPlugin::restoreState(const juce::ValueTree& state) {
 
     // Already holding this audio is not a reload. An authored-state edit is
     // projected as a whole document, so without this a loop-switch or root-note
-    // write would re-read the file and cut every sounding voice (#2379).
-    if (savedPath == samplePath_ && getSampleLengthSeconds() > 0.0) {
+    // write would re-read the file and cut every sounding voice (#2379). A file
+    // that CHANGED under the same name is not the audio this holds, so it falls
+    // through and is read again.
+    if (holdsAudioFrom(savedPath)) {
         setRootNote(savedRootNote);
         return;
     }
@@ -746,6 +748,8 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     currentSound = newSound;
 
     samplePath_ = file.getFullPathName();
+    sampleFileSize_ = file.getSize();
+    sampleFileModifiedMs_ = file.getLastModificationTime().toMilliseconds();
     rootNote_ = detectedRootNote;
 
     // Markers reset to span the new sample. restoreState() puts the authored
@@ -765,7 +769,20 @@ void MagdaSamplerPlugin::unloadSample() {
     synthesiser.addSound(empty);
     currentSound = empty;
     samplePath_.clear();
+    sampleFileSize_ = 0;
+    sampleFileModifiedMs_ = 0;
     rootNote_ = 60;
+}
+
+bool MagdaSamplerPlugin::holdsAudioFrom(const juce::String& path) const {
+    if (path.isEmpty() || path != samplePath_ || getSampleLengthSeconds() <= 0.0)
+        return false;
+
+    // Size and modification time, not the bytes: a sample is arbitrarily large
+    // and this runs on every projection of the device's document.
+    const juce::File file(path);
+    return file.getSize() == sampleFileSize_ &&
+           file.getLastModificationTime().toMilliseconds() == sampleFileModifiedMs_;
 }
 
 void MagdaSamplerPlugin::relocateSample(const juce::File& file) {
