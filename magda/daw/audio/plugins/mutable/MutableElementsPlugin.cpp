@@ -330,7 +330,7 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
     const int start = context.startSample;
     const int numChannels = buffer.getNumChannels();
     auto* destL = scratch_.getWritePointer(0);
-    float* destR = numChannels > 1 ? scratch_.getWritePointer(1) : nullptr;
+    auto* destR = numChannels > 1 ? scratch_.getWritePointer(1) : nullptr;
 
     // Split the block at each MIDI event so note timing lands at the right
     // sample, generating each segment with the performance state up to it.

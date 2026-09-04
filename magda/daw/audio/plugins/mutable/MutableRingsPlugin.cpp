@@ -318,7 +318,7 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
     auto& buffer = *context.audio;
     const int start = context.startSample;
     auto* destL = scratch_.getWritePointer(0);
-    float* destR = buffer.getNumChannels() > 1 ? scratch_.getWritePointer(1) : nullptr;
+    auto* destR = buffer.getNumChannels() > 1 ? scratch_.getWritePointer(1) : nullptr;
 
     int pos = 0;
     auto renderTo = [&](int upto) {
