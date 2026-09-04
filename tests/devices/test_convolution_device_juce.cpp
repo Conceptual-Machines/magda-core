@@ -107,12 +107,66 @@ int peakIndex(const juce::AudioBuffer<float>& buffer) {
     return index;
 }
 
-void prepareForRender(te::Plugin& plugin) {
+/**
+ * @brief RMS of a steady-state `frequency` Hz tone through `plugin`.
+ *
+ * `frequency` must divide `sampleRate` evenly (300 Hz fits both 44100 and
+ * 48000) so the measured window is a whole number of cycles - otherwise its
+ * windowing residual can rival the #2360 gain bug this test is for.
+ *
+ * @param settleBlocks Blocks rendered and discarded before measuring, to
+ *                     clear the filters' startup transient.
+ * @param measureCycles Whole tone cycles accumulated into the RMS.
+ */
+float steadyStateSineRms(te::Plugin& plugin, double sampleRate, double frequency, int settleBlocks,
+                         int measureCycles) {
+    juce::AudioBuffer<float> buffer(2, kBlockSize);
+    te::MidiMessageArray midi;
+    double phase = 0.0;
+    const double phaseIncrement = juce::MathConstants<double>::twoPi * frequency / sampleRate;
+
+    const auto renderBlock = [&] {
+        for (int i = 0; i < kBlockSize; ++i) {
+            const auto sample = static_cast<float>(std::sin(phase));
+            buffer.setSample(0, i, sample);
+            buffer.setSample(1, i, sample);
+            phase += phaseIncrement;
+        }
+        te::PluginRenderContext context(&buffer, juce::AudioChannelSet::stereo(), 0, kBlockSize,
+                                        &midi, 0.0, tracktion::TimeRange(), true, false, false,
+                                        true);
+        plugin.applyToBuffer(context);
+    };
+
+    for (int block = 0; block < settleBlocks; ++block)
+        renderBlock();
+
+    const int samplesPerCycle = juce::roundToInt(sampleRate / frequency);
+    const int measureSamples = measureCycles * samplesPerCycle;
+    double sumSquares = 0.0;
+    int measured = 0;
+    while (measured < measureSamples) {
+        renderBlock();
+        const int take = std::min(kBlockSize, measureSamples - measured);
+        for (int i = 0; i < take; ++i) {
+            const auto sample = buffer.getSample(0, i);
+            sumSquares += sample * sample;
+        }
+        measured += take;
+    }
+    return std::sqrt(static_cast<float>(sumSquares / measured));
+}
+
+void prepareForRenderAtSampleRate(te::Plugin& plugin, double sampleRate) {
     te::PluginInitialisationInfo info;
     info.startTime = tracktion::TimePosition();
-    info.sampleRate = kSampleRate;
+    info.sampleRate = sampleRate;
     info.blockSizeSamples = kBlockSize;
     plugin.baseClassInitialise(info);
+}
+
+void prepareForRender(te::Plugin& plugin) {
+    prepareForRenderAtSampleRate(plugin, kSampleRate);
 }
 
 class ConvolutionDeviceTest final : public juce::UnitTest {
@@ -134,6 +188,7 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         testImpulseResponseSurvivesSaveAndReload(*edit);
         testRestoringAStatelessDocumentUnloadsTheImpulseResponse(*edit);
         testDryPassesThroughUntouched(*edit);
+        testNoIrIsAPassThroughAtANonDefaultSampleRate(*edit);
     }
 
   private:
@@ -379,6 +434,38 @@ class ConvolutionDeviceTest final : public juce::UnitTest {
         expectEquals(peakIndex(rendered), 0);
 
         holder->deleteFromParent();
+    }
+
+    // No IR must be a pass-through at any session rate, not just 44.1 kHz
+    // (#2360). 300 Hz avoids the low-cut/high-cut colouring near Nyquist
+    // that a broadband impulse would show.
+    void testNoIrIsAPassThroughAtANonDefaultSampleRate(te::Edit& edit) {
+        beginTest("No IR is a pass-through on a session that is not 44.1 kHz");
+
+        constexpr double kToneHz = 300.0;
+        constexpr int kSettleBlocks = 4;
+        constexpr int kMeasureCycles = 20;
+        const float kExpectedRms = std::sqrt(0.5f);
+
+        for (const double rate : {kSampleRate, 48000.0}) {
+            te::Plugin::Ptr holder;
+            auto* convolution = createConvolution(edit, holder);
+            expect(convolution != nullptr);
+            if (convolution == nullptr)
+                continue;
+
+            setSlotDisplayValue(*holder, *convolution, audio::MagdaConvolutionPlugin::kMix, 1.0f);
+            prepareForRenderAtSampleRate(*holder, rate);
+            const auto rms =
+                steadyStateSineRms(*holder, rate, kToneHz, kSettleBlocks, kMeasureCycles);
+
+            expectWithinAbsoluteError(rms, kExpectedRms, 0.005f,
+                                      "the pass-through dirac was resampled from the 44100 "
+                                      "default at " +
+                                          juce::String(rate));
+
+            holder->deleteFromParent();
+        }
     }
 };
 

@@ -213,6 +213,12 @@ bool MagdaConvolutionPlugin::loadImpulseResponse(const void* sourceData, size_t 
 void MagdaConvolutionPlugin::prepare(const DevicePrepareContext& context) {
     sampleRate_ = context.sampleRate;
 
+    // restoreState() stamps a no-IR dirac at the stale 44100 default before
+    // sampleRate_ is real; reinstall it here, before chain_.prepare() pops
+    // the load queue and rebuilds against the new rate (#2360).
+    if (irData_.getSize() == 0)
+        loadImpulseResponseFromData();
+
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = context.sampleRate;
     spec.maximumBlockSize = static_cast<juce::uint32>(std::max(1, context.maximumBlockSize));
