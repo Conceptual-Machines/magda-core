@@ -1,9 +1,11 @@
 #include "plugins/mutable/MutableCloudsPlugin.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 
 // Upstream Mutable Instruments DSP (third_party/eurorack, magda::mutable),
 // compiled with -DTEST. Walled behind the pimpl so this is the only TU in the
@@ -27,6 +29,80 @@ inline float cubic(float x0, float x1, float x2, float x3, float t) {
     const float c = -0.5f * x0 + 0.5f * x2;
     return ((a * t + b) * t + c) * t + x1;
 }
+
+// One biquad section, transposed direct form II.
+struct Biquad {
+    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+    float z1 = 0.0f, z2 = 0.0f;
+
+    void clear() {
+        z1 = z2 = 0.0f;
+    }
+    void setLowpass(double fc, double fs, double q) {
+        const double w0 = 2.0 * juce::MathConstants<double>::pi * fc / fs;
+        const double cw = std::cos(w0);
+        const double alpha = std::sin(w0) / (2.0 * q);
+        const double a0 = 1.0 + alpha;
+        b0 = static_cast<float>((1.0 - cw) * 0.5 / a0);
+        b1 = static_cast<float>((1.0 - cw) / a0);
+        b2 = b0;
+        a1 = static_cast<float>(-2.0 * cw / a0);
+        a2 = static_cast<float>((1.0 - alpha) / a0);
+    }
+    float process(float x) {
+        const float y = b0 * x + z1;
+        z1 = b1 * x - a1 * y + z2;
+        z2 = b2 * x - a2 * y;
+        return y;
+    }
+};
+
+// Pole Qs of an 8th-order Butterworth, 1/(2 cos(pi (2k+1)/16)).
+constexpr double kButterworthQ[4] = {0.50979558, 0.60134489, 0.89997622, 2.56291545};
+constexpr double kBandLimitHz = MutableCloudsPlugin::kBandLimitHz;
+
+// A section's DC group delay is 1/(Q w0), so the filter's is sum(1/Q)/w0. The
+// header declares the latency from it and cannot see this table, so tie them.
+constexpr double kQSum = 1.0 / kButterworthQ[0] + 1.0 / kButterworthQ[1] + 1.0 / kButterworthQ[2] +
+                         1.0 / kButterworthQ[3];
+static_assert(kQSum > MutableCloudsPlugin::kBandLimitQSum - 1e-6 &&
+                  kQSum < MutableCloudsPlugin::kBandLimitQSum + 1e-6,
+              "the declared latency is derived from these pole Qs");
+static_assert(kBlock == 32, "kLatencySeconds counts a 32-sample grain block");
+
+// The 32 kHz DSP is band-limited to 16 kHz and the cubic interpolators do not
+// enforce it: unfiltered, a 20 kHz tone folds to 12 kHz louder than it left,
+// and a 10 kHz tone's image sits 17 dB down coming back up. One lowpass per
+// crossing, both at host rate, both idle at 32 kHz where neither leg resamples.
+struct BandLimit {
+    Biquad l[4], r[4];
+    bool active = false;
+
+    void prepare(double hostRate) {
+        active = hostRate > static_cast<double>(kInternalRate) + 1.0;
+        if (!active)
+            return;
+        for (int i = 0; i < 4; ++i) {
+            l[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
+            r[i].setLowpass(kBandLimitHz, hostRate, kButterworthQ[i]);
+        }
+        clear();
+    }
+    void clear() {
+        for (int i = 0; i < 4; ++i) {
+            l[i].clear();
+            r[i].clear();
+        }
+    }
+    void process(float& L, float& R) {
+        if (!active)
+            return;
+        for (int i = 0; i < 4; ++i) {
+            L = l[i].process(L);
+            R = r[i].process(R);
+        }
+    }
+};
 
 inline short floatToShort(float x) {
     return static_cast<short>(juce::jlimit(-32768, 32767, juce::roundToInt(x * 32767.0f)));
@@ -80,7 +156,10 @@ struct Resampler {
         pos = 1.0;
     }
     bool pull(StereoRing& ring, float& oL, float& oR) {
-        if (ring.count < 4)
+        // The 4-point window plus whatever this call pops: step can exceed 1,
+        // and popping past count leaves it negative, which puts the next push
+        // behind head (#2365 review).
+        if (ring.count < 3 + static_cast<int>(std::ceil(step)))
             return false;
         const auto t = static_cast<float>(pos - 1.0);
         oL = cubic(ring.L(0), ring.L(1), ring.L(2), ring.L(3), t);
@@ -184,6 +263,8 @@ struct MutableCloudsPlugin::Impl {
         // the output one reads 32 kHz.
         inResampler_.step = hostRate / kInternalRate;   // host -> 32k (downsample)
         outResampler_.step = kInternalRate / hostRate;  // 32k -> host (upsample)
+        inLimit_.prepare(hostRate);
+        outLimit_.prepare(hostRate);
         reset();
     }
 
@@ -192,6 +273,8 @@ struct MutableCloudsPlugin::Impl {
         wet32k_.clear();
         inResampler_.reset();
         outResampler_.reset();
+        inLimit_.clear();
+        outLimit_.clear();
         grainFill_ = 0;
     }
 
@@ -202,33 +285,48 @@ struct MutableCloudsPlugin::Impl {
         processor_.set_playback_mode(static_cast<clouds::PlaybackMode>(mode));
     }
 
-    // Push one host input frame, drain whatever full grain blocks it enables,
-    // and pull host output frames back out. Output lags input by the resampler
-    // + grain-block latency; the rings carry the cushion.
+    // Push host input, drain whatever full grain blocks it enables, and pull
+    // host output back out. Output lags input by the resampler + grain-block
+    // latency; the rings carry the cushion.
+    //
+    // In chunks, because pushing a whole call before draining any of it makes
+    // StereoRing::kCap a limit on the host's buffer size: at 8192 the ring
+    // overruns and drops input continuously (#2365 review). A chunk bounds
+    // occupancy at roughly kChunk * max(1, 32000/hostRate) whatever the host
+    // hands over, so prepare() does not have to be told the block size.
     void process(float* L, float* R, int n) {
-        for (int i = 0; i < n; ++i)
-            hostIn_.push(L[i], R != nullptr ? R[i] : L[i]);
+        constexpr int kChunk = 256;
 
-        float sL, sR;
-        while (inResampler_.pull(hostIn_, sL, sR)) {
-            grainIn_[grainFill_].l = sL;
-            grainIn_[grainFill_].r = sR;
-            if (++grainFill_ == kBlock) {
-                runBlock();
-                grainFill_ = 0;
+        for (int base = 0; base < n; base += kChunk) {
+            const int m = std::min(kChunk, n - base);
+
+            for (int i = 0; i < m; ++i) {
+                float inL = L[base + i];
+                float inR = R != nullptr ? R[base + i] : inL;
+                inLimit_.process(inL, inR);
+                hostIn_.push(inL, inR);
             }
-        }
 
-        for (int i = 0; i < n; ++i) {
-            float oL, oR;
-            if (outResampler_.pull(wet32k_, oL, oR)) {
-                L[i] = oL;
+            float sL, sR;
+            while (inResampler_.pull(hostIn_, sL, sR)) {
+                grainIn_[grainFill_].l = sL;
+                grainIn_[grainFill_].r = sR;
+                if (++grainFill_ == kBlock) {
+                    runBlock();
+                    grainFill_ = 0;
+                }
+            }
+
+            for (int i = 0; i < m; ++i) {
+                // Zero unless the ring has a window yet: priming latency only.
+                // The filter still sees those samples, so its state stays
+                // continuous across the transition into real output.
+                float oL = 0.0f, oR = 0.0f;
+                outResampler_.pull(wet32k_, oL, oR);
+                outLimit_.process(oL, oR);
+                L[base + i] = oL;
                 if (R != nullptr)
-                    R[i] = oR;
-            } else {
-                L[i] = 0.0f;  // priming latency only
-                if (R != nullptr)
-                    R[i] = 0.0f;
+                    R[base + i] = oR;
             }
         }
     }
@@ -255,6 +353,8 @@ struct MutableCloudsPlugin::Impl {
     StereoRing wet32k_;  // 32 kHz processed output awaiting upsample
     Resampler inResampler_;
     Resampler outResampler_;
+    BandLimit inLimit_;   // before the decimation, against aliasing
+    BandLimit outLimit_;  // after the interpolation, against imaging
 
     clouds::FloatFrame grainIn_[kBlock];
     int grainFill_ = 0;
@@ -284,10 +384,47 @@ float MutableCloudsPlugin::parameterValue(int index) const {
     return values_[static_cast<size_t>(index)];
 }
 
+double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool freeze) {
+    // Upstream's own reverb_amount (granular_processor.cc): feedback only joins
+    // it once frozen, and reverb alone tops out at 0.95.
+    const float amount =
+        juce::jlimit(0.0f, 1.0f, reverb * 0.95f + (freeze ? feedback * (2.0f - feedback) : 0.0f));
+
+    // Measured 90%-decay against reverb, +25% headroom (see the test). A curve
+    // rather than a formula: the decay is not a single exponential, so a fitted
+    // one is either wrong in the middle or absurd at the top.
+    constexpr float kAmount[] = {0.0f,   0.095f,  0.2375f, 0.38f, 0.5225f,
+                                 0.665f, 0.8075f, 0.95f,   1.0f};
+    constexpr double kSeconds[] = {0.1, 1.3, 2.3, 3.2, 4.2, 6.2, 10.7, 20.0, 20.0};
+    constexpr int kPoints = static_cast<int>(std::size(kAmount));
+
+    double seconds = kSeconds[kPoints - 1];
+    for (int i = 1; i < kPoints; ++i) {
+        if (amount <= kAmount[i]) {
+            const double t = (amount - kAmount[i - 1]) / (kAmount[i] - kAmount[i - 1]);
+            seconds = kSeconds[i - 1] + t * (kSeconds[i] - kSeconds[i - 1]);
+            break;
+        }
+    }
+
+    // Unfrozen feedback recirculates on its own: below 0.7 it dies with the
+    // grain, from 0.85 it never does. Declare the ceiling rather than a decay
+    // the device is not performing.
+    if (feedback >= 0.8f)
+        seconds = kMaxTailSeconds;
+
+    return juce::jlimit(0.25, kMaxTailSeconds, seconds);
+}
+
 void MutableCloudsPlugin::setParameterValue(int index, float value) {
     if (index < 0 || index >= kNumParams)
         return;
     values_[static_cast<size_t>(index)] = juce::jlimit(0.0f, 1.0f, value);
+
+    if (index == kReverb || index == kFeedback || index == kFreeze)
+        tailSeconds_.store(tailSecondsFor(displayValue(kReverb), displayValue(kFeedback),
+                                          displayValue(kFreeze) > 0.5f),
+                           std::memory_order_relaxed);
 }
 
 float MutableCloudsPlugin::displayValue(int index) const {

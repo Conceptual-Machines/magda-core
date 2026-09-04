@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include "audio/analysis/AudioTapBuffer.hpp"
@@ -54,11 +55,23 @@ class MutableCloudsPlugin : public MagdaDevice {
     }
     static const char* xmlTypeName;
 
-    /// Output lag through the resampler pair and the 32-sample grain block: the
-    /// block plus a sample of resampler group delay, at the DSP's own 32 kHz.
-    /// In seconds because properties() is read once, before the host rate is
-    /// known; the dry path carries it too, since Clouds mixes dry in itself.
-    static constexpr double kLatencySeconds = 33.0 / 32000.0;
+    /// The lowpass either side of the 32 kHz DSP, and its DC group delay,
+    /// sum(1/Q)/w0 over an 8th-order Butterworth. The .cpp asserts its filter
+    /// table against both.
+    static constexpr double kBandLimitHz = 15000.0;
+    static constexpr double kBandLimitQSum = 5.12583089;
+    static constexpr double kBandLimitDelaySeconds =
+        kBandLimitQSum / (2.0 * juce::MathConstants<double>::pi * kBandLimitHz);
+
+    /// The 32-sample grain block and a sample of resampler delay at 32 kHz, plus
+    /// both filters. In seconds because properties() is a construction-time
+    /// snapshot; the dry path carries it too, since Clouds mixes dry itself. A
+    /// 32 kHz host bypasses the filters and lands ~3 samples early against it.
+    static constexpr double kLatencySeconds = 33.0 / 32000.0 + 2.0 * kBandLimitDelaySeconds;
+
+    /// Past this the device is sustaining rather than decaying: feedback from
+    /// 0.85 recirculates indefinitely, which no finite tail covers.
+    static constexpr double kMaxTailSeconds = 20.0;
 
     //==============================================================================
     DeviceProperties properties() const override {
@@ -67,9 +80,14 @@ class MutableCloudsPlugin : public MagdaDevice {
             .name = getPluginName(),
             .shortName = "Nimbus",
             .latencySeconds = kLatencySeconds,
-            .tailLengthSeconds = 2.0,  // diffuser/reverb + grain tail
+            // Off the reverb, not a constant: the decay runs 60 ms to past 18 s
+            // across that parameter, and getTailLength() is read per render.
+            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
         };
     }
+
+    /// @brief The tail those three parameters imply, in seconds.
+    static double tailSecondsFor(float reverb, float feedback, bool freeze);
 
     void prepare(const DevicePrepareContext& context) override;
     void reset() override;
@@ -103,6 +121,10 @@ class MutableCloudsPlugin : public MagdaDevice {
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
     double sampleRate_ = 44100.0;
+
+    /// setParameterValue writes it, getTailLength() reads it off the message
+    /// thread.
+    std::atomic<double> tailSeconds_{tailSecondsFor(0.0f, 0.0f, false)};
 
     // Input-envelope decimation state (audio thread).
     AudioTapBuffer inputEnvelope_{1024};
