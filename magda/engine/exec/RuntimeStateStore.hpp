@@ -266,8 +266,13 @@ class RuntimeStateStore {
     /// @brief The handle for @p key, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
-    /// @brief Where @p key's state is published, or null (#2303). Made and
-    ///        retired with the handle beside it.
+    /**
+     * @brief Where @p key's state is published, or null (#2303).
+     *
+     * Made and retired with the handle beside it, and on the publishing thread
+     * both to look up and to read: publishHandles() destroys a dropped slot's
+     * tap as soon as the audio thread is out of it, and waits for nothing else.
+     */
     const LaunchTap* launchTap(const SlotKey& key) const;
 
     /// @brief Objects currently owned, for tests and diagnostics.

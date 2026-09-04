@@ -169,6 +169,30 @@ TEST_CASE("The published position is what the run has covered", "[engine][sessio
     CHECK(rig.reading().elapsedBeats == Catch::Approx(3.0 * kBeatsPerBlock).margin(1e-5));
 }
 
+TEST_CASE("A run days long still moves the playhead", "[engine][session][launch][tap]") {
+    // A run accumulates for as long as the clip plays, and a float's step
+    // reaches 16 ms after three days at 120 bpm (#2303 review). The published
+    // position has to resolve a block at any age the run reaches.
+    LaunchTap tap;
+
+    // Beats covered by thirty-three days at 120 bpm.
+    constexpr double kDays = 33.0 * 24.0 * 60.0 * 120.0;
+    constexpr double kStep = 1.0 / 4096.0;
+
+    LaunchTap::Reading written;
+    written.playing = true;
+    written.elapsedBeats = kDays;
+    tap.write(written);
+    const auto first = tap.read();
+
+    written.elapsedBeats = kDays + kBeatsPerBlock;
+    tap.write(written);
+    const auto second = tap.read();
+
+    CHECK(first.elapsedBeats == Catch::Approx(kDays).margin(kStep));
+    CHECK(second.elapsedBeats - first.elapsedBeats == Catch::Approx(kBeatsPerBlock).margin(kStep));
+}
+
 TEST_CASE("A stop leaves the track held, and says so", "[engine][session][launch][tap]") {
     // #2302: silence after a stop is the session still holding the track.
     Rig rig(1);

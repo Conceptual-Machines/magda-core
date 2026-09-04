@@ -1,7 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
-#include <bit>
+#include <cmath>
 #include <cstdint>
 
 #include "launch/LaunchHandle.hpp"
@@ -15,7 +16,13 @@
  * value tap: a slot no block has advanced is stopped, which is what a button
  * should draw anyway.
  *
- * One writer, the audio thread. Any number of readers.
+ * The position is fixed point rather than a float because a run accumulates for
+ * as long as a clip plays: a float's step reaches 16 ms after three days at 120
+ * bpm and 250 ms after thirty-three, so a playhead in a long-running set would
+ * stall and jump (#2303 review).
+ *
+ * One writer, the audio thread. Readers on the publishing thread, whose
+ * lifetime rule this follows (RuntimeStateStore::launchTap).
  */
 
 namespace magda::engine {
@@ -33,7 +40,7 @@ class LaunchTap {
         /// Timeline beats this run has covered, unlooped, or zero while
         /// stopped. The UI wraps it against the clip length, which is the
         /// model's.
-        float elapsedBeats = 0.0f;
+        double elapsedBeats = 0.0;
 
         bool playing = false;
 
@@ -48,7 +55,7 @@ class LaunchTap {
     /**
      * @brief What the last block to render left the slot doing.
      *
-     * Off the audio thread, from any number of readers. One load, so the
+     * On the publishing thread, as often as a repaint likes. One load, so the
      * position and the state are one block's own.
      */
     Reading read() const {
@@ -71,32 +78,45 @@ class LaunchTap {
                 *queued == LaunchHandle::QueueState::playQueued ? Queued::play : Queued::stop;
 
         if (const auto played = handle.playedRange())
-            reading.elapsedBeats = static_cast<float>(played->length());
+            reading.elapsedBeats = played->length();
 
+        write(reading);
+    }
+
+    /// @brief Publish @p reading as it stands. Audio thread.
+    void write(const Reading& reading) {
         state_.store(pack(reading), std::memory_order_release);
     }
 
   private:
-    /// Status half: playing, the two queued bits, then the section hold.
-    static std::uint32_t packStatus(const Reading& reading) {
-        return static_cast<std::uint32_t>(reading.playing ? 1U : 0U) |
-               (static_cast<std::uint32_t>(reading.queued) << 1U) |
-               (static_cast<std::uint32_t>(reading.holdsSection ? 1U : 0U) << 3U);
+    /// Four status bits: playing, the two queued bits, then the section hold.
+    static constexpr int kStatusBits = 4;
+
+    /// Beat fractions per unit. A twelfth of a millisecond at 120 bpm, and the
+    /// remaining 60 bits still reach further than any session will.
+    static constexpr double kUnitsPerBeat = 4096.0;
+
+    static constexpr std::uint64_t kMaxUnits = (1ULL << (64 - kStatusBits)) - 1ULL;
+
+    static std::uint64_t packStatus(const Reading& reading) {
+        return static_cast<std::uint64_t>(reading.playing ? 1U : 0U) |
+               (static_cast<std::uint64_t>(reading.queued) << 1U) |
+               (static_cast<std::uint64_t>(reading.holdsSection ? 1U : 0U) << 3U);
     }
 
     static std::uint64_t pack(const Reading& reading) {
-        return static_cast<std::uint64_t>(std::bit_cast<std::uint32_t>(reading.elapsedBeats)) |
-               (static_cast<std::uint64_t>(packStatus(reading)) << 32U);
+        const auto units = std::clamp(std::round(reading.elapsedBeats * kUnitsPerBeat), 0.0,
+                                      static_cast<double>(kMaxUnits));
+
+        return packStatus(reading) | (static_cast<std::uint64_t>(units) << kStatusBits);
     }
 
     static Reading unpack(std::uint64_t word) {
-        const auto status = static_cast<std::uint32_t>(word >> 32U);
-
         Reading reading;
-        reading.elapsedBeats = std::bit_cast<float>(static_cast<std::uint32_t>(word));
-        reading.playing = (status & 1U) != 0U;
-        reading.queued = static_cast<Queued>((status >> 1U) & 0b11U);
-        reading.holdsSection = ((status >> 3U) & 1U) != 0U;
+        reading.elapsedBeats = static_cast<double>(word >> kStatusBits) / kUnitsPerBeat;
+        reading.playing = (word & 1U) != 0U;
+        reading.queued = static_cast<Queued>((word >> 1U) & 0b11U);
+        reading.holdsSection = ((word >> 3U) & 1U) != 0U;
         return reading;
     }
 

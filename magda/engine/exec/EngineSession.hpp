@@ -173,9 +173,12 @@ class EngineSession {
     /**
      * @brief Where @p key's state is published for the UI, or null (#2303).
      *
-     * Read from any thread, as often as a repaint likes. The pointer is good
-     * until a publishClips() stops naming the slot, the same lifetime
-     * valueTap() hands out.
+     * Both the lookup and the pointer belong to the publishing thread, exactly
+     * as valueTap() does: the next publishClips() that stops naming the slot
+     * destroys the tap on that thread, with nothing deferring it, so a pointer
+     * cached and read from a paint or animation thread is a use-after-free
+     * waiting for a clip edit. Fetch it here, use it before returning to the
+     * message loop, and ask again after every publish.
      */
     const LaunchTap* launchTap(const SlotKey& key) const {
         return store_.launchTap(key);
