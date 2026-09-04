@@ -393,6 +393,22 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayedRange() const;
 
     /**
+     * @brief The monotonic beat this run's schedule counts from.
+     *
+     * Where the launch that began the run was asked for, carried across every
+     * re-trigger since (@ref Run::scheduleBeat). What a follow action counts
+     * its passes from, since the origin restarts at each wrap and would never
+     * reach the third pass of three (#2304).
+     */
+    std::optional<double> scheduleBeat() const;
+
+    /// The re-trigger interval @ref setLooping was last given, which is what a
+    /// pass through the slot is worth while it is set.
+    std::optional<double> loopBeats() const {
+        return loopBeats_;
+    }
+
+    /**
      * @brief Whether this slot holds its track's playback (#2302).
      *
      * The hand-back is not the slot stopping: silence after a stop is the

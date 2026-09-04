@@ -104,6 +104,8 @@ add_library(magda_engine STATIC
     tap/LevelTap.hpp
     tap/SampleRing.hpp
     tap/ValueTap.hpp
+    launch/FollowActions.cpp
+    launch/FollowActions.hpp
     launch/LaunchHandle.cpp
     launch/LaunchHandle.hpp
     launch/LaunchRequests.hpp

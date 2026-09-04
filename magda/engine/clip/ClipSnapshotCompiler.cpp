@@ -12,6 +12,32 @@ namespace magda::engine {
 
 namespace {
 
+/// The model's follow action at the launcher's altitude (#2304). The engine has
+/// no track groups to name, so the model's five actions map across whole.
+SlotFollow compileFollow(const ClipInfo& clip) {
+    const auto action = [&] {
+        switch (clip.followAction) {
+            case magda::FollowAction::None:
+                return SlotAction::none;
+            case magda::FollowAction::PlayNext:
+                return SlotAction::next;
+            case magda::FollowAction::PlayPrevious:
+                return SlotAction::previous;
+            case magda::FollowAction::PlayRandom:
+                return SlotAction::random;
+            case magda::FollowAction::Stop:
+                return SlotAction::stop;
+            case magda::FollowAction::PlayAgain:
+                return SlotAction::again;
+        }
+
+        return SlotAction::none;
+    }();
+
+    return SlotFollow{action, std::max(1, clip.followActionLoopCount),
+                      std::max(0.0, clip.followActionDelayBeats), clip.placement.lengthBeats};
+}
+
 std::string clipLabel(TrackId trackId, ClipId clipId) {
     return "track " + std::to_string(trackId) + " clip " + std::to_string(clipId) + ": ";
 }
@@ -400,6 +426,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             SessionSlotPlayback slot;
             slot.sceneIndex = clip.sceneIndex;
             slot.lengthBeats = clip.placement.lengthBeats;
+            slot.follow = compileFollow(clip);
             slot.audio = std::move(compiled.tracks.front().audio);
             slot.midi = std::move(compiled.tracks.front().midi);
 

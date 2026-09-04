@@ -248,7 +248,8 @@ AudioClipPlayback clipOver(magda::ClipId id, SnapshotSpan span) {
 /// what a store does with handles has its own cases below.
 struct AudioRig {
     AudioRig() {
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
         handles.publish(std::make_shared<const LaunchHandleTable>(table));
 
         source.prepare(context());
@@ -360,7 +361,8 @@ struct Captured {
 
 struct MidiRig {
     MidiRig() {
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
         handles.publish(std::make_shared<const LaunchHandleTable>(table));
         source.prepare(context());
     }
@@ -451,8 +453,10 @@ ClipInfo arrangementMidiClip(magda::ClipId id, double start, double lengthBeats,
 struct MidiSwitchRig {
     /// @copydoc SwitchRig
     explicit MidiSwitchRig(bool publishHandles = true) {
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene + 1}, .handle = &second});
 
         if (publishHandles)
             handles.publish(std::make_shared<const LaunchHandleTable>(table));
@@ -733,8 +737,10 @@ struct SwitchRig {
     /// ever published, which the contract permits and which a track's sources
     /// have to survive.
     explicit SwitchRig(bool publishHandles = true) {
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
-        table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene + 1}, &second});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
+        table.entries.push_back(
+            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene + 1}, .handle = &second});
 
         if (publishHandles)
             handles.publish(std::make_shared<const LaunchHandleTable>(table));
@@ -1717,7 +1723,8 @@ TEST_CASE("A handle is advanced once per block however many sources read it",
           "[engine][clip][session]") {
     LaunchHandle handle;
     LaunchHandleTable table;
-    table.entries.push_back(LaunchHandleTable::Entry{SlotKey{kTrack, kScene}, &handle});
+    table.entries.push_back(
+        LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
 
     LaunchHandleFeed feed;
     feed.publish(std::make_shared<const LaunchHandleTable>(table));

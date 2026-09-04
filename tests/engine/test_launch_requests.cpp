@@ -51,8 +51,9 @@ struct Rig {
     explicit Rig(int scenes) : handles(static_cast<std::size_t>(scenes)) {
         auto table = std::make_shared<LaunchHandleTable>();
         for (auto scene = 0; scene < scenes; ++scene)
-            table->entries.push_back(LaunchHandleTable::Entry{
-                SlotKey{kTrack, scene}, &handles[static_cast<std::size_t>(scene)]});
+            table->entries.push_back(
+                LaunchHandleTable::Entry{.key = SlotKey{kTrack, scene},
+                                         .handle = &handles[static_cast<std::size_t>(scene)]});
 
         feed.publish(std::move(table));
     }
@@ -72,8 +73,10 @@ struct Rig {
 
         for (auto scene = 0; scene < static_cast<int>(handles.size()); ++scene) {
             const auto key = SlotKey{kTrack, scene};
-            table->entries.push_back(LaunchHandleTable::Entry{
-                key, &handles[static_cast<std::size_t>(scene)], incarnation});
+            table->entries.push_back(
+                LaunchHandleTable::Entry{.key = key,
+                                         .handle = &handles[static_cast<std::size_t>(scene)],
+                                         .incarnation = incarnation});
             stamped[key] = incarnation;
         }
 
@@ -319,7 +322,8 @@ TEST_CASE("A request cannot launch the clip that replaced the one it named",
     // Emptied and refilled before the callback ever ran, so nothing has drained.
     LaunchHandle refilled;
     auto table = std::make_shared<LaunchHandleTable>();
-    table->entries.push_back(LaunchHandleTable::Entry{Rig::key(0), &refilled, 2});
+    table->entries.push_back(
+        LaunchHandleTable::Entry{.key = Rig::key(0), .handle = &refilled, .incarnation = 2});
     rig.feed.publish(std::move(table));
     rig.requests.setIncarnations({{Rig::key(0), 2}});
 
@@ -361,7 +365,7 @@ TEST_CASE("A slot emptied and refilled does not inherit what was asked of the la
     // What publishHandles() does to a slot whose clip was deleted and replaced.
     LaunchHandle refilled;
     auto table = std::make_shared<LaunchHandleTable>();
-    table->entries.push_back(LaunchHandleTable::Entry{Rig::key(0), &refilled});
+    table->entries.push_back(LaunchHandleTable::Entry{.key = Rig::key(0), .handle = &refilled});
     rig.feed.publish(std::move(table));
 
     rig.roll(1);
@@ -424,7 +428,7 @@ TEST_CASE("A request made while nothing is published is not kept", "[engine][ses
 
     LaunchHandle handle;
     auto table = std::make_shared<LaunchHandleTable>();
-    table->entries.push_back(LaunchHandleTable::Entry{Rig::key(0), &handle});
+    table->entries.push_back(LaunchHandleTable::Entry{.key = Rig::key(0), .handle = &handle});
     rig.feed.publish(std::move(table));
 
     rig.roll(1);

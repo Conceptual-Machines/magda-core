@@ -9,6 +9,7 @@
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/TypeIds.hpp"
+#include "launch/FollowActions.hpp"
 #include "transport/TimeDomains.hpp"
 
 /**
@@ -286,6 +287,10 @@ struct SessionSlotPlayback {
     /// handle re-triggers on. The clip's own loop is a separate thing that
     /// happens inside this.
     double lengthBeats = 0.0;
+
+    /// What the slot does when its run reaches the end (#2304). Carried into
+    /// the handle table, which is what the audio thread reads it from.
+    SlotFollow follow;
 };
 
 struct TrackClipPlayback {

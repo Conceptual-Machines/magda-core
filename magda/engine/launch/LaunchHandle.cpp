@@ -170,6 +170,13 @@ std::optional<BeatRange> LaunchHandle::lastPlayedRange() const {
     return lastPlayed_;
 }
 
+std::optional<double> LaunchHandle::scheduleBeat() const {
+    if (!run_)
+        return {};
+
+    return run_->scheduleBeat;
+}
+
 void LaunchHandle::releaseSection() {
     // A request, like every other way a slot stops: a run ended behind the
     // sources' backs is a step nobody can ramp. The stop and the hand-back are

@@ -8,6 +8,7 @@
 
 #include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
+#include "launch/FollowActions.hpp"
 #include "launch/LaunchHandle.hpp"
 #include "launch/LaunchRequests.hpp"
 #include "tap/LaunchTap.hpp"
@@ -56,6 +57,11 @@ struct LaunchHandleTable {
         /// Where this slot's state is published for the UI to read (#2303).
         /// Owned by the store, like the handle beside it.
         LaunchTap* tap = nullptr;
+
+        /// What ends this slot's run, and what starts next (#2304). Here rather
+        /// than looked up in the snapshot beside it, because the audio thread
+        /// already has this table and the two publish separately.
+        SlotFollow follow;
 
         bool operator==(const Entry&) const = default;
     };
