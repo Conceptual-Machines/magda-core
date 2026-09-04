@@ -49,7 +49,8 @@ struct Rig {
         for (auto scene = 0; scene < scenes; ++scene) {
             const auto key = SlotKey{kTrack, scene};
             const auto at = static_cast<std::size_t>(scene);
-            table->entries.push_back(LaunchHandleTable::Entry{key, &handles[at], 1, &taps[at]});
+            table->entries.push_back(LaunchHandleTable::Entry{
+                .key = key, .handle = &handles[at], .incarnation = 1, .tap = &taps[at]});
             incarnations[key] = 1;
         }
 

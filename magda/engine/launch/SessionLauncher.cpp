@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "launch/FollowActions.hpp"
+
 namespace magda::engine {
 
 std::pair<const LaunchHandleTable::Entry*, const LaunchHandleTable::Entry*>
@@ -93,6 +95,51 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
     }
 }
 
+/**
+ * @brief End the runs that reach their end inside @p range, and start what
+ *        follows them (#2304).
+ *
+ * Before the advance, so the stop and the launch it triggers land on one beat
+ * inside this block rather than on the next callback boundary.
+ *
+ * A slot with anything queued is left alone: a handle holds one pending request,
+ * so writing a stop over it would drop what the user asked for.
+ */
+void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& range) {
+    for (const auto& entry : table.entries) {
+        if (entry.handle == nullptr ||
+            entry.handle->playState() != LaunchHandle::PlayState::playing)
+            continue;
+
+        if (entry.handle->queuedState())
+            continue;
+
+        const auto due = followDueBeat(*entry.handle, entry.follow);
+        if (!due || *due >= range.monotonic.end)
+            continue;
+
+        // A run whose end was already behind this block: one shorter than a
+        // callback, whose launch was this block's one event and left the end
+        // nowhere to go. The handle clamps it to the first sample here, and the
+        // block it slipped is counted rather than left silent (#2304 review).
+        if (*due < range.monotonic.start)
+            entry.handle->noteLateRunEnd();
+
+        auto* target = followTarget(table, entry.key, entry.follow, *due);
+
+        // Asked before the stop below, so a slot following itself is not turned
+        // away by the stop this pass is about to write. A target already spoken
+        // for keeps what it was asked: a handle holds one pending request, and
+        // the user's outranks this one.
+        const auto spokenFor = target != nullptr && target->queuedState().has_value();
+
+        entry.handle->stop(*due);
+
+        if (target != nullptr && !spokenFor)
+            target->play(*due);
+    }
+}
+
 }  // namespace
 
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
@@ -112,6 +159,10 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
     requests.drain([&table](const LaunchRequest& request) { apply(request, *table.get()); });
 
     const auto range = syncRangeFor(block);
+
+    // After the requests, so a launch made in this block beats the follow
+    // action of the run it replaces.
+    applyDueFollowActions(*table.get(), range);
 
     for (const auto& entry : table->entries)
         if (entry.handle != nullptr) {

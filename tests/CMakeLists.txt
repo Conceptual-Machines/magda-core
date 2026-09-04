@@ -387,6 +387,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # What a slot publishes about itself (#2303): the block's own reading,
     # rather than a UI polling the launcher a frame behind the audio.
     list(APPEND TEST_SOURCES engine/test_launch_tap.cpp)
+    # What ends a slot's run and what starts next (#2304), and that a launch
+    # the engine made reads out exactly as a clicked one does.
+    list(APPEND TEST_SOURCES engine/test_follow_actions.cpp)
     list(APPEND TEST_SOURCES audio/test_click_generator.cpp)
     list(APPEND TEST_SOURCES audio/test_prefetch_stream.cpp)
     list(APPEND TEST_SOURCES audio/test_source_readers.cpp)

@@ -336,8 +336,11 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
                 made.tap = std::make_unique<LaunchTap>();
             }
 
-            table->entries.push_back(
-                LaunchHandleTable::Entry{key, made.handle.get(), made.incarnation, made.tap.get()});
+            table->entries.push_back(LaunchHandleTable::Entry{.key = key,
+                                                              .handle = made.handle.get(),
+                                                              .incarnation = made.incarnation,
+                                                              .tap = made.tap.get(),
+                                                              .follow = slot.follow});
         }
 
     // Sorted on arrival, since a snapshot holds tracks by id and slots by

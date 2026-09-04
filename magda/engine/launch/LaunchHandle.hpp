@@ -393,6 +393,22 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayedRange() const;
 
     /**
+     * @brief The monotonic beat this run's schedule counts from.
+     *
+     * Where the launch that began the run was asked for, carried across every
+     * re-trigger since (@ref Run::scheduleBeat). What a follow action counts
+     * its passes from, since the origin restarts at each wrap and would never
+     * reach the third pass of three (#2304).
+     */
+    std::optional<double> scheduleBeat() const;
+
+    /// The re-trigger interval @ref setLooping was last given, which is what a
+    /// pass through the slot is worth while it is set.
+    std::optional<double> loopBeats() const {
+        return loopBeats_;
+    }
+
+    /**
      * @brief Whether this slot holds its track's playback (#2302).
      *
      * The hand-back is not the slot stopping: silence after a stop is the
@@ -426,6 +442,22 @@ class LaunchHandle {
      */
     int loopRetriggerOverflows() const {
         return loopRetriggerOverflows_;
+    }
+
+    /**
+     * @brief Blocks in which a run ended before the launcher could act on it.
+     *
+     * A run shorter than a callback: its launch was the block's one event, so
+     * the end had nowhere to go and lands on the next block's first sample.
+     * Counted rather than left silent, for the reason above (#2304).
+     */
+    int lateRunEnds() const {
+        return lateRunEnds_;
+    }
+
+    /// Count one, from the pass that noticed. Audio thread.
+    void noteLateRunEnd() {
+        ++lateRunEnds_;
     }
 
   private:
@@ -543,6 +575,8 @@ class LaunchHandle {
     SplitStatus blockStatus_;
 
     int loopRetriggerOverflows_ = 0;
+
+    int lateRunEnds_ = 0;
 };
 
 }  // namespace magda::engine
