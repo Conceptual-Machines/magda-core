@@ -11,8 +11,18 @@ namespace magda {
 // link mode at a time. While active, clicking any parameter creates or edits
 // a link to that modulator, with an overlay slider to set the amount. It ends
 // when the link button is clicked again, ESC is pressed, or another modulator
-// enters link mode. Components implement LinkModeManagerListener and register
-// with LinkModeManager::getInstance() to react to changes.
+// enters link mode.
+//
+// Components implement LinkModeManagerListener and register with
+// LinkModeManager::getInstance() to react to changes:
+//
+//   class MyComponent : public LinkModeManagerListener {
+//       void modLinkModeChanged(bool active, const ModSelection& sel) override;
+//       void macroLinkModeChanged(bool active, const MacroSelection& sel) override;
+//   };
+//
+// Register in constructor: LinkModeManager::getInstance().addListener(this);
+// Unregister in destructor: LinkModeManager::getInstance().removeListener(this);
 
 /**
  * @brief Type of modulator in link mode
