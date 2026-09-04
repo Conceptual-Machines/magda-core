@@ -17,7 +17,7 @@ namespace magda {
 // =============================================================================
 
 MagdaSamplerProcessor::MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 MutableElementsProcessor::MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
     : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}

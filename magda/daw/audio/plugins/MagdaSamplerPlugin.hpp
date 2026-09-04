@@ -1,12 +1,15 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <juce_audio_utils/juce_audio_utils.h>
 
+#include <array>
+#include <atomic>
 #include <vector>
 
-namespace magda::daw::audio {
+#include "core/ParameterUtils.hpp"
+#include "plugins/MagdaDevice.hpp"
 
-namespace te = tracktion::engine;
+namespace magda::daw::audio {
 
 //==============================================================================
 /**
@@ -133,12 +136,54 @@ class SamplerSynth : public juce::Synthesiser {
 
 //==============================================================================
 /**
- * @brief Sample-based instrument plugin with ADSR, pitch/fine, and level controls
+ * @brief Sample-based instrument device with ADSR, pitch/fine, and level controls.
+ *
+ * A MagdaDevice since #2271: one DSP hosted by whichever engine is running it.
+ * Every Drum Grid pad holds one, so until it crossed, a drum kit built the
+ * ordinary way rendered as passthrough under the native engine.
+ *
+ * The slot ids, order and display ranges are the ones the retired host-native
+ * plugin registered, so saved automation, macro links and mod links survive
+ * the migration untouched.
+ *
+ * The sample is referenced by PATH, not embedded: unlike the IR the
+ * convolution device carries in its own state, a sample is arbitrarily large
+ * and the project media tree already owns relocating it (relocateSample).
  */
-class MagdaSamplerPlugin : public te::Plugin {
+class MagdaSamplerPlugin : public MagdaDevice {
   public:
-    MagdaSamplerPlugin(const te::PluginCreationInfo&);
+    MagdaSamplerPlugin();
     ~MagdaSamplerPlugin() override;
+
+    //==============================================================================
+    /// FROZEN parameter order — the compatibility surface saved automation,
+    /// macro and mod links address, and the order `syncCachedValueFromParam()`
+    /// documented on the retired plugin.
+    enum ParamIndex {
+        kAttack = 0,
+        kDecay,
+        kSustain,
+        kRelease,
+        kPitch,
+        kFine,
+        kLevel,
+        kSampleStart,
+        kSampleEnd,
+        kLoopStart,
+        kLoopEnd,
+        kVelAmount,
+        kVoiceMode,
+        kGlide,
+        kNumParams,
+    };
+
+    /// The device's own non-parameter state. The spellings are the retired
+    /// plugin's, so a saved project reads its sample back.
+    struct StateIDs {
+        static const juce::Identifier source;
+        static const juce::Identifier rootNote;
+        static const juce::Identifier loopEnabled;
+    };
 
     //==============================================================================
     static const char* getPluginName() {
@@ -146,49 +191,45 @@ class MagdaSamplerPlugin : public te::Plugin {
     }
     static const char* xmlTypeName;
 
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Sampler";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Sampler",
+            .takesMidiInput = true,
+            .takesAudioInput = false,
+            .isSynth = true,
+            .producesAudioWithoutInput = true,
+            // A released voice rings for the length of its release stage, so an
+            // offline render or a freeze keeps the tail instead of cutting it
+            // at the last note-off.
+            .tailLengthSeconds = tailSeconds_.load(std::memory_order_relaxed),
+        };
     }
 
-    //==============================================================================
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext&) override;
+    int parameterCount() const override {
+        return kNumParams;
+    }
+    ParameterInfo parameterInfo(int index) const override;
+    float parameterValue(int index) const override;
+    void setParameterValue(int index, float value) override;
+
+    /// One slot's value in its own display units (seconds, dB, semitones).
+    /// What the custom UI draws markers from, and what the retired plugin's
+    /// CachedValues held.
+    float displayValue(int index) const;
+    void setDisplayValue(int index, float value);
+
+    void flushState(juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& state) override;
 
     //==============================================================================
-    bool takesMidiInput() override {
-        return true;
-    }
-    bool takesAudioInput() override {
-        return false;
-    }
-    bool isSynth() override {
-        return true;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return true;
-    }
-    double getTailLength() const override;
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
-
-    //==============================================================================
-    // Sync CachedValue from current AutomatableParameter value (for persistence)
-    void syncCachedValueFromParam(int paramIndex);
-
-    //==============================================================================
-    // Sample loading
+    // Sample loading. Message thread only.
     void loadSample(const juce::File& file);
 
     /**
@@ -210,40 +251,44 @@ class MagdaSamplerPlugin : public te::Plugin {
     int getRootNote() const;
     void setRootNote(int note);
 
-    //==============================================================================
-    // Automatable parameters
-    juce::CachedValue<float> attackValue, decayValue, sustainValue, releaseValue;
-    juce::CachedValue<float> pitchValue, fineValue, levelValue;
-    juce::CachedValue<float> sampleStartValue, sampleEndValue, loopStartValue, loopEndValue;
-    juce::CachedValue<float> velAmountValue;
-    juce::CachedValue<float> voiceModeValue, glideValue;
+    /// Loop on/off. Never a parameter on the retired plugin either — the
+    /// faceplate writes it and it persists as device state.
+    bool loopEnabled() const {
+        return loopEnabled_.load(std::memory_order_relaxed);
+    }
+    void setLoopEnabled(bool enabled) {
+        loopEnabled_.store(enabled, std::memory_order_relaxed);
+    }
 
-    te::AutomatableParameter::Ptr attackParam, decayParam, sustainParam, releaseParam;
-    te::AutomatableParameter::Ptr pitchParam, fineParam, levelParam;
-    te::AutomatableParameter::Ptr sampleStartParam, sampleEndParam, loopStartParam, loopEndParam;
-    te::AutomatableParameter::Ptr velAmountParam;
-    te::AutomatableParameter::Ptr voiceModeParam, glideParam;
-
-    // Non-parameter state
-    juce::CachedValue<juce::String> samplePathValue;
-    juce::CachedValue<int> rootNoteValue;
-    juce::CachedValue<bool> loopEnabledValue;    // persisted state (message thread only)
-    std::atomic<bool> loopEnabledAtomic{false};  // audio-thread-safe mirror
-
-    // Playhead position (written by audio thread, read by UI)
-    std::atomic<double> currentPlaybackPosition{0.0};
+    /// Where in the sample the first sounding voice is, in seconds. Written by
+    /// the audio thread, read by the UI.
     double getPlaybackPosition() const {
-        return currentPlaybackPosition.load(std::memory_order_relaxed);
+        return currentPlaybackPosition_.load(std::memory_order_relaxed);
     }
 
   private:
     //==============================================================================
+    void updateVoiceParameters();
+    /// Put the synthesiser back to holding no audio. What an authored document
+    /// with no source means (see restoreState).
+    void unloadSample();
+
     SamplerSynth synthesiser;
     SamplerSound* currentSound = nullptr;  // owned by synthesiser
     double sampleRate = 44100.0;
     int numVoices = 8;
 
-    void updateVoiceParameters();
+    // Normalised slot values. The audio thread reads them every block while the
+    // message thread writes them, so they are atomics rather than plain floats.
+    std::array<std::atomic<float>, kNumParams> values_{};
+    std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
+
+    std::atomic<bool> loopEnabled_{false};
+    std::atomic<double> tailSeconds_{0.1};
+    std::atomic<double> currentPlaybackPosition_{0.0};
+
+    juce::String samplePath_;
+    int rootNote_ = 60;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MagdaSamplerPlugin)
 };

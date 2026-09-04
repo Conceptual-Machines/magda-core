@@ -3,6 +3,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/MagdaSamplerPlugin.hpp"
+#include "../audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "../audio/session/SessionClipAudioMonitor.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
 
@@ -104,17 +105,19 @@ std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaRefere
         return references;
 
     auto addSampler = [&references](tracktion::Plugin* plugin) {
-        auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin);
+        auto* sampler =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin);
         if (sampler == nullptr)
             return;
-        tracktion::Plugin::Ptr keepAlive(sampler);
-        references.push_back(
-            {sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
-                 // relocateSample, not loadSample: the file moved, the user's
-                 // root note and trim/loop markers did not.
-                 if (auto* live = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(keepAlive.get()))
-                     live->relocateSample(replacement);
-             }});
+        // The PLUGIN is what is reference counted; the device lives inside it.
+        tracktion::Plugin::Ptr keepAlive(plugin);
+        references.push_back({sampler->getSampleFile(), [keepAlive](const juce::File& replacement) {
+                                  // relocateSamplerSample, not loadSamplerSample: the file
+                                  // moved, the user's root note and trim/loop markers did not.
+                                  if (keepAlive != nullptr)
+                                      daw::audio::tracktion_adapter::relocateSamplerSample(
+                                          *keepAlive, replacement);
+                              }});
     };
 
     for (auto plugin : tracktion::getAllPlugins(*currentEdit_, true)) {

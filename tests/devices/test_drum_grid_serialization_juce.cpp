@@ -15,6 +15,7 @@
 #include "magda/daw/audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "magda/daw/audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/processors/CompiledFaustProcessor.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -304,8 +305,8 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
 
         // The sample path and root note are model state, so the plugin comes up
         // pointing at the file with nothing captured first.
-        auto* sampled =
-            dynamic_cast<magda::daw::audio::MagdaSamplerPlugin*>(chain->plugins[0].get());
+        auto* sampled = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+            magda::daw::audio::MagdaSamplerPlugin>(chain->plugins[0].get());
         expect(sampled != nullptr, "Pad voice must be the sampler");
         if (sampled != nullptr) {
             expectEquals(sampled->getSampleFile().getFullPathName(),
@@ -855,8 +856,8 @@ class DrumGridPadChainSerializationTest final : public juce::UnitTest {
             auto* reloadedChain = reloaded->getChainForNote(midiNote);
             expect(reloadedChain != nullptr, "Reloaded Drum Grid must have the sampler pad chain");
             if (reloadedChain != nullptr && !reloadedChain->plugins.empty()) {
-                auto* sampler = dynamic_cast<magda::daw::audio::MagdaSamplerPlugin*>(
-                    reloadedChain->plugins[0].get());
+                auto* sampler = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                    magda::daw::audio::MagdaSamplerPlugin>(reloadedChain->plugins[0].get());
                 expect(sampler != nullptr, "Reloaded pad plugin must be the sampler");
                 if (sampler != nullptr)
                     expectEquals(sampler->getSampleFile().getFullPathName(), samplePath,

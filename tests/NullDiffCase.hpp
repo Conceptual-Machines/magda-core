@@ -212,6 +212,15 @@ struct Case {
     /// one that does not, and the nudge above is only audible to the first.
     bool audioChangesAtNoteEnds = false;
 
+    /// This case's instrument's release stage, in seconds.
+    ///
+    /// The nudge above puts the two legs' releases four samples apart, so an
+    /// instrument with a release ramp differs for that ramp's whole length
+    /// rather than for four samples. The device's number, not the fork's, and
+    /// a case is expected to keep it short: the longer it is, the less of the
+    /// render is held to bit identity.
+    double noteEndReleaseSeconds = 0.0;
+
     /// The largest step this case's material may take from one sample to the
     /// next, for a case in the Invariants tier. Required there and refused
     /// without, because the tier has no residual to fall back on: a bound

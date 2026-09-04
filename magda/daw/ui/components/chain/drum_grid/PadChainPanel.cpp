@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -239,7 +240,7 @@ void PadChainPanel::rebuildSlots() {
 
         // Set plugin content
         if (info.isSampler) {
-            slot->setSampler(dynamic_cast<daw::audio::MagdaSamplerPlugin*>(info.plugin));
+            slot->setSampler(info.plugin);
         } else if (info.plugin) {
             slot->setPlugin(info.plugin, info.device, info.livePlugin);
         }

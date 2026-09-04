@@ -14,6 +14,7 @@
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
+#include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
@@ -628,6 +629,52 @@ magda::DeviceInfo faustInstrumentDevice(magda::DeviceId id, const char* source) 
     doc.deviceType = device.pluginId;
     doc.root.props.set("dspName", "Null Diff Faust Synth");
     doc.root.props.set("dspSource", source);
+    device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// The sampler's shortest envelope stage. Its attack, decay and release ranges
+/// all start here, and the case wants every one of them as close to a gate as
+/// the device allows.
+constexpr float kSamplerEnvelopeSeconds = 0.001f;
+
+/// A sampler pointed at @p sampleFile, as a project would save it (#2271).
+/// Root note 60 so a C4 plays the file back at its own rate: a wrong pitch
+/// ratio then shows up as a stretched staircase rather than as nothing.
+magda::DeviceInfo samplerDevice(magda::DeviceId id, const juce::File& sampleFile) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Sampler";
+    device.pluginId = magda::daw::audio::MagdaSamplerPlugin::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    // The envelope flattened to a gate, so the note-end nudge stays confined
+    // to the window the case excludes (Case::noteEndReleaseSeconds). Values
+    // travel on the model, which owns them since #2317.
+    using Sampler = magda::daw::audio::MagdaSamplerPlugin;
+    const auto slot = [](int index, float value) {
+        magda::daw::audio::MagdaSamplerPlugin metadata;
+        auto info = metadata.parameterInfo(index);
+        info.currentValue = value;
+        return info;
+    };
+    device.parameters.push_back(slot(Sampler::kAttack, kSamplerEnvelopeSeconds));
+    device.parameters.push_back(slot(Sampler::kDecay, kSamplerEnvelopeSeconds));
+    device.parameters.push_back(slot(Sampler::kSustain, 1.0f));
+    device.parameters.push_back(slot(Sampler::kRelease, kSamplerEnvelopeSeconds));
+
+    // As saved device state, which is the path a project takes on both legs.
+    magda::device_state::Doc doc;
+    doc.deviceType = device.pluginId;
+    doc.root.props.set("source", sampleFile.getFullPathName());
+    doc.root.props.set("rootNote", 60);
+    doc.root.props.set("loopEnabled", false);
     device.pluginState = magda::device_state::encode(doc);
 
     return device;
@@ -2495,6 +2542,43 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             clip.midiNotes.push_back(note(48 + index, at, 1.0, 100));
             clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
             clip.midiNotes.push_back(note(64 + index, at, 2.5, 100));
+        }
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The sampler on both legs (#2271) — every Drum Grid pad is one.
+        // Staircase material read back at its own rate, so a read head in the
+        // wrong place shows as a step on the wrong sample, not a level change.
+        auto track = plainTrack();
+        const auto sampleFile = writeMaterial(scratchDirectory, "sampler", stepsEvery(0.05));
+        track.chain.fxChainElements.emplace_back(samplerDevice(984, sampleFile));
+
+        auto value = newCase("plugin.sampler", "a sampler's voice allocation and playback region",
+                             std::move(track));
+        value.endBeat = 8.0;
+
+        // A sustaining instrument, so this case hears the fork's note-end nudge
+        // exactly as the Faust instrument does (#2315) — and unlike that one it
+        // has an envelope, so the difference does not end at the note-off. The
+        // release is at the device's minimum to keep that carry short.
+        value.audioChangesAtNoteEnds = true;
+        value.noteEndReleaseSeconds = kSamplerEnvelopeSeconds;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the two legs then run the same 0.001 s release four "
+            "samples apart, so that window is named per note and taken out of the residual, "
+            "everything else held to bit identity";
+
+        auto clip = midiClip(343, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Overlapping releases, so voices are reused rather than always
+            // free, and two pitches at once so the pitch ratio is exercised.
+            clip.midiNotes.push_back(note(60, at, 1.0, 100));
+            clip.midiNotes.push_back(note(67, at, 2.5, 80));
         }
         value.clips.push_back(std::move(clip));
 

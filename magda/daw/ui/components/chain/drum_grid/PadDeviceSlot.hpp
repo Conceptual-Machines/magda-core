@@ -55,7 +55,7 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     void setPlugin(tracktion::engine::Plugin* plugin);
     void setPlugin(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device,
                    std::function<tracktion::engine::Plugin::Ptr()> livePlugin);
-    void setSampler(daw::audio::MagdaSamplerPlugin* sampler);
+    void setSampler(te::Plugin* samplerPlugin);
     void clear();
     int getPreferredWidth() const;
     void setPreferredWidth(int width) {
@@ -164,7 +164,9 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
 
-    void setupForSampler(daw::audio::MagdaSamplerPlugin* sampler);
+    // Takes the PLUGIN, not the device: parameter writes go through the host
+    // wrapper's parameters, which is what the device reads its slots back from.
+    void setupForSampler(te::Plugin* samplerPlugin);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
     bool setupForSharedDeviceUi(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device);
     void resetSharedInlineUi();

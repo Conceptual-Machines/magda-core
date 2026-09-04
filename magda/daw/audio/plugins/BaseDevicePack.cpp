@@ -293,13 +293,15 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "Sampler",
          .description =
              "Sample playback instrument with envelope, pitch, start/end, and looping controls.",
-         .createMode = InternalPluginCreateMode::FreshValueTree,
-         .matchesPlugin = matches<MagdaSamplerPlugin>,
+         // The sample path lives in the device state, so a restore has to
+         // rebuild the plugin from it rather than from a fresh tree.
+         .createMode = InternalPluginCreateMode::SavedStateOrFresh,
+         .matchesPlugin = matchesDevice<MagdaSamplerPlugin>,
          .createProcessor = makeProcessor<MagdaSamplerProcessor>,
          .showInBrowser = true,
          .isInstrument = true,
-         .createInSession = createFreshValueTreePlugin,
-         .createPlugin = createPlugin<MagdaSamplerPlugin>});
+         .createInSession = createValueTreePlugin,
+         .createDevice = createDevice<MagdaSamplerPlugin>});
     add(registry,
         {.pluginId = DrumGridPlugin::xmlTypeName,
          .displayName = "Drum Grid",

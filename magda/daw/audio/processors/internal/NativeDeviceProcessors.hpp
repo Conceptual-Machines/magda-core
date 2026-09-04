@@ -32,11 +32,12 @@ struct FourOscPluginState {
 };
 
 /**
- * @brief Processor for the built-in Magda Sampler device
+ * @brief Processor for the built-in Magda Sampler device.
  *
- * Sets parameters directly on the MagdaSamplerPlugin's automatable parameters by index.
+ * The sampler is a MagdaDevice (#2271), so the chain holds the host's wrapper
+ * and the display metadata comes from the device's own slots.
  */
-class MagdaSamplerProcessor : public AutomatablePluginProcessor {
+class MagdaSamplerProcessor : public MagdaDeviceProcessor {
   public:
     MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };

@@ -3,6 +3,7 @@
 #include "core/ChainNodePath.hpp"
 #include "plugin_manager/PluginManager.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
+#include "plugins/tracktion/SamplerHostBinding.hpp"
 
 namespace magda {
 
@@ -14,11 +15,11 @@ bool SamplerFileLoader::loadSample(const ChainNodePath& devicePath, const juce::
     if (!plugin)
         return false;
 
-    auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(plugin.get());
-    if (!sampler)
+    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
+            plugin.get()) == nullptr)
         return false;
 
-    sampler->loadSample(file);
+    daw::audio::tracktion_adapter::loadSamplerSample(*plugin, file);
     return true;
 }
 
