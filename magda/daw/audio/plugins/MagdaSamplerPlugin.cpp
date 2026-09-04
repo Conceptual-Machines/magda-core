@@ -745,12 +745,12 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     synthesiser.clearSounds();
     synthesiser.addSound(newSound);
     currentSound = newSound;
-    publishSoundFacts();
 
     samplePath_ = file.getFullPathName();
     sampleFileSize_ = file.getSize();
     sampleFileModifiedMs_ = file.getLastModificationTime().toMilliseconds();
     rootNote_ = detectedRootNote;
+    publishSoundFacts();
 
     // Markers reset to span the new sample. restoreState() puts the authored
     // ones back over the top; a user-chosen sample keeps these.
@@ -783,11 +783,12 @@ void MagdaSamplerPlugin::unloadSample() {
     synthesiser.clearSounds();
     synthesiser.addSound(empty);
     currentSound = empty;
-    publishSoundFacts();
+
     samplePath_.clear();
     sampleFileSize_ = 0;
     sampleFileModifiedMs_ = 0;
     rootNote_ = 60;
+    publishSoundFacts();
 }
 
 bool MagdaSamplerPlugin::holdsAudioFrom(const juce::String& path) const {
