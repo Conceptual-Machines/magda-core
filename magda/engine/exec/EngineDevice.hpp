@@ -25,39 +25,27 @@ namespace magda::engine {
  * @brief Encoded MIDI one source or device may write to one port over any
  *        RenderContext::maxBlockSize samples of the timeline.
  *
- * The executor reserves storage for every MIDI port before the first block, so
- * nothing on the audio thread has to grow a buffer. A port fed by a merge is
- * sized from the sum of what feeds it; the chain has to end somewhere, and this
- * is where: a producer that writes past this forces the very allocation the
- * reservation exists to avoid. Debug builds assert on it at every write site.
+ * The executor reserves storage for every MIDI port before the first block,
+ * so nothing on the audio thread grows a buffer; a producer writing past this
+ * forces the allocation the reservation exists to avoid (debug builds assert
+ * on it at every write site). A port fed by a merge is sized from the sum of
+ * what feeds it.
  *
- * The budget is per span of samples rather than per callback, and the
- * difference is not pedantry. Blocks may be shorter than the one the plan was
- * prepared for, so a callback is not a fixed amount of time: a host delivering
- * one sample at a time against a plan prepared for five hundred and twelve
- * would fit five hundred and twelve callbacks inside the same stretch of
- * timeline, and any storage sized from a per-callback figure would be short by
- * that factor. Nothing noticed while every reservation covered one block; a
- * delay line holds what is in flight across many, and it is what the amount of
- * time a callback stands for has to be pinned down for.
+ * Sized per span of samples, not per callback: blocks may be shorter than
+ * the plan was prepared for, so a host delivering one sample at a time
+ * against a 512-sample plan fits 512 callbacks in the same stretch of
+ * timeline, and a per-callback figure would be short by that factor. Every
+ * MIDI producer is positioned on the timeline for this reason, not per call.
  *
- * Every producer the engine has already works this way, because MIDI is
- * positioned on the timeline rather than per call: a clip source renders the
- * events its block's time range contains, live input delivers what arrived
- * while that time passed, and a generator places notes at musical positions.
- * Spelling it out is what lets storage be sized from it.
+ * The debug asserts only see one callback, so the actual enforcement is
+ * downstream, at the one place a violation costs something: a delay line
+ * holding more than it reserved room for reports it
+ * (MidiDelayLine::hasOverflowed), in release as well as debug.
  *
- * The debug asserts at the write sites see one callback and so can only check
- * the looser reading of this, which is all a producer can be caught at where it
- * writes. What actually enforces the budget is downstream, at the one place a
- * violation costs something: a delay line holding more than it reserved room
- * for reports it (MidiDelayLine::hasOverflowed), in release as well as debug.
- *
- * The budget is bytes rather than events because a MIDI message is not a fixed
- * size: one SysEx dump from a controller can outweigh a thousand notes, and a
- * cap on the number of events would let it through. An event costs six bytes
- * plus its own length, so a note or a controller change is nine, and this
- * budget holds around four hundred and fifty of them.
+ * Budgeted in bytes rather than events, since a MIDI message has no fixed
+ * size (one SysEx dump can outweigh a thousand notes). An event costs six
+ * bytes plus its own length, so a note or controller change is nine, and
+ * this budget holds around 450 of them.
  */
 constexpr int kMaxMidiBytesPerPort = 4096;
 
@@ -74,14 +62,16 @@ struct DeviceBlock {
     /// MIDI reaching the device. Empty when the plan left the slot unconnected.
     const juce::MidiBuffer* midiIn = nullptr;
 
-    /// Where a MIDI-producing device writes, cleared before the call. Null when
-    /// the plan gave the device no MIDI output port. At most what
-    /// setMidiOutputBoundBytes said; past it the buffer allocates.
-    ///
-    /// What the device produced, not what it was handed. MIDI thru is the
-    /// plan's merge behind the device (DeviceInfo::midiInThru), so a device
-    /// that also passed its input on would send every note twice and leave
-    /// every reservation downstream counting one stream as two (#2345).
+    /**
+     * @brief Where a MIDI-producing device writes, cleared before the call.
+     *
+     * Null when the plan gave the device no MIDI output port. At most what
+     * setMidiOutputBoundBytes said; past it the buffer allocates.
+     *
+     * What the device produced, not what it was handed: MIDI thru is the
+     * plan's own merge behind the device (DeviceInfo::midiInThru), so a
+     * device that also echoed its input would double every note (#2345).
+     */
     juce::MidiBuffer* midiOut = nullptr;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
@@ -91,39 +81,31 @@ struct DeviceBlock {
     /**
      * @brief A multi-out instrument's further output pairs.
      *
-     * `extraOutputs[k]` is pair k + 1: pair 0 is `audio` above, which is what
-     * the device's own chain carries on from. Empty for every device that is
-     * not multi-out, which is almost all of them.
+     * `extraOutputs[k]` is pair k + 1: pair 0 is `audio` above. Empty for
+     * every device that is not multi-out (almost all of them).
      *
-     * One block per pair the device declares, whether or not a MultiOut track
-     * was opened for it, so a device writes its outputs where its own layout
-     * says they go and never has to ask what is being listened to. That is what
-     * the current engine does too: the instrument writes every pin of the rack
-     * around it, and it is the RackInstance for a pair that decides whether
-     * anyone reads those pins. A pair no track opened is rendered and dropped.
-     *
-     * Each block arrives cleared, so a device that writes only the pairs it has
-     * material for leaves the rest silent rather than stale.
+     * One block per pair the device declares, whether or not a MultiOut
+     * track was opened for it -- a device writes its own layout and never
+     * asks what's being listened to, matching the current engine (the
+     * instrument writes every rack pin; the RackInstance decides who reads
+     * it). Each block arrives cleared, so a device writing only the pairs it
+     * has material for leaves the rest silent rather than stale.
      */
     std::span<juce::dsp::AudioBlock<float>> extraOutputs;
 
     /**
      * @brief The device's parameters, resolved for this block (#2116).
      *
-     * Indexed the way the device declared them, and already everything the
-     * device could want to know: the stored value, the automation curve over
-     * it and the modifiers linked to it have been resolved into one value
-     * stream per parameter, clamped, quantised, and in the parameter's own
-     * units. A device reads these and has no other way to find out what a
-     * parameter is, which is what keeps the precedence rules in one place
-     * (param/ParamResolve.hpp) rather than in every device.
+     * Indexed the way the device declared them. Each entry is already the
+     * stored value, its automation curve and its linked modifiers resolved
+     * into one clamped, quantised value stream in the parameter's own
+     * units -- a device has no other way to read a parameter, which keeps
+     * the precedence rules in one place (param/ParamResolve.hpp).
      *
-     * Resolved before this call and before the MIDI above is looked at, so an
-     * event at sample zero sees the value automation put there rather than the
-     * one from the block before.
-     *
-     * Empty for a device with no parameters, and for every device until the
-     * table is published against a plan.
+     * Resolved before this call and before the MIDI above, so an event at
+     * sample zero sees this block's automated value, not the previous one.
+     * Empty for a device with no parameters, or before the table is first
+     * published against a plan.
      */
     DeviceParams params;
 
@@ -149,43 +131,35 @@ class EngineDevice {
     /**
      * @brief The most encoded MIDI that can reach this device in one block.
      *
-     * Called off the audio thread when a plan is prepared, before any block, by
-     * the executor that knows the answer. A device that buffers its input sizes
-     * that buffer from this and nothing else.
+     * Called off the audio thread when a plan is prepared, by the executor
+     * that knows the answer. A device that buffers its input sizes that
+     * buffer from this and nothing else.
      *
-     * Not kMaxMidiBytesPerPort. That is one producer's budget, and a device's
-     * input port is often a merge: the executor sums the bound through the MIDI
-     * graph precisely because fan-in outgrows any fixed figure, and a device
-     * that assumed the per-producer cap would drop everything past it on a
-     * track with more sources than one. Zero for a device the plan gave no MIDI
-     * input.
-     *
-     * Ignored by default, because most devices read the block's buffer where it
-     * lies and never need to know how big it can get.
+     * Not kMaxMidiBytesPerPort: that's one producer's budget, while a
+     * device's input port is often a merge, and the executor sums the bound
+     * through the MIDI graph so a device assuming the per-producer cap
+     * wouldn't drop input on a track fed by more than one source. Zero for a
+     * device the plan gave no MIDI input. Ignored by default, since most
+     * devices read the block's buffer where it lies without needing to know
+     * how big it can get.
      */
     virtual void setMidiInputBoundBytes(int) {}
 
     /**
      * @brief The most encoded MIDI this device may write in one block.
      *
-     * Called off the audio thread beside setMidiInputBoundBytes, by the same
-     * executor and for the same reason: the figure belongs to the plan and no
-     * device can work it out for itself.
+     * Called off the audio thread beside setMidiInputBoundBytes, for the
+     * same reason: the figure belongs to the plan, not the device.
      *
-     * A device is a producer and only a producer -- thru is the plan's merge,
-     * not the device's (#2345) -- so what arrives here is one producer's worth,
-     * for what the device makes of its own: a pattern, an arpeggio, the
-     * all-notes-off it owes after a prepare. It is said rather than assumed
-     * because the figure is the port's and the plan owns the port: a device
-     * reading the constant instead would be right today and silently wrong the
-     * day an op behind it reserves differently. Zero for a device the plan gave
-     * no MIDI output.
-     *
-     * Deliberately not the input bound, which is often larger: a device may
-     * read a whole merged stream and still emit only its own.
-     *
-     * Ignored by default, because a device that writes what it means to write
-     * and no more never comes near it.
+     * A device is a producer only -- thru is the plan's merge, not the
+     * device's (#2345) -- so this is one producer's worth, sized for what
+     * the device itself makes (a pattern, an arpeggio, a post-prepare
+     * all-notes-off). Passed in rather than assumed because the port owns
+     * the figure and a device reading a constant instead would go silently
+     * wrong the day an op behind it reserves differently. Zero for a device
+     * the plan gave no MIDI output; deliberately not the (often larger)
+     * input bound, since a device may read a merged stream and emit only
+     * its own. Ignored by default.
      */
     virtual void setMidiOutputBoundBytes(int) {}
 
@@ -223,39 +197,26 @@ class EngineMidiSource {
 };
 
 /**
- * @brief One hardware insert: what leaves the machine, and what comes back
- *        (#2245).
+ * @brief One hardware insert: what leaves the machine, and what comes back (#2245).
  *
- * The outside world, as the engine is allowed to see it. An insert is a send op
- * and a return op in the plan, and both of them resolve to one of these: the
- * send hands over what is leaving, the return is asked for what arrived, and
- * how those reach an interface is the host's business exactly as a live input's
- * is.
+ * An insert is a send op and a return op in the plan, both resolving to one
+ * of these -- one object rather than a source and a sink, since a round trip
+ * is one thing and the latency below is a property of the pair.
  *
- * One object rather than a source and a sink, because a round trip is one
- * thing. The latency below is a property of the pair -- what left, coming back
- * -- and an implementation that had to correlate a separately bound sink with a
- * separately bound source would be rebuilding the pairing the plan already did.
+ * Offline rendering (a bounce played back from a capture rather than run at
+ * real time, since the outside world can't be sped up) is not modeled here:
+ * an implementation returning captured samples and one returning what an
+ * interface just handed it satisfy the same two calls, and which one a
+ * render binds is what decides. Same shape as the location-transparent
+ * device op, for the same reason (#1893).
  *
- * ## The offline case
- *
- * A bounce cannot run the outside world faster than real time, so it either
- * runs at real time or plays back a capture, and the incumbent does the latter.
- * Nothing about that is here, and that is the seam rather than a gap: an
- * implementation that returns captured samples and one that returns what an
- * interface just handed it satisfy the same two calls, and which one a render
- * binds is what decides. Same shape as the location-transparent device op
- * (#1893), for the same reason.
- *
- * What this interface deliberately does not have is a notion of an
- * implementation that is present but unfit to render -- a capture taken at
- * another sample rate, one with a gap in it. Nothing here could enforce such a
- * state: the executor binds a pointer and calls it, so a "check me first" flag
- * would be a rule some caller has to remember, and the render that forgot would
- * be wrong with nothing downstream able to see it. A capture that cannot be
- * replayed must therefore fail to be constructed rather than fail to be valid,
- * which is a decision for whatever owns captures (#2279) and is why none of it
- * is here.
+ * There is deliberately no notion of an implementation that exists but is
+ * unfit to render (a capture at the wrong sample rate, one with a gap in
+ * it): the executor just binds a pointer and calls it, so a "check me
+ * first" flag would be a rule some caller could forget with nothing
+ * downstream able to catch it. A capture that can't be replayed must fail
+ * to construct rather than fail to be valid -- a decision for whatever owns
+ * captures (#2279).
  */
 class EngineInsert {
   public:
@@ -269,17 +230,15 @@ class EngineInsert {
     /**
      * @brief The round trip, in samples, as this insert measures it.
      *
-     * Asked when a plan is prepared, beside every device's, and compensated by
-     * the same pass: an insert reporting a round trip is a latency on an edge,
-     * and the graph aligns it against everything else arriving where it lands.
-     * That is what makes a chain with an insert in it line up with a chain
-     * without one, and it is why this is not an insert-shaped special case.
+     * Asked when a plan is prepared, beside every device's, and compensated
+     * by the same pass -- an insert's round trip is a latency on an edge,
+     * so a chain with an insert lines up with one without.
      *
-     * The user's manual correction is included here rather than applied
-     * somewhere above, because it is part of the same number: the interface
-     * reports its own buffering and knows nothing about the converter and the
-     * cable past it, so what an insert measures and what a person measured with
-     * a loopback are one figure by the time anything compensates for it.
+     * The user's manual correction lives here rather than applied
+     * elsewhere, since it's part of the same number: the interface reports
+     * its own buffering and knows nothing of the converter and cable past
+     * it, so what the insert measures and what a person measured with a
+     * loopback end up as one figure by the time anything compensates.
      */
     virtual int latencySamples() const {
         return 0;
@@ -288,16 +247,14 @@ class EngineInsert {
     /**
      * @brief What is leaving the machine this block.
      *
-     * Independent of @ref receive within one block, and deliberately: what comes
-     * back now is what left several blocks ago, so there is no ordering between
-     * the two and the plan declares none. The scheduler is free to run them on
-     * different threads, which means an implementation must not carry state
-     * from one to the other inside a block.
+     * Independent of @ref receive within one block: what comes back now
+     * left several blocks ago, so there's no ordering between the two and
+     * the plan declares none -- an implementation must not carry state from
+     * one to the other inside a block.
      *
-     *
-     * Either may be empty, which is an insert with no send of that kind: an
+     * Either may be empty, which is an insert with no send of that kind (an
      * external effect sends audio and no MIDI, an external instrument the
-     * reverse. Called on the audio thread.
+     * reverse). Called on the audio thread.
      */
     virtual void send(const BlockInfo&, juce::dsp::AudioBlock<const float> audio,
                       const juce::MidiBuffer& midi) = 0;

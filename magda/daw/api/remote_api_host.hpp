@@ -32,12 +32,19 @@ class SubscriptionHub;
  * Construct and destroy on the message thread: `ModelChangeBridge` attaches to
  * the model singletons, which notify there.
  *
- * The auth token is generated per run, never persisted to config, and lives in
- * an owner-only, per-process discovery file deleted on shutdown (see
- * docs/architecture/remote-api-host.md for the file format and why). `start()`
- * returns false and opens no socket when the feature is off, no token could be
- * generated, or the port is taken -- there is no partial state where MAGDA is
- * listening but unauthenticated.
+ * The auth token is generated per run, never persisted to config, and lives
+ * in an owner-only file beside the other app data, named after the process
+ * and deleted on shutdown so a client can find it with no configuration:
+ *
+ *     remote-api-<pid>.json
+ *     {"port":51734,"token":"...","url":"ws://127.0.0.1:51734/rpc",
+ *      "mcpPort":51735,"mcpUrl":"http://127.0.0.1:51735/mcp","pid":4021}
+ *
+ * See docs/architecture/remote-api-host.md for why (crash recovery, multiple
+ * instances, why the token isn't in config). `start()` returns false and
+ * opens no socket when the feature is off, no token could be generated, or
+ * the port is taken -- there is no partial state where MAGDA is listening
+ * but unauthenticated.
  */
 /// Which listener. Both are carried by one `RemoteApiHost`, but they are
 /// started, stopped, and credentialled independently (#2142).

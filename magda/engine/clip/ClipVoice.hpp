@@ -13,39 +13,36 @@
  * @file ClipVoice.hpp
  * @brief One entry of the snapshot, playing.
  *
- * A voice is one audio event of one clip, read through one prefetch stream. It
- * holds no decision about what should sound: the snapshot has already resolved
- * occlusion, crossfades and takes, so a voice plays a span with fades and never
- * looks at its neighbours (#2003). Two clips crossfading are two voices each
- * playing the fade it was handed, and nothing pairs them up.
+ * A voice is one audio event of one clip, read through one prefetch stream.
+ * It holds no decision about what should sound: the snapshot has already
+ * resolved occlusion, crossfades and takes (#2003), so a voice plays a span
+ * with fades and never looks at its neighbours. Two clips crossfading are
+ * two voices each playing the fade it was handed, with nothing pairing them
+ * up.
  *
- * The span crops what it reads, the interior silences punch holes in what it
- * read, and the fades shape the edges of the span rather than the edges of the
- * clip's placement: the span is what the lane leaves audible, and that is what
- * a listener hears begin and end.
+ * The span crops what it reads, interior silences punch holes in what it
+ * read, and fades shape the edges of the span rather than the clip's
+ * placement -- the span is what the lane leaves audible, and what a
+ * listener hears begin and end.
  *
- * Reading through a hole rather than around it is deliberate. A silence mutes
- * material that is still running underneath, so the stream is read straight
- * across and the hole is cleared afterwards; skipping the read would leave the
- * reader somewhere it was not pointed, which is a seek and costs a block of
- * silence on the far side (#2016).
+ * A silence is read through, not around: it mutes material still running
+ * underneath, so the stream reads straight across and the hole is cleared
+ * afterward. Skipping the read would leave the reader unpointed, which is a
+ * seek and costs a block of silence on the far side (#2016).
  *
- * Reverse, looping and rate conversion are not here either, and not because
- * they are missing: they are underneath, in what the stream reads through
- * (io/SourceReaders.hpp). Each of them is a question about which of a file's
- * samples answer a position, so each is a reader wrapped around a reader, and a
- * voice goes on consuming one sample of one forward stream per output sample at
- * the device's rate whether the clip is reversed, tiled, resampled or none of
- * them.
+ * Reverse, looping and rate conversion live underneath, in what the stream
+ * reads through (io/SourceReaders.hpp): each is a question of which of a
+ * file's samples answer a position, so each is a reader wrapped around a
+ * reader, and a voice always consumes one sample of one forward stream per
+ * output sample at the device's rate.
  *
- * Speed and pitch are the other way round (#2037). They change how fast the
- * reading is consumed rather than what it holds, so they are above the stream
- * rather than below it, and this is where the two meet: a voice asks
- * EventPlacement.hpp where in the reading the block's two ends are, reads
- * exactly that much, and hands it to the stretcher standing beside the stream
- * to come back as this block's length. A clip at its file's own speed has no
- * stretcher and reads one sample per sample, which is the same code path with
- * nothing in the middle.
+ * Speed and pitch work the other way (#2037): they change how fast the
+ * reading is consumed, not what it holds, so they sit above the stream. A
+ * voice asks EventPlacement.hpp where in the reading the block's two ends
+ * are, reads exactly that much, and hands it to the stretcher beside the
+ * stream to come back as this block's length. A clip at its file's own
+ * speed has no stretcher and reads one sample per sample -- the same code
+ * path with nothing in the middle.
  */
 
 namespace magda::engine {
@@ -99,18 +96,18 @@ class ClipVoice {
      * @brief Add this block's contribution to @p out.
      *
      * On the audio thread. @p scratch is working space of at least
-     * stretchScratchSamples(maxBlockSize), owned by the caller because one is
-     * enough for every voice on a track: they are rendered one after another and
-     * summed as they go. It holds what this voice renders and, behind it, the
-     * reading that block was made from, which is longer than the block whenever
-     * the clip plays faster than its file.
+     * stretchScratchSamples(maxBlockSize), owned by the caller since one is
+     * enough for every voice on a track (rendered one after another and
+     * summed as they go). It holds what this voice renders and, behind it,
+     * the reading that block was made from, which is longer than the block
+     * whenever the clip plays faster than its file.
      *
      * @p stretcher is the one standing beside @p stream, or null for a clip
-     * played at its file's own speed, and @p preRoll is what that stretcher was
+     * played at its file's own speed; @p preRoll is what that stretcher was
      * cued with (ClipStreamFeed.hpp).
      *
-     * Returns false when nothing was added, which is the ordinary answer for a
-     * voice whose entry does not reach into this block.
+     * Returns false when nothing was added, the ordinary answer for a voice
+     * whose entry does not reach into this block.
      */
     bool render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                 const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
@@ -122,20 +119,19 @@ class ClipVoice {
      * @brief Render @p count samples of a clip that consumes its reading at a
      *        rate, feeding the stretcher on a fixed grid.
      *
-     * Why a grid at all. A stretcher is a stateful thing whose output follows
-     * the sequence of sizes it was handed, and a rate that varies within a
-     * block used to be resolved from that block's own two ends. Both make the
-     * result a function of how the callback was cut up, which RenderContext.hpp
-     * forbids: block size is an I/O batching concept and never a precision one.
-     * A bounce at 1024 samples a block that disagrees with playback at 128 is
-     * the audible form of the same thing.
+     * A stretcher's output follows the sequence of sizes it's handed, and a
+     * rate resolved from a block's own two ends would make the result a
+     * function of how the callback was cut up -- which RenderContext.hpp
+     * forbids, since block size is an I/O batching concept, not a precision
+     * one (a bounce at 1024 disagreeing with playback at 128 is the audible
+     * form of the same bug).
      *
-     * So the timeline is divided into cells anchored to where the event begins,
-     * the ratio is resolved per cell from the same readingPositionAt, and the
-     * stretcher is fed one whole cell at a time. What it receives is then a
-     * function of position on the timeline and of nothing else. Cells rarely
-     * line up with blocks, so what a cell produces beyond the block that asked
-     * for it is held here until the next one.
+     * So the timeline is divided into cells anchored to where the event
+     * begins, the ratio is resolved per cell from the same
+     * readingPositionAt, and the stretcher is fed one whole cell at a time --
+     * what it receives is then a function of position on the timeline alone.
+     * Cells rarely line up with blocks, so what a cell produces beyond the
+     * block that asked for it is held here until the next one.
      *
      * @return whether every cell got the reading it asked for. The region is
      *         filled either way.
@@ -200,16 +196,16 @@ class ClipVoice {
     int skip_ = 0;
 
     /// The stretcher this voice primed, or null for one that has not primed
-    /// anything. An identity rather than a flag, because the pool replaces a
-    /// stretcher without touching the stream whenever a rate, a pitch or a mode
-    /// is edited, and the entry a voice is playing does not change when it does:
-    /// a fresh engine would otherwise reach the callback cold and stay cold,
-    /// which for a phase vocoder is its whole latency late for the rest of the
-    /// take.
+    /// anything. An identity rather than a flag: the pool replaces a
+    /// stretcher without touching the stream whenever a rate, pitch or mode
+    /// is edited, and the entry a voice is playing doesn't change when it
+    /// does, so an unprimed fresh engine would otherwise reach the callback
+    /// cold and stay cold -- a phase vocoder's whole latency, late for the
+    /// rest of the take.
     ///
-    /// Separate from @ref sounded_, because a block that came back short is not
-    /// a reason to prime again: the reader is behind, and priming reads
-    /// backwards, so doing it would seek and keep it behind for good.
+    /// Separate from @ref sounded_: a block that came back short is not a
+    /// reason to prime again, since priming reads backwards and the reader
+    /// is already behind -- doing it would seek and keep it behind for good.
     const ClipStretcher* primed_ = nullptr;
 };
 

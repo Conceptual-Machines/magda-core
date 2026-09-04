@@ -76,11 +76,12 @@ def main() -> int:
     results = []
     total_comment = 0
     total_code = 0
+    min_code = 0 if args.paths else args.min_code
     for path in targets:
         comment, code = classify_lines(path.read_text(encoding="utf-8", errors="replace"))
         total_comment += comment
         total_code += code
-        if code >= args.min_code:
+        if code >= min_code:
             ratio = (comment / code * 100) if code else 0.0
             results.append((ratio, comment, code, path))
 
