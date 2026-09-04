@@ -13,39 +13,32 @@
 
 /**
  * @file DeviceControl.hpp
- * @brief Everything that is not rendering, addressed the way rendering is (#2270).
+ * @brief Everything that is not rendering, addressed the way rendering is.
  *
- * #1893 asks for location transparency from day one, so running a plugin in
- * another process later is an add-on rather than a rework. The realtime half
- * already has it (EngineDevice says nothing about where a device lives); the
- * control half did not, since editor windows and state captures reached the
- * plugin by asking for its juce::AudioPluginInstance directly -- the one
- * thing a plugin in another process can't hand over.
+ * Location transparency is a goal from day one (#1893): running a plugin in
+ * another process later should be an add-on, not a rework. The realtime half
+ * already has it -- EngineDevice says nothing about where a device lives --
+ * but editor windows and state captures used to reach the plugin directly via
+ * its juce::AudioPluginInstance, the one thing a plugin in another process
+ * can't hand over.
  *
  * This is an endpoint rather than an accessor because a bare instance pointer
  * is also how the "reading state and rendering must not overlap" rule loses
- * its owner: #2268 found two races of the same shape, where control and audio
- * both reached the plugin and neither side owned the rule. Behind an
- * endpoint, only the object owning the instance can touch it, from either
- * side.
+ * its owner: control and audio each reaching the plugin directly caused two
+ * races of the same shape (#2268). Behind an endpoint, only the object
+ * owning the instance can touch it, from either side.
  *
  * Keyed by magda::engine::DeviceKey rather than a live reference. Async and
  * fallible, since a remote implementation has IPC, a timeout, and a device
  * that can go away mid-call. Everything runs and answers on the plane's
- * ControlExecutor (ControlExecutor.hpp) -- one executor per plane serializes
- * every operation against every other, including reads that suspend/resume a
- * plugin, which is what actually needs serializing and can't be done by
- * checking a thread on a headless host.
+ * ControlExecutor (ControlExecutor.hpp), which serializes every operation
+ * against every other -- including reads that suspend/resume a plugin, which
+ * can't be done safely by checking a thread on a headless host.
  *
- * Nothing here writes a model directly: a capture comes back as data, the
- * caller checks the assignment it was read from still holds, then writes it
- * -- the same boundary completeExternalPluginLoad() applies on the load path,
- * for the same reason (a slot can be given a different plugin, or none,
- * between asking and answering).
- *
- * Not here yet: the editor window, MAGDA's other caller that reaches for an
- * instance. It belongs here when it's ported off the fork's plugin windows --
- * an editor is a control-plane request like any other.
+ * Nothing here writes a model directly: a capture comes back as data, and
+ * the caller checks the assignment it was read from still holds before
+ * writing it -- the same boundary completeExternalPluginLoad() applies on
+ * the load path (#2270).
  */
 
 namespace magda::daw::audio::engine_adapter {

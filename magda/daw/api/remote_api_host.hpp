@@ -111,9 +111,9 @@ class RemoteApiHost {
      * Every connected client is disconnected, since that is what rotation
      * means. Clients reconnect by re-reading the discovery record, rewritten
      * before this returns. A no-op returning false when this transport is
-     * not listening. Per transport since #2142: the two hold separate
-     * tokens, so re-credentialling one doesn't drop the other's clients --
-     * that buys granularity, not isolation, since both still live in the same
+     * not listening. Each transport holds a separate token (#2142), so
+     * re-credentialling one doesn't drop the other's clients -- that buys
+     * granularity, not isolation, since both still live in the same
      * owner-only file. Message thread only, like `start()`.
      */
     bool rotateToken(Transport transport);

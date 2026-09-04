@@ -29,7 +29,7 @@ struct WarpMarkerInfo;
  * @brief Manages clip synchronization between ClipManager and Tracktion Engine
  *
  * Responsibilities:
- * - Bidirectional clip ID mapping (ClipId <-> TE EditItemID)
+ * - Bidirectional clip ID mapping (ClipId ↔ TE EditItemID)
  * - ClipManagerListener implementation (clips changed, property changed)
  * - Arrangement clip synchronization (audio + MIDI)
  * - Session clip slot management (create, launch, stop)
@@ -47,10 +47,18 @@ struct WarpMarkerInfo;
  */
 class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener {
   public:
+    /**
+     * @brief Construct ClipSynchronizer with required dependencies
+     * @param edit Reference to the current Edit (project)
+     * @param trackController Reference to TrackController for track operations
+     * @param warpMarkerManager Reference to WarpMarkerManager for warp operations
+     */
     ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                      WarpMarkerManager& warpMarkerManager);
 
-    /** @brief Unregisters from ClipManager listener. */
+    /**
+     * @brief Destructor - unregisters from ClipManager listener
+     */
     ~ClipSynchronizer() override;
 
     // =========================================================================
@@ -58,25 +66,35 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // =========================================================================
 
     /**
-     * @brief Handle clip additions, deletions, and reordering.
+     * @brief Handle clip additions, deletions, and reordering
      *
-     * Removes clips no longer in ClipManager, then syncs all arrangement
-     * clips to TE and all session clips to slots.
+     * - Removes clips that no longer exist in ClipManager
+     * - Syncs all arrangement clips to TE
+     * - Syncs all session clips to slots
      */
     void clipsChanged() override;
 
-    /** @brief Route a single clip's property change to the right sync method. */
+    /**
+     * @brief Handle individual clip property changes
+     * @param clipId The clip whose properties changed
+     *
+     * Routes to appropriate sync method based on clip view type
+     */
     void clipPropertyChanged(ClipId clipId) override;
 
     /**
-     * @brief Handle batched clip property changes synchronously.
+     * @brief Handle batched clip property changes synchronously
+     * @param clipIds The clips whose properties changed
      *
      * Deduplicates IDs and coalesces playback graph reallocation while still
      * leaving TE state up to date before returning.
      */
     void clipPropertiesChanged(const std::vector<ClipId>& clipIds) override;
 
-    /** @brief No-op: clip selection does not need to sync to TE. */
+    /**
+     * @brief Handle clip selection changes (no-op)
+     * @param clipId The newly selected clip
+     */
     void clipSelectionChanged(ClipId clipId) override;
 
     // =========================================================================
@@ -90,13 +108,27 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // Arrangement Clip Operations
     // =========================================================================
 
-    /** @brief Route to syncMidiClipToEngine() or syncAudioClipToEngine() based on type. */
+    /**
+     * @brief Sync a clip from ClipManager to Tracktion Engine
+     * @param clipId The MAGDA clip ID
+     *
+     * Routes to syncMidiClipToEngine() or syncAudioClipToEngine() based on type
+     */
     void syncClipToEngine(ClipId clipId);
 
-    /** @brief Remove a clip from TE and clear its bidirectional mapping. */
+    /**
+     * @brief Remove a clip from Tracktion Engine
+     * @param clipId The MAGDA clip ID
+     *
+     * Removes from TE timeline and clears bidirectional mapping
+     */
     void removeClipFromEngine(ClipId clipId);
 
-    /** @brief The TE Clip for this arrangement clip, or nullptr if not found. */
+    /**
+     * @brief Get Tracktion Engine clip for arrangement clip
+     * @param clipId The MAGDA clip ID
+     * @return The TE Clip, or nullptr if not found
+     */
     te::Clip* getArrangementTeClip(ClipId clipId) const;
 
     // =========================================================================
@@ -104,52 +136,108 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     // =========================================================================
 
     /**
-     * @brief Sync a session clip to its slot in TE Edit.
-     * @return true if a new clip was created (requires graph reallocation).
+     * @brief Sync a session clip to its slot in TE Edit
+     * @param clipId The MAGDA clip ID
+     * @return true if a new clip was created (requires graph reallocation)
+     *
+     * Creates or updates clip in session slot, handles audio and MIDI clips
      */
     bool syncSessionClipToSlot(ClipId clipId);
 
-    /** @brief Remove a session clip from its slot. */
+    /**
+     * @brief Remove a session clip from its slot
+     * @param clipId The MAGDA clip ID
+     */
     void removeSessionClipFromSlot(ClipId clipId);
 
-    /** @brief Configure looping and launch a session clip via LaunchHandle. */
+    /**
+     * @brief Launch a session clip for playback
+     * @param clipId The MAGDA clip ID
+     *
+     * Configures looping and launches via LaunchHandle
+     */
     void launchSessionClip(ClipId clipId, bool forceImmediate = false);
 
-    /** @brief Stop a playing session clip immediately. */
+    /**
+     * @brief Stop a playing session clip immediately
+     * @param clipId The MAGDA clip ID
+     */
     void stopSessionClip(ClipId clipId);
 
-    /** @brief Stop a playing session clip at the next quantization grid point. */
+    /**
+     * @brief Stop a playing session clip at the next quantization grid point
+     * @param clipId The MAGDA clip ID
+     * @param quantize The quantization to use for the stop
+     */
     void stopSessionClipQueued(ClipId clipId, LaunchQuantize quantize);
 
-    /** @brief The TE Clip in the session slot, or nullptr if not found. */
+    /**
+     * @brief Get Tracktion Engine clip for session clip
+     * @param clipId The MAGDA clip ID
+     * @return The TE Clip in the slot, or nullptr if not found
+     */
     te::Clip* getSessionTeClip(ClipId clipId);
 
     // =========================================================================
     // Warp Marker Operations (Delegated to WarpMarkerManager)
     // =========================================================================
 
-    /** @brief Set transient detection sensitivity and re-run detection. */
+    /**
+     * @brief Set transient detection sensitivity and re-run detection
+     * @param clipId The MAGDA clip ID
+     * @param sensitivity Sensitivity value (0.0 to 1.0)
+     */
     void setTransientSensitivity(ClipId clipId, float sensitivity);
 
-    /** @return true if transients were found. */
+    /**
+     * @brief Get transient detection times for a clip
+     * @param clipId The MAGDA clip ID
+     * @return true if transients were found
+     */
     bool getTransientTimes(ClipId clipId);
 
-    /** @brief Enable warp/time-stretch for a clip. */
+    /**
+     * @brief Enable warp/time-stretch for a clip
+     * @param clipId The MAGDA clip ID
+     */
     void enableWarp(ClipId clipId);
 
-    /** @brief Disable warp/time-stretch for a clip. */
+    /**
+     * @brief Disable warp/time-stretch for a clip
+     * @param clipId The MAGDA clip ID
+     */
     void disableWarp(ClipId clipId);
 
-    /** @brief All warp markers for a clip. */
+    /**
+     * @brief Get all warp markers for a clip
+     * @param clipId The MAGDA clip ID
+     * @return Vector of warp marker information
+     */
     std::vector<WarpMarkerInfo> getWarpMarkers(ClipId clipId);
 
-    /** @brief Add a warp marker; returns the index of the added marker. */
+    /**
+     * @brief Add a warp marker to a clip
+     * @param clipId The MAGDA clip ID
+     * @param sourceTime Time in source audio
+     * @param warpTime Warped time position
+     * @return Index of the added marker
+     */
     int addWarpMarker(ClipId clipId, double sourceTime, double warpTime);
 
-    /** @return the actual new warp time, which may be clamped. */
+    /**
+     * @brief Move an existing warp marker
+     * @param clipId The MAGDA clip ID
+     * @param markerIndex Index of marker to move
+     * @param newWarpTime New warped time position
+     * @return Actual new warp time (may be clamped)
+     */
     double moveWarpMarker(ClipId clipId, int markerIndex, double newWarpTime);
 
-    /** @brief Remove a warp marker from a clip. */
+    /**
+     * @brief Remove a warp marker from a clip
+     * @param clipId The MAGDA clip ID
+     * @param markerIndex Index of marker to remove
+     */
     void removeWarpMarker(ClipId clipId, int markerIndex);
 
     // =========================================================================
@@ -162,17 +250,27 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      */
     std::function<void()> onGraphReallocated;
 
-    /** @brief The clip a reverse proxy operation is pending for, polled by AudioBridge's timer. */
+    /**
+     * @brief Check if a reverse proxy operation is pending
+     * @return ClipId of pending clip, or INVALID_CLIP_ID
+     *
+     * Called from AudioBridge timer to poll for completion
+     */
     ClipId getPendingReverseClipId() const {
         return pendingReverseClipId_;
     }
 
-    /** @brief Clear pending reverse clip ID after proxy completion. */
+    /**
+     * @brief Clear pending reverse clip ID after proxy completion
+     */
     void clearPendingReverseClipId() {
         pendingReverseClipId_ = INVALID_CLIP_ID;
     }
 
-    /** @return the precise quantized launch time for a track's last-launched session clip, or 0.0.
+    /**
+     * @brief Get the precise quantized launch time for a track's last-launched session clip.
+     * @param trackId The track to query
+     * @return Time in seconds, or 0.0 if no launch recorded
      */
     double getLastLaunchTimeForTrack(TrackId trackId) const;
 
@@ -187,46 +285,71 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     /** Reallocate playback graph and fire onGraphReallocated callback. */
     void reallocateAndNotify();
 
-    /** @return true if this sync changed topology, requiring graph reallocation. */
+    /**
+     * @brief Sync one clip property notification into Tracktion Engine
+     * @return true if this sync changed topology requiring graph reallocation
+     */
     bool syncClipPropertyToEngine(ClipId clipId);
 
-    /** @brief Sync arrangement clip data; returns whether graph reallocation is needed. */
+    /**
+     * @brief Sync arrangement clip data and report whether graph reallocation is needed
+     */
     bool syncArrangementClipToEngine(ClipId clipId);
 
-    /** @brief Sync MIDI clip position, looping, offset, and note data to TE. */
+    /**
+     * @brief Sync MIDI clip properties to Tracktion Engine
+     * @param clipId The MAGDA clip ID
+     * @param clip The ClipInfo from ClipManager
+     *
+     * Handles position, looping, offset, and note data synchronization
+     */
     bool syncMidiClipToEngine(ClipId clipId, const ClipInfo* clip);
 
     /**
-     * @brief Sync audio clip position, speed, tempo sync, loop, offset, pitch,
-     * and fades to TE. Beat-based and time-based properties need separate
-     * handling (see docs/coordinate-system).
+     * @brief Sync audio clip properties to Tracktion Engine
+     * @param clipId The MAGDA clip ID
+     * @param clip The ClipInfo from ClipManager
+     *
+     * Handles position, speed, tempo sync, loop, offset, pitch, fades, etc.
+     * Complex logic for beat-based vs. time-based properties
      */
     bool syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
 
     /**
      * @brief Re-attach loop-record takes onto a freshly built TE clip.
      *
-     * The model owns the take list; the TE clip is rebuilt from scratch on
-     * record and on project load, so takes must be re-added each time.
-     * Idempotent. The active take plays because the clip's source already
-     * points at takes[currentTakeIndex]; the rest are kept as alternates.
+     * The model owns the take list (one audio file per loop pass); the TE clip
+     * is rebuilt from scratch on record and on project load, so the takes must
+     * be re-added each time. Idempotent: a no-op if the model has no takes or
+     * the TE clip already carries them. The active take plays back because the
+     * clip's source already points at takes[currentTakeIndex]; the others are
+     * preserved as alternates.
      */
     void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
-     * @brief Configure autoTempo on a session audio clip in TE.
+     * @brief Configure autoTempo on a session audio clip in TE
+     * @param audioClip The TE WaveAudioClip to configure
+     * @param clip The ClipInfo model data
      *
-     * Shared by syncSessionClipToSlot() and clipPropertyChanged(). Syncs
-     * source interpretation BPM, stretch mode, speedRatio, autoTempo flag,
+     * Shared by syncSessionClipToSlot() and clipPropertyChanged().
+     * Syncs source interpretation BPM, stretch mode, speedRatio, autoTempo flag,
      * offset, and beat-based loop range.
      */
     void configureSessionAutoTempo(te::WaveAudioClip* audioClip, const ClipInfo* clip);
 
-    /** @brief Sync TrackInfo::playbackMode to TE. The single place that writes
-     * audioTrack->playSlotClips. */
+    /**
+     * @brief Sync TrackInfo::playbackMode to TE's audioTrack->playSlotClips
+     * @param trackId The track to sync
+     *
+     * This is the SINGLE place that writes audioTrack->playSlotClips.
+     */
     void syncPlaybackModeToEngine(TrackId trackId);
 
-    /** @brief Remove a TE clip by its engine ID from any track. */
+    /**
+     * @brief Remove a TE clip by its engine ID from any track
+     * @param engineId The TE EditItemID string
+     */
     void removeTeClipByEngineId(const std::string& engineId);
 
     // References to dependencies (not owned)
