@@ -54,12 +54,19 @@ class MutableCloudsPlugin : public MagdaDevice {
     }
     static const char* xmlTypeName;
 
+    /// Output lag through the resampler pair and the 32-sample grain block: the
+    /// block plus a sample of resampler group delay, at the DSP's own 32 kHz.
+    /// In seconds because properties() is read once, before the host rate is
+    /// known; the dry path carries it too, since Clouds mixes dry in itself.
+    static constexpr double kLatencySeconds = 33.0 / 32000.0;
+
     //==============================================================================
     DeviceProperties properties() const override {
         return {
             .pluginId = xmlTypeName,
             .name = getPluginName(),
             .shortName = "Nimbus",
+            .latencySeconds = kLatencySeconds,
             .tailLengthSeconds = 2.0,  // diffuser/reverb + grain tail
         };
     }

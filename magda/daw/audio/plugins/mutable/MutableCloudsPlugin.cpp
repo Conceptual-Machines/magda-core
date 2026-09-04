@@ -179,8 +179,11 @@ struct MutableCloudsPlugin::Impl {
     }
 
     void prepare(double hostRate) {
-        inResampler_.step = kInternalRate / hostRate;   // host -> 32k (downsample)
-        outResampler_.step = hostRate / kInternalRate;  // 32k -> host (upsample)
+        // step = Fin/Fout, the rate the ring is read at over the rate it is
+        // pulled at (see Resampler). The input resampler reads host-rate data,
+        // the output one reads 32 kHz.
+        inResampler_.step = hostRate / kInternalRate;   // host -> 32k (downsample)
+        outResampler_.step = kInternalRate / hostRate;  // 32k -> host (upsample)
         reset();
     }
 
