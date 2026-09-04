@@ -9,11 +9,6 @@ namespace {
 
 constexpr double kBeatEpsilon = 1.0e-9;
 
-/// A boundary this close to the cursor is the cursor. Rounding up to the first
-/// sample at or past a musical position would otherwise turn the position the
-/// clock just anchored to into a boundary one sample ahead of itself.
-constexpr double kSampleEpsilon = 1.0e-2;
-
 }  // namespace
 
 void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
@@ -33,6 +28,9 @@ double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) co
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
+    // A boundary within the epsilon of the cursor is the cursor: rounding up to
+    // the first sample at or past a musical position would otherwise turn the
+    // position just anchored to into a boundary one sample ahead of itself.
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
@@ -117,12 +115,17 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         auto& segment = segments_[0];
         segment.block.numSamples = numSamples;
         segment.block.playing = false;
-        segment.block.startBeat = beat;
-        segment.block.endBeat = beat;
-        segment.block.startSeconds = seconds;
-        segment.block.endSeconds = seconds;
-        segment.block.startMonotonicBeat = monotonicBeat_;
-        segment.block.endMonotonicBeat = monotonicBeat_;
+        segment.block.beats.start = beat;
+        segment.block.beats.end = beat;
+        segment.block.seconds.start = seconds;
+        segment.block.seconds.end = seconds;
+        segment.block.monotonicBeats.start = monotonicBeat_;
+        segment.block.monotonicBeats.end = monotonicBeat_;
+        segment.block.monotonicSeconds.start = monotonicSeconds_;
+        segment.block.monotonicSeconds.end = monotonicSeconds_;
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        segment.block.monotonicSamples.end = monotonicSamples_;
+        segment.block.sampleRate = sampleRate_;
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;
         segment.startSample = 0;
@@ -170,6 +173,14 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (countingIn_)
             samples = std::min(samples, samplesUntil(tempo, countInUntilBeat_));
 
+        // A tempo section boundary is not cut at. It used to be, so that the
+        // block's own straight line stayed honest and so that a modifier
+        // reading one bpm per block read the right one; placement goes through
+        // the map now (#2336) and a modifier reads the beats the block covers
+        // (#2340), so nothing is left that a section boundary inside a block
+        // would be wrong for. A tempo change is not a jump either: audio flows
+        // straight through one and the block carries on continuous.
+        //
         // Clamped from inside the loop only. From outside it the count is
         // negative and would cut a callback that is not looping at all; from
         // inside, it can still be zero, for a loop so short that its end is not
@@ -194,17 +205,34 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         auto& segment = segments_[static_cast<std::size_t>(segmentCount_++)];
         segment.block.numSamples = static_cast<int>(samples);
         segment.block.playing = true;
-        segment.block.startBeat = beatAfter(tempo, samplesSinceAnchor_);
-        segment.block.endBeat = beatAfter(tempo, samplesSinceAnchor_ + samples);
-        segment.block.startSeconds = secondsAfter(samplesSinceAnchor_);
-        segment.block.endSeconds = secondsAfter(samplesSinceAnchor_ + samples);
+        segment.block.beats.start = beatAfter(tempo, samplesSinceAnchor_);
+        segment.block.beats.end = beatAfter(tempo, samplesSinceAnchor_ + samples);
+        segment.block.seconds.start = secondsAfter(samplesSinceAnchor_);
+        segment.block.seconds.end = secondsAfter(samplesSinceAnchor_ + samples);
 
-        // Accumulated from the segment rather than read off the cursor: this
-        // is the one quantity a wrap must not take back, and the cursor is
-        // about to be moved by one.
-        segment.block.startMonotonicBeat = monotonicBeat_;
-        monotonicBeat_ += segment.block.endBeat - segment.block.startBeat;
-        segment.block.endMonotonicBeat = monotonicBeat_;
+        // Accumulated from the segment rather than read off the cursor: these
+        // are the quantities a wrap must not take back, and the cursor is about
+        // to be moved by one.
+        segment.block.monotonicBeats.start = monotonicBeat_;
+        monotonicBeat_ += segment.block.beats.end - segment.block.beats.start;
+        segment.block.monotonicBeats.end = monotonicBeat_;
+
+        // From the samples, not the beats: a rate change re-anchors the cursor
+        // and this carries straight on (#2324).
+        segment.block.monotonicSeconds.start = monotonicSeconds_;
+        monotonicSeconds_ += static_cast<double>(samples) / sampleRate_;
+        segment.block.monotonicSeconds.end = monotonicSeconds_;
+
+        // The samples themselves, which is what the seconds above are counted
+        // from and what everything else here is an interpretation of. Kept
+        // rather than divided back out of them: a rate change makes the two no
+        // longer one conversion apart, and this side of it is the one that did
+        // not move (#2332).
+        segment.block.monotonicSamples.start = monotonicSamples_;
+        monotonicSamples_ += SampleDuration{samples};
+        segment.block.monotonicSamples.end = monotonicSamples_;
+
+        segment.block.sampleRate = sampleRate_;
 
         segment.block.continuous = continuous_;
         segment.block.tempo = &tempo;

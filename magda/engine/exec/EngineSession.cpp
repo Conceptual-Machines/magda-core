@@ -142,6 +142,15 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     if (voices_ != nullptr)
         voices_->setSnapshot(clips);
 
+    // Handles first: a table naming slots the callback cannot see yet is
+    // silent, while a snapshot naming a slot with no handle is a launch the
+    // block in between cannot honour.
+    //
+    // A null snapshot publishes an empty table rather than skipping, or the
+    // previous one would keep handles for slots the engine no longer knows.
+    static const ClipSnapshot kNothing;
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_);
+
     clips_.publish(std::move(clips));
 }
 
@@ -191,7 +200,12 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         // pool's window starts here, and a clip inside it has until the next
         // round to be given a reader.
         if (voices_ != nullptr)
-            voices_->setPosition(segment.block.startSeconds);
+            voices_->setPosition(segment.block.seconds.start);
+
+        // Before the plan, and over every handle rather than the ones this plan
+        // renders: a handle must see each block exactly once and a slot has two
+        // sources reading it (SessionLauncher.hpp).
+        advanceLaunchHandles(handles_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 

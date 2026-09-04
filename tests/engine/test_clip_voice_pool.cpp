@@ -80,10 +80,8 @@ RenderContext context() {
 
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * 2.0;
-    span.endBeat = end * 2.0;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * 2.0, end * 2.0};
+    span.seconds = {start, end};
     return span;
 }
 
@@ -116,14 +114,35 @@ std::shared_ptr<const ClipSnapshot> snapshotOf(std::vector<AudioClipPlayback> cl
     return snapshot;
 }
 
+/// A snapshot whose track holds slots rather than an arrangement. Slots compile
+/// at the origin, so these differ only by clip id.
+std::shared_ptr<const ClipSnapshot> sessionSnapshotOf(std::vector<magda::ClipId> ids,
+                                                      double lengthSeconds = 2.0) {
+    auto snapshot = std::make_shared<ClipSnapshot>();
+    TrackClipPlayback track;
+    track.trackId = kTrack;
+
+    auto scene = 0;
+    for (const auto id : ids) {
+        magda::engine::SessionSlotPlayback slot;
+        slot.sceneIndex = scene++;
+        slot.lengthBeats = lengthSeconds * 2.0;
+        slot.audio.push_back(clipAt(id, 0.0, lengthSeconds));
+        track.session.push_back(std::move(slot));
+    }
+
+    snapshot->tracks.push_back(std::move(track));
+    return snapshot;
+}
+
 BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + kBlockSize / kSampleRate;
-    block.startBeat = startSeconds * 2.0;
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + kBlockSize / kSampleRate;
+    block.beats.start = startSeconds * 2.0;
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -839,4 +858,99 @@ TEST_CASE("A round over a stretched clip that is playing does not swap a table",
     pool.service();
 
     CHECK(pool.tablesPublished() == 1);
+}
+
+TEST_CASE("Every session slot has a reader, wherever the transport is",
+          "[engine][clip][pool][session]") {
+    // A slot has no position, so there is no window it comes into and a launch
+    // can arrive on any block (#2301). No seek at the launch, one open file per
+    // slot for as long as the project holds it.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    pool.setSnapshot(sessionSnapshotOf({1, 2, 3}));
+
+    pool.setPosition(0.0);
+    pool.service();
+    CHECK(pool.streamCount() == 3);
+    CHECK(files.opens == 3);
+
+    SECTION("and moving the transport neither retires them nor re-opens them") {
+        // Nothing to move: a slot has no position to come into range of.
+        pool.setPosition(3600.0);
+        pool.service();
+
+        CHECK(pool.streamCount() == 3);
+        CHECK(files.opens == 3);
+    }
+
+    SECTION("and a round that changes nothing publishes nothing") {
+        pool.service();
+        pool.service();
+
+        CHECK(pool.streamCount() == 3);
+        CHECK(files.opens == 3);
+    }
+
+    SECTION("a slot the model has lost gives its reader back") {
+        pool.setSnapshot(sessionSnapshotOf({1, 2}));
+        pool.service();
+
+        CHECK(pool.streamCount() == 2);
+        CHECK(files.opens == 3);
+    }
+}
+
+TEST_CASE("The session's readers are its own, not a share of the arrangement's",
+          "[engine][clip][pool][session]") {
+    // Two budgets: an arrangement reader is a window the transport moves
+    // through and a slot is never passed, so neither starves the other.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    ClipSnapshot snapshot = *sessionSnapshotOf({100});
+    snapshot.tracks.front().audio.push_back(clipAt(1, 0.0, 10.0));
+    pool.setSnapshot(std::make_shared<const ClipSnapshot>(std::move(snapshot)));
+
+    pool.setPosition(5.0);
+    pool.service();
+
+    CHECK(pool.streamCount() == 2);
+    CHECK(files.opens == 2);
+    CHECK(pool.unbridged() == 0);
+    CHECK(pool.overSubscribed() == 0);
+    CHECK(pool.unprovisionedSlots() == 0);
+}
+
+TEST_CASE("A session past its budget says which slots have no reader",
+          "[engine][clip][pool][session]") {
+    // A slot that loses is not late, it is silent for as long as the project
+    // holds it, and the count is the only thing that says so.
+    TestFiles files;
+    PrefetchThread reader;
+    ClipVoicePool pool(files, reader, context());
+
+    std::vector<magda::ClipId> ids;
+    for (auto id = 0; id < magda::engine::kMaxSessionReadersPerTrack + 3; ++id)
+        ids.push_back(static_cast<magda::ClipId>(100 + id));
+
+    pool.setSnapshot(sessionSnapshotOf(ids));
+    pool.setPosition(0.0);
+    pool.service();
+
+    CHECK(pool.streamCount() ==
+          static_cast<std::size_t>(magda::engine::kMaxSessionReadersPerTrack));
+    CHECK(pool.unprovisionedSlots() == 3);
+
+    // And the arrangement still gets its own.
+    ClipSnapshot snapshot = *sessionSnapshotOf(ids);
+    snapshot.tracks.front().audio.push_back(clipAt(1, 0.0, 10.0));
+    pool.setSnapshot(std::make_shared<const ClipSnapshot>(std::move(snapshot)));
+    pool.service();
+
+    CHECK(pool.streamCount() ==
+          static_cast<std::size_t>(magda::engine::kMaxSessionReadersPerTrack) + 1);
+    CHECK(pool.unprovisionedSlots() == 3);
 }

@@ -79,7 +79,7 @@ class ChainMidiTap final : public MidiTap {
         // rather than accumulating, so this recovers that count exactly and
         // keeps doing so through the tail, where the timeline stands still.
         const auto blockStart =
-            static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate_));
+            static_cast<std::int64_t>(std::llround(block.seconds.start * sampleRate_));
 
         for (const auto message : midi) {
             const auto data = message.getMessage();

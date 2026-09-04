@@ -201,34 +201,37 @@ TEST_CASE("The plan dump is the compiler's golden surface", "[engine][plan][comp
     requireWellFormed(plan);
 
     CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
-ops=16 outputs=1
+ops=19 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
-[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
-[  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
-[  3] Delay       det   T1/D7:subtractInputDelay       in=2:0              out=audio       deps=1
-[  4] Delay       det   T1/D7:subtractInputDelay#1     in=1:0              out=audio       deps=1
-[  5] Subtract    det   T1/D7:deviceDelta              in=3:0,4:0          out=audio       deps=2
-[  6] Gain        det   T1/D7:deviceGain               in=5:0              out=audio       deps=1
-[  7] Meter       det   T1/D7:deviceMeter              in=6:0              out=audio       deps=1
-[  8] Fader       det   T1:trackFader                  in=7:0,-            out=audio       deps=1
-[  9] Meter       det   T1:trackMeter                  in=8:0              out=audio       deps=1
-[ 10] Gain        det   T1:trackMute                   in=9:0              out=audio       deps=1
-[ 11] MixAudio    det   T-2:trackAudioInput            in=10:0             out=audio       deps=1
-[ 12] Fader       det   T-2:trackFader                 in=11:0,-           out=audio       deps=1
-[ 13] Meter       det   T-2:trackMeter                 in=12:0             out=audio       deps=1
-[ 14] Gain        det   T-2:trackMute                  in=13:0             out=audio       deps=1
-[ 15] Output      det   T-2:hardwareOutput             in=14:0             out=-           deps=1
-ready=0
+[  1] SessionAudio det   T1:sessionAudio                in=-                out=audio       deps=0
+[  2] Delay       det   T1:mixInputDelay               in=0:0              out=audio       deps=1
+[  3] Delay       det   T1:mixInputDelay#1             in=1:0              out=audio       deps=1
+[  4] MixAudio    det   T1:trackAudioInput             in=2:0,3:0          out=audio       deps=2
+[  5] Device      det   T1/D7:deviceProcess            in=4:0,-,-          out=audio       deps=1
+[  6] Delay       det   T1/D7:subtractInputDelay       in=5:0              out=audio       deps=1
+[  7] Delay       det   T1/D7:subtractInputDelay#1     in=4:0              out=audio       deps=1
+[  8] Subtract    det   T1/D7:deviceDelta              in=6:0,7:0          out=audio       deps=2
+[  9] Gain        det   T1/D7:deviceGain               in=8:0              out=audio       deps=1
+[ 10] Meter       det   T1/D7:deviceMeter              in=9:0              out=audio       deps=1
+[ 11] Fader       det   T1:trackFader                  in=10:0,-           out=audio       deps=1
+[ 12] Meter       det   T1:trackMeter                  in=11:0             out=audio       deps=1
+[ 13] Gain        det   T1:trackMute                   in=12:0             out=audio       deps=1
+[ 14] MixAudio    det   T-2:trackAudioInput            in=13:0             out=audio       deps=1
+[ 15] Fader       det   T-2:trackFader                 in=14:0,-           out=audio       deps=1
+[ 16] Meter       det   T-2:trackMeter                 in=15:0             out=audio       deps=1
+[ 17] Gain        det   T-2:trackMute                  in=16:0             out=audio       deps=1
+[ 18] Output      det   T-2:hardwareOutput             in=17:0             out=-           deps=1
+ready=0,1
 )");
 }
 
 TEST_CASE("A second track is a fan-in, and a fan-in is where the delays go",
           "[engine][plan][compiler][pdc]") {
     // The same golden surface with one more track in it. Everything the first
-    // track had is unchanged, and what the second one adds is a sum with two
-    // inputs and a delay on each: how many samples they hold is not here,
-    // because it is not known until the plan is prepared against the plugins
-    // it names.
+    // track had is unchanged, and what the second one adds is a sum at the
+    // master with two inputs and a delay on each: how many samples they hold is
+    // not here, because it is not known until the plan is prepared against the
+    // plugins it names.
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
     tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
 
@@ -236,31 +239,37 @@ TEST_CASE("A second track is a fan-in, and a fan-in is where the delays go",
     requireWellFormed(plan);
 
     CHECK(magda::engine::dumpPlan(plan) == R"(magda-render-plan v1
-ops=23 outputs=1
+ops=29 outputs=1
 [  0] ClipAudio   det   T1:clipAudio                   in=-                out=audio       deps=0
-[  1] MixAudio    det   T1:trackAudioInput             in=0:0              out=audio       deps=1
-[  2] Device      det   T1/D7:deviceProcess            in=1:0,-,-          out=audio       deps=1
-[  3] Delay       det   T1/D7:subtractInputDelay       in=2:0              out=audio       deps=1
-[  4] Delay       det   T1/D7:subtractInputDelay#1     in=1:0              out=audio       deps=1
-[  5] Subtract    det   T1/D7:deviceDelta              in=3:0,4:0          out=audio       deps=2
-[  6] Gain        det   T1/D7:deviceGain               in=5:0              out=audio       deps=1
-[  7] Meter       det   T1/D7:deviceMeter              in=6:0              out=audio       deps=1
-[  8] Fader       det   T1:trackFader                  in=7:0,-            out=audio       deps=1
-[  9] Meter       det   T1:trackMeter                  in=8:0              out=audio       deps=1
-[ 10] Gain        det   T1:trackMute                   in=9:0              out=audio       deps=1
-[ 11] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
-[ 12] MixAudio    det   T2:trackAudioInput             in=11:0             out=audio       deps=1
-[ 13] Fader       det   T2:trackFader                  in=12:0,-           out=audio       deps=1
-[ 14] Meter       det   T2:trackMeter                  in=13:0             out=audio       deps=1
-[ 15] Gain        det   T2:trackMute                   in=14:0             out=audio       deps=1
-[ 16] Delay       det   T-2:mixInputDelay              in=10:0             out=audio       deps=1
-[ 17] Delay       det   T-2:mixInputDelay#1            in=15:0             out=audio       deps=1
-[ 18] MixAudio    det   T-2:trackAudioInput            in=16:0,17:0        out=audio       deps=2
-[ 19] Fader       det   T-2:trackFader                 in=18:0,-           out=audio       deps=1
-[ 20] Meter       det   T-2:trackMeter                 in=19:0             out=audio       deps=1
-[ 21] Gain        det   T-2:trackMute                  in=20:0             out=audio       deps=1
-[ 22] Output      det   T-2:hardwareOutput             in=21:0             out=-           deps=1
-ready=0,11
+[  1] SessionAudio det   T1:sessionAudio                in=-                out=audio       deps=0
+[  2] Delay       det   T1:mixInputDelay               in=0:0              out=audio       deps=1
+[  3] Delay       det   T1:mixInputDelay#1             in=1:0              out=audio       deps=1
+[  4] MixAudio    det   T1:trackAudioInput             in=2:0,3:0          out=audio       deps=2
+[  5] Device      det   T1/D7:deviceProcess            in=4:0,-,-          out=audio       deps=1
+[  6] Delay       det   T1/D7:subtractInputDelay       in=5:0              out=audio       deps=1
+[  7] Delay       det   T1/D7:subtractInputDelay#1     in=4:0              out=audio       deps=1
+[  8] Subtract    det   T1/D7:deviceDelta              in=6:0,7:0          out=audio       deps=2
+[  9] Gain        det   T1/D7:deviceGain               in=8:0              out=audio       deps=1
+[ 10] Meter       det   T1/D7:deviceMeter              in=9:0              out=audio       deps=1
+[ 11] Fader       det   T1:trackFader                  in=10:0,-           out=audio       deps=1
+[ 12] Meter       det   T1:trackMeter                  in=11:0             out=audio       deps=1
+[ 13] Gain        det   T1:trackMute                   in=12:0             out=audio       deps=1
+[ 14] ClipAudio   det   T2:clipAudio                   in=-                out=audio       deps=0
+[ 15] SessionAudio det   T2:sessionAudio                in=-                out=audio       deps=0
+[ 16] Delay       det   T2:mixInputDelay               in=14:0             out=audio       deps=1
+[ 17] Delay       det   T2:mixInputDelay#1             in=15:0             out=audio       deps=1
+[ 18] MixAudio    det   T2:trackAudioInput             in=16:0,17:0        out=audio       deps=2
+[ 19] Fader       det   T2:trackFader                  in=18:0,-           out=audio       deps=1
+[ 20] Meter       det   T2:trackMeter                  in=19:0             out=audio       deps=1
+[ 21] Gain        det   T2:trackMute                   in=20:0             out=audio       deps=1
+[ 22] Delay       det   T-2:mixInputDelay              in=13:0             out=audio       deps=1
+[ 23] Delay       det   T-2:mixInputDelay#1            in=21:0             out=audio       deps=1
+[ 24] MixAudio    det   T-2:trackAudioInput            in=22:0,23:0        out=audio       deps=2
+[ 25] Fader       det   T-2:trackFader                 in=24:0,-           out=audio       deps=1
+[ 26] Meter       det   T-2:trackMeter                 in=25:0             out=audio       deps=1
+[ 27] Gain        det   T-2:trackMute                  in=26:0             out=audio       deps=1
+[ 28] Output      det   T-2:hardwareOutput             in=27:0             out=-           deps=1
+ready=0,1,14,15
 )");
 }
 
@@ -921,9 +930,10 @@ TEST_CASE("An internal MIDI route reads the source track's MIDI", "[engine][plan
     REQUIRE(sourceMidi != magda::engine::INVALID_OP_ID);
     REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
 
-    // Own clips first, then the routed source.
-    REQUIRE(plan.ops[static_cast<std::size_t>(destMidi)].inputs.size() == 2);
-    CHECK(inputOp(plan, destMidi, 1) == sourceMidi);
+    // Own clips first, arrangement then session, and the routed source behind
+    // them.
+    REQUIRE(plan.ops[static_cast<std::size_t>(destMidi)].inputs.size() == 3);
+    CHECK(inputOp(plan, destMidi, 2) == sourceMidi);
 }
 
 TEST_CASE("An internal audio route reads the source track's post-mute output",
@@ -949,8 +959,8 @@ TEST_CASE("An internal audio route reads the source track's post-mute output",
     REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
     REQUIRE(destInput != magda::engine::INVALID_OP_ID);
 
-    REQUIRE(plan.ops[static_cast<std::size_t>(destInput)].inputs.size() == 2);
-    CHECK(inputOp(plan, destInput, 1) == sourceMute);
+    REQUIRE(plan.ops[static_cast<std::size_t>(destInput)].inputs.size() == 3);
+    CHECK(inputOp(plan, destInput, 2) == sourceMute);
 }
 
 TEST_CASE("Mute is applied after the meter and the sidechain tap", "[engine][plan][compiler]") {
@@ -1779,16 +1789,19 @@ TEST_CASE("Latency compensation goes where paths can arrive apart",
         return delays;
     };
 
-    SECTION("a sum of two tracks, but not a sum of one") {
-        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    SECTION("a sum of two, but not a sum of one") {
+        // A track sums its own two sections, the arrangement and the session
+        // (#2301), so a fan-in of two is what an ordinary track now is and the
+        // delays go there like anywhere else. The master over a single track is
+        // still the sum of one, and it still has none.
+        std::vector<TrackInfo> tracks{makeTrack(1)};
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
 
         const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
-        REQUIRE(inputs.size() == 3);
-        CHECK(delaysInto(plan, inputs[0]) == 0);  // one clip source
-        CHECK(delaysInto(plan, inputs[1]) == 0);
-        CHECK(delaysInto(plan, inputs[2]) == 2);  // the master, summing both
+        REQUIRE(inputs.size() == 2);
+        CHECK(delaysInto(plan, inputs[0]) == 2);  // arrangement and session
+        CHECK(delaysInto(plan, inputs[1]) == 0);  // the master, over one track
         CHECK(countRole(plan, OpRole::MixInputDelay) == 2);
     }
 
@@ -2318,17 +2331,17 @@ TEST_CASE("A multi-out pair that carries nothing is not an ordering dependency",
     CHECK_FALSE(anyDiagnosticContains(plan, "arrived after it was compiled"));
 
     // Track 2's real connection into track 1 survives, which is what a dropped
-    // edge would have cost: track 1's own clips, and track 2's output.
+    // edge would have cost: track 1's own two sections, and track 2's output.
     const auto input = trackInput(plan, 1);
     REQUIRE(input != magda::engine::INVALID_OP_ID);
-    REQUIRE(plan.ops[static_cast<std::size_t>(input)].inputs.size() == 2);
+    REQUIRE(plan.ops[static_cast<std::size_t>(input)].inputs.size() == 3);
 
     magda::engine::OpId readerMute = magda::engine::INVALID_OP_ID;
     for (const auto op : opsWithRole(plan, OpRole::TrackMute))
         if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
             readerMute = op;
     REQUIRE(readerMute != magda::engine::INVALID_OP_ID);
-    CHECK(inputOp(plan, input, 1) == readerMute);
+    CHECK(inputOp(plan, input, 2) == readerMute);
 }
 
 TEST_CASE("A device with more pairs than one op can carry says so", "[engine][plan][compiler]") {

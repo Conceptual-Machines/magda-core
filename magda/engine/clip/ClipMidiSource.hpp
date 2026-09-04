@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "clip/MidiEventList.hpp"
 #include "core/TypeIds.hpp"
 #include "exec/EngineDevice.hpp"
+#include "launch/SessionLauncher.hpp"
 
 /**
  * @file ClipMidiSource.hpp
@@ -56,6 +58,16 @@
  * ringing through it: MIDI plays around a hole rather than being cut by it.
  * Note-offs are exempt unconditionally. A hole is a reason for a note not to
  * start and never a reason for one not to end.
+ *
+ * ## The two sections
+ *
+ * As on the audio side, one class plays both, chosen by the handle feed at
+ * construction. A slot is the same lane walk over a block on the run's own axes
+ * (SessionPlayback.hpp); the sample a beat lands on is unchanged, so emission
+ * still writes into the callback's own buffer.
+ *
+ * That adds a sixth way a note ends: a slot not playing at the end of a block
+ * owes an off for everything it started.
  */
 
 namespace magda::engine {
@@ -64,7 +76,22 @@ struct MidiClipPlayback;
 
 class ClipMidiSource final : public EngineMidiSource {
   public:
+    /// The arrangement's source for @p trackId.
     ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips);
+
+    /**
+     * @brief The @p section's source for @p trackId, reading @p handles.
+     *
+     * Both sources of a track take the feed, and @p section says which of them
+     * this is (#2302). A session source is positioned by the handles rather
+     * than by the timeline; an arrangement source reads them only to know when
+     * the session has taken the track off it, and where in the block, which is
+     * where it owes note-offs for whatever it had sounding.
+     *
+     * @p handles outlives it.
+     */
+    ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles,
+                   Section section);
 
     void prepare(const RenderContext& context) override;
 
@@ -89,6 +116,30 @@ class ClipMidiSource final : public EngineMidiSource {
         return overflowed_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Blocks rendered against a map the snapshot was not compiled for.
+     *
+     * A snapshot carries the fingerprint of the tempo map its seconds were
+     * derived through. One that is not the transport's was compiled against a
+     * tempo that has since changed, so every second in it is wrong by however
+     * much the map moved.
+     *
+     * Counted and then played anyway. Refusing to play it is a hole in the
+     * middle of a set to report a bug that should not happen, and it buys
+     * little, because stale spans usually stop overlapping the block in any
+     * case: what that mostly converts is an accidental gap into a deliberate
+     * one.
+     *
+     * Zero is the only right answer, and reaching it is the publish's job
+     * rather than this one's: the map and the snapshot compiled for it are
+     * meant to swap together (#2337). Non-zero says they did not, which is a
+     * publish-ordering bug that would otherwise be inaudible until somebody
+     * wondered why a clip was in the wrong place.
+     */
+    int staleSnapshots() const {
+        return staleSnapshots_.load(std::memory_order_relaxed);
+    }
+
   private:
     /// One note owed an off that would not fit in the block that owed it.
     struct OwedNote {
@@ -96,18 +147,40 @@ class ClipMidiSource final : public EngineMidiSource {
         int note = 0;
     };
 
+    /// Bits for every (channel, note), used to compare what is sounding against
+    /// what a new snapshot says should be. On the stack: 256 bytes.
+    class NoteMask {
+      public:
+        void set(int channel, int note) {
+            const auto bit = index(channel, note);
+            bits_[bit / 32] |= (1u << (bit % 32));
+        }
+        bool test(int channel, int note) const {
+            const auto bit = index(channel, note);
+            return (bits_[bit / 32] & (1u << (bit % 32))) != 0u;
+        }
+
+      private:
+        static std::size_t index(int channel, int note) {
+            return static_cast<std::size_t>(((channel - 1) * ActiveNoteList::kNotes) + note);
+        }
+
+        std::array<std::uint32_t, (ActiveNoteList::kChannels * ActiveNoteList::kNotes) / 32>
+            bits_{};
+    };
+
     /// Whether @p bytes more will fit, leaving room for every off still owed.
     bool fits(int bytes) const;
 
-    void emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event);
+    void emit(juce::MidiBuffer& out, EventSample sample, const MidiClipEvent& event);
 
     /// Note-off now, or owed if it will not fit. Always leaves the note not
     /// sounding.
-    void endNote(juce::MidiBuffer& out, int sample, int channel, int note);
+    void endNote(juce::MidiBuffer& out, EventSample sample, int channel, int note);
 
     /// End everything, or everything one clip owns.
-    void endAll(juce::MidiBuffer& out, int sample);
-    void endClip(juce::MidiBuffer& out, int sample, ClipId clipId);
+    void endAll(juce::MidiBuffer& out, EventSample sample);
+    void endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId);
 
     /// The notes of @p clip actually sounding at @p timelineBeat, into @ref
     /// scratch_. Grooved edges, not written ones, and one implementation for
@@ -125,12 +198,39 @@ class ClipMidiSource final : public EngineMidiSource {
     void renderClip(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
                     double from, double to, bool jumped);
 
+    /// Play the part of @p clips between @p from and @p to. One lane over one
+    /// block: the track's clips for the arrangement, a slot's for the session.
+    void playLane(juce::MidiBuffer& out, const BlockInfo& block,
+                  const std::vector<MidiClipPlayback>& clips, double from, double to);
+
+    /// What @p clips say should be sounding here, into @p expected, handing over
+    /// any pitch the wrong clip holds. Split from the sweep because the session
+    /// has several lanes to mark before anything may be ended.
+    void expectLane(juce::MidiBuffer& out, const BlockInfo& block,
+                    const std::vector<MidiClipPlayback>& clips, double from, double to,
+                    NoteMask& expected);
+
+    /// The other half: end everything sounding that @p expected does not name.
+    void endUnexpected(juce::MidiBuffer& out, const NoteMask& expected);
+
+    /// Every note one slot started, ended at @p sample. What a stop owes.
+    void endSlot(juce::MidiBuffer& out, EventSample sample, const SessionSlotPlayback& slot);
+
+    /// What a launched slot plays and what a stopped one owes. False when no
+    /// handles have been published yet.
+    bool renderSession(juce::MidiBuffer& out, const BlockInfo& block,
+                       const TrackClipPlayback& track, bool reconcile);
+
     /// Start @p index of @p clip's list at @p timelineBeat.
     void startNote(juce::MidiBuffer& out, const BlockInfo& block, const MidiClipPlayback& clip,
                    std::int32_t index, double timelineBeat);
 
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
+
+    /// The section. Null is the arrangement, which needs no handles.
+    LaunchHandleFeed* handles_ = nullptr;
+    Section section_ = Section::Arrangement;
 
     ActiveNoteList active_;
     int activeCount_ = 0;
@@ -147,6 +247,7 @@ class ClipMidiSource final : public EngineMidiSource {
 
     std::atomic<int> dropped_{0};
     std::atomic<int> overflowed_{0};
+    std::atomic<int> staleSnapshots_{0};
 };
 
 }  // namespace magda::engine

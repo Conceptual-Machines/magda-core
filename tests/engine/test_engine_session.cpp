@@ -270,10 +270,8 @@ class OpenEverything final : public magda::engine::AudioFileReaderFactory {
 std::shared_ptr<const magda::engine::ClipSnapshot> clipsOver(TrackId trackId, double startSeconds,
                                                              double endSeconds) {
     magda::engine::SnapshotSpan span;
-    span.startSeconds = startSeconds;
-    span.endSeconds = endSeconds;
-    span.startBeat = startSeconds * 2.0;
-    span.endBeat = endSeconds * 2.0;
+    span.seconds = {startSeconds, endSeconds};
+    span.beats = {startSeconds * 2.0, endSeconds * 2.0};
 
     magda::engine::AudioEventPlayback event;
     event.eventId = 1;
@@ -292,6 +290,64 @@ std::shared_ptr<const magda::engine::ClipSnapshot> clipsOver(TrackId trackId, do
     track.audio.push_back(std::move(clip));
 
     auto snapshot = std::make_shared<magda::engine::ClipSnapshot>();
+    snapshot->tracks.push_back(std::move(track));
+    return snapshot;
+}
+
+/// A session source that sounds while its slot's handle says it is playing.
+/// What it asks is whether a launch reaches the audio thread at all: the handle
+/// is made and published by publishClips and advanced by process().
+class LaunchGatedSource final : public EngineAudioSource {
+  public:
+    LaunchGatedSource(TrackId trackId, magda::engine::LaunchHandleFeed& handles)
+        : trackId_(trackId), handles_(handles) {}
+
+    void render(const BlockInfo&, juce::dsp::AudioBlock<float> out) override {
+        out.clear();
+
+        const magda::engine::LaunchHandleFeed::Reader table(handles_);
+        if (!table)
+            return;
+
+        const auto [first, last] = table->rangeFor(trackId_);
+        for (const auto* entry = first; entry != last; ++entry)
+            if (entry->handle != nullptr && entry->handle->blockStatus().beforeEvent.playing())
+                out.fill(1.0f);
+    }
+
+  private:
+    TrackId trackId_;
+    magda::engine::LaunchHandleFeed& handles_;
+};
+
+/// A host with a launcher: it binds a session source for every track.
+class LauncherFactory final : public RuntimeStateFactory {
+  public:
+    std::unique_ptr<EngineAudioSource> createClipAudioSource(TrackId) override {
+        return std::make_unique<ConstantSource>(0.0f);
+    }
+
+    std::unique_ptr<EngineAudioSource> createSessionAudioSource(TrackId trackId) override {
+        REQUIRE(handles != nullptr);
+        return std::make_unique<LaunchGatedSource>(trackId, *handles);
+    }
+
+    magda::engine::LaunchHandleFeed* handles = nullptr;
+};
+
+/// A snapshot with one slot in one scene of one track, and nothing else.
+std::shared_ptr<const magda::engine::ClipSnapshot> snapshotWithSlot(TrackId trackId, int scene) {
+    auto snapshot = std::make_shared<magda::engine::ClipSnapshot>();
+
+    magda::engine::TrackClipPlayback track;
+    track.trackId = trackId;
+
+    magda::engine::SessionSlotPlayback slot;
+    slot.sceneIndex = scene;
+    slot.lengthBeats = 4.0;
+    slot.audio.emplace_back();
+    track.session.push_back(std::move(slot));
+
     snapshot->tracks.push_back(std::move(track));
     return snapshot;
 }
@@ -944,8 +1000,8 @@ TEST_CASE("A callback the loop wraps inside renders as two blocks",
     // them covers the wrap, which is the point: an op is never handed a block
     // whose timeline jumps in the middle.
     CHECK(before.numSamples + after.numSamples == kBlockSize);
-    CHECK(before.endBeat == Catch::Approx(1.0).margin(1e-9));
-    CHECK(after.startBeat == Catch::Approx(0.0).margin(1e-9));
+    CHECK(before.beats.end == Catch::Approx(1.0).margin(1e-9));
+    CHECK(after.beats.start == Catch::Approx(0.0).margin(1e-9));
     CHECK(before.continuous);
     CHECK(!after.continuous);
 }
@@ -1216,4 +1272,37 @@ TEST_CASE("Clips reach the voice pool with the transport that plays them",
 
     voices.service();
     CHECK(voices.streamCount() == 1);
+}
+
+TEST_CASE("A launch published with the clips reaches the audio thread", "[engine][session]") {
+    // The whole path once: publishClips makes and publishes the handle,
+    // process() advances it, and the session op is bound to a source reading it.
+    LauncherFactory factory;
+    EngineSession session(factory);
+    factory.handles = &session.launchHandleFeed();
+
+    const std::vector<TrackInfo> tracks{makeTrack(1)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+
+    session.publishTransport(rolling(0.0));
+    session.publishClips(snapshotWithSlot(1, 0));
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+
+    // Nothing launched, so the session is silent.
+    session.process(kBlockSize, output);
+    CHECK(output.getSample(0, 0) == approx(0.0f));
+
+    auto* handle = session.launchHandle(magda::engine::SlotKey{1, 0});
+    REQUIRE(handle != nullptr);
+    CHECK(session.launchHandle(magda::engine::SlotKey{1, 3}) == nullptr);
+
+    handle->play(std::nullopt);
+    session.process(kBlockSize, output);
+    CHECK(output.getSample(0, 0) == approx(1.0f));
+
+    handle->stop(std::nullopt);
+    session.process(kBlockSize, output);
+    CHECK(output.getSample(0, 0) == approx(0.0f));
 }

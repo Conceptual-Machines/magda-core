@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -70,11 +71,15 @@ Catch::Approx approx(float value) {
 BlockInfo blockFrom(double startSeconds, int numSamples = kBlockSize, bool continuous = true) {
     BlockInfo block;
     block.numSamples = numSamples;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + numSamples}};
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + numSamples / kSampleRate;
-    block.startBeat = startSeconds * 2.0;
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + numSamples / kSampleRate;
+    block.beats.start = startSeconds * 2.0;
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -101,7 +106,7 @@ std::vector<float> renderStream(magda::engine::EngineAudioSource& source, double
 
 TEST_CASE("An offline source plays the samples the clip is placed over", "[engine][io][offline]") {
     CountingReader reader(100000);
-    const ClipPlacement placement{0.0, 1.0, 0};
+    const ClipPlacement placement{{0.0, 1.0}, 0};
     FileAudioSource source(reader, placement);
     source.prepare(context());
 
@@ -119,7 +124,7 @@ TEST_CASE("An offline source and a streaming one render the same clip identicall
     // The claim the whole offline path rests on: a bounce is what was heard.
     // The two read through different machinery and share only the placement
     // mapping, so this is what catches them drifting apart.
-    const ClipPlacement placement{0.5, 2.0, 1000};
+    const ClipPlacement placement{{0.5, 2.0}, 1000};
 
     // Starting shortly before the clip, so the comparison covers the silence in
     // front of it, the block its start falls inside, and material either side
@@ -142,7 +147,7 @@ TEST_CASE("An offline source and a streaming one render the same clip identicall
     // never short and the comparison is about the samples rather than about a
     // disk's timing. Cued and taken up before the first block, which is what
     // scheduling material ahead of the callback amounts to.
-    stream.seek(live.sourceSampleAt(placement.startSeconds));
+    stream.seek(live.sourceSampleAt(placement.seconds.start));
     stream.applyPendingCue();
 
     juce::AudioBuffer<float> buffer(2, kBlockSize);
@@ -176,7 +181,7 @@ TEST_CASE("An offline source and a streaming one render the same clip identicall
 }
 
 TEST_CASE("An offline source renders the same samples at any block size", "[engine][io][offline]") {
-    const ClipPlacement placement{0.0, 4.0, 0};
+    const ClipPlacement placement{{0.0, 4.0}, 0};
 
     CountingReader shortReader(100000);
     FileAudioSource shortBlocks(shortReader, placement);
@@ -201,7 +206,7 @@ TEST_CASE("An offline source renders silence outside the clip", "[engine][io][of
 
     // The clip starts a quarter of a block in and ends half a block later.
     const auto quarter = 0.25 * kBlockSize / kSampleRate;
-    const ClipPlacement placement{quarter, quarter + 0.5 * kBlockSize / kSampleRate, 0};
+    const ClipPlacement placement{{quarter, quarter + 0.5 * kBlockSize / kSampleRate}, 0};
     FileAudioSource source(reader, placement);
     source.prepare(context());
 
@@ -219,13 +224,13 @@ TEST_CASE("An offline source renders silence outside the clip", "[engine][io][of
 TEST_CASE("An offline source renders nothing while the transport is stopped",
           "[engine][io][offline]") {
     CountingReader reader(100000);
-    FileAudioSource source(reader, ClipPlacement{0.0, 4.0, 0});
+    FileAudioSource source(reader, ClipPlacement{{0.0, 4.0}, 0});
     source.prepare(context());
 
     juce::AudioBuffer<float> buffer(2, kBlockSize);
     auto block = blockFrom(1.0);
     block.playing = false;
-    block.endSeconds = block.startSeconds;
+    block.seconds.end = block.seconds.start;
 
     source.render(block, juce::dsp::AudioBlock<float>(buffer));
 
@@ -240,7 +245,7 @@ TEST_CASE("An offline source runs off the end of a file as silence", "[engine][i
     // silence, and the clip stays the length it was placed at: a file that ran
     // out is not a reason to move what comes after it.
     CountingReader reader(kBlockSize + 10);
-    FileAudioSource source(reader, ClipPlacement{0.0, 4.0, 0});
+    FileAudioSource source(reader, ClipPlacement{{0.0, 4.0}, 0});
     source.prepare(context());
 
     const auto stream = renderStream(source, 0.0, 2);

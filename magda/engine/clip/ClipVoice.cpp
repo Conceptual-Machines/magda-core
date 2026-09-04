@@ -18,6 +18,20 @@ void ClipVoice::prepare(const RenderContext& context) {
     held_.setSize(std::max(1, context.numChannels), kCellSamples, false, true, false);
 
     release();
+    stop_.reset();
+}
+
+void ClipVoice::releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples) {
+    // What it was contributing, remembered by the render that produced it, so
+    // the ramp decays this voice and nothing else that landed in the same
+    // samples (StopDeClick::push).
+    stop_.begin(out, offset, fadeSamples);
+
+    release();
+}
+
+void ClipVoice::carryTail(juce::dsp::AudioBlock<float> out) {
+    stop_.advance(out);
 }
 
 void ClipVoice::release() {
@@ -26,6 +40,9 @@ void ClipVoice::release() {
     sounded_ = false;
     primed_ = nullptr;
     deClick_.reset();
+
+    // stop_ is deliberately left alone: releasing is what starts its ramp, and
+    // what is left of it is still sounding.
     pending_ = false;
     pendingCount_ = 0;
     pendingRead_ = 0;
@@ -44,7 +61,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     // the same cells, so the stretcher is handed the same input in the same
     // order both times and gives back the same samples.
     const auto eventStartSample =
-        static_cast<std::int64_t>(std::llround(event.span.startSeconds * sampleRate_));
+        static_cast<std::int64_t>(std::llround(event.span.seconds.start * sampleRate_));
     const auto windowStartSample =
         static_cast<std::int64_t>(std::llround(windowStart * sampleRate_));
 
@@ -147,35 +164,36 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     return full;
 }
 
-void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
+void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                           const BlockInfo& block, double startSeconds, double endSeconds,
                           FadeCurve curve, bool rising) const {
     const auto length = endSeconds - startSeconds;
     if (!(length > 0.0) || block.numSamples <= 0)
         return;
 
-    const auto blockSeconds = block.endSeconds - block.startSeconds;
+    const auto blockSeconds = block.seconds.end - block.seconds.start;
     if (!(blockSeconds > 0.0))
         return;
 
     // The samples of the block the fade covers, narrowed to the ones this
-    // region holds. sampleForTime clamps to the block, so a fade that began
-    // before it or runs past it contributes the part that is here.
+    // region holds. Bounds rather than moments, so they may sit one past the
+    // block's last sample, and edgeForTime clamps them to it: a fade that began
+    // before this block or runs past it contributes the part that is here.
     const auto count = static_cast<int>(region.getNumSamples());
-    const auto from = std::max(regionFirstSample, block.sampleForTime(startSeconds));
-    const auto to = std::min(regionFirstSample + count, block.sampleForTime(endSeconds));
+    const auto from = std::max(regionFirstSample, block.edgeForTime(startSeconds));
+    const auto to = std::min(regionFirstSample + count, block.edgeForTime(endSeconds));
     if (to <= from)
         return;
 
     const auto secondsPerSample = blockSeconds / block.numSamples;
     const auto channels = region.getNumChannels();
 
-    for (auto sample = from; sample < to; ++sample) {
-        const auto seconds = block.startSeconds + sample * secondsPerSample;
+    for (auto sample = from.value; sample < to.value; ++sample) {
+        const auto seconds = block.seconds.start + (sample * secondsPerSample);
         const auto progress = static_cast<float>((seconds - startSeconds) / length);
         const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
 
-        const auto index = static_cast<std::size_t>(sample - regionFirstSample);
+        const auto index = static_cast<std::size_t>(sample - regionFirstSample.value);
         for (std::size_t channel = 0; channel < channels; ++channel)
             region.getChannelPointer(channel)[index] *= gain;
     }
@@ -207,14 +225,14 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // audible, narrowed to the event's own stretch of it. The silences inside
     // are not part of this, because they mute material that goes on running.
     const auto windowStart =
-        std::max({block.startSeconds, clip.span.startSeconds, event.span.startSeconds});
+        std::max({block.seconds.start, clip.span.seconds.start, event.span.seconds.start});
     const auto windowEnd =
-        std::min({block.endSeconds, clip.span.endSeconds, event.span.endSeconds});
+        std::min({block.seconds.end, clip.span.seconds.end, event.span.seconds.end});
     if (windowEnd <= windowStart)
         return nothing();
 
-    const auto first = block.sampleForTime(windowStart);
-    const auto count = block.sampleForTime(windowEnd) - first;
+    const auto first = block.edgeForTime(windowStart);
+    const auto count = block.edgeForTime(windowEnd) - first;
     if (count <= 0)
         return nothing();
 
@@ -295,13 +313,13 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
-        const auto holeStart = std::max(hole.startSeconds, windowStart);
-        const auto holeEnd = std::min(hole.endSeconds, windowEnd);
+        const auto holeStart = std::max(hole.seconds.start, windowStart);
+        const auto holeEnd = std::min(hole.seconds.end, windowEnd);
         if (holeEnd <= holeStart)
             continue;
 
-        const auto from = std::clamp(block.sampleForTime(holeStart) - first, 0, count);
-        const auto to = std::clamp(block.sampleForTime(holeEnd) - first, 0, count);
+        const auto from = std::clamp(block.edgeForTime(holeStart) - first, 0, count);
+        const auto to = std::clamp(block.edgeForTime(holeEnd) - first, 0, count);
         if (to > from)
             region.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(to - from))
                 .clear();
@@ -340,12 +358,12 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // gain curve on top of that would fade an edge that was never meant to be
     // quiet.
     if (clip.fadeInBehaviour == 0)
-        applyFade(region, first, block, clip.span.startSeconds,
-                  clip.span.startSeconds + clip.fadeInSeconds, clip.fadeInCurve, true);
+        applyFade(region, first, block, clip.span.seconds.start,
+                  clip.span.seconds.start + clip.fadeInSeconds, clip.fadeInCurve, true);
 
     if (clip.fadeOutBehaviour == 0)
-        applyFade(region, first, block, clip.span.endSeconds - clip.fadeOutSeconds,
-                  clip.span.endSeconds, clip.fadeOutCurve, false);
+        applyFade(region, first, block, clip.span.seconds.end - clip.fadeOutSeconds,
+                  clip.span.seconds.end, clip.fadeOutCurve, false);
 
     // Volume and gain summed, panned the way the incumbent pans a clip: linear,
     // and hotter on one side rather than quieter on the other. Not a law with a
@@ -383,7 +401,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // has to: clamping it to the block would make the same clip come out
     // differently at 128 samples a block and at 1024, and an offline render at
     // one size disagree with playback at another.
-    const auto beginsAtItsOwnStart = windowStart <= event.span.startSeconds + (0.5 / sampleRate_);
+    const auto beginsAtItsOwnStart = windowStart <= event.span.seconds.start + (0.5 / sampleRate_);
 
     if (!sounded_ || !block.continuous) {
         if (beginsAtItsOwnStart)
@@ -394,7 +412,13 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         deClick_.advance(region);
     }
 
-    out.getSubBlock(static_cast<std::size_t>(first), static_cast<std::size_t>(count)).add(region);
+    // Before it is summed with anything else, and before any correction is
+    // added to it: what is remembered has to be this voice's own signal, or a
+    // ramp that decays it corrects for whatever else landed here too.
+    stop_.push(region.getSubBlock(0, static_cast<std::size_t>(count)));
+
+    out.getSubBlock(static_cast<std::size_t>(first.value), static_cast<std::size_t>(count))
+        .add(region);
 
     // Silence the reader could not fill is not sounding, and a block it only
     // half filled ends in that silence as surely as one it missed entirely.

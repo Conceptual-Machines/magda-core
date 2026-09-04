@@ -101,6 +101,25 @@ constexpr double kReadAheadBridgeSeconds = 0.1;
  */
 constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
 
+/**
+ * @brief Session slots one track may have standing by.
+ *
+ * Its own budget, not a share of the one above. An arrangement reader is a
+ * window the transport moves through, so a passed clip hands its reader on and
+ * a crowded lane costs read-ahead. A slot is never passed, so sharing would
+ * leave the slots behind the first 32 permanently silent rather than late
+ * (#2301).
+ *
+ * A ceiling on standing cost, not on how many scenes a project may have: each
+ * reader is an open file and a chunk pool, a quarter of a megabyte at the
+ * default settings. Slots past it are reported
+ * (@ref ClipVoicePool::unprovisionedSlots).
+ *
+ * Interim: once a launch is a request (#2305), what is worth provisioning is
+ * what is playing or queued.
+ */
+constexpr int kMaxSessionReadersPerTrack = kMaxReadersPerTrack;
+
 class ClipVoicePool {
   public:
     /**
@@ -258,6 +277,18 @@ class ClipVoicePool {
     }
 
     /**
+     * @brief Session slots the budget could not reach, in the last round.
+     *
+     * A launch that will play nothing. Unlike @ref unbridged this is not
+     * lateness: nothing the transport does brings such a slot into reach.
+     *
+     * A gauge rather than a tally, like the others.
+     */
+    int unprovisionedSlots() const {
+        return unprovisionedSlots_.load(std::memory_order_relaxed);
+    }
+
+    /**
      * @brief Tables handed to the audio thread since this pool was made.
      *
      * Every one of them made a callback finish its block before the swap could
@@ -369,6 +400,7 @@ class ClipVoicePool {
 
     std::atomic<int> overSubscribed_{0};
     std::atomic<int> unbridged_{0};
+    std::atomic<int> unprovisionedSlots_{0};
     std::atomic<int> unreadableFiles_{0};
     std::atomic<int> tablesPublished_{0};
 };

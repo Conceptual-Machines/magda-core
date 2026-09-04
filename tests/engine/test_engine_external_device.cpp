@@ -689,8 +689,8 @@ struct Block {
         buffer.clear();
         info.numSamples = context.maxBlockSize;
         info.playing = true;
-        info.endSeconds = context.maxBlockSize / context.sampleRate;
-        info.endBeat = info.endSeconds * 2.0;
+        info.seconds.end = context.maxBlockSize / context.sampleRate;
+        info.beats.end = info.seconds.end * 2.0;
     }
 
     void fill(float value) {
@@ -977,10 +977,10 @@ TEST_CASE("The plugin is told where the transport is", "[engine][external]") {
 
     ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
     Block block(context, 2);
-    block.info.startBeat = 7.0;  // the second beat of the third bar, in 3/4
-    block.info.endBeat = 7.5;
-    block.info.startSeconds = tempo.beatToTime(7.0);
-    block.info.endSeconds = tempo.beatToTime(7.5);
+    block.info.beats.start = 7.0;  // the second beat of the third bar, in 3/4
+    block.info.beats.end = 7.5;
+    block.info.seconds.start = tempo.beatToTime(7.0);
+    block.info.seconds.end = tempo.beatToTime(7.5);
     block.info.tempo = &tempo;
 
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
@@ -999,6 +999,99 @@ TEST_CASE("The plugin is told where the transport is", "[engine][external]") {
     CHECK(position.getTimeSignature()->denominator == 4);
     REQUIRE(position.getTimeInSeconds().hasValue());
     CHECK(*position.getTimeInSeconds() == Catch::Approx(tempo.beatToTime(7.0)));
+}
+
+TEST_CASE("The plugin is told the section the block renders in", "[engine][external][2336]") {
+    // A musical position within a hundredth of a sample of the cursor is the
+    // cursor as far as the transport is concerned, so a block can open that
+    // close before a section boundary while every sample it renders is past it
+    // (BlockInfo::openingBeat). A plugin is told one bpm and one signature for
+    // the whole call, and taking them from the block's first beat would run the
+    // call on the section it had already left.
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    // 120 to 60 at beat 4, and four four to three four with it. A step is two
+    // changes at the one beat, which is how it is written rather than a ramp.
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 120.0},
+                                         {.startBeat = 4.0, .bpm = 120.0},
+                                         {.startBeat = 4.0, .bpm = 60.0}},
+                                        {{.startBeat = 0.0, .numerator = 4, .denominator = 4},
+                                         {.startBeat = 4.0, .numerator = 3, .denominator = 4}});
+
+    // A hundredth of a sample before the boundary, at 120 bpm and 44.1 kHz.
+    constexpr auto kNudge = 0.01 / 22050.0;
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.info.beats.start = 4.0 - kNudge;
+    block.info.beats.end = block.info.beats.start + 0.25;
+    block.info.seconds.start = tempo.beatToTime(block.info.beats.start);
+    block.info.seconds.end = tempo.beatToTime(block.info.beats.end);
+    block.info.tempo = &tempo;
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    const auto& position = raw->positionSeen;
+
+    // The section the block is in, not the one its first beat is in.
+    REQUIRE(position.getBpm().hasValue());
+    CHECK(*position.getBpm() == Catch::Approx(60.0));
+    REQUIRE(position.getTimeSignature().hasValue());
+    CHECK(position.getTimeSignature()->numerator == 3);
+    CHECK(position.getTimeSignature()->denominator == 4);
+
+    // And the bar that section starts, rather than the four four bar the
+    // block's first beat is still a whole bar into.
+    REQUIRE(position.getPpqPositionOfLastBarStart().hasValue());
+    CHECK(*position.getPpqPositionOfLastBarStart() == Catch::Approx(4.0));
+
+    // Where the block is stays its own first sample, which is what the plugin
+    // is being handed.
+    REQUIRE(position.getPpqPosition().hasValue());
+    CHECK(*position.getPpqPosition() == Catch::Approx(block.info.beats.start));
+    REQUIRE(position.getTimeInSeconds().hasValue());
+    CHECK(*position.getTimeInSeconds() == Catch::Approx(block.info.seconds.start));
+}
+
+TEST_CASE("A block straddling a bar line reports the bar it began in", "[engine][external][2336]") {
+    // The bar a block's first sample is in is what the plugin is told, and a
+    // block is not cut at bar lines, so a long one straddles one. Reporting the
+    // bar its middle is in would make what the plugin hears depend on how the
+    // host sized the callback: the same first sample, two answers.
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    const magda::engine::TempoMap tempo({{.startBeat = 0.0, .bpm = 90.0}},
+                                        {{.startBeat = 0.0, .numerator = 3, .denominator = 4}});
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+
+    // Opens just before the bar line at beat 6 and runs past it.
+    block.info.beats.start = 5.99;
+    block.info.beats.end = 6.25;
+    block.info.seconds.start = tempo.beatToTime(block.info.beats.start);
+    block.info.seconds.end = tempo.beatToTime(block.info.beats.end);
+    block.info.tempo = &tempo;
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    const auto& position = raw->positionSeen;
+
+    // The bar the block began in, which is the one before the line it crosses.
+    REQUIRE(position.getPpqPositionOfLastBarStart().hasValue());
+    CHECK(*position.getPpqPositionOfLastBarStart() == Catch::Approx(3.0));
 }
 
 TEST_CASE("A parameter that did not move is not written again", "[engine][external]") {

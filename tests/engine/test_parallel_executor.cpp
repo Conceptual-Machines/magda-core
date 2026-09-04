@@ -60,16 +60,16 @@ BlockInfo blockAt(std::int64_t timelineSample, int numSamples) {
     BlockInfo block;
     block.numSamples = numSamples;
     block.playing = true;
-    block.startBeat = static_cast<double>(timelineSample) / kSamplesPerBeat;
-    block.endBeat = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
-    block.startSeconds = static_cast<double>(timelineSample) / 44100.0;
-    block.endSeconds = static_cast<double>(timelineSample + numSamples) / 44100.0;
+    block.beats.start = static_cast<double>(timelineSample) / kSamplesPerBeat;
+    block.beats.end = static_cast<double>(timelineSample + numSamples) / kSamplesPerBeat;
+    block.seconds.start = static_cast<double>(timelineSample) / 44100.0;
+    block.seconds.end = static_cast<double>(timelineSample + numSamples) / 44100.0;
     block.continuous = timelineSample > 0;
     return block;
 }
 
 std::int64_t timelineSampleOf(const BlockInfo& block) {
-    return static_cast<std::int64_t>(block.startBeat * kSamplesPerBeat + 0.5);
+    return static_cast<std::int64_t>(block.beats.start * kSamplesPerBeat + 0.5);
 }
 
 TrackInfo makeTrack(TrackId id, TrackType type = TrackType::Media) {

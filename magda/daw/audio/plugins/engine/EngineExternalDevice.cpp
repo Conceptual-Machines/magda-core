@@ -58,10 +58,11 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
   public:
     void setBlock(const magda::engine::BlockInfo& block, double sampleRate) {
         playing_.store(block.playing, std::memory_order_relaxed);
-        timeSeconds_.store(block.startSeconds, std::memory_order_relaxed);
-        timeSamples_.store(static_cast<std::int64_t>(std::llround(block.startSeconds * sampleRate)),
-                           std::memory_order_relaxed);
-        ppqPosition_.store(block.startBeat, std::memory_order_relaxed);
+        timeSeconds_.store(block.seconds.start, std::memory_order_relaxed);
+        timeSamples_.store(
+            static_cast<std::int64_t>(std::llround(block.seconds.start * sampleRate)),
+            std::memory_order_relaxed);
+        ppqPosition_.store(block.beats.start, std::memory_order_relaxed);
 
         if (block.tempo == nullptr) {
             // A caller assembling a block by hand: the defaults are what the
@@ -70,14 +71,29 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
             bpm_.store(kDefaultBpm, std::memory_order_relaxed);
             numerator_.store(4, std::memory_order_relaxed);
             denominator_.store(4, std::memory_order_relaxed);
-            ppqOfBarStart_.store(std::floor(block.startBeat / 4.0) * 4.0,
+            ppqOfBarStart_.store(std::floor(block.beats.start / 4.0) * 4.0,
                                  std::memory_order_relaxed);
             return;
         }
 
-        bpm_.store(block.tempo->bpmAt(block.startBeat), std::memory_order_relaxed);
+        // The tempo and the bar grid the block's first sample sounds under, not
+        // the ones its first beat sits in: a block can open a hundredth of a
+        // sample before a boundary it is otherwise entirely past
+        // (BlockInfo::openingBeat), and taking them from there would run the
+        // call on the section it had already left.
+        //
+        // One bpm and one signature for the whole call is all this interface
+        // has to give, so a block spanning a tempo change reports what its
+        // first sample is in for all of it. That is what every host does and
+        // what plugins are built to tolerate (#2340).
+        //
+        // Where the block is stays its own: the time and the PPQ position above
+        // are its first sample's, which is what the plugin is being handed.
+        const auto opening = block.openingBeat();
 
-        const auto position = block.tempo->barsAndBeatsAt(block.startBeat);
+        bpm_.store(block.tempo->bpmAt(opening), std::memory_order_relaxed);
+
+        const auto position = block.tempo->barsAndBeatsAt(opening);
         numerator_.store(position.numerator, std::memory_order_relaxed);
         denominator_.store(position.denominator, std::memory_order_relaxed);
 
@@ -86,7 +102,16 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
         // denominator is not four: three eighths into a 6/8 bar is one and a
         // half quarter notes, not three.
         const auto quartersPerBeat = 4.0 / std::max(1, position.denominator);
-        ppqOfBarStart_.store(block.startBeat - (position.beat * quartersPerBeat),
+
+        // The bar the block's first sample is in, under the signature it
+        // renders in. Not the bar its middle is in: a block is not cut at bar
+        // lines, so a long one straddles one, and taking the middle's bar would
+        // make what the plugin is told depend on how the host happened to size
+        // the callback.
+        //
+        // Straight back from where the grid was read, because the opening beat
+        // already carries the tolerance a sample's question is answered to.
+        ppqOfBarStart_.store(opening - (position.beat * quartersPerBeat),
                              std::memory_order_relaxed);
     }
 

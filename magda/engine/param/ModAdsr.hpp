@@ -90,7 +90,8 @@ struct AdsrSettings {
     magda::LFOTriggerMode trigger = magda::LFOTriggerMode::Free;
 
     /// Whether the stage lengths are musical divisions rather than
-    /// milliseconds.
+    /// milliseconds. Which unit the envelope runs in, not only how its lengths
+    /// are worked out: a synced one advances by the bars a block covered.
     bool tempoSync = false;
 
     /**
@@ -116,8 +117,18 @@ struct AdsrSettings {
 struct AdsrState {
     AdsrStage stage = AdsrStage::Idle;
 
-    /// How long the current stage has been running, in seconds.
+    /// How far the current stage has run, in whatever its length is counted in:
+    /// seconds for an envelope whose stages are milliseconds, bars for one
+    /// whose stages are a musical division (#2340).
     double timeInStage = 0.0;
+
+    /// The unit @ref timeInStage is counted in: true for bars, false for
+    /// seconds. Compared against runsInBars(settings) on every block rather
+    /// than trusted, because a tempo-sync toggle mid-stage does not empty the
+    /// accumulator, and reinterpreting seconds as bars (or the reverse) without
+    /// converting would snap the envelope to a different point in the stage
+    /// than the one it was actually at (#2340).
+    bool stageInBars = false;
 
     /// The level the stage started from, so a gate change is click-free from
     /// wherever the envelope happened to be rather than from the top.
@@ -161,6 +172,12 @@ struct AdsrState {
  * The milliseconds the model stores, or the musical division they are replaced
  * by when the envelope is tempo synced. A division of Hertz is not a division,
  * and falls back to the milliseconds, which is the fork's own rule.
+ *
+ * What a synced envelope actually runs on is that division in bars, because
+ * the block says how many bars it covered and a bpm and signature read once
+ * per block do not survive a tempo or signature change inside it (#2340). This
+ * is the same length said in seconds, which is what the millisecond path needs
+ * and what a reader asking how long a stage is wants to hear.
  */
 double adsrStageSeconds(float milliseconds, const AdsrSettings& settings, const ModTiming& timing);
 

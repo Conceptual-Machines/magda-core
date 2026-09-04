@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <array>
 
+#include "clip/SessionPlayback.hpp"
+
 namespace magda::engine {
 
 namespace {
@@ -10,38 +12,21 @@ namespace {
 /// Whether a span reaches into a beat range. Half open at both ends, so a clip
 /// ending exactly where a block begins contributes nothing to it.
 bool reachesInto(const SnapshotSpan& span, double startBeat, double endBeat) {
-    return span.startBeat < endBeat && span.endBeat > startBeat;
+    return span.beats.start < endBeat && span.beats.end > startBeat;
 }
 
 /// How many notes the source may hold at once before its owed note-offs alone
 /// could outrun the port budget. Room for the offs is reserved against this.
 constexpr int kOwedCapacity = ActiveNoteList::kChannels * ActiveNoteList::kNotes;
 
-/// Bits for every (channel, note), used to compare what is sounding against
-/// what a new snapshot says should be. On the stack: 256 bytes.
-class NoteMask {
-  public:
-    void set(int channel, int note) {
-        const auto bit = index(channel, note);
-        bits_[bit / 32] |= (1u << (bit % 32));
-    }
-    bool test(int channel, int note) const {
-        const auto bit = index(channel, note);
-        return (bits_[bit / 32] & (1u << (bit % 32))) != 0u;
-    }
-
-  private:
-    static std::size_t index(int channel, int note) {
-        return static_cast<std::size_t>((channel - 1) * ActiveNoteList::kNotes + note);
-    }
-
-    std::array<std::uint32_t, (ActiveNoteList::kChannels * ActiveNoteList::kNotes) / 32> bits_{};
-};
-
 }  // namespace
 
 ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips)
     : trackId_(trackId), clips_(clips) {}
+
+ClipMidiSource::ClipMidiSource(TrackId trackId, ClipSnapshotFeed& clips, LaunchHandleFeed& handles,
+                               Section section)
+    : trackId_(trackId), clips_(clips), handles_(&handles), section_(section) {}
 
 void ClipMidiSource::prepare(const RenderContext&) {
     // Everything the audio thread may need room for, reserved here and never
@@ -59,7 +44,7 @@ bool ClipMidiSource::fits(int bytes) const {
     return bytesUsed_ + bytes + reserved <= kMaxMidiBytesPerPort;
 }
 
-void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent& event) {
+void ClipMidiSource::emit(juce::MidiBuffer& out, EventSample sample, const MidiClipEvent& event) {
     // Two bytes or three, by status. Program change and channel pressure carry
     // one data byte, and building them as three makes a message whose length
     // disagrees with its status: JUCE would hand a synth a byte nobody sent.
@@ -70,7 +55,7 @@ void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent
                              ? juce::MidiMessage(event.status, event.data1)
                              : juce::MidiMessage(event.status, event.data1, event.data2);
 
-    out.addEvent(message, sample);
+    out.addEvent(message, sample.value);
 
     // Charged as a short message either way. The budget is a ceiling, and one
     // byte of slack per two-byte message spends it slightly early rather than
@@ -78,7 +63,7 @@ void ClipMidiSource::emit(juce::MidiBuffer& out, int sample, const MidiClipEvent
     bytesUsed_ += kMidiShortMessageBytes;
 }
 
-void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int note) {
+void ClipMidiSource::endNote(juce::MidiBuffer& out, EventSample sample, int channel, int note) {
     if (!active_.active(channel, note))
         return;
 
@@ -86,7 +71,7 @@ void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int
     activeCount_ = std::max(0, activeCount_ - 1);
 
     if (bytesUsed_ + kMidiShortMessageBytes <= kMaxMidiBytesPerPort) {
-        out.addEvent(juce::MidiMessage::noteOff(channel, note), sample);
+        out.addEvent(juce::MidiMessage::noteOff(channel, note), sample.value);
         bytesUsed_ += kMidiShortMessageBytes;
         return;
     }
@@ -99,7 +84,7 @@ void ClipMidiSource::endNote(juce::MidiBuffer& out, int sample, int channel, int
         owed_.push_back(OwedNote{channel, note});
 }
 
-void ClipMidiSource::endAll(juce::MidiBuffer& out, int sample) {
+void ClipMidiSource::endAll(juce::MidiBuffer& out, EventSample sample) {
     // Gathered before anything is emitted: endNote mutates the list.
     scratch_.clear();
     active_.forEach([this](int channel, int note) {
@@ -110,7 +95,7 @@ void ClipMidiSource::endAll(juce::MidiBuffer& out, int sample) {
         endNote(out, sample, packed / 1000, packed % 1000);
 }
 
-void ClipMidiSource::endClip(juce::MidiBuffer& out, int sample, ClipId clipId) {
+void ClipMidiSource::endClip(juce::MidiBuffer& out, EventSample sample, ClipId clipId) {
     scratch_.clear();
     active_.forEach([this, clipId](int channel, int note) {
         if (active_.owner(channel, note) == clipId)
@@ -122,9 +107,10 @@ void ClipMidiSource::endClip(juce::MidiBuffer& out, int sample, ClipId clipId) {
 }
 
 bool ClipMidiSource::inHole(const MidiClipPlayback& clip, double beat) {
-    return std::any_of(
-        clip.silenced.begin(), clip.silenced.end(),
-        [beat](const SnapshotSpan& hole) { return beat >= hole.startBeat && beat < hole.endBeat; });
+    return std::any_of(clip.silenced.begin(), clip.silenced.end(),
+                       [beat](const SnapshotSpan& hole) {
+                           return beat >= hole.beats.start && beat < hole.beats.end;
+                       });
 }
 
 void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
@@ -159,7 +145,7 @@ void ClipMidiSource::startNote(juce::MidiBuffer& out, const BlockInfo& block,
         active_.startBeat(channel, note) == timelineBeat)
         return;
 
-    emit(out, block.sampleForBeat(timelineBeat), event);
+    emit(out, block.eventForBeat(timelineBeat), event);
 
     if (!active_.active(channel, note))
         ++activeCount_;
@@ -171,7 +157,7 @@ void ClipMidiSource::chaseClip(juce::MidiBuffer& out, const BlockInfo& block,
                                const MidiClipPlayback& clip, const MidiFoldPass& pass,
                                double timelineBeat) {
     const auto contentBeat = timelineBeat - pass.timelineOfContentZero;
-    const auto sample = block.sampleForBeat(timelineBeat);
+    const auto sample = block.eventForBeat(timelineBeat);
 
     // Controllers first, so a note struck below lands on a configured synth.
     //
@@ -250,7 +236,7 @@ void ClipMidiSource::gatherSounding(const MidiClipPlayback& clip, const MidiFold
 void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                                 const MidiClipPlayback& clip, double from, double to, bool jumped) {
     MidiFoldPass passes[kMaxFoldPassesPerBlock];
-    const auto count = foldBlock(clip.fold, from, to, clip.span.endBeat, passes);
+    const auto count = foldBlock(clip.fold, from, to, clip.span.beats.end, passes);
 
     if (count == kMaxFoldPassesPerBlock)
         overflowed_.fetch_add(1, std::memory_order_relaxed);
@@ -342,7 +328,10 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     const auto onBeat = active_.startBeat(channel, note);
                     const auto at = std::clamp(timelineBeat, onBeat, passEndBeat);
 
-                    endNote(out, block.sampleForBeat(at), channel, note);
+                    // The end of a note's stretch, so an edge: one that falls
+                    // on the block boundary is heard a sample early rather than
+                    // written past the buffer (RenderContext.hpp).
+                    endNote(out, block.soundsAt(block.edgeForBeat(at)), channel, note);
                     continue;
                 }
 
@@ -354,7 +343,7 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     continue;
                 }
 
-                emit(out, block.sampleForBeat(timelineBeat), event);
+                emit(out, block.eventForBeat(timelineBeat), event);
             }
         }
 
@@ -362,11 +351,167 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         // it. This is what the fold owes the invariant: every note that sounded
         // in a pass is ended inside the same pass.
         if (pass.endsPass)
-            endClip(out, block.sampleForBeat(pass.timelineOfContentZero + pass.windowEnd),
+            endClip(out,
+                    block.soundsAt(block.edgeForBeat(pass.timelineOfContentZero + pass.windowEnd)),
                     clip.clipId);
     }
 
     juce::ignoreUnused(jumped);
+}
+
+void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
+                              const std::vector<MidiClipPlayback>& clips, double laneFrom,
+                              double laneTo) {
+    for (const auto& clip : clips) {
+        // Sorted by where they start, so once one begins at or after the end of
+        // this lane, so does everything behind it.
+        if (clip.span.beats.start >= laneTo)
+            break;
+
+        if (!reachesInto(clip.span, laneFrom, laneTo)) {
+            // Not sounding, and possibly only just: a clip whose span ended in
+            // an earlier block has already been ended by that block.
+            continue;
+        }
+
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        const auto to = std::min(laneTo, clip.span.beats.end);
+        if (to <= from)
+            continue;
+
+        // Locating into the middle of a clip has to leave every controller at
+        // the value its curve is at and strike the notes the instant is inside,
+        // or seeking into a sustained pad is silence until the next note. A
+        // launch is the same discontinuity (SessionPlayback.hpp).
+        if (!block.continuous) {
+            MidiFoldPass passes[kMaxFoldPassesPerBlock];
+            if (foldBlock(clip.fold, from, to, clip.span.beats.end, passes) > 0)
+                chaseClip(out, block, clip, passes[0], from);
+        }
+
+        renderClip(out, block, clip, from, to, !block.continuous);
+
+        // The span is the length of a MIDI clip, so its end is where the clip's
+        // notes end. Nothing here reads a loop as a length, which is why turning
+        // looping off does not shorten a clip the way MidiClip::disableLooping
+        // does.
+        if (clip.span.beats.end > from && clip.span.beats.end <= to)
+            endClip(out, block.soundsAt(block.edgeForBeat(clip.span.beats.end)), clip.clipId);
+    }
+}
+
+void ClipMidiSource::expectLane(juce::MidiBuffer& out, const BlockInfo& block,
+                                const std::vector<MidiClipPlayback>& clips, double laneFrom,
+                                double laneTo, NoteMask& expected) {
+    for (const auto& clip : clips) {
+        if (!reachesInto(clip.span, laneFrom, laneTo))
+            continue;
+
+        MidiFoldPass passes[kMaxFoldPassesPerBlock];
+        const auto from = std::max(laneFrom, clip.span.beats.start);
+        if (foldBlock(clip.fold, from, laneTo, clip.span.beats.end, passes) == 0)
+            continue;
+
+        gatherSounding(clip, passes[0], from);
+
+        for (std::size_t i = 0; i < scratch_.size(); ++i) {
+            const auto index = scratch_[i];
+            const auto& event = clip.events.events[static_cast<std::size_t>(index)];
+            const auto channel = event.channel();
+            const auto note = static_cast<int>(event.data1);
+
+            expected.set(channel, note);
+
+            if (!active_.active(channel, note))
+                continue;  // nobody is holding it, and a swap does not chase
+            if (active_.owner(channel, note) == clip.clipId)
+                continue;  // already sounding, from the clip that should own it
+
+            // The wrong clip is holding this pitch. Hand it over rather than
+            // leaving it: ending first keeps the receiver's count right, and
+            // striking it again is what makes the new clip's own note-off
+            // legal when it arrives instead of rejected for the wrong owner.
+            endNote(out, EventSample{0}, channel, note);
+            startNote(out, block, clip, index, from);
+        }
+    }
+}
+
+void ClipMidiSource::endUnexpected(juce::MidiBuffer& out, const NoteMask& expected) {
+    // Gathered before anything is emitted because endNote mutates the list,
+    // then walked by index: copying the scratch would allocate here.
+    scratch_.clear();
+    active_.forEach([this, &expected](int channel, int note) {
+        if (!expected.test(channel, note))
+            scratch_.push_back(static_cast<std::int32_t>(channel * 1000 + note));
+    });
+
+    for (std::size_t i = 0; i < scratch_.size(); ++i)
+        endNote(out, EventSample{0}, scratch_[i] / 1000, scratch_[i] % 1000);
+}
+
+void ClipMidiSource::endSlot(juce::MidiBuffer& out, EventSample sample,
+                             const SessionSlotPlayback& slot) {
+    for (const auto& clip : slot.midi)
+        endClip(out, sample, clip.clipId);
+}
+
+bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block,
+                                   const TrackClipPlayback& track, bool reconcile) {
+    const LaunchHandleFeed::Reader handles(*handles_);
+    if (!handles)
+        return false;
+
+    // The whole block rather than a piece of it: a MIDI event is placed at a
+    // sample of the callback, so the sub-range decides which events are emitted
+    // and not where they land (SessionPlayback.hpp).
+    const auto eachPlaying = [&block](const SplitStatus& status, const auto& fn) {
+        const auto play = [&](const BlockPiece& piece) {
+            if (!piece.origin)
+                return;
+
+            fn(materialBlock(block, piece.range, *piece.origin),
+               piece.range.start - piece.origin->beat, piece.range.end - piece.origin->beat);
+        };
+
+        play(status.beforeEvent);
+
+        if (status.afterEvent)
+            play(*status.afterEvent);
+    };
+
+    if (reconcile) {
+        // Every lane marked before anything is ended: a sweep per lane would end
+        // the notes of the slot walked after it.
+        NoteMask expected;
+
+        forEachSlot(*handles.get(), track,
+                    [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+                        eachPlaying(status, [&](const BlockInfo& material, double from, double to) {
+                            expectLane(out, material, slot.midi, from, to, expected);
+                        });
+                    });
+
+        endUnexpected(out, expected);
+    }
+
+    forEachSlot(
+        *handles.get(), track, [&](const SessionSlotPlayback& slot, const SplitStatus& status) {
+            eachPlaying(status, [&](const BlockInfo& material, double from, double to) {
+                playLane(out, material, slot.midi, from, to);
+            });
+
+            // The session's own way for a note to end: a stop is not a hole,
+            // not a snapshot swap and not the end of a span.
+            //
+            // Unconditional rather than edge-triggered. An already stopped
+            // slot holds nothing, so this emits nothing and needs no memory
+            // of the previous block.
+            if (!status.playingAtEnd())
+                endSlot(out, EventSample{status.afterEvent ? status.event.sample : 0}, slot);
+        });
+
+    return true;
 }
 
 void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
@@ -386,120 +531,123 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     const auto* live = snapshot.get();
 
     if (live == nullptr) {
-        endAll(out, 0);
+        endAll(out, EventSample{0});
         lastSnapshot_ = nullptr;
         return;
     }
+
+    // Compiled against a tempo map that has since changed: every second in it
+    // is wrong by however much the map moved (ClipSnapshot.hpp).
+    //
+    // Counted, and then played anyway. Not because playing it is right, but
+    // because the alternatives are worse in front of an audience: silence is a
+    // hole in the middle of a set, and the stale spans usually stop overlapping
+    // the block anyway, so refusing them mostly turns an accidental gap into a
+    // deliberate one. Re-deriving the seconds from the beats, which do survive
+    // a tempo edit, would be compiling on the audio thread, which is the one
+    // thing a snapshot exists to have already done.
+    //
+    // The count is the point. Zero is the only right answer and reaching it is
+    // the publish's job: the map and the snapshot compiled for it are meant to
+    // swap together, and this says when they did not (#2337).
+    //
+    // Coarser than the question it stands in for, and knowingly. The
+    // fingerprint is the whole map, while an arrangement clip's seconds depend
+    // on the map at its own placement and a session slot's depend on it only
+    // over beats zero to its length, because a slot compiles at the origin
+    // (ClipSnapshotCompiler.cpp). A tempo change at bar 200 moves neither a
+    // slot nor a clip before it, and still changes the fingerprint. Which is
+    // another reason this counts rather than acts.
+    if (block.tempo != nullptr && live->tempoFingerprint != block.tempo->fingerprint())
+        staleSnapshots_.fetch_add(1, std::memory_order_relaxed);
 
     const auto* track = live->find(trackId_);
 
     // A stopped transport does not advance the timeline, so nothing new sounds;
     // what was sounding still has to end. The graph keeps running either way.
     if (!block.playing || track == nullptr || block.numSamples <= 0) {
-        endAll(out, 0);
+        endAll(out, EventSample{0});
         lastSnapshot_ = live;
         return;
     }
 
     if (!block.continuous)
-        endAll(out, 0);
+        endAll(out, EventSample{0});
 
-    if (live != lastSnapshot_) {
-        // A swap that moved or deleted what was sounding. Everything the new
-        // snapshot agrees should be sounding here is left alone; the rest is
-        // ended. The fork's shouldSendNoteOffsForNotesNoLongerPlaying, and it
-        // costs one pointer comparison on every block that is not a swap.
-        //
-        // Agreement is about the owner as well as the pitch. A bare
-        // (channel, note) mask would call it settled when one clip is deleted
-        // and another starts sounding the same pitch, and the note would stay
-        // registered to the clip that is gone: a continuous block chases
-        // nothing, so the new clip's own note-off is later rejected for coming
-        // from the wrong owner and the note hangs until the transport stops.
-        NoteMask expected;
+    // A swap that moved or deleted what was sounding. Everything the new
+    // snapshot agrees should be sounding here is left alone; the rest is
+    // ended. The fork's shouldSendNoteOffsForNotesNoLongerPlaying, and it
+    // costs one pointer comparison on every block that is not a swap.
+    //
+    // Agreement is about the owner as well as the pitch. A bare
+    // (channel, note) mask would call it settled when one clip is deleted
+    // and another starts sounding the same pitch, and the note would stay
+    // registered to the clip that is gone: a continuous block chases
+    // nothing, so the new clip's own note-off is later rejected for coming
+    // from the wrong owner and the note hangs until the transport stops.
+    const auto swapped = live != lastSnapshot_;
 
-        for (const auto& clip : track->midi) {
-            if (!reachesInto(clip.span, block.startBeat, block.endBeat))
-                continue;
-
-            MidiFoldPass passes[kMaxFoldPassesPerBlock];
-            const auto from = std::max(block.startBeat, clip.span.startBeat);
-            if (foldBlock(clip.fold, from, block.endBeat, clip.span.endBeat, passes) == 0)
-                continue;
-
-            gatherSounding(clip, passes[0], from);
-
-            for (std::size_t i = 0; i < scratch_.size(); ++i) {
-                const auto index = scratch_[i];
-                const auto& event = clip.events.events[static_cast<std::size_t>(index)];
-                const auto channel = event.channel();
-                const auto note = static_cast<int>(event.data1);
-
-                expected.set(channel, note);
-
-                if (!active_.active(channel, note))
-                    continue;  // nobody is holding it, and a swap does not chase
-                if (active_.owner(channel, note) == clip.clipId)
-                    continue;  // already sounding, from the clip that should own it
-
-                // The wrong clip is holding this pitch. Hand it over rather than
-                // leaving it: ending first keeps the receiver's count right, and
-                // striking it again is what makes the new clip's own note-off
-                // legal when it arrives instead of rejected for the wrong owner.
-                endNote(out, 0, channel, note);
-                startNote(out, block, clip, index, from);
-            }
-        }
-
-        // Gathered before anything is emitted because endNote mutates the list,
-        // then walked by index: copying the scratch would allocate here.
-        scratch_.clear();
-        active_.forEach([this, &expected](int channel, int note) {
-            if (!expected.test(channel, note))
-                scratch_.push_back(static_cast<std::int32_t>(channel * 1000 + note));
-        });
-
-        for (std::size_t i = 0; i < scratch_.size(); ++i)
-            endNote(out, 0, scratch_[i] / 1000, scratch_[i] % 1000);
+    if (section_ == Section::Session) {
+        if (!renderSession(out, block, *track, swapped))
+            endAll(out, EventSample{0});  // no handles published yet: nothing can be playing
 
         lastSnapshot_ = live;
+        return;
     }
 
-    for (const auto& clip : track->midi) {
-        // Sorted by where they start, so once one begins at or after the end of
-        // this block, so does everything behind it.
-        if (clip.span.startBeat >= block.endBeat)
-            break;
+    // A source built without the feed is the whole track and has no section to
+    // lose.
+    // The arrangement's share, which is all of it on a track the session never
+    // took (#2302). The same fold the audio source reads.
+    auto lane = block;
+    auto until = block.numSamples;
+    auto lost = false;
 
-        if (!reachesInto(clip.span, block.startBeat, block.endBeat)) {
-            // Not sounding, and possibly only just: a clip whose span ended in
-            // an earlier block has already been ended by that block.
-            continue;
-        }
+    if (handles_ != nullptr) {
+        const LaunchHandleFeed::Reader handles(*handles_);
+        const auto hold = sectionHold(handles.get(), trackId_, block.numSamples);
 
-        const auto from = std::max(block.startBeat, clip.span.startBeat);
-        const auto to = std::min(block.endBeat, clip.span.endBeat);
-        if (to <= from)
-            continue;
+        until = std::clamp(hold.until.value, 0, block.numSamples);
+        lost = hold.lost;
 
-        // Locating into the middle of a clip has to leave every controller at
-        // the value its curve is at and strike the notes the instant is inside,
-        // or seeking into a sustained pad is silence until the next note.
-        if (!block.continuous) {
-            MidiFoldPass passes[kMaxFoldPassesPerBlock];
-            if (foldBlock(clip.fold, from, to, clip.span.endBeat, passes) > 0)
-                chaseClip(out, block, clip, passes[0], from);
-        }
-
-        renderClip(out, block, clip, from, to, !block.continuous);
-
-        // The span is the length of a MIDI clip, so its end is where the clip's
-        // notes end. Nothing here reads a loop as a length, which is why turning
-        // looping off does not shorten a clip the way MidiClip::disableLooping
-        // does.
-        if (clip.span.endBeat > block.startBeat && clip.span.endBeat <= block.endBeat)
-            endClip(out, block.sampleForBeat(clip.span.endBeat), clip.clipId);
+        // A discontinuity even though the transport never moved: its notes were
+        // ended when it lost the track and the timeline ran on underneath.
+        // Resuming without a chase leaves a sustained pad silent, which is the
+        // case playLane already answers for a locate.
+        if (hold.gained)
+            lane.continuous = false;
     }
+
+    // The session owns every sample. The arrangement owes note-offs on the
+    // block it loses the track, even losing it on the first sample and sounding
+    // none of that block, and nothing on the blocks after.
+    if (until == 0) {
+        if (lost)
+            endAll(out, EventSample{0});
+
+        lastSnapshot_ = live;
+        return;
+    }
+
+    const auto range = syncRangeFor(block);
+    const auto laneEnd =
+        until == block.numSamples ? block.beats.end : range.timelineBeatAt(range.atSample(until));
+
+    if (swapped) {
+        NoteMask expected;
+        expectLane(out, lane, track->midi, lane.beats.start, laneEnd, expected);
+        endUnexpected(out, expected);
+    }
+
+    playLane(out, lane, track->midi, lane.beats.start, laneEnd);
+
+    // It sounds up to the hand-over the way its audio renders up to it, and
+    // owes note-offs there: a note left holding would sound under the session's
+    // own until the transport stopped.
+    if (lost)
+        endAll(out, EventSample{std::min(until, block.numSamples - 1)});
+
+    lastSnapshot_ = live;
 }
 
 }  // namespace magda::engine

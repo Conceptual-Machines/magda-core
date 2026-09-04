@@ -5,12 +5,16 @@
 
 #include <array>
 #include <atomic>
+#include <optional>
+#include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "clip/ClipVoice.hpp"
+#include "clip/FadeCurves.hpp"
 #include "core/TypeIds.hpp"
 #include "exec/EngineDevice.hpp"
+#include "launch/SessionLauncher.hpp"
 
 /**
  * @file ClipAudioSource.hpp
@@ -25,6 +29,16 @@
  * overlap simply sum: the lane's rules were applied when the snapshot was
  * compiled, and a crossfade reaching here is two voices each playing the fade
  * it was handed.
+ *
+ * ## The two sections
+ *
+ * One class plays a track's arrangement and its session, chosen at construction
+ * (#2301). Spans, fades, stretching, warping, readers and voices are shared, so
+ * a clip dragged out of a slot onto the timeline sounds the same in both.
+ *
+ * What differs is where the material sits, which for a slot is nowhere: a
+ * session block is this block on the run's own axes (SessionPlayback.hpp), and
+ * a split block is two of them over two sub-blocks of the output.
  *
  * How many clips a track may sound at once is decided rather than discovered:
  * kMaxVoicesPerTrack, below. That is not how many readers a track may have,
@@ -68,13 +82,27 @@ constexpr int kMaxVoicesPerTrack = 16;
 class ClipAudioSource final : public EngineAudioSource {
   public:
     /**
-     * @brief The clip source for @p trackId.
+     * @brief The arrangement's source for @p trackId.
      *
      * Both feeds outlive it and are shared with every other track: what a track
      * plays and which readers are standing by are properties of the session,
      * not of any one source or any one plan.
      */
     ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams);
+
+    /**
+     * @brief The @p section's source for @p trackId, reading @p handles.
+     *
+     * Both sources of a track take the feed, and @p section says which of them
+     * this is (#2302). A session source is positioned by the handles instead of
+     * by the timeline; an arrangement source is positioned by the timeline as
+     * ever and reads the handles only to know when the session has taken the
+     * track off it, and where in the block that happened.
+     *
+     * @p handles outlives it.
+     */
+    ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipStreamFeed& streams,
+                    LaunchHandleFeed& handles, Section section);
 
     void prepare(const RenderContext& context) override;
 
@@ -100,6 +128,30 @@ class ClipAudioSource final : public EngineAudioSource {
         return starved_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Blocks rendered against a map the snapshot was not compiled for.
+     *
+     * A snapshot carries the fingerprint of the tempo map its seconds were
+     * derived through. One that is not the transport's was compiled against a
+     * tempo that has since changed, so every second in it is wrong by however
+     * much the map moved.
+     *
+     * Counted and then played anyway. Refusing to play it is a hole in the
+     * middle of a set to report a bug that should not happen, and it buys
+     * little, because stale spans usually stop overlapping the block in any
+     * case: what that mostly converts is an accidental gap into a deliberate
+     * one.
+     *
+     * Zero is the only right answer, and reaching it is the publish's job
+     * rather than this one's: the map and the snapshot compiled for it are
+     * meant to swap together (#2337). Non-zero says they did not, which is a
+     * publish-ordering bug that would otherwise be inaudible until somebody
+     * wondered why a clip was in the wrong place.
+     */
+    int staleSnapshots() const {
+        return staleSnapshots_.load(std::memory_order_relaxed);
+    }
+
   private:
     /// One entry that sounds in this block, and the reader it sounds through.
     struct Sounding {
@@ -111,7 +163,28 @@ class ClipAudioSource final : public EngineAudioSource {
         /// was cued with. Null and zero for a clip at its file's own speed.
         ClipStretcher* stretcher = nullptr;
         int preRoll = 0;
+
+        /// What it is played over and where in the output it lands: the block
+        /// itself for the arrangement, a material sub-block for a slot.
+        BlockInfo block;
+        int outOffset = 0;
     };
+
+    /// Where the streams for this track are, as one block's worth of lookups.
+    struct Streams {
+        const ClipStreamTable::Entry* first = nullptr;
+        const ClipStreamTable::Entry* last = nullptr;
+    };
+
+    /// Entries of @p clips that reach into @p block, appended to @p sounding.
+    void gather(const std::vector<AudioClipPlayback>& clips, const BlockInfo& block, int outOffset,
+                const Streams& streams, std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                int& soundingCount);
+
+    /// The same, over whichever of this track's slots a handle has playing.
+    void gatherSession(const TrackClipPlayback& track, const BlockInfo& block,
+                       const Streams& streams, std::array<Sounding, kMaxVoicesPerTrack>& sounding,
+                       int& soundingCount);
 
     /// The voice already playing this entry, or a free one, or null when every
     /// voice is busy.
@@ -120,6 +193,37 @@ class ClipAudioSource final : public EngineAudioSource {
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
     ClipStreamFeed& streams_;
+
+    /// The section. Null is the arrangement, which needs no handles.
+    /// Sum this track's material for @p block, on whichever section this is.
+    void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out);
+
+    /// Drop what the arrangement rendered for as long as the session holds the
+    /// track, and de-click both edges of the hand-over (#2302).
+    void applySectionHold(juce::dsp::AudioBlock<float> out);
+
+    LaunchHandleFeed* handles_ = nullptr;
+    Section section_ = Section::Arrangement;
+
+    /// The two edges of the arrangement's own playback: the step it carries
+    /// down when the session takes the track, and the one it subtracts when it
+    /// gets the track back mid-material.
+    StopDeClick handOver_;
+    StartDeClick handBack_;
+
+    /// One entry of this track's session that stopped in the block just
+    /// gathered, and where. Per entry rather than per track, because the ramp
+    /// that takes its step out belongs to the voice playing it: one ramp over
+    /// the track's sum could not tell an outgoing slot from one still sounding
+    /// through the same samples (#2344 review).
+    struct Stopping {
+        ClipId clipId = INVALID_CLIP_ID;
+        EventId eventId = INVALID_EVENT_ID;
+        int offset = 0;
+    };
+
+    std::array<Stopping, kMaxVoicesPerTrack> stopping_;
+    int stoppingCount_ = 0;
 
     std::array<ClipVoice, kMaxVoicesPerTrack> voices_;
 
@@ -130,6 +234,7 @@ class ClipAudioSource final : public EngineAudioSource {
     juce::AudioBuffer<float> scratch_;
 
     std::atomic<int> starved_{0};
+    std::atomic<int> staleSnapshots_{0};
 };
 
 }  // namespace magda::engine

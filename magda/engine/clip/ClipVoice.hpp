@@ -74,6 +74,28 @@ class ClipVoice {
     void release();
 
     /**
+     * @brief Stop, carrying this voice's own last sample down into @p out.
+     *
+     * The stop edge belongs here for the reason the start edge does: a voice is
+     * the only thing that knows what it alone was contributing, and one ramp
+     * over a track's sum cannot isolate it while other voices keep sounding.
+     *
+     * @p offset is where in the block it stopped. The voice is not free until
+     * the ramp is spent (@ref fading).
+     */
+    void releaseInto(juce::dsp::AudioBlock<float> out, int offset, int fadeSamples);
+
+    /// Carry an unfinished release ramp into @p out. Called every block for a
+    /// voice that is @ref fading, and does nothing for one that is not.
+    void carryTail(juce::dsp::AudioBlock<float> out);
+
+    /// Whether a release ramp is still sounding. Such a voice plays nothing and
+    /// holds no entry, and may not be claimed until this goes false.
+    bool fading() const {
+        return stop_.active();
+    }
+
+    /**
      * @brief Add this block's contribution to @p out.
      *
      * On the audio thread. @p scratch is working space of at least
@@ -126,7 +148,7 @@ class ClipVoice {
 
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
     /// by a curve running across it, rising or falling.
-    void applyFade(juce::dsp::AudioBlock<float> region, int regionFirstSample,
+    void applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                    const BlockInfo& block, double startSeconds, double endSeconds, FadeCurve curve,
                    bool rising) const;
 
@@ -157,6 +179,10 @@ class ClipVoice {
     /// so a ramp that lived inside one block would be a different length at
     /// every block size (FadeCurves.hpp).
     StartDeClick deClick_;
+
+    /// What it was contributing when it ended, carried down without touching
+    /// anything else on the track.
+    StopDeClick stop_;
 
     /// One cell's output, and how much of it a block has taken. Allocated in
     /// prepare(), never on the callback.

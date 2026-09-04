@@ -10,6 +10,7 @@
 #include "clip/ClipSnapshot.hpp"
 #include "exec/PlanBindings.hpp"
 #include "launch/LaunchHandle.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
 #include "tap/ValueTap.hpp"
@@ -137,22 +138,10 @@ class RuntimeStateFactory {
 struct RuntimeStateIds {
     std::set<DeviceKey> devices;
     std::set<TrackId> tracks;
-
-    /**
-     * @brief Every session slot the model holds, when the caller knows them.
-     *
-     * Absent rather than empty when it does not. Slots are clips, and the walk
-     * that answers what exists is handed tracks, so a caller with no snapshot
-     * to hand cannot name them; absent means "keep by track", which leaks a
-     * handle rather than retiring one something may still be holding.
-     *
-     * Track granularity is not enough on its own. A slot emptied while its
-     * track remains would keep its handle for ever, so the next clip put in
-     * that scene would inherit the old one's play state, loop phase and played
-     * range (#2301).
-     */
-    std::optional<std::set<SlotKey>> slots;
 };
+
+// Launch handles are deliberately not here: a slot is a clip, so what exists is
+// answered by the snapshot and their lifetime follows publishHandles() (#2301).
 
 /**
  * @brief Every device and track the model holds, nested racks included.
@@ -162,16 +151,6 @@ struct RuntimeStateIds {
  */
 RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
                                        const TrackInfo& master);
-
-/**
- * @brief The same, with the session slots @p clips says exist.
- *
- * The snapshot rather than the model because that is what enumerates slots, and
- * because it is what a handle would be made for: a slot the snapshot does not
- * carry has nothing to launch.
- */
-RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
-                                       const TrackInfo& master, const ClipSnapshot& clips);
 
 /**
  * @brief The runtime objects behind a plan's leaf ops, owned across swaps.
@@ -259,13 +238,26 @@ class RuntimeStateStore {
      */
     ValueTap* valueTap(const ParamKey& key) const;
 
-    /// The handle for one slot, made on first ask. Unlike a device or a tap
-    /// there is no factory to decline: a handle is the engine's own state
-    /// rather than something the host builds, so a slot the model names always
-    /// has one.
-    LaunchHandle& handle(const SlotKey& key);
+    /**
+     * @brief Make a handle for every slot @p clips names, publish them, and
+     *        retire the ones the snapshot has stopped naming.
+     *
+     * On the publishing thread, and the whole of a handle's lifetime: nothing
+     * else creates or retires them.
+     *
+     * All three in one call because they cannot be separated. A clip edit does
+     * not compile a plan, so releaseDeleted() would not run between a slot
+     * being emptied and refilled, and the refilled slot would come up already
+     * playing. And retiring is only safe on the far side of the publish, which
+     * waits for the block the callback is in.
+     *
+     * Nothing is swapped, and nothing retired, when the slots have not moved: a
+     * drag republishes the snapshot at gesture speed with the same slots.
+     */
+    std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
+                                                            LaunchHandleFeed& feed);
 
-    /// The handle for one slot, or null if nothing has asked for it yet.
+    /// The handle for one slot, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
     /// Objects currently owned, for tests and diagnostics.
@@ -291,12 +283,13 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> sessionMidi_;
 
-    /// One per slot rather than per track, because a slot's state has to
-    /// survive another slot playing in between: launch scene 0, then scene 1,
-    /// then scene 0 again, and the first slot's loop phase and played range are
-    /// still its own. Retired by the same rule as everything else here, which
-    /// is the model no longer naming the slot (#2301).
+    /// One per slot rather than per track: a slot's loop phase and played range
+    /// have to survive another slot playing in between. Made and retired by
+    /// publishHandles() alone (#2301).
     std::map<SlotKey, std::unique_ptr<LaunchHandle>> handles_;
+
+    /// What was last published, so a publish that changes nothing is skipped.
+    std::shared_ptr<const LaunchHandleTable> publishedHandles_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;
 

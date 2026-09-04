@@ -9,6 +9,7 @@
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
 
@@ -163,6 +164,26 @@ class EngineSession {
         return clips_;
     }
 
+    /// The feed session sources read their handles from (#2301). Owned here for
+    /// the reason the clip feed is: a structural recompile must not stop a clip
+    /// that is sounding. Published by publishClips().
+    LaunchHandleFeed& launchHandleFeed() {
+        return handles_;
+    }
+
+    /**
+     * @brief The handle for one slot, or null. On the publishing thread.
+     *
+     * What drives a launch until the request lane exists (#2305). A handle is
+     * advanced on the audio thread, so asking one for a change from here races
+     * the callback: safe only while nothing is rendering.
+     *
+     * Null until publishClips() has named the slot.
+     */
+    LaunchHandle* launchHandle(const SlotKey& key) const {
+        return store_.findHandle(key);
+    }
+
     /**
      * @brief Render @p numSamples. On the audio thread.
      *
@@ -296,6 +317,9 @@ class EngineSession {
     /// Not swapped with a plan and not keyed to one: what a track plays is a
     /// property of the model, and a structural edit is not a reason to lose it.
     ClipSnapshotFeed clips_;
+
+    /// Where the audio thread finds a slot's handle. Travels with the clips.
+    LaunchHandleFeed handles_;
 
     /// The cursor. Not published and not swapped: it is where the timeline is,
     /// which is a property of the session rather than of any plan, and a plan

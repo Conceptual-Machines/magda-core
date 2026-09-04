@@ -302,6 +302,14 @@ BarsAndBeats TempoMap::barsAndBeatsAt(double beat) const {
             section.numerator, section.denominator};
 }
 
+double TempoMap::signatureEndAfter(double beat) const {
+    // Already infinity on the section under the last signature change (built
+    // that way above), so there is nothing left to guard here: a beat with no
+    // change ahead of it answers with a number nothing on the timeline is ever
+    // past.
+    return sectionForBeat(beat).signatureEndBeat;
+}
+
 BeatTick TempoMap::tickAtOrAfter(double beat) const {
     const auto& section = sectionForBeat(beat);
     const auto tickBeats = tickBeatsOf(section.denominator);

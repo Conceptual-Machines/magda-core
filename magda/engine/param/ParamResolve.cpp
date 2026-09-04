@@ -158,13 +158,13 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
         return static_cast<float>(magda::automation::valueAtBeat(curve, beat));
     };
 
-    const float opening = valueAt(block.startBeat);
+    const float opening = valueAt(block.beats.start);
 
     // One value for the block, held: the incumbent engine settles a parameter
     // at the block boundary, and a device that did not ask for more is not the
     // place to start differing from it. Also the whole answer for a block with
     // no time in it, which is what a stopped transport renders.
-    if (!spec.segmentAccurate || block.numSamples <= 0 || block.endBeat <= block.startBeat) {
+    if (!spec.segmentAccurate || block.numSamples <= 0 || block.beats.end <= block.beats.start) {
         out[0] = ParamSegment{0, opening, opening};
         return 1;
     }
@@ -188,25 +188,28 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // this block: a step sitting exactly on the boundary belongs to the next
     // block, and writing its value here would pull it earlier by however long
     // the run before it lasts.
-    const float ending = valueAt(block.endBeat);
+    const float ending = valueAt(block.beats.end);
     const auto boundary = std::lower_bound(
-        curve.begin(), curve.end(), block.endBeat,
+        curve.begin(), curve.end(), block.beats.end,
         [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
     const bool hasKnotInside = boundary != curve.begin();
-    const int endingSample = hasKnotInside ? block.sampleForBeat((boundary - 1)->beatPosition) : 0;
+    const int endingSample =
+        hasKnotInside ? block.eventForBeat((boundary - 1)->beatPosition).value : 0;
     const float endingHeld = hasKnotInside ? valueAt((boundary - 1)->beatPosition) : opening;
 
     int written = 0;
     int startSample = 0;
     float startValue = opening;
-    bool holds = holdsFrom(block.startBeat);
+    bool holds = holdsFrom(block.beats.start);
     bool overflowed = false;
 
     // Close the run in progress at @p beat and open the next one there. The
     // value at a knot is the curve's value after it, which for a step is the
     // jump and for everything else is where the previous run arrived.
     const auto closeAt = [&](double beat) {
-        const auto sample = block.sampleForBeat(beat);
+        // A segment starts where a value takes effect, which is an event: one
+        // sample of this block, never the boundary past its last (#2336).
+        const auto sample = block.eventForBeat(beat).value;
         const auto value = valueAt(beat);
 
         if (sample > startSample) {
@@ -220,14 +223,14 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     };
 
     const auto inside = [&block](double beat) {
-        return beat > block.startBeat && beat < block.endBeat;
+        return beat > block.beats.start && beat < block.beats.end;
     };
 
     // The run the block opens inside, rather than the top of the lane: an
     // unrolled clip lane is as long as the arrangement, and every knot behind
     // the playhead is one this block was never going to emit.
     const auto opener = std::lower_bound(
-        curve.begin(), curve.end(), block.startBeat,
+        curve.begin(), curve.end(), block.beats.start,
         [](const magda::AutomationPoint& point, double beat) { return point.beatPosition < beat; });
     auto index = static_cast<std::size_t>(std::distance(curve.begin(), opener));
     if (index > 0)
@@ -237,7 +240,7 @@ int bakeCurve(std::span<const magda::AutomationPoint> curve, const ParamSpec& sp
     // apex of a hard corner, which is where that curve changes direction
     // between two breakpoints rather than at one.
     for (std::size_t i = index; i < curve.size(); ++i) {
-        if (curve[i].beatPosition >= block.endBeat)
+        if (curve[i].beatPosition >= block.beats.end)
             break;
         if (written + 1 >= static_cast<int>(out.size())) {
             overflowed = true;

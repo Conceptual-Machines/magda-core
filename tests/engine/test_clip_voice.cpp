@@ -157,10 +157,8 @@ Catch::Approx approx(float value) {
 /// audio path reads them: a source is handed seconds (ClipPlacement.hpp).
 SnapshotSpan seconds(double start, double end) {
     SnapshotSpan span;
-    span.startBeat = start * 2.0;
-    span.endBeat = end * 2.0;
-    span.startSeconds = start;
-    span.endSeconds = end;
+    span.beats = {start * 2.0, end * 2.0};
+    span.seconds = {start, end};
     return span;
 }
 
@@ -171,11 +169,15 @@ SnapshotSpan blocks(int firstBlock, int lastBlock) {
 BlockInfo blockFrom(double startSeconds, bool continuous = true) {
     BlockInfo block;
     block.numSamples = kBlockSize;
+    block.sampleRate = kSampleRate;
+    block.monotonicSamples = {
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate)},
+        magda::engine::SamplePosition{std::llround(startSeconds * kSampleRate) + kBlockSize}};
     block.playing = true;
-    block.startSeconds = startSeconds;
-    block.endSeconds = startSeconds + kBlockSize / kSampleRate;
-    block.startBeat = startSeconds * 2.0;
-    block.endBeat = block.endSeconds * 2.0;
+    block.seconds.start = startSeconds;
+    block.seconds.end = startSeconds + kBlockSize / kSampleRate;
+    block.beats.start = startSeconds * 2.0;
+    block.beats.end = block.seconds.end * 2.0;
     block.continuous = continuous;
     return block;
 }
@@ -266,7 +268,7 @@ struct Rig {
             REQUIRE(event != nullptr);
             entry.stream->seek(magda::engine::sourceSampleAt(
                 magda::engine::placementFor(*event, kSampleRate),
-                std::max(blockTime(next_), event->span.startSeconds), kSampleRate));
+                std::max(blockTime(next_), event->span.seconds.start), kSampleRate));
         }
 
         advance(lead + 1);
@@ -366,8 +368,8 @@ TEST_CASE("A track plays the clips the snapshot placed on it", "[engine][clip][v
 
         auto stopped = blockFrom(blockTime(200));
         stopped.playing = false;
-        stopped.endSeconds = stopped.startSeconds;
-        stopped.endBeat = stopped.startBeat;
+        stopped.seconds.end = stopped.seconds.start;
+        stopped.beats.end = stopped.beats.start;
         rig.render(stopped);
 
         for (auto sample = 0; sample < kBlockSize; ++sample)

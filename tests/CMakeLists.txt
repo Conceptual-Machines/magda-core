@@ -372,6 +372,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_value_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_tempo_map.cpp)
     list(APPEND TEST_SOURCES engine/test_transport_clock.cpp)
+    # The two meanings of a sample offset inside a block (#2336): an event on a
+    # sample the block plays, an edge that may be the boundary past its last.
+    list(APPEND TEST_SOURCES engine/test_block_samples.cpp)
     # The launcher's state machine (#2300): quantized launch and stop against
     # monotonic beats, and the split a block straddling one reports.
     list(APPEND TEST_SOURCES engine/test_launch_handle.cpp)
@@ -387,6 +390,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
+    # The two edges of a voice (#2302): the step a start subtracts and the
+    # one a stop carries down, which is what a section switch is made of.
+    list(APPEND TEST_SOURCES engine/test_de_click.cpp)
+    list(APPEND TEST_SOURCES engine/test_session_playback.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice_pool.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_stretch.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_warp.cpp)
