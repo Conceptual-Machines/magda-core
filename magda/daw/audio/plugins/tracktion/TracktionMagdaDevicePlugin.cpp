@@ -315,6 +315,11 @@ te::AutomatableParameter* TracktionMagdaDevicePlugin::parameterForDeviceSlot(int
 }
 
 void TracktionMagdaDevicePlugin::flushPluginStateToValueTree() {
+    // The host owns parameter values here and the device's copy is only as
+    // fresh as the last block: nothing has pushed into it since construction if
+    // the plugin has not rendered. Without this, flushState() writes those
+    // stale values over what the parameters actually hold (#2315).
+    syncParametersToDevice();
     device_->flushState(state);
     te::Plugin::flushPluginStateToValueTree();
 }
@@ -328,10 +333,18 @@ void TracktionMagdaDevicePlugin::restorePluginStateFromValueTree(
     // edit and every settings edit snapped Rate, Swing and Gate back to their
     // defaults mid-play (#2335). A slot the state says nothing about keeps
     // what the model last wrote.
-    for (auto& parameterValue : parameterValues_) {
-        if (const auto* property =
-                restoredState.getPropertyPointer(parameterValue->getPropertyID()))
-            *parameterValue = static_cast<float>(*property);
+    for (std::size_t index = 0; index < parameterValues_.size(); ++index) {
+        auto& parameterValue = parameterValues_[index];
+        const auto* property = restoredState.getPropertyPointer(parameterValue->getPropertyID());
+        if (property == nullptr)
+            continue;
+
+        *parameterValue = static_cast<float>(*property);
+        // The parameter caches its value and does not watch the CachedValue, so
+        // without this the restore reached the tree and nothing else -- and the
+        // next syncParametersToDevice() pushed the stale one back (#2315).
+        if (auto& parameter = parameters_[index])
+            parameter->updateFromAttachedValue();
     }
     syncParametersToDevice();
     device_->restoreState(restoredState);
@@ -383,6 +396,18 @@ void TracktionMagdaDevicePlugin::buildParameters() {
     }
 
     syncParametersToDevice();
+}
+
+void TracktionMagdaDevicePlugin::pullParametersFromDevice() {
+    for (int index = 0; index < static_cast<int>(parameters_.size()); ++index) {
+        auto& parameter = parameters_[static_cast<std::size_t>(index)];
+        if (parameter == nullptr)
+            continue;
+
+        const auto value = device_->parameterValue(index);
+        if (parameter->getCurrentValue() != value)
+            parameter->setParameterFromHost(value, juce::sendNotificationSync);
+    }
 }
 
 void TracktionMagdaDevicePlugin::syncParametersToDevice() {

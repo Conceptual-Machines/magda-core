@@ -3,6 +3,7 @@
 
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "third_party/tracktion_engine/modules/tracktion_engine/utilities/tracktion_TestUtilities.h"
 
 namespace {
@@ -29,8 +30,7 @@ te::Plugin::Ptr createFaustInstrument(te::Edit& edit) {
     return edit.getPluginCache().createNewPlugin(state);
 }
 
-float renderBlock(audio::FaustInstrumentPlugin& instrument, double startSeconds,
-                  te::MidiMessageArray& midi) {
+float renderBlock(te::Plugin& plugin, double startSeconds, te::MidiMessageArray& midi) {
     constexpr int kBlockSize = 64;
     juce::AudioBuffer<float> buffer(2, kBlockSize);
     buffer.clear();
@@ -41,7 +41,7 @@ float renderBlock(audio::FaustInstrumentPlugin& instrument, double startSeconds,
             tracktion::TimePosition::fromSeconds(startSeconds),
             tracktion::TimePosition::fromSeconds(startSeconds + kBlockSize / 44100.0)),
         true, false, false, false);
-    instrument.applyToBuffer(context);
+    plugin.applyToBuffer(context);
     return buffer.getSample(0, kBlockSize - 1);
 }
 
@@ -59,7 +59,10 @@ class FaustInstrumentTempoTest final : public juce::UnitTest {
             return;
 
         auto plugin = createFaustInstrument(*edit);
-        auto* instrument = dynamic_cast<audio::FaustInstrumentPlugin*>(plugin.get());
+        // The device inside the host wrapper (#2315): a MagdaDevice is what a
+        // Faust instrument is now, and the wrapper is what the fork holds.
+        auto* instrument =
+            audio::tracktion_adapter::deviceFromPlugin<audio::FaustInstrumentPlugin>(plugin.get());
         expect(instrument != nullptr, "Runtime Faust instrument should be created");
         if (!instrument)
             return;
@@ -74,7 +77,7 @@ class FaustInstrumentTempoTest final : public juce::UnitTest {
         initInfo.startTime = tracktion::TimePosition();
         initInfo.sampleRate = 44100.0;
         initInfo.blockSizeSamples = 64;
-        instrument->baseClassInitialise(initInfo);
+        plugin->baseClassInitialise(initInfo);
 
         auto* firstTempo = edit->tempoSequence.getTempo(0);
         expect(firstTempo != nullptr, "Test edit should have an initial tempo");
@@ -87,11 +90,11 @@ class FaustInstrumentTempoTest final : public juce::UnitTest {
                                te::MPESourceID{});
         noteOns.addMidiMessage(juce::MidiMessage::noteOn(1, 67, static_cast<juce::uint8>(127)), 0.0,
                                te::MPESourceID{});
-        const float at90Bpm = renderBlock(*instrument, 0.0, noteOns);
+        const float at90Bpm = renderBlock(*plugin, 0.0, noteOns);
 
         firstTempo->setBpm(180.0);
         te::MidiMessageArray noMidi;
-        const float at180Bpm = renderBlock(*instrument, 1.0, noMidi);
+        const float at180Bpm = renderBlock(*plugin, 1.0, noMidi);
 
         expectWithinAbsoluteError(at90Bpm, 0.6f, 0.0001f,
                                   "Two voices should each render (90 / 300) at full velocity");

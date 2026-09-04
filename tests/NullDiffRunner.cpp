@@ -6,9 +6,11 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <set>
+#include <utility>
 
 #include "AssertionWatch.hpp"
 #include "NullDiffHostedPlugin.hpp"
@@ -299,6 +301,52 @@ bool judgeStretched(const Case& value, const NativeRender& native, const Incumbe
     return held;
 }
 
+/**
+ * @brief [end - nudge, end) per note: where one leg has released and the other
+ *        has not.
+ *
+ * MidiNote::getPlaybackTime ends every note 0.0001 s early to keep an off ahead
+ * of an on (tracktion_MidiList.cpp:829); the engine keeps the authored length.
+ * Derived from the authored notes rather than found in the residual, which is
+ * what makes it a named window and not a tolerance.
+ */
+std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case& value) {
+    if (!value.audioChangesAtNoteEnds)
+        return {};
+
+    const auto nudge = static_cast<std::int64_t>(
+        std::llround(value.incumbentNoteEndEarlySeconds * value.sampleRate));
+    if (nudge <= 0)
+        return {};
+
+    const auto samplesPerBeat = 60.0 / value.startBpm() * value.sampleRate;
+
+    std::vector<std::pair<std::int64_t, std::int64_t>> ranges;
+    for (const auto& clip : value.clips) {
+        for (const auto& note : clip.midiNotes) {
+            // A note is authored inside its clip and a clip cuts it off, which
+            // is where the fork takes its own minimum too.
+            const auto endBeat =
+                std::min(clip.placement.startBeat + note.startBeat + note.lengthBeats,
+                         clip.placement.endBeat());
+            const auto end = static_cast<std::int64_t>(std::llround(endBeat * samplesPerBeat));
+            ranges.emplace_back(std::max<std::int64_t>(0, end - nudge), end);
+        }
+    }
+
+    // Sorted and merged: the residual loop walks them with a cursor, and two
+    // notes released together would otherwise have it skip only the first.
+    std::sort(ranges.begin(), ranges.end());
+    std::vector<std::pair<std::int64_t, std::int64_t>> merged;
+    for (const auto& range : ranges) {
+        if (!merged.empty() && range.first <= merged.back().second)
+            merged.back().second = std::max(merged.back().second, range.second);
+        else
+            merged.push_back(range);
+    }
+    return merged;
+}
+
 }  // namespace
 
 juce::File nullDiffScratchDirectory() {
@@ -582,6 +630,7 @@ CaseReport runCase(const Case& value, const RunnerLog& log) {
     options.sampleRate = value.sampleRate;
     options.measureShift = value.tier == AudioTier::Spectral;
     options.maxShiftSamples = value.maxShiftSamples;
+    options.excludedRanges = noteEndNudgeRanges(value);
 
     report.hasAudio = true;
     report.audio = compareAudio(aligned, incumbent.audio, options);

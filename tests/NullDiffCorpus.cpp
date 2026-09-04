@@ -10,8 +10,10 @@
 #include "NullDiffMaterial.hpp"
 #include "core/ChainWalk.hpp"
 #include "core/DeviceInfo.hpp"
+#include "core/DeviceState.hpp"
 #include "core/SourcePool.hpp"
 #include "core/TimeStretchModes.hpp"
+#include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
@@ -605,6 +607,45 @@ void expectsPrimingShift(Case& value) {
 }
 
 }  // namespace
+
+/// A runtime Faust instrument carrying @p source, as a project would save it.
+/// Spelled out rather than left at the device's default, which imports
+/// stdfaust.lib and cannot compile in this target (#2238).
+magda::DeviceInfo faustInstrumentDevice(magda::DeviceId id, const char* source) {
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Faust Instrument";
+    device.pluginId = magda::daw::audio::FaustInstrumentPlugin::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    // As saved device state, which is the path a project takes on both legs.
+    magda::device_state::Doc doc;
+    doc.deviceType = device.pluginId;
+    doc.root.props.set("dspName", "Null Diff Faust Synth");
+    doc.root.props.set("dspSource", source);
+    device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// A gated DC level per voice. No oscillator and no envelope, so the output is
+/// a staircase and every change is a gate edge - which is what the case
+/// measures.
+constexpr const char* kNullDiffFaustSynthDsp = R"FAUST(
+// Self-contained: the literal "stdfaust.lib" here is load-bearing, since the
+// compiler only skips its automatic import when the source already names it.
+freq = hslider("freq", 440, 20, 20000, 0.01);
+gain = hslider("gain", 0.5, 0, 1, 0.01);
+gate = button("gate");
+
+voice = (freq / 20000.0) * gain * gate;
+process = voice <: _, _;
+)FAUST";
 
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     scratchDirectory.createDirectory();
@@ -2421,6 +2462,40 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         auto clip = midiClip(341, 0.0, 8.0);
         for (auto index = 0; index < 8; ++index)
             clip.midiNotes.push_back(note(60 + index, static_cast<double>(index), 0.5, 127));
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The runtime Faust instrument on both legs (#2315). Chords rather
+        // than a line, so the allocator holds several voices at once and has to
+        // release the right one.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(
+            faustInstrumentDevice(983, kNullDiffFaustSynthDsp));
+
+        auto value = newCase("plugin.faust.instrument",
+                             "a runtime Faust instrument's voice allocation", std::move(track));
+        value.endBeat = 8.0;
+
+        // The corpus's first sustaining synth, so the first case that can hear
+        // the fork's note-end nudge at all.
+        value.audioChangesAtNoteEnds = true;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the four samples between the two releases are named per "
+            "note and taken out of the residual, everything else held to bit identity";
+
+        auto clip = midiClip(342, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Overlapping releases: the third note is still sounding when the
+            // next chord starts, so voices are reused rather than always free.
+            clip.midiNotes.push_back(note(48 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(64 + index, at, 2.5, 100));
+        }
         value.clips.push_back(std::move(clip));
 
         corpus.push_back(std::move(value));

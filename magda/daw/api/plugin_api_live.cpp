@@ -458,7 +458,8 @@ juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,
 
     auto* bridge = getAudioBridge();
     auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* faust = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get());
+    auto* faust = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
+        plugin.get());
     if (faust == nullptr)
         return "(could not resolve live Faust plugin)";
 

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <utility>
 #include <vector>
 
 /**
@@ -73,6 +74,12 @@ struct AudioCompareOptions {
     /// How far the search may look, in samples. A stretcher's priming is a
     /// window or two; anything beyond this is not priming.
     int maxShiftSamples = 8192;
+
+    /// Half-open sample ranges the residual is not taken over. Sorted, merged,
+    /// and counted out of `comparedSamples`. Only for samples a declared fact
+    /// about the incumbent can place: a range nobody can derive is an
+    /// allowance, not a shape. See NullDiffRunner's noteEndNudgeRanges.
+    std::vector<std::pair<std::int64_t, std::int64_t>> excludedRanges;
 
     double sampleRate = 44100.0;
 };

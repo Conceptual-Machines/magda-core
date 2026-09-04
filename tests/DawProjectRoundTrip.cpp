@@ -593,6 +593,7 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"plugin.sidechain", {deviceSidechain()}},
         {"plugin.instrument.midiout", {deviceMidiPorts()}},
         {"plugin.instrument.midiout.thru", {deviceMidiPorts()}},
+        {"plugin.faust.instrument", {internalDevices()}},
         {"multiout.pair", {internalDevices(), multiOutRouting()}},
         {"project.mixed", {internalDevices()}},
         {"midi.notes", {internalDevices()}},

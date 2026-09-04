@@ -2246,6 +2246,14 @@ void PluginManager::refreshDeviceParameters(const ChainNodePath& devicePath) {
         plugin = it->second.plugin;
     }
 
+    // Before the model is repopulated, because the model is filled from the
+    // host's parameters and a device that reassigned its own values -- a
+    // runtime Faust patch swap rebinding its pool -- would otherwise have them
+    // pushed back over by the next block (#2315).
+    if (auto* wrapper =
+            dynamic_cast<daw::audio::tracktion_adapter::TracktionMagdaDevicePlugin*>(plugin.get()))
+        wrapper->pullParametersFromDevice();
+
     DeviceId sidechainToClear = INVALID_DEVICE_ID;
     if (auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath)) {
         processor->populateParameters(*devInfo, DeviceProcessor::ValueSource::Model);

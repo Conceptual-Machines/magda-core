@@ -207,6 +207,11 @@ struct Case {
     /// it the corpus says so rather than absorbing it.
     double incumbentNoteEndEarlySeconds = 0.0001;
 
+    /// Whether this case's audio changes when a note ENDS, not only when it
+    /// starts. Set by hand: the harness cannot tell a synth that sustains from
+    /// one that does not, and the nudge above is only audible to the first.
+    bool audioChangesAtNoteEnds = false;
+
     /// The largest step this case's material may take from one sample to the
     /// next, for a case in the Invariants tier. Required there and refused
     /// without, because the tier has no residual to fall back on: a bound

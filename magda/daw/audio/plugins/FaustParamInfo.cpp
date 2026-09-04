@@ -28,6 +28,7 @@ constexpr const char* kHostParamGroup = "Voice";
 
 magda::ParameterInfo voiceModeInfo() {
     magda::ParameterInfo info;
+    info.stableId = "voiceMode";
     info.paramIndex = FaustParamPool::kSize;
     info.name = "Voice Mode";
     info.group = kHostParamGroup;
@@ -52,6 +53,7 @@ magda::ParameterInfo voiceModeInfo() {
 
 magda::ParameterInfo glideInfo() {
     magda::ParameterInfo info;
+    info.stableId = "glide";
     info.paramIndex = FaustParamPool::kSize + 1;
     info.name = "Glide";
     info.group = kHostParamGroup;
@@ -68,6 +70,7 @@ magda::ParameterInfo glideInfo() {
 
 magda::ParameterInfo bendRangeInfo() {
     magda::ParameterInfo info;
+    info.stableId = "bendRange";
     info.paramIndex = FaustParamPool::kSize + 2;
     info.name = "Bend Range";
     info.group = kHostParamGroup;
@@ -178,6 +181,10 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
 
 }  // namespace
 
+// The three ids below are the retired plugin's own property spellings. The host
+// wrapper keys its CachedValue on stableId and falls back to
+// "<pluginId>_param_<n>" without one, which would neither read what flushState
+// writes nor survive a project saved before the port (#2315).
 magda::ParameterInfo faustInstrumentHostParamInfo(int hostIndex) {
     switch (hostIndex) {
         case 0:

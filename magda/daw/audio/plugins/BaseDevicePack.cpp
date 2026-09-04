@@ -435,14 +435,14 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .createMode = InternalPluginCreateMode::SavedStateOrFresh,
                    .loadAliases = kFaustInstrumentAliases,
                    .loadAliasCount = static_cast<int>(std::size(kFaustInstrumentAliases)),
-                   .matchesPlugin = matches<FaustInstrumentPlugin>,
+                   .matchesPlugin = matchesDevice<FaustInstrumentPlugin>,
                    .createProcessor = makeProcessor<FaustInstrumentProcessor>,
                    .showInBrowser = true,
                    .isInstrument = true,
                    .tags = kFaustInstrumentTags,
                    .tagCount = static_cast<int>(std::size(kFaustInstrumentTags)),
                    .createInSession = createValueTreePlugin,
-                   .createPlugin = createPlugin<FaustInstrumentPlugin>});
+                   .createDevice = createDevice<FaustInstrumentPlugin>});
     add(registry,
         {.pluginId = OscilloscopePlugin::xmlTypeName,
          .displayName = "Oscilloscope",

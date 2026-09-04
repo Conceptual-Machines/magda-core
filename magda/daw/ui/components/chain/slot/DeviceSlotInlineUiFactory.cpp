@@ -5,6 +5,7 @@
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
 #include "audio/plugins/IFaustEditorModel.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/ControlTarget.hpp"
 #include "core/LinkModeManager.hpp"
@@ -175,7 +176,9 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         storage.faustUI = std::make_unique<FaustUI>();
 
         if (auto plugin = resolveLivePlugin(nodePath, callbacks)) {
-            if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
+            if (auto* faustModel =
+                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
+                        plugin.get())) {
                 storage.faustUI->setPlugin(faustModel);
                 storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
                     faustModel->getCustomViewName(), *faustModel);
@@ -214,7 +217,9 @@ void bindDeviceSlotFaustInlineUi(
     faustUI->setDevicePath(nodePath);
 
     if (auto plugin = getLivePlugin(nodePath)) {
-        if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(plugin.get())) {
+        if (auto* faustModel =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
+                    plugin.get())) {
             faustUI->setPlugin(faustModel);
             if (setMeterSource) {
                 setMeterSource([plugin, faustModel](int meterIndex) {
