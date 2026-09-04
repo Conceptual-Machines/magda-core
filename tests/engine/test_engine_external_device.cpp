@@ -964,6 +964,34 @@ TEST_CASE("MIDI reaches the plugin and what it answers reaches the port", "[engi
         CHECK(event.getMessage().getNoteNumber() == 64);
 }
 
+TEST_CASE("A plugin with no MIDI of its own hands none back", "[engine][external][2348]") {
+    // JUCE's AU path only clears the shared buffer under wantsMidiMessages, so
+    // a plugin that neither accepts nor produces MIDI leaves the input sitting
+    // in it. Writing that back doubles every note behind a ChainMidiMerge.
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->takesMidi = false;
+    raw->emitsMidi = false;
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+
+    juce::MidiBuffer in;
+    in.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 12);
+    juce::MidiBuffer out;
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    deviceBlock.midiIn = &in;
+    deviceBlock.midiOut = &out;
+    device.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
+}
+
 TEST_CASE("The plugin is told where the transport is", "[engine][external]") {
     auto plugin = std::make_unique<StubPlugin>();
     auto* raw = plugin.get();
