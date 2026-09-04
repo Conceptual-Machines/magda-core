@@ -164,8 +164,9 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
 
-    // Takes the PLUGIN, not the device: parameter writes go through the host
-    // wrapper's parameters, which is what the device reads its slots back from.
+    // Takes the PLUGIN because that is what the faceplate reads its readouts,
+    // waveform and playhead from. Edits go the other way, to the model at
+    // devicePath_, and reach the plugin by projection (#2379).
     void setupForSampler(te::Plugin* samplerPlugin);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
     bool setupForSharedDeviceUi(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device);

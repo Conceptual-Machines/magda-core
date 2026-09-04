@@ -71,6 +71,7 @@ class SamplerRelocateTest final : public juce::UnitTest {
         testLoadSampleStillResets();
         testLoadTakesMarkersIntoHostParameters();
         testRestoreWithoutLoopEnabledSwitchesItOff();
+        testSameSourceRestoreLeavesTheMarkersAlone();
     }
 
   private:
@@ -237,6 +238,38 @@ class SamplerRelocateTest final : public juce::UnitTest {
         sampler.restoreState(state);
 
         expect(sampler.loopEnabled(), "A state that names loopEnabled must still restore it");
+    }
+
+    void testSameSourceRestoreLeavesTheMarkersAlone() {
+        beginTest("Restoring the source already loaded leaves the markers alone");
+
+        // An authored-state edit is projected as a whole document, so a loop
+        // switch reaches the device as a restore naming the sample it already
+        // holds. Re-reading the file there would cut every sounding voice and
+        // re-derive markers the model owns (#2379).
+        auto file = testScratchDir().getNonexistentChildFile("same_source", ".wav");
+        expect(writeTestWav(file), "Test sample must be written");
+
+        MagdaSamplerPlugin sampler;
+        sampler.loadSample(file);
+        sampler.setDisplayValue(MagdaSamplerPlugin::kSampleEnd, 0.4f);
+        sampler.setDisplayValue(MagdaSamplerPlugin::kLoopEnd, 0.0f);
+
+        juce::ValueTree state{juce::Identifier("PLUGIN")};
+        state.setProperty(juce::Identifier("type"), MagdaSamplerPlugin::xmlTypeName, nullptr);
+        state.setProperty(MagdaSamplerPlugin::StateIDs::source, file.getFullPathName(), nullptr);
+        state.setProperty(MagdaSamplerPlugin::StateIDs::rootNote, 48, nullptr);
+        state.setProperty(MagdaSamplerPlugin::StateIDs::loopEnabled, true, nullptr);
+        sampler.restoreState(state);
+
+        expect(sampler.loopEnabled(), "The switch the document names is still applied");
+        expectEquals(sampler.getRootNote(), 48, "And so is the root note");
+        expectWithinAbsoluteError(sampler.displayValue(MagdaSamplerPlugin::kSampleEnd), 0.4f,
+                                  0.0001f, "The end marker must be left where it was");
+        expectWithinAbsoluteError(sampler.displayValue(MagdaSamplerPlugin::kLoopEnd), 0.0f, 0.0001f,
+                                  "A zero loop end must not be re-derived from the file");
+
+        file.deleteFile();
     }
 };
 

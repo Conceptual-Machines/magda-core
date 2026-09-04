@@ -33,6 +33,7 @@
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "audio/processors/DeviceProcessorFactory.hpp"
 #include "audio/processors/base/DeviceProcessor.hpp"
+#include "audio/sampling/SamplerModelEdits.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceStateCommands.hpp"
 #include "core/DrumGridPads.hpp"
@@ -2006,19 +2007,15 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
     auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
         plugin.get());
 
-    if (command == kSamplerSetLoopEnabled) {
-        if (sampler == nullptr)
-            return false;
-        sampler->setLoopEnabled(static_cast<bool>(arguments));
-        return true;
-    }
+    // The loop switch, the root note and the sample are the sampler's authored
+    // state: the edit patches the MODEL's state document and the projection
+    // updates the live device (#2317). Written onto the device instead they
+    // were lost at the next rebuild and never reached the native leg (#2379).
+    if (command == kSamplerSetLoopEnabled)
+        return magda::sampler_edits::setLoopEnabled(devicePath_, static_cast<bool>(arguments));
 
-    if (command == kSamplerSetRootNote) {
-        if (sampler == nullptr)
-            return false;
-        sampler->setRootNote(static_cast<int>(arguments));
-        return true;
-    }
+    if (command == kSamplerSetRootNote)
+        return magda::sampler_edits::setRootNote(devicePath_, static_cast<int>(arguments));
 
     if (command == kSamplerGetPlaybackPosition)
         return sampler != nullptr ? juce::var{sampler->getPlaybackPosition()} : juce::var{0.0};
@@ -2026,15 +2023,8 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
     if (command != kSamplerLoadSample)
         return {};
 
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (audioEngine == nullptr)
-        return false;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (bridge == nullptr)
-        return false;
-
     const juce::File file(arguments.toString());
-    if (!file.existsAsFile() || !bridge->loadSamplerSample(devicePath_, file))
+    if (!magda::sampler_edits::loadSample(devicePath_, file))
         return false;
 
     plugin = getLivePlugin();

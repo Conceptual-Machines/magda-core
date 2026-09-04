@@ -228,6 +228,17 @@ class MagdaSamplerPlugin : public MagdaDevice {
     void flushState(juce::ValueTree& state) override;
     void restoreState(const juce::ValueTree& state) override;
 
+    /// What choosing @p file means for a sampler, read off the file itself: the
+    /// note its metadata names and the marker span covering it. Invalid when no
+    /// sample format can read it. The model authors both when a sample is
+    /// chosen (#2379), so neither may need a loaded device.
+    struct SampleChoice {
+        bool valid = false;
+        int rootNote = 60;
+        float markerSeconds = 0.0f;
+    };
+    static SampleChoice readSampleChoice(const juce::File& file);
+
     //==============================================================================
     // Sample loading. Message thread only.
     void loadSample(const juce::File& file);

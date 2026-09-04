@@ -123,7 +123,6 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
       controlTargetResolver_(trackController_, pluginManager_),
       sidechainRouting_(pluginManager_, trackController_),
       insertDeviceEnablement_(edit),
-      samplerFileLoader_(pluginManager_),
       clipSynchronizer_(edit, trackController_, warpMarkerManager_),
       automationPlayback_(*this, edit),
       automationRecording_(edit) {
@@ -1494,10 +1493,6 @@ bool AudioBridge::togglePluginWindow(const ChainNodePath& devicePath) {
     auto plugin = getPlugin(devicePath);
     return plugin ? pluginWindowBridge_.togglePluginWindow(devicePath.getDeviceId(), plugin)
                   : false;
-}
-
-bool AudioBridge::loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file) {
-    return samplerFileLoader_.loadSample(devicePath, file);
 }
 
 // =============================================================================

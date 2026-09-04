@@ -27,7 +27,6 @@
 #include "params/ParameterQueue.hpp"
 #include "plugin_manager/PluginManager.hpp"
 #include "processors/base/DeviceProcessor.hpp"
-#include "sampling/SamplerFileLoader.hpp"
 #include "session/ClipSynchronizer.hpp"
 #include "session/SessionClipAudioMonitor.hpp"
 #include "sidechain/SidechainRoutingManager.hpp"
@@ -821,14 +820,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // Plugin Editor Windows (delegates to PluginWindowManager)
     // =========================================================================
 
-    /**
-     * @brief Load a sample file into a MagdaSamplerPlugin device
-     * @param devicePath MAGDA device path of the sampler plugin
-     * @param file Audio file to load
-     * @return true if sample was loaded successfully
-     */
-    bool loadSamplerSample(const ChainNodePath& devicePath, const juce::File& file);
-
   private:
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
@@ -871,7 +862,6 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     ControlTargetResolver controlTargetResolver_;
     SidechainRoutingManager sidechainRouting_;
     ExternalInsertDeviceEnablement insertDeviceEnablement_;
-    SamplerFileLoader samplerFileLoader_;
     ClipSynchronizer clipSynchronizer_;
     SessionClipAudioMonitor sessionAudioMonitor_;
     SessionMonitorPlugin* sessionMonitorPlugin_ = nullptr;
