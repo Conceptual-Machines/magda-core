@@ -322,6 +322,30 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
             expectWithinAbsoluteError(movedBent, expectedLevelForBentNote(72, 2.0f), 0.002f);
         }
 
+        beginTest("A duplicate note-on does not strand a pitch, in Mono or Legato (#2351)");
+        {
+            setHostParam(*plugin, glideIdx, 0.0f);
+
+            double t = 2.3;
+            for (const float mode : {0.5f, 1.0f}) {  // Mono, Legato
+                setHostParam(*plugin, voiceModeIdx, mode);
+                instrument->reset();
+
+                auto firstOn = noteOn(60);
+                renderBlock(*plugin, t, firstOn);
+                auto duplicateOn = noteOn(60);
+                renderBlock(*plugin, t += 0.01, duplicateOn);
+                auto off = noteOff(60);
+                const float afterOff = renderBlock(*plugin, t += 0.01, off);
+                t += 0.01;
+
+                expectWithinAbsoluteError(afterOff, 0.0f, 0.001f,
+                                          "one note-off after a duplicate note-on should have "
+                                          "released the pitch, mode=" +
+                                              juce::String(mode));
+            }
+        }
+
         plugin->baseClassDeinitialise();
     }
 };
