@@ -240,8 +240,7 @@ double SamplerVoice::pitchRatioForNote(int midiNoteNumber, const SamplerSound& s
     if (fractional != 0.0)  // fractional semitones -> exponential
         noteHz *= std::pow(2.0, fractional / 12.0);
 
-    double rootHz =
-        juce::MidiMessage::getMidiNoteInHertz(sound.rootNote.load(std::memory_order_relaxed));
+    double rootHz = juce::MidiMessage::getMidiNoteInHertz(rootNote);
     return (noteHz / rootHz) * (sound.sourceSampleRate / getSampleRate());
 }
 
@@ -551,9 +550,9 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
     const float pitch = displayValue(kPitch);
     const float fine = displayValue(kFine);
 
-    const double sourceSR = soundSourceRate_.load(std::memory_order_relaxed);
-    const double lengthSeconds = soundLengthSeconds_.load(std::memory_order_relaxed);
-    const auto maxSec = static_cast<float>(lengthSeconds);
+    const auto facts = playback_.read();
+    const double sourceSR = facts.sourceRate;
+    const auto maxSec = static_cast<float>(facts.lengthSeconds);
 
     const float sStart = juce::jlimit(0.0f, maxSec, displayValue(kSampleStart));
     const float sEnd = juce::jlimit(0.0f, maxSec, displayValue(kSampleEnd));
@@ -574,6 +573,7 @@ void MagdaSamplerPlugin::updateVoiceParameters() {
             voice->setADSR(attack, decay, sustain, release);
             voice->setPitchOffset(pitch, fine);
             voice->setPlaybackRegion(sStart, sEnd, loopOn, lStart, lEnd, sourceSR);
+            voice->setRootNote(facts.rootNote);
             voice->setVelocityAmount(velAmt);
         }
     }
@@ -624,7 +624,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     context.audio->applyGain(context.startSample, context.numSamples, levelLinear);
 
     // Playhead position from the first sounding voice.
-    const double sourceSR = soundSourceRate_.load(std::memory_order_relaxed);
+    const double sourceSR = playback_.read().sourceRate;
     bool foundActive = false;
     for (int i = 0; i < synthesiser.getNumVoices(); ++i) {
         if (auto* voice = dynamic_cast<SamplerVoice*>(synthesiser.getVoice(i))) {
@@ -741,7 +741,6 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
     auto* newSound = new SamplerSound();
     newSound->audioData = std::move(newBuffer);
     newSound->sourceSampleRate = sourceSR;
-    newSound->rootNote.store(detectedRootNote, std::memory_order_relaxed);
 
     synthesiser.clearSounds();
     synthesiser.addSound(newSound);
@@ -765,16 +764,18 @@ void MagdaSamplerPlugin::loadSample(const juce::File& file) {
 }
 
 void MagdaSamplerPlugin::publishSoundFacts() {
-    const auto rate = (currentSound != nullptr && currentSound->sourceSampleRate > 0.0)
-                          ? currentSound->sourceSampleRate
-                          : 44100.0;
+    SamplerPlayback::Facts facts;
+    facts.rootNote = rootNote_;
 
-    const auto seconds = (currentSound != nullptr && currentSound->hasData())
-                             ? currentSound->audioData.getNumSamples() / rate
-                             : 0.0;
+    if (currentSound != nullptr) {
+        if (currentSound->sourceSampleRate > 0.0)
+            facts.sourceRate = currentSound->sourceSampleRate;
 
-    soundSourceRate_.store(rate, std::memory_order_relaxed);
-    soundLengthSeconds_.store(seconds, std::memory_order_relaxed);
+        if (currentSound->hasData())
+            facts.lengthSeconds = currentSound->audioData.getNumSamples() / facts.sourceRate;
+    }
+
+    playback_.publish(facts);
 }
 
 void MagdaSamplerPlugin::unloadSample() {
@@ -856,10 +857,9 @@ int MagdaSamplerPlugin::getRootNote() const {
 
 void MagdaSamplerPlugin::setRootNote(int note) {
     rootNote_ = juce::jlimit(0, 127, note);
-    // Published rather than assigned: startNote is the audio thread, so a note
-    // arriving during this write would otherwise race it.
-    if (currentSound != nullptr)
-        currentSound->rootNote.store(rootNote_, std::memory_order_relaxed);
+    // Through the boundary, never onto the installed sound, which is immutable
+    // (#2384). startNote is the audio thread, so assigning it there would race.
+    playback_.publishRootNote(rootNote_);
 }
 
 }  // namespace magda::daw::audio
