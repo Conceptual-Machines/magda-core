@@ -624,6 +624,7 @@ target_sources(magda_juce_tests PRIVATE
     project/test_legacy_corpus_migration_juce.cpp
     devices/test_device_state_schema_juce.cpp
     devices/test_convolution_device_juce.cpp
+    devices/test_mutable_add_not_replace_juce.cpp
     devices/test_master_sidechain_juce.cpp
     midi/test_midi_bridge_note_events_juce.cpp
     devices/test_section_scoped_device_ids_juce.cpp
