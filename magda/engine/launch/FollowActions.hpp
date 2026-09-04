@@ -71,15 +71,16 @@ struct SlotFollow {
 std::optional<double> followDueBeat(const LaunchHandle& handle, const SlotFollow& follow);
 
 /**
- * @brief Do what @p follow asks of @p key, at @p dueBeat. Audio thread.
+ * @brief The handle @p follow starts at @p dueBeat, or null when it starts none.
  *
- * Only what starts next; the stop is the caller's, since a run that reached its
- * end stops whether or not anything follows it.
+ * Null for a stop, and for a neighbour past either end of the track. The caller
+ * owns the source's stop, since a run that reached its end stops whether or not
+ * anything follows it.
  *
  * Named against @p table as it stands now, so a slot deleted or moved since the
  * project loaded is not in the list this searches.
  */
-void applyFollowAction(const LaunchHandleTable& table, const SlotKey& key, const SlotFollow& follow,
-                       double dueBeat);
+LaunchHandle* followTarget(const LaunchHandleTable& table, const SlotKey& key,
+                           const SlotFollow& follow, double dueBeat);
 
 }  // namespace magda::engine

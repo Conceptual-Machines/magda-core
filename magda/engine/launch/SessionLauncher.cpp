@@ -115,14 +115,28 @@ void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& rang
             continue;
 
         const auto due = followDueBeat(*entry.handle, entry.follow);
-
-        // No lower bound: the handle clamps a position it has passed, so a slot
-        // shorter than a callback still reaches its end.
         if (!due || *due >= range.monotonic.end)
             continue;
 
+        // A run whose end was already behind this block: one shorter than a
+        // callback, whose launch was this block's one event and left the end
+        // nowhere to go. The handle clamps it to the first sample here, and the
+        // block it slipped is counted rather than left silent (#2304 review).
+        if (*due < range.monotonic.start)
+            entry.handle->noteLateRunEnd();
+
+        auto* target = followTarget(table, entry.key, entry.follow, *due);
+
+        // Asked before the stop below, so a slot following itself is not turned
+        // away by the stop this pass is about to write. A target already spoken
+        // for keeps what it was asked: a handle holds one pending request, and
+        // the user's outranks this one.
+        const auto spokenFor = target != nullptr && target->queuedState().has_value();
+
         entry.handle->stop(*due);
-        applyFollowAction(table, entry.key, entry.follow, *due);
+
+        if (target != nullptr && !spokenFor)
+            target->play(*due);
     }
 }
 

@@ -444,6 +444,22 @@ class LaunchHandle {
         return loopRetriggerOverflows_;
     }
 
+    /**
+     * @brief Blocks in which a run ended before the launcher could act on it.
+     *
+     * A run shorter than a callback: its launch was the block's one event, so
+     * the end had nowhere to go and lands on the next block's first sample.
+     * Counted rather than left silent, for the reason above (#2304).
+     */
+    int lateRunEnds() const {
+        return lateRunEnds_;
+    }
+
+    /// Count one, from the pass that noticed. Audio thread.
+    void noteLateRunEnd() {
+        ++lateRunEnds_;
+    }
+
   private:
     /**
      * @brief The run in progress: where it began, and how far it has got.
@@ -559,6 +575,8 @@ class LaunchHandle {
     SplitStatus blockStatus_;
 
     int loopRetriggerOverflows_ = 0;
+
+    int lateRunEnds_ = 0;
 };
 
 }  // namespace magda::engine

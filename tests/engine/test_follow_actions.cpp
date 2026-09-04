@@ -44,8 +44,9 @@ BlockInfo blockAt(int index) {
     return block;
 }
 
-SlotFollow follows(SlotAction action, int loopCount = 1, double delayBeats = 0.0) {
-    return SlotFollow{action, loopCount, delayBeats, kPassBeats};
+SlotFollow follows(SlotAction action, int loopCount = 1, double delayBeats = 0.0,
+                   double lengthBeats = kPassBeats) {
+    return SlotFollow{action, loopCount, delayBeats, lengthBeats};
 }
 
 /// A track's slots, published the way the store publishes them.
@@ -417,4 +418,77 @@ TEST_CASE("A chain of follow actions plays the scenes in order",
         CHECK(rig.handles[scene].lastPlayedRange()->start == Approx(scene * kPassBeats));
         CHECK(rig.handles[scene].lastPlayedRange()->length() == Approx(kPassBeats));
     }
+}
+
+TEST_CASE("A follow action leaves a target the user has already asked for",
+          "[engine][session][launch][follow]") {
+    // The rule the source already obeys, applied to the slot it hands over to:
+    // a handle holds one pending request, so launching over a queued one would
+    // drop what the user asked for (#2304 review).
+    Rig rig({follows(SlotAction::next), follows(SlotAction::none)});
+
+    launch(rig, 0);
+    rig.rollThrough(0, kBlocksPerPass - 1);
+
+    // Slot 1 is spoken for, two passes out, before the hand-over is due.
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(1), kPassBeats * 2);
+    }
+
+    rig.rollThrough(kBlocksPerPass - 1, kBlocksPerPass * 2);
+
+    // The source still stopped on its own beat; slot 1 waited for the beat the
+    // user named rather than starting a pass early.
+    CHECK(rig.sounding() == -1);
+
+    rig.roll(kBlocksPerPass * 2);
+
+    CHECK(rig.sounding() == 1);
+    REQUIRE(rig.handles[1].playedMonotonicRange().has_value());
+    CHECK(rig.handles[1].playedMonotonicRange()->start == Approx(kPassBeats * 2));
+}
+
+TEST_CASE("Play again is not turned away by its own stop", "[engine][session][launch][follow]") {
+    // The source is its own target, and the stop this pass writes must not read
+    // as somebody else having asked for the slot.
+    Rig rig({follows(SlotAction::again)});
+
+    launch(rig, 0);
+    rig.rollThrough(0, (kBlocksPerPass * 2) + 1);
+
+    CHECK(rig.reading(0).playing);
+    REQUIRE(rig.handles[0].playedMonotonicRange().has_value());
+    CHECK(rig.handles[0].playedMonotonicRange()->start == Approx(kPassBeats * 2));
+}
+
+TEST_CASE("A run shorter than a callback counts the block it slipped",
+          "[engine][session][launch][follow]") {
+    // Its launch is the block's one event, so its end has nowhere to go. The
+    // handle clamps it to the next block and the slip is counted rather than
+    // left to look like an audio device fault (#2304 review).
+    const auto shorterThanABlock = kBeatsPerBlock / 2.0;
+    Rig rig({follows(SlotAction::none, 1, 0.0, shorterThanABlock)});
+
+    launch(rig, 0);
+    rig.roll(0);
+
+    CHECK(rig.reading(0).playing);
+    CHECK(rig.handles[0].lateRunEnds() == 0);
+
+    rig.roll(1);
+
+    CHECK_FALSE(rig.reading(0).playing);
+    CHECK(rig.handles[0].lateRunEnds() == 1);
+}
+
+TEST_CASE("A run that ends on its own beat is not counted late",
+          "[engine][session][launch][follow]") {
+    Rig rig({follows(SlotAction::none)});
+
+    launch(rig, 0);
+    rig.rollThrough(0, kBlocksPerPass + 1);
+
+    CHECK_FALSE(rig.reading(0).playing);
+    CHECK(rig.handles[0].lateRunEnds() == 0);
 }

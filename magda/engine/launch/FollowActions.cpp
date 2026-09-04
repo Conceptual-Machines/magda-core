@@ -35,15 +35,15 @@ std::size_t randomIndex(const SlotKey& key, double dueBeat, std::size_t count) {
     return static_cast<std::size_t>(seed % count);
 }
 
-/// The slot @p follow names, or null for an action that starts nothing: a stop,
-/// and a neighbour at the end of the track.
-const LaunchHandleTable::Entry* followTarget(const LaunchHandleTable& table, const SlotKey& key,
-                                             const SlotFollow& follow, double dueBeat) {
+}  // namespace
+
+LaunchHandle* followTarget(const LaunchHandleTable& table, const SlotKey& key,
+                           const SlotFollow& follow, double dueBeat) {
     if (follow.action == SlotAction::none || follow.action == SlotAction::stop)
         return nullptr;
 
     if (follow.action == SlotAction::again)
-        return table.findEntry(key);
+        return table.find(key);
 
     // Every slot of the track that has a handle, in scene order, which is every
     // slot holding a clip: the table is built from the slots the snapshot named
@@ -61,13 +61,13 @@ const LaunchHandleTable::Entry* followTarget(const LaunchHandleTable& table, con
         case SlotAction::next:
             // No wrap at the ends, which is the incumbent's: the last slot of a
             // track stops rather than starting the first again.
-            return at + 1 < count ? first + at + 1 : nullptr;
+            return at + 1 < count ? first[at + 1].handle : nullptr;
 
         case SlotAction::previous:
-            return at > 0 ? first + at - 1 : nullptr;
+            return at > 0 ? first[at - 1].handle : nullptr;
 
         case SlotAction::random:
-            return first + randomIndex(key, dueBeat, count);
+            return first[randomIndex(key, dueBeat, count)].handle;
 
         case SlotAction::none:
         case SlotAction::stop:
@@ -77,8 +77,6 @@ const LaunchHandleTable::Entry* followTarget(const LaunchHandleTable& table, con
 
     return nullptr;
 }
-
-}  // namespace
 
 std::optional<double> followDueBeat(const LaunchHandle& handle, const SlotFollow& follow) {
     const auto schedule = handle.scheduleBeat();
@@ -100,14 +98,6 @@ std::optional<double> followDueBeat(const LaunchHandle& handle, const SlotFollow
     const auto passes = loop ? std::max(1, follow.loopCount) : 1;
 
     return *schedule + (pass * passes) + std::max(0.0, follow.delayBeats);
-}
-
-void applyFollowAction(const LaunchHandleTable& table, const SlotKey& key, const SlotFollow& follow,
-                       double dueBeat) {
-    const auto* target = followTarget(table, key, follow, dueBeat);
-
-    if (target != nullptr && target->handle != nullptr)
-        target->handle->play(dueBeat);
 }
 
 }  // namespace magda::engine
