@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstdint>
+#include <map>
 #include <optional>
 
 #include "launch/LaunchHandle.hpp"
@@ -67,6 +68,12 @@ struct LaunchRequest {
     /// The slot whose run a play joins, for a scene launch. Absent for a plain
     /// launch.
     std::optional<SlotKey> syncTo;
+
+    /// Which handle of @ref key this was asked of. Stamped when the request is
+    /// made and checked against the live table when it is applied, so a slot
+    /// emptied and refilled between the two does not launch the clip that
+    /// replaced the one the user clicked (#2305 review).
+    std::uint64_t incarnation = 0;
 };
 
 /**
@@ -145,6 +152,20 @@ class LaunchRequestQueue {
             queue_.push(LaunchRequest{key, LaunchRequest::Kind::loop, beats, {}});
         }
 
+        /// Every slot named in one call, in phase with @p leader, which is what
+        /// a scene launch is. Here rather than left to the caller because the
+        /// order matters: the leader's own launch has to be asked for first, or
+        /// the followers join the run it is about to leave.
+        template <typename Keys>
+        void playScene(const SlotKey& leader, const Keys& followers,
+                       std::optional<double> monotonicBeat = {}) {
+            play(leader, monotonicBeat);
+
+            for (const auto& follower : followers)
+                if (!(follower == leader))
+                    playSynced(follower, leader, monotonicBeat);
+        }
+
       private:
         LaunchRequestQueue& queue_;
     };
@@ -177,6 +198,24 @@ class LaunchRequestQueue {
         return overflows_;
     }
 
+    /**
+     * @brief Which handle each slot is on, as the publishing thread last saw it.
+     *
+     * Called by RuntimeStateStore::publishHandles with the table it is about to
+     * publish, so a request made after it carries the new incarnation and one
+     * made before it carries the old. On the publishing thread.
+     */
+    void setIncarnations(std::map<SlotKey, std::uint64_t> incarnations) {
+        incarnations_ = std::move(incarnations);
+    }
+
+    /// What @ref setIncarnations last said about @p key, or zero for a slot it
+    /// has never named. On the publishing thread.
+    std::uint64_t incarnationOf(const SlotKey& key) const {
+        const auto it = incarnations_.find(key);
+        return it == incarnations_.end() ? 0 : it->second;
+    }
+
   private:
     void beginGesture() {
         // Not nestable, and an assertion rather than a counter: the inner one's
@@ -189,9 +228,14 @@ class LaunchRequestQueue {
         overflowed_ = false;
     }
 
-    void push(const LaunchRequest& request) {
+    void push(LaunchRequest request) {
         if (overflowed_)
             return;
+
+        // Stamped here rather than by the caller: the map is the writer's own,
+        // and the writer is the thread that publishes handles, so what it knows
+        // about a slot is what the table it published says.
+        request.incarnation = incarnationOf(request.key);
 
         // Checked before the write and not at the commit: the slots the reader
         // still owns are the ones a full ring would be writing over, and rolling
@@ -239,6 +283,10 @@ class LaunchRequestQueue {
     /// Whether a gesture is open, so a nested one is caught rather than
     /// silently publishing half of the one it is inside.
     bool inGesture_ = false;
+
+    /// The writer's own view of which handle each slot is on. Never read on the
+    /// audio thread, which compares against the published table instead.
+    std::map<SlotKey, std::uint64_t> incarnations_;
 };
 
 }  // namespace magda::engine

@@ -1842,8 +1842,9 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
+    magda::engine::LaunchRequestQueue requests;
 
-    const auto first = store.publishHandles(snapshotWithSlots({2, 0, 1}), feed);
+    const auto first = store.publishHandles(snapshotWithSlots({2, 0, 1}), feed, requests);
     REQUIRE(first->entries.size() == 3);
     CHECK(first->entries[0].key.sceneIndex == 0);
     CHECK(first->entries[1].key.sceneIndex == 1);
@@ -1858,7 +1859,7 @@ TEST_CASE("A handle table names every slot, in order, and keeps the handles it h
     playing->advance(magda::engine::syncRangeFor(blockAt(0)));
     REQUIRE(playing->playState() == LaunchHandle::PlayState::playing);
 
-    const auto second = store.publishHandles(snapshotWithSlots({0, 1, 2}), feed);
+    const auto second = store.publishHandles(snapshotWithSlots({0, 1, 2}), feed, requests);
 
     // Same slots, same handles: a clip edit that did not touch the session must
     // not make the callback wait.
@@ -1873,8 +1874,9 @@ TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][cl
     NoFactory factory;
     magda::engine::RuntimeStateStore store{factory};
     LaunchHandleFeed feed;
+    magda::engine::LaunchRequestQueue requests;
 
-    store.publishHandles(snapshotWithSlots({0, 1}), feed);
+    store.publishHandles(snapshotWithSlots({0, 1}), feed, requests);
 
     auto* playing = store.findHandle(SlotKey{kTrack, 0});
     REQUIRE(playing != nullptr);
@@ -1882,10 +1884,10 @@ TEST_CASE("A slot emptied and refilled does not come back playing", "[engine][cl
     playing->advance(magda::engine::syncRangeFor(blockAt(0)));
     REQUIRE(playing->playState() == LaunchHandle::PlayState::playing);
 
-    store.publishHandles(snapshotWithSlots({1}), feed);
+    store.publishHandles(snapshotWithSlots({1}), feed, requests);
     CHECK(store.findHandle(SlotKey{kTrack, 0}) == nullptr);
 
-    store.publishHandles(snapshotWithSlots({0, 1}), feed);
+    store.publishHandles(snapshotWithSlots({0, 1}), feed, requests);
 
     auto* refilled = store.findHandle(SlotKey{kTrack, 0});
     REQUIRE(refilled != nullptr);

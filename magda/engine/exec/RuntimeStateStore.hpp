@@ -256,7 +256,8 @@ class RuntimeStateStore {
      * free.
      */
     std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
-                                                            LaunchHandleFeed& feed);
+                                                            LaunchHandleFeed& feed,
+                                                            LaunchRequestQueue& requests);
 
     /// The handle for one slot, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
@@ -284,10 +285,22 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> sessionMidi_;
 
+    /// A slot's handle and which handle it is. The incarnation is what tells a
+    /// request made against the clip that was here from one made against the
+    /// clip that replaced it, since the key is the same either way (#2305).
+    struct Slot {
+        std::unique_ptr<LaunchHandle> handle;
+        std::uint64_t incarnation = 0;
+    };
+
     /// One per slot rather than per track: a slot's loop phase and played
     /// range have to survive another slot playing in between. Made and
     /// retired by publishHandles() alone (#2301).
-    std::map<SlotKey, std::unique_ptr<LaunchHandle>> handles_;
+    std::map<SlotKey, Slot> handles_;
+
+    /// Never reused, so an incarnation names one handle for the life of the
+    /// session rather than one handle per slot at a time.
+    std::uint64_t nextIncarnation_ = 0;
 
     /// What was last published, so a publish that changes nothing is skipped.
     std::shared_ptr<const LaunchHandleTable> publishedHandles_;

@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -61,6 +62,23 @@ struct Rig {
 
     void roll(int index) {
         advanceLaunchHandles(feed, requests, blockAt(index));
+    }
+
+    /// Republish this rig's handles under @p incarnation, and tell the queue,
+    /// which is the pair RuntimeStateStore::publishHandles keeps in step.
+    void publishWithIncarnation(std::uint64_t incarnation) {
+        auto table = std::make_shared<LaunchHandleTable>();
+        std::map<SlotKey, std::uint64_t> stamped;
+
+        for (auto scene = 0; scene < static_cast<int>(handles.size()); ++scene) {
+            const auto key = SlotKey{kTrack, scene};
+            table->entries.push_back(LaunchHandleTable::Entry{
+                key, &handles[static_cast<std::size_t>(scene)], incarnation});
+            stamped[key] = incarnation;
+        }
+
+        feed.publish(std::move(table));
+        requests.setIncarnations(std::move(stamped));
     }
 
     LaunchHandle& slot(int scene) {
@@ -181,6 +199,80 @@ TEST_CASE("A scene launch arrives as one thing", "[engine][session][launch]") {
     }
 }
 
+TEST_CASE("Relaunching a scene whose leader is already playing keeps it in phase",
+          "[engine][session][launch]") {
+    // The leader's play() only queues: its run_ is still the old one when the
+    // followers are applied in the same gesture. Joining that run would put the
+    // followers on the run the leader is about to leave, and the scene would
+    // come back out of phase with itself (#2305 review).
+    Rig rig(3);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+
+    rig.roll(0);
+    rig.roll(1);
+    REQUIRE(playing(rig.slot(0)));
+
+    const auto firstRun = rig.slot(0).playedSampleRange();
+    REQUIRE(firstRun.has_value());
+
+    // The same scene launched again, leader first, exactly as playScene emits it.
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+        gesture.playSynced(Rig::key(1), Rig::key(0));
+        gesture.playSynced(Rig::key(2), Rig::key(0));
+    }
+
+    rig.roll(2);
+
+    const auto leader = rig.slot(0).playedSampleRange();
+    REQUIRE(leader.has_value());
+
+    // The leader really did relaunch rather than carry on.
+    CHECK(leader->start > firstRun->start);
+
+    for (auto scene = 1; scene < 3; ++scene) {
+        const auto joined = rig.slot(scene).playedSampleRange();
+        REQUIRE(joined.has_value());
+        CHECK(joined->start == leader->start);
+        CHECK(joined->end == leader->end);
+    }
+}
+
+TEST_CASE("playScene emits the leader before the slots that follow it",
+          "[engine][session][launch]") {
+    Rig rig(3);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+    rig.roll(0);
+    rig.roll(1);
+
+    const std::vector<SlotKey> scene{Rig::key(0), Rig::key(1), Rig::key(2)};
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.playScene(Rig::key(0), scene);
+    }
+
+    rig.roll(2);
+
+    const auto leader = rig.slot(0).playedSampleRange();
+    REQUIRE(leader.has_value());
+
+    for (auto index = 1; index < 3; ++index) {
+        const auto joined = rig.slot(index).playedSampleRange();
+        REQUIRE(joined.has_value());
+        CHECK(joined->start == leader->start);
+    }
+}
+
 TEST_CASE("A synced launch whose leader has gone starts on its own", "[engine][session][launch]") {
     // The leader's slot was emptied between the ask and the block. Playing
     // alone is the honest answer: the clip was asked to play and there is
@@ -207,6 +299,51 @@ TEST_CASE("A request for a slot that is not there does nothing", "[engine][sessi
 
     rig.roll(0);
     CHECK_FALSE(playing(rig.slot(0)));
+}
+
+TEST_CASE("A request cannot launch the clip that replaced the one it named",
+          "[engine][session][launch]") {
+    // The ordering the first refill case does not reach: the request is still
+    // in the queue when the slot is emptied and refilled, so the drain finds a
+    // live handle under the key it named. The key alone says yes; the
+    // incarnation is what says no (#2305 review).
+    Rig rig(1);
+
+    // What publishHandles stamps a handle with. The first table's entry carries
+    // it, and so does a request made while that table is the published one.
+    rig.publishWithIncarnation(1);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+
+    // Emptied and refilled before the callback ever ran, so nothing has drained.
+    LaunchHandle refilled;
+    auto table = std::make_shared<LaunchHandleTable>();
+    table->entries.push_back(LaunchHandleTable::Entry{Rig::key(0), &refilled, 2});
+    rig.feed.publish(std::move(table));
+    rig.requests.setIncarnations({{Rig::key(0), 2}});
+
+    rig.roll(0);
+
+    CHECK_FALSE(playing(refilled));
+    CHECK_FALSE(playing(rig.slot(0)));
+}
+
+TEST_CASE("A request still matches the handle it was made against", "[engine][session][launch]") {
+    // The other half: an incarnation that has not moved must not drop the
+    // request, or nothing would ever launch.
+    Rig rig(1);
+    rig.publishWithIncarnation(7);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+
+    rig.roll(0);
+    CHECK(playing(rig.slot(0)));
 }
 
 TEST_CASE("A slot emptied and refilled does not inherit what was asked of the last one",

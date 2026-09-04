@@ -47,6 +47,13 @@ struct LaunchHandleTable {
         SlotKey key;
         LaunchHandle* handle = nullptr;
 
+        /// Which handle this slot is on. A slot emptied and refilled is the
+        /// same key and a different clip, so a request made against the one
+        /// that has gone has to be told apart from one made against this one
+        /// (#2305 review). Assigned by RuntimeStateStore::publishHandles when
+        /// it makes a handle, and never reused.
+        std::uint64_t incarnation = 0;
+
         bool operator==(const Entry&) const = default;
     };
 
@@ -59,6 +66,10 @@ struct LaunchHandleTable {
 
     /// The handle for one slot, or null.
     LaunchHandle* find(const SlotKey& key) const;
+
+    /// The whole entry for one slot, or null, which is what a caller needs when
+    /// it has to check the incarnation as well as find the handle.
+    const Entry* findEntry(const SlotKey& key) const;
 };
 
 class LaunchHandleFeed {

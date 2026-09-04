@@ -17,7 +17,7 @@ LaunchHandleTable::rangeFor(TrackId trackId) const {
     return {from, to};
 }
 
-LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
+const LaunchHandleTable::Entry* LaunchHandleTable::findEntry(const SlotKey& key) const {
     const auto [from, to] = rangeFor(key.trackId);
 
     const auto* found =
@@ -25,7 +25,12 @@ LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
             return entry.key < wanted;
         });
 
-    return found != to && found->key == key ? found->handle : nullptr;
+    return found != to && found->key == key ? found : nullptr;
+}
+
+LaunchHandle* LaunchHandleTable::find(const SlotKey& key) const {
+    const auto* entry = findEntry(key);
+    return entry != nullptr ? entry->handle : nullptr;
 }
 
 namespace {
@@ -33,10 +38,19 @@ namespace {
 /// One request against the table that is live now. A slot the table does not
 /// name is one emptied between the ask and this block, and there is nothing
 /// left to ask.
+///
+/// The incarnation is the rest of that question. A slot emptied and refilled
+/// between the ask and this block is the same key on a different clip, and
+/// applying the launch to it would start something the user never clicked
+/// (#2305 review). The key alone cannot tell those apart; the incarnation can,
+/// and it is a number rather than a pointer, so nothing here holds a handle
+/// that could have been retired.
 void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
-    auto* handle = table.find(request.key);
-    if (handle == nullptr)
+    const auto* entry = table.findEntry(request.key);
+    if (entry == nullptr || entry->handle == nullptr || entry->incarnation != request.incarnation)
         return;
+
+    auto* handle = entry->handle;
 
     switch (request.kind) {
         case LaunchRequest::Kind::play:
@@ -46,6 +60,21 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
                 // decided on the message thread would join where the leader was
                 // a block ago.
                 if (const auto* with = table.find(*request.syncTo); with != nullptr) {
+                    // Unless the leader has a launch of its own still queued, in
+                    // which case it has no run to join yet: the one it is about
+                    // to begin is the one the follower means. Joining what it is
+                    // playing now would put the follower on the run the leader
+                    // is leaving, and a scene relaunched while it was already
+                    // playing would come back out of phase with itself.
+                    //
+                    // Both then begin fresh on the same instant, which is the
+                    // same origin, because a run's origin is the sample it
+                    // started on and nothing else (#2336).
+                    if (with->queuedState() == LaunchHandle::QueueState::playQueued) {
+                        handle->play(with->queuedPosition());
+                        return;
+                    }
+
                     handle->playSynced(*with, request.position);
                     return;
                 }

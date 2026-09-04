@@ -320,7 +320,7 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
 }
 
 std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
-    const ClipSnapshot& clips, LaunchHandleFeed& feed) {
+    const ClipSnapshot& clips, LaunchHandleFeed& feed, LaunchRequestQueue& requests) {
     auto table = std::make_shared<LaunchHandleTable>();
 
     for (const auto& track : clips.tracks)
@@ -328,10 +328,17 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
             const SlotKey key{track.trackId, slot.sceneIndex};
 
             auto& made = handles_[key];
-            if (made == nullptr)
-                made = std::make_unique<LaunchHandle>();
+            if (made.handle == nullptr) {
+                made.handle = std::make_unique<LaunchHandle>();
 
-            table->entries.push_back(LaunchHandleTable::Entry{key, made.get()});
+                // Counted up rather than reused, so a request stamped against
+                // the handle that was here can never match the one that
+                // replaced it (#2305 review).
+                made.incarnation = ++nextIncarnation_;
+            }
+
+            table->entries.push_back(
+                LaunchHandleTable::Entry{key, made.handle.get(), made.incarnation});
         }
 
     // Sorted on arrival, since a snapshot holds tracks by id and slots by
@@ -345,6 +352,16 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
         return publishedHandles_;
 
     publishedHandles_ = table;
+
+    // Before the swap, so a request made from here on carries the incarnation
+    // the table about to go live names. One made before it carries the old one
+    // and is dropped when it arrives, which is the whole point: the slot it was
+    // aimed at is not the slot that is there now.
+    std::map<SlotKey, std::uint64_t> incarnations;
+    for (const auto& entry : table->entries)
+        incarnations[entry.key] = entry.incarnation;
+
+    requests.setIncarnations(std::move(incarnations));
 
     // The swap waits for the block the callback is in, so afterwards a handle
     // this table does not name is unreachable from the audio thread.
@@ -361,7 +378,7 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
 
 LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
     const auto it = handles_.find(key);
-    return it == handles_.end() ? nullptr : it->second.get();
+    return it == handles_.end() ? nullptr : it->second.handle.get();
 }
 
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
