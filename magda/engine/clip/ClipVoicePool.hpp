@@ -25,23 +25,23 @@
  * @file ClipVoicePool.hpp
  * @brief Which clips have a reader standing by, and where it is pointed.
  *
- * A clip that starts on the beat is a read the stream was not expecting, and a
- * read that does not continue the last one is a seek: what was read ahead is
- * for somewhere else, and nothing plays until the reader catches up (#2016).
- * The whole point of this file is that it never happens. The transport's
- * position is watched from off the audio thread, clips about to sound are given
- * a stream and the stream is cued to the sample they start on, and by the time
- * the callback asks the material is already in memory.
+ * A clip that starts on the beat is a read the stream wasn't expecting, and
+ * a read that doesn't continue the last one is a seek: what was read ahead
+ * is for somewhere else, and nothing plays until the reader catches up
+ * (#2016). This file exists so that never happens: the transport's position
+ * is watched from off the audio thread, clips about to sound are given a
+ * stream cued to the sample they start on, and by the time the callback
+ * asks, the material is already in memory.
  *
- * Nothing here is on the audio thread and nothing here may be. Opening a file,
- * allocating a chunk pool and cueing a stream are all things that wait, so they
- * happen on a thread that is allowed to (ClipVoiceThread below), and what
- * reaches the callback is a published table (ClipStreamFeed.hpp).
+ * Nothing here runs on the audio thread. Opening a file, allocating a chunk
+ * pool and cueing a stream all wait, so they happen on a thread allowed to
+ * (ClipVoiceThread below), and what reaches the callback is a published
+ * table (ClipStreamFeed.hpp).
  *
- * Not the prefetch thread. The two jobs are separate on purpose: deciding what
- * to read must not queue behind a disk that is being read, and retiring a
- * stream waits for the prefetch thread to be out of it, which a caller running
- * on that thread would wait for for ever.
+ * Not the prefetch thread: deciding what to read must not queue behind a
+ * disk that's being read, and retiring a stream waits for the prefetch
+ * thread to be out of it, which a caller running on that thread would wait
+ * for forever.
  */
 
 namespace magda::engine {
@@ -49,16 +49,14 @@ namespace magda::engine {
 /**
  * @brief How far ahead of the transport a clip is given a reader.
  *
- * A cue is only worth giving if the reader has time to act on it, and what it
- * has to do is fill its pool: chunkSamples x (chunkCount - 1) samples of
- * read-ahead, which is two thirds of a second at the default settings and a
- * 44.1 kHz device, and less at every higher rate. Add a provisioning round and
- * the time it takes to open a file, and a second is that with room to spare.
+ * A cue is only worth giving if the reader has time to fill its pool:
+ * chunkSamples x (chunkCount - 1) samples of read-ahead, two thirds of a
+ * second at the default settings and 44.1 kHz. A second covers that plus a
+ * provisioning round and a file open, with room to spare.
  *
- * Longer is not better. Every clip inside the window is an open file and a
- * chunk pool, and a window wide enough to hold a chorus' worth of edits would
- * have the disk reading material that is a bar away instead of the material
- * that is due.
+ * Longer is not better: every clip inside the window is an open file and a
+ * chunk pool, and a wider window would have the disk reading material a bar
+ * away instead of material that's due.
  */
 constexpr double kCueAheadSeconds = 1.0;
 
@@ -66,57 +64,52 @@ constexpr double kCueAheadSeconds = 1.0;
  * @brief How soon a clip may be due and still be given a reader in time.
  *
  * A round finds a clip, opens its file and points the stream at it; the
- * prefetch thread notices on its next poll and reads. Until both have happened
- * the clip has a reader that cannot answer, so a clip due sooner than this is
- * one this pool was too late for however much budget it had.
+ * prefetch thread notices on its next poll and reads. Until both happen the
+ * clip's reader can't answer, so a clip due sooner than this was one this
+ * pool was too late for.
  *
- * It is what the reader budget has to cover, and the reason that budget is not
- * the voice ceiling. A callback can only sound kMaxVoicesPerTrack clips, but
- * the pool has to have opened every clip that will sound before it next wakes,
- * which is a different and larger set: sixteen readers is sixteen clips, and
- * sixteen clips is a tenth of a second of chopped material or an hour of a
- * ballad.
+ * This is what the reader budget has to cover, and why that budget isn't
+ * the voice ceiling: a callback can only sound kMaxVoicesPerTrack clips, but
+ * the pool has to have opened every clip that will sound before it next
+ * wakes -- a larger set, since sixteen readers can be sixteen clips, and
+ * sixteen clips can be a tenth of a second of chopped material.
  */
 constexpr double kReadAheadBridgeSeconds = 0.1;
 
 /**
  * @brief Readers one track may have standing by.
  *
- * The voice ceiling plus room to be early. Every clip that is sounding needs a
- * reader, and so does every clip that will start before this pool next gets to
- * look, so the budget has to hold both: kMaxVoicesPerTrack for the first and as
- * much again for the second. Sized to the voice ceiling instead, a lane would
- * spend its whole budget on what is playing and open the next clip at the
- * moment it was due, which is a seek, which is the one thing this file exists
- * to avoid.
+ * The voice ceiling plus room to be early: every sounding clip needs a
+ * reader, and so does every clip that will start before this pool next
+ * looks, so the budget covers both -- kMaxVoicesPerTrack for the first and
+ * as much again for the second. Sized to the voice ceiling alone, a lane
+ * would spend its whole budget on what's playing and open the next clip at
+ * the moment it was due, which is exactly the seek this file exists to avoid.
  *
- * Thirty-two is where the memory is too: each of these is an open file and a
- * chunk pool, a quarter of a megabyte at the default settings, so eight
- * megabytes for a track with clips near the cursor and nothing at all for one
+ * Thirty-two is also where the memory is: each reader is an open file and a
+ * chunk pool, a quarter of a megabyte at default settings, so eight
+ * megabytes for a track with clips near the cursor and nothing for one
  * without.
  *
- * It does not make the pool keep up with anything. Material dense enough that
- * even this cannot reach kReadAheadBridgeSeconds ahead is reported rather than
- * silently late (@ref ClipVoicePool::unbridged).
+ * Doesn't guarantee keeping up: material too dense for even this to reach
+ * kReadAheadBridgeSeconds ahead is reported rather than silently late (@ref
+ * ClipVoicePool::unbridged).
  */
 constexpr int kMaxReadersPerTrack = 2 * kMaxVoicesPerTrack;
 
 /**
  * @brief Session slots one track may have standing by.
  *
- * Its own budget, not a share of the one above. An arrangement reader is a
- * window the transport moves through, so a passed clip hands its reader on and
- * a crowded lane costs read-ahead. A slot is never passed, so sharing would
- * leave the slots behind the first 32 permanently silent rather than late
- * (#2301).
+ * Its own budget, not a share of the one above: an arrangement reader is a
+ * window the transport moves through, so a passed clip hands its reader on,
+ * while a slot is never passed, so sharing would leave slots past the first
+ * 32 permanently silent rather than late.
  *
- * A ceiling on standing cost, not on how many scenes a project may have: each
- * reader is an open file and a chunk pool, a quarter of a megabyte at the
- * default settings. Slots past it are reported
- * (@ref ClipVoicePool::unprovisionedSlots).
- *
- * Interim: once a launch is a request (#2305), what is worth provisioning is
- * what is playing or queued.
+ * A ceiling on standing cost, not on how many scenes a project may have:
+ * each reader is an open file and a chunk pool, a quarter of a megabyte at
+ * default settings. Slots past it are reported (@ref
+ * ClipVoicePool::unprovisionedSlots). Sized against the full launch
+ * surface; #2305's request lane will narrow this to what's playing or queued.
  */
 constexpr int kMaxSessionReadersPerTrack = kMaxReadersPerTrack;
 
@@ -126,9 +119,9 @@ class ClipVoicePool {
      * @brief A pool opening files through @p files and filled by @p reader.
      *
      * Neither is owned and both outlive it. @p context is the device the
-     * streams are read for, and the rate every cue is worked out at: a file
-     * sample is consumed per output sample, so a position derived at any other
-     * rate would disagree with what playing gets through (ClipPlacement.hpp).
+     * streams are read for and the rate every cue is worked out at: a file
+     * sample is consumed per output sample, so a position derived at any
+     * other rate would disagree with playback (ClipPlacement.hpp).
      */
     ClipVoicePool(AudioFileReaderFactory& files, PrefetchThread& reader,
                   const RenderContext& context, const PrefetchSettings& settings = {});
@@ -136,15 +129,14 @@ class ClipVoicePool {
     /**
      * @brief Give every reader back.
      *
-     * Publishes an empty table so nothing the audio thread can reach names a
+     * Publishes an empty table so nothing on the audio thread can reach a
      * stream, then waits for the prefetch thread to be out of each one.
      *
-     * Nothing may call @ref service() again from here on, and that is the
-     * caller's to guarantee rather than this class's: a round in flight would
-     * publish a full table straight after the empty one and the streams it
-     * named would be pulled out from under the reader. A host driving this with
-     * a ClipVoiceThread destroys the thread first, which is what declaring the
-     * thread after the pool gets for free.
+     * The caller must guarantee @ref service() is never called again after
+     * this starts -- a round still in flight could publish a full table
+     * right after the empty one and pull streams out from under the
+     * reader. A host using ClipVoiceThread gets this for free by declaring
+     * the thread after the pool, so it's destroyed first.
      */
     ~ClipVoicePool();
 
@@ -161,23 +153,22 @@ class ClipVoicePool {
     /**
      * @brief The snapshot to provision against.
      *
-     * On the publishing thread, beside EngineSession::publishClips: the same
-     * value reaches the audio thread through the feed and this side through
-     * here, so the clips a callback plays and the clips a reader is pointed at
-     * are the same clips.
+     * On the publishing thread, beside EngineSession::publishClips: the
+     * same value reaches the audio thread through the feed and this side
+     * through here, so the clips a callback plays and the clips a reader
+     * points at are the same clips.
      */
     void setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot);
 
     /**
      * @brief Where the transport is, in seconds.
      *
-     * From the audio thread, once per block: a relaxed store of a double and
-     * nothing else. Seconds rather than beats because that is the face a file's
-     * samples are counted in, and because a tempo map on this thread would be a
-     * second one.
+     * From the audio thread, once per block: a relaxed store of a double.
+     * Seconds rather than beats, since that's how a file's samples are
+     * counted, and a tempo map on this thread would be a second one.
      *
-     * A pool nobody tells provisions around zero, which is where a session that
-     * has not played yet is.
+     * A pool nobody tells provisions around zero, where a session that
+     * hasn't played yet is.
      */
     void setPosition(double seconds) {
         position_.store(seconds, std::memory_order_relaxed);
@@ -186,39 +177,35 @@ class ClipVoicePool {
     /**
      * @brief One round of provisioning: open, cue, publish, retire.
      *
-     * On a thread that may wait for a disk, and not the prefetch thread (see
-     * the file comment). Idempotent, and cheaply so: a round that finds every
-     * clip in the window already provisioned opens nothing, retires nothing and
-     * publishes nothing, so an idle session is not swapping a table at a
-     * hundred hertz and making the callback wait for each one.
+     * On a thread that may wait for a disk, and not the prefetch thread
+     * (see the file comment). Idempotent, and cheaply so: a round finding
+     * every clip in the window already provisioned opens, retires and
+     * publishes nothing, so an idle session isn't swapping a table at a
+     * hundred hertz.
      *
-     * A window holding more clips than there are readers is not a failure and
-     * is not reported as one. A window is a second of timeline and the budget
-     * is spent soonest first, so a clip that has been passed gives its reader
-     * back to the one behind it, and a queue of clips rotates through. What a
-     * crowded window costs is the read-ahead of the clips at the far end of it,
-     * which is nothing until the far end comes close.
-     *
-     * When it does come close, that is @ref unbridged. When more clips want to
-     * sound at once than a callback can render, that is @ref overSubscribed.
-     * The two are separate because they fail separately.
+     * A window holding more clips than there are readers isn't a failure:
+     * the budget is spent soonest-first, a passed clip gives its reader to
+     * the one behind it, and a queue of clips rotates through. That costs
+     * only the read-ahead of clips at the far end, which is nothing until
+     * the far end comes close -- when it does, that's @ref unbridged. When
+     * more clips want to sound at once than a callback can render, that's
+     * @ref overSubscribed. The two are separate because they fail separately.
      */
     void service();
 
     /**
      * @brief Read every provisioned stream up to capacity, here and now.
      *
-     * For a caller with no callback to starve, which in practice means an
-     * offline render. Servicing alone only opens files and points readers at
-     * them; what a voice actually copies out of is what the prefetch thread has
-     * managed to fetch, and a render moving a second of timeline every ten
-     * milliseconds outruns any thread. Doing the reading in step makes the
-     * render a function of the material rather than of the scheduler.
+     * For a caller with no callback to starve, in practice an offline
+     * render: servicing alone only opens files and points readers, while
+     * what a voice copies out of is what the prefetch thread has fetched,
+     * and a render moving a second of timeline every ten milliseconds
+     * outruns any thread. Reading in step here makes the render a function
+     * of the material rather than the scheduler.
      *
-     * Refuses when the reader has a thread of its own, because two things
-     * inside one stream's fill is a race over its cursor rather than a slow
-     * path. A host that wants this builds its PrefetchThread with the thread
-     * switched off.
+     * Refuses when the reader has a thread of its own, since two things
+     * filling one stream is a race over its cursor, not a slow path. A
+     * host that wants this builds its PrefetchThread with the thread off.
      */
     void fillNow();
 
@@ -228,19 +215,16 @@ class ClipVoicePool {
     /**
      * @brief Clips the last round found stacked past what a track can sound.
      *
-     * The most that are live at once anywhere in the window, less
-     * kMaxVoicesPerTrack. Live rather than overlapping, and measured against
-     * the same block the callback renders: clips that share a callback each
-     * need their own voice for it whether or not they overlap by a sample, so
-     * measuring bare overlap here would report zero while the callback was
-     * dropping the extras.
+     * The most live at once anywhere in the window, less kMaxVoicesPerTrack.
+     * Live rather than overlapping, measured against the same block the
+     * callback renders: clips sharing a callback each need their own voice
+     * whether or not they overlap by a sample, so measuring bare overlap
+     * would report zero while the callback was dropping the extras.
      *
-     * Not the number the window turned away, which is a different and usually
-     * harmless thing (see @ref service).
-     *
-     * A gauge rather than a tally, so it falls back to zero when the material
-     * stops asking. Non-zero means clips that will not be heard, and
-     * ClipAudioSource::starvedVoices counts them as they are not heard.
+     * Not the number the window turned away, which is usually harmless
+     * (see @ref service). A gauge, not a tally: falls back to zero once the
+     * material stops asking. Non-zero means clips that won't be heard;
+     * ClipAudioSource::starvedVoices counts them as unheard.
      */
     int overSubscribed() const {
         return overSubscribed_.load(std::memory_order_relaxed);
@@ -249,21 +233,21 @@ class ClipVoicePool {
     /**
      * @brief Clips due too soon for the reader budget to have reached them.
      *
-     * The other way a clip goes silent, and the one that has nothing to do with
-     * how many can sound at once: entries the budget turned away that start
-     * inside kReadAheadBridgeSeconds. Every one of them fits the voice ceiling
-     * and will still play nothing, because the round that could have opened it
-     * spent its budget on the clips in front of it.
+     * The other way a clip goes silent, unrelated to how many can sound at
+     * once: entries the budget turned away that start inside
+     * kReadAheadBridgeSeconds. Every one fits the voice ceiling and will
+     * still play nothing, because the round that could have opened it
+     * spent its budget on the clips ahead of it.
      *
-     * Fits the ceiling is checked rather than assumed. A clip dropped into a
-     * stretch where every voice is already spoken for was not going to sound
-     * whatever the budget had been, and it belongs to @ref overSubscribed; a
-     * clip counted here would otherwise be counted twice and send a reader for
-     * a voice that was never free.
+     * Fitting the ceiling is checked, not assumed: a clip dropped into a
+     * stretch where every voice is already spoken for was never going to
+     * sound regardless of budget, and belongs to @ref overSubscribed
+     * instead -- counting it here too would send a reader for a voice that
+     * was never free.
      *
-     * Non-zero means the material is denser than this track can read ahead for.
-     * Nothing in the engine fixes that by trying harder; what it can do is say
-     * so rather than let a lane of slices go quiet for no stated reason.
+     * Non-zero means the material is denser than this track can read ahead
+     * for; nothing here fixes that by trying harder, only reports it rather
+     * than letting a lane of slices go quiet unexplained.
      */
     int unbridged() const {
         return unbridged_.load(std::memory_order_relaxed);
@@ -279,10 +263,9 @@ class ClipVoicePool {
     /**
      * @brief Session slots the budget could not reach, in the last round.
      *
-     * A launch that will play nothing. Unlike @ref unbridged this is not
-     * lateness: nothing the transport does brings such a slot into reach.
-     *
-     * A gauge rather than a tally, like the others.
+     * A launch that will play nothing. Unlike @ref unbridged this isn't
+     * lateness -- nothing the transport does brings such a slot into reach.
+     * A gauge, not a tally, like the others.
      */
     int unprovisionedSlots() const {
         return unprovisionedSlots_.load(std::memory_order_relaxed);
@@ -291,11 +274,11 @@ class ClipVoicePool {
     /**
      * @brief Tables handed to the audio thread since this pool was made.
      *
-     * Every one of them made a callback finish its block before the swap could
-     * land, so this is the cost of provisioning as the audio thread sees it. It
-     * should climb while the transport moves through new material and stand
-     * still otherwise; a session sitting idle and still counting means rounds
-     * are publishing work that has not changed.
+     * Every one made a callback finish its block before the swap could
+     * land, so this is the cost of provisioning as the audio thread sees
+     * it. Should climb while the transport moves through new material and
+     * hold still otherwise; a still-climbing idle session means rounds are
+     * publishing unchanged work.
      */
     int tablesPublished() const {
         return tablesPublished_.load(std::memory_order_relaxed);
@@ -323,42 +306,41 @@ class ClipVoicePool {
     /**
      * @brief A reader, and what it was opened for.
      *
-     * The identity matters because the key does not carry it. An id survives
-     * edits that change everything a reader was opened for: swap a clip's file
-     * and the ids are the same clip and the same event over different material,
-     * and a reader kept on the strength of its id would go on playing the file
-     * that is no longer there. The anchor is here for the milder version of the
-     * same thing, a trim that moves where the reader should be pointed.
+     * Identity matters because the key doesn't carry it: an id survives
+     * edits that change everything a reader was opened for (swap a clip's
+     * file and the ids still name the same clip and event over different
+     * material), so a reader kept on id alone would keep playing a file
+     * that's no longer there. The anchor covers the milder case, a trim
+     * that moves where the reader should point.
      *
-     * The path is not the whole of what was opened either. Reverse, looping and
-     * rate conversion are built into the reader rather than asked of it per
-     * block (io/SourceReaders.hpp), so a clip that has been reversed since is
-     * reading a different file from the same path and needs a new one.
+     * The path alone isn't enough either: reverse, looping and rate
+     * conversion are built into the reader rather than asked of it per
+     * block (io/SourceReaders.hpp), so a clip reversed since is reading a
+     * different file from the same path.
      *
-     * The stream is null where the file would not open. Kept rather than
-     * dropped so a path that failed is not retried every round for as long as
-     * it sits in the window; leaving the window and coming back is what asks
-     * again.
+     * The stream is null where the file wouldn't open, kept rather than
+     * dropped so a failed path isn't retried every round while it sits in
+     * the window -- leaving and re-entering the window is what asks again.
      */
     struct Reader {
         std::shared_ptr<PrefetchStream> stream;
         std::string path;
         SourceRead read;
 
-        /// The sample of that reading the stream is pointed at: where the event
-        /// starts, less whatever its stretcher wants in front of it. Derived
-        /// rather than the event's own anchor, because a mirrored read counts
-        /// from the other end and a stretched one starts behind itself
-        /// (clip/EventPlacement.hpp, clip/ClipStretcher.hpp).
+        /// The sample of that reading the stream is pointed at: where the
+        /// event starts, less whatever its stretcher wants in front of it.
+        /// Derived rather than the event's own anchor, since a mirrored
+        /// read counts from the other end and a stretched one starts
+        /// behind itself (clip/EventPlacement.hpp, clip/ClipStretcher.hpp).
         std::int64_t cueSamples = 0;
 
-        /// What plays it at a speed that is not its file's, and how far in front
-        /// of the event that one wants to be handed. Null and zero for a clip
-        /// that asks for neither, which is every clip in slice 3.
+        /// What plays it at a speed that isn't its file's, and how far
+        /// ahead of the event it wants to be handed. Null and zero for a
+        /// clip asking for neither.
         ///
-        /// Kept across an edit that leaves the setup alone, and replaced without
-        /// touching the stream when only the setup changed: a pitch change
-        /// should not close a file and pay a seek for it.
+        /// Kept across an edit that leaves the setup alone, and replaced
+        /// without touching the stream when only the setup changed: a
+        /// pitch change shouldn't close a file and pay for a seek.
         std::shared_ptr<ClipStretcher> stretcher;
         StretchSetup setup;
         int preRoll = 0;
@@ -408,14 +390,14 @@ class ClipVoicePool {
 /**
  * @brief The thread a pool provisions on.
  *
- * It polls, like the prefetch thread and for the same reason: waking a thread
- * takes a lock, and the audio thread does not take locks. A clip that came into
- * the window between two rounds is found on the next one, which is a fraction
- * of the second the window is wide.
+ * Polls, like the prefetch thread and for the same reason: waking a thread
+ * takes a lock, and the audio thread doesn't take locks. A clip entering
+ * the window between two rounds is found on the next one, a fraction of a
+ * second later.
  *
- * Declare it after the pool it drives. Destruction runs in reverse, so the
- * thread stops before the pool gives its readers back, which is the order
- * ~ClipVoicePool requires and the one nothing else enforces.
+ * Declared after the pool it drives: destruction runs in reverse, so the
+ * thread stops before the pool gives its readers back, the order
+ * ~ClipVoicePool requires.
  */
 class ClipVoiceThread final : private juce::Thread {
   public:

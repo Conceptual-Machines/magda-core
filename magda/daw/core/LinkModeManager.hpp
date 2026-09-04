@@ -7,48 +7,12 @@
 
 namespace magda {
 
-// ============================================================================
-// LINK MODE PATTERN (Bitwig-style)
-// ============================================================================
-//
-// This module implements a link mode state manager for creating modulation
-// links between mods/macros and device parameters.
-//
-// ## Core Concept
-//
-// Only ONE modulator (mod or macro) can be in link mode at a time. When
-// a modulator's link button is clicked, it enters link mode. In this state:
-//   - Clicking any parameter creates/edits a link to that modulator
-//   - An overlay text slider appears on the parameter to set the amount
-//   - Link mode stays active until:
-//     a) The link button is clicked again
-//     b) ESC key is pressed
-//     c) Another modulator enters link mode
-//
-// ## Link Mode Flow
-//
-//   1. User clicks link button on a mod/macro knob
-//   2. LinkModeManager::enterModLinkMode() or enterMacroLinkMode() is called
-//   3. LinkModeManager:
-//      a) Stores the modulator path and index
-//      b) Notifies all listeners via LinkModeManagerListener callbacks
-//   4. ParamSlotComponent receives callback and enables link mode UI
-//   5. User clicks a param → creates/edits link with overlay slider
-//   6. User clicks link button again or presses ESC → exits link mode
-//
-// ## Listener Pattern
-//
-// Components implement LinkModeManagerListener to receive link mode changes:
-//
-//   class MyComponent : public LinkModeManagerListener {
-//       void modLinkModeChanged(bool active, const ModSelection& sel) override;
-//       void macroLinkModeChanged(bool active, const MacroSelection& sel) override;
-//   };
-//
-// Register in constructor: LinkModeManager::getInstance().addListener(this);
-// Unregister in destructor: LinkModeManager::getInstance().removeListener(this);
-//
-// ============================================================================
+// Link mode (Bitwig-style): exactly one modulator, mod or macro, can be in
+// link mode at a time. While active, clicking any parameter creates or edits
+// a link to that modulator, with an overlay slider to set the amount. It ends
+// when the link button is clicked again, ESC is pressed, or another modulator
+// enters link mode. Components implement LinkModeManagerListener and register
+// with LinkModeManager::getInstance() to react to changes.
 
 /**
  * @brief Type of modulator in link mode
