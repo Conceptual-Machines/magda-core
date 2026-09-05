@@ -200,7 +200,11 @@ jobs:
       run: |
         echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
         echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+        # Both DSP builds' flags live in DevicesDependencies.cmake; folding it
+        # into the fingerprint re-keys the artifacts when a flag changes, which
+        # the submodule SHAs alone would miss.
+        dsp_cfg=$(shasum magda/daw/audio/DevicesDependencies.cmake | cut -c1-12)
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)-${dsp_cfg}" >> "$GITHUB_OUTPUT"
 
     # Same bucket as sccache/vcpkg, dsp/ prefix. actions/cache scopes a push
     # run's restores to its own branch plus main, so the first run on every
@@ -513,7 +517,8 @@ jobs:
       run: |
         FAUST_SHA=$(git -C third_party/faust rev-parse HEAD)
         EURORACK_SHA=$(git -C third_party/eurorack rev-parse HEAD)
-        COMPILER=$(cc --version | head -n1 | shasum | cut -c1-12)
+        # See the Linux key step: flag changes must re-key the artifacts.
+        COMPILER="$(cc --version | head -n1 | shasum | cut -c1-12)-$(shasum magda/daw/audio/DevicesDependencies.cmake | cut -c1-12)"
         CACHE_ROOT="$HOME/magda-ci-cache"
 
         FAUST_DEBUG_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-wasm-debug"
@@ -1088,10 +1093,12 @@ jobs:
         git config --global --add safe.directory "*"
         $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
         $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
+        # See the Linux key step: flag changes must re-key the artifacts.
+        $dspCfg = (Get-FileHash -Algorithm SHA1 "magda/daw/audio/DevicesDependencies.cmake").Hash.Substring(0, 12).ToLower()
         $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
         echo "faust_sha=$faustSha" >> $env:GITHUB_OUTPUT
         echo "eurorack_sha=$eurorackSha" >> $env:GITHUB_OUTPUT
-        echo "compiler=$compiler" >> $env:GITHUB_OUTPUT
+        echo "compiler=$compiler-$dspCfg" >> $env:GITHUB_OUTPUT
 
     # Faust/Mutable prebuilt artifacts (#1669). Same self-hosted-vs-hosted
     # split as the vcpkg binary cache above: a fixed local dir on the
