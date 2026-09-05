@@ -10,6 +10,9 @@ namespace magda {
 
 class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
   public:
+    MenuManager(const MenuManager&) = delete;
+    MenuManager& operator=(const MenuManager&) = delete;
+
     // Menu callbacks
     struct MenuCallbacks {
         // File menu
@@ -152,10 +155,6 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
   private:
     MenuManager();
     ~MenuManager();
-
-    // Non-copyable
-    MenuManager(const MenuManager&) = delete;
-    MenuManager& operator=(const MenuManager&) = delete;
 
     // MenuBarModel implementation
     juce::StringArray getMenuBarNames() override;

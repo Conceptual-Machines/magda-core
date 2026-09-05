@@ -27,6 +27,9 @@ inline bool resolvesOwnFonts(const juce::Component& component) {
 
 class FontManager {
   public:
+    FontManager(const FontManager&) = delete;
+    FontManager& operator=(const FontManager&) = delete;
+
     enum class Weight { Regular, Medium, SemiBold, Bold };
 
     static FontManager& getInstance();
@@ -62,10 +65,6 @@ class FontManager {
   private:
     FontManager() = default;
     ~FontManager() = default;
-
-    // Non-copyable
-    FontManager(const FontManager&) = delete;
-    FontManager& operator=(const FontManager&) = delete;
 
     bool initialized = false;
 

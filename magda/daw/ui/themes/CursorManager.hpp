@@ -10,6 +10,9 @@ namespace magda {
  */
 class CursorManager {
   public:
+    CursorManager(const CursorManager&) = delete;
+    CursorManager& operator=(const CursorManager&) = delete;
+
     static CursorManager& getInstance();
 
     // Get zoom cursors
@@ -45,9 +48,6 @@ class CursorManager {
   private:
     CursorManager();
     ~CursorManager() = default;
-
-    CursorManager(const CursorManager&) = delete;
-    CursorManager& operator=(const CursorManager&) = delete;
 
     // Draw a magnifying glass cursor with optional +/- glyph
     enum class ZoomGlyph { None, Plus, Minus };

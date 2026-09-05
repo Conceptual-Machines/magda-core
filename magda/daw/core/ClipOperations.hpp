@@ -30,6 +30,8 @@ namespace magda {
  */
 class ClipOperations {
   public:
+    ClipOperations() = delete;  // Static class, no instances
+
     // ========================================================================
     // Constraint Constants
     // ========================================================================
@@ -1107,9 +1109,6 @@ class ClipOperations {
 
         clip.midiNotes = std::move(flatNotes);
     }
-
-  private:
-    ClipOperations() = delete;  // Static class, no instances
 };
 
 }  // namespace magda
