@@ -388,7 +388,7 @@ juce::String formatBars(float beats, int beatsPerBar = DEFAULT_TIME_SIGNATURE_NU
     int ticks = static_cast<int>(std::round((rem - b) * TICKS_PER_BEAT));
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%d.%d.%03d", bars + 1, b + 1, ticks);
-    return juce::String(buf);
+    return {buf};
 }
 
 bool storesPercentAsUnitFraction(const ParameterInfo& info) {
@@ -603,7 +603,7 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
                technicalText(TechnicalTextToken::Percent);
     }
 
-    return juce::String(realValue, decimalPlaces);
+    return {realValue, decimalPlaces};
 }
 
 std::optional<float> parseValue(const juce::String& text, const ParameterInfo& info) {

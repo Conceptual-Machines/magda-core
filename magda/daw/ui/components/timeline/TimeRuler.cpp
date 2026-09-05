@@ -825,10 +825,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         int cursorX = timeToPixel(displayTime);
         if (cursorX >= 0 && cursorX <= width) {
             g.setColour(juce::Colours::black.withAlpha(0.5f));
-            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(height), 1.f);
-            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(height), 1.f);
+            g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
+                       static_cast<float>(height), 1.f);
+            g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
+                       static_cast<float>(height), 1.f);
             g.setColour(juce::Colours::white);
-            g.drawLine(float(cursorX), 0.f, float(cursorX), float(height), 2.f);
+            g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
+                       static_cast<float>(height), 2.f);
         }
     }
 

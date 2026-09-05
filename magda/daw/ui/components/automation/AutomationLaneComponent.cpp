@@ -380,7 +380,7 @@ bool AutomationLaneComponent::hitTest(int x, int y) {
 
 juce::Rectangle<int> AutomationLaneComponent::getResizeHandleArea() const {
     int y = resizeHandleAtTop_ ? 0 : getHeight() - RESIZE_HANDLE_HEIGHT;
-    return juce::Rectangle<int>(0, y, getWidth(), RESIZE_HANDLE_HEIGHT);
+    return {0, y, getWidth(), RESIZE_HANDLE_HEIGHT};
 }
 
 void AutomationLaneComponent::setResizeHandleAtTop(bool atTop) {

@@ -56,7 +56,7 @@ constexpr const char* kBase64Prefix = "=?base64?";
 constexpr const char* kBase64Suffix = "?=";
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {

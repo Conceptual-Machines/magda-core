@@ -448,8 +448,8 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         return n;
     };
     std::set<juce::String> seen;  // normalized chord names
-    for (int i = 0;
-         i < static_cast<int>(boostedCandidates.size()) && (int)suggestions.size() < params.topK;
+    for (int i = 0; i < static_cast<int>(boostedCandidates.size()) &&
+                    static_cast<int>(suggestions.size()) < params.topK;
          ++i) {
         auto candidate = boostedCandidates[i];
         auto k = normName(candidate.chord.name);
@@ -475,10 +475,10 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     const int minDesired =
         std::max(params.topK, minPages * minPerPage);  // at least 16, or topK if larger
 
-    if ((int)suggestions.size() < minDesired) {
+    if (static_cast<int>(suggestions.size()) < minDesired) {
         // Backfill using raw pools but still respect current params to avoid disabled types
         for (const auto& c : diatonicCandidatesRaw) {
-            if ((int)suggestions.size() >= minDesired)
+            if (static_cast<int>(suggestions.size()) >= minDesired)
                 break;
             if (allowedByParams(c))
                 addUnique(c);
@@ -486,7 +486,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         // Only consider non-diatonic backfill when novelty > 0
         if (params.novelty > 0.0f) {
             for (const auto& c : nonDiatonicCandidatesRaw) {
-                if ((int)suggestions.size() >= minDesired)
+                if (static_cast<int>(suggestions.size()) >= minDesired)
                     break;
                 if (allowedByParams(c))
                     addUnique(c);
@@ -494,10 +494,10 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         }
     }
 
-    if ((int)suggestions.size() < minDesired) {
+    if (static_cast<int>(suggestions.size()) < minDesired) {
         // Final safety: synthesize only when novelty allows non-diatonic/fallback content
         if (params.novelty > 0.0f) {
-            for (int i = 0; i < 12 && (int)suggestions.size() < minDesired; ++i) {
+            for (int i = 0; i < 12 && static_cast<int>(suggestions.size()) < minDesired; ++i) {
                 juce::String rootName = NOTE_NAMES[i];
                 juce::String quality = (i % 2 == 0) ? "maj" : "min";
                 auto chord = buildChordObject(rootName, quality, targetOctave, effectiveInversions,
@@ -509,7 +509,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     }
 
     // Trim to max desired output (preserve earlier ranking at the top)
-    if ((int)suggestions.size() > std::max(minDesired, params.topK)) {
+    if (static_cast<int>(suggestions.size()) > std::max(minDesired, params.topK)) {
         suggestions.resize(std::max(minDesired, params.topK));
     }
 
@@ -1761,7 +1761,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
 
 std::vector<Chord> ChordSuggestionEngine::getRecentChords() const {
     std::scoped_lock lock(chordContextMutex);
-    return std::vector<Chord>(recentChords_.begin(), recentChords_.end());
+    return {recentChords_.begin(), recentChords_.end()};
 }
 
 juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {

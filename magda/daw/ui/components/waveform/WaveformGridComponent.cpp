@@ -662,7 +662,8 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
     WarpedWaveformSpec spec;
     spec.clipArea = waveformRect.getIntersection(getLocalBounds()).reduced(0, 4);
     spec.warpToPixelX = [this, displayStartTime](double warpSeconds) {
-        return (double)timeToPixel(displayInfo_.sourceToTimeline(warpSeconds) + displayStartTime);
+        return static_cast<double>(
+            timeToPixel(displayInfo_.sourceToTimeline(warpSeconds) + displayStartTime));
     };
     spec.fileDuration = fileDuration;
     spec.colour = waveColour;
@@ -687,7 +688,7 @@ void WaveformGridComponent::paintWarpedWaveform(juce::Graphics& g, const magda::
             const double mirroredPosition = displayInfo_.activeRegionStartPositionSeconds +
                                             displayInfo_.activeRegionEndPositionSeconds -
                                             forwardPosition;
-            return (double)timeToPixel(displayStartTime + mirroredPosition);
+            return static_cast<double>(timeToPixel(displayStartTime + mirroredPosition));
         };
         drawWarpedWaveform(g, thumbnailManager, audioEventRef(clip).sourceFilePath(), warpMarkers_,
                            spec);

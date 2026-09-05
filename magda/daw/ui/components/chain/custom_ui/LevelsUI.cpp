@@ -20,7 +20,7 @@ juce::String fmtDb(float v) {
     return v <= kSilenceDb + 1.0f ? juce::String("-inf") : juce::String(v, 1);
 }
 juce::String fmtLu(float v) {
-    return juce::String(v, 1);
+    return {v, 1};
 }
 
 // Colour a true-peak value: hot near/over 0 dBTP, warm approaching it.

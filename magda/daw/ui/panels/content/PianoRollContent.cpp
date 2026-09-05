@@ -393,7 +393,7 @@ std::vector<int> PianoRollContent::collectUsedPitches() const {
     } else if (editingClipId_ != magda::INVALID_CLIP_ID) {
         collect(editingClipId_);
     }
-    return std::vector<int>(usedPitches.begin(), usedPitches.end());
+    return {usedPitches.begin(), usedPitches.end()};
 }
 
 void PianoRollContent::onFoldMapChanged() {

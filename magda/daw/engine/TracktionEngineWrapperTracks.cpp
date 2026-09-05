@@ -163,8 +163,8 @@ void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int
     // Inject MIDI directly into the track's plugin chain via LiveMidiInjectingNode,
     // bypassing the MIDI input device and its monitor mode entirely (#762)
     juce::MidiMessage message =
-        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, (juce::uint8)velocity)
-                 : juce::MidiMessage::noteOff(1, noteNumber, (juce::uint8)velocity);
+        isNoteOn ? juce::MidiMessage::noteOn(1, noteNumber, static_cast<juce::uint8>(velocity))
+                 : juce::MidiMessage::noteOff(1, noteNumber, static_cast<juce::uint8>(velocity));
 
     audioTrack->injectLiveMidiMessage(message, {});
 }

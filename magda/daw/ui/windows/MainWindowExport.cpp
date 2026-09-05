@@ -152,7 +152,7 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
 
         // Keep lead-in silence from the preroll (don't trim it)
         auto effectiveTrim = std::max(0.0, prerollSeconds_ - leadInSilence_);
-        auto samplesToSkip = (juce::int64)(effectiveTrim * reader->sampleRate);
+        auto samplesToSkip = static_cast<juce::int64>(effectiveTrim * reader->sampleRate);
         auto samplesToKeep = reader->lengthInSamples - samplesToSkip;
         if (samplesToKeep <= 0)
             return false;
@@ -170,8 +170,8 @@ class ExportProgressWindow : public juce::ThreadWithProgressWindow {
             std::make_unique<juce::FileOutputStream>(tempFile);
         auto writerOptions = juce::AudioFormatWriterOptions()
                                  .withSampleRate(reader->sampleRate)
-                                 .withNumChannels((int)reader->numChannels)
-                                 .withBitsPerSample((int)reader->bitsPerSample);
+                                 .withNumChannels(static_cast<int>(reader->numChannels))
+                                 .withBitsPerSample(static_cast<int>(reader->bitsPerSample));
         auto writer = format->createWriterFor(outputStream, writerOptions);
         if (!writer)
             return false;

@@ -867,7 +867,7 @@ bool AudioBridge::loadPluginPresetFile(const ChainNodePath& devicePath,
         juce::MemoryBlock raw;
         if (!presetFile.loadFileAsData(raw))
             return false;
-        pi->setCurrentProgramStateInformation(raw.getData(), (int)raw.getSize());
+        pi->setCurrentProgramStateInformation(raw.getData(), static_cast<int>(raw.getSize()));
         applied = true;
     }
 

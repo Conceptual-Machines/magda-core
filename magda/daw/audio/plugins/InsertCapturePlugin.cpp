@@ -150,7 +150,7 @@ void InsertCapturePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
         // REPLACE semantics: whatever the offline insert produced (silence or
         // dry passthrough) must not mix with the captured return.
         fc.destBuffer->clear(fc.bufferStartSample, fc.bufferNumSamples);
-        if (m.numSamples > 0 && m.fileStartSample < (juce::int64)reader->lengthInSamples) {
+        if (m.numSamples > 0 && m.fileStartSample < reader->lengthInSamples) {
             // std::min, not juce::jmin: an explicit jmin<int64> instantiation
             // drags in the juce::dsp SIMD overload set, which has no
             // SIMDNativeOps<long long> on Linux/GCC and fails to compile.

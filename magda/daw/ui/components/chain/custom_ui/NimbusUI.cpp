@@ -65,8 +65,9 @@ NimbusUI::NimbusUI() {
             c.slider->setValueFormatter([](double v) { return juce::String(v, 1) + " st"; });
         } else {
             c.slider->setRange(0.0, 1.0, 0.0);
-            c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v * 100.0)) + "%"; });
+            c.slider->setValueFormatter([](double v) {
+                return juce::String(static_cast<int>(std::lround(v * 100.0))) + "%";
+            });
         }
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
@@ -135,7 +136,7 @@ void NimbusUI::updateFromParameters(const std::vector<magda::ParameterInfo>& par
             break;
         const float value = params[static_cast<size_t>(i)].currentValue;
         if (i == kMode)
-            curMode_ = juce::jlimit(0, kNumModes - 1, (int)std::lround(value));
+            curMode_ = juce::jlimit(0, kNumModes - 1, static_cast<int>(std::lround(value)));
         else if (i == kFreeze)
             freeze_ = value > 0.5f;
         else if (controls_[static_cast<size_t>(i)].slider != nullptr)
@@ -179,22 +180,22 @@ void NimbusUI::paintBuffer(juce::Graphics& g) {
     }
     const float life = haveAudio ? (0.22f + 0.78f * energy) : 0.5f;  // gentle idle baseline
 
-    const auto position = (float)controls_[kPosition].slider->getValue();
-    const auto size = (float)controls_[kSize].slider->getValue();
-    const auto density = (float)controls_[kDensity].slider->getValue();
-    const auto texture = (float)controls_[kTexture].slider->getValue();
+    const auto position = static_cast<float>(controls_[kPosition].slider->getValue());
+    const auto size = static_cast<float>(controls_[kSize].slider->getValue());
+    const auto density = static_cast<float>(controls_[kDensity].slider->getValue());
+    const auto texture = static_cast<float>(controls_[kTexture].slider->getValue());
 
     // Cloud drifts horizontally with Position, widens with Size, spreads and
     // jitters with Texture, thickens with Density.
     const float cloudW =
-        juce::jmap(size, 0.0f, 1.0f, plot.getWidth() * 0.25f, (float)plot.getWidth());
+        juce::jmap(size, 0.0f, 1.0f, plot.getWidth() * 0.25f, static_cast<float>(plot.getWidth()));
     const float cloudCx = plot.getX() + position * plot.getWidth();
     const float cyc = plot.getCentreY();
     const float spreadY = plot.getHeight() * (0.2f + 0.7f * texture);
 
     g.saveState();
     g.reduceClipRegion(b);
-    const int n = 20 + (int)std::lround(density * 130.0f);
+    const int n = 20 + static_cast<int>(std::lround(density * 130.0f));
     for (int k = 0; k < n; ++k) {
         const float bx = hash1(k * 2 + 1) * 2.0f - 1.0f;
         const float by = hash1(k * 2 + 2) * 2.0f - 1.0f;

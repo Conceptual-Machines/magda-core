@@ -45,7 +45,7 @@ juce::var toVar(const ChainNodePath& path) {
     }
     obj->setProperty("steps", juce::var(steps));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool fromVar(const juce::var& v, ChainNodePath& out) {

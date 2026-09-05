@@ -138,7 +138,7 @@ juce::String DraggableValueLabel::formatValue(double val) const {
             char buffer[32];
             std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset,
                           wholeBeats + offset, ticks);
-            return juce::String(buffer);
+            return {buffer};
         }
 
         case Format::Raw:

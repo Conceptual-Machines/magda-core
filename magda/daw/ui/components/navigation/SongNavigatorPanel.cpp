@@ -92,9 +92,9 @@ juce::Rectangle<float> SongNavigatorPanel::getViewportBox() const {
     const int left = beatToX(startBeats);
     const int right = beatToX(endBeats);
     // Span the lanes area only - start below the ruler band, like the playhead.
-    return juce::Rectangle<float>(static_cast<float>(left), static_cast<float>(kRulerHeight),
-                                  static_cast<float>(juce::jmax(2, right - left)),
-                                  static_cast<float>(getHeight() - kRulerHeight));
+    return {static_cast<float>(left), static_cast<float>(kRulerHeight),
+            static_cast<float>(juce::jmax(2, right - left)),
+            static_cast<float>(getHeight() - kRulerHeight)};
 }
 
 // ===== Painting =====

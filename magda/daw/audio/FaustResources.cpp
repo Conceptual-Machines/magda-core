@@ -1,12 +1,27 @@
 #include "FaustResources.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <regex>
 #include <string>
 
 #include "core/AppPaths.hpp"
 
 namespace magda::daw::audio {
+
+namespace {
+
+std::atomic<bool> faustLibraryImportsOff{false};
+
+}  // namespace
+
+void disallowFaustLibraryImports() {
+    faustLibraryImportsOff.store(true, std::memory_order_relaxed);
+}
+
+bool faustLibraryImportsDisallowed() {
+    return faustLibraryImportsOff.load(std::memory_order_relaxed);
+}
 
 namespace {
 

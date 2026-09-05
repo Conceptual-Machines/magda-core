@@ -134,9 +134,9 @@ juce::String prettyDuration(std::optional<double> seconds) {
 
 juce::String displayNameFor(const magda::media::QueryResult& result) {
     if (result.displayName && !result.displayName->empty()) {
-        return juce::String(*result.displayName);
+        return {*result.displayName};
     }
-    return juce::String(result.path.filename().string());
+    return {result.path.filename().string()};
 }
 
 // A compact, branded chip used as the drag image for preset rows. macOS would

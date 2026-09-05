@@ -158,7 +158,7 @@ jobs:
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
-        SCCACHE_VERSION=v0.8.1
+        SCCACHE_VERSION=v0.17.0
         curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
         sudo mv sccache-*/sccache /usr/local/bin/sccache
         sccache --version
@@ -200,9 +200,47 @@ jobs:
       run: |
         echo "faust_sha=$(git -C third_party/faust rev-parse HEAD)" >> "$GITHUB_OUTPUT"
         echo "eurorack_sha=$(git -C third_party/eurorack rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)" >> "$GITHUB_OUTPUT"
+        # Both DSP builds' flags live in DevicesDependencies.cmake; folding it
+        # into the fingerprint re-keys the artifacts when a flag changes, which
+        # the submodule SHAs alone would miss.
+        dsp_cfg=$(shasum magda/daw/audio/DevicesDependencies.cmake | cut -c1-12)
+        echo "compiler=$(cc --version | head -n1 | shasum | cut -c1-12)-${dsp_cfg}" >> "$GITHUB_OUTPUT"
 
+    # Same bucket as sccache/vcpkg, dsp/ prefix. actions/cache scopes a push
+    # run's restores to its own branch plus main, so the first run on every
+    # branch rebuilt Faust from source and stored another copy of the same
+    # artifact against the shared 10 GB budget. R2 has no branch scoping; the
+    # bucket's 14-day expiry bounds staleness.
+    - name: Restore prebuilt Faust/Mutable artifacts (R2)
+      id: dsp-r2
+      if: steps.r2-creds.outcome == 'success'
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        # R2 rejects the trailing checksums newer AWS CLIs send by default.
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        fetch() {
+          local key="$1" out="$2"
+          if aws s3 cp "s3://${R2_BUCKET}/dsp/${key}.tar.gz" - --endpoint-url "$endpoint" --only-show-errors | tar -xzf - 2>/dev/null; then
+            echo "${out}=true" >> "$GITHUB_OUTPUT"
+            echo "restored ${key}"
+          else
+            echo "miss: ${key}"
+          fi
+        }
+        fetch "${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug" faust_hit
+        fetch "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" mutable_hit
+
+    # Credential-less fallback (e.g. Dependabot): branch-scoped and duplicated,
+    # but better than a guaranteed cold Faust build.
     - name: Cache prebuilt Faust artifact
+      if: steps.r2-creds.outcome != 'success'
       id: faust-cache
       uses: actions/cache@v6
       with:
@@ -212,6 +250,7 @@ jobs:
         key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug
 
     - name: Cache prebuilt Mutable artifact
+      if: steps.r2-creds.outcome != 'success'
       id: mutable-cache
       uses: actions/cache@v6
       with:
@@ -232,13 +271,40 @@ jobs:
           -DMAGDA_PRO_DEVICES=ON \
           "-DCMAKE_C_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
           "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" \
-          ${{ steps.faust-cache.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
-          ${{ steps.mutable-cache.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
+          ${{ (steps.dsp-r2.outputs.faust_hit == 'true' || steps.faust-cache.outputs.cache-hit == 'true') && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace) || '' }} \
+          ${{ (steps.dsp-r2.outputs.mutable_hit == 'true' || steps.mutable-cache.outputs.cache-hit == 'true') && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace) || '' }}
 
     - name: Build
       run: |
         echo "Building with $(nproc) cores..."
         cmake --build build --config Debug -j$(nproc)
+
+    - name: Populate prebuilt Faust/Mutable artifacts (R2)
+      if: steps.r2-creds.outcome == 'success'
+      continue-on-error: true
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        endpoint="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
+        put() {
+          local key="$1"; shift
+          tar -czf - "$@" | aws s3 cp - "s3://${R2_BUCKET}/dsp/${key}.tar.gz" --endpoint-url "$endpoint" --only-show-errors
+          echo "uploaded ${key}"
+        }
+        if [ "${{ steps.dsp-r2.outputs.faust_hit }}" != "true" ] && [ -d third_party/faust/build/bin ] && [ -d third_party/faust/build/lib ]; then
+          put "${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug" \
+            third_party/faust/build/bin third_party/faust/build/lib
+        fi
+        if [ "${{ steps.dsp-r2.outputs.mutable_hit }}" != "true" ] && [ -d third_party/eurorack/build/lib ]; then
+          put "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" \
+            third_party/eurorack/build/lib
+        fi
 
     - name: Check build artifacts
       run: |
@@ -451,7 +517,8 @@ jobs:
       run: |
         FAUST_SHA=$(git -C third_party/faust rev-parse HEAD)
         EURORACK_SHA=$(git -C third_party/eurorack rev-parse HEAD)
-        COMPILER=$(cc --version | head -n1 | shasum | cut -c1-12)
+        # See the Linux key step: flag changes must re-key the artifacts.
+        COMPILER="$(cc --version | head -n1 | shasum | cut -c1-12)-$(shasum magda/daw/audio/DevicesDependencies.cmake | cut -c1-12)"
         CACHE_ROOT="$HOME/magda-ci-cache"
 
         FAUST_DEBUG_DIR="$CACHE_ROOT/faust-artifact-${FAUST_SHA}-${COMPILER}-wasm-debug"
@@ -755,24 +822,39 @@ jobs:
           status=$(printf '%s' "$runner" | cut -f1)
           busy=$(printf '%s' "$runner" | cut -f2)
 
-          # The runner only reports busy=true once a job has actually landed on
-          # it. This pick job runs at the very start of the workflow, long before
-          # the Windows build job dispatches, so two CI runs starting close
-          # together both see busy=false and both target magda-luca - the second
-          # then queues behind the first instead of falling back. Guard against
-          # that by also falling back when any other CI run is already in flight.
-          # Count every run that is not yet completed (queued/in_progress/
-          # waiting/...): a competing run can still be queued, not in_progress,
-          # at the moment this step executes, and it has already picked a runner.
-          inflight=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
-            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status != \"completed\")] | length" 2>/dev/null || echo "unknown")
+          # busy=true only appears once a job has landed, and this step runs long
+          # before the Windows job dispatches, so two runs starting together
+          # would both see busy=false and both target magda-luca. Count only the
+          # runs that could still take it - Windows job already labelled for it,
+          # or a pick that has not decided yet - rather than all CI activity,
+          # which handed Windows to a hosted runner whenever the repo was busy
+          # at all and left this runner almost unused (#2386).
+          contenders=0
+          runs=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
+            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status != \"completed\") | .id] | .[]" 2>/dev/null || echo "unknown")
 
-          if [ "$status" = "online" ] && [ "$busy" != "true" ] && [ "$inflight" = "0" ]; then
+          if [ "$runs" = "unknown" ]; then
+            contenders=1
+          else
+            for id in $runs; do
+              n=$(gh api "repos/${{ github.repository }}/actions/runs/$id/jobs" \
+                --jq '[.jobs[]
+                       | select(.status != "completed")
+                       | select((.name == "pick-windows-runner")
+                                or (.name == "build-and-test-windows"
+                                    and ((.labels // []) | index("magda-luca"))))]
+                      | length' 2>/dev/null || echo 1)
+              case "$n" in ''|*[!0-9]*) n=1 ;; esac
+              contenders=$((contenders + n))
+            done
+          fi
+
+          if [ "$status" = "online" ] && [ "$busy" != "true" ] && [ "$contenders" = "0" ]; then
             echo 'labels=["self-hosted","Windows","magda-luca"]' >> "$GITHUB_OUTPUT"
             echo "Using idle self-hosted runner: magda-luca"
           else
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
-            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}', inflight runs: '${inflight}')"
+            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}', contending runs: '${contenders}')"
           fi
 
   build-and-test-windows:
@@ -978,13 +1060,16 @@ jobs:
       id: sccache
       if: steps.r2-creds.outcome == 'success'
       shell: powershell
+      # Not fatal: a failure here drops the compiler launcher in Configure
+      # below and the job builds cold, which is slow but green.
+      continue-on-error: true
       env:
         R2_BUCKET: ${{ secrets.R2_BUCKET }}
         R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
-        $SCCACHE_VERSION = "v0.8.1"
+        $SCCACHE_VERSION = "v0.17.0"
         $archive = "sccache-$SCCACHE_VERSION-x86_64-pc-windows-msvc.tar.gz"
         # Into RUNNER_TEMP, not the checkout: the self-hosted workspace persists.
         $dest = Join-Path $env:RUNNER_TEMP "sccache"
@@ -999,18 +1084,76 @@ jobs:
         # Under the runner's ErrorActionPreference=Stop, native stderr through a
         # redirect is a terminating error, so relax it for this one call.
         $ErrorActionPreference = 'Continue'
-        & "$sccacheDir\sccache.exe" --stop-server 2>&1 | Out-Null
+        $sccache = Join-Path $sccacheDir "sccache.exe"
+
+        Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        & $sccache --stop-server 2>&1 | Out-Null
+        $global:LASTEXITCODE = 0
+
+        # R2 through the S3 backend: bucket + custom endpoint, region 'auto'
+        # (R2 has no regions), credentials via the standard AWS variables. Set
+        # in-process first so the server below starts against them.
+        $env:SCCACHE_BUCKET = $env:R2_BUCKET
+        $env:SCCACHE_ENDPOINT = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        $env:SCCACHE_REGION = "auto"
+        $env:SCCACHE_S3_KEY_PREFIX = "windows"
+        $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+        $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+        # One server for the whole job, not one per compile step.
+        $env:SCCACHE_IDLE_TIMEOUT = "0"
+        $mode = "r2"
+
+        # An sccache client gives a cold server a hard-coded 10s, and a slow
+        # first R2 call can outlast that: v0.8.1 took 12.2s on the self-hosted
+        # runner, failing every parallel compile at once (#2386). Pay the wait
+        # here instead, where slow is just slow.
+        function Wait-Sccache([int]$timeoutSec) {
+          & $sccache --start-server 2>&1 | Out-Null
+          $deadline = (Get-Date).AddSeconds($timeoutSec)
+          while ((Get-Date) -lt $deadline) {
+            & $sccache --show-stats 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { return $true }
+            Start-Sleep -Seconds 2
+          }
+          return $false
+        }
+
+        if (-not (Wait-Sccache 120)) {
+          # R2 can be unreachable from a self-hosted runner while the hosted
+          # Linux job reaches the same bucket. A disk cache on the machine keeps
+          # most of the benefit, since the workspace persists.
+          Write-Host "sccache could not start against R2; falling back to a local disk cache."
+          Remove-Item Env:SCCACHE_BUCKET, Env:SCCACHE_ENDPOINT, Env:SCCACHE_REGION, `
+                      Env:SCCACHE_S3_KEY_PREFIX, Env:AWS_ACCESS_KEY_ID, `
+                      Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+          $env:SCCACHE_DIR = "C:\sccache-cache"
+          $env:SCCACHE_CACHE_SIZE = "20G"
+          $mode = "local"
+
+          Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not (Wait-Sccache 60)) {
+            Write-Host "sccache could not start at all; this job will build without it."
+            exit 1
+          }
+        }
+
         $ErrorActionPreference = 'Stop'
         $global:LASTEXITCODE = 0
-        # sccache reads R2 through its S3 backend: bucket + custom endpoint,
-        # region 'auto' (R2 has no regions), credentials via the standard AWS
-        # variables. Written to GITHUB_ENV so the compile steps see them too.
-        "SCCACHE_BUCKET=$env:R2_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_ENDPOINT=https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_ACCESS_KEY_ID=$env:R2_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_SECRET_ACCESS_KEY=$env:R2_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "sccache ready ($mode)."
+
+        # Whichever mode won, to the compile steps.
+        "SCCACHE_IDLE_TIMEOUT=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        if ($mode -eq "r2") {
+          "SCCACHE_BUCKET=$env:SCCACHE_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_ENDPOINT=$env:SCCACHE_ENDPOINT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_ACCESS_KEY_ID=$env:AWS_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_SECRET_ACCESS_KEY=$env:AWS_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          "SCCACHE_DIR=$env:SCCACHE_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_CACHE_SIZE=$env:SCCACHE_CACHE_SIZE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
 
     - name: Determine Faust/Mutable artifact cache keys
       id: dsp-cache-keys
@@ -1026,10 +1169,12 @@ jobs:
         git config --global --add safe.directory "*"
         $faustSha = (git -C third_party/faust rev-parse HEAD).Trim()
         $eurorackSha = (git -C third_party/eurorack rev-parse HEAD).Trim()
+        # See the Linux key step: flag changes must re-key the artifacts.
+        $dspCfg = (Get-FileHash -Algorithm SHA1 "magda/daw/audio/DevicesDependencies.cmake").Hash.Substring(0, 12).ToLower()
         $compiler = if ($env:VCToolsVersion) { $env:VCToolsVersion } else { "unknown" }
         echo "faust_sha=$faustSha" >> $env:GITHUB_OUTPUT
         echo "eurorack_sha=$eurorackSha" >> $env:GITHUB_OUTPUT
-        echo "compiler=$compiler" >> $env:GITHUB_OUTPUT
+        echo "compiler=$compiler-$dspCfg" >> $env:GITHUB_OUTPUT
 
     # Faust/Mutable prebuilt artifacts (#1669). Same self-hosted-vs-hosted
     # split as the vcpkg binary cache above: a fixed local dir on the
@@ -1058,8 +1203,50 @@ jobs:
         if (Test-Path "$mutableDebugDir\lib") { echo "mutable_debug_hit=true" >> $env:GITHUB_OUTPUT }
         if (Test-Path "$mutableReleaseDir\lib") { echo "mutable_release_hit=true" >> $env:GITHUB_OUTPUT }
 
+    # Same bucket as sccache/vcpkg, dsp/ prefix; see the Linux job's twin step
+    # for why actions/cache alone rebuilt Faust on every new branch. Temp files
+    # rather than pipes: PowerShell pipelines corrupt binary streams.
+    - name: Restore prebuilt Faust/Mutable artifacts (R2, github-hosted)
+      id: dsp-r2-hosted
+      if: runner.environment == 'github-hosted' && steps.r2-creds.outcome == 'success'
+      shell: powershell
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
+          Write-Host "AWS CLI not found, skipping the R2 artifact cache"
+          exit 0
+        }
+        # A miss is normal, never a step failure.
+        $ErrorActionPreference = 'Continue'
+        $endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        function Restore-Artifact([string]$key, [string]$out) {
+          $tmp = Join-Path $env:RUNNER_TEMP "$key.tar.gz"
+          aws s3 cp "s3://$env:R2_BUCKET/dsp/$key.tar.gz" $tmp --endpoint-url $endpoint --only-show-errors
+          if ($LASTEXITCODE -eq 0 -and (Test-Path $tmp)) {
+            tar.exe -xzf $tmp
+            if ($LASTEXITCODE -eq 0) {
+              echo "$out=true" >> $env:GITHUB_OUTPUT
+              Write-Host "restored $key"
+              return
+            }
+          }
+          Write-Host "miss: $key"
+          $global:LASTEXITCODE = 0
+        }
+        Restore-Artifact "${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug" "faust_hit"
+        Restore-Artifact "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" "mutable_hit"
+
+    # Credential-less fallback (e.g. Dependabot): branch-scoped and duplicated,
+    # but better than a guaranteed cold Faust build.
     - name: Cache prebuilt Faust artifact (github-hosted)
-      if: runner.environment == 'github-hosted'
+      if: runner.environment == 'github-hosted' && steps.r2-creds.outcome != 'success'
       id: faust-cache-hosted
       uses: actions/cache@v6
       with:
@@ -1069,7 +1256,7 @@ jobs:
         key: ${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug
 
     - name: Cache prebuilt Mutable artifact (github-hosted)
-      if: runner.environment == 'github-hosted'
+      if: runner.environment == 'github-hosted' && steps.r2-creds.outcome != 'success'
       id: mutable-cache-hosted
       uses: actions/cache@v6
       with:
@@ -1193,8 +1380,8 @@ jobs:
           "-DCMAKE_CXX_COMPILER_LAUNCHER=${{ steps.sccache.outcome == 'success' && 'sccache' || '' }}" `
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
           -DVCPKG_TARGET_TRIPLET=x64-windows `
-          ${{ (steps.dsp-prebuilt-self.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_debug_dir)) || (steps.faust-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace)) || '' }} `
-          ${{ (steps.dsp-prebuilt-self.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_debug_dir)) || (steps.mutable-cache-hosted.outputs.cache-hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace)) || '' }}
+          ${{ (steps.dsp-prebuilt-self.outputs.faust_debug_hit == 'true' && format('-DMAGDA_FAUST_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.faust_debug_dir)) || ((steps.dsp-r2-hosted.outputs.faust_hit == 'true' || steps.faust-cache-hosted.outputs.cache-hit == 'true') && format('-DMAGDA_FAUST_PREBUILT_DIR={0}/third_party/faust/build', github.workspace)) || '' }} `
+          ${{ (steps.dsp-prebuilt-self.outputs.mutable_debug_hit == 'true' && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}', steps.dsp-prebuilt-self.outputs.mutable_debug_dir)) || ((steps.dsp-r2-hosted.outputs.mutable_hit == 'true' || steps.mutable-cache-hosted.outputs.cache-hit == 'true') && format('-DMAGDA_MUTABLE_PREBUILT_DIR={0}/third_party/eurorack/build', github.workspace)) || '' }}
 
     # Scoped to magda_tests only: this job doesn't otherwise need
     # magda_daw_app built during the Debug pass, and the Release pass below
@@ -1219,6 +1406,37 @@ jobs:
           Copy-Item -Recurse -Force "third_party\eurorack\build\lib" "${{ steps.dsp-prebuilt-self.outputs.mutable_debug_dir }}\"
         }
 
+    - name: Populate prebuilt Faust/Mutable artifacts (R2, github-hosted)
+      if: runner.environment == 'github-hosted' && steps.r2-creds.outcome == 'success'
+      continue-on-error: true
+      shell: powershell
+      env:
+        R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+        AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+        AWS_DEFAULT_REGION: auto
+        AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+        AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+      run: |
+        if (-not (Get-Command aws -ErrorAction SilentlyContinue)) { exit 0 }
+        $ErrorActionPreference = 'Continue'
+        $endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        function Publish-Artifact([string]$key, [string[]]$paths) {
+          $tmp = Join-Path $env:RUNNER_TEMP "$key.up.tar.gz"
+          tar.exe -czf $tmp @paths
+          if ($LASTEXITCODE -eq 0) {
+            aws s3 cp $tmp "s3://$env:R2_BUCKET/dsp/$key.tar.gz" --endpoint-url $endpoint --only-show-errors
+            Write-Host "uploaded $key"
+          }
+        }
+        if ("${{ steps.dsp-r2-hosted.outputs.faust_hit }}" -ne "true" -and (Test-Path "third_party\faust\build\bin") -and (Test-Path "third_party\faust\build\lib")) {
+          Publish-Artifact "${{ runner.os }}-faust-artifact-${{ steps.dsp-cache-keys.outputs.faust_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-wasm-debug" @("third_party/faust/build/bin", "third_party/faust/build/lib")
+        }
+        if ("${{ steps.dsp-r2-hosted.outputs.mutable_hit }}" -ne "true" -and (Test-Path "third_party\eurorack\build\lib")) {
+          Publish-Artifact "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" @("third_party/eurorack/build/lib")
+        }
+
     - name: Show sccache statistics
       if: steps.sccache.outcome == 'success'
       shell: powershell
@@ -1239,10 +1457,83 @@ jobs:
       timeout-minutes: 30
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
-        if ($testExe) {
-          & $testExe.FullName --abort
-        } else {
+        if (-not $testExe) {
           Write-Error "Tests executable not found"
+          exit 1
+        }
+        # Catch2 runs one process on one core, which serialized 7000+ cases
+        # while the rest of the machine idled. Shards are disjoint by
+        # construction, and each is its own process, so suite wall time drops
+        # to roughly the heaviest shard. Own TMP per shard: concurrent shards
+        # must not collide on temp file names.
+        $shards = 16
+        # On the self-hosted runner the job is a session-0 service child, and
+        # Windows gives such work EcoQoS: reduced clocks, roughly half speed
+        # measured on the heaviest shard. The parent owns the child handles,
+        # so it can turn that off per process; no-op where EcoQoS never applies.
+        Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public static class PowerThrottle {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct STATE { public uint Version; public uint ControlMask; public uint StateMask; }
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool SetProcessInformation(IntPtr hProcess, int infoClass, ref STATE info, int size);
+            public static bool Disable(IntPtr h) {
+                var s = new STATE { Version = 1, ControlMask = 0x1, StateMask = 0 };
+                return SetProcessInformation(h, 4, ref s, Marshal.SizeOf(typeof(STATE)));
+            }
+        }
+        "@
+        $outDir = Join-Path $env:RUNNER_TEMP "test-shards"
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+        $savedTmp = $env:TMP
+        $runs = @()
+        for ($i = 0; $i -lt $shards; $i++) {
+          $tmpDir = Join-Path $outDir "tmp-$i"
+          New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+          $env:TMP = $tmpDir
+          $env:TEMP = $tmpDir
+          $p = Start-Process -FilePath $testExe.FullName `
+            -ArgumentList "--abort", "--shard-count", "$shards", "--shard-index", "$i" `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
+            -RedirectStandardError (Join-Path $outDir "shard-$i.err")
+          # Without this, ExitCode can read null after WaitForExit.
+          $null = $p.Handle
+          try { [PowerThrottle]::Disable($p.Handle) | Out-Null } catch {}
+          $runs += @{ Index = $i; Proc = $p }
+        }
+        $env:TMP = $savedTmp
+        $env:TEMP = $savedTmp
+        # Announce completions as they happen; a silent multi-minute wait
+        # reads as a hang from the run page.
+        $pending = @($runs)
+        $done = 0
+        while ($pending.Count -gt 0) {
+          Start-Sleep -Seconds 5
+          $still = @()
+          foreach ($r in $pending) {
+            if ($r.Proc.HasExited) {
+              $done++
+              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $done/$shards done)"
+            } else {
+              $still += $r
+            }
+          }
+          $pending = $still
+        }
+        $failed = 0
+        foreach ($r in $runs) {
+          $code = $r.Proc.ExitCode
+          Write-Host "===== shard $($r.Index)/$shards exit $code ====="
+          Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue
+          $err = Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue
+          if ($err) { Write-Host "--- stderr ---"; $err }
+          if ($code -ne 0) { $failed++ }
+        }
+        if ($failed -gt 0) {
+          Write-Error "$failed of $shards test shards failed"
           exit 1
         }
 

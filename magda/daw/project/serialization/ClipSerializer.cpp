@@ -14,7 +14,7 @@ juce::var serializeMidiCurveHandle(const MidiCurveHandle& handle) {
     obj->setProperty("dx", handle.dx);
     obj->setProperty("dy", handle.dy);
     obj->setProperty("linked", handle.linked);
-    return juce::var(obj);
+    return {obj};
 }
 
 void deserializeMidiCurveHandle(const juce::var& json, MidiCurveHandle& handle) {
@@ -100,7 +100,7 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("fadeInBehaviour", event.fadeInBehaviour);
     obj->setProperty("fadeOutBehaviour", event.fadeOutBehaviour);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 int64_t readSamples(const juce::DynamicObject& obj, const char* key) {
@@ -531,7 +531,7 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
     if (clip.nextChordGroupId > 1)
         obj->setProperty("nextChordGroupId", clip.nextChordGroupId);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeClipInfo(const juce::var& json, ClipInfo& outClip,
@@ -923,7 +923,7 @@ juce::var ProjectSerializer::serializeMidiNote(const MidiNote& data) {
         }
         obj->setProperty("pitchExpression", juce::var(points));
     }
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiNote(const juce::var& json, MidiNote& data) {
@@ -965,7 +965,7 @@ juce::var ProjectSerializer::serializeMidiCCData(const MidiCCData& data) {
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiCCData(const juce::var& json, MidiCCData& data) {
@@ -994,7 +994,7 @@ juce::var ProjectSerializer::serializeMidiPitchBendData(const MidiPitchBendData&
     SER(tension);
     obj->setProperty("inHandle", serializeMidiCurveHandle(data.inHandle));
     obj->setProperty("outHandle", serializeMidiCurveHandle(data.outHandle));
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMidiPitchBendData(const juce::var& json,

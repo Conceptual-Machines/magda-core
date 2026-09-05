@@ -113,8 +113,9 @@ void GainStagingManager::startCollection(TrackId trackId) {
     activeTrackId_ = trackId;
     buildStagedDeviceList(trackId);
 
-    juce::Logger::writeToLog("[GainStaging] start pass on track " + juce::String((int)trackId) +
-                             ": " + juce::String((int)staged_.size()) + " devices, target " +
+    juce::Logger::writeToLog("[GainStaging] start pass on track " +
+                             juce::String(static_cast<int>(trackId)) + ": " +
+                             juce::String(static_cast<int>(staged_.size())) + " devices, target " +
                              juce::String(targetDb_, 1) + " dBFS");
 
     // A fresh pass on these devices supersedes any prior marks on them.

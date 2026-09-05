@@ -177,6 +177,12 @@ FaustPlugin::FaustState::~FaustState() {
 std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String& source,
                                                               int sampleRate,
                                                               juce::String& errorOut) {
+    // Passthrough by contract, without entering libfaust. See FaustResources.hpp.
+    if (faustLibraryImportsDisallowed() && source.contains("import(")) {
+        errorOut = "Faust library imports are disallowed in this process";
+        return nullptr;
+    }
+
     // Pass the bundled faustlibraries dir as `-I` so `import("stdfaust.lib")`
     // and friends resolve at compile time. The path may not exist when running
     // outside the installed bundle (e.g. unit tests) — libfaust falls back to
@@ -212,7 +218,10 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
         return state;
     };
 
-    const juce::String normalised = ensureStdfaustImport(source);
+    // In disallowed mode the injection is skipped too: it would turn a
+    // self-contained source into an importing one. See FaustResources.hpp.
+    const juce::String normalised =
+        faustLibraryImportsDisallowed() ? source : ensureStdfaustImport(source);
 
     auto state = compileSource(normalised, errorOut);
     if (!state)

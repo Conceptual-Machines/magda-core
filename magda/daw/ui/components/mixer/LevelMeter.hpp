@@ -254,11 +254,11 @@ class LevelMeter : public juce::Component, private juce::Timer {
                                         : juce::ColourGradient(green, 0.0f, bounds.getBottom(), red,
                                                                0.0f, bounds.getY(), false);
         // Green solid, then short fade to yellow around -12dB
-        grad.addColour(std::max(0.0, (double)yellowPos - fade), green);
-        grad.addColour(std::min(1.0, (double)yellowPos + fade), yellow);
+        grad.addColour(std::max(0.0, static_cast<double>(yellowPos) - fade), green);
+        grad.addColour(std::min(1.0, static_cast<double>(yellowPos) + fade), yellow);
         // Yellow solid, then short fade to red around 0dB
-        grad.addColour(std::max(0.0, (double)redPos - fade), yellow);
-        grad.addColour(std::min(1.0, (double)redPos + fade), red);
+        grad.addColour(std::max(0.0, static_cast<double>(redPos) - fade), yellow);
+        grad.addColour(std::min(1.0, static_cast<double>(redPos) + fade), red);
         return grad;
     }
 

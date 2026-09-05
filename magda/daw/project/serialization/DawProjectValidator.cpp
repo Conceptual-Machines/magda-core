@@ -30,7 +30,7 @@ juce::File schemaDirectory() {
     if (bundled.isDirectory())
         return bundled;
 
-    return juce::File(MAGDA_DAWPROJECT_SCHEMA_DIR);
+    return {MAGDA_DAWPROJECT_SCHEMA_DIR};
 }
 
 void appendLibXmlError(void* context, const char* message, ...) {

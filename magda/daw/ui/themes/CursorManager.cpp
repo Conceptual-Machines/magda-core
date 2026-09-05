@@ -61,7 +61,7 @@ juce::MouseCursor CursorManager::createCurveBendCursor() {
     pass(arrow, 3.4f, 1.6f);
 
     // Hotspot on the curve's own midpoint, which is the thing being grabbed.
-    return juce::MouseCursor(img, 13, 17);
+    return {img, 13, 17};
 }
 
 juce::MouseCursor CursorManager::createGhostCopyCursor() {
@@ -95,7 +95,7 @@ juce::MouseCursor CursorManager::createGhostCopyCursor() {
     g.strokePath(links, bodyStroke);
 
     // Hotspot at the joint between the two links (glyph centre).
-    return juce::MouseCursor(img, 14, 14);
+    return {img, 14, 14};
 }
 
 juce::MouseCursor CursorManager::createBladeCursor() {
@@ -139,7 +139,7 @@ juce::MouseCursor CursorManager::createBladeCursor() {
     g.fillEllipse(13.25f, 14.25f, 1.5f, 1.5f);
 
     // Hotspot at the blade tips (bottom centre)
-    return juce::MouseCursor(img, 14, 23);
+    return {img, 14, 23};
 }
 
 juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
@@ -191,7 +191,7 @@ juce::MouseCursor CursorManager::createZoomCursor(ZoomGlyph glyph) {
     }
 
     // Hotspot at center of the lens
-    return juce::MouseCursor(img, static_cast<int>(cx), static_cast<int>(cy));
+    return {img, static_cast<int>(cx), static_cast<int>(cy)};
 }
 
 juce::MouseCursor CursorManager::createNoteDrawCursor() {
@@ -235,7 +235,7 @@ juce::MouseCursor CursorManager::createNoteDrawCursor() {
     g.strokePath(tip, juce::PathStrokeType(1.0f));
 
     // Hotspot at pencil tip.
-    return juce::MouseCursor(img, 5, 22);
+    return {img, 5, 22};
 }
 
 juce::MouseCursor CursorManager::createEraseCursor() {
@@ -274,7 +274,7 @@ juce::MouseCursor CursorManager::createEraseCursor() {
     g.drawLine(5.0f, 5.0f, 12.0f, 12.0f, 2.0f);
     g.drawLine(12.0f, 5.0f, 5.0f, 12.0f, 2.0f);
 
-    return juce::MouseCursor(img, 8, 20);
+    return {img, 8, 20};
 }
 
 juce::MouseCursor CursorManager::createNoteRepeatCursor() {
@@ -319,7 +319,7 @@ juce::MouseCursor CursorManager::createNoteRepeatCursor() {
     g.strokePath(c3, hairline);
 
     // Hotspot at the centre of the leftmost cell — the click point lands there.
-    return juce::MouseCursor(img, 7, 14);
+    return {img, 7, 14};
 }
 
 }  // namespace magda

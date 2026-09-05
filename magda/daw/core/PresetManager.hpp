@@ -24,6 +24,9 @@ namespace magda {
  */
 class PresetManager {
   public:
+    PresetManager(const PresetManager&) = delete;
+    PresetManager& operator=(const PresetManager&) = delete;
+
     static PresetManager& getInstance();
 
     // ========================================================================
@@ -224,10 +227,6 @@ class PresetManager {
   private:
     PresetManager();
     ~PresetManager() = default;
-
-    // Non-copyable
-    PresetManager(const PresetManager&) = delete;
-    PresetManager& operator=(const PresetManager&) = delete;
 
     /**
      * @brief Ensure a directory exists, creating it if necessary

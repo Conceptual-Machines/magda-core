@@ -304,7 +304,7 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
                     return "-inf";
                 if (std::isinf(v))
                     return "+inf";
-                return juce::String(v, 1);
+                return {v, 1};
             };
             editor_.setText(formatValue(param.rangeMin) + juce::String::fromUTF8(" — ") +
                                 formatValue(param.rangeMax),

@@ -158,7 +158,7 @@ juce::var buildThemeSchema() {
     schema->setProperty("required", rootRequired);
     schema->setProperty("additionalProperties", false);
 
-    return juce::var(schema);
+    return {schema};
 }
 
 std::optional<GeneratedTheme> validateGeneratedTheme(const juce::String& llmText,

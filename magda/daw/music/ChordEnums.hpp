@@ -235,7 +235,7 @@ inline ChordSpec stringToChordSpec(const juce::String& chordString) {
         qualityStr = "maj";
     }
 
-    return ChordSpec(stringToRoot(rootStr), stringToQuality(qualityStr));
+    return {stringToRoot(rootStr), stringToQuality(qualityStr)};
 }
 
 inline std::vector<int> getChordIntervals(ChordQuality quality) {
