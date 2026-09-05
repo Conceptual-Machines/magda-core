@@ -175,7 +175,12 @@ jobs:
         seq 1 10 | xargs -P 4 -I{} sh -c '
           export HOME="$1/home-{}"
           export XDG_CONFIG_HOME="$HOME/.config"
-          mkdir -p "$XDG_CONFIG_HOME"
+          # JUCE resolves tempDirectory from TMPDIR on Linux, and the test
+          # fixtures write .wav material into fixed-name dirs under it, so
+          # concurrent runs sharing /tmp clobbered one another ("the material
+          # written ... does not read back").
+          export TMPDIR="$HOME/tmp"
+          mkdir -p "$XDG_CONFIG_HOME" "$TMPDIR"
           xvfb-run -a --server-num=$((90 + {})) "$0" > "$1/run-{}.log" 2>&1
           rc=$?
           echo "$rc" > "$1/run-{}.rc"
