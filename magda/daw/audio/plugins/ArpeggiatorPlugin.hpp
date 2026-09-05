@@ -139,10 +139,8 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // Pattern state
     int currentStep_ = 0;
-    bool goingUp_ = true;
     double arpOriginBeat_ = -1.0;
     int lastPlayedNote_ = -1;
-    int lastPlayedVelocity_ = 0;
     double lastNoteOffBeat_ = -1.0;
 
     // Transport
@@ -169,7 +167,9 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     void removeHeldNote(int noteNumber);
     void clearHeldNotes();
     void sendAllNotesOff(DeviceMidiBuffer& midi);
-    void resetArpState();
+    int takeSoundingNote();
+    // Returns the note that the caller must release when resetting during processing.
+    int resetArpState();
 
     struct ExpandedSequence {
         std::array<HeldNote, MAX_HELD * 4> notes{};

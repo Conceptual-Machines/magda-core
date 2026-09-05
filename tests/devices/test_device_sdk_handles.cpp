@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "TestDeviceMidiBuffer.hpp"
 #include "audio/plugins/DeviceParameterHandle.hpp"
 #include "audio/plugins/DevicePluginHandle.hpp"
 #include "audio/plugins/MagdaDevice.hpp"
@@ -146,44 +147,7 @@ TEST_CASE("MagdaDevice owns telemetry independently of a host plugin lifecycle",
 
 TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no host plugin",
           "[device-sdk]") {
-    class MidiBuffer final : public audio::DeviceMidiBuffer {
-      public:
-        int size() const override {
-            return static_cast<int>(events.size());
-        }
-        const juce::MidiMessage& message(int index) const override {
-            return events[static_cast<std::size_t>(index)].message;
-        }
-        std::uint32_t sourceId(int index) const override {
-            return events[static_cast<std::size_t>(index)].sourceId;
-        }
-        void setEvent(int index, audio::DeviceMidiEvent event) override {
-            events[static_cast<std::size_t>(index)] = std::move(event);
-        }
-        void removeEvent(int index) override {
-            events.erase(events.begin() + index);
-        }
-        void addEvent(audio::DeviceMidiEvent event) override {
-            events.push_back(std::move(event));
-        }
-        void clear() override {
-            events.clear();
-        }
-        void sortByTimestamp() override {
-            std::sort(events.begin(), events.end(), [](const auto& left, const auto& right) {
-                return left.message.getTimeStamp() < right.message.getTimeStamp();
-            });
-        }
-        bool isAllNotesOff() const override {
-            return allNotesOff;
-        }
-        void setAllNotesOff(bool value) override {
-            allNotesOff = value;
-        }
-
-        std::vector<audio::DeviceMidiEvent> events;
-        bool allNotesOff = false;
-    };
+    using MidiBuffer = magda::test::DeviceMidiBuffer;
 
     class TestDevice final : public audio::MagdaDevice {
       public:

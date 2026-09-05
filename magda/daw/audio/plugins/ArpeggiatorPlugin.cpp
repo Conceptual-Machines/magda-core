@@ -261,24 +261,25 @@ void ArpeggiatorPlugin::clearHeldNotes() {
 }
 
 void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
-    if (lastPlayedNote_ >= 0) {
-        midi.addEvent({juce::MidiMessage::noteOff(1, lastPlayedNote_), 0});
-        lastPlayedNote_ = -1;
-        clearMidiOutDisplay();
-    }
+    sendNoteOff(midi, takeSoundingNote());
 }
 
-void ArpeggiatorPlugin::resetArpState() {
-    currentStep_ = 0;
-    goingUp_ = true;
-    arpOriginBeat_ = -1.0;
+int ArpeggiatorPlugin::takeSoundingNote() {
+    const int note = lastPlayedNote_;
     lastPlayedNote_ = -1;
-    lastPlayedVelocity_ = 0;
     lastNoteOffBeat_ = -1.0;
+    clearMidiOutDisplay();
+    return note;
+}
+
+int ArpeggiatorPlugin::resetArpState() {
+    const int note = takeSoundingNote();
+    currentStep_ = 0;
+    arpOriginBeat_ = -1.0;
     wasPlaying_ = false;
     currentPlayStep_.store(-1, std::memory_order_relaxed);
     currentSeqLength_.store(0, std::memory_order_relaxed);
-    clearMidiOutDisplay();
+    return note;
 }
 
 ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
@@ -366,8 +367,23 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     const bool isLatched = displayValue(kLatch) >= 0.5f;
 
     // --- 1. Capture incoming MIDI ---
-    // Over the block's incoming events only: sendAllNotesOff() appends to the
-    // same buffer mid-loop, and the arp must not re-consume its own output.
+    // Keep the input view read-only: appending can invalidate message references,
+    // and the clear below would discard any note-offs emitted here. Only one
+    // note can be sounding on entry; this pass does not generate new notes.
+    int pendingNoteOff = -1;
+    const auto resetFromInput = [&] {
+        const int note = resetArpState();
+        if (note >= 0)
+            pendingNoteOff = note;
+        freeRunSamples_ = 0.0;
+    };
+    // Hosts can signal panic without a CC event (for example on a playhead
+    // jump). Reset before consuming fresh input, and forward the flag below.
+    const bool inputPanic = midi.isAllNotesOff();
+    if (inputPanic) {
+        clearHeldNotes();
+        resetFromInput();
+    }
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
@@ -376,21 +392,16 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             // Latch: if old set is stale (all keys were released), clear before adding
             if (isLatched && latchedSetStale_) {
-                // Send note-off for any currently playing note before clearing
-                sendAllNotesOff(midi);
                 heldCount_ = 0;
                 nextOrder_ = 0;
                 latchedSetStale_ = false;
-                currentStep_ = 0;
-                goingUp_ = true;
             }
 
             bool wasEmpty = (heldCount_ == 0);
             addHeldNote(msg.getNoteNumber(), msg.getVelocity());
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
-                freeRunSamples_ = 0.0;
-                resetArpState();
+                resetFromInput();
             }
         } else if (msg.isNoteOff()) {
             --physicallyHeldCount_;
@@ -406,17 +417,18 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             }
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
             clearHeldNotes();
-            resetArpState();
+            resetFromInput();
         }
     }
 
     // --- 2. Clear MIDI buffer (arp replaces input) ---
     midi.clear();
+    midi.setAllNotesOff(inputPanic);
+    sendNoteOff(midi, pendingNoteOff);
 
     // --- 3. Handle transport transitions ---
-    // Note: the host briefly toggles isPlaying at loop boundaries, so we only
-    // reset the arp on a genuine stop (isPlaying goes false). On start we
-    // just update the flag — the step counter continues from where it was.
+    // Reset on a playing-to-stopped edge. On start, just update the flag;
+    // the step counter continues from where it was.
     if (context.isPlaying && !wasPlaying_) {
         wasPlaying_ = true;
     } else if (!context.isPlaying && wasPlaying_) {
@@ -571,7 +583,6 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
                 timeInBlock);
 
             lastPlayedNote_ = note.noteNumber;
-            lastPlayedVelocity_ = vel;
             setMidiOutDisplay(note.noteNumber, vel);
 
             // Schedule note-off
