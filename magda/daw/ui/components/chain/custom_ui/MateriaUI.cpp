@@ -54,18 +54,19 @@ MateriaUI::MateriaUI() {
         if (isPitch(idx)) {
             c.slider->setRange(-24.0, 24.0, 0.0);
             c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v)) + " st"; });
+                [](double v) { return juce::String(static_cast<int>(std::lround(v))) + " st"; });
         } else if (isFine(idx)) {
             c.slider->setRange(-100.0, 100.0, 0.0);
             c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v)) + " ct"; });
+                [](double v) { return juce::String(static_cast<int>(std::lround(v))) + " ct"; });
         } else if (isLevel(idx)) {
             c.slider->setRange(-60.0, 12.0, 0.0);
             c.slider->setValueFormatter([](double v) { return juce::String(v, 1) + " dB"; });
         } else {
             c.slider->setRange(0.0, 1.0, 0.0);
-            c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v * 100.0)) + "%"; });
+            c.slider->setValueFormatter([](double v) {
+                return juce::String(static_cast<int>(std::lround(v * 100.0))) + "%";
+            });
         }
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
@@ -206,9 +207,9 @@ void MateriaUI::paint(juce::Graphics& g) {
         g.setColour(cStrike);
         g.fillEllipse(juce::Rectangle<float>(8, 8).withCentre(strike));
 
-        const auto wBow = (float)controls_[kBow].slider->getValue();
-        const auto wBlow = (float)controls_[kBlow].slider->getValue();
-        const auto wStrike = (float)controls_[kStrike].slider->getValue();
+        const auto wBow = static_cast<float>(controls_[kBow].slider->getValue());
+        const auto wBlow = static_cast<float>(controls_[kBlow].slider->getValue());
+        const auto wStrike = static_cast<float>(controls_[kStrike].slider->getValue());
         const float sum = wBow + wBlow + wStrike;
         juce::Point<float> dot = sum > 1.0e-4f
                                      ? (bow * wBow + blow * wBlow + strike * wStrike) / sum
@@ -236,10 +237,10 @@ void MateriaUI::paint(juce::Graphics& g) {
         g.setColour(kBorder);
         g.drawRoundedRectangle(modalVizArea_.toFloat().reduced(0.5f), 4.0f, 1.0f);
         auto b = modalVizArea_.reduced(12, 16);
-        const auto geometry = (float)controls_[kGeometry].slider->getValue();
-        const auto brightness = (float)controls_[kBrightness].slider->getValue();
-        const auto damping = (float)controls_[kDamping].slider->getValue();
-        const auto position = (float)controls_[kPosition].slider->getValue();
+        const auto geometry = static_cast<float>(controls_[kGeometry].slider->getValue());
+        const auto brightness = static_cast<float>(controls_[kBrightness].slider->getValue());
+        const auto damping = static_cast<float>(controls_[kDamping].slider->getValue());
+        const auto position = static_cast<float>(controls_[kPosition].slider->getValue());
 
         const float rolloff = juce::jmap(brightness, 0.0f, 1.0f, 0.80f, 0.985f);
         const float level = juce::jmap(damping, 0.0f, 1.0f, 0.45f, 1.0f);
@@ -264,9 +265,11 @@ void MateriaUI::paint(juce::Graphics& g) {
 
 std::array<juce::Point<float>, 3> MateriaUI::triangleCorners() const {
     auto b = blendArea_.reduced(28);
-    return {juce::Point<float>(b.getCentreX(), (float)b.getY()),             // bow   (top)
-            juce::Point<float>((float)b.getX(), (float)b.getBottom()),       // blow  (bottom-left)
-            juce::Point<float>((float)b.getRight(), (float)b.getBottom())};  // strike(bottom-right)
+    return {juce::Point<float>(b.getCentreX(), static_cast<float>(b.getY())),  // bow   (top)
+            juce::Point<float>(static_cast<float>(b.getX()),
+                               static_cast<float>(b.getBottom())),  // blow  (bottom-left)
+            juce::Point<float>(static_cast<float>(b.getRight()),
+                               static_cast<float>(b.getBottom()))};  // strike(bottom-right)
 }
 
 void MateriaUI::applyBlendDrag(juce::Point<int> p) {

@@ -386,10 +386,10 @@ void ClipFadesSection::update() {
                     continue;
                 const auto* c = magda::ClipManager::getInstance().getClip(cid);
                 if (c && c->isAudio()) {
-                    minIn = juce::jmin(minIn, (double)magda::audioEventRef(*c).fadeInSeconds);
-                    maxIn = juce::jmax(maxIn, (double)magda::audioEventRef(*c).fadeInSeconds);
-                    minOut = juce::jmin(minOut, (double)magda::audioEventRef(*c).fadeOutSeconds);
-                    maxOut = juce::jmax(maxOut, (double)magda::audioEventRef(*c).fadeOutSeconds);
+                    minIn = juce::jmin(minIn, magda::audioEventRef(*c).fadeInSeconds);
+                    maxIn = juce::jmax(maxIn, magda::audioEventRef(*c).fadeInSeconds);
+                    minOut = juce::jmin(minOut, magda::audioEventRef(*c).fadeOutSeconds);
+                    maxOut = juce::jmax(maxOut, magda::audioEventRef(*c).fadeOutSeconds);
                 }
             }
             double midIn = (minIn + maxIn) / 2.0;

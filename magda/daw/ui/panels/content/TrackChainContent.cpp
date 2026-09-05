@@ -2227,7 +2227,8 @@ void TrackChainContent::runAiGainStagingPass() {
         lvl.currentGainDb = s.currentGainDb;
         lvl.suggestedGainDb = s.suggestedGainDb;
         for (const auto& p : s.params)
-            lvl.params.push_back({p.name.toStdString(), (double)p.value, p.unit.toStdString()});
+            lvl.params.push_back(
+                {p.name.toStdString(), static_cast<double>(p.value), p.unit.toStdString()});
         levels.push_back(std::move(lvl));
         paths.push_back(s.path);
     }
@@ -2253,8 +2254,8 @@ void TrackChainContent::runAiGainStagingPass() {
                 reasoning << juce::String(result.summary) << "\n\n";
             for (const auto& d : result.decisions) {
                 juce::String name;
-                if (d.index >= 0 && d.index < (int)levels.size())
-                    name = juce::String(levels[(size_t)d.index].name);
+                if (d.index >= 0 && d.index < static_cast<int>(levels.size()))
+                    name = juce::String(levels[static_cast<size_t>(d.index)].name);
                 reasoning << name << ":  " << (d.newGainDb >= 0.0f ? "+" : "")
                           << juce::String(d.newGainDb, 1) << " dB";
                 if (!d.reason.empty())
@@ -2276,8 +2277,8 @@ void TrackChainContent::runAiGainStagingPass() {
             } else {
                 std::vector<std::pair<magda::ChainNodePath, float>> moves;
                 for (const auto& d : result.decisions)
-                    if (d.index >= 0 && d.index < (int)paths.size())
-                        moves.push_back({paths[(size_t)d.index], d.newGainDb});
+                    if (d.index >= 0 && d.index < static_cast<int>(paths.size()))
+                        moves.push_back({paths[static_cast<size_t>(d.index)], d.newGainDb});
                 m.applyAiMoves(moves);
                 juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
             }

@@ -108,7 +108,7 @@ class PluginPresetsButtonLookAndFeel : public juce::LookAndFeel_V4 {
                         bool /*down*/) override {
         auto bounds = button.getLocalBounds().reduced(6, 0);
         constexpr float chevronW = 10.0f;
-        auto chevronArea = bounds.removeFromRight((int)chevronW).toFloat();
+        auto chevronArea = bounds.removeFromRight(static_cast<int>(chevronW)).toFloat();
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
         g.setColour(

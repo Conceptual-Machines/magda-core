@@ -555,10 +555,10 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
     // track's MIDI input device rather than a hardware device
     const bool usesTrackMidiInput = trackInfo->midiInputDevice.startsWith("track:");
     const TrackId configuredSourceId =
-        usesTrackMidiInput
-            ? TrackId(trackInfo->midiInputDevice.fromFirstOccurrenceOf("track:", false, false)
-                          .getIntValue())
-            : INVALID_TRACK_ID;
+        usesTrackMidiInput ? static_cast<TrackId>(trackInfo->midiInputDevice
+                                                      .fromFirstOccurrenceOf("track:", false, false)
+                                                      .getIntValue())
+                           : INVALID_TRACK_ID;
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance);

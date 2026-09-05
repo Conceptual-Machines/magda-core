@@ -1603,11 +1603,12 @@ void NodeComponent::initializeModsMacrosPanels() {
 
         // Pick sidechain type from the selected modulator. The envelope follower
         // always sources audio; otherwise it follows the LFO's trigger mode.
-        const bool selValid = selectedModIndex_ >= 0 && selectedModIndex_ < (int)mods.size();
-        const bool isFollower =
-            selValid && mods[(size_t)selectedModIndex_].type == magda::ModType::Follower;
+        const bool selValid =
+            selectedModIndex_ >= 0 && selectedModIndex_ < static_cast<int>(mods.size());
+        const bool isFollower = selValid && mods[static_cast<size_t>(selectedModIndex_)].type ==
+                                                magda::ModType::Follower;
         const bool isAudioMode =
-            isFollower || (selValid && mods[(size_t)selectedModIndex_].triggerMode ==
+            isFollower || (selValid && mods[static_cast<size_t>(selectedModIndex_)].triggerMode ==
                                            magda::LFOTriggerMode::Audio);
         const auto sidechainType =
             isAudioMode ? magda::SidechainConfig::Type::Audio : magda::SidechainConfig::Type::MIDI;
@@ -1652,7 +1653,7 @@ void NodeComponent::initializeModsMacrosPanels() {
                     magda::TrackManager::getInstance().clearRackSidechain(rackPath);
             } else {
                 int index = result - 10;
-                if (index >= 0 && index < (int)trackEntries->size()) {
+                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
                     if (isDeviceTarget) {
                         magda::TrackManager::getInstance().setSidechainSource(
                             deviceId, (*trackEntries)[index].id, sidechainType);

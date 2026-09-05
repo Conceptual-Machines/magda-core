@@ -58,22 +58,24 @@ HaloUI::HaloUI() {
         c.slider->setTextColour(kText);
         if (isChord(idx)) {
             c.slider->setRange(0.0, 10.0, 1.0);
-            c.slider->setValueFormatter([](double v) { return juce::String((int)std::lround(v)); });
+            c.slider->setValueFormatter(
+                [](double v) { return juce::String(static_cast<int>(std::lround(v))); });
         } else if (isPitch(idx)) {
             c.slider->setRange(-24.0, 24.0, 0.0);
             c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v)) + " st"; });
+                [](double v) { return juce::String(static_cast<int>(std::lround(v))) + " st"; });
         } else if (isFine(idx)) {
             c.slider->setRange(-100.0, 100.0, 0.0);
             c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v)) + " ct"; });
+                [](double v) { return juce::String(static_cast<int>(std::lround(v))) + " ct"; });
         } else if (isLevel(idx)) {
             c.slider->setRange(-60.0, 12.0, 0.0);
             c.slider->setValueFormatter([](double v) { return juce::String(v, 1) + " dB"; });
         } else {
             c.slider->setRange(0.0, 1.0, 0.0);
-            c.slider->setValueFormatter(
-                [](double v) { return juce::String((int)std::lround(v * 100.0)) + "%"; });
+            c.slider->setValueFormatter([](double v) {
+                return juce::String(static_cast<int>(std::lround(v * 100.0))) + "%";
+            });
         }
         c.slider->onValueChanged = [this, idx](double v) {
             if (onParameterChanged)
@@ -112,9 +114,9 @@ void HaloUI::updateFromParameters(const std::vector<magda::ParameterInfo>& param
             break;
         const float value = params[static_cast<size_t>(i)].currentValue;
         if (i == kModel)
-            curModel_ = juce::jlimit(0, kNumModels - 1, (int)std::lround(value));
+            curModel_ = juce::jlimit(0, kNumModels - 1, static_cast<int>(std::lround(value)));
         else if (i == kPolyphony)
-            curPoly_ = juce::jlimit(0, kNumPoly - 1, (int)std::lround(value));
+            curPoly_ = juce::jlimit(0, kNumPoly - 1, static_cast<int>(std::lround(value)));
         else if (controls_[static_cast<size_t>(i)].slider != nullptr)
             controls_[static_cast<size_t>(i)].slider->setValue(value, juce::dontSendNotification);
     }
@@ -152,10 +154,10 @@ void HaloUI::paint(juce::Graphics& g) {
         g.setColour(kBorder);
         g.drawRoundedRectangle(modalVizArea_.toFloat().reduced(0.5f), 4.0f, 1.0f);
         auto b = modalVizArea_.reduced(14, 22);
-        const auto structure = (float)controls_[kStructure].slider->getValue();
-        const auto brightness = (float)controls_[kBrightness].slider->getValue();
-        const auto damping = (float)controls_[kDamping].slider->getValue();
-        const auto position = (float)controls_[kPosition].slider->getValue();
+        const auto structure = static_cast<float>(controls_[kStructure].slider->getValue());
+        const auto brightness = static_cast<float>(controls_[kBrightness].slider->getValue());
+        const auto damping = static_cast<float>(controls_[kDamping].slider->getValue());
+        const auto position = static_cast<float>(controls_[kPosition].slider->getValue());
 
         const float rolloff = juce::jmap(brightness, 0.0f, 1.0f, 0.80f, 0.985f);
         const float level = juce::jmap(damping, 0.0f, 1.0f, 0.5f, 1.0f);

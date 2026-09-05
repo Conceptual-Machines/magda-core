@@ -89,8 +89,8 @@ void TracktionEngineWrapper::recordingFinished(
     // don't have — this path needs to be diagnosable from user machines.
     juce::Logger::writeToLog("[MidiRec] finished dev='" + instance.owner.getName() +
                              "' clips=" + juce::String(recordedClips.size()) +
-                             " targetID=" + juce::String((int)targetID.getRawID()) +
-                             " physical=" + juce::String((int)isPhysical));
+                             " targetID=" + juce::String(static_cast<int>(targetID.getRawID())) +
+                             " physical=" + juce::String(static_cast<int>(isPhysical)));
     if (!audioBridge_)
         return;
 
@@ -251,8 +251,9 @@ void TracktionEngineWrapper::recordingFinished(
             "[MidiRec]   midi clip notes=" +
             juce::String(midiClip->getSequence().getNotes().size()) +
             " takes=" + juce::String(midiClip->hasAnyTakes() ? midiClip->getNumTakes(false) : 0) +
-            " len=" + juce::String(midiClip->getPosition().getLength().inSeconds(), 3) + " track=" +
-            juce::String(midiTrackId) + " hasMidiInput=" + juce::String((int)midiTrackHasInput));
+            " len=" + juce::String(midiClip->getPosition().getLength().inSeconds(), 3) +
+            " track=" + juce::String(midiTrackId) +
+            " hasMidiInput=" + juce::String(static_cast<int>(midiTrackHasInput)));
 
         if (!midiTrackHasInput) {
             juce::Logger::writeToLog("[MidiRec]   SKIP: track has no MIDI input configured");
@@ -878,9 +879,9 @@ void TracktionEngineWrapper::finalizeMidiRecording(TrackId trackId) {
                                     : takes[static_cast<size_t>(activeTakeIndex)];
 
     juce::Logger::writeToLog("[MidiRec] finalize track=" + juce::String(trackId) +
-                             " takes=" + juce::String((int)takes.size()) +
+                             " takes=" + juce::String(static_cast<int>(takes.size())) +
                              " active=" + juce::String(activeTakeIndex) +
-                             " notes=" + juce::String((int)active.notes.size()) +
+                             " notes=" + juce::String(static_cast<int>(active.notes.size())) +
                              " len=" + juce::String(lengthSeconds, 3));
 
     midiClip->removeFromParent();
