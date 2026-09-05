@@ -1,6 +1,7 @@
 #include "ClipOcclusion.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 namespace magda {
 
@@ -121,9 +122,9 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
             if (cover.start.value <= start + kTolBeats)
                 start = std::max(start, cover.end.value);
         }
-        for (auto it = covers.rbegin(); it != covers.rend(); ++it) {
-            if (it->end.value >= end - kTolBeats)
-                end = std::min(end, it->start.value);
+        for (auto& cover : std::views::reverse(covers)) {
+            if (cover.end.value >= end - kTolBeats)
+                end = std::min(end, cover.start.value);
         }
 
         if (end <= start + kTolBeats) {

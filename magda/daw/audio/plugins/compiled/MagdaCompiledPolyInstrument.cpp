@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <map>
+#include <ranges>
 
 #include "core/ParameterUtils.hpp"
 #include "faust/dsp/dsp.h"
@@ -81,11 +82,12 @@ class PolyVoiceHarvester : public ::UI {
     }
 
     bool inProxyGroup() const {
-        for (auto it = groupLabels_.rbegin(); it != groupLabels_.rend(); ++it) {
-            if (*it == "Voices")
+        for (const auto& groupLabel : std::views::reverse(groupLabels_)) {
+            if (groupLabel == "Voices")
                 return true;
-            if (it->startsWith("Voice") || (it->length() >= 2 && (*it)[0] == 'V' &&
-                                            juce::CharacterFunctions::isDigit((*it)[1])))
+            if (groupLabel.startsWith("Voice") ||
+                (groupLabel.length() >= 2 && groupLabel[0] == 'V' &&
+                 juce::CharacterFunctions::isDigit(groupLabel[1])))
                 return false;
         }
         return false;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ranges>
 
 #include "ClipOperations.hpp"
 #include "audio/sequencer/StepClock.hpp"
@@ -844,8 +845,7 @@ void QuantizeMidiNotesCommand::execute() {
     }
 
     // Apply quantization
-    for (size_t i = 0; i < noteIndices_.size(); ++i) {
-        size_t index = noteIndices_[i];
+    for (size_t index : noteIndices_) {
         if (index >= clip->midiNotes.size()) {
             continue;
         }
@@ -944,10 +944,10 @@ void DeleteMultipleMidiNotesCommand::undo() {
     }
 
     // Re-insert in reverse order (ascending index) to restore original positions
-    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
-        size_t insertPos = std::min(it->first, clip->midiNotes.size());
+    for (auto& it : std::views::reverse(deleted_)) {
+        size_t insertPos = std::min(it.first, clip->midiNotes.size());
         clip->midiNotes.insert(clip->midiNotes.begin() + static_cast<std::ptrdiff_t>(insertPos),
-                               it->second);
+                               it.second);
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
@@ -1451,10 +1451,10 @@ void DeleteMultipleMidiCCEventsCommand::undo() {
         return;
 
     // Re-insert in reverse order (ascending index) to restore original positions
-    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
-        size_t insertPos = std::min(it->first, clip->midiCCData.size());
+    for (auto& it : std::views::reverse(deleted_)) {
+        size_t insertPos = std::min(it.first, clip->midiCCData.size());
         clip->midiCCData.insert(clip->midiCCData.begin() + static_cast<std::ptrdiff_t>(insertPos),
-                                it->second);
+                                it.second);
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);
@@ -1660,10 +1660,10 @@ void DeleteMultipleMidiPitchBendEventsCommand::undo() {
         return;
 
     // Re-insert in reverse order (ascending index) to restore original positions
-    for (auto it = deleted_.rbegin(); it != deleted_.rend(); ++it) {
-        size_t insertPos = std::min(it->first, clip->midiPitchBendData.size());
+    for (auto& it : std::views::reverse(deleted_)) {
+        size_t insertPos = std::min(it.first, clip->midiPitchBendData.size());
         clip->midiPitchBendData.insert(
-            clip->midiPitchBendData.begin() + static_cast<std::ptrdiff_t>(insertPos), it->second);
+            clip->midiPitchBendData.begin() + static_cast<std::ptrdiff_t>(insertPos), it.second);
     }
 
     clipManager.forceNotifyClipPropertyChanged(clipId_);

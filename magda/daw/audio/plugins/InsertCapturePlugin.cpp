@@ -122,8 +122,8 @@ void InsertCapturePlugin::stopCapture(bool keepFile) {
 bool InsertCapturePlugin::writeSilence(juce::AudioFormatWriter::ThreadedWriter& writer,
                                        juce::int64 numSamples) {
     const float* chans[kNumChannels];
-    for (int c = 0; c < kNumChannels; ++c)
-        chans[c] = zeroBuf_.data();
+    for (auto& chan : chans)
+        chan = zeroBuf_.data();
 
     while (numSamples > 0) {
         const auto chunk = std::min(numSamples, static_cast<juce::int64>(zeroBuf_.size()));

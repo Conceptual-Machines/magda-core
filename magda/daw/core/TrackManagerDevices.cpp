@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <map>
+#include <ranges>
 #include <set>
 #include <span>
 
@@ -1189,8 +1190,8 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
     for (const auto& [index, _] : orderedPaths)
         chain.elements.push_back(std::move((*sourceElements)[static_cast<size_t>(index)]));
 
-    for (auto it = orderedPaths.rbegin(); it != orderedPaths.rend(); ++it)
-        sourceElements->erase(sourceElements->begin() + it->first);
+    for (auto& orderedPath : std::views::reverse(orderedPaths))
+        sourceElements->erase(sourceElements->begin() + orderedPath.first);
 
     const int insertIndex =
         std::clamp(orderedPaths.front().first, 0, static_cast<int>(sourceElements->size()));

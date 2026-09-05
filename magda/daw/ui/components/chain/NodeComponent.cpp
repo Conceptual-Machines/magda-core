@@ -227,26 +227,26 @@ NodeComponent::NodeComponent() {
     addAndMakeVisible(deleteButton_);
 
     // === MOD PANEL CONTROLS ===
-    for (int i = 0; i < 3; ++i) {
-        modSlotButtons_[i] = std::make_unique<juce::TextButton>("+");
-        modSlotButtons_[i]->setColour(juce::TextButton::buttonColourId,
-                                      DarkTheme::getColour(DarkTheme::SURFACE));
-        modSlotButtons_[i]->setColour(juce::TextButton::textColourOffId,
-                                      DarkTheme::getSecondaryTextColour());
-        modSlotButtons_[i]->onClick = [this, i]() {
+    for (auto& modSlotButton : modSlotButtons_) {
+        modSlotButton = std::make_unique<juce::TextButton>("+");
+        modSlotButton->setColour(juce::TextButton::buttonColourId,
+                                 DarkTheme::getColour(DarkTheme::SURFACE));
+        modSlotButton->setColour(juce::TextButton::textColourOffId,
+                                 DarkTheme::getSecondaryTextColour());
+        modSlotButton->onClick = [this, &modSlotButton]() {
             juce::PopupMenu menu;
             menu.addItem(1, "LFO");
             menu.addItem(2, "Bezier LFO");
             menu.addItem(3, "ADSR");
             menu.addItem(4, "Envelope Follower");
-            menu.showMenuAsync(juce::PopupMenu::Options(), [this, i](int result) {
+            menu.showMenuAsync(juce::PopupMenu::Options(), [this, &modSlotButton](int result) {
                 if (result > 0) {
                     juce::StringArray types = {"", "LFO", "BEZ", "ADSR", "ENV"};
-                    modSlotButtons_[i]->setButtonText(types[result]);
+                    modSlotButton->setButtonText(types[result]);
                 }
             });
         };
-        addChildComponent(*modSlotButtons_[i]);
+        addChildComponent(*modSlotButton);
     }
 
     // === PARAM PANEL CONTROLS ===
@@ -1022,9 +1022,9 @@ void NodeComponent::resizedModPanel(juce::Rectangle<int> panelArea) {
     // Default: placeholder mod slot buttons
     panelArea = panelArea.reduced(2);
     int slotHeight = (panelArea.getHeight() - 4) / 3;
-    for (int i = 0; i < 3; ++i) {
-        modSlotButtons_[i]->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
-        modSlotButtons_[i]->setVisible(true);
+    for (const auto& modSlotButton : modSlotButtons_) {
+        modSlotButton->setBounds(panelArea.removeFromTop(slotHeight).reduced(0, 1));
+        modSlotButton->setVisible(true);
     }
 }
 

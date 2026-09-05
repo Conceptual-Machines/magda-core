@@ -1,5 +1,7 @@
 #include "UndoManager.hpp"
 
+#include <ranges>
+
 #include "../project/ProjectManager.hpp"
 
 namespace magda {
@@ -214,8 +216,8 @@ void CompoundCommand::execute() {
 
 void CompoundCommand::undo() {
     // Undo all commands in reverse order
-    for (auto it = commands_.rbegin(); it != commands_.rend(); ++it) {
-        (*it)->undo();
+    for (auto& command : std::views::reverse(commands_)) {
+        command->undo();
     }
 }
 

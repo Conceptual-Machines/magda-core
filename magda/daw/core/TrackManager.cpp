@@ -3068,9 +3068,7 @@ TrackManager::ResolvedPath TrackManager::resolvePath(const ChainNodePath& path) 
     const RackInfo* currentRack = nullptr;
     const ChainInfo* currentChain = nullptr;
 
-    for (size_t i = 0; i < path.steps.size(); ++i) {
-        const auto& step = path.steps[i];
-
+    for (auto step : path.steps) {
         switch (step.type) {
             case ChainStepType::PadRack:
             case ChainStepType::Rack: {

@@ -3,6 +3,8 @@
 #include <BinaryData.h>
 #include <juce_llm/juce_llm.h>
 
+#include <ranges>
+
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llm_presets.hpp"
 #include "../../../../agents/mcp/MCPServerManager.hpp"
@@ -563,9 +565,9 @@ void AIPanelComponent::onGenerationFinished(juce::String status, juce::String co
         // with no conversation (4OSC sound design).
         juce::String description;
         auto conv = llm::Conversation::fromVar(juce::JSON::parse(conversationJson));
-        for (auto it = conv.messages.rbegin(); it != conv.messages.rend(); ++it) {
-            if (it->role == "assistant") {
-                description = extractStringField(it->content, "description");
+        for (auto& message : std::views::reverse(conv.messages)) {
+            if (message.role == "assistant") {
+                description = extractStringField(message.content, "description");
                 break;
             }
         }

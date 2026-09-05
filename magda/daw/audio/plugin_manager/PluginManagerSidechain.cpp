@@ -174,12 +174,12 @@ void PluginManager::ensureSidechainMonitor(TrackId sourceTrackId) {
     }
 
     // Check if a SidechainMonitorPlugin already exists on the track
-    for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-        if (dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i])) {
+    for (auto i : teTrack->pluginList) {
+        if (dynamic_cast<SidechainMonitorPlugin*>(i)) {
             DBG("PluginManager::ensureSidechainMonitor - track "
                 << sourceTrackId << " found existing monitor plugin on TE track");
-            sidechainMonitors_[sourceTrackId] = teTrack->pluginList[i];
-            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(teTrack->pluginList[i]);
+            sidechainMonitors_[sourceTrackId] = i;
+            auto* mon = dynamic_cast<SidechainMonitorPlugin*>(i);
             mon->setSourceTrackId(sourceTrackId);
             mon->setRealtimeContext(this);
             return;

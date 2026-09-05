@@ -74,16 +74,16 @@ void PluginManager::updateDeviceModifierProperties(TrackId trackId) {
     std::function<void(const std::function<void(te::Plugin*)>&)> visitHostPlugins;
     if (teTrack) {
         visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
-            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-                if (auto* plugin = teTrack->pluginList[pi])
+            for (auto plugin : teTrack->pluginList) {
+                if (plugin)
                     visit(plugin);
             }
         };
     } else if (trackId == MASTER_TRACK_ID && edit_.getMasterTrack()) {
         visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
             const auto& masterList = edit_.getMasterPluginList();
-            for (int pi = 0; pi < masterList.size(); ++pi) {
-                if (auto* plugin = masterList[pi])
+            for (auto plugin : masterList) {
+                if (plugin)
                     visit(plugin);
             }
         };
@@ -1077,8 +1077,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
         defaultModifierList = teTrack->getModifierList();
         macroList = &teTrack->getMacroParameterListForWriting();
         visitHostPlugins = [teTrack](const std::function<void(te::Plugin*)>& visit) {
-            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-                if (auto* plugin = teTrack->pluginList[pi])
+            for (auto plugin : teTrack->pluginList) {
+                if (plugin)
                     visit(plugin);
             }
         };
@@ -1090,8 +1090,8 @@ void PluginManager::resyncDeviceModifiers(TrackId trackId) {
             // null macro host as unsupported master macros.
             visitHostPlugins = [this](const std::function<void(te::Plugin*)>& visit) {
                 const auto& masterList = edit_.getMasterPluginList();
-                for (int pi = 0; pi < masterList.size(); ++pi) {
-                    if (auto* plugin = masterList[pi])
+                for (auto plugin : masterList) {
+                    if (plugin)
                         visit(plugin);
                 }
             };

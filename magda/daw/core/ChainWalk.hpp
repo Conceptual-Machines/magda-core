@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ranges>
 #include <type_traits>
 #include <vector>
 
@@ -89,9 +90,9 @@ enum class Descend { Into, Skip };
 /// own walk; deriving it once is what makes a disagreement between them
 /// impossible rather than untested (#2204).
 inline RackId owningRackId(const ChainNodePath& path) {
-    for (auto it = path.steps.rbegin(); it != path.steps.rend(); ++it)
-        if (it->type == ChainStepType::Rack || it->type == ChainStepType::PadRack)
-            return it->id;
+    for (auto step : std::views::reverse(path.steps))
+        if (step.type == ChainStepType::Rack || step.type == ChainStepType::PadRack)
+            return step.id;
     return INVALID_RACK_ID;
 }
 

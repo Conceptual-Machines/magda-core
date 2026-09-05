@@ -692,8 +692,8 @@ void PluginManager::validateMappingConsistency() {
             if (devicePath.trackId == MASTER_TRACK_ID) {
                 const auto& masterList = edit_.getMasterPluginList();
                 bool foundOnMaster = false;
-                for (int i = 0; i < masterList.size(); ++i) {
-                    if (masterList[i] == sd.plugin.get()) {
+                for (auto i : masterList) {
+                    if (i == sd.plugin.get()) {
                         foundOnMaster = true;
                         break;
                     }

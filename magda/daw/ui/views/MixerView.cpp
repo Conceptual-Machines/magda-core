@@ -2085,8 +2085,8 @@ void MixerView::rebuildChannelStrips() {
                 }
             }
             // Check aux strips — use negative index offset for identification
-            for (size_t i = 0; i < auxChannelStrips.size(); ++i) {
-                if (auxChannelStrips[i]->getTrackId() == trackId) {
+            for (const auto& auxChannelStrip : auxChannelStrips) {
+                if (auxChannelStrip->getTrackId() == trackId) {
                     // Select via TrackManager directly
                     SelectionManager::getInstance().selectTrack(trackId);
                     return;

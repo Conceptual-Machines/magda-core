@@ -1,5 +1,6 @@
 #include "param/ParamKey.hpp"
 
+#include <ranges>
 #include <tuple>
 
 namespace magda::engine {
@@ -19,9 +20,9 @@ ChainSegment segmentOf(const magda::ChainNodePath& path) {
 /// The rack a path ends in or passes through last, which is what owns a macro
 /// at rack scope.
 RackId lastRackOf(const magda::ChainNodePath& path) {
-    for (auto step = path.steps.rbegin(); step != path.steps.rend(); ++step)
-        if (magda::isRackStep(step->type))
-            return step->id;
+    for (auto step : std::views::reverse(path.steps))
+        if (magda::isRackStep(step.type))
+            return step.id;
     return INVALID_RACK_ID;
 }
 

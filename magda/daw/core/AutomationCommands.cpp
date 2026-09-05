@@ -1,6 +1,7 @@
 #include "AutomationCommands.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "LinkModeManager.hpp"
 #include "TrackManager.hpp"
@@ -696,8 +697,8 @@ void DuplicateAutomationTimeSelectionCommand::undo() {
 
     auto& mgr = AutomationManager::getInstance();
     AutomationManager::BatchScope batch;
-    for (auto it = insertedPoints_.rbegin(); it != insertedPoints_.rend(); ++it) {
-        mgr.deletePoint(it->laneId, it->pointId);
+    for (auto& insertedPoint : std::views::reverse(insertedPoints_)) {
+        mgr.deletePoint(insertedPoint.laneId, insertedPoint.pointId);
     }
     insertedPoints_.clear();
 }
@@ -778,8 +779,9 @@ void InsertTimeAutomationCommand::undo() {
     auto& mgr = AutomationManager::getInstance();
     AutomationManager::BatchScope batch;
     // Move leftmost first so each original beat is empty as we restore it.
-    for (auto it = shiftedPoints_.rbegin(); it != shiftedPoints_.rend(); ++it) {
-        mgr.movePoint(it->laneId, it->pointId, it->oldBeat, it->value);
+    for (auto& shiftedPoint : std::views::reverse(shiftedPoints_)) {
+        mgr.movePoint(shiftedPoint.laneId, shiftedPoint.pointId, shiftedPoint.oldBeat,
+                      shiftedPoint.value);
     }
     shiftedPoints_.clear();
 }
