@@ -129,8 +129,8 @@ class AboutDialog::ContentComponent : public juce::Component {
         int dotGap = 4;
 
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
-        g.drawHorizontalLine(creditsArea.getY(), (float)creditsArea.getX(),
-                             (float)creditsArea.getRight());
+        g.drawHorizontalLine(creditsArea.getY(), static_cast<float>(creditsArea.getX()),
+                             static_cast<float>(creditsArea.getRight()));
         creditsArea.removeFromTop(6);
 
         auto row = creditsArea.removeFromTop(20);

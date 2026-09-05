@@ -27,7 +27,7 @@ class FlatGainSliderLookAndFeel : public juce::LookAndFeel_V4 {
         constexpr float thumbHeight = 2.0f;
         const float thumbY = sliderPos - thumbHeight * 0.5f;
         g.setColour(DarkTheme::getSecondaryTextColour());
-        g.fillRect((float)x, thumbY, (float)width, thumbHeight);
+        g.fillRect(static_cast<float>(x), thumbY, static_cast<float>(width), thumbHeight);
     }
 
     int getSliderThumbRadius(juce::Slider&) override {

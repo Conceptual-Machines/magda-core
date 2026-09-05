@@ -2332,7 +2332,8 @@ void MediaExplorerContent::mouseDrag(const juce::MouseEvent& e) {
         {
             juce::Graphics g(dragImg);
             g.setColour(juce::Colours::black.withAlpha(0.78f));
-            g.fillRoundedRectangle(0.0f, 0.0f, (float)width, (float)height, 4.0f);
+            g.fillRoundedRectangle(0.0f, 0.0f, static_cast<float>(width),
+                                   static_cast<float>(height), 4.0f);
             g.setColour(juce::Colours::white);
             g.setFont(13.0f);
             for (int i = 0; i < maxRows; ++i) {

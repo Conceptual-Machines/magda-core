@@ -1246,7 +1246,8 @@ void ChordPanelContent::AIRequestThread::run() {
 
     if (!owner_.detectedScales_.empty()) {
         context += "Detected scales: ";
-        for (size_t i = 0; i < std::min(owner_.detectedScales_.size(), size_t(3)); ++i) {
+        for (size_t i = 0; i < std::min(owner_.detectedScales_.size(), static_cast<size_t>(3));
+             ++i) {
             if (i > 0)
                 context += ", ";
             context += juce::String(owner_.detectedScales_[i].name);

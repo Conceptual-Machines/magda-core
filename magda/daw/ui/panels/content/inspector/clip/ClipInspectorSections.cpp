@@ -730,8 +730,9 @@ void ClipInspector::initClipPropertiesSection() {
     clipPropsContainer_.addChildComponent(*clipLoopToggle_);
 
     // Audio clip properties collapse toggle
-    audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
-        audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+    audioPropsCollapseToggle_.setButtonText(
+        juce::String::charToString(audioPropsCollapsed_ ? static_cast<juce::juce_wchar>(0x25B6)
+                                                        : static_cast<juce::juce_wchar>(0x25BC)));
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonColourId,
                                         juce::Colours::transparentBlack);
     audioPropsCollapseToggle_.setColour(juce::TextButton::buttonOnColourId,
@@ -746,7 +747,8 @@ void ClipInspector::initClipPropertiesSection() {
     audioPropsCollapseToggle_.onClick = [this]() {
         audioPropsCollapsed_ = !audioPropsCollapsed_;
         audioPropsCollapseToggle_.setButtonText(juce::String::charToString(
-            audioPropsCollapsed_ ? (juce::juce_wchar)0x25B6 : (juce::juce_wchar)0x25BC));
+            audioPropsCollapsed_ ? static_cast<juce::juce_wchar>(0x25B6)
+                                 : static_cast<juce::juce_wchar>(0x25BC)));
         updateFromSelectedClip();
     };
     clipPropsContainer_.addChildComponent(audioPropsCollapseToggle_);

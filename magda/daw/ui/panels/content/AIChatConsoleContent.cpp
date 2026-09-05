@@ -2612,8 +2612,7 @@ void AIChatConsoleContent::insertParamAlias(const juce::String& pluginAlias,
         auto newText = before + inserted + " " + after;
         inputDocument_.replaceAllContent(newText);
         inputBox_->moveCaretTo(
-            juce::CodeDocument::Position(inputDocument_, atPos + (int)inserted.length() + 1),
-            false);
+            juce::CodeDocument::Position(inputDocument_, atPos + inserted.length() + 1), false);
     }
 
     suppressAutocompleteForContent_ = inputDocument_.getAllContent();
@@ -2646,7 +2645,7 @@ void AIChatConsoleContent::insertAlias(const juce::String& alias) {
         auto newText = before + "@" + alias + after;
         inputDocument_.replaceAllContent(newText);
         inputBox_->moveCaretTo(
-            juce::CodeDocument::Position(inputDocument_, atPos + 1 + (int)alias.length()), false);
+            juce::CodeDocument::Position(inputDocument_, atPos + 1 + alias.length()), false);
     }
 
     suppressAutocompleteForContent_ = inputDocument_.getAllContent();

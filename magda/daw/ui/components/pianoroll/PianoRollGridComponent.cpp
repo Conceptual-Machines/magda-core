@@ -242,7 +242,8 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
     if (chordDropActive_) {
         int lineX = beatToPixel(chordDropBeat_);
         g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.8f));
-        g.drawLine(float(lineX), 0.f, float(lineX), float(bounds.getHeight()), 2.0f);
+        g.drawLine(static_cast<float>(lineX), 0.f, static_cast<float>(lineX),
+                   static_cast<float>(bounds.getHeight()), 2.0f);
     }
 
     // Draw pending chord placement preview (after drop, awaiting length confirmation)
@@ -259,12 +260,14 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         // Draw blinking start line
         float alpha = pendingChord_.blinkOn ? 0.9f : 0.3f;
         g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(alpha));
-        g.drawLine(float(startX), 0.f, float(startX), float(bounds.getHeight()), 2.0f);
+        g.drawLine(static_cast<float>(startX), 0.f, static_cast<float>(startX),
+                   static_cast<float>(bounds.getHeight()), 2.0f);
 
         // Draw end line at mouse position
         if (endX > startX + 2) {
             g.setColour(DarkTheme::getColour(DarkTheme::PIANO_ROLL_CHORD_PREVIEW).withAlpha(0.5f));
-            g.drawLine(float(endX), 0.f, float(endX), float(bounds.getHeight()), 1.0f);
+            g.drawLine(static_cast<float>(endX), 0.f, static_cast<float>(endX),
+                       static_cast<float>(bounds.getHeight()), 1.0f);
         }
     }
 
@@ -309,10 +312,13 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         int cursorX = beatToPixel(displayBeat);
         if (cursorX >= 0 && cursorX <= bounds.getRight()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0.5f));
-            g.drawLine(float(cursorX - 1), 0.f, float(cursorX - 1), float(bounds.getHeight()), 1.f);
-            g.drawLine(float(cursorX + 1), 0.f, float(cursorX + 1), float(bounds.getHeight()), 1.f);
+            g.drawLine(static_cast<float>(cursorX - 1), 0.f, static_cast<float>(cursorX - 1),
+                       static_cast<float>(bounds.getHeight()), 1.f);
+            g.drawLine(static_cast<float>(cursorX + 1), 0.f, static_cast<float>(cursorX + 1),
+                       static_cast<float>(bounds.getHeight()), 1.f);
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_BRIGHT));
-            g.drawLine(float(cursorX), 0.f, float(cursorX), float(bounds.getHeight()), 2.f);
+            g.drawLine(static_cast<float>(cursorX), 0.f, static_cast<float>(cursorX),
+                       static_cast<float>(bounds.getHeight()), 2.f);
         }
     }
 
