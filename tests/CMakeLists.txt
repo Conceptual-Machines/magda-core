@@ -70,6 +70,7 @@ set(TEST_SOURCES
     devices/test_prune_missing_plugins.cpp
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
+    devices/test_mutable_clouds.cpp
     devices/test_device_ui_context.cpp
     ui/test_levels_ui.cpp
     # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation
