@@ -277,7 +277,9 @@ jobs:
     - name: Build
       run: |
         echo "Building with $(nproc) cores..."
-        cmake --build build --config Debug -j$(nproc)
+        # JUCE tests are built and run by juce-tests-linux.yml. Keep the app
+        # link check here, without also building that second test executable.
+        cmake --build build --config Debug --target magda_daw_app magda_tests -j"$(nproc)"
 
     - name: Populate prebuilt Faust/Mutable artifacts (R2)
       if: steps.r2-creds.outcome == 'success'
@@ -313,17 +315,13 @@ jobs:
         find build -name "magda_tests" -type f || echo "magda_tests executable not found"
 
     - name: Run tests
+      timeout-minutes: 15
       run: |
-        if [ -f build/tests/magda_tests ]; then
-          echo "Running tests..."
-          cd build
-          ./tests/magda_tests
-        else
-          echo "❌ Tests executable not found at build/tests/magda_tests"
-          echo "Build directory contents:"
-          find build -type f -name "*test*" || true
-          exit 1
-        fi
+        # Match available cores, capped at four to bound Debug-process memory.
+        shards=$(nproc)
+        if [ "$shards" -gt 4 ]; then shards=4; fi
+        cd build
+        bash "$GITHUB_WORKSPACE/scripts/ci-test-shards.sh" ./tests/magda_tests "$shards"
 
     - name: Show sccache statistics
       if: steps.sccache.outcome == 'success'
