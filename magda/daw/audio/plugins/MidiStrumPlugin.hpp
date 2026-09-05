@@ -92,12 +92,21 @@ class MidiStrumPlugin : public MidiMagdaDevice {
         int note = 0;
         int velocity = 0;
         std::int64_t order = 0;
+        /// Who played it, carried onto what this note strums. A device behind
+        /// this one reads provenance the same way, and the source is all of it
+        /// the host's buffer carries between them (#2416).
+        std::uint32_t sourceId = 0;
     };
     struct Pending {
         std::int64_t fireAt = 0;  // absolute sample clock
         int note = 0;
         int velocity = 0;    // 0..127
         bool gateOn = true;  // true = note-on, false = note-off
+        std::uint32_t sourceId = 0;
+    };
+    struct Sounding {
+        int note = 0;
+        std::uint32_t sourceId = 0;
     };
 
     void scheduleStrum();       // queue note-ons (+ Loop re-strum note-offs)
@@ -118,15 +127,15 @@ class MidiStrumPlugin : public MidiMagdaDevice {
 
     std::vector<Held> held_;
     std::vector<Pending> pending_;
-    std::vector<Pending> due_;       // scratch for the per-block emit pass
-    std::vector<int> sounding_;      // notes we have emitted note-on for, awaiting release
-    std::int64_t clock_ = 0;         // absolute sample counter
-    std::int64_t noteOrder_ = 0;     // play-order stamp for As-Played ordering
-    int collectLeft_ = -1;           // Chord-mode collect debounce (samples)
-    int syncLeft_ = 0;               // Loop-mode interval countdown (samples)
-    int lutShape_ = -1;              // shape index the LUT was built for
-    std::array<float, 1024> lut_{};  // current strum curve, sampled
-    bool wasPlaying_ = false;        // transport state last block (stop -> flush)
+    std::vector<Pending> due_;        // scratch for the per-block emit pass
+    std::vector<Sounding> sounding_;  // notes we have emitted note-on for, awaiting release
+    std::int64_t clock_ = 0;          // absolute sample counter
+    std::int64_t noteOrder_ = 0;      // play-order stamp for As-Played ordering
+    int collectLeft_ = -1;            // Chord-mode collect debounce (samples)
+    int syncLeft_ = 0;                // Loop-mode interval countdown (samples)
+    int lutShape_ = -1;               // shape index the LUT was built for
+    std::array<float, 1024> lut_{};   // current strum curve, sampled
+    bool wasPlaying_ = false;         // transport state last block (stop -> flush)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiStrumPlugin)
 };

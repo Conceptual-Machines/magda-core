@@ -134,6 +134,11 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         /// at once, and the two release independently (#2416).
         int liveHolds = 0;
         int hostHolds = 0;
+        /// One holder from each side, stamped on whatever this note generates.
+        /// A device downstream reads provenance the way this one does, and the
+        /// source is all of it the host's buffer carries between them (#2416).
+        std::uint32_t liveSourceId = 0;
+        std::uint32_t hostSourceId = 0;
     };
     std::array<HeldNote, MAX_HELD> heldNotes_{};
     int heldCount_ = 0;
@@ -147,6 +152,9 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     int currentStep_ = 0;
     double arpOriginBeat_ = -1.0;
     int lastPlayedNote_ = -1;
+    /// Source stamped on the sounding note's note-on, and on every note-off
+    /// that closes it.
+    std::uint32_t lastPlayedSourceId_ = 0;
     double lastNoteOffBeat_ = -1.0;
 
     // Transport
@@ -174,7 +182,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
-    void addHeldNote(int noteNumber, int velocity, bool fromLiveSource);
+    void addHeldNote(int noteNumber, int velocity, bool fromLiveSource, std::uint32_t sourceId);
     void releaseHeldNote(int noteNumber, bool fromLiveSource, bool removeWhenUnheld);
     void removeHeldNoteAt(int index);
     void clearHeldNotes();

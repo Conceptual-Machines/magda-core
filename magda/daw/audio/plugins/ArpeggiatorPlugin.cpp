@@ -241,19 +241,26 @@ double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool
     return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
-void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource) {
+void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource,
+                                    std::uint32_t sourceId) {
     for (int i = 0; i < heldCount_; ++i) {
         auto& held = heldNotes_[static_cast<size_t>(i)];
         if (held.noteNumber == noteNumber) {
             // The pattern already has this pitch; this is another holder of
             // it, not another note.
             ++(fromLiveSource ? held.liveHolds : held.hostHolds);
+            (fromLiveSource ? held.liveSourceId : held.hostSourceId) = sourceId;
             return;
         }
     }
     if (heldCount_ < MAX_HELD) {
-        heldNotes_[static_cast<size_t>(heldCount_)] = {
-            noteNumber, velocity, nextOrder_++, fromLiveSource ? 1 : 0, fromLiveSource ? 0 : 1};
+        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber,
+                                                       velocity,
+                                                       nextOrder_++,
+                                                       fromLiveSource ? 1 : 0,
+                                                       fromLiveSource ? 0 : 1,
+                                                       fromLiveSource ? sourceId : 0,
+                                                       fromLiveSource ? 0 : sourceId};
         ++heldCount_;
     }
 }
@@ -275,6 +282,7 @@ void ArpeggiatorPlugin::releaseHeldNote(int noteNumber, bool fromLiveSource,
 
 void ArpeggiatorPlugin::retainLiveHeldNotes() {
     int kept = 0;
+    int holds = 0;
     for (int i = 0; i < heldCount_; ++i) {
         auto note = heldNotes_[static_cast<size_t>(i)];
         if (note.liveHolds == 0)
@@ -282,10 +290,13 @@ void ArpeggiatorPlugin::retainLiveHeldNotes() {
         // Whatever the host was holding it is withdrawing, and re-asserts on
         // the same buffer what should still sound.
         note.hostHolds = 0;
+        note.hostSourceId = 0;
+        holds += note.liveHolds;
         heldNotes_[static_cast<size_t>(kept++)] = note;
     }
     heldCount_ = kept;
-    physicallyHeldCount_ = kept;
+    // Keys, not pitches: two inputs on one pitch stay held when one lets go.
+    physicallyHeldCount_ = holds;
     latchedSetStale_ = false;
     if (kept == 0)
         nextOrder_ = 0;
@@ -306,7 +317,8 @@ void ArpeggiatorPlugin::clearHeldNotes() {
 }
 
 void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
-    sendNoteOff(midi, takeSoundingNote());
+    const std::uint32_t source = lastPlayedSourceId_;
+    sendNoteOff(midi, takeSoundingNote(), source);
 }
 
 int ArpeggiatorPlugin::takeSoundingNote() {
@@ -358,9 +370,9 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
                 break;
             if (seq.length >= static_cast<int>(seq.notes.size()))
                 break;
-            seq.notes[static_cast<size_t>(seq.length)] = {note,
-                                                          sorted[static_cast<size_t>(i)].velocity,
-                                                          sorted[static_cast<size_t>(i)].order};
+            auto expanded = sorted[static_cast<size_t>(i)];
+            expanded.noteNumber = note;
+            seq.notes[static_cast<size_t>(seq.length)] = expanded;
             ++seq.length;
         }
     }
@@ -448,7 +460,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             }
 
             bool wasEmpty = (heldCount_ == 0);
-            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource);
+            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource,
+                        midi.sourceId(eventIndex));
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 resetFromInput();
@@ -472,7 +485,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // --- 2. Clear MIDI buffer (arp replaces input) ---
     midi.clear();
     midi.setAllNotesOff(inputPanic);
-    sendNoteOff(midi, pendingNoteOff);
+    sendNoteOff(midi, pendingNoteOff, lastPlayedSourceId_);
 
     // --- 3. Handle transport transitions ---
     if (context.isPlaying && !wasPlaying_) {
@@ -525,7 +538,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     constexpr double kContiguousBeats = 1.0e-3;
     if (lastBlockEndBeat_ < 0.0 ||
         std::abs(blockStartBeat - lastBlockEndBeat_) > kContiguousBeats) {
-        sendNoteOff(midi, takeSoundingNote());
+        const std::uint32_t source = lastPlayedSourceId_;
+        sendNoteOff(midi, takeSoundingNote(), source);
         currentStep_ = 0;
         arpOriginBeat_ = -1.0;
     }
@@ -578,16 +592,18 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // Block duration in seconds (MIDI timestamps stay in seconds, not samples)
     double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
 
-    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock) {
+    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock,
+                                         std::uint32_t sourceId) {
         message.setTimeStamp(timeInBlock);
-        midi.addEvent({std::move(message), 0});
+        midi.addEvent({std::move(message), sourceId});
     };
 
     // --- 7. Emit pending note-off from previous block ---
     if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
         lastPlayedNote_ >= 0) {
         double frac = (lastNoteOffBeat_ - blockStartBeat) / (blockEndBeat - blockStartBeat);
-        addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), frac * blockDurationSecs);
+        addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), frac * blockDurationSecs,
+                        lastPlayedSourceId_);
         lastPlayedNote_ = -1;
         lastNoteOffBeat_ = -1.0;
         clearMidiOutDisplay();
@@ -627,7 +643,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             // Note-off for previous note
             if (lastPlayedNote_ >= 0) {
-                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock);
+                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
+                                lastPlayedSourceId_);
                 lastPlayedNote_ = -1;
             }
 
@@ -649,12 +666,16 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
                 vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
             }
 
-            // Note-on
+            // Note-on, carrying the provenance of whoever holds the pitch, so
+            // a device behind this one reads it the way this one does (#2416).
+            const std::uint32_t noteSource =
+                note.liveHolds > 0 ? note.liveSourceId : note.hostSourceId;
             addTimedMessage(
                 juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
-                timeInBlock);
+                timeInBlock, noteSource);
 
             lastPlayedNote_ = note.noteNumber;
+            lastPlayedSourceId_ = noteSource;
             setMidiOutDisplay(note.noteNumber, vel);
 
             // Schedule note-off
@@ -662,7 +683,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             if (noteOffBeat < blockEndBeat) {
                 double offFrac = (noteOffBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
                 addTimedMessage(juce::MidiMessage::noteOff(1, note.noteNumber),
-                                offFrac * blockDurationSecs);
+                                offFrac * blockDurationSecs, noteSource);
                 lastPlayedNote_ = -1;
                 lastNoteOffBeat_ = -1.0;
                 clearMidiOutDisplay();

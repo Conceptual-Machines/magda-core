@@ -259,8 +259,8 @@ void MidiStrumPlugin::resetStrumState() {
 }
 
 void MidiStrumPlugin::scheduleReleaseAll() {
-    for (int note : sounding_)
-        pending_.push_back({clock_, note, 0, false});
+    for (const auto& note : sounding_)
+        pending_.push_back({clock_, note.note, 0, false, note.sourceId});
 }
 
 void MidiStrumPlugin::scheduleStrum() {
@@ -297,7 +297,8 @@ void MidiStrumPlugin::scheduleStrum() {
         const float onset = juce::jlimit(0.0f, W, sampleCycled(lut_, u, cyc) * W);
         const int note = notes[static_cast<size_t>(i)].note;
         const int vel = juce::jlimit(1, 127, notes[static_cast<size_t>(i)].velocity);
-        pending_.push_back({clock_ + static_cast<std::int64_t>(onset), note, vel, true});
+        pending_.push_back({clock_ + static_cast<std::int64_t>(onset), note, vel, true,
+                            notes[static_cast<size_t>(i)].sourceId});
     }
 }
 
@@ -339,7 +340,7 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
             held_.erase(std::remove_if(held_.begin(), held_.end(),
                                        [note](const Held& h) { return h.note == note; }),
                         held_.end());
-            held_.push_back({note, msg.getVelocity(), noteOrder_++});
+            held_.push_back({note, msg.getVelocity(), noteOrder_++, midi.sourceId(eventIndex)});
             collectLeft_ = juce::jmax(1, static_cast<int>(0.03 * sampleRate_));
         } else if (msg.isNoteOff()) {
             const int note = msg.getNoteNumber();
@@ -402,16 +403,19 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
             auto message =
                 juce::MidiMessage::noteOn(1, p.note, static_cast<juce::uint8>(p.velocity));
             message.setTimeStamp(tib);
-            midi.addEvent({std::move(message), 0});
-            if (std::find(sounding_.begin(), sounding_.end(), p.note) == sounding_.end())
-                sounding_.push_back(p.note);
+            midi.addEvent({std::move(message), p.sourceId});
+            const auto held = std::find_if(sounding_.begin(), sounding_.end(),
+                                           [&p](const Sounding& s) { return s.note == p.note; });
+            if (held == sounding_.end())
+                sounding_.push_back({p.note, p.sourceId});
             lastDisplayNote = p.note;
             lastDisplayVel = p.velocity;
         } else {
             auto message = juce::MidiMessage::noteOff(1, p.note);
             message.setTimeStamp(tib);
-            midi.addEvent({std::move(message), 0});
-            sounding_.erase(std::remove(sounding_.begin(), sounding_.end(), p.note),
+            midi.addEvent({std::move(message), p.sourceId});
+            sounding_.erase(std::remove_if(sounding_.begin(), sounding_.end(),
+                                           [&p](const Sounding& s) { return s.note == p.note; }),
                             sounding_.end());
         }
     }

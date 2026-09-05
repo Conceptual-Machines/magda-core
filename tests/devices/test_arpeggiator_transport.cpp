@@ -101,6 +101,51 @@ TEST_CASE("Arpeggiator drops a clip note a live key of another pitch does not ho
     }
 }
 
+TEST_CASE("Arpeggiator keeps a pitch two live inputs hold when one lets go",
+          "[arpeggiator][midi][transport]") {
+    Rig rig;
+    const auto first = rig.source;
+    const auto second = first + 1;
+    rig.liveSourceIds = {first, second};
+    rig.startNote();
+    rig.source = second;
+    rig.run(0.05, {on(60)});
+
+    rig.run(0.1, {}, false);
+    rig.run(0.0, {juce::MidiMessage::noteOff(1, 60)}, false);
+
+    // One input let go of the pitch; the other still has it down.
+    bool played = false;
+    for (int block = 0; block < 12 && !played; ++block) {
+        auto midi = rig.run(0.0, {}, false);
+        played = midi.size() > 0 && midi.message(midi.size() - 1).isNoteOn();
+    }
+    CHECK(played);
+}
+
+TEST_CASE("Arpeggiator stamps what it plays with the provenance it was given",
+          "[arpeggiator][midi][transport]") {
+    Rig rig;
+    rig.liveSourceIds = {rig.source};
+    auto midi = rig.run(0.0, {on(60)});
+    REQUIRE(midi.size() == 1);
+    CHECK(midi.message(0).isNoteOn());
+    CHECK(midi.events[0].sourceId == rig.source);
+
+    // The note-off closing it says the same, so a device behind this one reads
+    // one note from one origin.
+    auto stopped = rig.run(0.05, {}, false);
+    REQUIRE(stopped.size() >= 1);
+    CHECK(stopped.message(0).isNoteOff());
+    CHECK(stopped.events[0].sourceId == rig.source);
+
+    // A clip's note keeps its own origin rather than being flattened to none.
+    Rig fromClip;
+    auto clipMidi = fromClip.run(0.0, {on(60)});
+    REQUIRE(clipMidi.size() == 1);
+    CHECK(clipMidi.events[0].sourceId == fromClip.source);
+}
+
 TEST_CASE("Arpeggiator stopping drops held notes the host does not call live input",
           "[arpeggiator][midi][transport]") {
     Rig rig;
