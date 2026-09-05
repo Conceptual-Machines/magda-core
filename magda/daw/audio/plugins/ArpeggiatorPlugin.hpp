@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
@@ -128,6 +129,16 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         int noteNumber = -1;
         int velocity = 0;
         int order = 0;
+        /// Note-ons not yet released, split by whether the host calls their
+        /// source live input. One pitch can be under a finger and in a clip
+        /// at once, and the two release independently (#2416).
+        int liveHolds = 0;
+        int hostHolds = 0;
+        /// One holder from each side, stamped on whatever this note generates.
+        /// A device downstream reads provenance the way this one does, and the
+        /// source is all of it the host's buffer carries between them (#2416).
+        std::uint32_t liveSourceId = 0;
+        std::uint32_t hostSourceId = 0;
     };
     std::array<HeldNote, MAX_HELD> heldNotes_{};
     int heldCount_ = 0;
@@ -141,10 +152,18 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     int currentStep_ = 0;
     double arpOriginBeat_ = -1.0;
     int lastPlayedNote_ = -1;
+    /// Source stamped on the sounding note's note-on, and on every note-off
+    /// that closes it.
+    std::uint32_t lastPlayedSourceId_ = 0;
     double lastNoteOffBeat_ = -1.0;
 
     // Transport
     bool wasPlaying_ = false;
+
+    /// Where the previous block ended on the clock it ran on, or -1 for none.
+    /// A block that does not continue it is a seek, a loop wrap or a change of
+    /// clock, and only some of those reach the device as a panic (#2416).
+    double lastBlockEndBeat_ = -1.0;
 
     // Free-running clock for when transport is stopped
     double freeRunSamples_ = 0.0;
@@ -163,9 +182,14 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
-    void addHeldNote(int noteNumber, int velocity);
-    void removeHeldNote(int noteNumber);
+    void addHeldNote(int noteNumber, int velocity, bool fromLiveSource, std::uint32_t sourceId);
+    void releaseHeldNote(int noteNumber, bool fromLiveSource, bool removeWhenUnheld);
+    void removeHeldNoteAt(int index);
     void clearHeldNotes();
+    /// Drops the held notes no live input is holding, and withdraws the host's
+    /// hold on the rest. What a clip left behind has no note-off coming once
+    /// the transport stops, and none at all when a seek moves off it.
+    void retainLiveHeldNotes();
     void sendAllNotesOff(DeviceMidiBuffer& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.

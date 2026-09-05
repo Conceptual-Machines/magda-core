@@ -175,10 +175,37 @@ void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& 
     // was constructed with and audibly ramp to the real values over the first
     // block.
     syncParametersToDevice();
+    refreshLiveSourceIds();
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,
     });
+}
+
+void TracktionMagdaDevicePlugin::refreshLiveSourceIds() {
+    // Every MIDI input device stamps what it plays with its own MPE source id
+    // (MidiInputDeviceNode), and nothing else in the graph uses those, so this
+    // is exactly the set a device can trust as a player's keys.
+    auto& deviceManager = engine.getDeviceManager();
+    const int numInputs = deviceManager.getNumMidiInDevices();
+    std::vector<std::uint32_t> block;
+    block.reserve(static_cast<size_t>(numInputs) + 1);
+    block.push_back(0);
+    for (int i = 0; i < numInputs; ++i) {
+        if (auto input = deviceManager.getMidiInDevice(i))
+            block.push_back(static_cast<std::uint32_t>(input->getMPESourceID()));
+    }
+    block[0] = static_cast<std::uint32_t>(block.size() - 1);
+
+    // Graphs are rebuilt for far more than a change of MIDI inputs, and an
+    // unchanged list publishes nothing and keeps no further block alive.
+    const auto* current = liveSources_.load(std::memory_order_relaxed);
+    if (current != nullptr && current[0] == block[0] &&
+        std::equal(block.begin() + 1, block.end(), current + 1))
+        return;
+
+    liveSourceBlocks_.push_back(std::move(block));
+    liveSources_.store(liveSourceBlocks_.back().data(), std::memory_order_release);
 }
 
 void TracktionMagdaDevicePlugin::deinitialise() {
@@ -210,6 +237,8 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
             ? (properties_.outputChannelCount > 0 ? properties_.outputChannelCount : 2)
             : -1;
 
+    const auto* liveSources = liveSources_.load(std::memory_order_acquire);
+
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
         .sidechainInputChannel = sidechainChannel,
@@ -223,6 +252,8 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
         .isPlaying = context.isPlaying,
         .isScrubbing = context.isScrubbing,
         .isRendering = context.isRendering,
+        .liveSourceIds = liveSources != nullptr ? liveSources + 1 : nullptr,
+        .numLiveSourceIds = liveSources != nullptr ? static_cast<int>(liveSources[0]) : 0,
     };
     device_->process(deviceContext);
 }

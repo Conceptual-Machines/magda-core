@@ -21,7 +21,13 @@ PluginWindowManager::~PluginWindowManager() {
     stopTimer();
 
     // Close all remaining windows
-    closeAllWindows();
+    try {
+        closeAllWindows();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[PluginWindowManager] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[PluginWindowManager] unknown exception during teardown");
+    }
 
     DBG("PluginWindowManager destroyed");
 }

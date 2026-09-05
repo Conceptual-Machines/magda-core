@@ -47,6 +47,7 @@
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
+#include "core/UserAlert.hpp"
 #include "engine/AudioEngine.hpp"
 #include "engine/MagdaUIBehaviour.hpp"
 #include "engine/PlaybackPositionTimer.hpp"
@@ -981,6 +982,10 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     addAndMakeVisible(*toast_);
     toast_->toFront(false);
     daw::ui::Toast::setGlobalHost(toast_.get());
+    // Bridge non-UI code's notifyUserAlert() to a toast without giving
+    // core/engine/audio a link-time dependency on the UI layer (#2395).
+    magda::setUserAlertHandler(
+        [](const juce::String& message) { daw::ui::Toast::showGlobal(message, 5000); });
 
     // Listen for MIDI Learn events to show toast notifications
     magda::MidiLearnCoordinator::getInstance().addListener(this);
@@ -1378,6 +1383,7 @@ MainWindow::MainComponent::~MainComponent() {
     magda::MidiLearnCoordinator::getInstance().removeListener(this);
 
     // Clear Toast global host before destroying
+    magda::setUserAlertHandler(nullptr);
     daw::ui::Toast::setGlobalHost(nullptr);
     toast_.reset();
 

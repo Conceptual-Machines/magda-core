@@ -88,7 +88,13 @@ PianoRollGridComponent::PianoRollGridComponent() {
 
 PianoRollGridComponent::~PianoRollGridComponent() {
     ClipManager::getInstance().removeListener(this);
-    clearNoteComponents();
+    try {
+        clearNoteComponents();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[PianoRollGridComponent] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[PianoRollGridComponent] unknown exception during teardown");
+    }
 }
 
 void PianoRollGridComponent::paint(juce::Graphics& g) {

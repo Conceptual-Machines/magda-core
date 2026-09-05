@@ -15,6 +15,19 @@ const juce::Identifier ArpeggiatorPlugin::SettingIDs::hardAngle("arpHardAngle");
 
 namespace {
 
+/// Whether the host counts this MIDI source as live input. No list is
+/// "nothing is known live", never "everything is": the native engine says
+/// nothing and stamps every event 0 (#2418).
+bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
+    if (context.liveSourceIds == nullptr)
+        return false;
+    for (int i = 0; i < context.numLiveSourceIds; ++i) {
+        if (context.liveSourceIds[i] == sourceId)
+            return true;
+    }
+    return false;
+}
+
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
 /// slots by index and projects store parameter values in display units.
@@ -228,29 +241,72 @@ double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool
     return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
-void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
-    // Check if already held
+void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource,
+                                    std::uint32_t sourceId) {
     for (int i = 0; i < heldCount_; ++i) {
-        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber)
+        auto& held = heldNotes_[static_cast<size_t>(i)];
+        if (held.noteNumber == noteNumber) {
+            // The pattern already has this pitch; this is another holder of
+            // it, not another note.
+            ++(fromLiveSource ? held.liveHolds : held.hostHolds);
+            (fromLiveSource ? held.liveSourceId : held.hostSourceId) = sourceId;
             return;
+        }
     }
     if (heldCount_ < MAX_HELD) {
-        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber, velocity, nextOrder_++};
+        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber,
+                                                       velocity,
+                                                       nextOrder_++,
+                                                       fromLiveSource ? 1 : 0,
+                                                       fromLiveSource ? 0 : 1,
+                                                       fromLiveSource ? sourceId : 0,
+                                                       fromLiveSource ? 0 : sourceId};
         ++heldCount_;
     }
 }
 
-void ArpeggiatorPlugin::removeHeldNote(int noteNumber) {
+void ArpeggiatorPlugin::releaseHeldNote(int noteNumber, bool fromLiveSource,
+                                        bool removeWhenUnheld) {
     for (int i = 0; i < heldCount_; ++i) {
-        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber) {
-            // Swap with last
-            if (i < heldCount_ - 1)
-                heldNotes_[static_cast<size_t>(i)] =
-                    heldNotes_[static_cast<size_t>(heldCount_ - 1)];
-            --heldCount_;
-            return;
-        }
+        auto& held = heldNotes_[static_cast<size_t>(i)];
+        if (held.noteNumber != noteNumber)
+            continue;
+        auto& holds = fromLiveSource ? held.liveHolds : held.hostHolds;
+        if (holds > 0)
+            --holds;
+        if (removeWhenUnheld && held.liveHolds == 0 && held.hostHolds == 0)
+            removeHeldNoteAt(i);
+        return;
     }
+}
+
+void ArpeggiatorPlugin::retainLiveHeldNotes() {
+    int kept = 0;
+    int holds = 0;
+    for (int i = 0; i < heldCount_; ++i) {
+        auto note = heldNotes_[static_cast<size_t>(i)];
+        if (note.liveHolds == 0)
+            continue;
+        // Whatever the host was holding it is withdrawing, and re-asserts on
+        // the same buffer what should still sound.
+        note.hostHolds = 0;
+        note.hostSourceId = 0;
+        holds += note.liveHolds;
+        heldNotes_[static_cast<size_t>(kept++)] = note;
+    }
+    heldCount_ = kept;
+    // Keys, not pitches: two inputs on one pitch stay held when one lets go.
+    physicallyHeldCount_ = holds;
+    latchedSetStale_ = false;
+    if (kept == 0)
+        nextOrder_ = 0;
+}
+
+void ArpeggiatorPlugin::removeHeldNoteAt(int index) {
+    // Swap with last
+    if (index < heldCount_ - 1)
+        heldNotes_[static_cast<size_t>(index)] = heldNotes_[static_cast<size_t>(heldCount_ - 1)];
+    --heldCount_;
 }
 
 void ArpeggiatorPlugin::clearHeldNotes() {
@@ -261,7 +317,8 @@ void ArpeggiatorPlugin::clearHeldNotes() {
 }
 
 void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
-    sendNoteOff(midi, takeSoundingNote());
+    const std::uint32_t source = lastPlayedSourceId_;
+    sendNoteOff(midi, takeSoundingNote(), source);
 }
 
 int ArpeggiatorPlugin::takeSoundingNote() {
@@ -276,6 +333,7 @@ int ArpeggiatorPlugin::resetArpState() {
     const int note = takeSoundingNote();
     currentStep_ = 0;
     arpOriginBeat_ = -1.0;
+    lastBlockEndBeat_ = -1.0;
     wasPlaying_ = false;
     currentPlayStep_.store(-1, std::memory_order_relaxed);
     currentSeqLength_.store(0, std::memory_order_relaxed);
@@ -312,9 +370,9 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
                 break;
             if (seq.length >= static_cast<int>(seq.notes.size()))
                 break;
-            seq.notes[static_cast<size_t>(seq.length)] = {note,
-                                                          sorted[static_cast<size_t>(i)].velocity,
-                                                          sorted[static_cast<size_t>(i)].order};
+            auto expanded = sorted[static_cast<size_t>(i)];
+            expanded.noteNumber = note;
+            seq.notes[static_cast<size_t>(seq.length)] = expanded;
             ++seq.length;
         }
     }
@@ -377,16 +435,20 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             pendingNoteOff = note;
         freeRunSamples_ = 0.0;
     };
-    // Hosts can signal panic without a CC event (for example on a playhead
-    // jump). Reset before consuming fresh input, and forward the flag below.
+    // Hosts raise this without a CC event, on a playhead jump or a track they
+    // just muted, and then re-assert whatever should be sounding at the new
+    // position without a note-off for what should not. So the host's notes go
+    // and come back on the same buffer, while keys proven to be a player's are
+    // not the host's to withdraw (#2416).
     const bool inputPanic = midi.isAllNotesOff();
     if (inputPanic) {
-        clearHeldNotes();
-        resetFromInput();
+        pendingNoteOff = takeSoundingNote();
+        retainLiveHeldNotes();
     }
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
+        const bool fromLiveSource = isLiveSource(context, midi.sourceId(eventIndex));
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
 
@@ -398,7 +460,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             }
 
             bool wasEmpty = (heldCount_ == 0);
-            addHeldNote(msg.getNoteNumber(), msg.getVelocity());
+            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource,
+                        midi.sourceId(eventIndex));
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 resetFromInput();
@@ -408,13 +471,11 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             if (physicallyHeldCount_ < 0)
                 physicallyHeldCount_ = 0;
 
-            if (isLatched) {
-                // Don't remove notes; mark stale when all physically released
-                if (physicallyHeldCount_ == 0)
-                    latchedSetStale_ = true;
-            } else {
-                removeHeldNote(msg.getNoteNumber());
-            }
+            // Latch keeps the note in the pattern and only marks the set
+            // stale once every key is up.
+            releaseHeldNote(msg.getNoteNumber(), fromLiveSource, !isLatched);
+            if (isLatched && physicallyHeldCount_ == 0)
+                latchedSetStale_ = true;
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
             clearHeldNotes();
             resetFromInput();
@@ -424,25 +485,29 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // --- 2. Clear MIDI buffer (arp replaces input) ---
     midi.clear();
     midi.setAllNotesOff(inputPanic);
-    sendNoteOff(midi, pendingNoteOff);
+    sendNoteOff(midi, pendingNoteOff, lastPlayedSourceId_);
 
     // --- 3. Handle transport transitions ---
-    // Reset on a playing-to-stopped edge. On start, just update the flag;
-    // the step counter continues from where it was.
     if (context.isPlaying && !wasPlaying_) {
+        // The transport and the free-running clock are different clocks, so
+        // the walk re-anchors below instead of carrying its step across.
         wasPlaying_ = true;
+        lastBlockEndBeat_ = -1.0;
     } else if (!context.isPlaying && wasPlaying_) {
+        // Keys under the player's fingers keep the arp free-running; notes a
+        // clip left behind are dropped, because their note-off is never
+        // coming once the transport stops (#2416).
         sendAllNotesOff(midi);
-        clearHeldNotes();
+        retainLiveHeldNotes();
         resetArpState();
         freeRunSamples_ = 0.0;
-        wasPlaying_ = false;
     }
 
     // --- 4. No held notes, or no MIDI input while transport is stopped? ---
     if (heldCount_ == 0 || (!context.isPlaying && physicallyHeldCount_ <= 0)) {
         sendAllNotesOff(midi);
         freeRunSamples_ = 0.0;
+        lastBlockEndBeat_ = -1.0;
         return;
     }
 
@@ -465,6 +530,20 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
     if (blockEndBeat <= blockStartBeat)
         return;
+
+    // Seeks, loop wraps and the switch between the two clocks all arrive as a
+    // block that does not continue the last one. Only some of them reach the
+    // device as a panic and a loop wrap reaches it as nothing at all, so the
+    // timeline is what the walk trusts (#2416).
+    constexpr double kContiguousBeats = 1.0e-3;
+    if (lastBlockEndBeat_ < 0.0 ||
+        std::abs(blockStartBeat - lastBlockEndBeat_) > kContiguousBeats) {
+        const std::uint32_t source = lastPlayedSourceId_;
+        sendNoteOff(midi, takeSoundingNote(), source);
+        currentStep_ = 0;
+        arpOriginBeat_ = -1.0;
+    }
+    lastBlockEndBeat_ = blockEndBeat;
 
     // --- 6. Build note sequence ---
     auto seq = buildSequence();
@@ -513,25 +592,34 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // Block duration in seconds (MIDI timestamps stay in seconds, not samples)
     double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
 
-    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock) {
+    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock,
+                                         std::uint32_t sourceId) {
         message.setTimeStamp(timeInBlock);
-        midi.addEvent({std::move(message), 0});
+        midi.addEvent({std::move(message), sourceId});
     };
 
     // --- 7. Emit pending note-off from previous block ---
     if (lastNoteOffBeat_ >= blockStartBeat && lastNoteOffBeat_ < blockEndBeat &&
         lastPlayedNote_ >= 0) {
         double frac = (lastNoteOffBeat_ - blockStartBeat) / (blockEndBeat - blockStartBeat);
-        addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), frac * blockDurationSecs);
+        addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), frac * blockDurationSecs,
+                        lastPlayedSourceId_);
         lastPlayedNote_ = -1;
         lastNoteOffBeat_ = -1.0;
         clearMidiOutDisplay();
     }
 
     // --- 8. Walk steps and generate notes ---
-    // Catch up: skip past any steps whose warped position is before this block
-    while (computeStepBeat(currentStep_) < blockStartBeat)
-        ++currentStep_;
+    // Catch up to the block. Cycles are evenly spaced whatever the ramp does
+    // inside one, so the cycle holding the block start is a division and only
+    // its steps are walked: bounded work, not one pass per skipped step.
+    if (computeStepBeat(currentStep_) < blockStartBeat) {
+        const int cycle =
+            static_cast<int>(std::floor((blockStartBeat - arpOriginBeat_) / cycleBeats));
+        currentStep_ = std::max(currentStep_, cycle * seq.length);
+        while (computeStepBeat(currentStep_) < blockStartBeat)
+            ++currentStep_;
+    }
 
     double stepBeat = computeStepBeat(currentStep_);
 
@@ -555,7 +643,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             // Note-off for previous note
             if (lastPlayedNote_ >= 0) {
-                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock);
+                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
+                                lastPlayedSourceId_);
                 lastPlayedNote_ = -1;
             }
 
@@ -577,12 +666,16 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
                 vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
             }
 
-            // Note-on
+            // Note-on, carrying the provenance of whoever holds the pitch, so
+            // a device behind this one reads it the way this one does (#2416).
+            const std::uint32_t noteSource =
+                note.liveHolds > 0 ? note.liveSourceId : note.hostSourceId;
             addTimedMessage(
                 juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
-                timeInBlock);
+                timeInBlock, noteSource);
 
             lastPlayedNote_ = note.noteNumber;
+            lastPlayedSourceId_ = noteSource;
             setMidiOutDisplay(note.noteNumber, vel);
 
             // Schedule note-off
@@ -590,7 +683,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             if (noteOffBeat < blockEndBeat) {
                 double offFrac = (noteOffBeat - blockStartBeat) / (blockEndBeat - blockStartBeat);
                 addTimedMessage(juce::MidiMessage::noteOff(1, note.noteNumber),
-                                offFrac * blockDurationSecs);
+                                offFrac * blockDurationSecs, noteSource);
                 lastPlayedNote_ = -1;
                 lastNoteOffBeat_ = -1.0;
                 clearMidiOutDisplay();

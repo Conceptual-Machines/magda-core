@@ -230,8 +230,14 @@ class MonitoredProfiler {
     explicit MonitoredProfiler(const juce::String& category) : category_(category), timer_() {}
 
     ~MonitoredProfiler() {
-        double elapsed = timer_.elapsedMilliseconds();
-        PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        try {
+            double elapsed = timer_.elapsedMilliseconds();
+            PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        } catch (const std::exception& e) {
+            juce::Logger::writeToLog(juce::String("[MonitoredProfiler] ") + e.what());
+        } catch (...) {
+            juce::Logger::writeToLog("[MonitoredProfiler] unknown exception");
+        }
     }
 
   private:

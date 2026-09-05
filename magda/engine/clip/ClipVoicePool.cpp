@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -194,14 +196,28 @@ ClipVoicePool::~ClipVoicePool() {
     // nothing may be in the prefetch thread's round either. An empty table
     // published first is what takes care of the callback; removal takes care of
     // the reader, and waits for it.
-    feed_.publish(std::make_shared<const ClipStreamTable>());
+    try {
+        feed_.publish(std::make_shared<const ClipStreamTable>());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: unknown exception\n");
+    }
 
-    const std::scoped_lock guard(streamsLock_);
-    for (auto& [key, reader] : streams_)
-        if (reader.stream != nullptr)
-            reader_.remove(*reader.stream);
+    // Must run even if publish() above threw: a stream still registered with
+    // the prefetch reader would otherwise dangle once this pool is gone.
+    try {
+        const std::scoped_lock guard(streamsLock_);
+        for (auto& [key, reader] : streams_)
+            if (reader.stream != nullptr)
+                reader_.remove(*reader.stream);
 
-    streams_.clear();
+        streams_.clear();
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: unknown exception\n");
+    }
 }
 
 void ClipVoicePool::setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot) {
