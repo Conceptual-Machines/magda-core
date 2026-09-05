@@ -158,7 +158,7 @@ jobs:
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
-        SCCACHE_VERSION=v0.8.1
+        SCCACHE_VERSION=v0.17.0
         curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
         sudo mv sccache-*/sccache /usr/local/bin/sccache
         sccache --version
@@ -822,24 +822,39 @@ jobs:
           status=$(printf '%s' "$runner" | cut -f1)
           busy=$(printf '%s' "$runner" | cut -f2)
 
-          # The runner only reports busy=true once a job has actually landed on
-          # it. This pick job runs at the very start of the workflow, long before
-          # the Windows build job dispatches, so two CI runs starting close
-          # together both see busy=false and both target magda-luca - the second
-          # then queues behind the first instead of falling back. Guard against
-          # that by also falling back when any other CI run is already in flight.
-          # Count every run that is not yet completed (queued/in_progress/
-          # waiting/...): a competing run can still be queued, not in_progress,
-          # at the moment this step executes, and it has already picked a runner.
-          inflight=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
-            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status != \"completed\")] | length" 2>/dev/null || echo "unknown")
+          # busy=true only appears once a job has landed, and this step runs long
+          # before the Windows job dispatches, so two runs starting together
+          # would both see busy=false and both target magda-luca. Count only the
+          # runs that could still take it - Windows job already labelled for it,
+          # or a pick that has not decided yet - rather than all CI activity,
+          # which handed Windows to a hosted runner whenever the repo was busy
+          # at all and left this runner almost unused (#2386).
+          contenders=0
+          runs=$(gh api "repos/${{ github.repository }}/actions/workflows/ci.yml/runs?per_page=100" \
+            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.status != \"completed\") | .id] | .[]" 2>/dev/null || echo "unknown")
 
-          if [ "$status" = "online" ] && [ "$busy" != "true" ] && [ "$inflight" = "0" ]; then
+          if [ "$runs" = "unknown" ]; then
+            contenders=1
+          else
+            for id in $runs; do
+              n=$(gh api "repos/${{ github.repository }}/actions/runs/$id/jobs" \
+                --jq '[.jobs[]
+                       | select(.status != "completed")
+                       | select((.name == "pick-windows-runner")
+                                or (.name == "build-and-test-windows"
+                                    and ((.labels // []) | index("magda-luca"))))]
+                      | length' 2>/dev/null || echo 1)
+              case "$n" in ''|*[!0-9]*) n=1 ;; esac
+              contenders=$((contenders + n))
+            done
+          fi
+
+          if [ "$status" = "online" ] && [ "$busy" != "true" ] && [ "$contenders" = "0" ]; then
             echo 'labels=["self-hosted","Windows","magda-luca"]' >> "$GITHUB_OUTPUT"
             echo "Using idle self-hosted runner: magda-luca"
           else
             echo 'labels=["windows-latest"]' >> "$GITHUB_OUTPUT"
-            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}', inflight runs: '${inflight}')"
+            echo "Falling back to windows-latest (magda-luca status: '${status:-not-found}', busy: '${busy:-unknown}', contending runs: '${contenders}')"
           fi
 
   build-and-test-windows:
@@ -1045,13 +1060,16 @@ jobs:
       id: sccache
       if: steps.r2-creds.outcome == 'success'
       shell: powershell
+      # Not fatal: a failure here drops the compiler launcher in Configure
+      # below and the job builds cold, which is slow but green.
+      continue-on-error: true
       env:
         R2_BUCKET: ${{ secrets.R2_BUCKET }}
         R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
         R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
-        $SCCACHE_VERSION = "v0.8.1"
+        $SCCACHE_VERSION = "v0.17.0"
         $archive = "sccache-$SCCACHE_VERSION-x86_64-pc-windows-msvc.tar.gz"
         # Into RUNNER_TEMP, not the checkout: the self-hosted workspace persists.
         $dest = Join-Path $env:RUNNER_TEMP "sccache"
@@ -1066,18 +1084,76 @@ jobs:
         # Under the runner's ErrorActionPreference=Stop, native stderr through a
         # redirect is a terminating error, so relax it for this one call.
         $ErrorActionPreference = 'Continue'
-        & "$sccacheDir\sccache.exe" --stop-server 2>&1 | Out-Null
+        $sccache = Join-Path $sccacheDir "sccache.exe"
+
+        Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        & $sccache --stop-server 2>&1 | Out-Null
+        $global:LASTEXITCODE = 0
+
+        # R2 through the S3 backend: bucket + custom endpoint, region 'auto'
+        # (R2 has no regions), credentials via the standard AWS variables. Set
+        # in-process first so the server below starts against them.
+        $env:SCCACHE_BUCKET = $env:R2_BUCKET
+        $env:SCCACHE_ENDPOINT = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        $env:SCCACHE_REGION = "auto"
+        $env:SCCACHE_S3_KEY_PREFIX = "windows"
+        $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+        $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+        # One server for the whole job, not one per compile step.
+        $env:SCCACHE_IDLE_TIMEOUT = "0"
+        $mode = "r2"
+
+        # An sccache client gives a cold server a hard-coded 10s, and a slow
+        # first R2 call can outlast that: v0.8.1 took 12.2s on the self-hosted
+        # runner, failing every parallel compile at once (#2386). Pay the wait
+        # here instead, where slow is just slow.
+        function Wait-Sccache([int]$timeoutSec) {
+          & $sccache --start-server 2>&1 | Out-Null
+          $deadline = (Get-Date).AddSeconds($timeoutSec)
+          while ((Get-Date) -lt $deadline) {
+            & $sccache --show-stats 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { return $true }
+            Start-Sleep -Seconds 2
+          }
+          return $false
+        }
+
+        if (-not (Wait-Sccache 120)) {
+          # R2 can be unreachable from a self-hosted runner while the hosted
+          # Linux job reaches the same bucket. A disk cache on the machine keeps
+          # most of the benefit, since the workspace persists.
+          Write-Host "sccache could not start against R2; falling back to a local disk cache."
+          Remove-Item Env:SCCACHE_BUCKET, Env:SCCACHE_ENDPOINT, Env:SCCACHE_REGION, `
+                      Env:SCCACHE_S3_KEY_PREFIX, Env:AWS_ACCESS_KEY_ID, `
+                      Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+          $env:SCCACHE_DIR = "C:\sccache-cache"
+          $env:SCCACHE_CACHE_SIZE = "20G"
+          $mode = "local"
+
+          Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not (Wait-Sccache 60)) {
+            Write-Host "sccache could not start at all; this job will build without it."
+            exit 1
+          }
+        }
+
         $ErrorActionPreference = 'Stop'
         $global:LASTEXITCODE = 0
-        # sccache reads R2 through its S3 backend: bucket + custom endpoint,
-        # region 'auto' (R2 has no regions), credentials via the standard AWS
-        # variables. Written to GITHUB_ENV so the compile steps see them too.
-        "SCCACHE_BUCKET=$env:R2_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_ENDPOINT=https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_ACCESS_KEY_ID=$env:R2_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_SECRET_ACCESS_KEY=$env:R2_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "sccache ready ($mode)."
+
+        # Whichever mode won, to the compile steps.
+        "SCCACHE_IDLE_TIMEOUT=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        if ($mode -eq "r2") {
+          "SCCACHE_BUCKET=$env:SCCACHE_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_ENDPOINT=$env:SCCACHE_ENDPOINT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_ACCESS_KEY_ID=$env:AWS_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_SECRET_ACCESS_KEY=$env:AWS_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          "SCCACHE_DIR=$env:SCCACHE_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_CACHE_SIZE=$env:SCCACHE_CACHE_SIZE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
 
     - name: Determine Faust/Mutable artifact cache keys
       id: dsp-cache-keys
@@ -1381,10 +1457,83 @@ jobs:
       timeout-minutes: 30
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
-        if ($testExe) {
-          & $testExe.FullName --abort
-        } else {
+        if (-not $testExe) {
           Write-Error "Tests executable not found"
+          exit 1
+        }
+        # Catch2 runs one process on one core, which serialized 7000+ cases
+        # while the rest of the machine idled. Shards are disjoint by
+        # construction, and each is its own process, so suite wall time drops
+        # to roughly the heaviest shard. Own TMP per shard: concurrent shards
+        # must not collide on temp file names.
+        $shards = 16
+        # On the self-hosted runner the job is a session-0 service child, and
+        # Windows gives such work EcoQoS: reduced clocks, roughly half speed
+        # measured on the heaviest shard. The parent owns the child handles,
+        # so it can turn that off per process; no-op where EcoQoS never applies.
+        Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public static class PowerThrottle {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct STATE { public uint Version; public uint ControlMask; public uint StateMask; }
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool SetProcessInformation(IntPtr hProcess, int infoClass, ref STATE info, int size);
+            public static bool Disable(IntPtr h) {
+                var s = new STATE { Version = 1, ControlMask = 0x1, StateMask = 0 };
+                return SetProcessInformation(h, 4, ref s, Marshal.SizeOf(typeof(STATE)));
+            }
+        }
+        "@
+        $outDir = Join-Path $env:RUNNER_TEMP "test-shards"
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+        $savedTmp = $env:TMP
+        $runs = @()
+        for ($i = 0; $i -lt $shards; $i++) {
+          $tmpDir = Join-Path $outDir "tmp-$i"
+          New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+          $env:TMP = $tmpDir
+          $env:TEMP = $tmpDir
+          $p = Start-Process -FilePath $testExe.FullName `
+            -ArgumentList "--abort", "--shard-count", "$shards", "--shard-index", "$i" `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
+            -RedirectStandardError (Join-Path $outDir "shard-$i.err")
+          # Without this, ExitCode can read null after WaitForExit.
+          $null = $p.Handle
+          try { [PowerThrottle]::Disable($p.Handle) | Out-Null } catch {}
+          $runs += @{ Index = $i; Proc = $p }
+        }
+        $env:TMP = $savedTmp
+        $env:TEMP = $savedTmp
+        # Announce completions as they happen; a silent multi-minute wait
+        # reads as a hang from the run page.
+        $pending = @($runs)
+        $done = 0
+        while ($pending.Count -gt 0) {
+          Start-Sleep -Seconds 5
+          $still = @()
+          foreach ($r in $pending) {
+            if ($r.Proc.HasExited) {
+              $done++
+              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $done/$shards done)"
+            } else {
+              $still += $r
+            }
+          }
+          $pending = $still
+        }
+        $failed = 0
+        foreach ($r in $runs) {
+          $code = $r.Proc.ExitCode
+          Write-Host "===== shard $($r.Index)/$shards exit $code ====="
+          Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue
+          $err = Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue
+          if ($err) { Write-Host "--- stderr ---"; $err }
+          if ($code -ne 0) { $failed++ }
+        }
+        if ($failed -gt 0) {
+          Write-Error "$failed of $shards test shards failed"
           exit 1
         }
 
