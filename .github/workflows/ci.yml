@@ -1319,18 +1319,46 @@ jobs:
           Write-Error "Tests executable not found"
           exit 1
         }
-        $proc = Start-Process -FilePath $testExe.FullName -ArgumentList "--abort" -NoNewWindow -PassThru
-        # Without this, ExitCode can read null after WaitForExit.
-        $null = $proc.Handle
-        if ("${{ runner.environment }}" -eq "self-hosted") {
-          # The runner is a session-0 service on a hybrid CPU, so Windows
-          # schedules its children as background work, onto the E-cores: the
-          # serial test run sat on cores 12-15 at half speed while six P-cores
-          # idled. Pin it to the P-cores (logical 0-11).
-          try { $proc.ProcessorAffinity = 0xFFF } catch { Write-Host "affinity not set: $($_.Exception.Message)" }
+        # Catch2 runs one process on one core, which serialized 7000+ cases
+        # while the rest of the machine idled. Shards are disjoint by
+        # construction, and each is its own process, so suite wall time drops
+        # to roughly the heaviest shard. Own TMP per shard: concurrent shards
+        # must not collide on temp file names.
+        $shards = 16
+        $outDir = Join-Path $env:RUNNER_TEMP "test-shards"
+        New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+        $savedTmp = $env:TMP
+        $runs = @()
+        for ($i = 0; $i -lt $shards; $i++) {
+          $tmpDir = Join-Path $outDir "tmp-$i"
+          New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+          $env:TMP = $tmpDir
+          $env:TEMP = $tmpDir
+          $p = Start-Process -FilePath $testExe.FullName `
+            -ArgumentList "--abort", "--shard-count", "$shards", "--shard-index", "$i" `
+            -NoNewWindow -PassThru `
+            -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
+            -RedirectStandardError (Join-Path $outDir "shard-$i.err")
+          # Without this, ExitCode can read null after WaitForExit.
+          $null = $p.Handle
+          $runs += @{ Index = $i; Proc = $p }
         }
-        $proc.WaitForExit()
-        exit $proc.ExitCode
+        $env:TMP = $savedTmp
+        $env:TEMP = $savedTmp
+        foreach ($r in $runs) { $r.Proc.WaitForExit() }
+        $failed = 0
+        foreach ($r in $runs) {
+          $code = $r.Proc.ExitCode
+          Write-Host "===== shard $($r.Index)/$shards exit $code ====="
+          Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue
+          $err = Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue
+          if ($err) { Write-Host "--- stderr ---"; $err }
+          if ($code -ne 0) { $failed++ }
+        }
+        if ($failed -gt 0) {
+          Write-Error "$failed of $shards test shards failed"
+          exit 1
+        }
 
     # Release configure/build/verify only run on push to main, and only on the
     # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
