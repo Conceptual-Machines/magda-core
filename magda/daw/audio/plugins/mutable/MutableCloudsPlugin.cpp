@@ -18,7 +18,13 @@ namespace magda::daw::audio {
 namespace {
 
 constexpr int kBlock = static_cast<int>(clouds::kMaxBlockSize);  // 32
-const float kInternalRate = 32000.0f;                            // Clouds native rate
+
+// Silence placed in the output ring at reset. A grain block arrives 32 samples
+// at a time while the output is drawn continuously, so the ring swings by a
+// block; the window on top of that is what the interpolator reads. See
+// Impl::reset.
+constexpr int kWetPrimeFrames = kBlock + 4;
+const float kInternalRate = 32000.0f;  // Clouds native rate
 
 const char* const kModeNames[] = {"Granular", "Stretch", "Looping Delay", "Spectral"};
 constexpr int kNumModes = 4;
@@ -272,6 +278,18 @@ struct MutableCloudsPlugin::Impl {
         inLimit_.clear();
         outLimit_.clear();
         grainFill_ = 0;
+
+        // Start the output ring with a grain block of silence in it. Without
+        // that cushion, whether a pull finds data depends on where the host's
+        // callback boundaries fall, and a starved pull emits a zero WITHOUT
+        // advancing the resampler, so each one adds a sample of delay for
+        // good. Two hosts with different buffer sizes then produce different
+        // audio permanently, not just a different transient: at 48 kHz a
+        // 1-sample callback diverged from a 128-sample one across the whole
+        // render (#2365 review). Placed here, the delay is designed rather
+        // than discovered, and after startup a starved pull cannot happen.
+        for (int i = 0; i < kWetPrimeFrames; ++i)
+            wet32k_.push(0.0f, 0.0f);
     }
 
     clouds::Parameters* parameters() {
@@ -412,12 +430,13 @@ double MutableCloudsPlugin::tailSecondsFor(float reverb, float feedback, bool fr
     // independent, longest at grain size 1.
     seconds += 0.8 * position;
 
-    // Spectral resynthesis is not deterministic: three identical renders at
-    // reverb 0.75 gave 0 s, 0 s and 20.7 s, where the curve above says 11.9.
-    // Nothing measurable to fit, so double it and let the ceiling catch the
-    // rest.
+    // Spectral resynthesis is not deterministic: identical renders at reverb
+    // 0.75 have come back 0 s, 0 s, 20.7 s and 37.7 s, where the curve above
+    // says 12.2. Nothing measurable to fit, so take enough headroom that any
+    // engaged reverb reaches the ceiling, which is the only honest bound on a
+    // mode that can ring for most of a minute.
     if (mode == 3)
-        seconds *= 2.0;
+        seconds *= 4.0;
 
     // Unfrozen feedback is a delay line: the buffer repeats every `position`
     // seconds at that gain, so the tail is however many repeats reach -60 dB.
