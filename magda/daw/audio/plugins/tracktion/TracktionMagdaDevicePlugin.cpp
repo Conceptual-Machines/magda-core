@@ -187,14 +187,25 @@ void TracktionMagdaDevicePlugin::refreshLiveSourceIds() {
     // (MidiInputDeviceNode), and nothing else in the graph uses those, so this
     // is exactly the set a device can trust as a player's keys.
     auto& deviceManager = engine.getDeviceManager();
-    const int available = std::min(deviceManager.getNumMidiInDevices(), kMaxLiveSourceIds);
-    int count = 0;
-    for (int i = 0; i < available; ++i) {
+    const int numInputs = deviceManager.getNumMidiInDevices();
+    std::vector<std::uint32_t> block;
+    block.reserve(static_cast<size_t>(numInputs) + 1);
+    block.push_back(0);
+    for (int i = 0; i < numInputs; ++i) {
         if (auto input = deviceManager.getMidiInDevice(i))
-            liveSourceIds_[static_cast<size_t>(count++)].store(
-                static_cast<std::uint32_t>(input->getMPESourceID()), std::memory_order_relaxed);
+            block.push_back(static_cast<std::uint32_t>(input->getMPESourceID()));
     }
-    numLiveSourceIds_.store(count, std::memory_order_release);
+    block[0] = static_cast<std::uint32_t>(block.size() - 1);
+
+    // Graphs are rebuilt for far more than a change of MIDI inputs, and an
+    // unchanged list publishes nothing and keeps no further block alive.
+    const auto* current = liveSources_.load(std::memory_order_relaxed);
+    if (current != nullptr && current[0] == block[0] &&
+        std::equal(block.begin() + 1, block.end(), current + 1))
+        return;
+
+    liveSourceBlocks_.push_back(std::move(block));
+    liveSources_.store(liveSourceBlocks_.back().data(), std::memory_order_release);
 }
 
 void TracktionMagdaDevicePlugin::deinitialise() {
@@ -226,11 +237,7 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
             ? (properties_.outputChannelCount > 0 ? properties_.outputChannelCount : 2)
             : -1;
 
-    std::array<std::uint32_t, kMaxLiveSourceIds> liveSourceIds{};
-    const int numLiveSourceIds = numLiveSourceIds_.load(std::memory_order_acquire);
-    for (int i = 0; i < numLiveSourceIds; ++i)
-        liveSourceIds[static_cast<size_t>(i)] =
-            liveSourceIds_[static_cast<size_t>(i)].load(std::memory_order_relaxed);
+    const auto* liveSources = liveSources_.load(std::memory_order_acquire);
 
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
@@ -245,8 +252,8 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
         .isPlaying = context.isPlaying,
         .isScrubbing = context.isScrubbing,
         .isRendering = context.isRendering,
-        .liveSourceIds = liveSourceIds.data(),
-        .numLiveSourceIds = numLiveSourceIds,
+        .liveSourceIds = liveSources != nullptr ? liveSources + 1 : nullptr,
+        .numLiveSourceIds = liveSources != nullptr ? static_cast<int>(liveSources[0]) : 0,
     };
     device_->process(deviceContext);
 }

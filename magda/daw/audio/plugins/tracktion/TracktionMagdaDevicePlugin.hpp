@@ -2,7 +2,6 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -76,12 +75,13 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     std::vector<te::AutomatableParameter::Ptr> parameters_;
 
     /// MPE source ids of the engine's MIDI inputs, which is what a device
-    /// reads to tell a player's keys from clip playback. Rebuilt whenever the
-    /// graph is, and published as atomics because the rebuild runs while the
-    /// previous graph is still calling applyToBuffer on this same plugin.
-    static constexpr int kMaxLiveSourceIds = 16;
-    std::array<std::atomic<std::uint32_t>, kMaxLiveSourceIds> liveSourceIds_{};
-    std::atomic<int> numLiveSourceIds_{0};
+    /// reads to tell a player's keys from clip playback. One immutable block,
+    /// count first and then the ids, because a graph rebuild runs while the
+    /// previous graph still calls applyToBuffer on this same plugin: a block
+    /// is never rewritten, and the ones it replaces outlive every reader by
+    /// living as long as the plugin.
+    std::atomic<const std::uint32_t*> liveSources_{nullptr};
+    std::vector<std::vector<std::uint32_t>> liveSourceBlocks_;
 };
 
 template <typename DeviceType> DeviceType* deviceFromPlugin(te::Plugin* plugin) {

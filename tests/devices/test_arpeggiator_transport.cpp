@@ -63,6 +63,44 @@ TEST_CASE("Arpeggiator keeps live keys across a transport stop", "[arpeggiator][
         CHECK(rig.run(0.0, {}, false).size() == 0);
 }
 
+TEST_CASE("Arpeggiator keeps a live key a clip is doubling", "[arpeggiator][midi][transport]") {
+    Rig rig;
+    rig.liveSourceIds = {rig.source};
+    rig.startNote();
+
+    // A clip lands on the pitch already under the player's finger. The pattern
+    // holds one note either way, but two holders now have it.
+    const auto live = rig.source;
+    rig.source = live + 1;
+    rig.run(0.05, {on(60)});
+    rig.source = live;
+
+    auto midi = rig.run(0.1, {}, false);
+    REQUIRE(midi.size() == 2);
+    checkNoteOff(midi, 0);
+    CHECK(midi.message(1).isNoteOn());
+    CHECK(midi.message(1).getNoteNumber() == 60);
+}
+
+TEST_CASE("Arpeggiator drops a clip note a live key of another pitch does not hold",
+          "[arpeggiator][midi][transport]") {
+    Rig rig;
+    rig.liveSourceIds = {rig.source + 1};
+    rig.startNote();
+
+    rig.source = rig.source + 1;
+    rig.run(0.05, {on(67)});
+
+    auto midi = rig.run(0.1, {}, false);
+    REQUIRE(midi.size() >= 1);
+    // Only the live key is left, so the pattern has one note and it is not 60.
+    for (int block = 0; block < 12; ++block) {
+        auto next = rig.run(0.0, {}, false);
+        for (int i = 0; i < next.size(); ++i)
+            CHECK(next.message(i).getNoteNumber() == 67);
+    }
+}
+
 TEST_CASE("Arpeggiator stopping drops held notes the host does not call live input",
           "[arpeggiator][midi][transport]") {
     Rig rig;

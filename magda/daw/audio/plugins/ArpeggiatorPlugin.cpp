@@ -15,6 +15,19 @@ const juce::Identifier ArpeggiatorPlugin::SettingIDs::hardAngle("arpHardAngle");
 
 namespace {
 
+/// Whether the host counts this MIDI source as live input. No list is
+/// "nothing is known live", never "everything is": the native engine says
+/// nothing and stamps every event 0 (#2418).
+bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
+    if (context.liveSourceIds == nullptr)
+        return false;
+    for (int i = 0; i < context.numLiveSourceIds; ++i) {
+        if (context.liveSourceIds[i] == sourceId)
+            return true;
+    }
+    return false;
+}
+
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
 /// slots by index and projects store parameter values in display units.
@@ -228,77 +241,61 @@ double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool
     return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
-void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, std::uint32_t sourceId) {
-    // Check if already held
+void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, bool fromLiveSource) {
     for (int i = 0; i < heldCount_; ++i) {
         auto& held = heldNotes_[static_cast<size_t>(i)];
         if (held.noteNumber == noteNumber) {
-            // A host re-asserting its notes after a seek owns the key again.
-            held.physicallyHeld = true;
-            held.sourceId = sourceId;
+            // The pattern already has this pitch; this is another holder of
+            // it, not another note.
+            ++(fromLiveSource ? held.liveHolds : held.hostHolds);
             return;
         }
     }
     if (heldCount_ < MAX_HELD) {
-        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber, velocity, nextOrder_++, sourceId,
-                                                       true};
+        heldNotes_[static_cast<size_t>(heldCount_)] = {
+            noteNumber, velocity, nextOrder_++, fromLiveSource ? 1 : 0, fromLiveSource ? 0 : 1};
         ++heldCount_;
     }
 }
 
-void ArpeggiatorPlugin::markHeldNoteReleased(int noteNumber) {
+void ArpeggiatorPlugin::releaseHeldNote(int noteNumber, bool fromLiveSource,
+                                        bool removeWhenUnheld) {
     for (int i = 0; i < heldCount_; ++i) {
-        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber) {
-            heldNotes_[static_cast<size_t>(i)].physicallyHeld = false;
-            return;
-        }
+        auto& held = heldNotes_[static_cast<size_t>(i)];
+        if (held.noteNumber != noteNumber)
+            continue;
+        auto& holds = fromLiveSource ? held.liveHolds : held.hostHolds;
+        if (holds > 0)
+            --holds;
+        if (removeWhenUnheld && held.liveHolds == 0 && held.hostHolds == 0)
+            removeHeldNoteAt(i);
+        return;
     }
 }
 
-void ArpeggiatorPlugin::retainLiveHeldNotes(const DeviceProcessContext& context) {
-    // No list is "nothing is known live", not "everything is": the native
-    // engine says nothing and stamps every event 0 (#2418).
-    if (context.numLiveSourceIds <= 0 || context.liveSourceIds == nullptr) {
-        clearHeldNotes();
-        return;
-    }
-
-    const auto isLiveSource = [&context](std::uint32_t sourceId) {
-        for (int i = 0; i < context.numLiveSourceIds; ++i) {
-            if (context.liveSourceIds[i] == sourceId)
-                return true;
-        }
-        return false;
-    };
-
+void ArpeggiatorPlugin::retainLiveHeldNotes() {
     int kept = 0;
-    int stillDown = 0;
     for (int i = 0; i < heldCount_; ++i) {
-        const auto& note = heldNotes_[static_cast<size_t>(i)];
-        if (!isLiveSource(note.sourceId))
+        auto note = heldNotes_[static_cast<size_t>(i)];
+        if (note.liveHolds == 0)
             continue;
+        // Whatever the host was holding it is withdrawing, and re-asserts on
+        // the same buffer what should still sound.
+        note.hostHolds = 0;
         heldNotes_[static_cast<size_t>(kept++)] = note;
-        if (note.physicallyHeld)
-            ++stillDown;
     }
     heldCount_ = kept;
-    physicallyHeldCount_ = stillDown;
-    latchedSetStale_ = kept > 0 && stillDown == 0;
+    physicallyHeldCount_ = kept;
+    latchedSetStale_ = false;
     if (kept == 0)
         nextOrder_ = 0;
 }
 
-void ArpeggiatorPlugin::removeHeldNote(int noteNumber) {
-    for (int i = 0; i < heldCount_; ++i) {
-        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber) {
-            // Swap with last
-            if (i < heldCount_ - 1)
-                heldNotes_[static_cast<size_t>(i)] =
-                    heldNotes_[static_cast<size_t>(heldCount_ - 1)];
-            --heldCount_;
-            return;
-        }
-    }
+void ArpeggiatorPlugin::removeHeldNoteAt(int index) {
+    // Swap with last
+    if (index < heldCount_ - 1)
+        heldNotes_[static_cast<size_t>(index)] = heldNotes_[static_cast<size_t>(heldCount_ - 1)];
+    --heldCount_;
 }
 
 void ArpeggiatorPlugin::clearHeldNotes() {
@@ -434,12 +431,12 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     const bool inputPanic = midi.isAllNotesOff();
     if (inputPanic) {
         pendingNoteOff = takeSoundingNote();
-        retainLiveHeldNotes(context);
+        retainLiveHeldNotes();
     }
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
-        const std::uint32_t source = midi.sourceId(eventIndex);
+        const bool fromLiveSource = isLiveSource(context, midi.sourceId(eventIndex));
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
 
@@ -451,7 +448,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             }
 
             bool wasEmpty = (heldCount_ == 0);
-            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), source);
+            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource);
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 resetFromInput();
@@ -461,14 +458,11 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             if (physicallyHeldCount_ < 0)
                 physicallyHeldCount_ = 0;
 
-            if (isLatched) {
-                // Don't remove notes; mark stale when all physically released
-                markHeldNoteReleased(msg.getNoteNumber());
-                if (physicallyHeldCount_ == 0)
-                    latchedSetStale_ = true;
-            } else {
-                removeHeldNote(msg.getNoteNumber());
-            }
+            // Latch keeps the note in the pattern and only marks the set
+            // stale once every key is up.
+            releaseHeldNote(msg.getNoteNumber(), fromLiveSource, !isLatched);
+            if (isLatched && physicallyHeldCount_ == 0)
+                latchedSetStale_ = true;
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
             clearHeldNotes();
             resetFromInput();
@@ -491,7 +485,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         // clip left behind are dropped, because their note-off is never
         // coming once the transport stops (#2416).
         sendAllNotesOff(midi);
-        retainLiveHeldNotes(context);
+        retainLiveHeldNotes();
         resetArpState();
         freeRunSamples_ = 0.0;
     }

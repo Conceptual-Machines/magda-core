@@ -129,10 +129,11 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         int noteNumber = -1;
         int velocity = 0;
         int order = 0;
-        /// Who sent the note-on, and whether the key is still down. Together
-        /// they tell a live key from clip playback across a stop (#2416).
-        std::uint32_t sourceId = 0;
-        bool physicallyHeld = false;
+        /// Note-ons not yet released, split by whether the host calls their
+        /// source live input. One pitch can be under a finger and in a clip
+        /// at once, and the two release independently (#2416).
+        int liveHolds = 0;
+        int hostHolds = 0;
     };
     std::array<HeldNote, MAX_HELD> heldNotes_{};
     int heldCount_ = 0;
@@ -173,14 +174,14 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
-    void addHeldNote(int noteNumber, int velocity, std::uint32_t sourceId);
-    void removeHeldNote(int noteNumber);
-    void markHeldNoteReleased(int noteNumber);
+    void addHeldNote(int noteNumber, int velocity, bool fromLiveSource);
+    void releaseHeldNote(int noteNumber, bool fromLiveSource, bool removeWhenUnheld);
+    void removeHeldNoteAt(int index);
     void clearHeldNotes();
-    /// Drops held notes the host does not call live input, and recounts the
-    /// keys still down. What a clip left behind has no note-off coming once
-    /// the transport stops, and none coming at all when a seek moves off it.
-    void retainLiveHeldNotes(const DeviceProcessContext& context);
+    /// Drops the held notes no live input is holding, and withdraws the host's
+    /// hold on the rest. What a clip left behind has no note-off coming once
+    /// the transport stops, and none at all when a seek moves off it.
+    void retainLiveHeldNotes();
     void sendAllNotesOff(DeviceMidiBuffer& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.
