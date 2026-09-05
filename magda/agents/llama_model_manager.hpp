@@ -17,6 +17,9 @@ struct LlamaModelManagerTestAccess;
 
 class LlamaModelManager {
   public:
+    LlamaModelManager(const LlamaModelManager&) = delete;
+    LlamaModelManager& operator=(const LlamaModelManager&) = delete;
+
     static LlamaModelManager& getInstance();
 
     struct Config {
@@ -56,9 +59,6 @@ class LlamaModelManager {
 
     LlamaModelManager() = default;
     ~LlamaModelManager();
-
-    LlamaModelManager(const LlamaModelManager&) = delete;
-    LlamaModelManager& operator=(const LlamaModelManager&) = delete;
 
     static std::string cpuCompatibilityError(bool isIntel, bool hasSSE42, bool hasAVX);
     static std::string currentCpuCompatibilityError();
