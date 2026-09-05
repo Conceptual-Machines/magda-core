@@ -58,7 +58,7 @@ class TracktionEngineWrapper : public AudioEngine,
     static constexpr int AUDIO_DEVICE_CHECK_THRESHOLD = 3;
 
     TracktionEngineWrapper();
-    ~TracktionEngineWrapper();
+    ~TracktionEngineWrapper() override;
 
     /**
      * @brief Force the wrapper to skip UI/timer-backed runtime helpers.

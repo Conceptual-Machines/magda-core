@@ -551,7 +551,7 @@ class AutomationManager : public TrackManagerListener {
 
   private:
     AutomationManager();
-    ~AutomationManager();
+    ~AutomationManager() override;
 
     std::vector<AutomationLaneInfo> lanes_;
     std::vector<AutomationClipInfo> clips_;

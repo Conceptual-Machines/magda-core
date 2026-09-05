@@ -1245,7 +1245,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
   private:
     TrackManager();
-    ~TrackManager() = default;
+    ~TrackManager() override = default;
 
     // Register a track with MidiBridge for input monitoring. No-op when no audio
     // engine is attached or the track takes no external input (Aux, Group).

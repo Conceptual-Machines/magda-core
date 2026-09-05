@@ -42,7 +42,7 @@ struct WarpMarkerInfo {
 class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::Timer {
   public:
     WarpMarkerManager() = default;
-    ~WarpMarkerManager();
+    ~WarpMarkerManager() override;
 
     /**
      * @brief Detect transient times for an audio clip's source file

@@ -32,7 +32,7 @@ class PluginManager;
 class DeviceMeteringManager : public daw::audio::DeviceMeteringContext {
   public:
     DeviceMeteringManager() = default;
-    ~DeviceMeteringManager() = default;
+    ~DeviceMeteringManager() override = default;
 
     /**
      * @brief Set the PluginManager for plugin→device lookup
