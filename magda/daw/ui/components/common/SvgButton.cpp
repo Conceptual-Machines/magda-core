@@ -30,9 +30,8 @@ SvgButton::SvgButton(const juce::String& buttonName, const char* offSvgData, siz
     setMouseClickGrabsKeyboardFocus(false);
 }
 
-SvgButton::~SvgButton() {
-    // RAII cleanup handled automatically by ManagedDrawable
-}
+// RAII cleanup handled automatically by ManagedDrawable
+SvgButton::~SvgButton() = default;
 
 juce::Colour SvgButton::resolveThemeColour(juce::Colour colour,
                                            const std::optional<ColourRole>& role) {

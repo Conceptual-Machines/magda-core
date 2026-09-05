@@ -2660,9 +2660,8 @@ void MainView::MasterHeaderPanel::setPeakLevels(float leftPeak, float rightPeak)
 
 // ===== MasterContentPanel Implementation =====
 
-MainView::MasterContentPanel::MasterContentPanel() {
-    // Empty for now - will show waveform later
-}
+// Empty for now - will show waveform later
+MainView::MasterContentPanel::MasterContentPanel() = default;
 
 void MainView::MasterContentPanel::paint(juce::Graphics& g) {
     // Background matching track content area

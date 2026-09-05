@@ -57,11 +57,10 @@ class ManagedDrawable {
         return managed;
     }
 
-    // Destructor - RAII cleanup (like Python's __exit__)
-    ~ManagedDrawable() {
-        // Let unique_ptr handle destruction naturally
-        // No manual deleteAllChildren needed - Component destructor handles it correctly
-    }
+    // Destructor - RAII cleanup (like Python's __exit__). Let unique_ptr handle
+    // destruction naturally; no manual deleteAllChildren needed - Component's
+    // destructor handles it correctly.
+    ~ManagedDrawable() = default;
 
     // Move-only (like Python context managers)
     ManagedDrawable(ManagedDrawable&&) noexcept = default;

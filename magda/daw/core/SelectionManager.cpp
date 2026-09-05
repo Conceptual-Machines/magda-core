@@ -74,9 +74,7 @@ SelectionManager& SelectionManager::getInstance() {
     return instance;
 }
 
-SelectionManager::SelectionManager() {
-    // Start with no selection
-}
+SelectionManager::SelectionManager() = default;
 
 // ============================================================================
 // Primary-track alignment helper (shared by selectDevice / selectChainNode)
