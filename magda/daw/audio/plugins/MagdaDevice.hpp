@@ -15,6 +15,9 @@ struct DeviceProperties {
     juce::String name;
     juce::String shortName;
     bool takesMidiInput = false;
+    /// The device emits MIDI of its own, written to DeviceProcessContext::midiOut.
+    /// Its input never passes through it: thru is the host's merge (#2347).
+    bool producesMidi = false;
     bool takesAudioInput = true;
     bool isSynth = false;
     bool producesAudioWithoutInput = false;
@@ -67,24 +70,33 @@ class DeviceTelemetry {
 };
 
 /**
- * Mutable MIDI view supplied by a host adapter.
+ * The MIDI that reached the device this block. Timestamps are seconds from
+ * the block start.
  *
- * Event timestamps remain in seconds. This matches MAGDA's current device
- * semantics without exposing the current engine's MIDI container.
+ * Read-only: whether this stream continues past the device is the host's
+ * routing decision (DeviceInfo::midiInThru), never the device's (#2347).
  */
-class DeviceMidiBuffer {
+class DeviceMidiInput {
   public:
-    virtual ~DeviceMidiBuffer() = default;
+    virtual ~DeviceMidiInput() = default;
 
     virtual int size() const = 0;
     virtual const juce::MidiMessage& message(int index) const = 0;
     virtual std::uint32_t sourceId(int index) const = 0;
-    virtual void setEvent(int index, DeviceMidiEvent event) = 0;
-    virtual void removeEvent(int index) = 0;
-    virtual void addEvent(DeviceMidiEvent event) = 0;
-    virtual void clear() = 0;
-    virtual void sortByTimestamp() = 0;
+    /// The host signalled panic without a CC event (a playhead jump, a stop).
     virtual bool isAllNotesOff() const = 0;
+};
+
+/**
+ * Where a device writes the MIDI it emits. Empty on entry; on exit it is the
+ * device's whole MIDI output. Timestamps are seconds from the block start.
+ */
+class DeviceMidiOutput {
+  public:
+    virtual ~DeviceMidiOutput() = default;
+
+    virtual void addEvent(DeviceMidiEvent event) = 0;
+    /// Panic beside the events, for a host whose MIDI container carries one.
     virtual void setAllNotesOff(bool allNotesOff) = 0;
 };
 
@@ -101,7 +113,11 @@ struct DeviceProcessContext {
      * own width.
      */
     int sidechainInputChannel = -1;
-    DeviceMidiBuffer* midi = nullptr;
+    /// Both null when the host routed no MIDI to or from the device, otherwise
+    /// both set; a device that declares no MIDI output still gets a sink, which
+    /// the host discards.
+    const DeviceMidiInput* midiIn = nullptr;
+    DeviceMidiOutput* midiOut = nullptr;
     const DeviceTempoMap* tempoMap = nullptr;
     int startSample = 0;
     int numSamples = 0;
@@ -112,7 +128,7 @@ struct DeviceProcessContext {
     bool isScrubbing = false;
     bool isRendering = false;
     /**
-     * Sources the host counts as live input, against DeviceMidiBuffer::sourceId.
+     * Sources the host counts as live input, against DeviceMidiInput::sourceId.
      *
      * A device that holds notes needs this to tell a player's keys from clip
      * playback: a clip's note-off never arrives once the transport stops, and

@@ -12,6 +12,12 @@ lifecycle; a device pack does not subclass an engine plugin class.
 map. Device-owned telemetry is exposed through typed `DeviceTelemetry`
 subclasses, while host/editor lifetime remains outside the device.
 
+MIDI is split by direction. `midiIn` is read-only. `midiOut` is empty on entry
+and, on exit, is the device's whole MIDI output; a device only has one if it
+declares `producesMidi` in `DeviceProperties`. The chain's raw MIDI never
+passes through a device: thru is the host's merge behind it
+(`DeviceInfo::midiInThru`, #2347).
+
 ## Public surface
 
 A pack may use:

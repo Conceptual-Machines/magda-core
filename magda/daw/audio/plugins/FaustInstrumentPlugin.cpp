@@ -878,9 +878,9 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
     // Mono retrigger depends on this: its envelope restarts on a gate edge, and
     // an edge only exists if samples are rendered either side of it.
     int cursor = 0;
-    if (context.midi != nullptr) {
-        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
-            const auto& m = context.midi->message(eventIndex);
+    if (context.midiIn != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
+            const auto& m = context.midiIn->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * currentSampleRate_);
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);

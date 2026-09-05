@@ -82,9 +82,9 @@ class DeviceParameter final : public te::AutomatableParameter {
     int index_ = 0;
 };
 
-class TracktionMidiBufferView final : public DeviceMidiBuffer {
+class TracktionMidiInputView final : public DeviceMidiInput {
   public:
-    explicit TracktionMidiBufferView(te::MidiMessageArray& midi) : midi_(midi) {}
+    explicit TracktionMidiInputView(const te::MidiMessageArray& midi) : midi_(midi) {}
 
     int size() const override {
         return midi_.size();
@@ -98,30 +98,21 @@ class TracktionMidiBufferView final : public DeviceMidiBuffer {
         return static_cast<std::uint32_t>(midi_[index].mpeSourceID);
     }
 
-    void setEvent(int index, DeviceMidiEvent event) override {
-        midi_[index] = te::MidiMessageWithSource(std::move(event.message),
-                                                 static_cast<te::MPESourceID>(event.sourceId));
+    bool isAllNotesOff() const override {
+        return midi_.isAllNotesOff;
     }
 
-    void removeEvent(int index) override {
-        midi_.remove(index);
-    }
+  private:
+    const te::MidiMessageArray& midi_;
+};
+
+class TracktionMidiOutputView final : public DeviceMidiOutput {
+  public:
+    explicit TracktionMidiOutputView(te::MidiMessageArray& midi) : midi_(midi) {}
 
     void addEvent(DeviceMidiEvent event) override {
         midi_.addMidiMessage(std::move(event.message),
                              static_cast<te::MPESourceID>(event.sourceId));
-    }
-
-    void clear() override {
-        midi_.clear();
-    }
-
-    void sortByTimestamp() override {
-        midi_.sortByTimestamp();
-    }
-
-    bool isAllNotesOff() const override {
-        return midi_.isAllNotesOff;
     }
 
     void setAllNotesOff(bool allNotesOff) override {
@@ -176,6 +167,8 @@ void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& 
     // block.
     syncParametersToDevice();
     refreshLiveSourceIds();
+    // So a normal block's output never allocates on the audio thread.
+    midiOut_.reserve(128);
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,
@@ -224,9 +217,13 @@ void TracktionMagdaDevicePlugin::reset() {
 void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& context) {
     syncParametersToDevice();
 
-    std::optional<TracktionMidiBufferView> midi;
-    if (context.bufferForMidiMessages != nullptr)
-        midi.emplace(*context.bufferForMidiMessages);
+    std::optional<TracktionMidiInputView> midiIn;
+    std::optional<TracktionMidiOutputView> midiOut;
+    if (context.bufferForMidiMessages != nullptr) {
+        midiOut_.clear();
+        midiIn.emplace(*context.bufferForMidiMessages);
+        midiOut.emplace(midiOut_);
+    }
 
     TracktionTempoMapView tempoMap{edit.tempoSequence};
 
@@ -242,7 +239,8 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
     DeviceProcessContext deviceContext{
         .audio = context.destBuffer,
         .sidechainInputChannel = sidechainChannel,
-        .midi = midi ? &*midi : nullptr,
+        .midiIn = midiIn ? &*midiIn : nullptr,
+        .midiOut = midiOut ? &*midiOut : nullptr,
         .tempoMap = &tempoMap,
         .startSample = context.bufferStartSample,
         .numSamples = context.bufferNumSamples,
@@ -256,6 +254,21 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
         .numLiveSourceIds = liveSources != nullptr ? static_cast<int>(liveSources[0]) : 0,
     };
     device_->process(deviceContext);
+
+    if (context.bufferForMidiMessages == nullptr)
+        return;
+
+    if (properties_.producesMidi) {
+        // The buffer leaves as the device's own output, panic flag included; the
+        // raw input reaches the next plugin only by the host's thru merge
+        // (#2345, #2347).
+        context.bufferForMidiMessages->swapWith(midiOut_);
+    } else {
+        // Left in place: that is how this engine carries the raw input past a
+        // device that emits no MIDI. Anything here is output the device never
+        // declared.
+        jassert(midiOut_.size() == 0);
+    }
 }
 
 bool TracktionMagdaDevicePlugin::takesMidiInput() {

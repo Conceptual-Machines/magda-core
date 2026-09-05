@@ -73,6 +73,9 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     const DeviceProperties properties_;
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;
+    /// The device's MIDI output for the current block, swapped into the host's
+    /// buffer after process() when the device declares producesMidi (#2347).
+    te::MidiMessageArray midiOut_;
 
     /// MPE source ids of the engine's MIDI inputs, which is what a device
     /// reads to tell a player's keys from clip playback. One immutable block,

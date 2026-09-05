@@ -295,10 +295,13 @@ bool StepSequencerPlugin::popRecordedStep(RecordedStep& step) {
 // =============================================================================
 
 void StepSequencerPlugin::process(DeviceProcessContext& context) {
-    if (context.midi == nullptr || context.numSamples <= 0)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
         return;
 
-    auto& midi = *context.midi;
+    const auto& in = *context.midiIn;
+    // Carries only what this device writes; MIDI thru is the host's merge
+    // behind it (#2345, #2347).
+    auto& midi = *context.midiOut;
 
     // Take the published pattern for the length of this block: a publish
     // waiting on the message thread cannot touch this slot until the hold goes
@@ -313,9 +316,9 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
     // --- Step recording: an incoming note fills the next step ---
     if (stepRecording_.load(std::memory_order_relaxed)) {
         const int stepCount = live.playingLength();
-        const int incoming = midi.size();
+        const int incoming = in.size();
         for (int i = 0; i < incoming; ++i) {
-            const auto& message = midi.message(i);
+            const auto& message = in.message(i);
             if (!message.isNoteOn())
                 continue;
 
@@ -337,22 +340,6 @@ void StepSequencerPlugin::process(DeviceProcessContext& context) {
                 stepRecording_.store(false, std::memory_order_relaxed);
         }
     }
-
-    // --- Incoming MIDI: read above, and swallowed here ---
-    //
-    // The buffer the SDK hands a device serves both directions, so what is left
-    // in it is what the device's MIDI output port carries. This sequencer's
-    // output is its own notes, which is what every other MIDI device here does
-    // (ArpeggiatorPlugin, MidiStrumPlugin, MidiChordEnginePlugin) and what a
-    // hosted plugin does whether it means to or not - every JUCE format
-    // replaces the host's buffer with the plugin's declared output.
-    //
-    // MIDI thru is the plan's, not the device's: with DeviceInfo::midiInThru on
-    // the compiler merges the chain's raw MIDI with this port downstream
-    // (OpRole::ChainMidiMerge). A device that also passed its input through
-    // made that a second copy, so a thru-enabled sequencer played every note
-    // twice and every computation over the port's contents was wrong (#2345).
-    midi.clear();
 
     // Clear anything a re-prepared device left sounding under it.
     if (needsAllNotesOff_) {

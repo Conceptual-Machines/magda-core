@@ -332,12 +332,11 @@ void MidiStrumPlugin::scheduleStrum() {
 }
 
 void MidiStrumPlugin::process(DeviceProcessContext& context) {
-    if (context.midi == nullptr)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
         return;
-    auto& midi = *context.midi;
+    const auto& in = *context.midiIn;
+    auto& midi = *context.midiOut;
     const int n = context.numSamples;
-    if (n <= 0)
-        return;
 
     // Stop mid-strum: the upstream clip stops sending note-offs, so release
     // everything sounding and drop the latched chord on the playing->stopped
@@ -360,12 +359,12 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
 
     const bool chordMode = static_cast<Trigger>(displayIndex(kTrigger)) == Trigger::Chord;
 
-    // --- 1. Latch the held chord from incoming MIDI, then swallow the input.
+    // --- 1. Latch the held chord from incoming MIDI.
     const bool wasEmpty = heldCount_ == 0;
-    for (int eventIndex = 0; eventIndex < midi.size(); ++eventIndex) {
-        const auto& msg = midi.message(eventIndex);
+    for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
+        const auto& msg = in.message(eventIndex);
         if (msg.isNoteOn()) {
-            addHeld(msg.getNoteNumber(), msg.getVelocity(), midi.sourceId(eventIndex));
+            addHeld(msg.getNoteNumber(), msg.getVelocity(), in.sourceId(eventIndex));
             collectLeft_ = juce::jmax(1, static_cast<int>(0.03 * sampleRate_));
         } else if (msg.isNoteOff()) {
             removeHeld(msg.getNoteNumber());
@@ -373,7 +372,6 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
             heldCount_ = 0;
         }
     }
-    midi.clear();  // the strum replaces the raw chord
 
     // Chord released -> end what the strum is still holding or owes.
     if (heldCount_ == 0 && !wasEmpty) {

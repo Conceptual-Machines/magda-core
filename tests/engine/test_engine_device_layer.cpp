@@ -95,7 +95,7 @@ class CountingDevice final : public magda::daw::audio::MagdaDevice {
     }
 
     void process(magda::daw::audio::DeviceProcessContext& context) override {
-        received = context.midi != nullptr ? context.midi->size() : 0;
+        received = context.midiIn != nullptr ? context.midiIn->size() : 0;
     }
 
     int received = 0;
@@ -109,29 +109,31 @@ class CountingDevice final : public magda::daw::audio::MagdaDevice {
 /// the byte budget the executor sized the port from.
 class EmittingDevice final : public magda::daw::audio::MagdaDevice {
   public:
-    EmittingDevice(int count, int dataBytes) : count_(count), payload_(dataBytes, 0x7f) {}
+    EmittingDevice(int count, int dataBytes, bool declared = true)
+        : count_(count), declared_(declared), payload_(dataBytes, 0x7f) {}
 
     magda::daw::audio::DeviceProperties properties() const override {
         magda::daw::audio::DeviceProperties properties;
         properties.pluginId = "emitting";
         properties.name = "Emitting";
         properties.takesMidiInput = true;
+        properties.producesMidi = declared_;
         return properties;
     }
 
     void process(magda::daw::audio::DeviceProcessContext& context) override {
-        if (context.midi == nullptr)
+        if (context.midiOut == nullptr)
             return;
 
-        context.midi->clear();
         for (int event = 0; event < count_; ++event)
-            context.midi->addEvent({juce::MidiMessage::createSysExMessage(
-                                        payload_.data(), static_cast<int>(payload_.size())),
-                                    0});
+            context.midiOut->addEvent({juce::MidiMessage::createSysExMessage(
+                                           payload_.data(), static_cast<int>(payload_.size())),
+                                       0});
     }
 
   private:
     int count_;
+    bool declared_;
     std::vector<std::uint8_t> payload_;
 };
 
@@ -152,37 +154,37 @@ class BoundProbe final : public magda::engine::EngineDevice {
     int outBound = -1;
 };
 
-/// Rewrites, reorders and drops what it was handed, on messages big enough to
-/// be heap-allocated.
+/// Copies its input to its output reversed, dropping the middle event, on
+/// messages big enough to be heap-allocated.
 ///
-/// The three mutating paths of DeviceMidiBuffer in one device, on SysEx,
-/// because that is where juce::MidiMessage owns heap and where getting the
-/// assignment wrong leaks it rather than merely misbehaving.
-class RewritingDevice final : public magda::daw::audio::MagdaDevice {
+/// On SysEx because that is where juce::MidiMessage owns heap, so a copy that
+/// went wrong on the input-to-output leg would leak or corrupt rather than
+/// merely misbehave.
+class ForwardingDevice final : public magda::daw::audio::MagdaDevice {
   public:
     magda::daw::audio::DeviceProperties properties() const override {
         magda::daw::audio::DeviceProperties properties;
-        properties.pluginId = "rewriting";
-        properties.name = "Rewriting";
+        properties.pluginId = "forwarding";
+        properties.name = "Forwarding";
         properties.takesMidiInput = true;
+        properties.producesMidi = true;
         return properties;
     }
 
     void process(magda::daw::audio::DeviceProcessContext& context) override {
-        if (context.midi == nullptr || context.midi->size() < 3)
+        if (context.midiIn == nullptr || context.midiOut == nullptr || context.midiIn->size() < 3)
             return;
 
-        // Reversed, so the sort has a permutation to apply rather than an
-        // already-ordered list to leave alone.
-        const auto count = context.midi->size();
-        for (int at = 0; at < count; ++at) {
-            auto message = context.midi->message(at);
-            message.setTimeStamp(static_cast<double>(count - at));
-            context.midi->setEvent(at, {message, 0});
-        }
+        const auto count = context.midiIn->size();
+        for (int at = count - 1; at >= 0; --at) {
+            if (at == 1)
+                continue;
 
-        context.midi->sortByTimestamp();
-        context.midi->removeEvent(1);
+            // Reversed in time as well as in order, so the port shows it.
+            auto message = context.midiIn->message(at);
+            message.setTimeStamp(context.midiIn->message(count - 1 - at).getTimeStamp());
+            context.midiOut->addEvent({std::move(message), context.midiIn->sourceId(at)});
+        }
     }
 };
 
@@ -416,13 +418,10 @@ TEST_CASE("a device writing past the port's byte budget is cut off at the bytes"
 }
 
 TEST_CASE("a step sequencer's MIDI output is its own", "[engine][devices][2345]") {
-    // The device reads its input and swallows it. What its MIDI output port
-    // carries is what the sequencer played, and nothing it was handed.
-    //
-    // Thru is the plan's merge behind the device (DeviceInfo::midiInThru), the
-    // only way a host can offer it over a plugin it did not write. The device
-    // used to do it as well, so a thru-enabled sequencer sent every note twice
-    // and every reservation downstream counted one stream as two (#2345).
+    // What the sequencer's MIDI output port carries is what it played, and
+    // nothing it was handed. Thru is the plan's merge behind the device
+    // (DeviceInfo::midiInThru); the device used to do it as well, so a
+    // thru-enabled sequencer sent every note twice (#2345).
     //
     // The densest legal block, and no denser: a clock is one byte of data and
     // costs seven against the budget, a note costs nine, so a note-on, 582
@@ -496,12 +495,9 @@ TEST_CASE("a step sequencer's MIDI output is its own", "[engine][devices][2345]"
 
 TEST_CASE("a device nothing feeds still emits its whole producer's worth",
           "[engine][devices][2341]") {
-    // The scratch serves both directions, and the two bounds it is sized from
-    // are independent now that thru is the plan's (#2345): a device may read a
-    // merged stream far larger than one producer's budget, and a device nothing
-    // feeds at all still writes a full one. Sized from the input alone, a step
-    // sequencer on a track with no MIDI source would have room for nothing and
-    // play silence.
+    // The output scratch is sized from the output bound, not the input's: a
+    // step sequencer on a track with no MIDI source would otherwise have room
+    // for nothing and play silence.
     //
     // A payload rather than a bare short message, so what is filled is the byte
     // budget rather than an event count that happens to match it.
@@ -660,15 +656,15 @@ TEST_CASE("the executor tells a device what it may write, apart from what it may
     CHECK(gainProbe.outBound == 0);
 }
 
-TEST_CASE("a device may rewrite, reorder and drop long messages", "[engine][devices][2174]") {
+TEST_CASE("a device forwards long messages by copying them, never in place",
+          "[engine][devices][2174][2347]") {
     // juce::MidiMessage keeps anything past eight bytes on the heap, and its
-    // move assignment overwrites the destination's pointer without freeing what
-    // it held. So every path that puts a message somewhere has to copy or
-    // move-construct, and the two obvious spellings -- vector::erase and
-    // stable_sort over the events -- do neither. This runs all three mutating
-    // paths over SysEx, which is where that goes wrong.
-    auto rewriting = std::make_unique<RewritingDevice>();
-    adapter::EngineMagdaDevice hosted(std::move(rewriting), /*offlineRender=*/false);
+    // move assignment overwrites a live destination without freeing it. The
+    // input view is read-only and the output view only push_backs, so the
+    // input-to-output leg is copies and move-constructs; this checks they
+    // arrive whole and in the order the device chose.
+    auto forwarding = std::make_unique<ForwardingDevice>();
+    adapter::EngineMagdaDevice hosted(std::move(forwarding), /*offlineRender=*/false);
 
     const auto context = contextFor();
     hosted.prepare(context);
@@ -688,7 +684,7 @@ TEST_CASE("a device may rewrite, reorder and drop long messages", "[engine][devi
     deviceBlock.midiOut = &out;
     hosted.process(deviceBlock);
 
-    // Reversed by the rewrite, then the second of those dropped: third, first.
+    // Reversed, with the middle one dropped: third, first.
     std::vector<std::uint8_t> marks;
     for (const auto metadata : out) {
         const auto message = metadata.getMessage();
@@ -698,6 +694,53 @@ TEST_CASE("a device may rewrite, reorder and drop long messages", "[engine][devi
     }
 
     CHECK(marks == std::vector<std::uint8_t>{0x33, 0x11});
+}
+
+TEST_CASE("a device's input never reaches its MIDI output port", "[engine][devices][2347]") {
+    // The output port carries only what the device wrote. A device that reads
+    // its input and writes nothing sends nothing, so thru is the plan's merge
+    // behind it and never a device doing nothing (#2347).
+    auto counting = std::make_unique<CountingDevice>();
+    auto* device = counting.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(counting), /*offlineRender=*/false);
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 16);
+    block.midi.addEvent(juce::MidiMessage::noteOff(1, 60), 128);
+    block.midi.addEvent(juce::MidiMessage::noteOff(1, 64), context.maxBlockSize - 1);
+    REQUIRE(block.midi.getNumEvents() == 4);
+
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(device->received == 4);
+    CHECK(out.getNumEvents() == 0);
+    CHECK(budgetCostOf(out) == 0);
+}
+
+TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {
+    // The plan may still give the op a MIDI output port (the model's view of the
+    // device, not the device's own). What an undeclared emitter writes is
+    // dropped, as the Tracktion adapter drops it.
+    auto emitting = std::make_unique<EmittingDevice>(3, 16, /*declared=*/false);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
 }
 
 TEST_CASE("one note-off releases a pitch that was pressed many times", "[engine][devices][2192]") {

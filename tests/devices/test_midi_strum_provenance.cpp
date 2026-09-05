@@ -11,15 +11,17 @@ namespace audio = magda::daw::audio;
 magda::test::DeviceMidiBuffer runBlock(audio::MidiStrumPlugin& strum,
                                        std::initializer_list<juce::MidiMessage> input,
                                        std::uint32_t source) {
-    magda::test::DeviceMidiBuffer midi;
+    magda::test::DeviceMidiBuffer in;
     for (const auto& message : input)
-        midi.events.push_back({message, source});
+        in.events.push_back({message, source});
+    magda::test::DeviceMidiBuffer out;
     audio::DeviceProcessContext context;
-    context.midi = &midi;
+    context.midiIn = &in;
+    context.midiOut = &out;
     context.numSamples = 2400;
     context.isPlaying = true;
     strum.process(context);
-    return midi;
+    return out;
 }
 }  // namespace
 

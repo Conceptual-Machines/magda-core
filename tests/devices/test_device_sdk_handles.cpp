@@ -157,6 +157,7 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
                 .name = "Neutral lifecycle",
                 .shortName = "Neutral",
                 .takesMidiInput = true,
+                .producesMidi = true,
                 .latencySeconds = 0.01,
             };
         }
@@ -172,8 +173,8 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
         void process(audio::DeviceProcessContext& context) override {
             if (context.audio != nullptr)
                 context.audio->applyGain(context.startSample, context.numSamples, parameter);
-            if (context.midi != nullptr)
-                context.midi->addEvent(
+            if (context.midiOut != nullptr)
+                context.midiOut->addEvent(
                     {.message = juce::MidiMessage::noteOn(1, 60, juce::uint8{100})});
         }
 
@@ -225,17 +226,19 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
     juce::AudioBuffer<float> audioBuffer(1, 4);
     audioBuffer.clear();
     audioBuffer.addFrom(0, 0, std::array{1.0f, 1.0f, 1.0f, 1.0f}.data(), 4);
-    MidiBuffer midiBuffer;
+    MidiBuffer in;
+    MidiBuffer out;
     audio::DeviceProcessContext context{
         .audio = &audioBuffer,
-        .midi = &midiBuffer,
+        .midiIn = &in,
+        .midiOut = &out,
         .numSamples = 4,
     };
     device.process(context);
 
     CHECK(audioBuffer.getSample(0, 0) == 0.5f);
-    REQUIRE(midiBuffer.size() == 1);
-    CHECK(midiBuffer.message(0).isNoteOn());
+    REQUIRE(out.size() == 1);
+    CHECK(out.message(0).isNoteOn());
 
     juce::ValueTree state("device");
     device.deviceOwnedState = 17;

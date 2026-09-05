@@ -343,9 +343,9 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
         pos = upto;
     };
 
-    if (context.midi != nullptr) {
-        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
-            const auto& m = context.midi->message(eventIndex);
+    if (context.midiIn != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
+            const auto& m = context.midiIn->message(eventIndex);
             const bool isPanic = m.isController() &&
                                  (m.getControllerNumber() == 120 || m.getControllerNumber() == 123);
             if (!m.isNoteOn() && !m.isNoteOff() && !isPanic)

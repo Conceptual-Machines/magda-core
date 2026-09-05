@@ -13,11 +13,11 @@ namespace magda::daw::audio {
  * The core names no MIDI container (#2313), so this is the one place that turns
  * its plain `{time, note, velocity, on/off}` records into the messages a host
  * hands downstream. Timestamps stay in seconds from the block's start, which is
- * the domain DeviceMidiBuffer takes.
+ * the domain DeviceMidiOutput takes.
  */
 class DeviceNoteSink : public sequencer::NoteSink {
   public:
-    explicit DeviceNoteSink(DeviceMidiBuffer& midi) : midi_(midi) {}
+    explicit DeviceNoteSink(DeviceMidiOutput& midi) : midi_(midi) {}
 
     void addNoteEvent(const sequencer::NoteEvent& event) override {
         auto message = event.isNoteOn
@@ -29,7 +29,7 @@ class DeviceNoteSink : public sequencer::NoteSink {
     }
 
   private:
-    DeviceMidiBuffer& midi_;
+    DeviceMidiOutput& midi_;
 };
 
 }  // namespace magda::daw::audio

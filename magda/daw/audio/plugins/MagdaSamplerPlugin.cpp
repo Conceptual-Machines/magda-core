@@ -591,7 +591,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     // offset within the block. Deduplicate on note AND sample position, because
     // several input devices can route the same message at the same instant.
     juce::MidiBuffer midiBuffer;
-    if (context.midi != nullptr) {
+    if (context.midiIn != nullptr) {
         struct SeenKey {
             int note;
             int samplePos;
@@ -602,8 +602,8 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
         };
         juce::Array<SeenKey> seen;
 
-        for (int i = 0; i < context.midi->size(); ++i) {
-            const auto& m = context.midi->message(i);
+        for (int i = 0; i < context.midiIn->size(); ++i) {
+            const auto& m = context.midiIn->message(i);
             int midiPos = juce::roundToInt(m.getTimeStamp() * sampleRate);
             midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), midiPos);
 

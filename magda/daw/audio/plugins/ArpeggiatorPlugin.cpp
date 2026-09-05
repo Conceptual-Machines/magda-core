@@ -316,7 +316,7 @@ void ArpeggiatorPlugin::clearHeldNotes() {
     nextOrder_ = 0;
 }
 
-void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
+void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiOutput& midi) {
     const std::uint32_t source = lastPlayedSourceId_;
     sendNoteOff(midi, takeSoundingNote(), source);
 }
@@ -413,7 +413,7 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
 // =============================================================================
 
 void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
-    if (context.midi == nullptr || context.numSamples <= 0)
+    if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
         return;
 
     // The host pushed the modulated slot positions before this call; publish
@@ -421,13 +421,13 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     displayedRamp_.store(displayValue(kRamp), std::memory_order_relaxed);
     displayedSkew_.store(displayValue(kSkew), std::memory_order_relaxed);
 
-    auto& midi = *context.midi;
+    const auto& in = *context.midiIn;
+    auto& midi = *context.midiOut;
     const bool isLatched = displayValue(kLatch) >= 0.5f;
 
     // --- 1. Capture incoming MIDI ---
-    // Keep the input view read-only: appending can invalidate message references,
-    // and the clear below would discard any note-offs emitted here. Only one
-    // note can be sounding on entry; this pass does not generate new notes.
+    // Only one note can be sounding on entry, and this pass generates none, so
+    // one pending note-off is enough.
     int pendingNoteOff = -1;
     const auto resetFromInput = [&] {
         const int note = resetArpState();
@@ -440,15 +440,15 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // position without a note-off for what should not. So the host's notes go
     // and come back on the same buffer, while keys proven to be a player's are
     // not the host's to withdraw (#2416).
-    const bool inputPanic = midi.isAllNotesOff();
+    const bool inputPanic = in.isAllNotesOff();
     if (inputPanic) {
         pendingNoteOff = takeSoundingNote();
         retainLiveHeldNotes();
     }
-    const int incomingCount = midi.size();
+    const int incomingCount = in.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
-        const auto& msg = midi.message(eventIndex);
-        const bool fromLiveSource = isLiveSource(context, midi.sourceId(eventIndex));
+        const auto& msg = in.message(eventIndex);
+        const bool fromLiveSource = isLiveSource(context, in.sourceId(eventIndex));
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
 
@@ -461,7 +461,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             bool wasEmpty = (heldCount_ == 0);
             addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource,
-                        midi.sourceId(eventIndex));
+                        in.sourceId(eventIndex));
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 resetFromInput();
@@ -482,8 +482,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         }
     }
 
-    // --- 2. Clear MIDI buffer (arp replaces input) ---
-    midi.clear();
+    // --- 2. Pass the panic on and close the note the input pass ended ---
     midi.setAllNotesOff(inputPanic);
     sendNoteOff(midi, pendingNoteOff, lastPlayedSourceId_);
 

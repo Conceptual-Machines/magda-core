@@ -55,6 +55,7 @@ class PolyStepSequencerPlugin : public MidiMagdaDevice {
             .name = getPluginName(),
             .shortName = "PSeq",
             .takesMidiInput = true,
+            .producesMidi = true,
         };
     }
 
