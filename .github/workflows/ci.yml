@@ -1325,6 +1325,24 @@ jobs:
         # to roughly the heaviest shard. Own TMP per shard: concurrent shards
         # must not collide on temp file names.
         $shards = 16
+        # On the self-hosted runner the job is a session-0 service child, and
+        # Windows gives such work EcoQoS: reduced clocks, roughly half speed
+        # measured on the heaviest shard. The parent owns the child handles,
+        # so it can turn that off per process; no-op where EcoQoS never applies.
+        Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public static class PowerThrottle {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct STATE { public uint Version; public uint ControlMask; public uint StateMask; }
+            [DllImport("kernel32.dll", SetLastError = true)]
+            public static extern bool SetProcessInformation(IntPtr hProcess, int infoClass, ref STATE info, int size);
+            public static bool Disable(IntPtr h) {
+                var s = new STATE { Version = 1, ControlMask = 0x1, StateMask = 0 };
+                return SetProcessInformation(h, 4, ref s, Marshal.SizeOf(typeof(STATE)));
+            }
+        }
+        "@
         $outDir = Join-Path $env:RUNNER_TEMP "test-shards"
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
         $savedTmp = $env:TMP
@@ -1341,11 +1359,28 @@ jobs:
             -RedirectStandardError (Join-Path $outDir "shard-$i.err")
           # Without this, ExitCode can read null after WaitForExit.
           $null = $p.Handle
+          try { [PowerThrottle]::Disable($p.Handle) | Out-Null } catch {}
           $runs += @{ Index = $i; Proc = $p }
         }
         $env:TMP = $savedTmp
         $env:TEMP = $savedTmp
-        foreach ($r in $runs) { $r.Proc.WaitForExit() }
+        # Announce completions as they happen; a silent multi-minute wait
+        # reads as a hang from the run page.
+        $pending = @($runs)
+        $done = 0
+        while ($pending.Count -gt 0) {
+          Start-Sleep -Seconds 5
+          $still = @()
+          foreach ($r in $pending) {
+            if ($r.Proc.HasExited) {
+              $done++
+              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $done/$shards done)"
+            } else {
+              $still += $r
+            }
+          }
+          $pending = $still
+        }
         $failed = 0
         foreach ($r in $runs) {
           $code = $r.Proc.ExitCode
