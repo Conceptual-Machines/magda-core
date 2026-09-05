@@ -36,7 +36,7 @@ juce::File scratch() {
 TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corpus]") {
     const auto corpus = sharedCorpus(scratch());
 
-    REQUIRE(corpus.size() == 67);
+    REQUIRE(corpus.size() == 69);
 
     std::set<std::string> names;
     for (const auto& value : corpus)
@@ -88,7 +88,9 @@ TEST_CASE("The corpus builds and covers what the slice claims", "[nulldiff][corp
                                  "rack.chain.solo",
                                  "rack.deltasolo.device",
                                  "rack.deltasolo.rack",
+                                 "rack.latency",
                                  "rack.nested",
+                                 "rack.nested.latency",
                                  "rack.aux",
                                  "rack.mono",
                                  "rack.instrument",
