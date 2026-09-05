@@ -317,11 +317,10 @@ jobs:
     - name: Run tests
       timeout-minutes: 15
       run: |
-        # Match available cores, capped at four to bound Debug-process memory.
-        shards=$(nproc)
-        if [ "$shards" -gt 4 ]; then shards=4; fi
+        # Serial on purpose: concurrent Debug shards starve the [remote]
+        # suites' socket timeouts on a four-core runner (#2421 follow-up).
         cd build
-        bash "$GITHUB_WORKSPACE/scripts/ci-test-shards.sh" ./tests/magda_tests "$shards"
+        ./tests/magda_tests
 
     - name: Show sccache statistics
       if: steps.sccache.outcome == 'success'
