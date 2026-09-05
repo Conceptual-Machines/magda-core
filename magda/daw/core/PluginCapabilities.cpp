@@ -151,7 +151,7 @@ std::optional<PluginCapabilitySnapshot> PluginCapabilityCache::find(
     if (pluginIdentifier.isEmpty())
         return std::nullopt;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto it = snapshots_.find(pluginIdentifier);
     if (it == snapshots_.end())
         return std::nullopt;
@@ -162,7 +162,7 @@ void PluginCapabilityCache::update(const PluginCapabilitySnapshot& snapshot) {
     if (snapshot.pluginIdentifier.isEmpty())
         return;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (auto it = snapshots_.find(snapshot.pluginIdentifier);
         it != snapshots_.end() && snapshotsEqual(it->second, snapshot)) {
         return;

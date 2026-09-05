@@ -51,7 +51,7 @@ juce::String ChordSuggestionEngine::getNoteName(int pitchClass) {
 }
 
 void ChordSuggestionEngine::updateWithChord(const Chord& chord, double currentTimeSeconds) {
-    std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+    std::scoped_lock lock(pcsHistogramMutex);
 
     // Decay histogram since last update (exponential decay)
     if (lastPcsUpdateTime > 0.0) {
@@ -83,7 +83,7 @@ bool ChordSuggestionEngine::addChordToContext(const Chord& chord, double current
     // Check for duplicates and manage context
     bool wasAdded = false;
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
 
         bool isDuplicate = false;
         if (!recentChords_.empty()) {
@@ -124,18 +124,18 @@ bool ChordSuggestionEngine::addChordToContext(const Chord& chord, double current
 
 void ChordSuggestionEngine::reset() {
     {
-        std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+        std::scoped_lock lock(pcsHistogramMutex);
         pcsHistogram.fill(0.0);
         lastPcsUpdateTime = 0.0;
     }
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
         recentChords_.clear();
     }
 }
 
 void ChordSuggestionEngine::clearContext() {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
     recentChords_.clear();
 }
 
@@ -157,7 +157,7 @@ std::array<double, 12> ChordSuggestionEngine::getDecayedHistogram(double current
 
 std::optional<std::pair<juce::String, juce::String>>
 ChordSuggestionEngine::inferKeyModeFromHistogram() const {
-    std::lock_guard<std::mutex> lock(pcsHistogramMutex);
+    std::scoped_lock lock(pcsHistogramMutex);
 
     const auto hist = getDecayedHistogram(juce::Time::getMillisecondCounter() / 1000.0);
 
@@ -1710,7 +1710,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
     bool isDuplicate = false;
     std::vector<Chord> contextCopy;
     {
-        std::lock_guard<std::mutex> lock(chordContextMutex);
+        std::scoped_lock lock(chordContextMutex);
 
         if (!recentChords_.empty()) {
             const Chord& last = recentChords_.back();
@@ -1760,12 +1760,12 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
 }
 
 std::vector<Chord> ChordSuggestionEngine::getRecentChords() const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
     return std::vector<Chord>(recentChords_.begin(), recentChords_.end());
 }
 
 juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     juce::String contextTail;
     int count = 0;
@@ -1831,7 +1831,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::filter
 // Infer key/mode using comprehensive scale detection system
 std::optional<std::pair<juce::String, juce::String>>
 ChordSuggestionEngine::inferKeyModeFromScaleDetection() const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     if (recentChords_.empty()) {
         return std::nullopt;
@@ -1917,7 +1917,7 @@ ChordSuggestionEngine::inferKeyModeFromScaleDetection() const {
 }
 
 juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) const {
-    std::lock_guard<std::mutex> lock(chordContextMutex);
+    std::scoped_lock lock(chordContextMutex);
 
     if (recentChords_.empty()) {
         return "";

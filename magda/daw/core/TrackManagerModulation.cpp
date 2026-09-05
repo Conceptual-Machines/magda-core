@@ -676,7 +676,7 @@ void TrackManager::removeModPage(const ChainNodePath& path) {
 }
 
 void TrackManager::triggerMidiNoteOn(TrackId trackId) {
-    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    std::scoped_lock lock(midiTriggerMutex_);
     pendingMidiNoteOns_[trackId]++;
 }
 
@@ -709,7 +709,7 @@ const ModInfo* TrackManager::getModById(TrackId trackId, ModId modId) const {
 }
 
 void TrackManager::triggerMidiNoteOff(TrackId trackId) {
-    std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+    std::scoped_lock lock(midiTriggerMutex_);
     pendingMidiNoteOffs_[trackId]++;
 }
 
@@ -744,7 +744,7 @@ void TrackManager::updateAllMods(double deltaTime, double bpm, bool transportJus
     std::map<TrackId, int> noteOnsThisTick;
     std::map<TrackId, int> noteOffsThisTick;
     {
-        std::lock_guard<std::mutex> lock(midiTriggerMutex_);
+        std::scoped_lock lock(midiTriggerMutex_);
         noteOnsThisTick.swap(pendingMidiNoteOns_);
         noteOffsThisTick.swap(pendingMidiNoteOffs_);
     }

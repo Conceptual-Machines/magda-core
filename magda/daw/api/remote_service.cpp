@@ -136,14 +136,14 @@ RemoteApiService::~RemoteApiService() {
 }
 
 std::shared_ptr<RemoteApiService::ExecutionState> RemoteApiService::currentState() const {
-    const std::lock_guard<std::mutex> lock(stateMutex_);
+    const std::scoped_lock lock(stateMutex_);
     return state_;
 }
 
 void RemoteApiService::retireState() {
     std::shared_ptr<ExecutionState> retiring;
     {
-        const std::lock_guard<std::mutex> lock(stateMutex_);
+        const std::scoped_lock lock(stateMutex_);
         retiring = std::move(state_);
         state_.reset();
     }
@@ -152,7 +152,7 @@ void RemoteApiService::retireState() {
     // Taking the execution lock here is the whole point: it cannot be acquired
     // while a job is inside execute(), so once this returns no job is running
     // and none can start.
-    const std::lock_guard<std::mutex> lock(retiring->mutex);
+    const std::scoped_lock lock(retiring->mutex);
     retiring->revisionAtRetirement = currentRevision();
     retiring->service = nullptr;
 }
@@ -265,7 +265,7 @@ void RemoteApiService::dispatch(const juce::String& operationName, const juce::v
             // The lock is held across the handler, so the service cannot be
             // retired out from under it, and two handlers cannot run at once
             // even when the caller's thread executes them inline.
-            const std::lock_guard<std::mutex> lock(state->mutex);
+            const std::scoped_lock lock(state->mutex);
             if (state->service == nullptr) {
                 // The revision the service had when it was retired, not zero:
                 // a client's cursor must never be moved backwards by a failure.
@@ -434,7 +434,7 @@ void RemoteApiService::projectReplaced() {
     // queued work.
     retireState();
     {
-        const std::lock_guard<std::mutex> lock(stateMutex_);
+        const std::scoped_lock lock(stateMutex_);
         state_ = std::make_shared<ExecutionState>();
         state_->service = this;
     }
@@ -461,7 +461,7 @@ void RemoteApiService::projectReplaced() {
     }
 
     {
-        const std::lock_guard<std::mutex> lock(cacheMutex_);
+        const std::scoped_lock lock(cacheMutex_);
         cache_.clear();
     }
 }
@@ -504,12 +504,12 @@ const ChangeSource& RemoteApiService::changes() const {
 }
 
 void RemoteApiService::setAuditLog(std::shared_ptr<RemoteAuditLog> log) {
-    const std::lock_guard<std::mutex> lock(auditMutex_);
+    const std::scoped_lock lock(auditMutex_);
     audit_ = std::move(log);
 }
 
 std::shared_ptr<RemoteAuditLog> RemoteApiService::auditLog() const {
-    const std::lock_guard<std::mutex> lock(auditMutex_);
+    const std::scoped_lock lock(auditMutex_);
     return audit_;
 }
 
@@ -553,7 +553,7 @@ void RemoteApiService::recordAudit(const std::shared_ptr<RemoteAuditLog>& log,
 }
 
 void RemoteApiService::setIdempotencyCacheCapacity(std::size_t capacity) {
-    const std::lock_guard<std::mutex> lock(cacheMutex_);
+    const std::scoped_lock lock(cacheMutex_);
     cacheCapacity_ = capacity;
     if (cache_.size() > cacheCapacity_)
         cache_.erase(cache_.begin(),
@@ -569,7 +569,7 @@ juce::String RemoteApiService::idempotencyKey(const RequestContext& context) {
 }
 
 std::optional<Response> RemoteApiService::cachedResponse(const juce::String& key) const {
-    const std::lock_guard<std::mutex> lock(cacheMutex_);
+    const std::scoped_lock lock(cacheMutex_);
     const auto found =
         std::find_if(cache_.begin(), cache_.end(),
                      [&key](const CachedResponse& entry) { return entry.key == key; });
@@ -579,7 +579,7 @@ std::optional<Response> RemoteApiService::cachedResponse(const juce::String& key
 }
 
 void RemoteApiService::cacheResponse(const juce::String& key, const Response& response) {
-    const std::lock_guard<std::mutex> lock(cacheMutex_);
+    const std::scoped_lock lock(cacheMutex_);
     const auto found =
         std::find_if(cache_.begin(), cache_.end(),
                      [&key](const CachedResponse& entry) { return entry.key == key; });

@@ -101,7 +101,7 @@ bool registerDevicePack(DevicePackRegistration registerDevices) {
         return false;
 
     auto& state = registryState();
-    const std::lock_guard lock(state.mutex);
+    const std::scoped_lock lock(state.mutex);
     if (state.initialized ||
         std::find(state.packRegistrations.begin(), state.packRegistrations.end(),
                   registerDevices) != state.packRegistrations.end())
@@ -115,7 +115,7 @@ InternalPluginRegistry& getInternalPluginRegistry() {
     static InternalPluginRegistry registry;
     static const bool initialized = [] {
         auto& state = registryState();
-        const std::lock_guard lock(state.mutex);
+        const std::scoped_lock lock(state.mutex);
         for (const auto hook : state.packRegistrations)
             hook(registry);
         state.initialized = true;

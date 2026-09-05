@@ -33,14 +33,14 @@ ChordEngine* ChordEngine::instance = nullptr;
 std::mutex ChordEngine::instanceMutex;
 
 ChordEngine& ChordEngine::getInstance() {
-    std::lock_guard<std::mutex> lock(instanceMutex);
+    std::scoped_lock lock(instanceMutex);
     if (instance == nullptr)
         instance = new ChordEngine();
     return *instance;
 }
 
 void ChordEngine::cleanup() {
-    std::lock_guard<std::mutex> lock(instanceMutex);
+    std::scoped_lock lock(instanceMutex);
     if (instance != nullptr) {
         delete instance;
         instance = nullptr;

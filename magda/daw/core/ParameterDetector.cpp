@@ -28,7 +28,7 @@ juce::File getDetectorLogFile() {
 
 void logDetector(const juce::String& msg) {
     static std::mutex logMutex;
-    std::lock_guard<std::mutex> lock(logMutex);
+    std::scoped_lock lock(logMutex);
     auto f = getDetectorLogFile();
     f.appendText(msg + "\n");
 }
@@ -637,7 +637,7 @@ int parseAIResponse(const juce::String& responseText, const std::vector<Ambiguou
     }
 
     int parsedCount = 0;
-    std::lock_guard<std::mutex> lock(resultsMutex);
+    std::scoped_lock lock(resultsMutex);
     for (const auto& paramVar : *paramsArray) {
         if (auto* pObj = paramVar.getDynamicObject()) {
             int paramIndex = -1;

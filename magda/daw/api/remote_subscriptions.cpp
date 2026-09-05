@@ -344,13 +344,13 @@ void SubscriptionHub::shutdown() {
     // until any flush already inside publish() has finished, and that flush
     // needs mutex_ to finish.
     {
-        const std::lock_guard<std::mutex> lock(gate_->mutex);
+        const std::scoped_lock lock(gate_->mutex);
         gate_->hub = nullptr;
     }
 
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return;
         shutdown_ = true;
@@ -367,7 +367,7 @@ void SubscriptionHub::shutdown() {
 }
 
 SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disconnect) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     if (shutdown_)
         return 0;
 
@@ -378,7 +378,7 @@ SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disco
 
 void SubscriptionHub::removeClient(ClientId client) {
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         const auto found = std::remove_if(clients_.begin(), clients_.end(),
                                           [client](const Client& c) { return c.id == client; });
         if (found == clients_.end())
@@ -392,12 +392,12 @@ void SubscriptionHub::removeClient(ClientId client) {
 }
 
 int SubscriptionHub::clientCount() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return static_cast<int>(clients_.size());
 }
 
 void SubscriptionHub::setMeterSource(std::unique_ptr<MeterSource> source) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     meters_ = std::move(source);
 }
 
@@ -444,7 +444,7 @@ void SubscriptionHub::applyTopology() {
     bool wantSampler = false;
     int existing = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         topologyPending_ = false;
         if (shutdown_)
             return;
@@ -476,14 +476,14 @@ void SubscriptionHub::applyTopology() {
         auto gate = gate_;
         const auto token = service_.changes().addListener(
             [gate](const std::vector<ChangeSource::Change>& changes) {
-                const std::lock_guard<std::mutex> lock(gate->mutex);
+                const std::scoped_lock lock(gate->mutex);
                 if (gate->hub != nullptr)
                     gate->hub->publish(changes);
             });
 
         bool keep = false;
         {
-            const std::lock_guard<std::mutex> lock(mutex_);
+            const std::scoped_lock lock(mutex_);
             // Shutdown may have landed while the listener was being attached,
             // in which case this token is surplus.
             if (!shutdown_ && changeToken_ == 0) {
@@ -498,7 +498,7 @@ void SubscriptionHub::applyTopology() {
 
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         token = changeToken_;
         changeToken_ = 0;
     }
@@ -516,7 +516,7 @@ void SubscriptionHub::scheduleTopology() {
     }
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_ || topologyPending_)
             return;
         topologyPending_ = true;
@@ -524,13 +524,13 @@ void SubscriptionHub::scheduleTopology() {
 
     auto gate = gate_;
     if (!juce::MessageManager::callAsync([gate] {
-            const std::lock_guard<std::mutex> lock(gate->mutex);
+            const std::scoped_lock lock(gate->mutex);
             if (gate->hub != nullptr)
                 gate->hub->applyTopology();
         })) {
         // The message loop is going away, so nothing will reconcile anything
         // again; shutdown() detaches everything regardless.
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         topologyPending_ = false;
     }
 }
@@ -702,7 +702,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
     bool dropped = false;
     std::vector<Topic> stillOwed;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return;
 
@@ -752,7 +752,7 @@ void SubscriptionHub::publish(const std::vector<ChangeSource::Change>& changes) 
 }
 
 void SubscriptionHub::sampleNow() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     if (shutdown_)
         return;
 
@@ -881,7 +881,7 @@ bool SubscriptionHub::handle(ClientId client, const juce::String& method, const 
                 onComplete = std::move(onComplete)]() mutable {
         Response response;
         {
-            const std::lock_guard<std::mutex> lock(gate->mutex);
+            const std::scoped_lock lock(gate->mutex);
             response = gate->hub != nullptr
                            ? gate->hub->execute(client, method, params, requested, topicsGiven)
                            : Response::failure(ErrorCode::Cancelled, "subscriptions are shut down",
@@ -912,7 +912,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
 
     Response response;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (shutdown_)
             return Response::failure(ErrorCode::Cancelled, "remote API service is shut down",
                                      revision);

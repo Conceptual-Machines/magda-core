@@ -707,7 +707,7 @@ void AIChatConsoleContent::RequestThread::run() {
 
     auto appendToken = [safeThis, singleState](const juce::String& token) {
         {
-            std::lock_guard<std::mutex> lk(singleState->mu);
+            std::scoped_lock lk(singleState->mu);
             singleState->pending += token;
         }
         bool expected = false;
@@ -719,7 +719,7 @@ void AIChatConsoleContent::RequestThread::run() {
                 return;
             juce::String chunk;
             {
-                std::lock_guard<std::mutex> lk(singleState->mu);
+                std::scoped_lock lk(singleState->mu);
                 chunk = std::move(singleState->pending);
                 singleState->pending.clear();
             }
@@ -3394,7 +3394,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
         if (threadShouldExit())
             return false;
         {
-            std::lock_guard<std::mutex> lk(buf->mu);
+            std::scoped_lock lk(buf->mu);
             buf->pending += token;
         }
         bool expected = false;
@@ -3406,7 +3406,7 @@ void AIChatConsoleContent::ThemeRequestThread::run() {
                 return;
             juce::String chunk;
             {
-                std::lock_guard<std::mutex> lk(buf->mu);
+                std::scoped_lock lk(buf->mu);
                 chunk = std::move(buf->pending);
                 buf->pending.clear();
             }

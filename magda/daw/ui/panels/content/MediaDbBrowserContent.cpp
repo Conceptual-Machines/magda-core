@@ -2424,7 +2424,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                                      juce::String(reason);
                 juce::Logger::writeToLog(message);
 
-                std::lock_guard<std::mutex> lock(failureMutex);
+                std::scoped_lock lock(failureMutex);
                 ++failureCount;
                 if (firstFailures.size() < 5) {
                     firstFailures.push_back(message);
@@ -2509,7 +2509,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 
-            std::lock_guard<std::mutex> lock(failureMutex);
+            std::scoped_lock lock(failureMutex);
             for (const auto& failure : firstFailures) {
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] First failure: ") +
                                          failure);

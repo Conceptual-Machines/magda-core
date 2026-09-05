@@ -25,7 +25,7 @@ ScopeSet RemoteClientRegistry::scopesFor(const juce::String& clientName) {
     bool created = false;
     ScopeSet scopes;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         auto found = grants_.find(key);
         if (found == grants_.end()) {
             ClientGrant grant;
@@ -52,7 +52,7 @@ ScopeSet RemoteClientRegistry::scopesFor(const juce::String& clientName) {
 
 std::optional<ScopeSet> RemoteClientRegistry::peekScopes(const juce::String& clientName) const {
     const auto key = normaliseClientName(clientName).toStdString();
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto found = grants_.find(key);
     if (found == grants_.end())
         return std::nullopt;
@@ -68,7 +68,7 @@ void RemoteClientRegistry::setScopes(const juce::String& clientName, ScopeSet sc
     scopes.add(Scope::Read);
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         auto& grant = grants_[key];
         if (grant.name.isEmpty()) {
             grant.name = juce::String(key);
@@ -85,7 +85,7 @@ void RemoteClientRegistry::setScopes(const juce::String& clientName, ScopeSet sc
 void RemoteClientRegistry::forget(const juce::String& clientName) {
     const auto key = normaliseClientName(clientName).toStdString();
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         if (grants_.erase(key) == 0)
             return;
     }
@@ -93,7 +93,7 @@ void RemoteClientRegistry::forget(const juce::String& clientName) {
 }
 
 std::vector<ClientGrant> RemoteClientRegistry::grants() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     std::vector<ClientGrant> result;
     result.reserve(grants_.size());
     for (const auto& [key, grant] : grants_)
@@ -110,7 +110,7 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
     if (client.connectedAtMs == 0)
         client.connectedAtMs = nowMs();
 
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     // Replace rather than append on a repeated id. A transport that reuses one
     // would otherwise leave a phantom row that no disconnect could clear,
     // because `noteDisconnected` removes a single entry.
@@ -125,7 +125,7 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
 }
 
 void RemoteClientRegistry::noteDisconnected(const juce::String& connectionId) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     connections_.erase(std::remove_if(connections_.begin(), connections_.end(),
                                       [&](const ConnectedClient& client) {
                                           return client.connectionId == connectionId;
@@ -134,18 +134,18 @@ void RemoteClientRegistry::noteDisconnected(const juce::String& connectionId) {
 }
 
 std::vector<ConnectedClient> RemoteClientRegistry::connections() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return connections_;
 }
 
 int RemoteClientRegistry::connectionCount() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return static_cast<int>(connections_.size());
 }
 
 void RemoteClientRegistry::setDisconnectHandler(const juce::String& transport,
                                                 DisconnectHandler handler) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     if (handler)
         disconnectHandlers_[transport.toStdString()] = std::move(handler);
     else
@@ -155,7 +155,7 @@ void RemoteClientRegistry::setDisconnectHandler(const juce::String& transport,
 bool RemoteClientRegistry::disconnect(const juce::String& connectionId) {
     DisconnectHandler handler;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         const auto found = std::find_if(
             connections_.begin(), connections_.end(),
             [&](const ConnectedClient& client) { return client.connectionId == connectionId; });
@@ -182,7 +182,7 @@ int RemoteClientRegistry::disconnectClient(const juce::String& clientName) {
     // Snapshot the ids under the lock, close outside it, for the reason above.
     std::vector<juce::String> ids;
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         for (const auto& client : connections_) {
             if (client.name == name)
                 ids.push_back(client.connectionId);
@@ -235,7 +235,7 @@ void RemoteClientRegistry::loadGrantsFromJson(const juce::var& value) {
     }
 
     {
-        const std::lock_guard<std::mutex> lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         grants_ = std::move(loaded);
     }
     // Deliberately silent. This runs during startup, from the same code that
@@ -244,14 +244,14 @@ void RemoteClientRegistry::loadGrantsFromJson(const juce::var& value) {
 }
 
 void RemoteClientRegistry::setChangeHandler(std::function<void()> onChanged) {
-    const std::lock_guard<std::mutex> lock(changeHandlerMutex_);
+    const std::scoped_lock lock(changeHandlerMutex_);
     onChanged_ = std::move(onChanged);
 }
 
 void RemoteClientRegistry::notifyChanged() {
     std::function<void()> handler;
     {
-        const std::lock_guard<std::mutex> lock(changeHandlerMutex_);
+        const std::scoped_lock lock(changeHandlerMutex_);
         handler = onChanged_;
     }
     // Copied and called outside both locks: a handler is free to read grants

@@ -74,7 +74,7 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyF
         // busy handler when two connections open a fresh database together.
         // Cover that step as well as the transactional setup for concurrent
         // first opens within the application.
-        const std::lock_guard initializationLock(initializationMutex);
+        const std::scoped_lock initializationLock(initializationMutex);
         sqlite::exec(db_.get(), "PRAGMA journal_mode=WAL", "set plugin metadata journal mode");
         sqlite::exec(db_.get(), "PRAGMA synchronous=NORMAL",
                      "set plugin metadata synchronous mode");

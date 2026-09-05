@@ -240,7 +240,7 @@ class Bridge {
         }
 
         auto finished = std::make_shared<std::atomic<bool>>(false);
-        std::lock_guard<std::mutex> lock(threadsMutex_);
+        std::scoped_lock lock(threadsMutex_);
 
         // Reap before adding. A thread handle is a native resource, and a host
         // that stays open for hours sends thousands of requests — without this
@@ -426,7 +426,7 @@ class Bridge {
     /// Whether this stream was stopped on purpose, which is the difference
     /// between "the host closed it" and "the connection broke".
     bool isCancelled(const juce::var& id) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         return cancelled_.erase(juce::JSON::toString(id, true).toStdString()) > 0;
     }
 
@@ -507,7 +507,7 @@ class Bridge {
                 ? juce::JSON::toString(parsed, true).toStdString()
                 : json;
 
-        std::lock_guard<std::mutex> lock(outputMutex_);
+        std::scoped_lock lock(outputMutex_);
         std::cout << text << '\n' << std::flush;
     }
 
@@ -528,7 +528,7 @@ class Bridge {
         setProperty(reply, "id", id);
         setProperty(reply, "error", error);
 
-        std::lock_guard<std::mutex> lock(outputMutex_);
+        std::scoped_lock lock(outputMutex_);
         std::cout << juce::JSON::toString(reply, true).toStdString() << '\n' << std::flush;
     }
 
@@ -565,7 +565,7 @@ class Bridge {
     // -----------------------------------------------------------------------
 
     std::optional<Endpoint> currentEndpoint(bool forceRefresh) {
-        std::lock_guard<std::mutex> lock(endpointMutex_);
+        std::scoped_lock lock(endpointMutex_);
         if (forceRefresh || !endpoint_)
             endpoint_ = resolveEndpoint();
         return endpoint_;
@@ -574,29 +574,29 @@ class Bridge {
     void rememberSession(const httplib::Response& response) {
         if (!response.has_header("Mcp-Session-Id"))
             return;
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         session_ = response.get_header_value("Mcp-Session-Id");
     }
 
     std::string currentSession() const {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         return session_;
     }
 
     void clearSession() {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         session_.clear();
     }
 
     /// The `initialize` the host sent, kept so a session can be rebuilt without
     /// it. Empty when the host speaks the modern era and never sent one.
     void rememberHandshake(const std::string& body) {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         handshake_ = body;
     }
 
     std::string currentHandshake() const {
-        std::lock_guard<std::mutex> lock(sessionMutex_);
+        std::scoped_lock lock(sessionMutex_);
         return handshake_;
     }
 
@@ -620,19 +620,19 @@ class Bridge {
     }
 
     void registerStream(const juce::var& id, std::shared_ptr<httplib::Client> client) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         streams_[juce::JSON::toString(id, true).toStdString()] = std::move(client);
     }
 
     void unregisterStream(const juce::var& id) {
-        std::lock_guard<std::mutex> lock(streamMutex_);
+        std::scoped_lock lock(streamMutex_);
         streams_.erase(juce::JSON::toString(id, true).toStdString());
     }
 
     void cancel(const juce::var& requestId) {
         std::shared_ptr<httplib::Client> client;
         {
-            std::lock_guard<std::mutex> lock(streamMutex_);
+            std::scoped_lock lock(streamMutex_);
             const auto key = juce::JSON::toString(requestId, true).toStdString();
             const auto it = streams_.find(key);
             if (it == streams_.end())
@@ -648,13 +648,13 @@ class Bridge {
 
     void shutdown() {
         {
-            std::lock_guard<std::mutex> lock(streamMutex_);
+            std::scoped_lock lock(streamMutex_);
             for (auto& [id, client] : streams_) {
                 cancelled_.insert(id);
                 client->stop();
             }
         }
-        std::lock_guard<std::mutex> lock(threadsMutex_);
+        std::scoped_lock lock(threadsMutex_);
         for (auto& [thread, finished] : threads_)
             if (thread.joinable())
                 thread.join();

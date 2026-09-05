@@ -87,7 +87,7 @@ void RemoteAuditLog::record(AuditEntry entry) {
     // the call sites instead would mean each new one is a chance to forget.
     entry.detail = redactSecrets(entry.detail);
 
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     entries_.push_back(std::move(entry));
     ++totalRecorded_;
     while (entries_.size() > capacity_)
@@ -95,18 +95,18 @@ void RemoteAuditLog::record(AuditEntry entry) {
 }
 
 std::vector<AuditEntry> RemoteAuditLog::entries() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return {entries_.begin(), entries_.end()};
 }
 
 std::vector<AuditEntry> RemoteAuditLog::recent(std::size_t count) const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     const auto take = std::min(count, entries_.size());
     return {entries_.end() - static_cast<std::ptrdiff_t>(take), entries_.end()};
 }
 
 std::vector<AuditEntry> RemoteAuditLog::forClient(const juce::String& clientName) const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     std::vector<AuditEntry> result;
     for (const auto& entry : entries_) {
         if (entry.client == clientName)
@@ -116,7 +116,7 @@ std::vector<AuditEntry> RemoteAuditLog::forClient(const juce::String& clientName
 }
 
 void RemoteAuditLog::clear() {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     entries_.clear();
     // `totalRecorded_` deliberately survives: it is the "did anything change"
     // cursor the UI polls, and resetting it would make a clear look like no
@@ -124,24 +124,24 @@ void RemoteAuditLog::clear() {
 }
 
 std::size_t RemoteAuditLog::size() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return entries_.size();
 }
 
 std::size_t RemoteAuditLog::capacity() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return capacity_;
 }
 
 void RemoteAuditLog::setCapacity(std::size_t capacity) {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     capacity_ = capacity == 0 ? DEFAULT_CAPACITY : capacity;
     while (entries_.size() > capacity_)
         entries_.pop_front();
 }
 
 std::uint64_t RemoteAuditLog::totalRecorded() const {
-    const std::lock_guard<std::mutex> lock(mutex_);
+    const std::scoped_lock lock(mutex_);
     return totalRecorded_;
 }
 
@@ -157,20 +157,20 @@ void registerRemoteSecret(const juce::String& secret) {
     if (secret.length() < 8)
         return;
 
-    const std::lock_guard<std::mutex> lock(secretsMutex());
+    const std::scoped_lock lock(secretsMutex());
     auto& values = secrets();
     if (std::find(values.begin(), values.end(), secret) == values.end())
         values.push_back(secret);
 }
 
 void forgetRemoteSecret(const juce::String& secret) {
-    const std::lock_guard<std::mutex> lock(secretsMutex());
+    const std::scoped_lock lock(secretsMutex());
     auto& values = secrets();
     values.erase(std::remove(values.begin(), values.end(), secret), values.end());
 }
 
 void forgetAllRemoteSecrets() {
-    const std::lock_guard<std::mutex> lock(secretsMutex());
+    const std::scoped_lock lock(secretsMutex());
     secrets().clear();
 }
 
@@ -180,7 +180,7 @@ juce::String redactSecrets(const juce::String& text) {
 
     juce::String result = text;
     {
-        const std::lock_guard<std::mutex> lock(secretsMutex());
+        const std::scoped_lock lock(secretsMutex());
         for (const auto& secret : secrets())
             result = result.replace(secret, kMask, false);
     }

@@ -239,7 +239,7 @@ RemoteApiHost::~RemoteApiHost() {
 void RemoteApiHost::persistGrants() {
     auto writer = grantWriter_;
     {
-        const std::lock_guard<std::mutex> lock(writer->mutex);
+        const std::scoped_lock lock(writer->mutex);
         // Snapshotted *under* this lock, not before it. Reading first and
         // storing second leaves the same reordering one level down: a thread
         // can read A, be preempted while another reads B and stores it, then
@@ -283,11 +283,11 @@ void RemoteApiHost::persistGrants() {
         // only ever takes `mutex`, so a recorder is never blocked behind a file
         // write; it just leaves a newer `latest` for whoever is inside here to
         // pick up.
-        const std::lock_guard<std::mutex> applying(writer->applyMutex);
+        const std::scoped_lock applying(writer->applyMutex);
 
         juce::var latest;
         {
-            const std::lock_guard<std::mutex> lock(writer->mutex);
+            const std::scoped_lock lock(writer->mutex);
             latest = writer->latest;
             writer->posted = false;
         }
@@ -316,7 +316,7 @@ void RemoteApiHost::persistGrants() {
     // is not persisted — the same outcome as the process being killed a moment
     // earlier, and not something worth a synchronous write on shutdown.
     if (!juce::MessageManager::callAsync(apply)) {
-        const std::lock_guard<std::mutex> lock(writer->mutex);
+        const std::scoped_lock lock(writer->mutex);
         writer->posted = false;
     }
 }
