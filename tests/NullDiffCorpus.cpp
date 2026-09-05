@@ -1888,6 +1888,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         std::vector<ChainInfo> innerChains;
         innerChains.push_back(std::move(innerChain));
         auto inner = rackOf(713, "Inner Latency", std::move(innerChains));
+        inner.deltaSolo = true;
 
         ChainInfo outerChain;
         outerChain.id = 1;
@@ -1897,6 +1898,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
 
         std::vector<ChainInfo> outerChains;
         outerChains.push_back(std::move(outerChain));
+        outerChains.push_back(gainChain(2, "Sibling", 987, 0.125f));
 
         auto value = newRackCase("rack.nested.latency",
                                  "latency before and inside a nested rack, delta soloed",
