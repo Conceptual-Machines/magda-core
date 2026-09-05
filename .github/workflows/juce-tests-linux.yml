@@ -176,7 +176,7 @@ jobs:
           finished=$(ls "${outdir}"/run-*.rc 2>/dev/null | wc -l)
           echo "${finished}/10 runs finished"
           [ "$finished" -eq 10 ] && break
-          sleep 15
+          sleep 60
         done
         wait
 
