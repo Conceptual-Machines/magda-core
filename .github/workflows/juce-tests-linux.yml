@@ -161,24 +161,18 @@ jobs:
         #
         # The ten repetitions are independent samples, so they run
         # concurrently: sequentially they took 16m35s of a 24-minute job.
-        # Explicit --server-num per run, because concurrent xvfb-run -a
-        # instances race for the same display number.
+        # Four at a time, matching the runner's vCPUs - launching all ten at
+        # once was no faster than sequential, from oversubscription and ten
+        # Debug-sized processes contending for memory. Explicit --server-num
+        # per run, because concurrent xvfb-run -a instances race for the same
+        # display number.
         outdir=$(mktemp -d)
-        for run in $(seq 1 10); do
-          (
-            xvfb-run -a --server-num=$((90 + run)) "$JUCE_TEST_BIN" \
-              > "${outdir}/run-${run}.log" 2>&1
-            echo $? > "${outdir}/run-${run}.rc"
-          ) &
-        done
-
-        while true; do
-          finished=$(ls "${outdir}"/run-*.rc 2>/dev/null | wc -l)
-          echo "${finished}/10 runs finished"
-          [ "$finished" -eq 10 ] && break
-          sleep 60
-        done
-        wait
+        seq 1 10 | xargs -P 4 -I{} sh -c '
+          xvfb-run -a --server-num=$((90 + {})) "$0" > "$1/run-{}.log" 2>&1
+          rc=$?
+          echo "$rc" > "$1/run-{}.rc"
+          echo "run {}/10 finished (exit $rc)"
+        ' "$JUCE_TEST_BIN" "$outdir"
 
         failed=0
         for run in $(seq 1 10); do
