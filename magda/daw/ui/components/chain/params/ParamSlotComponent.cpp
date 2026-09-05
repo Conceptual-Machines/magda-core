@@ -174,25 +174,40 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 ParamSlotComponent::~ParamSlotComponent() {
     stopTimer();
 
-    if (momentaryButton_)
-        momentaryButton_->release();
+    try {
+        if (momentaryButton_)
+            momentaryButton_->release();
 
-    // Detach the shared LookAndFeel before the buttons die.
-    for (auto& button : choiceButtons_) {
-        if (button)
-            button->setLookAndFeel(nullptr);
+        // Detach the shared LookAndFeel before the buttons die.
+        for (auto& button : choiceButtons_) {
+            if (button)
+                button->setLookAndFeel(nullptr);
+        }
+
+        if (amountLabel_.isOnDesktop()) {
+            amountLabel_.removeFromDesktop();
+        }
+        if (isInMidiLearnMode_) {
+            magda::MidiLearnCoordinator::getInstance().cancelLearn();
+        }
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[ParamSlotComponent] unknown exception during teardown");
     }
 
-    if (amountLabel_.isOnDesktop()) {
-        amountLabel_.removeFromDesktop();
+    // Must run even if the best-effort teardown above threw: these
+    // singletons hold a raw `this` pointer that would otherwise dangle.
+    try {
+        magda::MidiLearnCoordinator::getInstance().removeListener(this);
+        magda::BindingRegistry::getInstance().removeListener(this);
+        magda::ControllerRegistry::getInstance().removeListener(this);
+        magda::LinkModeManager::getInstance().removeListener(this);
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent removeListener] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[ParamSlotComponent removeListener] unknown exception");
     }
-    if (isInMidiLearnMode_) {
-        magda::MidiLearnCoordinator::getInstance().cancelLearn();
-    }
-    magda::MidiLearnCoordinator::getInstance().removeListener(this);
-    magda::BindingRegistry::getInstance().removeListener(this);
-    magda::ControllerRegistry::getInstance().removeListener(this);
-    magda::LinkModeManager::getInstance().removeListener(this);
 }
 
 // ============================================================================

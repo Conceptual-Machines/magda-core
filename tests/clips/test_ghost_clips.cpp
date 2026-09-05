@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <stdexcept>
 #include <vector>
 
 #include "magda/daw/core/ClipCommands.hpp"
@@ -206,6 +207,38 @@ TEST_CASE("Content edits propagate to link-group siblings", "[clip][ghost]") {
         cm.forceNotifyClipPropertyChanged(lone);
         REQUIRE(cm.getClip(a)->midiNotes[0].noteNumber == 60);
     }
+}
+
+namespace {
+struct ThrowingBatchListener : ClipManagerListener {
+    bool called = false;
+    void clipsChanged() override {}
+    void clipPropertiesChanged(const std::vector<ClipId>&) override {
+        called = true;
+        throw std::runtime_error("listener boom");
+    }
+};
+}  // namespace
+
+TEST_CASE("ClipManager::BatchScope destructor survives a throwing listener", "[clips][batch]") {
+    // #2395: ~BatchScope calls endBatch(), which fans out to listeners. A
+    // listener throw used to escape an implicitly-noexcept destructor
+    // (std::terminate); it must now be swallowed.
+    resetState();
+    auto& cm = ClipManager::getInstance();
+    TrackId track = createTrack();
+    ClipId clip = createMidi(track, 0.0, 4.0, {0.0});
+
+    ThrowingBatchListener listener;
+    cm.addListener(&listener);
+
+    {
+        ClipManager::BatchScope batch;
+        cm.forceNotifyClipPropertyChanged(clip);
+    }
+
+    cm.removeListener(&listener);
+    REQUIRE(listener.called);
 }
 
 TEST_CASE("Per-instance edits do not propagate or notify siblings", "[clip][ghost]") {

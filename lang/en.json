@@ -332,6 +332,7 @@
     "capture.cancel": "Cancel",
     "capture.error_setup": "Couldn't set up the external hardware capture. The export was aborted.",
     "capture.error_failed": "Recording the external hardware returns failed. The export was aborted.",
+    "capture.cleanup_failed": "Cleaning up after the hardware capture pass failed.",
     "error.trim_failed": "Render succeeded but failed to trim preroll.",
     "error.file_not_created": "Render completed but file was not created. The project may be empty or contain no audio.",
     "error.render_failed": "Render job failed",
@@ -341,6 +342,9 @@
     "error.no_midi_notes": "No {0} clips with notes to export.",
     "error.midi_write_failed": "Failed to write {0} file.",
     "error.cannot_create_file": "Could not create output file:"
+  },
+  "mix_analysis": {
+    "cleanup_failed": "Cleaning up after mix analysis failed."
   },
   "collect": {
     "title": "Collect Files",

@@ -1458,7 +1458,13 @@ RemoteMcpServer::RemoteMcpServer(RemoteApiService& service, Options options,
     : impl_(std::make_unique<Impl>(service, std::move(options), subscriptions)) {}
 
 RemoteMcpServer::~RemoteMcpServer() {
-    stop();
+    try {
+        stop();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[RemoteMcpServer] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[RemoteMcpServer] unknown exception during teardown");
+    }
 }
 
 const char* RemoteMcpServer::endpointPath() {
@@ -1566,43 +1572,51 @@ void RemoteMcpServer::stop() {
     if (!impl_->running.exchange(false))
         return;
 
-    // First, so nothing can route a disconnect into a server that is tearing
-    // its streams and sessions down.
-    if (impl_->options.clients != nullptr)
-        impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
+    try {
+        // First, so nothing can route a disconnect into a server that is tearing
+        // its streams and sessions down.
+        if (impl_->options.clients != nullptr)
+            impl_->options.clients->setDisconnectHandler(TRANSPORT_MCP, nullptr);
 
-    // Requests already dispatched may be waiting for a completion posted to
-    // this same message thread. Wake their pool threads before joining them.
-    impl_->cancelWaiters();
+        // Requests already dispatched may be waiting for a completion posted to
+        // this same message thread. Wake their pool threads before joining them.
+        impl_->cancelWaiters();
 
-    // Streams first. Each is a pool thread parked in its content provider, and
-    // closing the outbox is what wakes it — `server.stop()` alone would leave
-    // them waiting on a condition variable nobody was going to notify.
-    std::vector<std::shared_ptr<EventStream>> live;
-    {
-        const std::scoped_lock lock(impl_->streamMutex);
-        live = impl_->streams;
-    }
-    // `releaseStream` deregisters each from the client registry, so the
-    // settings list empties as the streams close rather than keeping rows for
-    // connections that no longer exist.
-    for (const auto& stream : live)
-        impl_->releaseStream(stream);
-
-    {
-        std::vector<juce::String> closed;
+        // Streams first. Each is a pool thread parked in its content provider, and
+        // closing the outbox is what wakes it — `server.stop()` alone would leave
+        // them waiting on a condition variable nobody was going to notify.
+        std::vector<std::shared_ptr<EventStream>> live;
         {
-            const std::scoped_lock lock(impl_->sessionMutex);
-            closed.reserve(impl_->sessions.size());
-            for (const auto& [key, session] : impl_->sessions)
-                closed.push_back(session.id);
-            impl_->sessions.clear();
+            const std::scoped_lock lock(impl_->streamMutex);
+            live = impl_->streams;
         }
-        impl_->noteSessionsClosed(closed);
+        // `releaseStream` deregisters each from the client registry, so the
+        // settings list empties as the streams close rather than keeping rows for
+        // connections that no longer exist.
+        for (const auto& stream : live)
+            impl_->releaseStream(stream);
+
+        {
+            std::vector<juce::String> closed;
+            {
+                const std::scoped_lock lock(impl_->sessionMutex);
+                closed.reserve(impl_->sessions.size());
+                for (const auto& [key, session] : impl_->sessions)
+                    closed.push_back(session.id);
+                impl_->sessions.clear();
+            }
+            impl_->noteSessionsClosed(closed);
+        }
+
+        impl_->server.stop();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[RemoteMcpServer::stop] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[RemoteMcpServer::stop] unknown exception");
     }
 
-    impl_->server.stop();
-
+    // Must run even if teardown above threw: a still-joinable std::thread
+    // calls std::terminate from its own destructor, unconditionally.
     if (impl_->listener.joinable())
         impl_->listener.join();
 

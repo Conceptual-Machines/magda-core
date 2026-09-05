@@ -230,7 +230,13 @@ CompoundOperationScope::CompoundOperationScope(const juce::String& description) 
 }
 
 CompoundOperationScope::~CompoundOperationScope() {
-    UndoManager::getInstance().endCompoundOperation();
+    try {
+        UndoManager::getInstance().endCompoundOperation();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[CompoundOperationScope] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[CompoundOperationScope] unknown exception");
+    }
 }
 
 }  // namespace magda

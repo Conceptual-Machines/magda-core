@@ -683,31 +683,40 @@ class Bridge {
 }  // namespace
 
 int main(int argc, char** argv) {
-    for (int i = 1; i < argc; ++i) {
-        const juce::String argument(argv[i]);
-        if (argument == "--help" || argument == "-h") {
-            std::cout
-                // Written straight to std::cout, so the bytes reach the
-                // terminal as authored, never through juce::String. utf8-ok
-                << "magda-mcp — bridges an MCP host's stdio transport to the MAGDA MCP "
-                   "endpoint.\n\n"
-                   "Takes no options. It finds a running MAGDA through the discovery record it\n"
-                   "writes on startup, so the port and token it uses are whatever that instance\n"
-                   "currently advertises, and restarting MAGDA needs no reconfiguration here.\n\n"
-                   "MAGDA must be running with the remote API enabled.\n\n"
-                   "Register it with a host, for example:\n"
-                   "  claude mcp add magda -- magda-mcp\n\n"
-                   "Environment:\n"
-                   "  MAGDA_DATA_DIR   where to look for discovery records, overriding config\n";
-            return 0;
+    try {
+        for (int i = 1; i < argc; ++i) {
+            const juce::String argument(argv[i]);
+            if (argument == "--help" || argument == "-h") {
+                std::cout
+                    // Written straight to std::cout, so the bytes reach the
+                    // terminal as authored, never through juce::String. utf8-ok
+                    << "magda-mcp — bridges an MCP host's stdio transport to the MAGDA MCP "
+                       "endpoint.\n\n"
+                       "Takes no options. It finds a running MAGDA through the discovery record "
+                       "it\n"
+                       "writes on startup, so the port and token it uses are whatever that "
+                       "instance\n"
+                       "currently advertises, and restarting MAGDA needs no reconfiguration "
+                       "here.\n\n"
+                       "MAGDA must be running with the remote API enabled.\n\n"
+                       "Register it with a host, for example:\n"
+                       "  claude mcp add magda -- magda-mcp\n\n"
+                       "Environment:\n"
+                       "  MAGDA_DATA_DIR   where to look for discovery records, overriding "
+                       "config\n";
+                return 0;
+            }
+            std::cerr << "magda-mcp: unrecognised argument '" << argument << "'; try --help\n";
+            return 2;
         }
-        std::cerr << "magda-mcp: unrecognised argument '" << argument << "'; try --help\n";
-        return 2;
-    }
 
-    // The stdio transport is a byte protocol on stdout. Anything JUCE or a
-    // library writes there would land inside a JSON-RPC message; diagnostics go
-    // to stderr, which the host is explicitly told may carry them.
-    Bridge bridge;
-    return bridge.run();
+        // The stdio transport is a byte protocol on stdout. Anything JUCE or a
+        // library writes there would land inside a JSON-RPC message; diagnostics go
+        // to stderr, which the host is explicitly told may carry them.
+        Bridge bridge;
+        return bridge.run();
+    } catch (const std::exception& e) {
+        std::cerr << "magda-mcp: fatal error: " << e.what() << "\n";
+        return 1;
+    }
 }
