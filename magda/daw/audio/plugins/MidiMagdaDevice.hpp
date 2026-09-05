@@ -33,10 +33,12 @@ class MidiMagdaDevice : public MagdaDevice {
         sampleRate_ = context.sampleRate;
     }
 
-    /** Send note-off for the given note (channel 1, like the retired base). */
-    static void sendNoteOff(DeviceMidiBuffer& midi, int noteNumber) {
+    /** Send note-off for the given note (channel 1, like the retired base).
+     *  The source is the one the note-on carried, so a device downstream reads
+     *  the pair as one note from one origin (#2416). */
+    static void sendNoteOff(DeviceMidiBuffer& midi, int noteNumber, std::uint32_t sourceId = 0) {
         if (noteNumber >= 0)
-            midi.addEvent({juce::MidiMessage::noteOff(1, noteNumber), 0});
+            midi.addEvent({juce::MidiMessage::noteOff(1, noteNumber), sourceId});
     }
 
     /** Clear the MIDI output note display (no note playing). */
