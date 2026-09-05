@@ -81,8 +81,9 @@ struct Rig {
     }
 
     MidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
-                   bool playing = true) {
+                   bool playing = true, bool panic = false) {
         MidiBuffer midi;
+        midi.setAllNotesOff(panic);
         for (const auto& message : input)
             midi.events.push_back({message, 42});
         midi.events.shrink_to_fit();
@@ -156,6 +157,44 @@ TEST_CASE("Arpeggiator input resets retain a single pending note-off",
     CHECK(midi.message(1).isNoteOn());
     CHECK(midi.message(1).getNoteNumber() == 67);
     CHECK(midi.message(1).getVelocity() == 73);
+}
+
+TEST_CASE("Arpeggiator buffer panic stops and clears a latched chord",
+          "[arpeggiator][midi][input]") {
+    Rig rig(true);
+    rig.startNote();
+    rig.run(0.05, {juce::MidiMessage::noteOff(1, 60)});
+    auto midi = rig.run(0.1, {}, true, true);
+    CHECK(midi.isAllNotesOff());
+    REQUIRE(midi.size() == 1);
+    checkOff(midi);
+    auto next = rig.run(0.5);
+    CHECK_FALSE(next.isAllNotesOff());
+    CHECK(next.size() == 0);
+}
+
+TEST_CASE("Arpeggiator buffer panic permits fresh input without duplicate note-offs",
+          "[arpeggiator][midi][input]") {
+    Rig rig(true);
+    rig.startNote();
+    auto midi = rig.run(
+        0.5, {juce::MidiMessage::allNotesOff(1), juce::MidiMessage::noteOn(1, 67, juce::uint8{73})},
+        true, true);
+    CHECK(midi.isAllNotesOff());
+    REQUIRE(midi.size() == 2);
+    checkOff(midi);
+    CHECK(midi.message(1).isNoteOn());
+    CHECK(midi.message(1).getNoteNumber() == 67);
+    CHECK(midi.message(1).getVelocity() == 73);
+}
+
+TEST_CASE("Arpeggiator forwards buffer panic even with no sounding note",
+          "[arpeggiator][midi][input]") {
+    Rig rig;
+    auto midi = rig.run(0.0, {}, false, true);
+    CHECK(midi.isAllNotesOff());
+    CHECK(midi.size() == 0);
+    CHECK_FALSE(rig.run(0.05, {}, false).isAllNotesOff());
 }
 
 TEST_CASE("Arpeggiator replacing an unlatched chord stops the previous note",
