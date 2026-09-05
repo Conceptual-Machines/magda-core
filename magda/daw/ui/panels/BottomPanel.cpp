@@ -1481,7 +1481,7 @@ void BottomPanel::layoutMidiHeaderControls(juce::Rectangle<int> headerBounds) {
 
 juce::Rectangle<int> BottomPanel::getTabBarBounds() {
     // No tab bar for bottom panel - content is auto-switched based on selection
-    return juce::Rectangle<int>();
+    return {};
 }
 
 juce::Rectangle<int> BottomPanel::getContentBounds() {

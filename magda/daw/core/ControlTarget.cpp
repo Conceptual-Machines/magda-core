@@ -38,7 +38,7 @@ juce::var toVar(const ControlTarget& target) {
     obj->setProperty("modParamIndex", target.modParamIndex);
     obj->setProperty("sendBusIndex", target.sendBusIndex);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool fromVar(const juce::var& v, ControlTarget& out) {

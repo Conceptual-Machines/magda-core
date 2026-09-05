@@ -1760,7 +1760,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
         auto& sel = SelectionManager::getInstance();
         if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
             const auto& set = sel.getSelectedTracks();
-            return std::vector<TrackId>(set.begin(), set.end());
+            return {set.begin(), set.end()};
         }
         return {clickedId};
     };
@@ -2142,7 +2142,7 @@ juce::Rectangle<int> TrackHeadersPanel::getTrackHeaderArea(int trackIndex) const
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition, getWidth(), height - RESIZE_HANDLE_HEIGHT);
+    return {0, yPosition, getWidth(), height - RESIZE_HANDLE_HEIGHT};
 }
 
 juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) const {
@@ -2153,8 +2153,7 @@ juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) cons
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackHeaders[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition + height - RESIZE_HANDLE_HEIGHT, getWidth(),
-                                RESIZE_HANDLE_HEIGHT);
+    return {0, yPosition + height - RESIZE_HANDLE_HEIGHT, getWidth(), RESIZE_HANDLE_HEIGHT};
 }
 
 bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const {

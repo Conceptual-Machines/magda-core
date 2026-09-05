@@ -564,7 +564,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     if (!info.projectBindings.isVoid())
         obj->setProperty("projectBindings", info.projectBindings);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& outInfo) {
@@ -870,7 +870,7 @@ juce::var ProjectSerializer::serializeTracks() {
         tracksArray.add(serializeTrackInfo(track));
     }
 
-    return juce::var(tracksArray);
+    return {tracksArray};
 }
 
 juce::var ProjectSerializer::serializeSources() {
@@ -905,7 +905,7 @@ juce::var ProjectSerializer::serializeSources() {
             sourceObj->setProperty("detectedKeyScale", juce::String(source.detectedKeyScale));
         sourcesArray.add(juce::var(sourceObj));
     }
-    return juce::var(sourcesArray);
+    return {sourcesArray};
 }
 
 void ProjectSerializer::deserializeSourcesToStaging(const juce::var& json,
@@ -1039,7 +1039,7 @@ juce::var ProjectSerializer::serializeClips() {
         clipsArray.add(serializeClipInfo(clip));
     }
 
-    return juce::var(clipsArray);
+    return {clipsArray};
 }
 
 juce::var ProjectSerializer::serializeAutomation() {
@@ -1059,7 +1059,7 @@ juce::var ProjectSerializer::serializeAutomation() {
     obj->setProperty("lanes", juce::var(lanesArray));
     obj->setProperty("clips", juce::var(clipsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================

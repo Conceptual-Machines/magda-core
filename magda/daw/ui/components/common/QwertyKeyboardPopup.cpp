@@ -116,16 +116,16 @@ void QwertyKeyboardPopup::resized() {
 juce::Rectangle<float> QwertyKeyboardPopup::whiteKeyBounds(size_t index) const {
     const auto total = static_cast<float>(kWhiteKeys_.size());
     const float w = keyboardArea_.getWidth() / total;
-    return juce::Rectangle<float>(keyboardArea_.getX() + static_cast<float>(index) * w,
-                                  static_cast<float>(keyboardArea_.getY()), w,
-                                  static_cast<float>(keyboardArea_.getHeight()));
+    return {keyboardArea_.getX() + static_cast<float>(index) * w,
+            static_cast<float>(keyboardArea_.getY()), w,
+            static_cast<float>(keyboardArea_.getHeight())};
 }
 
 juce::Rectangle<float> QwertyKeyboardPopup::blackKeyBounds(const BlackKey& bk) const {
     auto anchor = whiteKeyBounds(static_cast<size_t>(bk.anchorWhiteIndex));
     const float w = anchor.getWidth() * 0.62f;
     const float h = anchor.getHeight() * (kBlackKeyHeightRatio / 100.0f);
-    return juce::Rectangle<float>(anchor.getRight() - w * 0.5f, anchor.getY(), w, h);
+    return {anchor.getRight() - w * 0.5f, anchor.getY(), w, h};
 }
 
 void QwertyKeyboardPopup::paint(juce::Graphics& g) {

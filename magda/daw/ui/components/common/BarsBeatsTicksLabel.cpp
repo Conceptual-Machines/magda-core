@@ -307,7 +307,7 @@ juce::String BarsBeatsTicksLabel::SegmentLabel::formatDisplay() const {
         // Zero-padded to 3 digits
         char buffer[8];
         std::snprintf(buffer, sizeof(buffer), "%03d", displayValue_);
-        return juce::String(buffer);
+        return {buffer};
     }
     return juce::String(displayValue_);
 }

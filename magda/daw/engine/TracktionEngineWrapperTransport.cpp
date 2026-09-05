@@ -16,10 +16,10 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
     try {
         if (type == "play") {
             play();
-            return CommandResponse(CommandResponse::Status::Success, "Playback started");
+            return {CommandResponse::Status::Success, "Playback started"};
         } else if (type == "stop") {
             stop();
-            return CommandResponse(CommandResponse::Status::Success, "Playback stopped");
+            return {CommandResponse::Status::Success, "Playback stopped"};
         } else if (type == "createTrack") {
             // Simple parameter parsing - in a real implementation you'd parse JSON
             auto trackId = createMidiTrack("New Track");
@@ -32,11 +32,11 @@ CommandResponse TracktionEngineWrapper::processCommand(const Command& command) {
             response.setData(responseData);
             return response;
         } else {
-            return CommandResponse(CommandResponse::Status::Error, "Unknown command");
+            return {CommandResponse::Status::Error, "Unknown command"};
         }
     } catch (const std::exception& e) {
-        return CommandResponse(CommandResponse::Status::Error,
-                               "Command execution failed: " + std::string(e.what()));
+        return {CommandResponse::Status::Error,
+                "Command execution failed: " + std::string(e.what())};
     }
 }
 

@@ -91,8 +91,8 @@ Token Tokenizer::readIdentifier() {
         col_++;
     }
 
-    return Token(TokenType::IDENTIFIER, std::string(start, static_cast<size_t>(pos_ - start)),
-                 line_, startCol);
+    return {TokenType::IDENTIFIER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
+            startCol};
 }
 
 Token Tokenizer::readString() {
@@ -136,10 +136,10 @@ Token Tokenizer::readString() {
         pos_++;
         col_++;
     } else {
-        return Token(TokenType::ERROR, "Unterminated string", line_, startCol);
+        return {TokenType::ERROR, "Unterminated string", line_, startCol};
     }
 
-    return Token(TokenType::STRING, value, line_, startCol);
+    return {TokenType::STRING, value, line_, startCol};
 }
 
 Token Tokenizer::readNumber() {
@@ -165,8 +165,8 @@ Token Tokenizer::readNumber() {
         }
     }
 
-    return Token(TokenType::NUMBER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
-                 startCol);
+    return {TokenType::NUMBER, std::string(start, static_cast<size_t>(pos_ - start)), line_,
+            startCol};
 }
 
 Token Tokenizer::next() {
@@ -178,7 +178,7 @@ Token Tokenizer::next() {
     skipWhitespace();
 
     if (!*pos_)
-        return Token(TokenType::END_OF_INPUT, "", line_, col_);
+        return {TokenType::END_OF_INPUT, "", line_, col_};
 
     int startCol = col_;
     char c = *pos_;
@@ -187,71 +187,71 @@ Token Tokenizer::next() {
         case '(':
             pos_++;
             col_++;
-            return Token(TokenType::LPAREN, "(", line_, startCol);
+            return {TokenType::LPAREN, "(", line_, startCol};
         case ')':
             pos_++;
             col_++;
-            return Token(TokenType::RPAREN, ")", line_, startCol);
+            return {TokenType::RPAREN, ")", line_, startCol};
         case '[':
             pos_++;
             col_++;
-            return Token(TokenType::LBRACKET, "[", line_, startCol);
+            return {TokenType::LBRACKET, "[", line_, startCol};
         case ']':
             pos_++;
             col_++;
-            return Token(TokenType::RBRACKET, "]", line_, startCol);
+            return {TokenType::RBRACKET, "]", line_, startCol};
         case '.':
             pos_++;
             col_++;
-            return Token(TokenType::DOT, ".", line_, startCol);
+            return {TokenType::DOT, ".", line_, startCol};
         case ',':
             pos_++;
             col_++;
-            return Token(TokenType::COMMA, ",", line_, startCol);
+            return {TokenType::COMMA, ",", line_, startCol};
         case ';':
             pos_++;
             col_++;
-            return Token(TokenType::SEMICOLON, ";", line_, startCol);
+            return {TokenType::SEMICOLON, ";", line_, startCol};
         case '@':
             pos_++;
             col_++;
-            return Token(TokenType::AT, "@", line_, startCol);
+            return {TokenType::AT, "@", line_, startCol};
         case '=':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::EQUALS_EQUALS, "==", line_, startCol);
+                return {TokenType::EQUALS_EQUALS, "==", line_, startCol};
             }
-            return Token(TokenType::EQUALS, "=", line_, startCol);
+            return {TokenType::EQUALS, "=", line_, startCol};
         case '!':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::NOT_EQUALS, "!=", line_, startCol);
+                return {TokenType::NOT_EQUALS, "!=", line_, startCol};
             }
-            return Token(TokenType::ERROR, "!", line_, startCol);
+            return {TokenType::ERROR, "!", line_, startCol};
         case '>':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::GREATER_EQUALS, ">=", line_, startCol);
+                return {TokenType::GREATER_EQUALS, ">=", line_, startCol};
             }
-            return Token(TokenType::GREATER, ">", line_, startCol);
+            return {TokenType::GREATER, ">", line_, startCol};
         case '<':
             pos_++;
             col_++;
             if (*pos_ == '=') {
                 pos_++;
                 col_++;
-                return Token(TokenType::LESS_EQUALS, "<=", line_, startCol);
+                return {TokenType::LESS_EQUALS, "<=", line_, startCol};
             }
-            return Token(TokenType::LESS, "<", line_, startCol);
+            return {TokenType::LESS, "<", line_, startCol};
         default:
             break;
     }
@@ -269,7 +269,7 @@ Token Tokenizer::next() {
     // Unknown character - skip it
     pos_++;
     col_++;
-    return Token(TokenType::ERROR, std::string(1, c), line_, startCol);
+    return {TokenType::ERROR, std::string(1, c), line_, startCol};
 }
 
 Token Tokenizer::peek() {
@@ -1914,7 +1914,7 @@ juce::var capabilitySummary(const juce::String& pluginId) {
     for (const auto& alias : capabilities.parameterAliases)
         aliases.add(alias);
     object->setProperty("parameter_aliases", aliases);
-    return juce::var(object);
+    return {object};
 }
 
 juce::var parameterSummary(const ParameterInfo& parameter) {
@@ -1930,7 +1930,7 @@ juce::var parameterSummary(const ParameterInfo& parameter) {
     if (std::isfinite(parameter.maxValue))
         object->setProperty("max", parameter.maxValue);
     object->setProperty("modulatable", parameter.modulatable);
-    return juce::var(object);
+    return {object};
 }
 
 juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
@@ -1958,7 +1958,7 @@ juce::var deviceSummary(const DeviceInfo& device, const ChainNodePath& path,
         object->setProperty("parameters_truncated", static_cast<int>(device.parameters.size()) >
                                                         kMaxSelectedDeviceParameters);
     }
-    return juce::var(object);
+    return {object};
 }
 
 struct DeviceAtPath {

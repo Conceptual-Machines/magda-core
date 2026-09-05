@@ -160,7 +160,7 @@ juce::var ControllerRegistry::saveToConfig() const {
     juce::Array<juce::var> arr;
     for (const auto& c : controllers_)
         arr.add(encodeController(c));
-    return juce::var(arr);
+    return {arr};
 }
 
 // ============================================================================

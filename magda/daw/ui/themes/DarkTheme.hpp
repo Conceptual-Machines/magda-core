@@ -37,9 +37,8 @@ inline juce::Colour oklchToColour(float L, float C, float hueDegrees, float alph
         return static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, c * 255.0f + 0.5f));
     };
 
-    return juce::Colour(
-        toSrgb(rLin), toSrgb(gLin), toSrgb(bLin),
-        static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, alpha * 255.0f + 0.5f)));
+    return {toSrgb(rLin), toSrgb(gLin), toSrgb(bLin),
+            static_cast<juce::uint8>(juce::jlimit(0.0f, 255.0f, alpha * 255.0f + 0.5f))};
 }
 
 // Converts a JUCE sRGB Colour to its true OKLCH hue in degrees. NOTE: this is

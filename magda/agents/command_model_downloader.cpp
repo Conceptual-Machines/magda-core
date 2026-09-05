@@ -197,7 +197,7 @@ CommandModelDownloader::~CommandModelDownloader() {
 
 juce::File CommandModelDownloader::modelsDir() {
     // Single source of truth: the same directory the backend loads from.
-    return juce::File(juce::String(CommandModelOnnx::defaultAssetDir().string()));
+    return {juce::String(CommandModelOnnx::defaultAssetDir().string())};
 }
 
 std::vector<juce::File> CommandModelDownloader::modelFiles() {

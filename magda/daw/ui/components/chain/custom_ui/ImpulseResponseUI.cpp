@@ -100,8 +100,7 @@ ImpulseResponseUI::ImpulseResponseUI() {
 
     // Filter Q: 0.1–14.0
     filterQ_.slider.setRange(0.1, 14.0, 0.01);
-    filterQ_.slider.setValueFormatter(
-        [](double value) -> juce::String { return juce::String(value, 2); });
+    filterQ_.slider.setValueFormatter([](double value) -> juce::String { return {value, 2}; });
     filterQ_.slider.setValueParser(
         [](const juce::String& text) -> double { return text.trim().getDoubleValue(); });
     filterQ_.slider.onValueChanged = [this](double value) {

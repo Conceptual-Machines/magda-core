@@ -65,7 +65,7 @@ constexpr const char* kRecordPattern = "remote-api-*.json";
 constexpr int kInternalError = -32603;
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {
@@ -107,7 +107,7 @@ juce::String envVar(const char* name) {
  */
 juce::File dataDir() {
     if (const auto fromEnv = envVar("MAGDA_DATA_DIR"); fromEnv.isNotEmpty())
-        return juce::File(fromEnv);
+        return {fromEnv};
 
     const auto osDefault = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                                .getChildFile("MAGDA");
@@ -116,7 +116,7 @@ juce::File dataDir() {
         juce::var parsed;
         if (juce::JSON::parse(config.loadFileAsString(), parsed).wasOk()) {
             if (const auto configured = parsed["dataDir"].toString(); configured.isNotEmpty())
-                return juce::File(configured);
+                return {configured};
         }
     }
     return osDefault;

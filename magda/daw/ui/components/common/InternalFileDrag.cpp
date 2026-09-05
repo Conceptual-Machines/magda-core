@@ -16,7 +16,7 @@ juce::var makeFilesDragDescription(const juce::StringArray& paths) {
     auto* obj = new juce::DynamicObject();
     obj->setProperty(kTypeKey, juce::var(kFilesType));
     obj->setProperty(kPathsKey, juce::var(pathArray));
-    return juce::var(obj);  // ref-counted from here, so no leak if it goes unused
+    return {obj};  // ref-counted from here, so no leak if it goes unused
 }
 
 void startFilesDrag(juce::Component* sourceComponent, const juce::StringArray& paths,

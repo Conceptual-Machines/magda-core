@@ -273,7 +273,7 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
         // External plugin identification
         obj->setProperty("uniqueId", plugin_.uniqueId);
         obj->setProperty("fileOrIdentifier", plugin_.fileOrIdentifier);
-        return juce::var(obj);
+        return {obj};
     }
 
     bool isInterestedInDragSource(const juce::DragAndDropTarget::SourceDetails&) override {

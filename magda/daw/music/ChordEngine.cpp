@@ -109,7 +109,7 @@ ChordEngine::~ChordEngine() = default;
 
 Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
     if (heldNotes.empty())
-        return Chord("none");
+        return {"none"};
 
     if (heldNotes.size() < 2) {
         Chord chord("");
@@ -130,7 +130,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
     }
 
     if (pitchClasses.size() < 2)
-        return Chord("unknown");
+        return {"unknown"};
 
     std::sort(pitchClasses.begin(), pitchClasses.end());
 

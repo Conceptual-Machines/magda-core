@@ -830,7 +830,7 @@ void MagdaSamplerPlugin::relocateSample(const juce::File& file) {
 }
 
 juce::File MagdaSamplerPlugin::getSampleFile() const {
-    return juce::File(samplePath_);
+    return {samplePath_};
 }
 
 const juce::AudioBuffer<float>* MagdaSamplerPlugin::getWaveform() const {

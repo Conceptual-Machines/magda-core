@@ -331,7 +331,7 @@ double parseNumber(const std::string& text) {
 std::string fmtG(double v) {
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%g", v);
-    return std::string(buf);
+    return {buf};
 }
 
 struct Phrase {

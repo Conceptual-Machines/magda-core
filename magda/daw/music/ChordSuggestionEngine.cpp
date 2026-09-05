@@ -1761,7 +1761,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::proces
 
 std::vector<Chord> ChordSuggestionEngine::getRecentChords() const {
     std::scoped_lock lock(chordContextMutex);
-    return std::vector<Chord>(recentChords_.begin(), recentChords_.end());
+    return {recentChords_.begin(), recentChords_.end()};
 }
 
 juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {

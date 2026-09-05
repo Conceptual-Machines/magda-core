@@ -93,7 +93,7 @@ juce::var ProjectSerializer::serializeAutomationLaneInfo(const AutomationLaneInf
     }
     obj->setProperty("clipIds", juce::var(clipIdsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeAutomationLaneInfo(const juce::var& json,
@@ -178,7 +178,7 @@ juce::var ProjectSerializer::serializeAutomationClipInfo(const AutomationClipInf
     }
     obj->setProperty("points", juce::var(pointsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeAutomationClipInfo(const juce::var& json,
@@ -242,7 +242,7 @@ juce::var ProjectSerializer::serializeAutomationPoint(const AutomationPoint& poi
     obj->setProperty("inHandle", serializeBezierHandle(point.inHandle));
     obj->setProperty("outHandle", serializeBezierHandle(point.outHandle));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeAutomationPoint(const juce::var& json,
@@ -283,7 +283,7 @@ juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& t
     obj->setProperty("modParamIndex", target.modParamIndex);
     obj->setProperty("sendBusIndex", target.sendBusIndex);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeAutomationTarget(const juce::var& json,
@@ -327,7 +327,7 @@ juce::var ProjectSerializer::serializeBezierHandle(const BezierHandle& handle) {
     obj->setProperty("value", handle.value);
     obj->setProperty("linked", handle.linked);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeBezierHandle(const juce::var& json, BezierHandle& outHandle) {
@@ -380,7 +380,7 @@ juce::var ProjectSerializer::serializeMacroInfo(const MacroInfo& macro) {
     }
     obj->setProperty("links", juce::var(linksArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& outMacro) {
@@ -495,7 +495,7 @@ juce::var ProjectSerializer::serializeModInfo(const ModInfo& mod) {
     }
     obj->setProperty("links", juce::var(linksArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMod) {
@@ -677,7 +677,7 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     }
     obj->setProperty("valueTable", juce::var(valueTableArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, ParameterInfo& data) {
@@ -757,7 +757,7 @@ juce::var ProjectSerializer::serializeCurvePointData(const CurvePointData& data)
     SER(inHandleY);
     SER(outHandleX);
     SER(outHandleY);
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeCurvePointData(const juce::var& json, CurvePointData& data) {
@@ -790,7 +790,7 @@ juce::var ProjectSerializer::serializeMacroLink(const MacroLink& data) {
     obj->setProperty("target", juce::var(targetObj));
     SER(amount);
     SER(bipolar);
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeMacroLink(const juce::var& json, MacroLink& data) {
@@ -816,7 +816,7 @@ juce::var ProjectSerializer::serializeModLink(const ModLink& data) {
     SER(amount);
     SER(bipolar);
     SER(enabled);
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeModLink(const juce::var& json, ModLink& data) {

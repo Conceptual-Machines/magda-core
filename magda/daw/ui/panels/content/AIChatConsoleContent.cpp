@@ -3561,7 +3561,7 @@ static juce::String formatSeconds(float s) {
 
 // Format a normalized 0..1 value as 2-decimal text.
 static juce::String formatNorm(float v) {
-    return juce::String(juce::jlimit(0.0f, 1.0f, v), 2);
+    return {juce::jlimit(0.0f, 1.0f, v), 2};
 }
 
 // Render a parsed preset as a categorized multi-line summary suitable

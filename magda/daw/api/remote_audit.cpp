@@ -70,7 +70,7 @@ juce::var AuditEntry::toJson() const {
     object->setProperty("requestId", requestId);
     object->setProperty("outcome", magda::remote::toString(outcome));
     object->setProperty("detail", detail);
-    return juce::var(object);
+    return {object};
 }
 
 // ===========================================================================

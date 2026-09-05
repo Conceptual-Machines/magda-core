@@ -20,7 +20,7 @@ std::size_t indexOf(Topic topic) {
 }
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(const juce::var& object, const char* name, const juce::var& value) {

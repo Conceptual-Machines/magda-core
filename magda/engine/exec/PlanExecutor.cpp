@@ -879,8 +879,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
 juce::dsp::AudioBlock<float> PlanExecutor::audioBlock(std::size_t row, int numSamples) const {
     const auto channels = static_cast<std::size_t>(context_.numChannels);
-    return juce::dsp::AudioBlock<float>(&slotChannels_[row * channels], channels,
-                                        static_cast<std::size_t>(numSamples));
+    return {&slotChannels_[row * channels], channels, static_cast<std::size_t>(numSamples)};
 }
 
 juce::dsp::AudioBlock<float> PlanExecutor::audioIn(const PortRef& ref, int numSamples) const {

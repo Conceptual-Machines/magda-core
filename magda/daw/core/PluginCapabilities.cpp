@@ -83,7 +83,7 @@ juce::var snapshotToVar(const PluginCapabilitySnapshot& snapshot) {
     setBool(*obj, "tracktionTakesAudioInput", snapshot.tracktionTakesAudioInput);
     setBool(*obj, "tracktionProducesAudioWhenNoAudioInput",
             snapshot.tracktionProducesAudioWhenNoAudioInput);
-    return juce::var(obj);
+    return {obj};
 }
 
 DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {

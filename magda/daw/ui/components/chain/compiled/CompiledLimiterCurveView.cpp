@@ -31,7 +31,7 @@ float valueForSlot(const magda::DeviceInfo& device, int slotIndex, float fallbac
 juce::String formatDb(float db) {
     if (db <= -90.0f)
         return "-inf";
-    return juce::String(db, db > -10.0f ? 1 : 0);
+    return {db, db > -10.0f ? 1 : 0};
 }
 
 }  // namespace

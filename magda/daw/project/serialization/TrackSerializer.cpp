@@ -171,7 +171,7 @@ juce::var ProjectSerializer::serializeTrackInfo(const TrackInfo& track) {
     obj->setProperty("selectedGlobalModIndex", track.selectedGlobalModIndex);
     obj->setProperty("selectedGlobalMacroIndex", track.selectedGlobalMacroIndex);
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeTrackInfo(const juce::var& json, TrackInfo& outTrack) {
@@ -395,7 +395,7 @@ juce::var ProjectSerializer::serializeChainElement(const ChainElement& element) 
         obj->setProperty("rack", serializeRackInfo(getRack(element)));
     }
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeChainElement(const juce::var& json, ChainElement& outElement) {
@@ -588,7 +588,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     if (device.pads)
         obj->setProperty("pads", serializeRackInfo(*device.pads.get()));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo& outDevice) {
@@ -872,7 +872,7 @@ juce::var ProjectSerializer::serializeRackInfo(const RackInfo& rack) {
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeRackInfo(const juce::var& json, RackInfo& outRack) {
@@ -979,7 +979,7 @@ juce::var ProjectSerializer::serializeChainInfo(const ChainInfo& chain) {
     }
     obj->setProperty("elements", juce::var(elementsArray));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeChainInfo(const juce::var& json, ChainInfo& outChain) {
@@ -1039,7 +1039,7 @@ juce::var ProjectSerializer::serializeSendInfo(const SendInfo& data) {
     SER(level);
     SER(preFader);
     SER(destTrackId);
-    return juce::var(obj);
+    return {obj};
 }
 
 bool ProjectSerializer::deserializeSendInfo(const juce::var& json, SendInfo& data) {
