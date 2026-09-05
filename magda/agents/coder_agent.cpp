@@ -3,6 +3,7 @@
 #include <juce_events/juce_events.h>
 
 #include <memory>
+#include <stdexcept>
 
 #include "../daw/api/magda_api.hpp"
 #include "../daw/api/plugin_api.hpp"
@@ -68,7 +69,15 @@ class FaustCoderAgent : public CoderAgent {
         };
         auto state = std::make_shared<ApplyState>();
         mm.callAsync([state, applyOnce]() {
-            state->status = applyOnce();
+            // Uncaught here runs on the message thread and would propagate into
+            // JUCE's dispatch loop instead of just failing this apply (#2395).
+            try {
+                state->status = applyOnce();
+            } catch (const std::exception& e) {
+                state->status = juce::String("error: ") + e.what();
+            } catch (...) {
+                state->status = "error: unknown exception";
+            }
             state->done.signal();
         });
 

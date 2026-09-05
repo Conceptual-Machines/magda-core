@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "../../core/TrackManager.hpp"
+#include "../../core/UserAlert.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "MixAnalysisInput.hpp"
 
@@ -43,7 +44,7 @@ bool runOnMessageThreadBlocking(std::function<void()> operation) {
         return true;
     }
 
-    enum class State { Queued, Running, Cancelled, Finished };
+    enum class State { Queued, Running, Cancelled, Finished, Failed };
     struct SharedOperation {
         explicit SharedOperation(std::function<void()> op) : operation(std::move(op)) {}
         std::function<void()> operation;
@@ -58,8 +59,19 @@ bool runOnMessageThreadBlocking(std::function<void()> operation) {
                 shared->completed.signal();
                 return;
             }
-            shared->operation();
-            shared->state.store(State::Finished);
+            // A throw here runs on the message thread and must not escape:
+            // uncaught, it would propagate into JUCE's dispatch loop and
+            // take the whole app down instead of just failing this render.
+            try {
+                shared->operation();
+                shared->state.store(State::Finished);
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[runOnMessageThreadBlocking] ") + e.what());
+                shared->state.store(State::Failed);
+            } catch (...) {
+                juce::Logger::writeToLog("[runOnMessageThreadBlocking] unknown exception");
+                shared->state.store(State::Failed);
+            }
             shared->completed.signal();
         }))
         return false;
@@ -87,8 +99,14 @@ class MessageThreadRenderSession {
     ~MessageThreadRenderSession() {
         try {
             close();
+        } catch (const std::exception& e) {
+            juce::Logger::writeToLog(juce::String("[MessageThreadRenderSession] ") + e.what());
+            const juce::String message = juce::String("Mix analysis cleanup failed: ") + e.what();
+            juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
         } catch (...) {
-            // best-effort teardown; a throw here must not terminate the process
+            juce::Logger::writeToLog("[MessageThreadRenderSession] unknown exception");
+            juce::MessageManager::callAsync(
+                [] { magda::notifyUserAlert("Mix analysis cleanup failed"); });
         }
     }
 

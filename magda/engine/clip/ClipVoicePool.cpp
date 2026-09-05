@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -196,15 +198,25 @@ ClipVoicePool::~ClipVoicePool() {
     // the reader, and waits for it.
     try {
         feed_.publish(std::make_shared<const ClipStreamTable>());
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: %s\n", e.what());
+    } catch (...) {
+        std::fprintf(stderr, "[ClipVoicePool] publish failed: unknown exception\n");
+    }
 
+    // Must run even if publish() above threw: a stream still registered with
+    // the prefetch reader would otherwise dangle once this pool is gone.
+    try {
         const std::scoped_lock guard(streamsLock_);
         for (auto& [key, reader] : streams_)
             if (reader.stream != nullptr)
                 reader_.remove(*reader.stream);
 
         streams_.clear();
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: %s\n", e.what());
     } catch (...) {
-        // best-effort teardown; a throw here must not terminate the process
+        std::fprintf(stderr, "[ClipVoicePool] teardown failed: unknown exception\n");
     }
 }
 

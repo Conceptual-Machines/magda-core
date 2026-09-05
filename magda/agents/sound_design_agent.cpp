@@ -2,6 +2,8 @@
 
 #include <juce_events/juce_events.h>
 
+#include <stdexcept>
+
 #include "api/magda_api.hpp"
 #include "api/plugin_api.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
@@ -80,7 +82,15 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
         const auto preset = result.preset;
         auto* plugins = plugins_;
         mm.callAsync([state, preset, path, plugins]() {
-            state->status = applyFourOscPresetToPath(*plugins, preset, path);
+            // Uncaught here runs on the message thread and would propagate into
+            // JUCE's dispatch loop instead of just failing this apply (#2395).
+            try {
+                state->status = applyFourOscPresetToPath(*plugins, preset, path);
+            } catch (const std::exception& e) {
+                state->status = juce::String("error: ") + e.what();
+            } catch (...) {
+                state->status = "error: unknown exception";
+            }
             state->done.signal();
         });
 
@@ -199,7 +209,15 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
         const auto preset = result.preset;
         auto* plugins = plugins_;
         mm.callAsync([state, preset, path, plugins]() {
-            state->status = applyPolyStepSequencerPresetToPath(*plugins, preset, path);
+            // Uncaught here runs on the message thread and would propagate into
+            // JUCE's dispatch loop instead of just failing this apply (#2395).
+            try {
+                state->status = applyPolyStepSequencerPresetToPath(*plugins, preset, path);
+            } catch (const std::exception& e) {
+                state->status = juce::String("error: ") + e.what();
+            } catch (...) {
+                state->status = "error: unknown exception";
+            }
             state->done.signal();
         });
 
@@ -293,7 +311,15 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
         const auto preset = result.preset;
         auto* plugins = plugins_;
         mm.callAsync([state, preset, path, plugins]() {
-            state->status = applyStepSequencerPresetToPath(*plugins, preset, path);
+            // Uncaught here runs on the message thread and would propagate into
+            // JUCE's dispatch loop instead of just failing this apply (#2395).
+            try {
+                state->status = applyStepSequencerPresetToPath(*plugins, preset, path);
+            } catch (const std::exception& e) {
+                state->status = juce::String("error: ") + e.what();
+            } catch (...) {
+                state->status = "error: unknown exception";
+            }
             state->done.signal();
         });
 

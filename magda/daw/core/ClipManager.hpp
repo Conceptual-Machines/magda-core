@@ -861,8 +861,10 @@ class ClipManager {
         ~BatchScope() {
             try {
                 ClipManager::getInstance().endBatch();
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[ClipManager::BatchScope] ") + e.what());
             } catch (...) {
-                // best-effort notification flush; a listener throw must not terminate
+                juce::Logger::writeToLog("[ClipManager::BatchScope] unknown exception");
             }
         }
         BatchScope(const BatchScope&) = delete;

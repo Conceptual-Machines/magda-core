@@ -5,6 +5,7 @@
 target_sources(magda_daw PRIVATE
     Config.cpp
     AppPaths.cpp
+    UserAlert.cpp
     ChainNodePath.cpp
     DeviceInfo.cpp
     DrumGridPads.cpp

@@ -452,8 +452,11 @@ class AutomationManager : public TrackManagerListener {
         ~BatchScope() {
             try {
                 AutomationManager::getInstance().endNotificationBatch();
+            } catch (const std::exception& e) {
+                juce::Logger::writeToLog(juce::String("[AutomationManager::BatchScope] ") +
+                                         e.what());
             } catch (...) {
-                // best-effort notification flush; a listener throw must not terminate
+                juce::Logger::writeToLog("[AutomationManager::BatchScope] unknown exception");
             }
         }
         BatchScope(const BatchScope&) = delete;

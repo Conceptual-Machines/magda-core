@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -151,11 +152,18 @@ class Transaction {
             if (savepoint_.empty()) {
                 sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
             } else {
-                sqlite3_exec(db_, ("ROLLBACK TO " + savepoint_).c_str(), nullptr, nullptr, nullptr);
-                sqlite3_exec(db_, ("RELEASE " + savepoint_).c_str(), nullptr, nullptr, nullptr);
+                // Build both statements before running either: if the second
+                // allocation throws, the savepoint must not be left half-released
+                // (ROLLBACK TO already run, RELEASE skipped).
+                const std::string rollbackTo = "ROLLBACK TO " + savepoint_;
+                const std::string release = "RELEASE " + savepoint_;
+                sqlite3_exec(db_, rollbackTo.c_str(), nullptr, nullptr, nullptr);
+                sqlite3_exec(db_, release.c_str(), nullptr, nullptr, nullptr);
             }
+        } catch (const std::exception& e) {
+            std::fprintf(stderr, "[Transaction] rollback failed: %s\n", e.what());
         } catch (...) {
-            // best-effort rollback; nothing to do if string allocation fails
+            std::fprintf(stderr, "[Transaction] rollback failed: unknown exception\n");
         }
     }
 

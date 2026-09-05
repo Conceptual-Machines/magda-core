@@ -1085,8 +1085,11 @@ class SelectionManager {
                             sm.listeners_.push_back(l);
                     }
                     sm.pendingAdditions_.clear();
+                } catch (const std::exception& e) {
+                    juce::Logger::writeToLog(juce::String("[SelectionManager::NotifyGuard] ") +
+                                             e.what());
                 } catch (...) {
-                    // best-effort listener bookkeeping; nothing to do if push_back allocation fails
+                    juce::Logger::writeToLog("[SelectionManager::NotifyGuard] unknown exception");
                 }
             }
         }

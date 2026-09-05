@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 
+#include "core/UserAlert.hpp"
 #include "plugins/InsertCapturePlugin.hpp"
 
 namespace magda {
@@ -98,9 +99,28 @@ InsertRenderCaptureService::~InsertRenderCaptureService() {
     try {
         if (pass_ != nullptr)
             finishPass(false);
-        cleanupAfterRender();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
+        const juce::String message = juce::String("Render capture cleanup failed: ") + e.what();
+        juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
     } catch (...) {
-        // best-effort teardown; a throw from onFinished/TE calls must not terminate
+        juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert("Render capture cleanup failed"); });
+    }
+
+    // Must run even if finishPass() above threw: removeTaps() releases the
+    // capture plugins and temp files, which would otherwise leak.
+    try {
+        cleanupAfterRender();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
+        const juce::String message = juce::String("Render capture cleanup failed: ") + e.what();
+        juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
+    } catch (...) {
+        juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert("Render capture cleanup failed"); });
     }
 }
 

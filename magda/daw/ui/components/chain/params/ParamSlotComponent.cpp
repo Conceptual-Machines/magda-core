@@ -190,12 +190,23 @@ ParamSlotComponent::~ParamSlotComponent() {
         if (isInMidiLearnMode_) {
             magda::MidiLearnCoordinator::getInstance().cancelLearn();
         }
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent] ") + e.what());
+    } catch (...) {
+        juce::Logger::writeToLog("[ParamSlotComponent] unknown exception during teardown");
+    }
+
+    // Must run even if the best-effort teardown above threw: these
+    // singletons hold a raw `this` pointer that would otherwise dangle.
+    try {
         magda::MidiLearnCoordinator::getInstance().removeListener(this);
         magda::BindingRegistry::getInstance().removeListener(this);
         magda::ControllerRegistry::getInstance().removeListener(this);
         magda::LinkModeManager::getInstance().removeListener(this);
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[ParamSlotComponent removeListener] ") + e.what());
     } catch (...) {
-        // best-effort teardown; a throw here must not terminate the process
+        juce::Logger::writeToLog("[ParamSlotComponent removeListener] unknown exception");
     }
 }
 

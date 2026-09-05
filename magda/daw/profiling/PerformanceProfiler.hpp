@@ -233,8 +233,10 @@ class MonitoredProfiler {
         try {
             double elapsed = timer_.elapsedMilliseconds();
             PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        } catch (const std::exception& e) {
+            juce::Logger::writeToLog(juce::String("[MonitoredProfiler] ") + e.what());
         } catch (...) {
-            // best-effort sample recording; nothing to do if map insertion fails
+            juce::Logger::writeToLog("[MonitoredProfiler] unknown exception");
         }
     }
 

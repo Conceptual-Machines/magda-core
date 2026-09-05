@@ -232,8 +232,10 @@ CompoundOperationScope::CompoundOperationScope(const juce::String& description) 
 CompoundOperationScope::~CompoundOperationScope() {
     try {
         UndoManager::getInstance().endCompoundOperation();
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[CompoundOperationScope] ") + e.what());
     } catch (...) {
-        // best-effort compound-command flush; a listener throw must not terminate
+        juce::Logger::writeToLog("[CompoundOperationScope] unknown exception");
     }
 }
 

@@ -74,12 +74,23 @@ Checks: >-
 #
 # bugprone-exception-escape stays enabled — it correctly found 20 real
 # noexcept/destructor/main sites (#2395) — but on LLVM 23 it also flags ~41
-# plain, non-noexcept UI/agent lambdas that only reach a throwing std::string
-# or std::vector copy. The check's documented scope is noexcept functions,
-# destructors, main, and other implicitly-noexcept special members; a lambda
-# handed to a std::function-typed callback setter (juce::Button::onClick,
-# PopupMenu::showMenuAsync, MessageManager::callAsync, ...) has none of that
-# and is free to throw. Treat those as false positives, not a to-do list.
+# plain, non-noexcept UI/agent lambdas. The reported trace is a genuine false
+# positive at the diagnostic site itself: the throwing std::string/std::vector
+# copy happens while constructing the closure (a by-value capture), not inside
+# the lambda's non-noexcept call operator, and a lambda handed to a
+# std::function-typed callback setter (juce::Button::onClick,
+# PopupMenu::showMenuAsync, MessageManager::callAsync, ...) is under none of
+# this check's documented scope (noexcept functions, destructors, main) and is
+# free to throw. Don't chase these as a to-do list.
+#
+# That said, "free to throw" doesn't mean the throw is harmless: a handful of
+# these callAsync lambdas (magda/agents/coder_agent.cpp,
+# magda/agents/sound_design_agent.cpp x3) ran an apply step and then
+# unconditionally signalled a WaitableEvent the caller was blocked on. An
+# exception mid-apply skipped the signal (the caller then just timed out) and,
+# uncaught on the message thread, would have propagated into JUCE's dispatch
+# loop instead of failing only that one apply. Those four now catch and report
+# the error through the same `status`/signal path instead of skipping it.
 
 # Warnings as errors (can be adjusted based on team preference)
 WarningsAsErrors: ''
