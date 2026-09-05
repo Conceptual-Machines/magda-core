@@ -6,6 +6,7 @@
 
 #include "AssertionWatch.hpp"
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/audio/FaustResources.hpp"
 
 /**
  * @brief Main entry point for JUCE unit tests
@@ -25,6 +26,12 @@ int main(int argc, char* argv[]) {
     // earlier suite could have started, is what keeps that write from racing a
     // read. It is never taken down. See AssertionWatch.hpp.
     magda::test::AssertionWatch::instance();
+
+    // This binary ships no faustlibraries (staging them aborts libfaust on
+    // Linux, #2238), so an importing Faust source could only fail its compile
+    // into passthrough anyway. Disallowed, that passthrough is the contract
+    // and libfaust is never entered; self-contained sources still compile.
+    magda::daw::audio::disallowFaustLibraryImports();
 
     // Initialize JUCE GUI subsystem - required for message loop, timers, async updaters, etc.
     // This must be alive for the entire test run to avoid SIGSEGV from singleton cleanup issues
