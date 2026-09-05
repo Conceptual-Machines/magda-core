@@ -203,12 +203,28 @@
     "label.click_hint": "Щёлкните элемент, чтобы выбрать его в виде цепочки"
   },
   "project_settings": {
+    "section.metadata": "",
+    "section.general": "",
+    "metadata": {
+      "title": "",
+      "artist": "",
+      "album": "",
+      "originalArtist": "",
+      "composer": "",
+      "songwriter": "",
+      "producer": "",
+      "arranger": "",
+      "year": "",
+      "genre": "",
+      "copyright": "",
+      "website": "",
+      "comment": ""
+    },
     "total_length": "Общая длина",
     "bars": "тактов",
     "sample_rate": "Частота дискретизации",
     "render_bit_depth": "Битовая глубина рендеринга",
-    "bounce_bit_depth": "Битовая глубина сведения",
-    "save_as_default": "Сохранить как настройки по умолчанию для новых проектов"
+    "bounce_bit_depth": "Битовая глубина сведения"
   },
   "track_manager": {
     "column.track": "Дорожка",
@@ -316,6 +332,7 @@
     "capture.cancel": "Отмена",
     "capture.error_setup": "Не удалось настроить захват внешнего оборудования. Экспорт был прерван.",
     "capture.error_failed": "Не удалось записать возвраты внешнего оборудования. Экспорт был прерван.",
+    "capture.cleanup_failed": "",
     "error.trim_failed": "Рендер выполнен, но не удалось обрезать пре-ролл.",
     "error.file_not_created": "Рендер завершён, но файл не создан. Проект может быть пустым или не содержать аудио.",
     "error.render_failed": "Задача рендеринга завершилась с ошибкой",
@@ -325,6 +342,9 @@
     "error.no_midi_notes": "Нет {0}-клипов с нотами для экспорта.",
     "error.midi_write_failed": "Не удалось записать {0}-файл.",
     "error.cannot_create_file": "Не удалось создать выходной файл:"
+  },
+  "mix_analysis": {
+    "cleanup_failed": ""
   },
   "collect": {
     "title": "Собрать файлы",
@@ -344,9 +364,11 @@
     "scale.label": "Масштаб интерфейса",
     "scale.auto": "Авто",
     "font_scale.label": "Размер шрифта",
+    "localized_font_scale.label": "",
     "font_family.label": "Шрифт интерфейса",
     "font_family.default": "Inter (по умолчанию)",
     "tab.general": "Общие",
+    "tab.defaults": "",
     "tab.appearance": "Внешний вид",
     "tab.colours": "Цвета",
     "tab.rendering": "Рендер",
@@ -370,12 +392,18 @@
     "section.clip_colours": "Цвета клипов",
     "section.output": "Вывод",
     "section.format": "Формат",
+    "section.new_project_defaults": "",
+    "section.credit_defaults": "",
+    "label.default_sample_rate": "",
+    "label.default_render_bit_depth": "",
+    "label.default_bounce_bit_depth": "",
     "section.file_naming": "Именование файлов",
     "section.keyboard_shortcuts": "Горячие клавиши",
     "slider.zoom_in_sensitivity": "Чувствительность приближения",
     "slider.zoom_out_sensitivity": "Чувствительность отдаления",
     "slider.zoom_shift_sensitivity": "Чувствительность {0}+масштаб",
     "slider.default_length": "Длина по умолчанию",
+    "slider.default_total_length": "",
     "slider.default_view": "Вид по умолчанию",
     "slider.interval": "Интервал",
     "toggle.enable_autosave": "Автосохранение",
@@ -418,6 +446,8 @@
     "option.bit_depth_16": "16 бит",
     "option.bit_depth_24": "24 бит",
     "option.bit_depth_32_float": "32 бит с плавающей точкой",
+    "dialog.load_theme": "",
+    "dialog.save_theme_template": "",
     "dialog.select_render_output_folder": "Выбрать выходную папку",
     "paths.section.data": "Папка данных (логи, скрипты, кэш плагинов)",
     "paths.section.presets": "Папка пресетов (цепочки, рэки, устройства)",
