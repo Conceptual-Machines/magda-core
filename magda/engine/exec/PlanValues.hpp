@@ -44,6 +44,13 @@ struct OpValue {
     /// audio, and no gain can silence a MIDI stream.
     bool silent = false;
 
+    /// The op's track is not being heard: muted, or silenced by another
+    /// track's solo. Not the gain that silences it -- the TrackMute op applies
+    /// that -- but the fact behind it, which a device is owed on the block it
+    /// becomes true so it can drop what it holds (#2418). The fork signals the
+    /// same edge as TrackMuteState::wasJustMuted.
+    bool trackInaudible = false;
+
     /// Whether a Subtract takes its dry side away, which is whether the device
     /// or rack it is keyed to is soloing its delta. Its own field rather than a
     /// gain on the dry edge, because the safe reading of a value that does not

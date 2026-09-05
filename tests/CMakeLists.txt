@@ -341,6 +341,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_plan_layout.cpp)
     # The note-range gate a pad chain needs (#2200).
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
+    # The panic flag beside a MIDI port (#2418).
+    list(APPEND TEST_SOURCES engine/test_plan_midi_panic.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_diff.cpp)
@@ -637,6 +639,8 @@ target_sources(magda_juce_tests PRIVATE
     project/test_legacy_corpus_migration_juce.cpp
     devices/test_device_state_schema_juce.cpp
     devices/test_convolution_device_juce.cpp
+    # One device, one discontinuity, both adapters (#2418).
+    devices/test_device_panic_flag_juce.cpp
     devices/test_mutable_add_not_replace_juce.cpp
     devices/test_master_sidechain_juce.cpp
     midi/test_midi_bridge_note_events_juce.cpp

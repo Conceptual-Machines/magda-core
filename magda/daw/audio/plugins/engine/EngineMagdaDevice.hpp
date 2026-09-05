@@ -30,18 +30,19 @@
  * once would differ from it by however much the curve moves across a block, on
  * every automated parameter, in every project.
  *
- * Two things the device SDK does not carry yet, named here rather than
- * silently dropped, because each is a divergence the day a device wants it:
+ * One thing the device SDK does not carry yet, named here rather than silently
+ * dropped, because it is a divergence the day a device wants it:
  *
  * - **Further output pairs.** A MagdaDevice declares no channel layout beyond
  *   what it writes into the buffer it is handed, so DeviceBlock::extraOutputs
  *   is left cleared. Multi-out is a te::RackType wrapper in the incumbent and
  *   an op with extra ports in the plan; a device that owned pairs of its own
  *   would need the SDK to say so.
- * - **MidiMessageArray::isAllNotesOff.** The fork's MIDI container carries that
- *   flag beside the events and the engine's juce::MidiBuffer does not. A device
- *   reading DeviceMidiInput::isAllNotesOff gets false here, and one setting it
- *   on its output is writing to something nothing downstream reads.
+ *
+ * The panic flag used to be a second. The fork carries it on its MIDI container
+ * (MidiMessageArray::isAllNotesOff) and a juce::MidiBuffer has no room for it,
+ * so the engine carries it beside the port instead: DeviceBlock::midiInAllNotesOff
+ * on the way in, DeviceBlock::midiOutAllNotesOff on the way out (#2418).
  *
  * Sidechain audio used to be a third. DeviceBlock::sidechain now reaches the
  * device as further channels of its own buffer, after the ones it owns, with

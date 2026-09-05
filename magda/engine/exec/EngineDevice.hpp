@@ -63,6 +63,17 @@ struct DeviceBlock {
     const juce::MidiBuffer* midiIn = nullptr;
 
     /**
+     * @brief Panic reaching the device: release what you are holding (#2418).
+     *
+     * A discontinuity the host signals without a CC event -- a playhead jump,
+     * a track that just went inaudible -- after which it re-asserts what
+     * should be sounding without a note-off for what should not. The fork
+     * carries it on the buffer (MidiMessageArray::isAllNotesOff); a
+     * juce::MidiBuffer has no room for it, so it travels beside the port.
+     */
+    bool midiInAllNotesOff = false;
+
+    /**
      * @brief Where a MIDI-producing device writes, cleared before the call.
      *
      * Null when the plan gave the device no MIDI output port. At most what
@@ -73,6 +84,16 @@ struct DeviceBlock {
      * device that also echoed its input would double every note (#2345).
      */
     juce::MidiBuffer* midiOut = nullptr;
+
+    /**
+     * @brief The panic the device leaves on @ref midiOut, read back after
+     *        process() and carried to whatever the port feeds.
+     *
+     * False on entry, like the buffer: a device producing MIDI produces the
+     * flag with it, and one meaning to pass a panic on says so. Ignored for a
+     * device the plan gave no MIDI output.
+     */
+    bool midiOutAllNotesOff = false;
 
     /// Sidechain audio. A zero-channel block when the slot is unconnected, so
     /// devices check getNumChannels() rather than assuming a source.
@@ -194,6 +215,15 @@ class EngineMidiSource {
     /// Add this block's events to @p out; it arrives cleared. At most
     /// kMaxMidiBytesPerPort of encoded MIDI, SysEx included.
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
+
+    /// Whether the block just rendered was a discontinuity of the source's
+    /// own -- a slot the session launched where the transport never moved
+    /// (#2418). Raises the panic flag on the port it feeds, beside the one
+    /// every device takes from BlockInfo::continuous. Read straight after
+    /// render(); false for a source that only follows the timeline.
+    virtual bool raisedAllNotesOff() const {
+        return false;
+    }
 };
 
 /**

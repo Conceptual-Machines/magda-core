@@ -188,6 +188,33 @@ class ForwardingDevice final : public magda::daw::audio::MagdaDevice {
     }
 };
 
+/// Reads the panic it was handed and answers with one of its own.
+class PanicDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    explicit PanicDevice(bool declared = true) : declared_(declared) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "panic";
+        properties.name = "Panic";
+        properties.takesMidiInput = true;
+        properties.producesMidi = declared_;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        heard = context.midiIn != nullptr && context.midiIn->isAllNotesOff();
+        if (context.midiOut != nullptr)
+            context.midiOut->setAllNotesOff(answer);
+    }
+
+    bool heard = false;
+    bool answer = false;
+
+  private:
+    bool declared_;
+};
+
 /// What @p buffer costs against the port's budget, by the engine's own model:
 /// six bytes an event plus the event's own length.
 int budgetCostOf(const juce::MidiBuffer& buffer) {
@@ -926,4 +953,72 @@ TEST_CASE("the Rings resonator renders through the engine's device op", "[engine
     auto ringingBlock = ringing.deviceBlock();
     device->process(ringingBlock);
     CHECK(peakOf(ringing.buffer) > 0.0f);
+}
+
+TEST_CASE("the adapter hands a device the panic the port carried", "[engine][devices][2418]") {
+    // The engine's juce::MidiBuffer has no flag beside its events, so the port
+    // carries one and the adapter reads it into the SDK's input view.
+    auto panic = std::make_unique<PanicDevice>();
+    auto* device = panic.get();
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+
+    auto quiet = block.deviceBlock();
+    quiet.midiOut = &out;
+    hosted.process(quiet);
+    CHECK_FALSE(device->heard);
+
+    auto jumped = block.deviceBlock();
+    jumped.midiOut = &out;
+    jumped.midiInAllNotesOff = true;
+    hosted.process(jumped);
+    CHECK(device->heard);
+}
+
+TEST_CASE("the adapter puts a device's panic back on its output port", "[engine][devices][2418]") {
+    // On an empty block as much as a busy one: the flag is the device's answer
+    // whether or not it wrote an event, and a panic with no events is exactly
+    // what a device raises when it has nothing left to say.
+    auto panic = std::make_unique<PanicDevice>();
+    auto* device = panic.get();
+    device->answer = true;
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
+    CHECK(deviceBlock.midiOutAllNotesOff);
+}
+
+TEST_CASE("a device that declares no MIDI output cannot raise a panic either",
+          "[engine][devices][2418]") {
+    // The same rule its events get: what an undeclared emitter writes is
+    // dropped, and the flag is part of what it writes.
+    auto panic = std::make_unique<PanicDevice>(/*declared=*/false);
+    auto* device = panic.get();
+    device->answer = true;
+    adapter::EngineMagdaDevice hosted(std::move(panic), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK_FALSE(deviceBlock.midiOutAllNotesOff);
 }

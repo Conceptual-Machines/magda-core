@@ -506,6 +506,11 @@ class PlanExecutor {
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 
+    /// The panic flag beside a MIDI slot (#2418). False for a port the plan
+    /// left unconnected, the way midiIn hands back an empty buffer for one.
+    bool midiInPanic(const PortRef& ref) const;
+    void setMidiOutPanic(OpId op, int port, bool panic);
+
     /// Whether an op's output port 0 is the buffer one of its inputs
     /// arrived in, so the copy that would fill it has already happened.
     bool writesInPlace(std::size_t op) const {
@@ -525,6 +530,12 @@ class PlanExecutor {
     /// once, worked out in assignBuffers rather than here.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
+
+    /// All-notes-off beside each MIDI slot, one byte per slot (#2418). Written
+    /// by the op that owns the slot, every block, the way its buffer is: there
+    /// is no stale flag to clear because nothing reads a slot its producer has
+    /// not run.
+    std::vector<char> midiSlotPanic_;
 
     /// Channel pointers into the arena, flattened: slot s, channel c is at
     /// s * numChannels + c, and the row past the last slot is silence_.
@@ -578,6 +589,11 @@ class PlanExecutor {
     std::vector<EngineInsert*> insertForOp_;
     std::vector<EngineAudioSource*> audioSourceForOp_;
     std::vector<EngineMidiSource*> midiSourceForOp_;
+
+    /// Whether each op's track was inaudible last block, for the edge a device
+    /// panics on (#2418). Only the op's own thread touches its entry, so the
+    /// parallel executor reads and writes it the same way.
+    std::vector<char> wasInaudible_;
 
     /// Handed to ops whose input slot the plan left unconnected. Kept
     /// zeroed: nothing writes to it.

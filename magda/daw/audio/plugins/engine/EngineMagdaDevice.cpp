@@ -51,7 +51,8 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
 /// is the SDK boundary, not this adapter (#1836).
 class EngineMidiInputView final : public DeviceMidiInput {
   public:
-    explicit EngineMidiInputView(const std::vector<DeviceMidiEvent>& events) : events_(events) {}
+    EngineMidiInputView(const std::vector<DeviceMidiEvent>& events, bool allNotesOff)
+        : events_(events), allNotesOff_(allNotesOff) {}
 
     int size() const override {
         return static_cast<int>(events_.size());
@@ -65,13 +66,15 @@ class EngineMidiInputView final : public DeviceMidiInput {
         return events_[static_cast<std::size_t>(index)].sourceId;
     }
 
-    /// The engine's juce::MidiBuffer carries no panic flag beside its events.
     bool isAllNotesOff() const override {
-        return false;
+        return allNotesOff_;
     }
 
   private:
     const std::vector<DeviceMidiEvent>& events_;
+    /// What the port carried, beside its events rather than in them: the
+    /// engine's juce::MidiBuffer has nowhere to put it (#2418).
+    bool allNotesOff_ = false;
 };
 
 /// The SDK's write-only sink for what the device emits, over the output scratch.
@@ -89,6 +92,11 @@ class EngineMidiOutputView final : public DeviceMidiOutput {
     EngineMidiOutputView(std::vector<DeviceMidiEvent>& events, int capacity)
         : events_(events), capacity_(capacity) {}
 
+    /// What the device left here, for the executor to put back on the port.
+    bool isAllNotesOff() const {
+        return allNotesOff_;
+    }
+
     void addEvent(DeviceMidiEvent event) override {
         if (static_cast<int>(events_.size()) >= capacity_) {
             jassertfalse;  // a device past the port's bound; see the class comment
@@ -100,13 +108,14 @@ class EngineMidiOutputView final : public DeviceMidiOutput {
         events_.push_back(std::move(event));
     }
 
-    /// Dropped: the engine's MIDI container has no flag for it (see the file
-    /// comment).
-    void setAllNotesOff(bool) override {}
+    void setAllNotesOff(bool allNotesOff) override {
+        allNotesOff_ = allNotesOff;
+    }
 
   private:
     std::vector<DeviceMidiEvent>& events_;
     int capacity_;
+    bool allNotesOff_ = false;
 };
 
 /// The block's tempo map, as the SDK asks for it.
@@ -290,7 +299,7 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                 midiInScratch_.push_back({std::move(message), 0});
             }
 
-        midiIn.emplace(midiInScratch_);
+        midiIn.emplace(midiInScratch_, block.midiInAllNotesOff);
         midiOut.emplace(midiOutScratch_, midiOutCapacity_);
     }
 
@@ -315,6 +324,12 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     };
 
     device_->process(context);
+
+    // Back onto the port, ahead of the two returns below: the flag is the
+    // device's answer whether or not it wrote an event, and dropping it on an
+    // empty block is how a panic gets lost (#2418).
+    if (midiOut && properties_.producesMidi)
+        block.midiOutAllNotesOff = midiOut->isAllNotesOff();
 
     if (block.midiOut == nullptr)
         return;

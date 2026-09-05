@@ -385,10 +385,20 @@ struct MidiRig {
 
             juce::MidiBuffer buffer;
             source.render(block, buffer);
+            panics.push_back(source.raisedAllNotesOff());
 
             for (const auto metadata : buffer)
                 captured.push_back(Captured{index, metadata.samplePosition, metadata.getMessage()});
         }
+    }
+
+    /// The blocks this rig rolled where the source raised a panic (#2418).
+    std::vector<int> panicBlocks() const {
+        std::vector<int> blocks;
+        for (std::size_t index = 0; index < panics.size(); ++index)
+            if (panics[index])
+                blocks.push_back(static_cast<int>(index));
+        return blocks;
     }
 
     /// Notes still sounding after everything recorded, as "channel:note". The
@@ -434,6 +444,7 @@ struct MidiRig {
     magda::engine::LaunchRequestQueue requests;
     ClipMidiSource source{kTrack, clips, handles, Section::Session};
     std::vector<Captured> captured;
+    std::vector<bool> panics;
 };
 
 /// A clip on the timeline, from beat @p start, carrying @p notes.
@@ -487,6 +498,7 @@ struct MidiSwitchRig {
             magda::engine::advanceLaunchHandles(handles, requests, block);
 
             capture(arrangement, block, index, fromArrangement);
+            arrangementPanics.push_back(arrangement.raisedAllNotesOff());
             capture(session, block, index, fromSession);
         }
     }
@@ -538,6 +550,10 @@ struct MidiSwitchRig {
 
     ClipMidiSource arrangement{kTrack, clips, handles, Section::Arrangement};
     ClipMidiSource session{kTrack, clips, handles, Section::Session};
+
+    /// One entry per block rolled, for the discontinuity a device is owed when
+    /// the arrangement is handed its track back (#2418).
+    std::vector<bool> arrangementPanics;
 
     std::vector<Captured> fromArrangement;
     std::vector<Captured> fromSession;
@@ -1635,6 +1651,49 @@ TEST_CASE("Releasing the section brings the arrangement's MIDI back",
         REQUIRE(ons.size() == 1);
         CHECK(ons.front().message.getNoteNumber() == 64);
     }
+}
+
+TEST_CASE("A launched slot raises a panic on the block it starts",
+          "[engine][clip][session][2418]") {
+    // A discontinuity the transport never moved for. A device downstream is
+    // holding what the slot before it played and has nothing else to hear it
+    // from: the flag beside the port is what says so (#2418).
+    MidiRig rig;
+    rig.publish({sessionMidiClip(1, 4.0, {MidiNote{60, 100, 0.0, 1.0, 0, {}}})});
+
+    rig.roll(0, 3);
+    CHECK(rig.panicBlocks().empty());
+
+    rig.handle.play(std::nullopt);
+    rig.roll(4, 8);
+
+    // The block the launch fires in, and no block after it: a slot that goes on
+    // playing is not a discontinuity every block.
+    CHECK(rig.panicBlocks() == std::vector<int>{4});
+}
+
+TEST_CASE("Handing a track back to its arrangement raises a panic",
+          "[engine][clip][session][2418]") {
+    // The mirror of the launch above, and the same reason the hand-back sets
+    // BlockInfo::continuous false for the chase below it.
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 16.0, {MidiNote{64, 100, 0.5, 12.0, 0, {}}})},
+                {sessionMidiClip(2, 16.0, {MidiNote{67, 100, 0.0, 16.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 4);
+    const auto beforeRelease = rig.arrangementPanics;
+    CHECK(std::count(beforeRelease.begin(), beforeRelease.end(), true) == 0);
+
+    rig.handle.releaseSection();
+    rig.roll(5, 8);
+
+    std::vector<int> raised;
+    for (std::size_t index = 0; index < rig.arrangementPanics.size(); ++index)
+        if (rig.arrangementPanics[index])
+            raised.push_back(static_cast<int>(index));
+
+    CHECK(raised == std::vector<int>{5});
 }
 
 TEST_CASE("A hand-back inside a sustained note strikes it rather than waiting",
