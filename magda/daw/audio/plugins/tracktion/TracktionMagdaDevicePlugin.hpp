@@ -2,6 +2,9 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <array>
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -60,6 +63,7 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
   private:
     void buildParameters();
     void syncParametersToDevice();
+    void refreshLiveSourceIds();
 
     std::unique_ptr<MagdaDevice> device_;
     /// Handed to the parameter conversion lambdas, which an automation curve can
@@ -70,6 +74,14 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     const DeviceProperties properties_;
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;
+
+    /// MPE source ids of the engine's MIDI inputs, which is what a device
+    /// reads to tell a player's keys from clip playback. Rebuilt whenever the
+    /// graph is, and published as atomics because the rebuild runs while the
+    /// previous graph is still calling applyToBuffer on this same plugin.
+    static constexpr int kMaxLiveSourceIds = 16;
+    std::array<std::atomic<std::uint32_t>, kMaxLiveSourceIds> liveSourceIds_{};
+    std::atomic<int> numLiveSourceIds_{0};
 };
 
 template <typename DeviceType> DeviceType* deviceFromPlugin(te::Plugin* plugin) {

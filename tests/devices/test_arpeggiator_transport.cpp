@@ -45,9 +45,10 @@ TEST_CASE("Arpeggiator seeking far ahead lands on the new grid", "[arpeggiator][
 
 TEST_CASE("Arpeggiator keeps live keys across a transport stop", "[arpeggiator][midi][transport]") {
     Rig rig;
-    // Played with the transport stopped, so this source is not clip playback.
-    REQUIRE(rig.run(0.0, {on(60)}, false).size() == 1);
-    rig.run(0.0, {}, true);
+    rig.liveSourceIds = {rig.source};
+    // First pressed with the transport already rolling, which is the case that
+    // no amount of watching the input can tell apart from a clip.
+    rig.startNote();
 
     auto midi = rig.run(0.05, {}, false);
     REQUIRE(midi.size() == 2);
@@ -55,17 +56,18 @@ TEST_CASE("Arpeggiator keeps live keys across a transport stop", "[arpeggiator][
     CHECK(midi.message(1).isNoteOn());
     CHECK(midi.message(1).getNoteNumber() == 60);
 
-    // The key releases the arp the way it would have before the stop.
-    rig.run(0.0, {juce::MidiMessage::noteOff(1, 60)}, false);
+    auto released = rig.run(0.0, {juce::MidiMessage::noteOff(1, 60)}, false);
+    REQUIRE(released.size() == 1);
+    checkNoteOff(released, 0);
     for (int block = 0; block < 20; ++block)
         CHECK(rig.run(0.0, {}, false).size() == 0);
 }
 
-TEST_CASE("Arpeggiator stopping drops held notes it cannot prove came from a player",
+TEST_CASE("Arpeggiator stopping drops held notes the host does not call live input",
           "[arpeggiator][midi][transport]") {
     Rig rig;
-    // Only ever seen while playing, so it may be a clip whose note-off will
-    // never arrive.
+    // A live input exists, but this phrase is not coming from it.
+    rig.liveSourceIds = {rig.source + 1};
     rig.startNote();
 
     auto midi = rig.run(0.05, {}, false);
@@ -78,6 +80,7 @@ TEST_CASE("Arpeggiator stopping drops held notes it cannot prove came from a pla
 TEST_CASE("Arpeggiator keeps live keys when the transport starts under a panic",
           "[arpeggiator][midi][transport]") {
     Rig rig;
+    rig.liveSourceIds = {rig.source};
     REQUIRE(rig.run(0.0, {on(60)}, false).size() == 1);
 
     auto midi = rig.run(0.0, {}, true, true);
@@ -91,8 +94,8 @@ TEST_CASE("Arpeggiator keeps live keys when the transport starts under a panic",
 TEST_CASE("Arpeggiator locating under a panic keeps a chord proven live",
           "[arpeggiator][midi][transport]") {
     Rig rig;
-    REQUIRE(rig.run(0.0, {on(60)}, false).size() == 1);
-    rig.run(0.0, {}, true);
+    rig.liveSourceIds = {rig.source};
+    rig.startNote();
 
     auto midi = rig.run(4.0, {}, true, true);
     CHECK(midi.isAllNotesOff());
@@ -105,6 +108,7 @@ TEST_CASE("Arpeggiator locating under a panic keeps a chord proven live",
 TEST_CASE("Arpeggiator locating out of a clip note does not retrigger it",
           "[arpeggiator][midi][transport]") {
     Rig rig;
+    rig.liveSourceIds = {rig.source + 1};
     rig.startNote();
 
     // The host re-asserts what sounds at the destination and says nothing

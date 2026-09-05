@@ -255,30 +255,21 @@ void ArpeggiatorPlugin::markHeldNoteReleased(int noteNumber) {
     }
 }
 
-void ArpeggiatorPlugin::noteLiveSource(std::uint32_t sourceId) {
-    // 0 is "the host did not say", which is every event on the native engine
-    // until its port carries source identity (#2418).
-    if (sourceId == 0 || isLiveSource(sourceId))
-        return;
-    if (liveSourceCount_ < kMaxLiveSources)
-        liveSources_[static_cast<size_t>(liveSourceCount_++)] = sourceId;
-}
-
-bool ArpeggiatorPlugin::isLiveSource(std::uint32_t sourceId) const {
-    if (sourceId == 0)
-        return false;
-    for (int i = 0; i < liveSourceCount_; ++i) {
-        if (liveSources_[static_cast<size_t>(i)] == sourceId)
-            return true;
-    }
-    return false;
-}
-
-void ArpeggiatorPlugin::retainLiveHeldNotes() {
-    if (liveSourceCount_ == 0) {
+void ArpeggiatorPlugin::retainLiveHeldNotes(const DeviceProcessContext& context) {
+    // No list is "nothing is known live", not "everything is": the native
+    // engine says nothing and stamps every event 0 (#2418).
+    if (context.numLiveSourceIds <= 0 || context.liveSourceIds == nullptr) {
         clearHeldNotes();
         return;
     }
+
+    const auto isLiveSource = [&context](std::uint32_t sourceId) {
+        for (int i = 0; i < context.numLiveSourceIds; ++i) {
+            if (context.liveSourceIds[i] == sourceId)
+                return true;
+        }
+        return false;
+    };
 
     int kept = 0;
     int stillDown = 0;
@@ -443,7 +434,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     const bool inputPanic = midi.isAllNotesOff();
     if (inputPanic) {
         pendingNoteOff = takeSoundingNote();
-        retainLiveHeldNotes();
+        retainLiveHeldNotes(context);
     }
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
@@ -451,10 +442,6 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         const std::uint32_t source = midi.sourceId(eventIndex);
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
-            // Clips are silent with the transport stopped, so whoever plays
-            // now is a live source and its notes survive a stop (#2416).
-            if (!context.isPlaying)
-                noteLiveSource(source);
 
             // Latch: if old set is stale (all keys were released), clear before adding
             if (isLatched && latchedSetStale_) {
@@ -504,7 +491,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         // clip left behind are dropped, because their note-off is never
         // coming once the transport stops (#2416).
         sendAllNotesOff(midi);
-        retainLiveHeldNotes();
+        retainLiveHeldNotes(context);
         resetArpState();
         freeRunSamples_ = 0.0;
     }

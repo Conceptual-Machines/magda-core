@@ -111,6 +111,17 @@ struct DeviceProcessContext {
     bool isPlaying = false;
     bool isScrubbing = false;
     bool isRendering = false;
+    /**
+     * Sources the host counts as live input, against DeviceMidiBuffer::sourceId.
+     *
+     * A device that holds notes needs this to tell a player's keys from clip
+     * playback: a clip's note-off never arrives once the transport stops, and
+     * a seek re-asserts what sounds at the destination without releasing what
+     * sounded only at the origin. Empty when the host does not say, which a
+     * device must read as "no source is known live", never as "all of them".
+     */
+    const std::uint32_t* liveSourceIds = nullptr;
+    int numLiveSourceIds = 0;
 };
 
 /**

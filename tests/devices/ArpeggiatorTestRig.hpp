@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <initializer_list>
+#include <vector>
 
 #include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
@@ -44,9 +45,11 @@ class ArpTempo final : public audio::DeviceTempoMap {
 struct ArpRig {
     Arp arp;
     ArpTempo tempo;
-    /// Who the events come from. The arp learns which sources are live keys
-    /// rather than clip playback, so a test picks a source per phrase.
+    /// Who the events come from, and which sources the host calls live input.
+    /// The two together are how the arp tells a player's keys from clip
+    /// playback, so a test says which of the two this phrase is.
     std::uint32_t source = 42;
+    std::vector<std::uint32_t> liveSourceIds;
 
     explicit ArpRig(bool latch = false) {
         arp.prepare({.sampleRate = 48000.0, .maximumBlockSize = 2400});
@@ -75,6 +78,8 @@ struct ArpRig {
         context.timelineStartSeconds = start;
         context.timelineEndSeconds = start + 0.05;
         context.isPlaying = playing;
+        context.liveSourceIds = liveSourceIds.empty() ? nullptr : liveSourceIds.data();
+        context.numLiveSourceIds = static_cast<int>(liveSourceIds.size());
         arp.process(context);
         CHECK(midi.additionsBeforeClear == 0);
         return midi;

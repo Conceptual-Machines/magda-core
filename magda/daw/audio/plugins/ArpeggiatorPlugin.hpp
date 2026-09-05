@@ -142,13 +142,6 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     int physicallyHeldCount_ = 0;
     bool latchedSetStale_ = false;
 
-    /// Sources that sent a note while the transport was stopped, so they are
-    /// not clip playback. A stop keeps what they hold and drops the rest,
-    /// which would wait forever for a note-off no clip will send (#2416).
-    static constexpr int kMaxLiveSources = 4;
-    std::array<std::uint32_t, kMaxLiveSources> liveSources_{};
-    int liveSourceCount_ = 0;
-
     // Pattern state
     int currentStep_ = 0;
     double arpOriginBeat_ = -1.0;
@@ -184,11 +177,10 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     void removeHeldNote(int noteNumber);
     void markHeldNoteReleased(int noteNumber);
     void clearHeldNotes();
-    void noteLiveSource(std::uint32_t sourceId);
-    bool isLiveSource(std::uint32_t sourceId) const;
-    /// Drops held notes from sources that never played while stopped, and
-    /// recounts the keys still down. Used on the playing-to-stopped edge.
-    void retainLiveHeldNotes();
+    /// Drops held notes the host does not call live input, and recounts the
+    /// keys still down. What a clip left behind has no note-off coming once
+    /// the transport stops, and none coming at all when a seek moves off it.
+    void retainLiveHeldNotes(const DeviceProcessContext& context);
     void sendAllNotesOff(DeviceMidiBuffer& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.
