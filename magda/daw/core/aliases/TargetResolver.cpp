@@ -148,7 +148,7 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
                                               " -- param not found on focused device");
 
             ResolveResult r;
-            r.target.devicePath = devicePath;
+            r.target.devicePath = std::move(devicePath);
             r.target.paramIndex = paramIdx;
             r.sourceLabel = "@focused." + sigil.paramKey;
             r.resolved = true;

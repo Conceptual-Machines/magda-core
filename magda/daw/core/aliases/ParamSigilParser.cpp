@@ -43,8 +43,8 @@ std::optional<ParsedSigil> tryParse(const juce::String& token) {
         return std::nullopt;
 
     ParsedSigil result;
-    result.pluginKey = pluginKey;
-    result.paramKey = paramKey;
+    result.pluginKey = std::move(pluginKey);
+    result.paramKey = std::move(paramKey);
 
     // Check for scoped forms
     static const juce::StringArray scopedKeys{"focused", "selected", "master"};

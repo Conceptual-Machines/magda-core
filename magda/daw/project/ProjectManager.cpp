@@ -391,9 +391,9 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     // Commit updated state only after successful save
     const bool wasOpen = isProjectOpen_;
     currentProject_ = std::move(newProject);
-    currentFile_ = actualFile;
+    currentFile_ = std::move(actualFile);
     isProjectOpen_ = true;
-    mediaDirectory_ = targetMediaDir;
+    mediaDirectory_ = std::move(targetMediaDir);
 
     clearDirty();
     deleteAutosaveFile();
@@ -604,7 +604,7 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
     bool recoveredFromAutosave = false;
     if (autosaveFile.existsAsFile()) {
         if (promptAutosaveRecovery(file)) {
-            fileToLoad = autosaveFile;
+            fileToLoad = std::move(autosaveFile);
             recoveredFromAutosave = true;
         } else {
             autosaveFile.deleteFile();

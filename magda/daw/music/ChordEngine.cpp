@@ -366,7 +366,7 @@ Chord ChordEngine::detectPolychord(const std::vector<ChordNote>& notes) const {
                     Chord chord(label);
                     chord.notes = notes;
                     chord.name = label;
-                    chord.displayName = label;
+                    chord.displayName = std::move(label);
                     chord.root = static_cast<ChordRoot>(lowerPc);
                     chord.quality = lowerMinor ? ChordQuality::Minor : ChordQuality::Major;
                     chord.inversion = 0;
@@ -399,7 +399,7 @@ Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality
     juce::String chordName = chordSpecToString(spec);
 
     Chord chord(chordName);
-    chord.notes = notes;
+    chord.notes = std::move(notes);
     return chord;
 }
 
@@ -439,7 +439,7 @@ Chord ChordEngine::buildChordInversion(ChordRoot root, ChordQuality quality, int
     juce::String chordName = chordSpecToString(spec);
 
     Chord chord(chordName);
-    chord.notes = notes;
+    chord.notes = std::move(notes);
     return chord;
 }
 

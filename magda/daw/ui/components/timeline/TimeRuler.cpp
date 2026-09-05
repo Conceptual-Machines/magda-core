@@ -412,7 +412,7 @@ void TimeRuler::mouseMove(const juce::MouseEvent& event) {
         desiredCursor == juce::MouseCursor::IBeamCursor) {
         auto loopCursor = loopInteraction_.getCursor(event.x, event.y);
         if (loopCursor != juce::MouseCursor::NormalCursor)
-            desiredCursor = loopCursor;
+            desiredCursor = std::move(loopCursor);
     }
 
     setMouseCursor(desiredCursor);

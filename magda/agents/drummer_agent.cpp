@@ -196,7 +196,7 @@ juce::String extractLastGridBlock(const juce::String& text) {
     }
 
     if (!currentBlock.isEmpty())
-        lastBlock = currentBlock;
+        lastBlock = std::move(currentBlock);
 
     return lastBlock.joinIntoString("\n").trim();
 }

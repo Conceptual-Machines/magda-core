@@ -834,7 +834,7 @@ void PianoRollContent::setupGridCallbacks() {
             magda::ClipInfo::ChordAnnotation annotation;
             annotation.beatPosition = beat;
             annotation.lengthBeats = noteLength;
-            annotation.chordName = chordName;
+            annotation.chordName = std::move(chordName);
             annotation.chordGroup = groupId;
             auto chordCmd = std::make_unique<magda::AddChordAnnotationCommand>(clipId, annotation);
             magda::UndoManager::getInstance().executeCommand(std::move(chordCmd));

@@ -84,7 +84,7 @@ void QwertyKeyboardPopup::timerCallback() {
     auto octave = keyboard_.getBaseOctave();
     if (octave != lastBaseOctave_ || held != lastHeldNotes_) {
         lastBaseOctave_ = octave;
-        lastHeldNotes_ = held;
+        lastHeldNotes_ = std::move(held);
         octaveLabel_.setText("Base octave: " + juce::String(octave), juce::dontSendNotification);
         repaint();
     }

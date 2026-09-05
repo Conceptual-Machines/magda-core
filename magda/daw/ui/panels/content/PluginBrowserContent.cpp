@@ -1111,7 +1111,7 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
                     for (auto& p : plugins_) {
                         juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
                         if (key == pluginKey) {
-                            p.alias = newAlias;
+                            p.alias = std::move(newAlias);
                             break;
                         }
                     }

@@ -159,7 +159,7 @@ bool fromVar(const juce::var& v, ChainNodePath& out) {
     if (representations > 1)
         return false;
 
-    out = path;
+    out = std::move(path);
     return true;
 }
 

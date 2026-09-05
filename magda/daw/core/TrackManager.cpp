@@ -3006,7 +3006,7 @@ void TrackManager::setChainName(const ChainNodePath& chainPath, const juce::Stri
         auto trimmed = name.trim();
         if (trimmed.isEmpty() || trimmed == chain->name)
             return;
-        chain->name = trimmed;
+        chain->name = std::move(trimmed);
         notifyTrackPropertyChanged(chainPath.trackId);
     }
 }

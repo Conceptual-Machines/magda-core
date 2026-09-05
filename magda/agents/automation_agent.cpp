@@ -164,7 +164,7 @@ llm::Request buildRequest(MagdaApi& api, const std::string& message) {
         systemPrompt += "\n\nContext:\n" + ctx;
 
     llm::Request request;
-    request.systemPrompt = systemPrompt;
+    request.systemPrompt = std::move(systemPrompt);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.1f;
     return request;

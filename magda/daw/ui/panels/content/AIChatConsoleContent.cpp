@@ -2080,7 +2080,7 @@ void AIChatConsoleContent::trackSelectionChanged(magda::TrackId trackId) {
         contextText_ = juce::String::fromUTF8("Drummer \xc2\xb7 ") + trackName;
         contextIcon_ = ContextIcon::Drummer;
     } else {
-        contextText_ = trackName;
+        contextText_ = std::move(trackName);
         contextIcon_ = ContextIcon::Track;
     }
     updateContextBar();
@@ -2154,7 +2154,7 @@ void AIChatConsoleContent::chainNodeSelectionChanged(const magda::ChainNodePath&
         else
             contextText_ = trackName + " > " + juce::String(deviceId);
     } else {
-        contextText_ = trackName;
+        contextText_ = std::move(trackName);
     }
     contextIcon_ = ContextIcon::Device;
     updateContextBar();

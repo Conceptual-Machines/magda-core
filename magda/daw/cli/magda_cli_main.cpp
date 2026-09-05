@@ -371,7 +371,7 @@ class CommandDispatcher {
             name = tokens[static_cast<int>(index++)];
 
         magda::DeviceInfo device;
-        device.name = name;
+        device.name = std::move(name);
         device.manufacturer = "MAGDA";
         device.pluginId = pluginId;
         device.uniqueId = pluginId;

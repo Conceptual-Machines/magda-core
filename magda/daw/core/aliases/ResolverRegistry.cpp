@@ -61,7 +61,7 @@ std::optional<ControlTarget> FocusedDeviceMacroResolver::resolve(const juce::Str
     int macroIndex = args.getValue("macroIndex", "0").getIntValue();
 
     ControlTarget t;
-    t.devicePath = ownerPath;
+    t.devicePath = std::move(ownerPath);
     t.paramIndex = macroIndex;
     t.kind = ControlTarget::Kind::DeviceMacro;
     return t;

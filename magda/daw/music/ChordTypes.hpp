@@ -54,7 +54,7 @@ struct Chord {
         quality = parsedSpec.quality;
         inversion = parsedSpec.inversion;
         displayName = chordName.contains(" + ") ? chordName : juce::String();
-        name = chordName;
+        name = std::move(chordName);
         notes = {};
         rootNoteNumber = -1;
         degree = std::nullopt;
@@ -79,7 +79,7 @@ struct Chord {
         quality = parsedSpec.quality;
         inversion = chordInversion;
         displayName = chordName.contains(" + ") ? chordName : juce::String();
-        name = chordName;
+        name = std::move(chordName);
         notes = chordNotes;
         rootNoteNumber = rootNote;
         degree = chordDegree;

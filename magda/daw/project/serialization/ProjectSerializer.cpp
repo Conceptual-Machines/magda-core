@@ -96,7 +96,7 @@ bool ProjectSerializer::exportToDawProject(const juce::File& file, const Project
     juce::String error;
 
     if (!DawProjectArchive::writeToFile(file, document, error)) {
-        lastError_ = error;
+        lastError_ = std::move(error);
         return false;
     }
 
@@ -109,7 +109,7 @@ bool ProjectSerializer::loadDawProjectAndStage(const juce::File& file, StagedPro
     juce::String error;
 
     if (!DawProjectArchive::readFromFile(file, document, error, audioExtractionDir)) {
-        lastError_ = error;
+        lastError_ = std::move(error);
         return false;
     }
 

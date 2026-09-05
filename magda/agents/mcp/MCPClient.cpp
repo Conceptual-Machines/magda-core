@@ -276,10 +276,10 @@ MCPClient::ToolResult MCPClient::callTool(const juce::String& toolName,
     }
 
     if (isError) {
-        result.error = combinedText;
+        result.error = std::move(combinedText);
     } else {
         result.success = true;
-        result.content = combinedText;
+        result.content = std::move(combinedText);
     }
     return result;
 }

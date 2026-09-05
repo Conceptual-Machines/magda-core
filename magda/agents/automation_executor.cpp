@@ -380,7 +380,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
             auto& op = std::get<AutoClearOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
-                error_ = err;
+                error_ = std::move(err);
                 return false;
             }
             mgr.clearLanePoints(laneId);
@@ -392,7 +392,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
             auto& op = std::get<AutoFreeformOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
-                error_ = err;
+                error_ = std::move(err);
                 return false;
             }
             for (const auto& p : op.points) {
@@ -407,7 +407,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
             auto& op = std::get<AutoShapeOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
-                error_ = err;
+                error_ = std::move(err);
                 return false;
             }
             int before = 0;

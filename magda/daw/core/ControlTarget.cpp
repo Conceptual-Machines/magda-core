@@ -70,7 +70,7 @@ bool fromVar(const juce::var& v, ControlTarget& out) {
     if (obj->hasProperty("sendBusIndex"))
         target.sendBusIndex = static_cast<int>(obj->getProperty("sendBusIndex"));
 
-    out = target;
+    out = std::move(target);
     return true;
 }
 

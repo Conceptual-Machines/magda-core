@@ -926,7 +926,7 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
             juce::String uname = upperRoot + (upperMinor ? " min" : " maj");
             juce::String fullName = lname + " + " + uname;
             lowerChord.name = fullName;
-            lowerChord.displayName = fullName;
+            lowerChord.displayName = std::move(fullName);
 
             candidates.push_back({lowerChord, priority, label, "polychord"});
         };
@@ -1174,8 +1174,8 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
 
         // Create chord with base quality (enum), but override names below
         Chord chord(rootEnum, baseQuality, notes, rootMidiNote, std::nullopt, 0);
-        chord.name = finalName;
-        chord.displayName = displayName;
+        chord.name = std::move(finalName);
+        chord.displayName = std::move(displayName);
         return chord;
     }
 
@@ -1213,7 +1213,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
 
         Chord chord(rootEnum, baseQuality, notes, rootMidiNote, std::nullopt, 0);
         chord.name = finalName;  // preserve original descriptor like "7alt"
-        chord.displayName = finalName;
+        chord.displayName = std::move(finalName);
         return chord;
     }
 
@@ -1224,7 +1224,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
         addNote(rootMidiNote + iv);
     Chord chord(rootEnum, qualityEnum, notes, rootMidiNote, std::nullopt, 0);
     chord.name = finalName;
-    chord.displayName = finalName;
+    chord.displayName = std::move(finalName);
     return chord;
 }
 
@@ -1359,7 +1359,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     Chord result;
     if (inversionStrength >= 0.3f) {  // Lower threshold - use voice leading for most cases
         // Use voice leading optimization
-        result = bestInversion;
+        result = std::move(bestInversion);
         result.inversion = bestInversionValue;
     } else {
         // Only interpolate for very low inversion strength (prefer root position)
@@ -1379,7 +1379,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
                 result = chord;  // Fallback if no inversions available
             }
         } else {
-            result = bestInversion;  // Use the best inversion
+            result = std::move(bestInversion);  // Use the best inversion
         }
         result.inversion =
             static_cast<int>(std::round(bestInversionValue * inversionStrength * 3.0f));

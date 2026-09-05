@@ -273,7 +273,7 @@ StepSequencerAgent::GenerateResult StepSequencerAgent::generate(const std::strin
     auto systemPrompt = juce::String::fromUTF8(getSystemPrompt());
     if (!deviceContext.empty())
         systemPrompt += "\n\n" + juce::String::fromUTF8(deviceContext.c_str());
-    request.systemPrompt = systemPrompt;
+    request.systemPrompt = std::move(systemPrompt);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.5f;  // some creativity for patterns
 
@@ -325,7 +325,7 @@ StepSequencerAgent::GenerateResult StepSequencerAgent::generateStreaming(
     auto systemPromptStr = juce::String::fromUTF8(getSystemPrompt());
     if (!deviceContext.empty())
         systemPromptStr += "\n\n" + juce::String::fromUTF8(deviceContext.c_str());
-    request.systemPrompt = systemPromptStr;
+    request.systemPrompt = std::move(systemPromptStr);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.5f;
 

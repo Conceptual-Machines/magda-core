@@ -138,7 +138,7 @@ void ExportMidiDialog::showDialog(juce::Component* parent,
     auto* dialog = new ExportMidiDialog();
     dialog->setTimeSelectionAvailable(hasTimeSelection);
     dialog->setLoopRegionAvailable(hasLoopRegion);
-    dialog->onExport = exportCallback;
+    dialog->onExport = std::move(exportCallback);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle =

@@ -1416,8 +1416,8 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
                 }
             }
 
-            clip->midiNotes = leftNotes;
-            rightClip.midiNotes = rightNotes;
+            clip->midiNotes = std::move(leftNotes);
+            rightClip.midiNotes = std::move(rightNotes);
 
             // Partitioning rewrites shared content, so ghost halves cannot
             // stay in their link group: the next propagation would truncate

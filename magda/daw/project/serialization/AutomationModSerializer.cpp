@@ -418,7 +418,7 @@ bool ProjectSerializer::deserializeMacroInfo(const juce::var& json, MacroInfo& o
             deserializeControlTarget(targetVar.getDynamicObject(), legacy);
             if (legacy.isValid()) {
                 MacroLink link;
-                link.target = legacy;
+                link.target = std::move(legacy);
                 outMacro.links.push_back(link);
             }
         }
@@ -623,7 +623,7 @@ bool ProjectSerializer::deserializeModInfo(const juce::var& json, ModInfo& outMo
             deserializeControlTarget(targetVar.getDynamicObject(), legacy);
             if (legacy.isValid()) {
                 ModLink link;
-                link.target = legacy;
+                link.target = std::move(legacy);
                 link.amount = static_cast<float>(obj->getProperty("amount"));
                 outMod.links.push_back(link);
             }
