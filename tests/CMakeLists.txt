@@ -73,6 +73,7 @@ set(TEST_SOURCES
     devices/test_mutable_clouds.cpp
     devices/test_arpeggiator_input.cpp
     devices/test_arpeggiator_transport.cpp
+    devices/test_midi_strum_lifecycle.cpp
     devices/test_midi_strum_provenance.cpp
     devices/test_device_ui_context.cpp
     ui/test_levels_ui.cpp

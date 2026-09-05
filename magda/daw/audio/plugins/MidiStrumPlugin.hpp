@@ -109,9 +109,14 @@ class MidiStrumPlugin : public MidiMagdaDevice {
         std::uint32_t sourceId = 0;
     };
 
-    void scheduleStrum();       // queue note-ons (+ Loop re-strum note-offs)
-    void scheduleReleaseAll();  // queue note-offs for everything sounding (at clock_)
+    void scheduleStrum();  // queue note-ons, superseding the pass before them
+    /// Ends every note this device still owes a note-off for: sounding ones get
+    /// one at `clock_`, queued note-ons are dropped rather than fired (#2363).
+    void scheduleReleaseAll();
     void resetStrumState();
+    void addHeld(int note, int velocity, std::uint32_t sourceId);
+    void removeHeld(int note);
+    void queuePending(const Pending& event);
     // Loop re-strum interval in samples: either the free ms value or a tempo-
     // locked beat division (read from the block's tempo map).
     int loopIntervalSamples(const DeviceProcessContext& context) const;
@@ -125,17 +130,29 @@ class MidiStrumPlugin : public MidiMagdaDevice {
     std::array<float, kNumParams> values_{};
     std::array<ParameterUtils::ParameterDomain, kNumParams> domains_{};
 
-    std::vector<Held> held_;
-    std::vector<Pending> pending_;
-    std::vector<Pending> due_;        // scratch for the per-block emit pass
-    std::vector<Sounding> sounding_;  // notes we have emitted note-on for, awaiting release
-    std::int64_t clock_ = 0;          // absolute sample counter
-    std::int64_t noteOrder_ = 0;      // play-order stamp for As-Played ordering
-    int collectLeft_ = -1;            // Chord-mode collect debounce (samples)
-    int syncLeft_ = 0;                // Loop-mode interval countdown (samples)
-    int lutShape_ = -1;               // shape index the LUT was built for
-    std::array<float, 1024> lut_{};   // current strum curve, sampled
-    bool wasPlaying_ = false;         // transport state last block (stop -> flush)
+    // Fixed capacity: this state is all touched from process(), which must not
+    // allocate. Anything past the cap is dropped, as the Arpeggiator does.
+    static constexpr int MAX_HELD = 32;
+    static constexpr int MAX_ORDERED = MAX_HELD * 2;  // Up/Down: N + (N - 2)
+    /// One strum's note-ons plus the release of the pass it supersedes.
+    static constexpr int MAX_PENDING = MAX_ORDERED + MAX_HELD;
+
+    std::array<Held, MAX_HELD> held_{};
+    int heldCount_ = 0;
+    std::array<Held, MAX_ORDERED> ordered_{};  // scheduleStrum ordering scratch
+    std::array<Pending, MAX_PENDING> pending_{};
+    int pendingCount_ = 0;
+    std::array<Pending, MAX_PENDING> due_{};  // scratch for the per-block emit pass
+    int dueCount_ = 0;
+    std::array<Sounding, MAX_HELD> sounding_{};  // note-ons emitted, awaiting release
+    int soundingCount_ = 0;
+    std::int64_t clock_ = 0;         // absolute sample counter
+    std::int64_t noteOrder_ = 0;     // play-order stamp for As-Played ordering
+    int collectLeft_ = -1;           // Chord-mode collect debounce (samples)
+    int syncLeft_ = 0;               // Loop-mode interval countdown (samples)
+    int lutShape_ = -1;              // shape index the LUT was built for
+    std::array<float, 1024> lut_{};  // current strum curve, sampled
+    bool wasPlaying_ = false;        // transport state last block (stop -> flush)
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiStrumPlugin)
 };
