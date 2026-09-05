@@ -6,6 +6,7 @@
 #include <chrono>
 #include <memory>
 
+#include "../../core/StringTable.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/UserAlert.hpp"
 #include "../../engine/AudioEngine.hpp"
@@ -101,12 +102,12 @@ class MessageThreadRenderSession {
             close();
         } catch (const std::exception& e) {
             juce::Logger::writeToLog(juce::String("[MessageThreadRenderSession] ") + e.what());
-            const juce::String message = juce::String("Mix analysis cleanup failed: ") + e.what();
-            juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
+            juce::MessageManager::callAsync(
+                [] { magda::notifyUserAlert(magda::tr("mix_analysis.cleanup_failed")); });
         } catch (...) {
             juce::Logger::writeToLog("[MessageThreadRenderSession] unknown exception");
             juce::MessageManager::callAsync(
-                [] { magda::notifyUserAlert("Mix analysis cleanup failed"); });
+                [] { magda::notifyUserAlert(magda::tr("mix_analysis.cleanup_failed")); });
         }
     }
 

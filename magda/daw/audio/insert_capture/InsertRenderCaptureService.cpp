@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 
+#include "core/StringTable.hpp"
 #include "core/UserAlert.hpp"
 #include "plugins/InsertCapturePlugin.hpp"
 
@@ -101,12 +102,12 @@ InsertRenderCaptureService::~InsertRenderCaptureService() {
             finishPass(false);
     } catch (const std::exception& e) {
         juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
-        const juce::String message = juce::String("Render capture cleanup failed: ") + e.what();
-        juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
     } catch (...) {
         juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
         juce::MessageManager::callAsync(
-            [] { magda::notifyUserAlert("Render capture cleanup failed"); });
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
     }
 
     // Must run even if finishPass() above threw: removeTaps() releases the
@@ -115,12 +116,12 @@ InsertRenderCaptureService::~InsertRenderCaptureService() {
         cleanupAfterRender();
     } catch (const std::exception& e) {
         juce::Logger::writeToLog(juce::String("[InsertRenderCaptureService] ") + e.what());
-        const juce::String message = juce::String("Render capture cleanup failed: ") + e.what();
-        juce::MessageManager::callAsync([message] { magda::notifyUserAlert(message); });
+        juce::MessageManager::callAsync(
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
     } catch (...) {
         juce::Logger::writeToLog("[InsertRenderCaptureService] unknown exception during teardown");
         juce::MessageManager::callAsync(
-            [] { magda::notifyUserAlert("Render capture cleanup failed"); });
+            [] { magda::notifyUserAlert(magda::tr("export.capture.cleanup_failed")); });
     }
 }
 
