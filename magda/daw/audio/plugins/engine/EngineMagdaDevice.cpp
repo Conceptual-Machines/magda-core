@@ -319,6 +319,11 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     if (block.midiOut == nullptr)
         return;
 
+    // A port the device never declared: what it wrote is dropped, as the fork's
+    // adapter drops it, so producesMidi means the same on both legs.
+    if (!properties_.producesMidi)
+        return;
+
     // What the device wrote, back onto the port. An event outside the block
     // lands on the nearest sample it has rather than being dropped: a device
     // that placed a note one sample past the end meant the note.

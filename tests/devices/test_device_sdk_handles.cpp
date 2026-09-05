@@ -157,6 +157,7 @@ TEST_CASE("MagdaDevice lifecycle, state, parameters, audio, and MIDI need no hos
                 .name = "Neutral lifecycle",
                 .shortName = "Neutral",
                 .takesMidiInput = true,
+                .producesMidi = true,
                 .latencySeconds = 0.01,
             };
         }

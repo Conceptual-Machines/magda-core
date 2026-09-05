@@ -109,13 +109,15 @@ class CountingDevice final : public magda::daw::audio::MagdaDevice {
 /// the byte budget the executor sized the port from.
 class EmittingDevice final : public magda::daw::audio::MagdaDevice {
   public:
-    EmittingDevice(int count, int dataBytes) : count_(count), payload_(dataBytes, 0x7f) {}
+    EmittingDevice(int count, int dataBytes, bool declared = true)
+        : count_(count), declared_(declared), payload_(dataBytes, 0x7f) {}
 
     magda::daw::audio::DeviceProperties properties() const override {
         magda::daw::audio::DeviceProperties properties;
         properties.pluginId = "emitting";
         properties.name = "Emitting";
         properties.takesMidiInput = true;
+        properties.producesMidi = declared_;
         return properties;
     }
 
@@ -131,6 +133,7 @@ class EmittingDevice final : public magda::daw::audio::MagdaDevice {
 
   private:
     int count_;
+    bool declared_;
     std::vector<std::uint8_t> payload_;
 };
 
@@ -719,6 +722,25 @@ TEST_CASE("a device's input never reaches its MIDI output port", "[engine][devic
     CHECK(device->received == 4);
     CHECK(out.getNumEvents() == 0);
     CHECK(budgetCostOf(out) == 0);
+}
+
+TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {
+    // The plan may still give the op a MIDI output port (the model's view of the
+    // device, not the device's own). What an undeclared emitter writes is
+    // dropped, as the Tracktion adapter drops it.
+    auto emitting = std::make_unique<EmittingDevice>(3, 16, /*declared=*/false);
+    adapter::EngineMagdaDevice hosted(std::move(emitting), /*offlineRender=*/false);
+
+    const auto context = contextFor();
+    hosted.prepare(context);
+
+    Block block(context);
+    juce::MidiBuffer out;
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiOut = &out;
+    hosted.process(deviceBlock);
+
+    CHECK(out.getNumEvents() == 0);
 }
 
 TEST_CASE("one note-off releases a pitch that was pressed many times", "[engine][devices][2192]") {
