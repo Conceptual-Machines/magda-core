@@ -91,7 +91,7 @@ ChangeSource::~ChangeSource() = default;
 int ChangeSource::addListener(Listener listener) {
     int token = 0;
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
+        const std::scoped_lock lock(listenerMutex_);
         token = nextToken_++;
         listeners_.emplace_back(token, std::move(listener));
     }
@@ -101,7 +101,7 @@ int ChangeSource::addListener(Listener listener) {
 
 void ChangeSource::removeListener(int token) {
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
+        const std::scoped_lock lock(listenerMutex_);
         listeners_.erase(
             std::remove_if(listeners_.begin(), listeners_.end(),
                            [token](const auto& entry) { return entry.first == token; }),
@@ -145,7 +145,7 @@ void ChangeSource::flush() {
     // invalidate the iterator mid-notification.
     std::vector<Listener> targets;
     {
-        const std::lock_guard<std::mutex> lock(listenerMutex_);
+        const std::scoped_lock lock(listenerMutex_);
         targets.reserve(listeners_.size());
         for (const auto& [token, listener] : listeners_)
             targets.push_back(listener);
@@ -179,7 +179,7 @@ void ChangeSource::startPumpIfNeeded() {
 }
 
 void ChangeSource::stopPumpIfIdle() {
-    const std::lock_guard<std::mutex> lock(listenerMutex_);
+    const std::scoped_lock lock(listenerMutex_);
     if (listeners_.empty())
         pump_.reset();
 }

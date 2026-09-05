@@ -37,7 +37,7 @@ void ConversationStore::record(Channel channel, const std::string& user,
     if (user.empty() && assistant.empty())
         return;
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto& thread = threads_[channel];
     thread.push_back({user, assistant});
     while (thread.size() > kMaxStoredTurns)
@@ -45,7 +45,7 @@ void ConversationStore::record(Channel channel, const std::string& user,
 }
 
 std::string ConversationStore::render(Channel channel, int maxTurns) const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     auto it = threads_.find(channel);
     if (it == threads_.end() || it->second.empty() || maxTurns <= 0)
         return {};
@@ -66,12 +66,12 @@ std::string ConversationStore::render(Channel channel, int maxTurns) const {
 }
 
 void ConversationStore::clear(Channel channel) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     threads_.erase(channel);
 }
 
 void ConversationStore::clearAll() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     threads_.clear();
 }
 

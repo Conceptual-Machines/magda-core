@@ -196,7 +196,7 @@ ClipVoicePool::~ClipVoicePool() {
     // the reader, and waits for it.
     feed_.publish(std::make_shared<const ClipStreamTable>());
 
-    const std::lock_guard<std::mutex> guard(streamsLock_);
+    const std::scoped_lock guard(streamsLock_);
     for (auto& [key, reader] : streams_)
         if (reader.stream != nullptr)
             reader_.remove(*reader.stream);
@@ -205,12 +205,12 @@ ClipVoicePool::~ClipVoicePool() {
 }
 
 void ClipVoicePool::setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot) {
-    const std::lock_guard<std::mutex> guard(snapshotLock_);
+    const std::scoped_lock guard(snapshotLock_);
     snapshot_ = std::move(snapshot);
 }
 
 std::size_t ClipVoicePool::streamCount() const {
-    const std::lock_guard<std::mutex> guard(streamsLock_);
+    const std::scoped_lock guard(streamsLock_);
     return streams_.size();
 }
 
@@ -297,7 +297,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
 void ClipVoicePool::service() {
     std::shared_ptr<const ClipSnapshot> snapshot;
     {
-        const std::lock_guard<std::mutex> guard(snapshotLock_);
+        const std::scoped_lock guard(snapshotLock_);
         snapshot = snapshot_;
     }
 
@@ -318,7 +318,7 @@ void ClipVoicePool::service() {
     std::vector<Candidate> slots;
 
     {
-        const std::lock_guard<std::mutex> guard(streamsLock_);
+        const std::scoped_lock guard(streamsLock_);
 
         if (snapshot != nullptr) {
             for (const auto& track : snapshot->tracks) {

@@ -18,7 +18,7 @@ PrefetchThread::~PrefetchThread() {
 
 void PrefetchThread::add(PrefetchStream& stream) {
     {
-        const std::lock_guard<std::mutex> guard(lock_);
+        const std::scoped_lock guard(lock_);
         if (std::find(streams_.begin(), streams_.end(), &stream) == streams_.end())
             streams_.push_back(&stream);
     }
@@ -27,17 +27,17 @@ void PrefetchThread::add(PrefetchStream& stream) {
 }
 
 void PrefetchThread::remove(PrefetchStream& stream) {
-    const std::lock_guard<std::mutex> guard(lock_);
+    const std::scoped_lock guard(lock_);
     streams_.erase(std::remove(streams_.begin(), streams_.end(), &stream), streams_.end());
 }
 
 std::size_t PrefetchThread::streamCount() const {
-    const std::lock_guard<std::mutex> guard(lock_);
+    const std::scoped_lock guard(lock_);
     return streams_.size();
 }
 
 bool PrefetchThread::fillOnce() {
-    const std::lock_guard<std::mutex> guard(lock_);
+    const std::scoped_lock guard(lock_);
 
     auto worked = false;
     for (auto* stream : streams_)

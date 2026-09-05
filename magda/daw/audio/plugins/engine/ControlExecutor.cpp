@@ -73,7 +73,7 @@ SerialControlThread::SerialControlThread() : shared_(std::make_shared<Shared>())
 
 SerialControlThread::~SerialControlThread() {
     {
-        const std::lock_guard<std::mutex> held(shared_->lock);
+        const std::scoped_lock held(shared_->lock);
         shared_->stopping = true;
     }
 
@@ -100,7 +100,7 @@ bool SerialControlThread::run(Work work) {
         return false;
 
     {
-        const std::lock_guard<std::mutex> held(shared_->lock);
+        const std::scoped_lock held(shared_->lock);
         if (shared_->stopping)
             return false;
 

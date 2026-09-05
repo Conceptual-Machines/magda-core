@@ -1068,7 +1068,7 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
     const auto scanTagOptions = scanTagOptions_;
     FailureFn failureRef = [failureCallback, &failureMutex](const std::filesystem::path& current,
                                                             const std::string& reason) {
-        std::lock_guard<std::mutex> lock(failureMutex);
+        std::scoped_lock lock(failureMutex);
         reportFailure(failureCallback, current, reason);
     };
 
@@ -1102,13 +1102,13 @@ MediaDbIndexer::Stats MediaDbIndexer::indexDirectory(const std::filesystem::path
                                    scanTagOptions);
                     const int nowDone = ++doneCounter;
                     if (progressRef) {
-                        std::lock_guard<std::mutex> lock(progressMutex);
+                        std::scoped_lock lock(progressMutex);
                         progressRef(nowDone, total, files[i].path);
                     }
                 }
             }
 
-            std::lock_guard<std::mutex> lock(statsMutex);
+            std::scoped_lock lock(statsMutex);
             aggregate.inserted += local.inserted;
             aggregate.updated += local.updated;
             aggregate.skipped += local.skipped;

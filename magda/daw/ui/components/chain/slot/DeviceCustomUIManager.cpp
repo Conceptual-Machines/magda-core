@@ -193,7 +193,7 @@ std::vector<CachedRoleEmbedding> roleTextEmbeddings(magda::media::ClapTextEncode
     static const magda::media::RobertaTokenizer* cachedTokenizer = nullptr;
     static std::vector<CachedRoleEmbedding> cached;
 
-    std::lock_guard<std::mutex> lock(cacheMutex);
+    std::scoped_lock lock(cacheMutex);
     if (cachedTextEncoder == &textEncoder && cachedTokenizer == &tokenizer && !cached.empty())
         return cached;
 

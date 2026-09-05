@@ -36,7 +36,7 @@ std::shared_ptr<const Resolved>& cachedSlot() {
 }
 
 std::shared_ptr<const Resolved> snapshot() {
-    std::lock_guard<std::mutex> lock(cacheMutex());
+    std::scoped_lock lock(cacheMutex());
     if (cachedSlot() == nullptr) {
         // Bootstrap: first reader before resolve() ran. Compute defaults
         // on demand so paths remain useful even if a consumer touches them
@@ -249,7 +249,7 @@ void resolve() {
     fresh->renderFromEnv = render.fromEnv;
 
     {
-        std::lock_guard<std::mutex> lock(cacheMutex());
+        std::scoped_lock lock(cacheMutex());
         cachedSlot() = fresh;
     }
 }

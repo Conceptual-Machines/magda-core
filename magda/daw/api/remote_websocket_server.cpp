@@ -324,7 +324,7 @@ struct Connection {
      */
     bool enqueue(std::string payload, bool ownsSlot) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed || queuedReplies >= maxQueuedReplies) {
                 if (ownsSlot)
                     releaseLocked();
@@ -349,7 +349,7 @@ struct Connection {
      */
     bool enqueueEvent(std::string payload) {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             if (closed || queuedEvents >= maxQueuedEvents)
                 return false;
             ++queuedEvents;
@@ -373,7 +373,7 @@ struct Connection {
 
     void release() {
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             releaseLocked();
         }
         ready.notify_one();
@@ -391,14 +391,14 @@ struct Connection {
      * executed, mutations and all, and only its replies are thrown away.
      */
     bool isClosed() const {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
         return closed;
     }
 
     void markClosed() {
         std::deque<Outgoing> abandoned;
         {
-            const std::lock_guard<std::mutex> lock(mutex);
+            const std::scoped_lock lock(mutex);
             closed = true;
             abandoned.swap(outbox);
             queuedReplies = 0;
@@ -428,7 +428,7 @@ struct Connection {
      * Returns an empty string when the request may proceed.
      */
     juce::String admit(int maxInFlight, double ratePerSecond, double burst) {
-        const std::lock_guard<std::mutex> lock(mutex);
+        const std::scoped_lock lock(mutex);
 
         const auto now = std::chrono::steady_clock::now();
         const auto elapsed = std::chrono::duration<double>(now - lastRefill).count();
@@ -511,7 +511,7 @@ struct RemoteWebSocketServer::Impl {
     std::vector<std::shared_ptr<Connection>> live;
 
     int connectionCount() const {
-        const std::lock_guard<std::mutex> lock(liveMutex);
+        const std::scoped_lock lock(liveMutex);
         return static_cast<int>(live.size());
     }
 
@@ -545,7 +545,7 @@ struct RemoteWebSocketServer::Impl {
      * immediately before that WebSocket is destroyed.
      */
     bool disconnectByHandle(const juce::String& handle) {
-        const std::lock_guard<std::mutex> lock(liveMutex);
+        const std::scoped_lock lock(liveMutex);
         const auto found =
             std::find_if(live.begin(), live.end(),
                          [&](const std::shared_ptr<Connection>& c) { return c->handle == handle; });
@@ -573,7 +573,7 @@ struct RemoteWebSocketServer::Impl {
      * the same function that removes one.
      */
     bool registerConnection(const std::shared_ptr<Connection>& connection) {
-        const std::lock_guard<std::mutex> lock(liveMutex);
+        const std::scoped_lock lock(liveMutex);
         if (static_cast<int>(live.size()) >= options.maxConnections)
             return false;
         live.push_back(connection);
@@ -925,7 +925,7 @@ struct RemoteWebSocketServer::Impl {
         writer.join();
 
         {
-            const std::lock_guard<std::mutex> lock(liveMutex);
+            const std::scoped_lock lock(liveMutex);
             live.erase(std::remove(live.begin(), live.end(), connection), live.end());
         }
 
@@ -1031,7 +1031,7 @@ void RemoteWebSocketServer::stop() {
     // OS shutdown is safe across threads and wakes the one framed reader; unlike
     // WebSocket::close(), it does not start a competing read for a Close echo.
     {
-        const std::lock_guard<std::mutex> lock(impl_->liveMutex);
+        const std::scoped_lock lock(impl_->liveMutex);
         for (const auto& connection : impl_->live)
             connection->shutdown();
     }

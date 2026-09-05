@@ -217,7 +217,7 @@ void MidiChordEnginePlugin::seedFromChords(const std::vector<magda::music::Chord
     // Prime the engine's context from an authored progression (e.g. the chord
     // track) so key / suggestions / scales appear without live play. Message
     // thread; serialised with runDetection via stateMutex_.
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
 
     suggestionEngine_.reset();
     keyHistogram_.reset();
@@ -253,7 +253,7 @@ void MidiChordEnginePlugin::runDetection() {
     }
 
     if (heldNotes.empty()) {
-        std::lock_guard<std::mutex> lock(stateMutex_);
+        std::scoped_lock lock(stateMutex_);
         if (currentChord_.name.isNotEmpty()) {
             currentChord_ = {};
             // Don't notify — UI uses lastDetectedChord_ for display
@@ -268,7 +268,7 @@ void MidiChordEnginePlugin::runDetection() {
     if (detected.name.isEmpty() || detected.name == "none" || detected.name == "unknown")
         return;
 
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
 
     bool chordChanged = detected.getDisplayName() != currentChord_.getDisplayName();
     currentChord_ = detected;
@@ -303,47 +303,47 @@ void MidiChordEnginePlugin::runDetection() {
 // =============================================================================
 
 juce::String MidiChordEnginePlugin::getCurrentChordName() const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return currentChord_.getDisplayName();
 }
 
 juce::String MidiChordEnginePlugin::getLastDetectedChordName() const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return lastDetectedChordName_;
 }
 
 magda::music::Chord MidiChordEnginePlugin::getCurrentChord() const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return currentChord_;
 }
 
 std::vector<magda::music::Chord> MidiChordEnginePlugin::getRecentChords() const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return chordHistory_;
 }
 
 std::optional<std::pair<juce::String, juce::String>> MidiChordEnginePlugin::getDetectedKeyMode()
     const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return cachedKeyMode_;
 }
 
 std::vector<magda::music::ChordEngine::SuggestionItem> MidiChordEnginePlugin::getSuggestions()
     const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     return cachedSuggestions_;
 }
 
 std::vector<magda::music::ScaleWithChords> MidiChordEnginePlugin::getDetectedScales(
     int maxResults) const {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     if (static_cast<int>(cachedScales_.size()) <= maxResults)
         return cachedScales_;
     return {cachedScales_.begin(), cachedScales_.begin() + maxResults};
 }
 
 void MidiChordEnginePlugin::clearHistory() {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     chordHistory_.clear();
     currentChord_ = {};
     lastDetectedChordName_.clear();
@@ -358,7 +358,7 @@ void MidiChordEnginePlugin::clearHistory() {
 }
 
 void MidiChordEnginePlugin::refreshSuggestions() {
-    std::lock_guard<std::mutex> lock(stateMutex_);
+    std::scoped_lock lock(stateMutex_);
     auto recentChords = suggestionEngine_.getRecentChords();
     if (recentChords.empty() && !cachedKeyMode_.has_value()) {
         // No input yet — don't show default C major suggestions

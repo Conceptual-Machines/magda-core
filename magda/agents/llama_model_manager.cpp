@@ -58,7 +58,7 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
         }
     } loadingReset{loading_};
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     // Status reads happen on the message thread, so publish state via the lock-free
     // snapshot instead of the mutex held across model loading and inference.
@@ -103,7 +103,7 @@ bool LlamaModelManager::loadModel(const Config& config, std::string* errorMessag
 }
 
 void LlamaModelManager::unloadModel() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
 
     std::atomic_store_explicit(&loadedPathSnapshot_, std::shared_ptr<const std::string>{},
                                std::memory_order_release);
@@ -154,7 +154,7 @@ std::string LlamaModelManager::applyTemplate(const std::string& systemPrompt,
 
 LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceRequest& req,
                                                             TokenCallback onToken) {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     InferenceResult result;
 
     if (model_ == nullptr || ctx_ == nullptr) {
