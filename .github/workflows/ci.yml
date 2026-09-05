@@ -1315,12 +1315,22 @@ jobs:
       timeout-minutes: 30
       run: |
         $testExe = Get-ChildItem -Path build-debug -Recurse -Filter "magda_tests.exe" | Select-Object -First 1
-        if ($testExe) {
-          & $testExe.FullName --abort
-        } else {
+        if (-not $testExe) {
           Write-Error "Tests executable not found"
           exit 1
         }
+        $proc = Start-Process -FilePath $testExe.FullName -ArgumentList "--abort" -NoNewWindow -PassThru
+        # Without this, ExitCode can read null after WaitForExit.
+        $null = $proc.Handle
+        if ("${{ runner.environment }}" -eq "self-hosted") {
+          # The runner is a session-0 service on a hybrid CPU, so Windows
+          # schedules its children as background work, onto the E-cores: the
+          # serial test run sat on cores 12-15 at half speed while six P-cores
+          # idled. Pin it to the P-cores (logical 0-11).
+          try { $proc.ProcessorAffinity = 0xFFF } catch { Write-Host "affinity not set: $($_.Exception.Message)" }
+        }
+        $proc.WaitForExit()
+        exit $proc.ExitCode
 
     # Release configure/build/verify only run on push to main, and only on the
     # self-hosted runner (magda-luca). Feature-branch pushes get Debug coverage;
