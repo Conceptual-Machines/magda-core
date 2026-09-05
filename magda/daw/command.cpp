@@ -101,7 +101,7 @@ juce::var Command::toJson() const {
             value);
     }
 
-    return juce::var(obj.get());
+    return {obj.get()};
 }
 
 Command Command::fromJsonString(const std::string& json_str) {
@@ -140,5 +140,5 @@ juce::var CommandResponse::toJson() const {
         obj->setProperty("data", data_);
     }
 
-    return juce::var(obj.get());
+    return {obj.get()};
 }

@@ -107,7 +107,7 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId) {
     auto& sel = SelectionManager::getInstance();
     if (sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
         const auto& set = sel.getSelectedTracks();
-        return std::vector<TrackId>(set.begin(), set.end());
+        return {set.begin(), set.end()};
     }
     return {clickedId};
 }
@@ -1153,7 +1153,7 @@ class SessionView::MiniChannelStrip : public juce::Component {
                 return "-inf";
             if (std::abs(db) < 0.05f)
                 db = 0.0f;
-            return juce::String(db, 1);
+            return {db, 1};
         });
         volumeSlider_->setValueParser([](const juce::String& text) -> double {
             auto t = text.trim();
@@ -1437,7 +1437,7 @@ class SessionView::MiniMasterStrip : public juce::Component {
                 return "-inf";
             if (std::abs(db) < 0.05f)
                 db = 0.0f;
-            return juce::String(db, 1);
+            return {db, 1};
         });
         volumeSlider_->setValueParser([](const juce::String& text) -> double {
             auto t = text.trim();

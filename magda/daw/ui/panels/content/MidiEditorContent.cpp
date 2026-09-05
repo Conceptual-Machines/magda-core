@@ -53,7 +53,7 @@ std::vector<int> MidiEditorContent::collectUsedPitches() const {
             for (const auto& note : clip->midiNotes)
                 used.insert(note.noteNumber);
     }
-    return std::vector<int>(used.begin(), used.end());
+    return {used.begin(), used.end()};
 }
 
 void MidiEditorContent::rebuildFoldMap() {

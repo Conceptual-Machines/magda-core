@@ -200,7 +200,7 @@ inline std::string formatTimeAsBarsBeats(double time, double bpm, int beatsPerBa
 
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", bar, beat, ticks);
-    return std::string(buffer);
+    return {buffer};
 }
 
 /**
@@ -229,7 +229,7 @@ inline std::string formatDurationAsBarsBeats(double duration, double bpm, int be
         // Sub-beat duration - show as fraction
         std::snprintf(buffer, sizeof(buffer), "%.2f beats", totalBeats);
     }
-    return std::string(buffer);
+    return {buffer};
 }
 
 /**
@@ -246,7 +246,7 @@ inline std::string formatDurationCompact(double duration, double bpm, int beatsP
 
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "%d.%.1f", wholeBars, remainingBeats);
-    return std::string(buffer);
+    return {buffer};
 }
 
 /**
@@ -265,7 +265,7 @@ inline std::string formatBeatsAsBarsBeats(double totalBeats, int beatsPerBar) {
 
     char buffer[32];
     std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars, wholeBeats, ticks);
-    return std::string(buffer);
+    return {buffer};
 }
 
 }  // namespace TimelineUtils

@@ -50,7 +50,7 @@ constexpr std::array<ManifestEntry, 3> kManifest = {{
 }};
 
 juce::File modelsDirAsFile() {
-    return juce::File(juce::String(MediaDbContext::getInstance().modelsDir().string()));
+    return {juce::String(MediaDbContext::getInstance().modelsDir().string())};
 }
 
 juce::File destinationFile(const ManifestEntry& entry) {

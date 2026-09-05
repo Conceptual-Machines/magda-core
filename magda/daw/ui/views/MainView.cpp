@@ -60,7 +60,7 @@ juce::String formatDbValue(float db) {
         return "-inf";
     if (std::abs(db) < 0.05f)
         db = 0.0f;
-    return juce::String(db, 1);
+    return {db, 1};
 }
 
 // Route through the position-aware tempo facade when wired (message thread);
@@ -1936,7 +1936,7 @@ juce::Rectangle<int> MainView::getResizeHandleArea() const {
     int x = arrangementLayout.swapped
                 ? arrangementLayout.trackHeadersArea.getX() - layout.componentSpacing
                 : arrangementLayout.trackHeadersArea.getRight();
-    return juce::Rectangle<int>(x, top, layout.componentSpacing, getHeight() - top);
+    return {x, top, layout.componentSpacing, getHeight() - top};
 }
 
 void MainView::paintResizeHandle(juce::Graphics& g) {
@@ -1977,7 +1977,7 @@ juce::Rectangle<int> MainView::getMasterResizeHandleArea() const {
     int horizontalScrollbarHeight = ARRANGEMENT_SCROLLBAR_SIZE;
     int resizeHandleY = getHeight() - horizontalScrollbarHeight - masterStripHeight -
                         MASTER_RESIZE_HANDLE_HEIGHT - effectiveAuxHeight;
-    return juce::Rectangle<int>(0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT);
+    return {0, resizeHandleY, getWidth(), MASTER_RESIZE_HANDLE_HEIGHT};
 }
 
 void MainView::paintMasterResizeHandle(juce::Graphics& g) {

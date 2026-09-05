@@ -383,7 +383,7 @@ void NoteInspector::refreshMultiRangeDisplay() {
         char buffer[32];
         std::snprintf(buffer, sizeof(buffer), "%d.%d.%03d", wholeBars + offset, wholeBeats + offset,
                       ticks);
-        return juce::String(buffer);
+        return {buffer};
     };
 
     if (std::abs(multiRange_.minStart - multiRange_.maxStart) < 0.001) {

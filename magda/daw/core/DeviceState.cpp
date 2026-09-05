@@ -35,14 +35,14 @@ juce::var encodeValue(const juce::var& value) {
             obj->setProperty(kBinaryTag, block->toBase64Encoding());
         else
             obj->setProperty(kBinaryTag, juce::String());
-        return juce::var(obj);
+        return {obj};
     }
 
     if (const auto* array = value.getArray()) {
         juce::Array<juce::var> encoded;
         for (const auto& entry : *array)
             encoded.add(encodeValue(entry));
-        return juce::var(encoded);
+        return {encoded};
     }
 
     return value;
@@ -53,7 +53,7 @@ juce::var decodeValue(const juce::var& value) {
         if (obj->hasProperty(kBinaryTag)) {
             juce::MemoryBlock block;
             block.fromBase64Encoding(obj->getProperty(kBinaryTag).toString());
-            return juce::var(block);
+            return {block};
         }
         return value;
     }
@@ -62,7 +62,7 @@ juce::var decodeValue(const juce::var& value) {
         juce::Array<juce::var> decoded;
         for (const auto& entry : *array)
             decoded.add(decodeValue(entry));
-        return juce::var(decoded);
+        return {decoded};
     }
 
     return value;
@@ -72,7 +72,7 @@ juce::var encodeProps(const juce::NamedValueSet& props) {
     auto* obj = new juce::DynamicObject();
     for (int i = 0; i < props.size(); ++i)
         obj->setProperty(props.getName(i), encodeValue(props.getValueAt(i)));
-    return juce::var(obj);
+    return {obj};
 }
 
 void decodeProps(const juce::var& value, juce::NamedValueSet& outProps) {
@@ -95,7 +95,7 @@ juce::var encodeNode(const Node& node) {
             children.add(encodeNode(child));
         obj->setProperty(kKeyChildren, juce::var(children));
     }
-    return juce::var(obj);
+    return {obj};
 }
 
 Node decodeNode(const juce::var& value) {

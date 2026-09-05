@@ -113,7 +113,7 @@ std::vector<TrackId> getMultiEditTargets(TrackId clickedId, bool isMaster) {
     auto& sel = SelectionManager::getInstance();
     if (!isMaster && sel.isTrackSelected(clickedId) && sel.getSelectedTrackCount() > 1) {
         const auto& set = sel.getSelectedTracks();
-        return std::vector<TrackId>(set.begin(), set.end());
+        return {set.begin(), set.end()};
     }
     return {clickedId};
 }
@@ -490,7 +490,7 @@ void MixerView::ChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
     // Parse typed dB input
     volumeSlider->setValueParser([](const juce::String& text) -> double {

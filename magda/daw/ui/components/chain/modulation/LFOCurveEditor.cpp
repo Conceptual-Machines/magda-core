@@ -788,7 +788,7 @@ juce::Rectangle<int> LFOCurveEditor::getIndicatorBounds() const {
 
     // Return a small region around the indicator dot
     constexpr int margin = 8;
-    return juce::Rectangle<int>(x - margin, y - margin, margin * 2, margin * 2);
+    return {x - margin, y - margin, margin * 2, margin * 2};
 }
 
 void LFOCurveEditor::paint(juce::Graphics& g) {

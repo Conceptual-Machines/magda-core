@@ -173,7 +173,7 @@ juce::File configFile() {
     // Read on every call rather than cached in the resolve() snapshot: config
     // has to be readable before resolve() has run.
     if (const auto override_ = envVar("MAGDA_CONFIG_FILE"); override_.isNotEmpty())
-        return juce::File(override_);
+        return {override_};
     return alwaysOSDefault().getChildFile("config.json");
 }
 

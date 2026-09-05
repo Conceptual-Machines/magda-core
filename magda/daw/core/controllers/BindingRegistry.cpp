@@ -497,7 +497,7 @@ juce::var BindingRegistry::encodeArray(const std::vector<Binding>& bindings) {
     juce::Array<juce::var> arr;
     for (const auto& b : bindings)
         arr.add(encodeBinding(b));
-    return juce::var(arr);
+    return {arr};
 }
 
 void BindingRegistry::loadGlobal(const juce::var& json) {

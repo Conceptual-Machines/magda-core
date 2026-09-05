@@ -53,7 +53,7 @@ constexpr const char* kInstructions =
     "conditional on the project not having changed since the revision you last saw.";
 
 juce::var makeObject() {
-    return juce::var(new juce::DynamicObject());
+    return {new juce::DynamicObject()};
 }
 
 void setProperty(juce::var& object, const char* name, const juce::var& value) {

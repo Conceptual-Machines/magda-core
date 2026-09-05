@@ -299,7 +299,7 @@ void MasterChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
 
     // Custom parser: user input text -> normalized position (0-1)
@@ -473,7 +473,7 @@ void MasterChannelStrip::setupControls() {
             return "-inf";
         if (std::abs(db) < 0.05f)
             db = 0.0f;
-        return juce::String(db, 1);
+        return {db, 1};
     });
 
     cueVolumeSlider_->setValueParser([](const juce::String& text) -> double {

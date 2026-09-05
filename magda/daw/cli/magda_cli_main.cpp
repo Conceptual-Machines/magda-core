@@ -29,7 +29,7 @@ void printUsage(std::ostream& out);
 
 juce::File fileFromArg(const juce::String& path) {
     if (juce::File::isAbsolutePath(path))
-        return juce::File(path);
+        return {path};
     return juce::File::getCurrentWorkingDirectory().getChildFile(path);
 }
 

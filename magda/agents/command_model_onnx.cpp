@@ -411,11 +411,11 @@ std::filesystem::path CommandModelOnnx::defaultAssetDir() {
     // <dataDir>/CommandModel/models — same shape as MediaDB/models and
     // StemSeparation/models, so every downloaded bundle sits in the same place
     // relative to its feature.
-    return std::filesystem::path(magda::paths::dataDir()
-                                     .getChildFile("CommandModel")
-                                     .getChildFile("models")
-                                     .getFullPathName()
-                                     .toStdString());
+    return {magda::paths::dataDir()
+                .getChildFile("CommandModel")
+                .getChildFile("models")
+                .getFullPathName()
+                .toStdString()};
 }
 
 }  // namespace magda

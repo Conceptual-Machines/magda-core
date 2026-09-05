@@ -30,7 +30,7 @@ constexpr int kHalfOverlapFrames = bp::kOverlappingFrames / 2;                  
 // Resample mono PCM to 22050 Hz. Returns the resampled buffer.
 std::vector<float> resampleTo22050(const float* mono, int numSamples, int sampleRate) {
     if (sampleRate == bp::kSampleRate) {
-        return std::vector<float>(mono, mono + numSamples);
+        return {mono, mono + numSamples};
     }
     const double ratio = static_cast<double>(sampleRate) / bp::kSampleRate;
     const int outLen = static_cast<int>(std::ceil(numSamples / ratio));

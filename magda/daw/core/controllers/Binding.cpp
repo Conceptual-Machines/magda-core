@@ -158,7 +158,7 @@ juce::var encodeBinding(const Binding& b) {
     rangeObj->setProperty("curve", curveToString(b.range.curve));
     obj->setProperty("range", juce::var(rangeObj));
 
-    return juce::var(obj);
+    return {obj};
 }
 
 // ============================================================================

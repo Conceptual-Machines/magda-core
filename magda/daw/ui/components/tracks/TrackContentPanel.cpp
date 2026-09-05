@@ -1057,7 +1057,7 @@ juce::Rectangle<int> TrackContentPanel::getTrackLaneArea(int trackIndex) const {
     int yPosition = getTrackYPosition(trackIndex);
     int height = static_cast<int>(trackLanes[trackIndex]->height * verticalZoom);
 
-    return juce::Rectangle<int>(0, yPosition, getWidth(), height);
+    return {0, yPosition, getWidth(), height};
 }
 
 bool TrackContentPanel::isInSelectableArea(int x, int y) const {

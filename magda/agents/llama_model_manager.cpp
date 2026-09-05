@@ -149,7 +149,7 @@ std::string LlamaModelManager::applyTemplate(const std::string& systemPrompt,
     std::vector<char> buf(static_cast<size_t>(len) + 1);
     llama_chat_apply_template(tmpl, messages, 2, true, buf.data(),
                               static_cast<int32_t>(buf.size()));
-    return std::string(buf.data(), static_cast<size_t>(len));
+    return {buf.data(), static_cast<size_t>(len)};
 }
 
 LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceRequest& req,

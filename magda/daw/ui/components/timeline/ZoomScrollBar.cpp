@@ -260,13 +260,11 @@ juce::Rectangle<int> ZoomScrollBar::getTrackBounds() const {
     if (orientation == Orientation::Horizontal) {
         int height = bounds.getHeight() - 8;
         int yOffset = (bounds.getHeight() - height) / 2;
-        return juce::Rectangle<int>(bounds.getX() + 2, bounds.getY() + yOffset,
-                                    bounds.getWidth() - 4, height);
+        return {bounds.getX() + 2, bounds.getY() + yOffset, bounds.getWidth() - 4, height};
     } else {
         int width = bounds.getWidth() - 8;
         int xOffset = (bounds.getWidth() - width) / 2;
-        return juce::Rectangle<int>(bounds.getX() + xOffset, bounds.getY() + 2, width,
-                                    bounds.getHeight() - 4);
+        return {bounds.getX() + xOffset, bounds.getY() + 2, width, bounds.getHeight() - 4};
     }
 }
 
@@ -278,15 +276,13 @@ juce::Rectangle<int> ZoomScrollBar::getThumbBounds() const {
         int thumbWidth = static_cast<int>((visibleEnd - visibleStart) * trackBounds.getWidth());
         thumbWidth = juce::jmax(thumbWidth, MIN_THUMB_SIZE);
 
-        return juce::Rectangle<int>(thumbX, trackBounds.getY(), thumbWidth,
-                                    trackBounds.getHeight());
+        return {thumbX, trackBounds.getY(), thumbWidth, trackBounds.getHeight()};
     } else {
         int thumbY = trackBounds.getY() + static_cast<int>(visibleStart * trackBounds.getHeight());
         int thumbHeight = static_cast<int>((visibleEnd - visibleStart) * trackBounds.getHeight());
         thumbHeight = juce::jmax(thumbHeight, MIN_THUMB_SIZE);
 
-        return juce::Rectangle<int>(trackBounds.getX(), thumbY, trackBounds.getWidth(),
-                                    thumbHeight);
+        return {trackBounds.getX(), thumbY, trackBounds.getWidth(), thumbHeight};
     }
 }
 
