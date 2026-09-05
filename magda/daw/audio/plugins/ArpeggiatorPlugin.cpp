@@ -366,8 +366,18 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     const bool isLatched = displayValue(kLatch) >= 0.5f;
 
     // --- 1. Capture incoming MIDI ---
-    // Over the block's incoming events only: sendAllNotesOff() appends to the
-    // same buffer mid-loop, and the arp must not re-consume its own output.
+    // Keep the input view read-only: appending can invalidate message references,
+    // and the clear below would discard any note-offs emitted here. Only one
+    // note can be sounding on entry; this pass does not generate new notes.
+    int pendingNoteOff = -1;
+    const auto deferNoteOff = [&] {
+        if (lastPlayedNote_ >= 0) {
+            pendingNoteOff = lastPlayedNote_;
+            lastPlayedNote_ = -1;
+            lastNoteOffBeat_ = -1.0;
+            clearMidiOutDisplay();
+        }
+    };
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
@@ -376,8 +386,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             // Latch: if old set is stale (all keys were released), clear before adding
             if (isLatched && latchedSetStale_) {
-                // Send note-off for any currently playing note before clearing
-                sendAllNotesOff(midi);
+                deferNoteOff();
                 heldCount_ = 0;
                 nextOrder_ = 0;
                 latchedSetStale_ = false;
@@ -390,6 +399,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 freeRunSamples_ = 0.0;
+                deferNoteOff();
                 resetArpState();
             }
         } else if (msg.isNoteOff()) {
@@ -405,6 +415,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
                 removeHeldNote(msg.getNoteNumber());
             }
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
+            deferNoteOff();
             clearHeldNotes();
             resetArpState();
         }
@@ -412,6 +423,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
     // --- 2. Clear MIDI buffer (arp replaces input) ---
     midi.clear();
+    if (pendingNoteOff >= 0)
+        midi.addEvent({juce::MidiMessage::noteOff(1, pendingNoteOff), 0});
 
     // --- 3. Handle transport transitions ---
     // Note: the host briefly toggles isPlaying at loop boundaries, so we only
