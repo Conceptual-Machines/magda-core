@@ -331,7 +331,7 @@ void ExportAudioDialog::showDialog(juce::Component* parent,
     auto* dialog = new ExportAudioDialog();
     dialog->setTimeSelectionAvailable(hasTimeSelection);
     dialog->setLoopRegionAvailable(hasLoopRegion);
-    dialog->onExport = exportCallback;
+    dialog->onExport = std::move(exportCallback);
 
     juce::DialogWindow::LaunchOptions options;
     options.dialogTitle = tr("dialogs.export_audio");

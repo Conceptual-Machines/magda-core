@@ -2116,7 +2116,7 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                 auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
                     ViewModeController::getInstance().getViewMode());
                 if (sel.isAllTracks()) {
-                    trackIds = visibleTracks;
+                    trackIds = std::move(visibleTracks);
                 } else {
                     for (int idx : sel.trackIndices) {
                         if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -2804,7 +2804,7 @@ void TrackContentPanel::updateMarqueeHighlights() {
         clipComp->setMarqueeHighlighted(inMarquee);
     }
 
-    marqueePreviewClips_ = clipsInRect;
+    marqueePreviewClips_ = std::move(clipsInRect);
 }
 
 bool TrackContentPanel::checkIfMarqueeNeeded(const juce::Point<int>& currentPoint) const {

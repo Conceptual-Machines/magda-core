@@ -122,7 +122,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             if (parseGridLine(line, instructions, gridError))
                 continue;
             if (gridError.isNotEmpty()) {
-                lastError_ = gridError;
+                lastError_ = std::move(gridError);
                 return {};
             }
             // fall through (no `|` after all — shouldn't happen, but safe)

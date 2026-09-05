@@ -97,7 +97,7 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
 
     lastKnownDeviceCount_ = totalDevices;
     if (currentDeviceName.isNotEmpty())
-        lastKnownAudioDeviceName_ = currentDeviceName;
+        lastKnownAudioDeviceName_ = std::move(currentDeviceName);
 }
 
 void TracktionEngineWrapper::notifyDeviceLoadingComplete(const juce::String& message) {

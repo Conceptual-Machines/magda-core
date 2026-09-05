@@ -44,7 +44,7 @@ bool parseTarget(const juce::String& value, AutoTarget& out, juce::String& err) 
     // Sigil token: @plugin.param
     if (isSigilToken(v)) {
         out.kind = AutoTarget::Kind::Alias;
-        out.aliasToken = v;
+        out.aliasToken = std::move(v);
         return true;
     }
     err = "Unknown target: " + v;
@@ -208,7 +208,7 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
                 if (k.equalsIgnoreCase("target")) {
                     juce::String err;
                     if (!parseTarget(v, op.target, err)) {
-                        lastError_ = err;
+                        lastError_ = std::move(err);
                         return {};
                     }
                 } else if (k.equalsIgnoreCase("id")) {
@@ -238,7 +238,7 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
                 } else if (k.equalsIgnoreCase("points")) {
                     juce::String err;
                     if (!parseFreeformPoints(v, op.points, err)) {
-                        lastError_ = err;
+                        lastError_ = std::move(err);
                         return {};
                     }
                 }
@@ -270,7 +270,7 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
                 if (k.equalsIgnoreCase("target")) {
                     juce::String err;
                     if (!parseTarget(v, op.target, err)) {
-                        lastError_ = err;
+                        lastError_ = std::move(err);
                         return {};
                     }
                 }
@@ -289,13 +289,13 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
                 if (k.equalsIgnoreCase("target")) {
                     juce::String err;
                     if (!parseTarget(v, op.target, err)) {
-                        lastError_ = err;
+                        lastError_ = std::move(err);
                         return {};
                     }
                 } else if (k.equalsIgnoreCase("points")) {
                     juce::String err;
                     if (!parseFreeformPoints(v, op.points, err)) {
-                        lastError_ = err;
+                        lastError_ = std::move(err);
                         return {};
                     }
                 }
@@ -325,7 +325,7 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
             if (k.equalsIgnoreCase("target")) {
                 juce::String err;
                 if (!parseTarget(v, op.target, err)) {
-                    lastError_ = err;
+                    lastError_ = std::move(err);
                     return {};
                 }
             } else if (k.equalsIgnoreCase("start"))

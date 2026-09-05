@@ -157,7 +157,7 @@ static llm::Request buildRequest(MagdaApi& api, const std::string& message, bool
     if (cfg) {
         request.grammar = juce::String::fromUTF8(dsl::getGrammar());
         request.grammarToolName = "magda_dsl";
-        request.grammarToolDescription = systemPrompt;
+        request.grammarToolDescription = std::move(systemPrompt);
     }
 
     return request;

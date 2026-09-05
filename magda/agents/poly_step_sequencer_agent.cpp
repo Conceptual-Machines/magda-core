@@ -328,7 +328,7 @@ PolyStepSequencerAgent::GenerateResult PolyStepSequencerAgent::generate(
     auto systemPrompt = juce::String::fromUTF8(getSystemPrompt());
     if (!deviceContext.empty())
         systemPrompt += "\n\n" + juce::String::fromUTF8(deviceContext.c_str());
-    request.systemPrompt = systemPrompt;
+    request.systemPrompt = std::move(systemPrompt);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.3f;  // some creativity for patterns
 
@@ -380,7 +380,7 @@ PolyStepSequencerAgent::GenerateResult PolyStepSequencerAgent::generateStreaming
     auto systemPromptStr = juce::String::fromUTF8(getSystemPrompt());
     if (!deviceContext.empty())
         systemPromptStr += "\n\n" + juce::String::fromUTF8(deviceContext.c_str());
-    request.systemPrompt = systemPromptStr;
+    request.systemPrompt = std::move(systemPromptStr);
     request.userMessage = juce::String::fromUTF8(message.c_str());
     request.temperature = 0.3f;
 

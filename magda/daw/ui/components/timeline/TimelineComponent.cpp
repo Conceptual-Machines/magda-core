@@ -678,7 +678,7 @@ void TimelineComponent::mouseDoubleClick(const juce::MouseEvent& event) {
             // Edit section name (simplified - in real app would show text editor)
             auto& section = *sections[sectionIndex];
             juce::String newName = "Section " + juce::String(sectionIndex + 1);
-            section.name = newName;
+            section.name = std::move(newName);
 
             if (onSectionChanged) {
                 onSectionChanged(sectionIndex, section);

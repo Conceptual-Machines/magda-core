@@ -555,7 +555,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
         auto visibleTracks = TrackManager::getInstance().getVisibleTracks(
             ViewModeController::getInstance().getViewMode());
         if (sel.isAllTracks()) {
-            trackIds = visibleTracks;
+            trackIds = std::move(visibleTracks);
         } else {
             for (int idx : sel.trackIndices) {
                 if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))
@@ -1685,7 +1685,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
             std::vector<TrackId> trackIds;
             if (state.selection.isAllTracks()) {
-                trackIds = visibleTracks;
+                trackIds = std::move(visibleTracks);
             } else {
                 for (int idx : state.selection.trackIndices) {
                     if (idx >= 0 && idx < static_cast<int>(visibleTracks.size()))

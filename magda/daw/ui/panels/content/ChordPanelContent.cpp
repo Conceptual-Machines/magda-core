@@ -553,7 +553,7 @@ void ChordPanelContent::updateFromPlugin() {
         }
     }
     if (scalesChanged) {
-        detectedScales_ = newScales;
+        detectedScales_ = std::move(newScales);
         rebuildScaleBlocks();
         needsLayout = true;
     }

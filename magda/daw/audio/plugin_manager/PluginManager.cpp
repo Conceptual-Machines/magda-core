@@ -489,7 +489,7 @@ void PluginManager::capturePluginState(const ChainNodePath& devicePath) {
                                                                              devInfo->pluginState);
     }
 
-    devInfo->pluginState = stateStr;
+    devInfo->pluginState = std::move(stateStr);
     if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
         captureDrumGridPads(devicePath, *drumGrid);
     captureVst3Info(*devInfo, capturedExt);

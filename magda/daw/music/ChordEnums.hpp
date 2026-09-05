@@ -231,7 +231,7 @@ inline ChordSpec stringToChordSpec(const juce::String& chordString) {
         rootStr = cleanStr.substring(0, spacePos).trim();
         qualityStr = cleanStr.substring(spacePos + 1).trim();
     } else {
-        rootStr = cleanStr;
+        rootStr = std::move(cleanStr);
         qualityStr = "maj";
     }
 

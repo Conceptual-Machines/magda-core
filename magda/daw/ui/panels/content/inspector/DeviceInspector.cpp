@@ -170,8 +170,8 @@ void DeviceInspector::updateFromSelectedChainNode() {
 
     if (displayName.isNotEmpty()) {
         // Use override info (pad chain plugin)
-        typeStr = displayType;
-        nameStr = displayName;
+        typeStr = std::move(displayType);
+        nameStr = std::move(displayName);
     } else
         switch (type) {
             case magda::ChainNodeType::Device:

@@ -1995,7 +1995,7 @@ bool TrackManager::setDeviceAuthoredState(const ChainNodePath& devicePath,
         canonical = device_state::encode(*decoded);
     }
 
-    device->pluginState = canonical;
+    device->pluginState = std::move(canonical);
     projectAuthoredStateToEngine(audioEngine_, devicePath, device->pluginState, device->pluginId);
     notifyDevicePropertyChanged(devicePath);
     return true;

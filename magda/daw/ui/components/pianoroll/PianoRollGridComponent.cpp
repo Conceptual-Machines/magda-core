@@ -2735,7 +2735,7 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
     pendingChord_.startBeat = dropBeat;
     pendingChord_.previewEndBeat = dropBeat + gridResolutionBeats_;  // Default length preview
     pendingChord_.notes = std::move(notes);
-    pendingChord_.chordName = chordName;
+    pendingChord_.chordName = std::move(chordName);
     pendingChord_.active = true;
     pendingChord_.blinkOn = true;
 

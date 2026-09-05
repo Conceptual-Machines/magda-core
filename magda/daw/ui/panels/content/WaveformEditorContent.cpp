@@ -1121,7 +1121,7 @@ void WaveformEditorContent::setMultiClipSelection(
     if (names == multiClipNames_)
         return;
 
-    multiClipNames_ = names;
+    multiClipNames_ = std::move(names);
     if (!multiClipNames_.isEmpty()) {
         setClip(magda::INVALID_CLIP_ID);
         setTransientsUpdating(false);

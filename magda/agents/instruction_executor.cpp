@@ -853,7 +853,7 @@ bool InstructionExecutor::executeArp(const ArpOp& op) {
     juce::String chordError;
     if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
                                   midiNotes, chordError)) {
-        error_ = chordError;
+        error_ = std::move(chordError);
         return false;
     }
 
@@ -925,7 +925,7 @@ bool InstructionExecutor::executeChord(const ChordOp& op) {
     juce::String chordError;
     if (!music::resolveChordNotes(op.root.toStdString(), op.quality.toStdString(), op.inversion,
                                   midiNotes, chordError)) {
-        error_ = chordError;
+        error_ = std::move(chordError);
         return false;
     }
 
