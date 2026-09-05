@@ -1075,15 +1075,19 @@ class SelectionManager {
         }
         ~NotifyGuard() {
             if (--sm.notifyDepth_ == 0) {
-                sm.listeners_.erase(
-                    std::remove(sm.listeners_.begin(), sm.listeners_.end(), nullptr),
-                    sm.listeners_.end());
-                for (auto* l : sm.pendingAdditions_) {
-                    if (l && std::find(sm.listeners_.begin(), sm.listeners_.end(), l) ==
-                                 sm.listeners_.end())
-                        sm.listeners_.push_back(l);
+                try {
+                    sm.listeners_.erase(
+                        std::remove(sm.listeners_.begin(), sm.listeners_.end(), nullptr),
+                        sm.listeners_.end());
+                    for (auto* l : sm.pendingAdditions_) {
+                        if (l && std::find(sm.listeners_.begin(), sm.listeners_.end(), l) ==
+                                     sm.listeners_.end())
+                            sm.listeners_.push_back(l);
+                    }
+                    sm.pendingAdditions_.clear();
+                } catch (...) {
+                    // best-effort listener bookkeeping; nothing to do if push_back allocation fails
                 }
-                sm.pendingAdditions_.clear();
             }
         }
     };

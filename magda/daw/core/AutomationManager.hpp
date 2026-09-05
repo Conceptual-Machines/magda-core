@@ -450,7 +450,11 @@ class AutomationManager : public TrackManagerListener {
             AutomationManager::getInstance().beginNotificationBatch();
         }
         ~BatchScope() {
-            AutomationManager::getInstance().endNotificationBatch();
+            try {
+                AutomationManager::getInstance().endNotificationBatch();
+            } catch (...) {
+                // best-effort notification flush; a listener throw must not terminate
+            }
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;

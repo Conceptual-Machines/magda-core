@@ -1458,7 +1458,11 @@ RemoteMcpServer::RemoteMcpServer(RemoteApiService& service, Options options,
     : impl_(std::make_unique<Impl>(service, std::move(options), subscriptions)) {}
 
 RemoteMcpServer::~RemoteMcpServer() {
-    stop();
+    try {
+        stop();
+    } catch (...) {
+        // best-effort teardown; a throw here must not terminate the process
+    }
 }
 
 const char* RemoteMcpServer::endpointPath() {

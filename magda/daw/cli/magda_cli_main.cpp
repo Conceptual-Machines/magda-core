@@ -1009,32 +1009,37 @@ int bootOnly() {
 }  // namespace
 
 int main(int argc, char* argv[]) {
-    juce::ScopedJuceInitialiser_GUI juceInit;
+    try {
+        juce::ScopedJuceInitialiser_GUI juceInit;
 
-    juce::StringArray args;
-    for (int i = 0; i < argc; ++i)
-        args.add(juce::String(argv[i]));
+        juce::StringArray args;
+        for (int i = 0; i < argc; ++i)
+            args.add(juce::String(argv[i]));
 
-    if (args.size() < 2 || args[1] == "--help" || args[1] == "-h") {
-        printUsage(args.size() < 2 ? std::cerr : std::cout);
-        return args.size() < 2 ? 2 : 0;
+        if (args.size() < 2 || args[1] == "--help" || args[1] == "-h") {
+            printUsage(args.size() < 2 ? std::cerr : std::cout);
+            return args.size() < 2 ? 2 : 0;
+        }
+
+        const auto command = args[1];
+        args.remove(0);
+
+        if (command == "boot")
+            return bootOnly();
+        if (command == "init")
+            return initProject(args);
+        if (command == "run")
+            return runRoundTrip(args);
+        if (command == "exec")
+            return execCommands(args);
+        if (command == "render")
+            return renderProject(args);
+
+        std::cerr << "Unknown command: " << command << "\n";
+        printUsage(std::cerr);
+        return 2;
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal error: " << e.what() << "\n";
+        return 1;
     }
-
-    const auto command = args[1];
-    args.remove(0);
-
-    if (command == "boot")
-        return bootOnly();
-    if (command == "init")
-        return initProject(args);
-    if (command == "run")
-        return runRoundTrip(args);
-    if (command == "exec")
-        return execCommands(args);
-    if (command == "render")
-        return renderProject(args);
-
-    std::cerr << "Unknown command: " << command << "\n";
-    printUsage(std::cerr);
-    return 2;
 }

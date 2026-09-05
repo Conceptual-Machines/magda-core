@@ -95,9 +95,13 @@ struct InsertRenderCaptureService::Taps {
 InsertRenderCaptureService::InsertRenderCaptureService(te::Edit& edit) : edit_(edit) {}
 
 InsertRenderCaptureService::~InsertRenderCaptureService() {
-    if (pass_ != nullptr)
-        finishPass(false);
-    cleanupAfterRender();
+    try {
+        if (pass_ != nullptr)
+            finishPass(false);
+        cleanupAfterRender();
+    } catch (...) {
+        // best-effort teardown; a throw from onFinished/TE calls must not terminate
+    }
 }
 
 bool InsertRenderCaptureService::exportNeedsCapturePass() const {

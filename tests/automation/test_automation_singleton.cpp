@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <stdexcept>
 
 #include "magda/daw/core/AutomationCommands.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
@@ -406,4 +407,37 @@ TEST_CASE("A Linear segment's shaper handle bends the evaluated value", "[automa
 
     // The midpoint must now follow the bend, not the straight line.
     REQUIRE(mgr.getValueAtBeat(laneId, 2.0) < 0.45);
+}
+
+namespace {
+struct ThrowingPointsListener : AutomationManagerListener {
+    bool called = false;
+    void automationLanesChanged() override {}
+    void automationPointsChanged(AutomationLaneId) override {
+        called = true;
+        throw std::runtime_error("listener boom");
+    }
+};
+}  // namespace
+
+TEST_CASE("AutomationManager::BatchScope destructor survives a throwing listener",
+          "[automation][batch]") {
+    // #2395: ~BatchScope calls endNotificationBatch(), which fans out to
+    // listeners. A listener throw used to escape an implicitly-noexcept
+    // destructor (std::terminate); it must now be swallowed.
+    resetState();
+    auto& mgr = AutomationManager::getInstance();
+    auto trackId = makeTrack("Batch");
+    auto laneId = mgr.createLane(volumeTarget(trackId), AutomationLaneType::Absolute);
+
+    ThrowingPointsListener listener;
+    mgr.addListener(&listener);
+
+    {
+        AutomationManager::BatchScope batch;
+        mgr.addPoint(laneId, 1.0, 0.5);
+    }
+
+    mgr.removeListener(&listener);
+    REQUIRE(listener.called);
 }

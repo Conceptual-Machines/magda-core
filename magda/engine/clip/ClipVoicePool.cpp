@@ -194,14 +194,18 @@ ClipVoicePool::~ClipVoicePool() {
     // nothing may be in the prefetch thread's round either. An empty table
     // published first is what takes care of the callback; removal takes care of
     // the reader, and waits for it.
-    feed_.publish(std::make_shared<const ClipStreamTable>());
+    try {
+        feed_.publish(std::make_shared<const ClipStreamTable>());
 
-    const std::scoped_lock guard(streamsLock_);
-    for (auto& [key, reader] : streams_)
-        if (reader.stream != nullptr)
-            reader_.remove(*reader.stream);
+        const std::scoped_lock guard(streamsLock_);
+        for (auto& [key, reader] : streams_)
+            if (reader.stream != nullptr)
+                reader_.remove(*reader.stream);
 
-    streams_.clear();
+        streams_.clear();
+    } catch (...) {
+        // best-effort teardown; a throw here must not terminate the process
+    }
 }
 
 void ClipVoicePool::setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot) {

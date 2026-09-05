@@ -230,7 +230,11 @@ CompoundOperationScope::CompoundOperationScope(const juce::String& description) 
 }
 
 CompoundOperationScope::~CompoundOperationScope() {
-    UndoManager::getInstance().endCompoundOperation();
+    try {
+        UndoManager::getInstance().endCompoundOperation();
+    } catch (...) {
+        // best-effort compound-command flush; a listener throw must not terminate
+    }
 }
 
 }  // namespace magda

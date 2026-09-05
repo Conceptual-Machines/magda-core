@@ -147,11 +147,15 @@ class Transaction {
     ~Transaction() {
         if (finished_)
             return;
-        if (savepoint_.empty()) {
-            sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
-        } else {
-            sqlite3_exec(db_, ("ROLLBACK TO " + savepoint_).c_str(), nullptr, nullptr, nullptr);
-            sqlite3_exec(db_, ("RELEASE " + savepoint_).c_str(), nullptr, nullptr, nullptr);
+        try {
+            if (savepoint_.empty()) {
+                sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr);
+            } else {
+                sqlite3_exec(db_, ("ROLLBACK TO " + savepoint_).c_str(), nullptr, nullptr, nullptr);
+                sqlite3_exec(db_, ("RELEASE " + savepoint_).c_str(), nullptr, nullptr, nullptr);
+            }
+        } catch (...) {
+            // best-effort rollback; nothing to do if string allocation fails
         }
     }
 

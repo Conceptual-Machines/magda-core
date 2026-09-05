@@ -85,7 +85,11 @@ class MessageThreadRenderSession {
     explicit MessageThreadRenderSession(AudioEngine& engine) : engine_(engine) {}
 
     ~MessageThreadRenderSession() {
-        close();
+        try {
+            close();
+        } catch (...) {
+            // best-effort teardown; a throw here must not terminate the process
+        }
     }
 
     bool open() {

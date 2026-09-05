@@ -21,7 +21,11 @@ PluginWindowManager::~PluginWindowManager() {
     stopTimer();
 
     // Close all remaining windows
-    closeAllWindows();
+    try {
+        closeAllWindows();
+    } catch (...) {
+        // best-effort teardown; a throw here must not terminate the process
+    }
 
     DBG("PluginWindowManager destroyed");
 }

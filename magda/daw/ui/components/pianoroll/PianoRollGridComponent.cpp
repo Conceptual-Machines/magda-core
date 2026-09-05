@@ -88,7 +88,11 @@ PianoRollGridComponent::PianoRollGridComponent() {
 
 PianoRollGridComponent::~PianoRollGridComponent() {
     ClipManager::getInstance().removeListener(this);
-    clearNoteComponents();
+    try {
+        clearNoteComponents();
+    } catch (...) {
+        // best-effort teardown; a throw from onSelectedPitchRowsChanged must not terminate
+    }
 }
 
 void PianoRollGridComponent::paint(juce::Graphics& g) {

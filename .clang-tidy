@@ -71,6 +71,15 @@ Checks: >-
 # whole run down — so with these enabled `make lint` and `make lint-changed`
 # exited 132/139 on every file and reported nothing at all. Worth re-testing
 # when the toolchain moves.
+#
+# bugprone-exception-escape stays enabled — it correctly found 20 real
+# noexcept/destructor/main sites (#2395) — but on LLVM 23 it also flags ~41
+# plain, non-noexcept UI/agent lambdas that only reach a throwing std::string
+# or std::vector copy. The check's documented scope is noexcept functions,
+# destructors, main, and other implicitly-noexcept special members; a lambda
+# handed to a std::function-typed callback setter (juce::Button::onClick,
+# PopupMenu::showMenuAsync, MessageManager::callAsync, ...) has none of that
+# and is free to throw. Treat those as false positives, not a to-do list.
 
 # Warnings as errors (can be adjusted based on team preference)
 WarningsAsErrors: ''

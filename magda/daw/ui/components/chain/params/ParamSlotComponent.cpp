@@ -174,25 +174,29 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
 ParamSlotComponent::~ParamSlotComponent() {
     stopTimer();
 
-    if (momentaryButton_)
-        momentaryButton_->release();
+    try {
+        if (momentaryButton_)
+            momentaryButton_->release();
 
-    // Detach the shared LookAndFeel before the buttons die.
-    for (auto& button : choiceButtons_) {
-        if (button)
-            button->setLookAndFeel(nullptr);
-    }
+        // Detach the shared LookAndFeel before the buttons die.
+        for (auto& button : choiceButtons_) {
+            if (button)
+                button->setLookAndFeel(nullptr);
+        }
 
-    if (amountLabel_.isOnDesktop()) {
-        amountLabel_.removeFromDesktop();
+        if (amountLabel_.isOnDesktop()) {
+            amountLabel_.removeFromDesktop();
+        }
+        if (isInMidiLearnMode_) {
+            magda::MidiLearnCoordinator::getInstance().cancelLearn();
+        }
+        magda::MidiLearnCoordinator::getInstance().removeListener(this);
+        magda::BindingRegistry::getInstance().removeListener(this);
+        magda::ControllerRegistry::getInstance().removeListener(this);
+        magda::LinkModeManager::getInstance().removeListener(this);
+    } catch (...) {
+        // best-effort teardown; a throw here must not terminate the process
     }
-    if (isInMidiLearnMode_) {
-        magda::MidiLearnCoordinator::getInstance().cancelLearn();
-    }
-    magda::MidiLearnCoordinator::getInstance().removeListener(this);
-    magda::BindingRegistry::getInstance().removeListener(this);
-    magda::ControllerRegistry::getInstance().removeListener(this);
-    magda::LinkModeManager::getInstance().removeListener(this);
 }
 
 // ============================================================================

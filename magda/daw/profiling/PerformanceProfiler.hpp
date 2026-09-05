@@ -230,8 +230,12 @@ class MonitoredProfiler {
     explicit MonitoredProfiler(const juce::String& category) : category_(category), timer_() {}
 
     ~MonitoredProfiler() {
-        double elapsed = timer_.elapsedMilliseconds();
-        PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        try {
+            double elapsed = timer_.elapsedMilliseconds();
+            PerformanceMonitor::getInstance().addSample(category_, elapsed);
+        } catch (...) {
+            // best-effort sample recording; nothing to do if map insertion fails
+        }
     }
 
   private:

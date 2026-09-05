@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <stdexcept>
 
 #include "magda/daw/core/ClipBatchEdit.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -100,4 +101,36 @@ TEST_CASE("SetClipPropertyCommand restores setter side effects", "[undo][clip][p
     REQUIRE(undo.undo());
     REQUIRE_FALSE(primaryEventOf(clip)->warpEnabled);
     REQUIRE(primaryEventOf(clip)->analogPitch);
+}
+
+namespace {
+struct ThrowingUndoListener : UndoManagerListener {
+    bool called = false;
+    void undoStateChanged() override {
+        called = true;
+        throw std::runtime_error("listener boom");
+    }
+};
+}  // namespace
+
+TEST_CASE("CompoundOperationScope destructor survives a throwing listener", "[undo]") {
+    // #2395: ~CompoundOperationScope calls endCompoundOperation(), which
+    // notifies listeners. A listener throw used to escape an
+    // implicitly-noexcept destructor (std::terminate); it must now be
+    // swallowed.
+    auto& undo = UndoManager::getInstance();
+    undo.clearHistory();
+
+    ThrowingUndoListener listener;
+    undo.addListener(&listener);
+
+    int value = 0;
+    {
+        CompoundOperationScope scope("Test Op");
+        undo.executeCommand(std::make_unique<SetIntCommand>(value, 1));
+    }
+
+    undo.removeListener(&listener);
+    REQUIRE(listener.called);
+    REQUIRE(value == 1);
 }

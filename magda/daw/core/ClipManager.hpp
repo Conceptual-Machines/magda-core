@@ -859,7 +859,11 @@ class ClipManager {
             ClipManager::getInstance().beginBatch();
         }
         ~BatchScope() {
-            ClipManager::getInstance().endBatch();
+            try {
+                ClipManager::getInstance().endBatch();
+            } catch (...) {
+                // best-effort notification flush; a listener throw must not terminate
+            }
         }
         BatchScope(const BatchScope&) = delete;
         BatchScope& operator=(const BatchScope&) = delete;

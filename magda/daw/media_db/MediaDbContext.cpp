@@ -227,10 +227,13 @@ bool MediaDbContext::isReady() const noexcept {
 bool MediaDbContext::hasAudioEncoder() const noexcept {
     // "Has" means "model file is present on disk" — whether or not it's
     // been loaded yet. The lazy load happens on first audioEncoder() call.
-    return std::filesystem::exists(audioModelPath());
+    std::error_code ec;
+    return std::filesystem::exists(audioModelPath(), ec);
 }
 bool MediaDbContext::hasTextSearch() const noexcept {
-    return std::filesystem::exists(textModelPath()) && std::filesystem::exists(tokenizerJsonPath());
+    std::error_code ec;
+    return std::filesystem::exists(textModelPath(), ec) &&
+           std::filesystem::exists(tokenizerJsonPath(), ec);
 }
 
 bool MediaDbContext::isAudioEncoderLoaded() const noexcept {
@@ -277,7 +280,8 @@ ClapAudioEncoder* MediaDbContext::audioEncoder() noexcept {
     if (audioEnc_) {
         return audioEnc_.get();
     }
-    if (!std::filesystem::exists(audioModelPath())) {
+    std::error_code ec;
+    if (!std::filesystem::exists(audioModelPath(), ec)) {
         return nullptr;
     }
     LoadGuard guard(loadInProgress_);
@@ -293,7 +297,8 @@ ClapTextEncoder* MediaDbContext::textEncoder() noexcept {
     if (textEnc_) {
         return textEnc_.get();
     }
-    if (!std::filesystem::exists(textModelPath())) {
+    std::error_code ec;
+    if (!std::filesystem::exists(textModelPath(), ec)) {
         return nullptr;
     }
     LoadGuard guard(loadInProgress_);
@@ -309,7 +314,8 @@ RobertaTokenizer* MediaDbContext::tokenizer() noexcept {
     if (tokenizer_) {
         return tokenizer_.get();
     }
-    if (!std::filesystem::exists(tokenizerJsonPath())) {
+    std::error_code ec;
+    if (!std::filesystem::exists(tokenizerJsonPath(), ec)) {
         return nullptr;
     }
     LoadGuard guard(loadInProgress_);
