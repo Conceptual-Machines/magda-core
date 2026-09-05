@@ -165,10 +165,6 @@ MidiStrumPlugin::MidiStrumPlugin() {
 
     buildLut(displayIndex(kShape), lut_);
     lutShape_ = displayIndex(kShape);
-    held_.reserve(16);
-    pending_.reserve(128);
-    due_.reserve(128);
-    sounding_.reserve(32);
 }
 
 MidiStrumPlugin::~MidiStrumPlugin() = default;
@@ -250,55 +246,88 @@ void MidiStrumPlugin::reset() {
 }
 
 void MidiStrumPlugin::resetStrumState() {
-    held_.clear();
-    pending_.clear();
-    sounding_.clear();
+    heldCount_ = 0;
+    pendingCount_ = 0;
+    soundingCount_ = 0;
     clock_ = 0;
     collectLeft_ = -1;
     syncLeft_ = 0;
 }
 
+void MidiStrumPlugin::addHeld(int note, int velocity, std::uint32_t sourceId) {
+    removeHeld(note);
+    if (heldCount_ < MAX_HELD)
+        held_[static_cast<size_t>(heldCount_++)] = {note, velocity, noteOrder_++, sourceId};
+}
+
+void MidiStrumPlugin::removeHeld(int note) {
+    int keep = 0;
+    for (int i = 0; i < heldCount_; ++i)
+        if (held_[static_cast<size_t>(i)].note != note)
+            held_[static_cast<size_t>(keep++)] = held_[static_cast<size_t>(i)];
+    heldCount_ = keep;
+}
+
+void MidiStrumPlugin::queuePending(const Pending& event) {
+    if (pendingCount_ < MAX_PENDING)
+        pending_[static_cast<size_t>(pendingCount_++)] = event;
+}
+
 void MidiStrumPlugin::scheduleReleaseAll() {
-    for (const auto& note : sounding_)
-        pending_.push_back({clock_, note.note, 0, false, note.sourceId});
+    // Note-ons still waiting belong to a chord that is over, so they are
+    // dropped rather than fired and left hanging until the next release.
+    int keep = 0;
+    for (int i = 0; i < pendingCount_; ++i)
+        if (!pending_[static_cast<size_t>(i)].gateOn)
+            pending_[static_cast<size_t>(keep++)] = pending_[static_cast<size_t>(i)];
+    pendingCount_ = keep;
+
+    for (int i = 0; i < soundingCount_; ++i) {
+        const auto& note = sounding_[static_cast<size_t>(i)];
+        queuePending({clock_, note.note, 0, false, note.sourceId});
+    }
+    // Every sounding note now has its note-off queued for this block, so a
+    // second call in the same block must not queue a duplicate.
+    soundingCount_ = 0;
 }
 
 void MidiStrumPlugin::scheduleStrum() {
-    if (held_.empty())
+    if (heldCount_ == 0)
         return;
 
-    // Loop re-strum: stop whatever is currently ringing before the new pass.
-    if (static_cast<Trigger>(displayIndex(kTrigger)) == Trigger::Loop)
-        scheduleReleaseAll();
+    // A strum supersedes the pass before it in both modes: what that pass left
+    // ringing is released, and what it had not played yet is dropped. Chord
+    // mode used to re-strum straight over the sounding notes, so a chord change
+    // gave a downstream instrument a second note-on per pitch with no note-off
+    // between them, and one hung voice each (#2363).
+    scheduleReleaseAll();
 
-    std::vector<Held> notes = held_;
+    auto begin = ordered_.begin();
+    auto end = begin + heldCount_;
+    std::copy(held_.begin(), held_.begin() + heldCount_, begin);
+
     const int ord = displayIndex(kOrder);
     if (ord == 0)  // Up
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note < b.note; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note < b.note; });
     else if (ord == 1)  // Down
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note > b.note; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note > b.note; });
     else if (ord == 2) {  // Up-Down
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.note < b.note; });
-        for (int i = static_cast<int>(notes.size()) - 2; i >= 1; --i)
-            notes.push_back(notes[static_cast<size_t>(i)]);
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.note < b.note; });
+        for (int i = heldCount_ - 2; i >= 1; --i)
+            *end++ = ordered_[static_cast<size_t>(i)];
     } else  // As Played
-        std::sort(notes.begin(), notes.end(),
-                  [](const Held& a, const Held& b) { return a.order < b.order; });
+        std::sort(begin, end, [](const Held& a, const Held& b) { return a.order < b.order; });
 
-    const int N = static_cast<int>(notes.size());
+    const int N = static_cast<int>(end - begin);
     const float W = displayValue(kStrumLength) * 0.001f * static_cast<float>(sampleRate_);
     const int cyc = displayIndex(kCycles) + 1;  // index 0..7 -> 1..8
 
     for (int i = 0; i < N; ++i) {
         const float u = (N == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(N - 1);
         const float onset = juce::jlimit(0.0f, W, sampleCycled(lut_, u, cyc) * W);
-        const int note = notes[static_cast<size_t>(i)].note;
-        const int vel = juce::jlimit(1, 127, notes[static_cast<size_t>(i)].velocity);
-        pending_.push_back({clock_ + static_cast<std::int64_t>(onset), note, vel, true,
-                            notes[static_cast<size_t>(i)].sourceId});
+        const auto& source = ordered_[static_cast<size_t>(i)];
+        queuePending({clock_ + static_cast<std::int64_t>(onset), source.note,
+                      juce::jlimit(1, 127, source.velocity), true, source.sourceId});
     }
 }
 
@@ -316,7 +345,7 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
     // step 3 below.)
     if (wasPlaying_ && !context.isPlaying) {
         scheduleReleaseAll();
-        held_.clear();
+        heldCount_ = 0;
         collectLeft_ = -1;
         syncLeft_ = 0;
     }
@@ -332,29 +361,22 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
     const bool chordMode = static_cast<Trigger>(displayIndex(kTrigger)) == Trigger::Chord;
 
     // --- 1. Latch the held chord from incoming MIDI, then swallow the input.
-    const bool wasEmpty = held_.empty();
+    const bool wasEmpty = heldCount_ == 0;
     for (int eventIndex = 0; eventIndex < midi.size(); ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
         if (msg.isNoteOn()) {
-            const int note = msg.getNoteNumber();
-            held_.erase(std::remove_if(held_.begin(), held_.end(),
-                                       [note](const Held& h) { return h.note == note; }),
-                        held_.end());
-            held_.push_back({note, msg.getVelocity(), noteOrder_++, midi.sourceId(eventIndex)});
+            addHeld(msg.getNoteNumber(), msg.getVelocity(), midi.sourceId(eventIndex));
             collectLeft_ = juce::jmax(1, static_cast<int>(0.03 * sampleRate_));
         } else if (msg.isNoteOff()) {
-            const int note = msg.getNoteNumber();
-            held_.erase(std::remove_if(held_.begin(), held_.end(),
-                                       [note](const Held& h) { return h.note == note; }),
-                        held_.end());
+            removeHeld(msg.getNoteNumber());
         } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
-            held_.clear();
+            heldCount_ = 0;
         }
     }
     midi.clear();  // the strum replaces the raw chord
 
-    // Chord released -> let everything sounding ring off.
-    if (held_.empty() && !wasEmpty) {
+    // Chord released -> end what the strum is still holding or owes.
+    if (heldCount_ == 0 && !wasEmpty) {
         scheduleReleaseAll();
         collectLeft_ = -1;
         syncLeft_ = 0;
@@ -369,7 +391,7 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
                 collectLeft_ = -1;
             }
         }
-    } else if (!held_.empty()) {
+    } else if (heldCount_ != 0) {
         syncLeft_ -= n;
         if (syncLeft_ <= 0) {
             scheduleStrum();
@@ -380,48 +402,66 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
     // --- 3. Emit pending events that fall in this block, in time order
     //        (note-offs before note-ons at the same instant, so retriggers work).
     const double blockSecs = static_cast<double>(n) / sampleRate_;
-    due_.clear();
-    for (auto it = pending_.begin(); it != pending_.end();) {
-        if (it->fireAt < clock_ + n) {
-            due_.push_back(*it);
-            it = pending_.erase(it);
-        } else {
-            ++it;
-        }
+    dueCount_ = 0;
+    int stillPending = 0;
+    for (int i = 0; i < pendingCount_; ++i) {
+        const auto& event = pending_[static_cast<size_t>(i)];
+        if (event.fireAt < clock_ + n)
+            due_[static_cast<size_t>(dueCount_++)] = event;
+        else
+            pending_[static_cast<size_t>(stillPending++)] = event;
     }
-    std::sort(due_.begin(), due_.end(), [](const Pending& a, const Pending& b) {
+    pendingCount_ = stillPending;
+
+    auto* dueBegin = due_.data();
+    auto* dueEnd = dueBegin + dueCount_;
+    std::sort(dueBegin, dueEnd, [](const Pending& a, const Pending& b) {
         if (a.fireAt != b.fireAt)
             return a.fireAt < b.fireAt;
         return a.gateOn < b.gateOn;  // false (note-off) before true (note-on)
     });
 
     int lastDisplayNote = -1, lastDisplayVel = 0;
-    for (const auto& p : due_) {
+    for (auto* p = dueBegin; p != dueEnd; ++p) {
         const double tib =
-            juce::jlimit(0.0, blockSecs, static_cast<double>(p.fireAt - clock_) / sampleRate_);
-        if (p.gateOn) {
+            juce::jlimit(0.0, blockSecs, static_cast<double>(p->fireAt - clock_) / sampleRate_);
+        if (p->gateOn) {
+            // Up/Down sounds the inner notes twice in one pass. Close the first
+            // one here, or the buffer carries two note-ons a pitch and only the
+            // single note-off `sounding_` tracks (#2363).
+            auto* soundingBegin = sounding_.data();
+            auto* soundingEnd = soundingBegin + soundingCount_;
+            auto* held = std::find_if(soundingBegin, soundingEnd,
+                                      [p](const Sounding& s) { return s.note == p->note; });
+            if (held != soundingEnd) {
+                auto release = juce::MidiMessage::noteOff(1, p->note);
+                release.setTimeStamp(tib);
+                midi.addEvent({std::move(release), held->sourceId});
+                held->sourceId = p->sourceId;
+            } else if (soundingCount_ < MAX_HELD) {
+                sounding_[static_cast<size_t>(soundingCount_++)] = {p->note, p->sourceId};
+            }
+
             auto message =
-                juce::MidiMessage::noteOn(1, p.note, static_cast<juce::uint8>(p.velocity));
+                juce::MidiMessage::noteOn(1, p->note, static_cast<juce::uint8>(p->velocity));
             message.setTimeStamp(tib);
-            midi.addEvent({std::move(message), p.sourceId});
-            const auto held = std::find_if(sounding_.begin(), sounding_.end(),
-                                           [&p](const Sounding& s) { return s.note == p.note; });
-            if (held == sounding_.end())
-                sounding_.push_back({p.note, p.sourceId});
-            lastDisplayNote = p.note;
-            lastDisplayVel = p.velocity;
+            midi.addEvent({std::move(message), p->sourceId});
+            lastDisplayNote = p->note;
+            lastDisplayVel = p->velocity;
         } else {
-            auto message = juce::MidiMessage::noteOff(1, p.note);
+            auto message = juce::MidiMessage::noteOff(1, p->note);
             message.setTimeStamp(tib);
-            midi.addEvent({std::move(message), p.sourceId});
-            sounding_.erase(std::remove_if(sounding_.begin(), sounding_.end(),
-                                           [&p](const Sounding& s) { return s.note == p.note; }),
-                            sounding_.end());
+            midi.addEvent({std::move(message), p->sourceId});
+            int keep = 0;
+            for (int i = 0; i < soundingCount_; ++i)
+                if (sounding_[static_cast<size_t>(i)].note != p->note)
+                    sounding_[static_cast<size_t>(keep++)] = sounding_[static_cast<size_t>(i)];
+            soundingCount_ = keep;
         }
     }
     if (lastDisplayNote >= 0)
         setMidiOutDisplay(lastDisplayNote, lastDisplayVel);
-    else if (sounding_.empty())
+    else if (soundingCount_ == 0)
         clearMidiOutDisplay();
 
     clock_ += n;
