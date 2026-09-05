@@ -17,6 +17,7 @@
 
 #include <httplib.h>
 
+#include <algorithm>
 #include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -640,6 +641,11 @@ TEST_CASE("A refused connection is recorded without its credential",
 
 TEST_CASE("Permission decisions hold up under concurrent load",
           "[remote][permissions][conformance][load]") {
+    bool delayWriter = false;
+    SECTION("Writer runs immediately") {}
+    SECTION("Writer starts after the original fixed request budget is exhausted") {
+        delayWriter = true;
+    }
     // Enforcement reads a grant on every request from every connection at once,
     // while the settings dialog may be rewriting that grant from another thread.
     // The property under test is not throughput — the dispatcher serialises
@@ -659,7 +665,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     constexpr int kRevokedRound = 15;
     constexpr int kRacingRound = 10;
     constexpr int kRequestsEach = kGrantedRound + kRevokedRound + kRacingRound;
-    constexpr int kTotal = kClients * kRequestsEach;
+    constexpr int kMinimumTotal = kClients * kRequestsEach;
 
     RemoteWebSocketServer::Options options;
     options.bearerToken = kToken;
@@ -677,6 +683,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     std::atomic<int> allowed{0};
     std::atomic<int> denied{0};
     std::atomic<int> unexpected{0};
+    std::atomic<int> issued{0};
 
     /**
      * @brief The rounds, and the barrier between them.
@@ -741,21 +748,23 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     /**
      * @brief The grant writer that races round 3, and the proof that it did.
      *
-     * `flips` alone is not evidence. Sampling it on the main thread around the
+     * A flip count alone is not evidence. Sampling it on the main thread around the
      * round leaves a gap at each end — a flip landing between the sample and the
      * release, with the flipper then descheduled for the whole round, satisfies
      * "the count moved" while nothing raced anything.
      *
-     * So the observation is made by the workers, over their own requests:
-     * each reads the counter either side of its racing round, and a worker that
-     * saw it move was demonstrably issuing requests while the grant was being
-     * rewritten. That is the property, asserted directly, with no window for the
-     * main thread to race.
+     * Each worker announces itself after its first request. The flipper
+     * acknowledges that announcement only after rewriting the grant. Workers
+     * keep making requests until acknowledged, then send a final request.
+     * This brackets an actual rewrite without assuming ten requests give the
+     * flipper enough CPU time on an oversubscribed CI runner. Continuing to read
+     * replies also services WebSocket pings while waiting for the acknowledgement.
      */
     struct Racing {
         std::atomic<bool> running{true};
-        std::atomic<int> flips{0};
-        /// Workers that saw `flips` move across their own racing round.
+        std::atomic<unsigned> requesting{0};
+        std::atomic<unsigned> rewritten{0};
+        /// Workers whose requests bracket an acknowledged grant rewrite.
         std::atomic<int> observedConcurrent{0};
     } racing;
 
@@ -782,7 +791,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
 
     pool.threads.reserve(kClients);
     for (int worker = 0; worker < kClients; ++worker) {
-        pool.threads.emplace_back([&] {
+        pool.threads.emplace_back([&, worker] {
             // No Catch2 macros on this thread. `REQUIRE` is not thread-safe, so
             // the worker records into atomics and every assertion is made on the
             // main thread once the workers have been joined.
@@ -794,6 +803,7 @@ TEST_CASE("Permission decisions hold up under concurrent load",
 
             const auto round = [&](int count) {
                 for (int index = 0; index < count && connected; ++index) {
+                    issued.fetch_add(1);
                     const auto outcome = sendWrite(client);
                     if (!outcome.answered)
                         unexpected.fetch_add(1);
@@ -815,27 +825,25 @@ TEST_CASE("Permission decisions hold up under concurrent load",
             if (!rounds.await(2))
                 return;
 
-            // Give the flipper a moment to get going, so the round does not
-            // start against a writer that has not woken yet. Best effort, and
-            // deliberately brief: this thread is not in `read()` while it waits,
-            // and the server pings every second and drops a client that stops
-            // answering — so a long wait here would kill the connection and turn
-            // a diagnosable failure into forty unexplained transport errors. In
-            // the healthy case the flipper is already spinning and this costs
-            // nothing; if it expires, `observedConcurrent` below is what reports
-            // the problem, and it says exactly what went wrong.
-            const auto flipDeadline =
-                std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
-            while (racing.flips.load() == 0 && !rounds.isAborted() &&
-                   std::chrono::steady_clock::now() < flipDeadline)
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-
-            // Either side of this worker's own requests: if the counter moved
-            // between them, the grant was provably being rewritten while this
-            // worker was issuing them.
-            const auto flipsBefore = racing.flips.load();
-            round(kRacingRound);
-            if (racing.flips.load() > flipsBefore)
+            // Do not park the socket while waiting for the writer: keep issuing
+            // requests until it acknowledges this worker's announcement. The
+            // deadline bounds a broken writer; it does not pace a healthy run.
+            round(1);
+            const unsigned workerBit = 1u << worker;
+            racing.requesting.fetch_or(workerBit);
+            const auto flipDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+            int racingRequests = 1;
+            while (
+                connected && !rounds.isAborted() &&
+                std::chrono::steady_clock::now() < flipDeadline &&
+                (racingRequests < kRacingRound - 1 || (racing.rewritten.load() & workerBit) == 0)) {
+                round(1);
+                ++racingRequests;
+                std::this_thread::yield();
+            }
+            const bool acknowledged = (racing.rewritten.load() & workerBit) != 0;
+            round(1);
+            if (acknowledged)
                 racing.observedConcurrent.fetch_add(1);
 
             // Parking here too, so the main thread knows the racing round is
@@ -860,9 +868,17 @@ TEST_CASE("Permission decisions hold up under concurrent load",
     // would let a deschedule at the handover produce a round that raced nothing.
     std::thread flipper([&] {
         while (racing.running.load()) {
+            // Exercise a writer denied CPU time until the old ten-request
+            // racing round would already have ended. Use request progress,
+            // not a sleep, so this regression case is independent of CPU speed.
+            if (delayWriter && issued.load() < kMinimumTotal + kClients) {
+                std::this_thread::yield();
+                continue;
+            }
+            const auto requesting = racing.requesting.load();
             registry.setScopes(kClient, ScopeSet{Scope::Read, Scope::Edit});
             registry.setScopes(kClient, defaultClientScopes());
-            racing.flips.fetch_add(1);
+            racing.rewritten.fetch_or(requesting);
             // Yielding rather than spinning flat out: on a two-core runner this
             // would otherwise compete with the workers it exists to interfere
             // with, which is the opposite of the point.
@@ -891,21 +907,22 @@ TEST_CASE("Permission decisions hold up under concurrent load",
         thread.join();
 
     REQUIRE(unexpected.load() == 0);
-    REQUIRE(allowed.load() + denied.load() == kTotal);
+    REQUIRE(issued.load() >= kMinimumTotal);
+    REQUIRE(allowed.load() + denied.load() == issued.load());
     // Arithmetic, not a race: round 1 is all-allowed and round 2 all-denied
     // because the grant only moved while every worker was parked between them.
     REQUIRE(allowed.load() >= kClients * kGrantedRound);
     REQUIRE(denied.load() >= kClients * kRevokedRound);
-    // And round 3 raced something: at least one worker saw the grant rewritten
-    // between its own first and last racing request. Asserted from the worker's
-    // own observation rather than from a counter sampled around the round on
-    // this thread, which leaves a gap at each end that a descheduled flipper
-    // can slip through while the count still moves.
-    REQUIRE(racing.observedConcurrent.load() > 0);
+    // Every worker must have bracketed a rewrite, including when the writer
+    // needed more than the minimum request count to get scheduled.
+    REQUIRE(racing.observedConcurrent.load() == kClients);
 
-    // Every one of them is in the record, and none of them carries a payload.
+    // The bounded audit log retains the requests (or its newest capacity-sized
+    // window if waiting for the writer needed more), without their payloads.
     const auto entries = log->forClient(kClient);
-    REQUIRE(entries.size() >= static_cast<std::size_t>(kClients * kRequestsEach));
+    const auto retainedRequests =
+        std::min(static_cast<std::size_t>(issued.load()), log->capacity());
+    REQUIRE(entries.size() >= retainedRequests);
     for (const auto& entry : entries)
         REQUIRE_FALSE(entry.detail.contains("130"));
 }
