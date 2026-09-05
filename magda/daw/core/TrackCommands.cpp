@@ -668,12 +668,12 @@ void PasteChainElementsCommand::execute() {
 
 void PasteChainElementsCommand::undo() {
     auto& tm = TrackManager::getInstance();
-    for (auto it = insertedPaths_.rbegin(); it != insertedPaths_.rend(); ++it) {
-        if (it->getType() == ChainNodeType::TopLevelDevice ||
-            it->getType() == ChainNodeType::Device)
-            tm.removeDeviceFromChainByPath(*it);
-        else if (it->getType() == ChainNodeType::Rack)
-            tm.removeRackFromChainByPath(*it);
+    for (auto& insertedPath : std::views::reverse(insertedPaths_)) {
+        if (insertedPath.getType() == ChainNodeType::TopLevelDevice ||
+            insertedPath.getType() == ChainNodeType::Device)
+            tm.removeDeviceFromChainByPath(insertedPath);
+        else if (insertedPath.getType() == ChainNodeType::Rack)
+            tm.removeRackFromChainByPath(insertedPath);
     }
 }
 

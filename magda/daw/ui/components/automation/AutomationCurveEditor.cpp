@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "AutomationLaneComponent.hpp"
 #include "core/AutomationCommands.hpp"
@@ -888,8 +889,8 @@ void AutomationCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& poi
 
     {
         CompoundOperationScope scope("Delete Automation Points");
-        for (auto it = pointIds.rbegin(); it != pointIds.rend(); ++it) {
-            onPointDeleted(*it);
+        for (unsigned int pointId : std::views::reverse(pointIds)) {
+            onPointDeleted(pointId);
         }
     }
 

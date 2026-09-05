@@ -1,6 +1,7 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "slot/DeviceSlotHeaderSpec.hpp"
 
@@ -85,9 +86,9 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
             placeLeft(headerArea, spec.component, buttonSize);
     }
 
-    for (auto it = specs.rbegin(); it != specs.rend(); ++it) {
-        if (it->side == HeaderControlSide::Right && it->expandedVisible)
-            placeRight(headerArea, it->component, buttonSize);
+    for (auto& spec : std::views::reverse(specs)) {
+        if (spec.side == HeaderControlSide::Right && spec.expandedVisible)
+            placeRight(headerArea, spec.component, buttonSize);
     }
 }
 

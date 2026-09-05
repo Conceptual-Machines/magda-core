@@ -680,8 +680,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             if (rackInstance) {
                 // Check if this rack instance is already on the track
                 bool alreadyOnTrack = false;
-                for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                    if (teTrack->pluginList[i] == rackInstance.get()) {
+                for (auto i : teTrack->pluginList) {
+                    if (i == rackInstance.get()) {
                         alreadyOnTrack = true;
                         break;
                     }
@@ -730,8 +730,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     // Any track with auxBusIndex: ensure AuxReturnPlugin exists with correct bus number
     if (trackInfo->auxBusIndex >= 0) {
         bool hasReturn = false;
-        for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-            if (dynamic_cast<te::AuxReturnPlugin*>(teTrack->pluginList[i])) {
+        for (auto i : teTrack->pluginList) {
+            if (dynamic_cast<te::AuxReturnPlugin*>(i)) {
                 hasReturn = true;
                 break;
             }
@@ -763,8 +763,8 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     syncDeviceModifiers(trackId, teTrack->getModifierList(),
                         &teTrack->getMacroParameterListForWriting(),
                         [teTrack](const std::function<void(te::Plugin*)>& visit) {
-                            for (int pi = 0; pi < teTrack->pluginList.size(); ++pi) {
-                                if (auto* plugin = teTrack->pluginList[pi])
+                            for (auto plugin : teTrack->pluginList) {
+                                if (plugin)
                                     visit(plugin);
                             }
                         });
@@ -996,15 +996,15 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
     }
 
     // 3. Delete plugins and close windows outside lock
-    for (size_t i = 0; i < devicePaths.size(); ++i) {
-        const auto deviceId = devicePaths[i].getDeviceId();
+    for (const auto& devicePath : devicePaths) {
+        const auto deviceId = devicePath.getDeviceId();
         pluginWindowBridge_.closeWindowsForDevice(deviceId);
 
         // Unwrap instrument racks
-        if (canOwnInstrumentWrapper(devicePaths[i]) &&
+        if (canOwnInstrumentWrapper(devicePath) &&
             instrumentRackManager_.getInnerPlugin(deviceId) != nullptr) {
             instrumentRackManager_.unwrap(deviceId);
-        } else if (auto it = pluginsToDelete.find(devicePaths[i]); it != pluginsToDelete.end()) {
+        } else if (auto it = pluginsToDelete.find(devicePath); it != pluginsToDelete.end()) {
             if (it->second)
                 it->second->deleteFromParent();
         }
@@ -1382,8 +1382,8 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
     // appendStripOrder could not show, because it can only order plugins that
     // are already there.
     std::vector<int> existingSendBuses;
-    for (int i = 0; i < track.pluginList.size(); ++i)
-        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]))
+    for (auto i : track.pluginList)
+        if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(i))
             existingSendBuses.push_back(auxSend->getBusNumber());
 
     std::vector<int> desiredBuses;
@@ -1418,8 +1418,8 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
     }
 
     for (const auto& send : trackInfo.sends) {
-        for (int i = 0; i < track.pluginList.size(); ++i) {
-            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+        for (auto i : track.pluginList) {
+            if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(i);
                 auxSend != nullptr && auxSend->getBusNumber() == send.busIndex) {
                 auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
                 break;
@@ -1468,8 +1468,8 @@ void PluginManager::appendStripOrder(TrackId trackId, const TrackInfo& trackInfo
         for (const auto& send : trackInfo.sends) {
             if (send.preFader != preFader)
                 continue;
-            for (int i = 0; i < track.pluginList.size(); ++i) {
-                if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+            for (auto i : track.pluginList) {
+                if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(i);
                     aux != nullptr && aux->getBusNumber() == send.busIndex) {
                     desiredOrder.push_back(aux);
                     break;
@@ -1603,8 +1603,8 @@ std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(
     for (const auto& send : trackInfo->sends) {
         if (send.preFader)
             continue;
-        for (int i = 0; i < track.pluginList.size(); ++i)
-            if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i]);
+        for (auto i : track.pluginList)
+            if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(i);
                 aux != nullptr && aux->getBusNumber() == send.busIndex)
                 result.insert(aux);
     }
@@ -1734,8 +1734,8 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
         if (rackInstance) {
             bool alreadyOnTrack = false;
-            for (int i = 0; i < teTrack->pluginList.size(); ++i) {
-                if (teTrack->pluginList[i] == rackInstance.get()) {
+            for (auto i : teTrack->pluginList) {
+                if (i == rackInstance.get()) {
                     alreadyOnTrack = true;
                     break;
                 }
@@ -1921,8 +1921,8 @@ void PluginManager::syncMasterPlugins() {
                 continue;
             // Check if plugin belongs to master plugin list
             bool belongsToMaster = false;
-            for (int i = 0; i < masterList.size(); ++i) {
-                if (masterList[i] == sd.plugin.get()) {
+            for (auto i : masterList) {
+                if (i == sd.plugin.get()) {
                     belongsToMaster = true;
                     break;
                 }
@@ -1939,8 +1939,8 @@ void PluginManager::syncMasterPlugins() {
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         std::vector<te::Plugin*> scopePlugins;
         scopePlugins.reserve(masterList.size());
-        for (int i = 0; i < masterList.size(); ++i) {
-            if (auto* plugin = masterList[i])
+        for (auto plugin : masterList) {
+            if (plugin)
                 scopePlugins.push_back(plugin);
         }
         for (const auto& devicePath : toRemove) {

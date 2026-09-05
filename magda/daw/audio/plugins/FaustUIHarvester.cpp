@@ -1,5 +1,6 @@
 #include "FaustUIHarvester.hpp"
 
+#include <ranges>
 #include <utility>
 
 namespace magda::daw::audio {
@@ -40,10 +41,10 @@ ControlMetadata FaustUIHarvester::mergedMetadataFor(FAUSTFLOAT* zone) {
 }
 
 bool FaustUIHarvester::isInsidePolyProxyGroup() const {
-    for (auto it = groupLabelStack_.rbegin(); it != groupLabelStack_.rend(); ++it) {
-        if (*it == "Voices")
+    for (const auto& it : std::views::reverse(groupLabelStack_)) {
+        if (it == "Voices")
             return true;
-        if (isPolyVoiceGroup(*it))
+        if (isPolyVoiceGroup(it))
             return false;
     }
     return false;

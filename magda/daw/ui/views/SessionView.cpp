@@ -2560,8 +2560,8 @@ void SessionView::removeScene() {
     // Check if any clips exist in the last scene
     auto& clipManager = ClipManager::getInstance();
     bool hasClips = false;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], lastScene);
+    for (int visibleTrackId : visibleTrackIds_) {
+        ClipId clipId = clipManager.getClipInSlot(visibleTrackId, lastScene);
         if (clipId != INVALID_CLIP_ID) {
             hasClips = true;
             break;
@@ -2596,8 +2596,8 @@ void SessionView::removeSceneAsync(int sceneIndex) {
 
     // Stop and delete any clips in this scene
     auto& clipManager = ClipManager::getInstance();
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        ClipId clipId = clipManager.getClipInSlot(visibleTrackIds_[i], sceneIndex);
+    for (int visibleTrackId : visibleTrackIds_) {
+        ClipId clipId = clipManager.getClipInSlot(visibleTrackId, sceneIndex);
         if (clipId != INVALID_CLIP_ID) {
             clipManager.stopClip(clipId);
             clipManager.deleteClip(clipId);

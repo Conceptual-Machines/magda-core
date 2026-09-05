@@ -419,8 +419,8 @@ Chord ChordEngine::buildChordInversion(ChordRoot root, ChordQuality quality, int
 
     const int rootMidiNote = static_cast<int>(root) + ((octave + 1) * 12);
 
-    for (size_t i = 0; i < intervals.size(); ++i)
-        notes.emplace_back(rootMidiNote + intervals[i], 100);
+    for (int interval : intervals)
+        notes.emplace_back(rootMidiNote + interval, 100);
 
     const int k = std::max(0, inversion);
     if (k > 0) {

@@ -116,31 +116,28 @@ std::vector<LinkableTextSlider*> FourOscUI::getLinkableSliders() {
     std::vector<LinkableTextSlider*> sliders;
 
     // OSC tab: 4 oscillators x 7 params each (indices 0-27)
-    for (int i = 0; i < 4; ++i) {
-        auto& row = oscTab_->rows_[i];
-        sliders.push_back(&row.tuneSlider);        // oscBase + i*7 + 0
-        sliders.push_back(&row.fineSlider);        // oscBase + i*7 + 1
-        sliders.push_back(&row.levelSlider);       // oscBase + i*7 + 2
-        sliders.push_back(&row.pulseWidthSlider);  // oscBase + i*7 + 3
-        sliders.push_back(&row.detuneSlider);      // oscBase + i*7 + 4
-        sliders.push_back(&row.spreadSlider);      // oscBase + i*7 + 5
-        sliders.push_back(&row.panSlider);         // oscBase + i*7 + 6
+    for (auto& row : oscTab_->rows_) {
+        sliders.push_back(&row.tuneSlider);
+        sliders.push_back(&row.fineSlider);
+        sliders.push_back(&row.levelSlider);
+        sliders.push_back(&row.pulseWidthSlider);
+        sliders.push_back(&row.detuneSlider);
+        sliders.push_back(&row.spreadSlider);
+        sliders.push_back(&row.panSlider);
     }
 
     // LFO tab: 2 LFOs x 2 params each (indices 28-31)
-    for (int i = 0; i < 2; ++i) {
-        auto& row = lfoTab_->rows_[i];
-        sliders.push_back(&row.rateSlider);   // lfoBase + i*2 + 0
-        sliders.push_back(&row.depthSlider);  // lfoBase + i*2 + 1
+    for (auto& row : lfoTab_->rows_) {
+        sliders.push_back(&row.rateSlider);
+        sliders.push_back(&row.depthSlider);
     }
 
     // Mod Env tab: 2 envelopes x 4 params each (indices 32-39)
-    for (int i = 0; i < 2; ++i) {
-        auto& row = modEnvTab_->rows_[i];
-        sliders.push_back(&row.attackSlider);   // modEnvBase + i*4 + 0
-        sliders.push_back(&row.decaySlider);    // modEnvBase + i*4 + 1
-        sliders.push_back(&row.sustainSlider);  // modEnvBase + i*4 + 2
-        sliders.push_back(&row.releaseSlider);  // modEnvBase + i*4 + 3
+    for (auto& row : modEnvTab_->rows_) {
+        sliders.push_back(&row.attackSlider);
+        sliders.push_back(&row.decaySlider);
+        sliders.push_back(&row.sustainSlider);
+        sliders.push_back(&row.releaseSlider);
     }
 
     // Amp tab: 5 params (indices 40-44)
@@ -430,11 +427,10 @@ void FourOscUI::OscTab::resized() {
 
     area.removeFromTop(2);
 
-    for (int i = 0; i < 4; ++i) {
+    for (auto& row : rows_) {
         auto rowArea = area.removeFromTop(rowH);
         area.removeFromTop(gap);
 
-        auto& row = rows_[i];
         row.label.setBounds(rowArea.removeFromLeft(labelW));
         rowArea.removeFromLeft(gap);
         row.waveSelector.setBounds(rowArea.removeFromLeft(waveSelectorW));
@@ -1112,11 +1108,9 @@ void FourOscUI::ModEnvTab::resized() {
     // draggable graph filling the rest of the block on the right.
     constexpr int envBlockH = 46;
     const int boxesW = labelW + gap + 4 * (sliderW + gap);
-    for (int i = 0; i < 2; ++i) {
+    for (auto& row : rows_) {
         auto block = area.removeFromTop(envBlockH);
         area.removeFromTop(gap);
-        auto& row = rows_[i];
-
         auto left = block.removeFromLeft(boxesW);
         block.removeFromLeft(gap);
         row.graph.setBounds(block.reduced(2));
@@ -1311,10 +1305,9 @@ void FourOscUI::LFOTab::resized() {
     hdrSync_.setBounds(headerRow.removeFromLeft(toggleW));
     area.removeFromTop(2);
 
-    for (int i = 0; i < 2; ++i) {
+    for (auto& row : rows_) {
         auto rowArea = area.removeFromTop(rowH);
         area.removeFromTop(gap);
-        auto& row = rows_[i];
         row.label.setBounds(rowArea.removeFromLeft(labelW));
         rowArea.removeFromLeft(gap);
         row.waveSelector.setBounds(rowArea.removeFromLeft(waveSelectorW));
@@ -1379,8 +1372,7 @@ void FourOscUI::LFOTab::updatePluginState(const FourOscPluginState& state) {
 }
 
 void FourOscUI::LFOTab::paint(juce::Graphics& g) {
-    for (int i = 0; i < 2; ++i) {
-        const auto& row = rows_[i];
+    for (const auto& row : rows_) {
         auto b = row.previewBounds.toFloat();
         if (b.getWidth() < 8.0f || b.getHeight() < 6.0f)
             continue;
@@ -1815,8 +1807,7 @@ void FourOscUI::LFOTab::rebuildModRows() {
     modDestRows_.clear();
     modListContent_->removeAllChildren();
 
-    for (size_t i = 0; i < modEntries_.size(); ++i) {
-        auto& entry = modEntries_[i];
+    for (auto& entry : modEntries_) {
         ModDestRow row;
 
         // "LFO 1 > Filter Freq" style label
@@ -1941,8 +1932,7 @@ void FourOscUI::ModEnvTab::rebuildModRows() {
     modDestRows_.clear();
     modListContent_->removeAllChildren();
 
-    for (size_t i = 0; i < modEntries_.size(); ++i) {
-        auto& entry = modEntries_[i];
+    for (auto& entry : modEntries_) {
         ModDestRow row;
 
         juce::String label = entry.sourceName + " > " + entry.paramName;

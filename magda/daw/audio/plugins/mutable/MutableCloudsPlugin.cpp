@@ -355,8 +355,8 @@ struct MutableCloudsPlugin::Impl {
         }
         processor_.Prepare();
         processor_.Process(in, out, static_cast<size_t>(kBlock));
-        for (int j = 0; j < kBlock; ++j)
-            wet32k_.push(shortToFloat(out[j].l), shortToFloat(out[j].r));
+        for (auto& j : out)
+            wet32k_.push(shortToFloat(j.l), shortToFloat(j.r));
     }
 
     clouds::GranularProcessor processor_;

@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <random>
+#include <ranges>
 #include <sstream>
 
 #include "../daw/api/clip_api.hpp"
@@ -1142,8 +1143,8 @@ bool Interpreter::executeDelete() {
     if (ctx_.inFilterContext) {
         // Delete in reverse order to avoid index shifting issues
         auto ids = ctx_.filteredTrackIds;
-        for (auto it = ids.rbegin(); it != ids.rend(); ++it)
-            tm.deleteTrack(*it);
+        for (int& id : std::views::reverse(ids))
+            tm.deleteTrack(id);
         ctx_.addResult("Deleted " + juce::String(static_cast<int>(ids.size())) + " track(s)");
         ctx_.filteredTrackIds.clear();
     } else if (ctx_.currentTrackId >= 0) {
@@ -2890,8 +2891,8 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     std::vector<float> latenesses(static_cast<size_t>(numSteps), 0.0f);
     std::vector<bool> hasTransient(static_cast<size_t>(numSteps), false);
 
-    for (int i = 0; i < transients->size(); ++i) {
-        double transientSec = (*transients)[i] - clipStartSec;
+    for (double transient : *transients) {
+        double transientSec = transient - clipStartSec;
         if (transientSec < 0.0 || transientSec >= clipLengthSec)
             continue;
 

@@ -78,12 +78,12 @@ class CommandModelDownloader::Worker : public juce::Thread {
             }
         }
 
-        for (int i = 0; i < kNumFiles; ++i) {
-            p.currentFilename = kFiles[i].filename;
+        for (auto kFile : kFiles) {
+            p.currentFilename = kFile.filename;
             p.phase = Phase::Downloading;
             postProgress(p);
 
-            if (!downloadOne(kFiles[i], p)) {
+            if (!downloadOne(kFile, p)) {
                 p.phase = threadShouldExit() ? Phase::Cancelled : Phase::Failed;
                 postProgress(p);
                 return;
@@ -203,8 +203,8 @@ juce::File CommandModelDownloader::modelsDir() {
 std::vector<juce::File> CommandModelDownloader::modelFiles() {
     std::vector<juce::File> files;
     files.reserve(static_cast<size_t>(kNumFiles));
-    for (int i = 0; i < kNumFiles; ++i)
-        files.push_back(modelsDir().getChildFile(kFiles[i].filename));
+    for (auto kFile : kFiles)
+        files.push_back(modelsDir().getChildFile(kFile.filename));
     return files;
 }
 
@@ -217,9 +217,9 @@ const char* CommandModelDownloader::sourceUrl() {
 }
 
 bool CommandModelDownloader::isInstalled() {
-    for (int i = 0; i < kNumFiles; ++i) {
-        auto f = modelsDir().getChildFile(kFiles[i].filename);
-        if (!f.existsAsFile() || f.getSize() != kFiles[i].size)
+    for (auto kFile : kFiles) {
+        auto f = modelsDir().getChildFile(kFile.filename);
+        if (!f.existsAsFile() || f.getSize() != kFile.size)
             return false;
     }
     return true;
@@ -227,8 +227,8 @@ bool CommandModelDownloader::isInstalled() {
 
 juce::int64 CommandModelDownloader::expectedTotalBytes() {
     juce::int64 total = 0;
-    for (int i = 0; i < kNumFiles; ++i)
-        total += kFiles[i].size;
+    for (auto kFile : kFiles)
+        total += kFile.size;
     return total;
 }
 

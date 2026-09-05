@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include <cmath>
+#include <ranges>
 #include <set>
 
 #include "../components/automation/AutomationMenu.hpp"
@@ -108,15 +109,15 @@ MainView::MainView(AudioEngine* audioEngine)
         auto rows = cReg.all();
         std::set<juce::String> portWithEnabled;
         bool changed = false;
-        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
-            if (it->inputPort.isEmpty())
+        for (auto& row : std::views::reverse(rows)) {
+            if (row.inputPort.isEmpty())
                 continue;
-            const bool hasBindings = bReg.hasAnyBindingForController(it->id);
+            const bool hasBindings = bReg.hasAnyBindingForController(row.id);
             if (!hasBindings)
                 continue;
-            if (!portWithEnabled.insert(it->inputPort).second) {
-                bReg.removeAllForController(BindingScope::Global, it->id);
-                bReg.removeAllForController(BindingScope::Project, it->id);
+            if (!portWithEnabled.insert(row.inputPort).second) {
+                bReg.removeAllForController(BindingScope::Global, row.id);
+                bReg.removeAllForController(BindingScope::Project, row.id);
                 changed = true;
             }
         }
@@ -2936,8 +2937,8 @@ void MainView::AuxHeadersPanel::resized() {
     int rowHeight = getHeight() / static_cast<int>(auxRows_.size());
     auto bounds = getLocalBounds();
 
-    for (size_t i = 0; i < auxRows_.size(); ++i) {
-        auto& row = *auxRows_[i];
+    for (const auto& auxRow : auxRows_) {
+        auto& row = *auxRow;
         auto rowArea = bounds.removeFromTop(rowHeight);
         // Centre a fixed 18px-tall strip within the row (matching master header controls)
         auto controlArea = rowArea.withSizeKeepingCentre(rowArea.getWidth() - 8, 18);

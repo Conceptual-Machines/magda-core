@@ -85,11 +85,11 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
 
             // Mono channels (ID 100+)
             id = 100;
-            for (int i = 0; i < activeIndices.size(); ++i) {
-                int channelNum = activeIndices[i] + 1;
+            for (int activeIndice : activeIndices) {
+                int channelNum = activeIndice + 1;
                 options.push_back({id, juce::String(channelNum) + " (mono)"});
                 if (outChannelMapping)
-                    (*outChannelMapping)[id] = getDeviceName(activeIndices[i]);
+                    (*outChannelMapping)[id] = getDeviceName(activeIndice);
                 ++id;
             }
         }
