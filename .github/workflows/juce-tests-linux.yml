@@ -166,8 +166,16 @@ jobs:
         # Debug-sized processes contending for memory. Explicit --server-num
         # per run, because concurrent xvfb-run -a instances race for the same
         # display number.
+        # Own HOME per run: concurrent runs otherwise share
+        # ~/.config/MAGDA - one Settings.xml and one plugin_metadata.db
+        # between four processes - which failed 7 of 10 runs. A fresh HOME
+        # also makes every run the cold start the repetitions are meant to
+        # sample; sequentially, runs 2-10 inherited run 1's state.
         outdir=$(mktemp -d)
         seq 1 10 | xargs -P 4 -I{} sh -c '
+          export HOME="$1/home-{}"
+          export XDG_CONFIG_HOME="$HOME/.config"
+          mkdir -p "$XDG_CONFIG_HOME"
           xvfb-run -a --server-num=$((90 + {})) "$0" > "$1/run-{}.log" 2>&1
           rc=$?
           echo "$rc" > "$1/run-{}.rc"
