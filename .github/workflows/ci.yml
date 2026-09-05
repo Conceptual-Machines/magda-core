@@ -978,6 +978,9 @@ jobs:
       id: sccache
       if: steps.r2-creds.outcome == 'success'
       shell: powershell
+      # Not fatal: a failure here drops the compiler launcher in Configure
+      # below and the job builds cold, which is slow but green.
+      continue-on-error: true
       env:
         R2_BUCKET: ${{ secrets.R2_BUCKET }}
         R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -999,18 +1002,77 @@ jobs:
         # Under the runner's ErrorActionPreference=Stop, native stderr through a
         # redirect is a terminating error, so relax it for this one call.
         $ErrorActionPreference = 'Continue'
-        & "$sccacheDir\sccache.exe" --stop-server 2>&1 | Out-Null
+        $sccache = Join-Path $sccacheDir "sccache.exe"
+
+        Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        & $sccache --stop-server 2>&1 | Out-Null
+        $global:LASTEXITCODE = 0
+
+        # R2 through the S3 backend: bucket + custom endpoint, region 'auto'
+        # (R2 has no regions), credentials via the standard AWS variables. Set
+        # in-process first so the server below starts against them.
+        $env:SCCACHE_BUCKET = $env:R2_BUCKET
+        $env:SCCACHE_ENDPOINT = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+        $env:SCCACHE_REGION = "auto"
+        $env:SCCACHE_S3_KEY_PREFIX = "windows"
+        $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+        $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+        # One server for the whole job, not one per compile step.
+        $env:SCCACHE_IDLE_TIMEOUT = "0"
+        $mode = "r2"
+
+        # An sccache client waits a hard-coded 10s for a cold server to come up.
+        # The self-hosted runner lists unreachable fec0:0:0:ffff::1-3 IPv6 DNS
+        # servers, and sccache's bundled resolver spends about that long
+        # retrying them on the first R2 call, so every client of a cold server
+        # times out at once. Absorb the wait here, where slow is just slow.
+        function Wait-Sccache([int]$timeoutSec) {
+          & $sccache --start-server 2>&1 | Out-Null
+          $deadline = (Get-Date).AddSeconds($timeoutSec)
+          while ((Get-Date) -lt $deadline) {
+            & $sccache --show-stats 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) { return $true }
+            Start-Sleep -Seconds 2
+          }
+          return $false
+        }
+
+        if (-not (Wait-Sccache 120)) {
+          # R2 can be unreachable from a self-hosted runner while the hosted
+          # Linux job reaches the same bucket. A disk cache on the machine keeps
+          # most of the benefit, since the workspace persists.
+          Write-Host "sccache could not start against R2; falling back to a local disk cache."
+          Remove-Item Env:SCCACHE_BUCKET, Env:SCCACHE_ENDPOINT, Env:SCCACHE_REGION, `
+                      Env:SCCACHE_S3_KEY_PREFIX, Env:AWS_ACCESS_KEY_ID, `
+                      Env:AWS_SECRET_ACCESS_KEY -ErrorAction SilentlyContinue
+          $env:SCCACHE_DIR = "C:\sccache-cache"
+          $env:SCCACHE_CACHE_SIZE = "20G"
+          $mode = "local"
+
+          Get-Process sccache -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          if (-not (Wait-Sccache 60)) {
+            Write-Host "sccache could not start at all; this job will build without it."
+            exit 1
+          }
+        }
+
         $ErrorActionPreference = 'Stop'
         $global:LASTEXITCODE = 0
-        # sccache reads R2 through its S3 backend: bucket + custom endpoint,
-        # region 'auto' (R2 has no regions), credentials via the standard AWS
-        # variables. Written to GITHUB_ENV so the compile steps see them too.
-        "SCCACHE_BUCKET=$env:R2_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_ENDPOINT=https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_ACCESS_KEY_ID=$env:R2_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        "AWS_SECRET_ACCESS_KEY=$env:R2_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        Write-Host "sccache ready ($mode)."
+
+        # Whichever mode won, to the compile steps.
+        "SCCACHE_IDLE_TIMEOUT=0" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        if ($mode -eq "r2") {
+          "SCCACHE_BUCKET=$env:SCCACHE_BUCKET" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_ENDPOINT=$env:SCCACHE_ENDPOINT" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_REGION=auto" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_S3_KEY_PREFIX=windows" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_ACCESS_KEY_ID=$env:AWS_ACCESS_KEY_ID" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "AWS_SECRET_ACCESS_KEY=$env:AWS_SECRET_ACCESS_KEY" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        } else {
+          "SCCACHE_DIR=$env:SCCACHE_DIR" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "SCCACHE_CACHE_SIZE=$env:SCCACHE_CACHE_SIZE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        }
 
     - name: Determine Faust/Mutable artifact cache keys
       id: dsp-cache-keys
