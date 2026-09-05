@@ -54,7 +54,7 @@ TEST_CASE("Arpeggiator input resets retain a single pending note-off",
     CHECK(midi.message(1).getVelocity() == 73);
 }
 
-TEST_CASE("Arpeggiator buffer panic stops its note and keeps the latched chord",
+TEST_CASE("Arpeggiator buffer panic drops a latched chord it cannot prove is live",
           "[arpeggiator][midi][input]") {
     Rig rig(true);
     rig.startNote();
@@ -63,13 +63,11 @@ TEST_CASE("Arpeggiator buffer panic stops its note and keeps the latched chord",
     CHECK(midi.isAllNotesOff());
     REQUIRE(midi.size() == 1);
     checkOff(midi);
-    // The latch is the arp's own memory of a chord, and a host relocating is
-    // not the player letting go, so the walk re-anchors and plays it again.
+    // Nothing here ever played with the transport stopped, so the chord may be
+    // clip playback the host is about to re-assert somewhere else.
     auto next = rig.run(0.5);
     CHECK_FALSE(next.isAllNotesOff());
-    REQUIRE(next.size() == 1);
-    CHECK(next.message(0).isNoteOn());
-    CHECK(next.message(0).getNoteNumber() == 60);
+    CHECK(next.size() == 0);
 }
 
 TEST_CASE("Arpeggiator buffer panic permits fresh input without duplicate note-offs",

@@ -275,6 +275,11 @@ bool ArpeggiatorPlugin::isLiveSource(std::uint32_t sourceId) const {
 }
 
 void ArpeggiatorPlugin::retainLiveHeldNotes() {
+    if (liveSourceCount_ == 0) {
+        clearHeldNotes();
+        return;
+    }
+
     int kept = 0;
     int stillDown = 0;
     for (int i = 0; i < heldCount_; ++i) {
@@ -431,11 +436,15 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         freeRunSamples_ = 0.0;
     };
     // Hosts raise this without a CC event, on a playhead jump or a track they
-    // just muted. It says to silence what is sounding, not that the player let
-    // go: the keys stay held and the walk re-anchors below (#2416).
+    // just muted, and then re-assert whatever should be sounding at the new
+    // position without a note-off for what should not. So the host's notes go
+    // and come back on the same buffer, while keys proven to be a player's are
+    // not the host's to withdraw (#2416).
     const bool inputPanic = midi.isAllNotesOff();
-    if (inputPanic)
+    if (inputPanic) {
         pendingNoteOff = takeSoundingNote();
+        retainLiveHeldNotes();
+    }
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);

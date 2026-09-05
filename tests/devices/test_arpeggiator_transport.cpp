@@ -61,7 +61,7 @@ TEST_CASE("Arpeggiator keeps live keys across a transport stop", "[arpeggiator][
         CHECK(rig.run(0.0, {}, false).size() == 0);
 }
 
-TEST_CASE("Arpeggiator drops notes a clip left behind when the transport stops",
+TEST_CASE("Arpeggiator stopping drops held notes it cannot prove came from a player",
           "[arpeggiator][midi][transport]") {
     Rig rig;
     // Only ever seen while playing, so it may be a clip whose note-off will
@@ -88,10 +88,11 @@ TEST_CASE("Arpeggiator keeps live keys when the transport starts under a panic",
     CHECK(midi.message(1).getNoteNumber() == 60);
 }
 
-TEST_CASE("Arpeggiator locating under a panic keeps the chord and re-anchors",
+TEST_CASE("Arpeggiator locating under a panic keeps a chord proven live",
           "[arpeggiator][midi][transport]") {
     Rig rig;
-    rig.startNote();
+    REQUIRE(rig.run(0.0, {on(60)}, false).size() == 1);
+    rig.run(0.0, {}, true);
 
     auto midi = rig.run(4.0, {}, true, true);
     CHECK(midi.isAllNotesOff());
@@ -99,4 +100,31 @@ TEST_CASE("Arpeggiator locating under a panic keeps the chord and re-anchors",
     checkNoteOff(midi, 0);
     CHECK(midi.message(1).isNoteOn());
     CHECK(midi.message(1).getNoteNumber() == 60);
+}
+
+TEST_CASE("Arpeggiator locating out of a clip note does not retrigger it",
+          "[arpeggiator][midi][transport]") {
+    Rig rig;
+    rig.startNote();
+
+    // The host re-asserts what sounds at the destination and says nothing
+    // about what only sounded at the old position, so the note goes with it.
+    auto midi = rig.run(4.0, {}, true, true);
+    CHECK(midi.isAllNotesOff());
+    REQUIRE(midi.size() == 1);
+    checkNoteOff(midi, 0);
+    for (int block = 0; block < 10; ++block)
+        CHECK(rig.run(4.05 + block * 0.05).size() == 0);
+}
+
+TEST_CASE("Arpeggiator plays what the host re-asserts under a panic",
+          "[arpeggiator][midi][transport]") {
+    Rig rig;
+    rig.startNote();
+
+    auto midi = rig.run(4.0, {on(64)}, true, true);
+    REQUIRE(midi.size() == 2);
+    checkNoteOff(midi, 0);
+    CHECK(midi.message(1).isNoteOn());
+    CHECK(midi.message(1).getNoteNumber() == 64);
 }
