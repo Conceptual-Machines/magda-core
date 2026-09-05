@@ -3,10 +3,10 @@
 #include "devices/ArpeggiatorTestRig.hpp"
 
 namespace {
-using magda::test::ArpMidiBuffer;
+using magda::test::DeviceMidiBuffer;
 using Rig = magda::test::ArpRig;
 
-void checkOff(const ArpMidiBuffer& midi, int index = 0) {
+void checkOff(const DeviceMidiBuffer& midi, int index = 0) {
     magda::test::checkNoteOff(midi, index);
 }
 }  // namespace
@@ -110,7 +110,7 @@ TEST_CASE("Arpeggiator release and transport stop still send one note-off",
           "[arpeggiator][midi][input]") {
     Rig rig;
     rig.startNote();
-    ArpMidiBuffer midi;
+    DeviceMidiBuffer midi;
     SECTION("release") {
         midi = rig.run(0.05, {juce::MidiMessage::noteOff(1, 60)});
     }

@@ -13,8 +13,8 @@ namespace magda::daw::audio {
  * @brief MIDI arpeggiator device that transforms held notes into rhythmic patterns.
  *
  * Placed on a track's FX chain before a synth. Captures incoming MIDI note-on/off
- * events, clears the MIDI buffer, and outputs arpeggiated notes synced to the
- * block's tempo map. All processing happens on the audio thread.
+ * events and outputs arpeggiated notes synced to the block's tempo map. All
+ * processing happens on the audio thread.
  *
  * A MagdaDevice since #2299: one scheduler hosted by whichever engine is
  * running it. The slot ids, order and display ranges are the ones the retired
@@ -69,6 +69,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
             .name = getPluginName(),
             .shortName = "Arp",
             .takesMidiInput = true,
+            .producesMidi = true,
         };
     }
 
@@ -190,7 +191,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     /// hold on the rest. What a clip left behind has no note-off coming once
     /// the transport stops, and none at all when a seek moves off it.
     void retainLiveHeldNotes();
-    void sendAllNotesOff(DeviceMidiBuffer& midi);
+    void sendAllNotesOff(DeviceMidiOutput& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.
     int resetArpState();

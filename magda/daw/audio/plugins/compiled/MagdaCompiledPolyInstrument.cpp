@@ -477,9 +477,9 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     // Walk MIDI in time order, rendering audio between events so note timing (and
     // the Mono retrigger gate edge) is sample-accurate within the block.
     int cursor = 0;
-    if (context.midi != nullptr) {
-        for (int eventIndex = 0; eventIndex < context.midi->size(); ++eventIndex) {
-            const auto& m = context.midi->message(eventIndex);
+    if (context.midiIn != nullptr) {
+        for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
+            const auto& m = context.midiIn->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);

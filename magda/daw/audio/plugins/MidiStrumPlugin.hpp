@@ -68,6 +68,7 @@ class MidiStrumPlugin : public MidiMagdaDevice {
             .name = getPluginName(),
             .shortName = "Strum",
             .takesMidiInput = true,
+            .producesMidi = true,
         };
     }
 

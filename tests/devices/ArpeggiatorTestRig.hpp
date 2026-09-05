@@ -13,25 +13,6 @@ namespace magda::test {
 namespace audio = magda::daw::audio;
 using Arp = audio::ArpeggiatorPlugin;
 
-// Like the Tracktion view, additions may invalidate references. Also detect
-// writes before clear deterministically, without depending on a freed read
-// happening to return the wrong note on a particular allocator.
-class ArpMidiBuffer final : public DeviceMidiBuffer {
-  public:
-    bool cleared = false;
-    int additionsBeforeClear = 0;
-
-    void addEvent(audio::DeviceMidiEvent event) override {
-        if (!cleared)
-            ++additionsBeforeClear;
-        DeviceMidiBuffer::addEvent(std::move(event));
-    }
-    void clear() override {
-        DeviceMidiBuffer::clear();
-        cleared = true;
-    }
-};
-
 class ArpTempo final : public audio::DeviceTempoMap {
   public:
     double beatsAtSeconds(double seconds) const override {
@@ -64,15 +45,16 @@ struct ArpRig {
                                                                 arp.parameterInfo(Arp::kRate)));
     }
 
-    ArpMidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
-                      bool playing = true, bool panic = false) {
-        ArpMidiBuffer midi;
-        midi.setAllNotesOff(panic);
+    DeviceMidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
+                         bool playing = true, bool panic = false) {
+        DeviceMidiBuffer in;
+        in.allNotesOff = panic;
         for (const auto& message : input)
-            midi.events.push_back({message, source});
-        midi.events.shrink_to_fit();
+            in.events.push_back({message, source});
+        DeviceMidiBuffer out;
         audio::DeviceProcessContext context;
-        context.midi = &midi;
+        context.midiIn = &in;
+        context.midiOut = &out;
         context.tempoMap = &tempo;
         context.numSamples = 2400;
         context.timelineStartSeconds = start;
@@ -81,8 +63,7 @@ struct ArpRig {
         context.liveSourceIds = liveSourceIds.empty() ? nullptr : liveSourceIds.data();
         context.numLiveSourceIds = static_cast<int>(liveSourceIds.size());
         arp.process(context);
-        CHECK(midi.additionsBeforeClear == 0);
-        return midi;
+        return out;
     }
 
     void startNote() {
@@ -93,7 +74,7 @@ struct ArpRig {
     }
 };
 
-inline void checkNoteOff(const ArpMidiBuffer& midi, int index = 0, int noteNumber = 60) {
+inline void checkNoteOff(const DeviceMidiBuffer& midi, int index = 0, int noteNumber = 60) {
     REQUIRE(midi.size() > index);
     CHECK(midi.message(index).isNoteOff());
     CHECK(midi.message(index).getNoteNumber() == noteNumber);

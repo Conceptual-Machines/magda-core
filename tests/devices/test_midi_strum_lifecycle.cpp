@@ -35,15 +35,17 @@ struct StrumRig {
     }
 
     void run(std::initializer_list<juce::MidiMessage> input = {}, bool playing = true) {
-        magda::test::DeviceMidiBuffer midi;
+        magda::test::DeviceMidiBuffer in;
         for (const auto& message : input)
-            midi.events.push_back({message, source});
+            in.events.push_back({message, source});
+        magda::test::DeviceMidiBuffer out;
         audio::DeviceProcessContext context;
-        context.midi = &midi;
+        context.midiIn = &in;
+        context.midiOut = &out;
         context.numSamples = kBlock;
         context.isPlaying = playing;
         strum.process(context);
-        for (const auto& event : midi.events) {
+        for (const auto& event : out.events) {
             if (event.message.isNoteOn())
                 gates.push_back({event.message.getNoteNumber(), true});
             else if (event.message.isNoteOff())

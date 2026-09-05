@@ -37,66 +37,21 @@ DeviceProperties propertiesForRequiredDevice(const std::unique_ptr<MagdaDevice>&
     return device->properties();
 }
 
-/// The SDK's mutable MIDI view over a flat vector.
+/// The SDK's read-only view of what reached the device, over the input scratch.
 ///
-/// The fork's adapter wraps te::MidiMessageArray, which is already this shape.
-/// The engine's port is a juce::MidiBuffer, which is a byte stream and cannot
-/// be addressed by index or edited in place, so the block's events are decoded
-/// into the scratch on the way in and encoded back out of it afterwards.
+/// The engine's port is a juce::MidiBuffer, a byte stream that cannot be
+/// addressed by index, so the block's events are decoded into the scratch first.
+/// Decoding is push_back and emptying is clear(): JUCE's MidiMessage move
+/// assignment overwrites a live destination's heap pointer without freeing it,
+/// so nothing here ever move-assigns into a message that is already alive.
 ///
-/// **Never move-assign a juce::MidiMessage that is already alive.** JUCE's move
-/// assignment overwrites the destination's pointer without freeing what it
-/// held, while the destructor frees on size alone, so moving into a live
-/// message that happened to be heap-allocated leaks its buffer. Move
-/// *construction* is safe, because there is no destination to leak, which is
-/// why decoding is push_back.
-///
-/// std::swap is safe as well, and it is what everything that rearranges these
-/// uses. Its first move empties the source, so neither assignment after it has
-/// a live buffer to drop, and what it costs is two pointers rather than a
-/// realloc: copy assignment is also safe and reallocs whatever the destination
-/// holds, which on the audio thread is a heap operation nobody asked for.
-///
-/// That rules out two things this would otherwise be written with.
-/// std::vector::erase shifts its tail down by move assignment, and every
-/// destination in that shift is live; std::stable_sort moves elements through a
-/// temporary and back, and whether a destination has been moved-from first is
-/// its implementation's business rather than a guarantee. So removal walks the
-/// entry to the back by swapping and pops it, and sorting permutes an index
-/// list. Both are spelled out below rather than left to an algorithm, because
-/// what is wrong with the algorithm is invisible at the call site.
-///
-/// A long message costs an allocation on the audio thread whichever way this is
-/// written, and that is the SDK boundary rather than this adapter: message()
-/// hands a device a const juce::MidiMessage&, MidiBufferIterator only makes one
-/// by value, and JUCE has no non-owning MidiMessage. Anything past eight bytes
-/// is heap, which is SysEx and nothing else -- every note and every controller
-/// change is inline and free. The fork's adapter avoids it by wrapping storage
-/// that already owns its messages, so this is a real difference between the two
-/// hosts and it needs the SDK to close (#1836).
-///
-/// Nothing here grows the vector. Its capacity is the most events the wider of
-/// the device's two port bounds admits, so what is refused is a producer past
-/// that bound rather than an ordinary block: growing it would allocate, and one
-/// dropped event is cheaper than a callback that missed its deadline. The
-/// engine treats the same violation the same way -- assert where it is written,
-/// count it where it costs something.
-///
-/// The wider of the two, because one vector serves both directions: a device
-/// passing its input through and adding its own events reads and writes the
-/// same scratch, and sizing it from the input alone left a device with a full
-/// input no room to say anything of its own (#2341).
-///
-/// That bound is a count of events and it is only half the rule. The port's
-/// budget is bytes, and the two part company on SysEx: a handful of dumps sit
-/// well inside any event count while being multiples of the byte budget. The
-/// count is what keeps this vector from reallocating; the byte budget is
-/// enforced where it is actually spent, writing back onto the port.
-class EngineMidiBufferView final : public DeviceMidiBuffer {
+/// A long message allocates on the audio thread whichever way this is written:
+/// message() hands out a const juce::MidiMessage& and JUCE has no non-owning
+/// one. Anything past eight bytes is heap, which is SysEx and nothing else. That
+/// is the SDK boundary, not this adapter (#1836).
+class EngineMidiInputView final : public DeviceMidiInput {
   public:
-    EngineMidiBufferView(std::vector<DeviceMidiEvent>& events, int capacity,
-                         std::vector<int>& order)
-        : events_(events), capacity_(capacity), order_(order) {}
+    explicit EngineMidiInputView(const std::vector<DeviceMidiEvent>& events) : events_(events) {}
 
     int size() const override {
         return static_cast<int>(events_.size());
@@ -110,29 +65,29 @@ class EngineMidiBufferView final : public DeviceMidiBuffer {
         return events_[static_cast<std::size_t>(index)].sourceId;
     }
 
-    void setEvent(int index, DeviceMidiEvent event) override {
-        // Swapped rather than assigned. Copy assignment is safe where move
-        // assignment is not, but it reallocs the destination for a message that
-        // is on the heap, and the caller's parameter has already paid for a
-        // copy: swapping hands that buffer over and leaves the old one in a
-        // local that frees it. No heap operation of its own.
-        std::swap(events_[static_cast<std::size_t>(index)], event);
+    /// The engine's juce::MidiBuffer carries no panic flag beside its events.
+    bool isAllNotesOff() const override {
+        return false;
     }
 
-    void removeEvent(int index) override {
-        if (index < 0 || static_cast<std::size_t>(index) >= events_.size())
-            return;
+  private:
+    const std::vector<DeviceMidiEvent>& events_;
+};
 
-        // Walked to the back by swapping, which exchanges pointers and touches
-        // no heap. A copy shift would realloc every entry it passed, and it was
-        // only there because vector::erase moves.
-        for (auto at = static_cast<std::size_t>(index); at + 1 < events_.size(); ++at)
-            std::swap(events_[at], events_[at + 1]);
-
-        // The removed message is at the back now, and pop_back destroys it: the
-        // one free a removal owes.
-        events_.pop_back();
-    }
+/// The SDK's write-only sink for what the device emits, over the output scratch.
+///
+/// Nothing here grows the vector. Its capacity is the most events the output
+/// port's bound admits, so what is refused is a device past that bound rather
+/// than an ordinary block: growing it would allocate, and one dropped event is
+/// cheaper than a callback that missed its deadline.
+///
+/// That capacity is a count of events; the port's budget is bytes, and the two
+/// part company on SysEx. The count keeps this vector from reallocating, the
+/// byte budget is enforced where it is spent, writing back onto the port (#2341).
+class EngineMidiOutputView final : public DeviceMidiOutput {
+  public:
+    EngineMidiOutputView(std::vector<DeviceMidiEvent>& events, int capacity)
+        : events_(events), capacity_(capacity) {}
 
     void addEvent(DeviceMidiEvent event) override {
         if (static_cast<int>(events_.size()) >= capacity_) {
@@ -140,57 +95,18 @@ class EngineMidiBufferView final : public DeviceMidiBuffer {
             return;
         }
 
-        // Move construction into storage that holds nothing yet, which is the
-        // one move this class is allowed.
+        // Move construction into storage that holds nothing yet: the one move a
+        // live juce::MidiMessage allows without leaking (see the input view).
         events_.push_back(std::move(event));
     }
 
-    void clear() override {
-        events_.clear();
-    }
-
-    void sortByTimestamp() override {
-        // The order first, which is integers and safe to move however the
-        // algorithm likes, and then one pass applying it. Stable, because two
-        // events at one instant have an order already and it is the order they
-        // were delivered in: a note-off ahead of the note-on that follows it
-        // stays ahead of it.
-        order_.resize(events_.size());
-        for (std::size_t at = 0; at < order_.size(); ++at)
-            order_[at] = static_cast<int>(at);
-
-        std::stable_sort(order_.begin(), order_.end(), [this](int first, int second) {
-            return events_[static_cast<std::size_t>(first)].message.getTimeStamp() <
-                   events_[static_cast<std::size_t>(second)].message.getTimeStamp();
-        });
-
-        // Applied as cycles, so the permutation costs one swap per element that
-        // moves and no second buffer. std::swap is safe here where assignment
-        // is not: its first move leaves the source empty, so neither assignment
-        // that follows has a live buffer to drop.
-        for (std::size_t at = 0; at < order_.size(); ++at) {
-            auto target = static_cast<std::size_t>(order_[at]);
-            while (target < at)
-                target = static_cast<std::size_t>(order_[target]);
-
-            if (target != at)
-                std::swap(events_[at], events_[target]);
-        }
-    }
-
-    bool isAllNotesOff() const override {
-        return allNotesOff_;
-    }
-
-    void setAllNotesOff(bool allNotesOff) override {
-        allNotesOff_ = allNotesOff;
-    }
+    /// Dropped: the engine's MIDI container has no flag for it (see the file
+    /// comment).
+    void setAllNotesOff(bool) override {}
 
   private:
     std::vector<DeviceMidiEvent>& events_;
     int capacity_;
-    std::vector<int>& order_;
-    bool allNotesOff_ = false;
 };
 
 /// The block's tempo map, as the SDK asks for it.
@@ -287,20 +203,15 @@ void EngineMagdaDevice::setMidiOutputBoundBytes(int bytes) {
 void EngineMagdaDevice::sizeMidiScratch() {
     // Every caller runs off the audio thread, and each runs again when another
     // does: prepare() sizes from whatever bounds are known, and the executor
-    // tells us the real ones straight after.
-    //
-    // From the wider of the two, because the device reads its input out of this
-    // vector and writes its own events back into the same one: it has to hold
-    // a full input on the way in and a full output on the way out, and which of
-    // those is larger is the plan's business rather than this vector's (#2341).
-    // A device the plan gave neither port is told zero twice and keeps nothing.
-    midiCapacity_ = midiEventsWithin(std::max(midiInputBoundBytes_, midiOutputBoundBytes_));
+    // tells us the real ones straight after. Each scratch is sized from its own
+    // port's bound; a device the plan gave neither port keeps nothing.
+    midiInCapacity_ = midiEventsWithin(midiInputBoundBytes_);
+    midiInScratch_.clear();
+    midiInScratch_.reserve(static_cast<std::size_t>(midiInCapacity_));
 
-    midiScratch_.clear();
-    midiScratch_.reserve(static_cast<std::size_t>(midiCapacity_));
-
-    midiOrder_.clear();
-    midiOrder_.reserve(static_cast<std::size_t>(midiCapacity_));
+    midiOutCapacity_ = midiEventsWithin(midiOutputBoundBytes_);
+    midiOutScratch_.clear();
+    midiOutScratch_.reserve(static_cast<std::size_t>(midiOutCapacity_));
 }
 
 void EngineMagdaDevice::reset() {
@@ -353,15 +264,19 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     juce::AudioBuffer<float> audio(channels_.data(),
                                    static_cast<int>(numChannels + sidechainChannels), numSamples);
 
-    std::optional<EngineMidiBufferView> midi;
+    // Both views or neither, which is the SDK's contract: a device with an input
+    // and nothing to write to still gets a sink, and its output is discarded.
+    std::optional<EngineMidiInputView> midiIn;
+    std::optional<EngineMidiOutputView> midiOut;
     if (block.midiIn != nullptr || block.midiOut != nullptr) {
-        // Emptied by destroying what it held, which is what frees a long
-        // message rather than leaking it. See the view.
-        midiScratch_.clear();
+        // Emptied by destroying what they held, which is what frees a long
+        // message rather than leaking it. See the input view.
+        midiInScratch_.clear();
+        midiOutScratch_.clear();
 
         if (block.midiIn != nullptr)
             for (const auto metadata : *block.midiIn) {
-                if (static_cast<int>(midiScratch_.size()) >= midiCapacity_) {
+                if (static_cast<int>(midiInScratch_.size()) >= midiInCapacity_) {
                     jassertfalse;  // a producer past the port's bound
                     break;
                 }
@@ -372,10 +287,11 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                 // reads on both sides: the fork stamps its events that way and
                 // the engine's ports count samples.
                 message.setTimeStamp(static_cast<double>(metadata.samplePosition) / sampleRate_);
-                midiScratch_.push_back({std::move(message), 0});
+                midiInScratch_.push_back({std::move(message), 0});
             }
 
-        midi.emplace(midiScratch_, midiCapacity_, midiOrder_);
+        midiIn.emplace(midiInScratch_);
+        midiOut.emplace(midiOutScratch_, midiOutCapacity_);
     }
 
     std::optional<EngineTempoMapView> tempo;
@@ -385,7 +301,8 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     DeviceProcessContext context{
         .audio = &audio,
         .sidechainInputChannel = sidechainChannels > 0 ? static_cast<int>(numChannels) : -1,
-        .midi = midi ? &*midi : nullptr,
+        .midiIn = midiIn ? &*midiIn : nullptr,
+        .midiOut = midiOut ? &*midiOut : nullptr,
         .tempoMap = tempo ? &*tempo : nullptr,
         .startSample = 0,
         .numSamples = numSamples,
@@ -402,30 +319,23 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     if (block.midiOut == nullptr)
         return;
 
-    // What the device left in the scratch, back onto the port. An event outside
-    // the block lands on the nearest sample it has rather than being dropped: a
-    // device that placed a note one sample past the end meant the note.
+    // What the device wrote, back onto the port. An event outside the block
+    // lands on the nearest sample it has rather than being dropped: a device
+    // that placed a note one sample past the end meant the note.
     //
-    // Counted in bytes, because that is what the port's budget is and what the
-    // executor sized its storage from. The scratch's own guard is a count of
-    // events, which is the right bound for a vector and the wrong one for this:
-    // a device emitting SysEx stays far inside that count while going far past
-    // the port's budget, and every byte over it grows a juce::MidiBuffer the
-    // executor reserved once and a delay line downstream sized to match.
+    // Counted in bytes against what the executor reserved for this port, never
+    // the flat constant (#2341): the scratch's guard is an event count, and a
+    // device emitting SysEx stays far inside that while going far past the
+    // budget, growing a juce::MidiBuffer the executor reserved once.
     //
-    // Against what the executor reserved for this port, never the flat
-    // constant: the figure is the port's and the plan owns the port (#2341).
-    //
-    // What is in the scratch is what the device produced. A device that left
-    // its input in there would be sending a second copy of a stream the plan
-    // already merges behind it (#2345), and would be over this budget as soon
-    // as more than one source fed the track.
+    // The input cannot reach this port any more by construction (#2347); thru
+    // is the plan's merge behind the device.
     int bytesWritten = 0;
 
-    for (const auto& event : midiScratch_) {
+    for (const auto& event : midiOutScratch_) {
         const auto cost = kMidiEventOverheadBytes + event.message.getRawDataSize();
         if (bytesWritten + cost > midiOutputBoundBytes_) {
-            jassertfalse;  // a device past the port's budget; see the view's comment
+            jassertfalse;  // a device past the port's budget; see the output view
             break;
         }
 

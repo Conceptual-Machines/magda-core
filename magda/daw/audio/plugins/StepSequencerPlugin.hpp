@@ -61,6 +61,7 @@ class StepSequencerPlugin : public MidiMagdaDevice {
             .name = getPluginName(),
             .shortName = "Seq",
             .takesMidiInput = true,
+            .producesMidi = true,
         };
     }
 

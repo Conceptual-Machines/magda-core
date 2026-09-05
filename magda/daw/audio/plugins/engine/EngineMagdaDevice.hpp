@@ -40,7 +40,8 @@
  *   would need the SDK to say so.
  * - **MidiMessageArray::isAllNotesOff.** The fork's MIDI container carries that
  *   flag beside the events and the engine's juce::MidiBuffer does not. A device
- *   that sets it is writing to something nothing downstream reads here.
+ *   reading DeviceMidiInput::isAllNotesOff gets false here, and one setting it
+ *   on its output is writing to something nothing downstream reads.
  *
  * Sidechain audio used to be a third. DeviceBlock::sidechain now reaches the
  * device as further channels of its own buffer, after the ones it owns, with
@@ -55,8 +56,9 @@ namespace magda::daw::audio::engine_adapter {
  * @brief One MagdaDevice bound to one Device op.
  *
  * Owns the device. Everything the audio thread touches is sized in prepare():
- * the channel pointer array the audio view is built from, the MIDI scratch the
- * SDK's mutable buffer needs, and the parameter map.
+ * the channel pointer array the audio view is built from, the two MIDI
+ * scratches the SDK's input and output views read and write, and the
+ * parameter map.
  */
 class EngineMagdaDevice final : public magda::engine::EngineDevice {
   public:
@@ -116,11 +118,12 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     std::vector<ParameterMapping> parameters_;
     std::vector<float*> channels_;
 
-    /// The SDK's MIDI buffer for one block, and the index list its sort
-    /// permutes. Both reserved to the port's bound and never grown past it.
-    std::vector<DeviceMidiEvent> midiScratch_;
-    std::vector<int> midiOrder_;
-    int midiCapacity_ = 0;
+    /// What the device reads this block and what it wrote, one vector each,
+    /// reserved to its own port's bound and never grown past it (#2347).
+    std::vector<DeviceMidiEvent> midiInScratch_;
+    std::vector<DeviceMidiEvent> midiOutScratch_;
+    int midiInCapacity_ = 0;
+    int midiOutCapacity_ = 0;
 
     /// What the executor said can reach the input port, which is the sum
     /// through the MIDI graph rather than one producer's budget. The constant
@@ -130,9 +133,8 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     /// What the executor reserved on the output port, which is one producer's
     /// worth: a device emits what it made, and MIDI thru is the plan's merge
-    /// behind it rather than the device's doing (#2345). Read from the executor
-    /// rather than from the constant because the figure is the port's, and the
-    /// constant until it says otherwise, for the reason above.
+    /// behind it (#2345, #2347). The constant until it says otherwise, for the
+    /// reason above.
     int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     double sampleRate_ = 44100.0;
