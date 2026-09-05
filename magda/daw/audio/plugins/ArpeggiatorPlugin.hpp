@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 
 #include "core/ParameterUtils.hpp"
 #include "plugins/MidiMagdaDevice.hpp"
@@ -128,6 +129,10 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         int noteNumber = -1;
         int velocity = 0;
         int order = 0;
+        /// Who sent the note-on, and whether the key is still down. Together
+        /// they tell a live key from clip playback across a stop (#2416).
+        std::uint32_t sourceId = 0;
+        bool physicallyHeld = false;
     };
     std::array<HeldNote, MAX_HELD> heldNotes_{};
     int heldCount_ = 0;
@@ -137,6 +142,13 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     int physicallyHeldCount_ = 0;
     bool latchedSetStale_ = false;
 
+    /// Sources that sent a note while the transport was stopped, so they are
+    /// not clip playback. A stop keeps what they hold and drops the rest,
+    /// which would wait forever for a note-off no clip will send (#2416).
+    static constexpr int kMaxLiveSources = 4;
+    std::array<std::uint32_t, kMaxLiveSources> liveSources_{};
+    int liveSourceCount_ = 0;
+
     // Pattern state
     int currentStep_ = 0;
     double arpOriginBeat_ = -1.0;
@@ -145,6 +157,11 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // Transport
     bool wasPlaying_ = false;
+
+    /// Where the previous block ended on the clock it ran on, or -1 for none.
+    /// A block that does not continue it is a seek, a loop wrap or a change of
+    /// clock, and only some of those reach the device as a panic (#2416).
+    double lastBlockEndBeat_ = -1.0;
 
     // Free-running clock for when transport is stopped
     double freeRunSamples_ = 0.0;
@@ -163,9 +180,15 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
 
     // --- Helpers ---
     static double rateToBeats(Rate r);
-    void addHeldNote(int noteNumber, int velocity);
+    void addHeldNote(int noteNumber, int velocity, std::uint32_t sourceId);
     void removeHeldNote(int noteNumber);
+    void markHeldNoteReleased(int noteNumber);
     void clearHeldNotes();
+    void noteLiveSource(std::uint32_t sourceId);
+    bool isLiveSource(std::uint32_t sourceId) const;
+    /// Drops held notes from sources that never played while stopped, and
+    /// recounts the keys still down. Used on the playing-to-stopped edge.
+    void retainLiveHeldNotes();
     void sendAllNotesOff(DeviceMidiBuffer& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.

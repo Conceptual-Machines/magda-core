@@ -1,88 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
-#include <initializer_list>
 
-#include "TestDeviceMidiBuffer.hpp"
-#include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
+#include "devices/ArpeggiatorTestRig.hpp"
 
 namespace {
-namespace audio = magda::daw::audio;
-using Arp = audio::ArpeggiatorPlugin;
+using magda::test::ArpMidiBuffer;
+using Rig = magda::test::ArpRig;
 
-// Like the Tracktion view, additions may invalidate references. Also detect
-// writes before clear deterministically, without depending on a freed read
-// happening to return the wrong note on a particular allocator.
-class MidiBuffer final : public magda::test::DeviceMidiBuffer {
-  public:
-    bool cleared = false;
-    int additionsBeforeClear = 0;
-
-    void addEvent(audio::DeviceMidiEvent event) override {
-        if (!cleared)
-            ++additionsBeforeClear;
-        magda::test::DeviceMidiBuffer::addEvent(std::move(event));
-    }
-    void clear() override {
-        magda::test::DeviceMidiBuffer::clear();
-        cleared = true;
-    }
-};
-
-class Tempo final : public audio::DeviceTempoMap {
-  public:
-    double beatsAtSeconds(double seconds) const override {
-        return seconds * 2.0;
-    }
-    double bpmAtSeconds(double) const override {
-        return 120.0;
-    }
-};
-
-struct Rig {
-    Arp arp;
-    Tempo tempo;
-
-    explicit Rig(bool latch = false) {
-        arp.prepare({.sampleRate = 48000.0, .maximumBlockSize = 2400});
-        arp.setParameterValue(Arp::kLatch, latch ? 1.0f : 0.0f);
-        arp.setParameterValue(Arp::kGate, 1.0f);
-        arp.setParameterValue(
-            Arp::kRate, magda::ParameterUtils::realToNormalized(
-                            static_cast<float>(Arp::Rate::Quarter), arp.parameterInfo(Arp::kRate)));
-    }
-
-    MidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
-                   bool playing = true, bool panic = false) {
-        MidiBuffer midi;
-        midi.setAllNotesOff(panic);
-        for (const auto& message : input)
-            midi.events.push_back({message, 42});
-        midi.events.shrink_to_fit();
-        audio::DeviceProcessContext context;
-        context.midi = &midi;
-        context.tempoMap = &tempo;
-        context.numSamples = 2400;
-        context.timelineStartSeconds = start;
-        context.timelineEndSeconds = start + 0.05;
-        context.isPlaying = playing;
-        arp.process(context);
-        CHECK(midi.additionsBeforeClear == 0);
-        return midi;
-    }
-
-    void startNote() {
-        auto midi = run(0.0, {juce::MidiMessage::noteOn(1, 60, juce::uint8{91})});
-        REQUIRE(midi.size() == 1);
-        REQUIRE(midi.message(0).isNoteOn());
-        REQUIRE(midi.message(0).getNoteNumber() == 60);
-    }
-};
-
-void checkOff(const MidiBuffer& midi, int index = 0) {
-    REQUIRE(midi.size() > index);
-    CHECK(midi.message(index).isNoteOff());
-    CHECK(midi.message(index).getNoteNumber() == 60);
-    CHECK(midi.message(index).getChannel() == 1);
-    CHECK(midi.message(index).getTimeStamp() == 0.0);
+void checkOff(const ArpMidiBuffer& midi, int index = 0) {
+    magda::test::checkNoteOff(midi, index);
 }
 }  // namespace
 
@@ -129,7 +54,7 @@ TEST_CASE("Arpeggiator input resets retain a single pending note-off",
     CHECK(midi.message(1).getVelocity() == 73);
 }
 
-TEST_CASE("Arpeggiator buffer panic stops and clears a latched chord",
+TEST_CASE("Arpeggiator buffer panic stops its note and keeps the latched chord",
           "[arpeggiator][midi][input]") {
     Rig rig(true);
     rig.startNote();
@@ -138,9 +63,13 @@ TEST_CASE("Arpeggiator buffer panic stops and clears a latched chord",
     CHECK(midi.isAllNotesOff());
     REQUIRE(midi.size() == 1);
     checkOff(midi);
+    // The latch is the arp's own memory of a chord, and a host relocating is
+    // not the player letting go, so the walk re-anchors and plays it again.
     auto next = rig.run(0.5);
     CHECK_FALSE(next.isAllNotesOff());
-    CHECK(next.size() == 0);
+    REQUIRE(next.size() == 1);
+    CHECK(next.message(0).isNoteOn());
+    CHECK(next.message(0).getNoteNumber() == 60);
 }
 
 TEST_CASE("Arpeggiator buffer panic permits fresh input without duplicate note-offs",
@@ -183,7 +112,7 @@ TEST_CASE("Arpeggiator release and transport stop still send one note-off",
           "[arpeggiator][midi][input]") {
     Rig rig;
     rig.startNote();
-    MidiBuffer midi;
+    ArpMidiBuffer midi;
     SECTION("release") {
         midi = rig.run(0.05, {juce::MidiMessage::noteOff(1, 60)});
     }

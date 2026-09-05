@@ -228,16 +228,68 @@ double ArpeggiatorPlugin::applyRampCurve(double t, float depth, float skew, bool
     return ramp_curve::applyRampCurve(t, depth, skew, hardAngle);
 }
 
-void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity) {
+void ArpeggiatorPlugin::addHeldNote(int noteNumber, int velocity, std::uint32_t sourceId) {
     // Check if already held
     for (int i = 0; i < heldCount_; ++i) {
-        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber)
+        auto& held = heldNotes_[static_cast<size_t>(i)];
+        if (held.noteNumber == noteNumber) {
+            // A host re-asserting its notes after a seek owns the key again.
+            held.physicallyHeld = true;
+            held.sourceId = sourceId;
             return;
+        }
     }
     if (heldCount_ < MAX_HELD) {
-        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber, velocity, nextOrder_++};
+        heldNotes_[static_cast<size_t>(heldCount_)] = {noteNumber, velocity, nextOrder_++, sourceId,
+                                                       true};
         ++heldCount_;
     }
+}
+
+void ArpeggiatorPlugin::markHeldNoteReleased(int noteNumber) {
+    for (int i = 0; i < heldCount_; ++i) {
+        if (heldNotes_[static_cast<size_t>(i)].noteNumber == noteNumber) {
+            heldNotes_[static_cast<size_t>(i)].physicallyHeld = false;
+            return;
+        }
+    }
+}
+
+void ArpeggiatorPlugin::noteLiveSource(std::uint32_t sourceId) {
+    // 0 is "the host did not say", which is every event on the native engine
+    // until its port carries source identity (#2418).
+    if (sourceId == 0 || isLiveSource(sourceId))
+        return;
+    if (liveSourceCount_ < kMaxLiveSources)
+        liveSources_[static_cast<size_t>(liveSourceCount_++)] = sourceId;
+}
+
+bool ArpeggiatorPlugin::isLiveSource(std::uint32_t sourceId) const {
+    if (sourceId == 0)
+        return false;
+    for (int i = 0; i < liveSourceCount_; ++i) {
+        if (liveSources_[static_cast<size_t>(i)] == sourceId)
+            return true;
+    }
+    return false;
+}
+
+void ArpeggiatorPlugin::retainLiveHeldNotes() {
+    int kept = 0;
+    int stillDown = 0;
+    for (int i = 0; i < heldCount_; ++i) {
+        const auto& note = heldNotes_[static_cast<size_t>(i)];
+        if (!isLiveSource(note.sourceId))
+            continue;
+        heldNotes_[static_cast<size_t>(kept++)] = note;
+        if (note.physicallyHeld)
+            ++stillDown;
+    }
+    heldCount_ = kept;
+    physicallyHeldCount_ = stillDown;
+    latchedSetStale_ = kept > 0 && stillDown == 0;
+    if (kept == 0)
+        nextOrder_ = 0;
 }
 
 void ArpeggiatorPlugin::removeHeldNote(int noteNumber) {
@@ -276,6 +328,7 @@ int ArpeggiatorPlugin::resetArpState() {
     const int note = takeSoundingNote();
     currentStep_ = 0;
     arpOriginBeat_ = -1.0;
+    lastBlockEndBeat_ = -1.0;
     wasPlaying_ = false;
     currentPlayStep_.store(-1, std::memory_order_relaxed);
     currentSeqLength_.store(0, std::memory_order_relaxed);
@@ -377,18 +430,22 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             pendingNoteOff = note;
         freeRunSamples_ = 0.0;
     };
-    // Hosts can signal panic without a CC event (for example on a playhead
-    // jump). Reset before consuming fresh input, and forward the flag below.
+    // Hosts raise this without a CC event, on a playhead jump or a track they
+    // just muted. It says to silence what is sounding, not that the player let
+    // go: the keys stay held and the walk re-anchors below (#2416).
     const bool inputPanic = midi.isAllNotesOff();
-    if (inputPanic) {
-        clearHeldNotes();
-        resetFromInput();
-    }
+    if (inputPanic)
+        pendingNoteOff = takeSoundingNote();
     const int incomingCount = midi.size();
     for (int eventIndex = 0; eventIndex < incomingCount; ++eventIndex) {
         const auto& msg = midi.message(eventIndex);
+        const std::uint32_t source = midi.sourceId(eventIndex);
         if (msg.isNoteOn()) {
             ++physicallyHeldCount_;
+            // Clips are silent with the transport stopped, so whoever plays
+            // now is a live source and its notes survive a stop (#2416).
+            if (!context.isPlaying)
+                noteLiveSource(source);
 
             // Latch: if old set is stale (all keys were released), clear before adding
             if (isLatched && latchedSetStale_) {
@@ -398,7 +455,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
             }
 
             bool wasEmpty = (heldCount_ == 0);
-            addHeldNote(msg.getNoteNumber(), msg.getVelocity());
+            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), source);
             // Reset free-running clock when first note arrives
             if (wasEmpty && heldCount_ > 0) {
                 resetFromInput();
@@ -410,6 +467,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
             if (isLatched) {
                 // Don't remove notes; mark stale when all physically released
+                markHeldNoteReleased(msg.getNoteNumber());
                 if (physicallyHeldCount_ == 0)
                     latchedSetStale_ = true;
             } else {
@@ -427,22 +485,26 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     sendNoteOff(midi, pendingNoteOff);
 
     // --- 3. Handle transport transitions ---
-    // Reset on a playing-to-stopped edge. On start, just update the flag;
-    // the step counter continues from where it was.
     if (context.isPlaying && !wasPlaying_) {
+        // The transport and the free-running clock are different clocks, so
+        // the walk re-anchors below instead of carrying its step across.
         wasPlaying_ = true;
+        lastBlockEndBeat_ = -1.0;
     } else if (!context.isPlaying && wasPlaying_) {
+        // Keys under the player's fingers keep the arp free-running; notes a
+        // clip left behind are dropped, because their note-off is never
+        // coming once the transport stops (#2416).
         sendAllNotesOff(midi);
-        clearHeldNotes();
+        retainLiveHeldNotes();
         resetArpState();
         freeRunSamples_ = 0.0;
-        wasPlaying_ = false;
     }
 
     // --- 4. No held notes, or no MIDI input while transport is stopped? ---
     if (heldCount_ == 0 || (!context.isPlaying && physicallyHeldCount_ <= 0)) {
         sendAllNotesOff(midi);
         freeRunSamples_ = 0.0;
+        lastBlockEndBeat_ = -1.0;
         return;
     }
 
@@ -465,6 +527,19 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
 
     if (blockEndBeat <= blockStartBeat)
         return;
+
+    // Seeks, loop wraps and the switch between the two clocks all arrive as a
+    // block that does not continue the last one. Only some of them reach the
+    // device as a panic and a loop wrap reaches it as nothing at all, so the
+    // timeline is what the walk trusts (#2416).
+    constexpr double kContiguousBeats = 1.0e-3;
+    if (lastBlockEndBeat_ < 0.0 ||
+        std::abs(blockStartBeat - lastBlockEndBeat_) > kContiguousBeats) {
+        sendNoteOff(midi, takeSoundingNote());
+        currentStep_ = 0;
+        arpOriginBeat_ = -1.0;
+    }
+    lastBlockEndBeat_ = blockEndBeat;
 
     // --- 6. Build note sequence ---
     auto seq = buildSequence();
@@ -529,9 +604,16 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     }
 
     // --- 8. Walk steps and generate notes ---
-    // Catch up: skip past any steps whose warped position is before this block
-    while (computeStepBeat(currentStep_) < blockStartBeat)
-        ++currentStep_;
+    // Catch up to the block. Cycles are evenly spaced whatever the ramp does
+    // inside one, so the cycle holding the block start is a division and only
+    // its steps are walked: bounded work, not one pass per skipped step.
+    if (computeStepBeat(currentStep_) < blockStartBeat) {
+        const int cycle =
+            static_cast<int>(std::floor((blockStartBeat - arpOriginBeat_) / cycleBeats));
+        currentStep_ = std::max(currentStep_, cycle * seq.length);
+        while (computeStepBeat(currentStep_) < blockStartBeat)
+            ++currentStep_;
+    }
 
     double stepBeat = computeStepBeat(currentStep_);
 
