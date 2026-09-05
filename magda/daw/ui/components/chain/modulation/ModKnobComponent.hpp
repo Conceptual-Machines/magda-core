@@ -24,7 +24,7 @@ class MiniWaveformDisplay : public juce::Component, private juce::Timer {
         startTimer(33);  // 30 FPS animation
     }
 
-    ~MiniWaveformDisplay() {
+    ~MiniWaveformDisplay() override {
         stopTimer();
     }
 

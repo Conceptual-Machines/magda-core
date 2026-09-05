@@ -154,7 +154,7 @@ class MenuManager : public juce::MenuBarModel, public UndoManagerListener {
 
   private:
     MenuManager();
-    ~MenuManager();
+    ~MenuManager() override;
 
     // MenuBarModel implementation
     juce::StringArray getMenuBarNames() override;

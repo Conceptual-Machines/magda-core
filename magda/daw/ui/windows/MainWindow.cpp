@@ -71,7 +71,7 @@ class MainWindow::MainComponent::LoadingOverlay : public juce::Component, privat
         setInterceptsMouseClicks(false, false);  // Non-blocking - clicks pass through
     }
 
-    ~LoadingOverlay() {
+    ~LoadingOverlay() override {
         stopTimer();
     }
 

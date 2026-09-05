@@ -327,7 +327,7 @@ class ProjectManager : private juce::Timer {
     friend class UndoManager;
 
     ProjectManager();
-    ~ProjectManager();
+    ~ProjectManager() override;
 
     void joinBackgroundThread();
     void timerCallback() override;
