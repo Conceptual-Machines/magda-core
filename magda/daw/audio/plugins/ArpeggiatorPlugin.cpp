@@ -261,24 +261,25 @@ void ArpeggiatorPlugin::clearHeldNotes() {
 }
 
 void ArpeggiatorPlugin::sendAllNotesOff(DeviceMidiBuffer& midi) {
-    if (lastPlayedNote_ >= 0) {
-        midi.addEvent({juce::MidiMessage::noteOff(1, lastPlayedNote_), 0});
-        lastPlayedNote_ = -1;
-        clearMidiOutDisplay();
-    }
+    sendNoteOff(midi, takeSoundingNote());
 }
 
-void ArpeggiatorPlugin::resetArpState() {
-    currentStep_ = 0;
-    goingUp_ = true;
-    arpOriginBeat_ = -1.0;
+int ArpeggiatorPlugin::takeSoundingNote() {
+    const int note = lastPlayedNote_;
     lastPlayedNote_ = -1;
-    lastPlayedVelocity_ = 0;
     lastNoteOffBeat_ = -1.0;
+    clearMidiOutDisplay();
+    return note;
+}
+
+int ArpeggiatorPlugin::resetArpState() {
+    const int note = takeSoundingNote();
+    currentStep_ = 0;
+    arpOriginBeat_ = -1.0;
     wasPlaying_ = false;
     currentPlayStep_.store(-1, std::memory_order_relaxed);
     currentSeqLength_.store(0, std::memory_order_relaxed);
-    clearMidiOutDisplay();
+    return note;
 }
 
 ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
@@ -371,9 +372,9 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // note can be sounding on entry; this pass does not generate new notes.
     int pendingNoteOff = -1;
     const auto resetFromInput = [&] {
-        if (lastPlayedNote_ >= 0)
-            pendingNoteOff = lastPlayedNote_;
-        resetArpState();
+        const int note = resetArpState();
+        if (note >= 0)
+            pendingNoteOff = note;
         freeRunSamples_ = 0.0;
     };
     // Hosts can signal panic without a CC event (for example on a playhead
@@ -582,7 +583,6 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
                 timeInBlock);
 
             lastPlayedNote_ = note.noteNumber;
-            lastPlayedVelocity_ = vel;
             setMidiOutDisplay(note.noteNumber, vel);
 
             // Schedule note-off

@@ -1,8 +1,7 @@
-#include <algorithm>
 #include <catch2/catch_test_macros.hpp>
 #include <initializer_list>
-#include <vector>
 
+#include "TestDeviceMidiBuffer.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 
 namespace {
@@ -12,48 +11,19 @@ using Arp = audio::ArpeggiatorPlugin;
 // Like the Tracktion view, additions may invalidate references. Also detect
 // writes before clear deterministically, without depending on a freed read
 // happening to return the wrong note on a particular allocator.
-class MidiBuffer final : public audio::DeviceMidiBuffer {
+class MidiBuffer final : public magda::test::DeviceMidiBuffer {
   public:
-    std::vector<audio::DeviceMidiEvent> events;
     bool cleared = false;
     int additionsBeforeClear = 0;
-    bool allNotesOff = false;
 
-    int size() const override {
-        return static_cast<int>(events.size());
-    }
-    const juce::MidiMessage& message(int index) const override {
-        return events.at(index).message;
-    }
-    std::uint32_t sourceId(int index) const override {
-        return events.at(index).sourceId;
-    }
-    void setEvent(int index, audio::DeviceMidiEvent event) override {
-        events.at(index) = event;
-    }
-    void removeEvent(int index) override {
-        events.erase(events.begin() + index);
-    }
     void addEvent(audio::DeviceMidiEvent event) override {
         if (!cleared)
             ++additionsBeforeClear;
-        events.push_back(event);
+        magda::test::DeviceMidiBuffer::addEvent(std::move(event));
     }
     void clear() override {
-        events.clear();
+        magda::test::DeviceMidiBuffer::clear();
         cleared = true;
-        allNotesOff = false;
-    }
-    void sortByTimestamp() override {
-        std::stable_sort(events.begin(), events.end(), [](const auto& a, const auto& b) {
-            return a.message.getTimeStamp() < b.message.getTimeStamp();
-        });
-    }
-    bool isAllNotesOff() const override {
-        return allNotesOff;
-    }
-    void setAllNotesOff(bool value) override {
-        allNotesOff = value;
     }
 };
 
