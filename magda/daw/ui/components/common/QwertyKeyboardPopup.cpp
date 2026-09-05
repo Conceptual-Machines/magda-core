@@ -114,7 +114,7 @@ void QwertyKeyboardPopup::resized() {
 }
 
 juce::Rectangle<float> QwertyKeyboardPopup::whiteKeyBounds(size_t index) const {
-    const float total = static_cast<float>(kWhiteKeys_.size());
+    const auto total = static_cast<float>(kWhiteKeys_.size());
     const float w = keyboardArea_.getWidth() / total;
     return juce::Rectangle<float>(keyboardArea_.getX() + static_cast<float>(index) * w,
                                   static_cast<float>(keyboardArea_.getY()), w,

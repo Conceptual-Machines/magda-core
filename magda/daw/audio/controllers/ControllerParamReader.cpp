@@ -104,7 +104,7 @@ std::optional<float> DefaultControllerParamReader::readPluginParam(const Control
         return std::nullopt;
 
     const auto range = param->getValueRange();
-    const float span = static_cast<float>(range.getLength());
+    const auto span = static_cast<float>(range.getLength());
     if (span <= 0.0f)
         return std::nullopt;
 

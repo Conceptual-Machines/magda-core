@@ -112,7 +112,7 @@ void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target,
     // parameter's actual value range before writing — te::AutomatableParameter::
     // setParameter expects raw, not normalized.
     const auto range = param->getValueRange();
-    const float raw = static_cast<float>(range.getStart() + clamped * range.getLength());
+    const auto raw = static_cast<float>(range.getStart() + clamped * range.getLength());
     param->setParameterFromHost(raw, juce::sendNotificationSync);
 
     // Mirror the write into DeviceInfo and notify MAGDA listeners so param

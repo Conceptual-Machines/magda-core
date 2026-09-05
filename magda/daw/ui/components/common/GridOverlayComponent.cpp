@@ -194,7 +194,7 @@ void GridOverlayComponent::drawBarsBeatsGrid(juce::Graphics& g, juce::Rectangle<
         gridQuantize, currentZoom, timeSignatureNumerator, minPixelSpacing);
 
     double totalTimelineBeats = timelineLength * tempoBPM / 60.0;
-    double barLengthBeats = static_cast<double>(timeSignatureNumerator);
+    auto barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
     bool alignsWithBars = GridConstants::gridAlignsWithBars(markerIntervalBeats, barLengthBeats);

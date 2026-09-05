@@ -279,7 +279,7 @@ void DrumVoiceUI::drawEnvelope(juce::Graphics& g, juce::Rectangle<int> area, con
         (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
             : 0.0f;
-    const float decayMs =
+    const auto decayMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
 
     // Curve knob (-50..50) -> decay exponent 8^(-c/50), matching the dsp. 0 (or no
@@ -347,7 +347,7 @@ bool DrumVoiceUI::envHandles(int i, juce::Point<float>& peak, juce::Point<float>
         (s.attackSlot >= 0 && s.attackSlot < static_cast<int>(controls_.size()))
             ? static_cast<float>(controls_[static_cast<size_t>(s.attackSlot)].slider->getValue())
             : 0.0f;
-    const float dMs =
+    const auto dMs =
         static_cast<float>(controls_[static_cast<size_t>(s.decaySlot)].slider->getValue());
     const float xA = r.getX() + r.getWidth() * (aMs / axis);
     const float xD = juce::jmin(r.getRight(), r.getX() + r.getWidth() * ((aMs + dMs) / axis));
@@ -431,7 +431,7 @@ void DrumVoiceUI::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWhe
             continue;
         if (!sectionEnvAreas_[static_cast<size_t>(i)].toFloat().contains(e.position))
             continue;
-        const float cur =
+        const auto cur =
             static_cast<float>(controls_[static_cast<size_t>(s.curveSlot)].slider->getValue());
         // Scroll down bends the curve down (toward fast/negative); up = swelled/positive.
         const float delta = gesture.magnitude * 60.0f;

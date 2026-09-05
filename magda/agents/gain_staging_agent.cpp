@@ -55,7 +55,7 @@ bool parseDecisionIndex(const juce::var& value, int& indexOut) {
     if (!isNumericVar(value))
         return false;
 
-    const double asDouble = static_cast<double>(value);
+    const auto asDouble = static_cast<double>(value);
     const double rounded = std::round(asDouble);
     if (std::abs(asDouble - rounded) > 0.000001)
         return false;

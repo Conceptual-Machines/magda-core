@@ -258,8 +258,8 @@ std::optional<juce::Point<float>> getControllerIndicatorAnchor(bool isDrumGrid, 
         return std::nullopt;
 
     const auto modBounds = modButton->getBounds();
-    const float textStartX = static_cast<float>(modBounds.getRight() + 4);
-    const float textCentreY = static_cast<float>(modBounds.getCentreY());
+    const auto textStartX = static_cast<float>(modBounds.getRight() + 4);
+    const auto textCentreY = static_cast<float>(modBounds.getCentreY());
 
     auto font = FontManager::getInstance().getMicrogrammaFont(11.0f);
     juce::GlyphArrangement glyphs;

@@ -285,8 +285,8 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
         // The intro plays once and the region repeats from there. Read off the
         // cumulative position rather than the wrapped phase, because which of
         // the two it is depends on how many cycles have gone by.
-        const double length = static_cast<double>(settings.loopEnd - settings.loopStart);
-        const double start = static_cast<double>(settings.loopStart);
+        const auto length = static_cast<double>(settings.loopEnd - settings.loopStart);
+        const auto start = static_cast<double>(settings.loopStart);
         const double effective =
             cycles < start ? cycles : start + std::fmod(cycles - start, length);
 
@@ -343,8 +343,8 @@ float advanceLfo(LfoState& state, const LfoSettings& settings,
     // started a moment ago. A one-shot is the exception: how far past the end
     // it is is the whole question it answers.
     if (looping) {
-        const double length = static_cast<double>(settings.loopEnd - settings.loopStart);
-        const double start = static_cast<double>(settings.loopStart);
+        const auto length = static_cast<double>(settings.loopEnd - settings.loopStart);
+        const auto start = static_cast<double>(settings.loopStart);
         if (state.cycles >= start + length)
             state.cycles = start + std::fmod(state.cycles - start, length);
     } else if (!settings.oneShot && state.cycles >= 1.0) {

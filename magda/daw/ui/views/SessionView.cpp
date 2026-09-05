@@ -569,7 +569,7 @@ class SessionView::BeatBandContainer : public juce::Component {
 
             if (!hidden) {
                 double phase = (i < static_cast<int>(phases_.size())) ? phases_[i] : 0.0;
-                float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase * 0.85));
+                auto alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase * 0.85));
                 g.setColour(pulseColour.withAlpha(alpha));
                 g.fillEllipse(layout.dotCentre.getX() - kDotRadius,
                               layout.dotCentre.getY() - kDotRadius, kDotRadius * 2.0f,
@@ -666,7 +666,7 @@ class SessionView::MasterBeatIndicator : public juce::Component {
         g.setColour(DarkTheme::getColour(DarkTheme::SEPARATOR));
         g.fillRect(0, 0, getWidth(), 1);
 
-        const float alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
+        const auto alpha = static_cast<float>(juce::jmax(0.0, 0.85 - phase_ * 0.85));
         constexpr float kDotRadius = 3.0f;
         const auto centre = getLocalBounds().toFloat().getCentre();
         g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_INFO).withAlpha(alpha));

@@ -329,7 +329,7 @@ TrackInspector::TrackInspector() {
     panLabel_->onValueChange = [this]() {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
-        float pan = static_cast<float>(panLabel_->getValue());
+        auto pan = static_cast<float>(panLabel_->getValue());
         if (panLabel_->isDragging()) {
             // Apply directly during drag (no undo command per pixel)
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
@@ -349,8 +349,8 @@ TrackInspector::TrackInspector() {
     panLabel_->onDragEnd = [this](double startValue) {
         if (selectedTrackId_ == magda::INVALID_TRACK_ID)
             return;
-        float oldPan = static_cast<float>(startValue);
-        float newPan = static_cast<float>(panLabel_->getValue());
+        auto oldPan = static_cast<float>(startValue);
+        auto newPan = static_cast<float>(panLabel_->getValue());
         if (selectedTrackId_ == magda::MASTER_TRACK_ID)
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));
@@ -868,7 +868,7 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         panLabel_->onValueChange = [this]() {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
                 return;
-            float pan = static_cast<float>(panLabel_->getValue());
+            auto pan = static_cast<float>(panLabel_->getValue());
             if (panLabel_->isDragging()) {
                 if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                     magda::TrackManager::getInstance().setMasterPan(pan);
@@ -886,8 +886,8 @@ void TrackInspector::setSelectedTrack(magda::TrackId trackId) {
         panLabel_->onDragEnd = [this](double startValue) {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
                 return;
-            float oldPan = static_cast<float>(startValue);
-            float newPan = static_cast<float>(panLabel_->getValue());
+            auto oldPan = static_cast<float>(startValue);
+            auto newPan = static_cast<float>(panLabel_->getValue());
             if (selectedTrackId_ == magda::MASTER_TRACK_ID)
                 magda::UndoManager::getInstance().executeCommand(
                     std::make_unique<magda::SetMasterPanCommand>(oldPan, newPan));

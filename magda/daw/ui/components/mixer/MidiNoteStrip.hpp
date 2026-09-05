@@ -59,7 +59,7 @@ class MidiNoteStrip : public juce::Component, private juce::Timer {
         if (height < 1.0f)
             return;
 
-        float noteRange = static_cast<float>(highNote_ - lowNote_);
+        auto noteRange = static_cast<float>(highNote_ - lowNote_);
         if (noteRange <= 0.0f)
             return;
 

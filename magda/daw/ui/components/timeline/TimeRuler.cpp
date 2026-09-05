@@ -516,7 +516,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     double pixelsPerBeat = zoom;
     double pixelsPerBar = zoom * timeSigNumerator;
-    double barLengthBeats = static_cast<double>(timeSigNumerator);
+    auto barLengthBeats = static_cast<double>(timeSigNumerator);
 
     // Check if grid interval aligns with bar and beat boundaries
     bool alignsWithBars = GridConstants::gridAlignsWithBars(intervalBeats, barLengthBeats);
@@ -555,7 +555,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     if (firstVisibleBeat < barOriginBeats)
         firstVisibleBeat = barOriginBeats;
 
-    long long startStep =
+    auto startStep =
         static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / intervalBeats));
     if (startStep < 0)
         startStep = 0;
@@ -631,7 +631,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Pass 2: Bar labels (highest priority — always drawn when interval allows)
     {
         // Iterate by bar
-        long long startBarStep = static_cast<long long>(
+        auto startBarStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / barLengthBeats));
         if (startBarStep < 0)
             startBarStep = 0;
@@ -666,8 +666,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
 
     // Pass 3: Beat labels (skip beat 1 = bar start, check overlap with bar labels)
     if (pixelsPerBeat >= 20) {
-        long long startBeatStep =
-            static_cast<long long>(std::floor(firstVisibleBeat - barOriginBeats));
+        auto startBeatStep = static_cast<long long>(std::floor(firstVisibleBeat - barOriginBeats));
         if (startBeatStep < 0)
             startBeatStep = 0;
 
@@ -682,7 +681,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             if (x < 0)
                 continue;
 
-            double beatsFromOrigin = static_cast<double>(beatStep);
+            auto beatsFromOrigin = static_cast<double>(beatStep);
             double barRemainder = std::fmod(beatsFromOrigin, barLengthBeats);
             bool isBarStart = barRemainder < 0.001;
             if (isBarStart)
@@ -719,7 +718,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Pass 4: Subdivision labels at musically meaningful positions
     if (subdivLabelBeats > 0.0 && gridAligned) {
         // Iterate at the subdivision label level (not at grid resolution)
-        long long startSubdivStep = static_cast<long long>(
+        auto startSubdivStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / subdivLabelBeats));
         if (startSubdivStep < 0)
             startSubdivStep = 0;
@@ -812,8 +811,8 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             g.fillRect(phaseX - 1, tickAreaTop, 2, tickHeightMajor());
             // Downward triangle at top of tick area
             juce::Path flag;
-            float fx = static_cast<float>(phaseX);
-            float triTop = static_cast<float>(tickAreaTop);
+            auto fx = static_cast<float>(phaseX);
+            auto triTop = static_cast<float>(tickAreaTop);
             flag.addTriangle(fx - 5.0f, triTop, fx + 5.0f, triTop, fx, triTop + 8.0f);
             g.fillPath(flag);
         }
@@ -844,9 +843,9 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
             // label divider) so it fills that rectangle instead of poking past
             // the ruler bottom into the grid.
             juce::Path triangle;
-            const float x = static_cast<float>(handleX);
-            const float yTop = static_cast<float>(tickAreaTop);
-            const float yTip = static_cast<float>(height - 1);
+            const auto x = static_cast<float>(handleX);
+            const auto yTop = static_cast<float>(tickAreaTop);
+            const auto yTip = static_cast<float>(height - 1);
             triangle.addTriangle(x - 6.0f, yTop, x + 6.0f, yTop, x, yTip);
             g.fillPath(triangle);
         }

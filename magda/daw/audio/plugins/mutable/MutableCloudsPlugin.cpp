@@ -82,7 +82,7 @@ struct Resampler {
     bool pull(StereoRing& ring, float& oL, float& oR) {
         if (ring.count < 4)
             return false;
-        const float t = static_cast<float>(pos - 1.0);
+        const auto t = static_cast<float>(pos - 1.0);
         oL = cubic(ring.L(0), ring.L(1), ring.L(2), ring.L(3), t);
         oR = cubic(ring.R(0), ring.R(1), ring.R(2), ring.R(3), t);
         pos += step;

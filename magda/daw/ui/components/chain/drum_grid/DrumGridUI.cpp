@@ -669,8 +669,8 @@ void DrumGridUI::paint(juce::Graphics& g) {
         bool selectedPadHasContent =
             padInfos_[static_cast<size_t>(selectedPad_)].sampleName.isNotEmpty();
         auto divArea = getLocalBounds().reduced(6);
-        float top = static_cast<float>(divArea.getY());
-        float bottom = static_cast<float>(divArea.getBottom());
+        auto top = static_cast<float>(divArea.getY());
+        auto bottom = static_cast<float>(divArea.getBottom());
         g.setColour(DarkTheme::getColour(DarkTheme::BORDER));
         if (selectedPadHasContent) {
             int detailLeft = padChainPanel_.getX() - kGap / 2;

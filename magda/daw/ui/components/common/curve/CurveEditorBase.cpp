@@ -154,8 +154,8 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         // Just start at the first point - no extra wrap segment needed
         if (!renderPoints.empty()) {
             auto [firstX, firstY] = getEffectivePosition(*renderPoints.front());
-            float firstPixelX = static_cast<float>(xToPixelF(firstX));
-            float firstPixelY = static_cast<float>(yToPixelF(firstY));
+            auto firstPixelX = static_cast<float>(xToPixelF(firstX));
+            auto firstPixelY = static_cast<float>(yToPixelF(firstY));
             curvePath.startNewSubPath(firstPixelX, firstPixelY);
             pathStarted = true;
             pathStartX = firstPixelX;
@@ -164,8 +164,8 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         // For non-looping (automation): Extend from left edge at first point's value
         if (!renderPoints.empty()) {
             auto [firstX, firstY] = getEffectivePosition(*renderPoints.front());
-            float firstPixelX = static_cast<float>(xToPixelF(firstX));
-            float firstPixelY = static_cast<float>(yToPixelF(firstY));
+            auto firstPixelX = static_cast<float>(xToPixelF(firstX));
+            auto firstPixelY = static_cast<float>(yToPixelF(firstY));
 
             if (firstPixelX > 0.0f) {
                 curvePath.startNewSubPath(0.0f, firstPixelY);
@@ -180,8 +180,8 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     for (size_t i = 0; i < renderPoints.size(); ++i) {
         const auto& p = *renderPoints[i];
         auto [x, y] = getEffectivePosition(p);
-        float pixelX = static_cast<float>(xToPixelF(x));
-        float pixelY = static_cast<float>(yToPixelF(y));
+        auto pixelX = static_cast<float>(xToPixelF(x));
+        auto pixelY = static_cast<float>(yToPixelF(y));
 
         if (!pathStarted) {
             curvePath.startNewSubPath(pixelX, pixelY);
@@ -210,8 +210,8 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         if (!renderPoints.empty()) {
             auto [lastX, lastY] = getEffectivePosition(*renderPoints.back());
             juce::ignoreUnused(lastX);
-            float lastPixelY = static_cast<float>(yToPixelF(lastY));
-            float width = static_cast<float>(getWidth());
+            auto lastPixelY = static_cast<float>(yToPixelF(lastY));
+            auto width = static_cast<float>(getWidth());
             curvePath.lineTo(width, lastPixelY);
         }
     }
@@ -236,7 +236,7 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
     // visible diagonals across that offset.
     juce::Path fillPath = curvePath;
     const auto curveEnd = curvePath.getCurrentPosition();
-    float fillBaseY = static_cast<float>(yToPixelF(0.0));
+    auto fillBaseY = static_cast<float>(yToPixelF(0.0));
     fillPath.lineTo(curveEnd.x, fillBaseY);
     fillPath.lineTo(pathStartX, fillBaseY);
     fillPath.closeSubPath();
@@ -250,10 +250,10 @@ void CurveEditorBase::renderCurveSegment(juce::Path& path, const CurvePoint& p1,
     auto [x2, y2] = getEffectivePosition(p2);
 
     // Float-precision pixel coords for rendering (no int truncation)
-    float pixelX1 = static_cast<float>(xToPixelF(x1));
-    float pixelY1 = static_cast<float>(yToPixelF(y1));
-    float pixelX2 = static_cast<float>(xToPixelF(x2));
-    float pixelY2 = static_cast<float>(yToPixelF(y2));
+    auto pixelX1 = static_cast<float>(xToPixelF(x1));
+    auto pixelY1 = static_cast<float>(yToPixelF(y1));
+    auto pixelX2 = static_cast<float>(xToPixelF(x2));
+    auto pixelY2 = static_cast<float>(yToPixelF(y2));
 
     switch (p1.curveType) {
         case CurveType::Linear: {

@@ -319,7 +319,7 @@ void DraggableValueLabel::beginAutomationGesture(double baselineValue) {
     mgr.beginTargetGesture(automationTarget_);
     mgr.setTargetUserTouched(automationTarget_, true);
     const auto info = getParameterInfoForTarget(automationTarget_);
-    const double normalized = static_cast<double>(
+    const auto normalized = static_cast<double>(
         ParameterUtils::realToNormalized(static_cast<float>(baselineValue), info));
     mgr.setTouchBaseline(automationTarget_, normalized);
 }

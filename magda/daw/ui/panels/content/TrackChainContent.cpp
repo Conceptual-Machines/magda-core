@@ -180,7 +180,7 @@ class GainMeterComponent : public juce::Component,
         g.fillRect(fillArea);
 
         // Gain position indicator (horizontal line)
-        float gainNormalized = static_cast<float>((gainDb_ + 60.0) / 66.0);  // -60 to +6 dB
+        auto gainNormalized = static_cast<float>((gainDb_ + 60.0) / 66.0);  // -60 to +6 dB
         int gainY =
             meterArea.getY() + static_cast<int>((1.0f - gainNormalized) * meterArea.getHeight());
         g.setColour(DarkTheme::getTextColour());

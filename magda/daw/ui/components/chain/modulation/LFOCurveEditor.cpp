@@ -856,8 +856,8 @@ void LFOCurveEditor::paintPhaseIndicator(juce::Graphics& g) {
 
 void LFOCurveEditor::paintGrid(juce::Graphics& g) {
     auto bounds = getLocalBounds();
-    float width = static_cast<float>(bounds.getWidth());
-    float height = static_cast<float>(bounds.getHeight());
+    auto width = static_cast<float>(bounds.getWidth());
+    auto height = static_cast<float>(bounds.getHeight());
 
     // Horizontal grid lines (value divisions) - placed using the padded y mapping
     // so they align with the curve and point positions.
@@ -894,8 +894,8 @@ void LFOCurveEditor::paintLoopRegion(juce::Graphics& g) {
         return;
 
     auto content = getContentBounds();
-    float loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
-    float loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
+    auto loopStartX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopStart)));
+    auto loopEndX = static_cast<float>(xToPixelF(static_cast<double>(modInfo_->loopEnd)));
 
     // Shade areas outside the loop region
     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x30 / 255.0f));
@@ -966,7 +966,7 @@ void LFOCurveEditor::mouseDown(const juce::MouseEvent& e) {
 void LFOCurveEditor::mouseDrag(const juce::MouseEvent& e) {
     if (draggingLoopMarker_ != 0 && modInfo_) {
         constexpr float kMinGap = 0.02f;
-        float phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
+        auto phase = static_cast<float>(juce::jlimit(0.0, 1.0, pixelToX(e.x)));
         if (snapLoop_ && gridDivisionsX_ > 1) {
             const double step = 1.0 / gridDivisionsX_;
             phase = static_cast<float>(juce::jlimit(0.0, 1.0, std::round(phase / step) * step));

@@ -445,8 +445,8 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
                     float t = static_cast<float>(seg) / static_cast<float>(numSegments);
                     double beat = firstBeat + t * beatRange;
                     int vel = interpolateVelocity(t);
-                    float px = static_cast<float>(beatToPixel(beat + clipAbsOffset));
-                    float py = static_cast<float>(velocityToY(vel));
+                    auto px = static_cast<float>(beatToPixel(beat + clipAbsOffset));
+                    auto py = static_cast<float>(velocityToY(vel));
 
                     if (!started) {
                         curvePath.startNewSubPath(px, py);
@@ -462,9 +462,9 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
             // Draw curve handle
             if (isCurveHandleVisible_ && !isRampDragging_) {
-                float hx = static_cast<float>(curveHandleX_);
-                float hy = static_cast<float>(curveHandleY_);
-                float hs = static_cast<float>(CURVE_HANDLE_SIZE);
+                auto hx = static_cast<float>(curveHandleX_);
+                auto hy = static_cast<float>(curveHandleY_);
+                auto hs = static_cast<float>(CURVE_HANDLE_SIZE);
 
                 // Diamond shape
                 juce::Path diamond;

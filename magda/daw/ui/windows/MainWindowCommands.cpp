@@ -1983,7 +1983,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
 
         case uiScaleUp:
         case uiScaleDown: {
-            const double current =
+            const auto current =
                 static_cast<double>(juce::Desktop::getInstance().getGlobalScaleFactor());
             const int direction = (info.commandID == uiScaleUp) ? +1 : -1;
             applyUIScale(stepUIScale(current, direction));

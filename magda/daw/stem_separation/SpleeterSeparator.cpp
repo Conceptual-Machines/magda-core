@@ -91,7 +91,7 @@ struct SpleeterSeparator::Impl {
             info.GetElementCount() != x.size())
             throw std::runtime_error("Spleeter model returned an unexpected output shape");
 
-        const float* data = outputs[0].GetTensorData<float>();
+        const auto* data = outputs[0].GetTensorData<float>();
         return {data, data + x.size()};
     }
 };

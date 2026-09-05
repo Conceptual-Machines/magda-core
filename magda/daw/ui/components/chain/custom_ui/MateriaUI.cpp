@@ -206,9 +206,9 @@ void MateriaUI::paint(juce::Graphics& g) {
         g.setColour(cStrike);
         g.fillEllipse(juce::Rectangle<float>(8, 8).withCentre(strike));
 
-        const float wBow = (float)controls_[kBow].slider->getValue();
-        const float wBlow = (float)controls_[kBlow].slider->getValue();
-        const float wStrike = (float)controls_[kStrike].slider->getValue();
+        const auto wBow = (float)controls_[kBow].slider->getValue();
+        const auto wBlow = (float)controls_[kBlow].slider->getValue();
+        const auto wStrike = (float)controls_[kStrike].slider->getValue();
         const float sum = wBow + wBlow + wStrike;
         juce::Point<float> dot = sum > 1.0e-4f
                                      ? (bow * wBow + blow * wBlow + strike * wStrike) / sum
@@ -236,10 +236,10 @@ void MateriaUI::paint(juce::Graphics& g) {
         g.setColour(kBorder);
         g.drawRoundedRectangle(modalVizArea_.toFloat().reduced(0.5f), 4.0f, 1.0f);
         auto b = modalVizArea_.reduced(12, 16);
-        const float geometry = (float)controls_[kGeometry].slider->getValue();
-        const float brightness = (float)controls_[kBrightness].slider->getValue();
-        const float damping = (float)controls_[kDamping].slider->getValue();
-        const float position = (float)controls_[kPosition].slider->getValue();
+        const auto geometry = (float)controls_[kGeometry].slider->getValue();
+        const auto brightness = (float)controls_[kBrightness].slider->getValue();
+        const auto damping = (float)controls_[kDamping].slider->getValue();
+        const auto position = (float)controls_[kPosition].slider->getValue();
 
         const float rolloff = juce::jmap(brightness, 0.0f, 1.0f, 0.80f, 0.985f);
         const float level = juce::jmap(damping, 0.0f, 1.0f, 0.45f, 1.0f);
@@ -247,7 +247,7 @@ void MateriaUI::paint(juce::Graphics& g) {
         const float bw = b.getWidth() / static_cast<float>(n);
         g.setColour(kReso.withAlpha(0.6f));
         for (int i = 0; i < n; ++i) {
-            const float harmonic = static_cast<float>(i + 1);
+            const auto harmonic = static_cast<float>(i + 1);
             const float comb = std::abs(
                 std::sin(juce::MathConstants<float>::pi * harmonic * (0.02f + 0.48f * position)));
             const float structure =

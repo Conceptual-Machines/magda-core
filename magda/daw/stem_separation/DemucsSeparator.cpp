@@ -102,7 +102,7 @@ struct DemucsSeparator::Impl {
             info.GetElementCount() != count)
             throw std::runtime_error("Demucs model returned an unexpected output shape");
 
-        const float* data = outputs[0].GetTensorData<float>();
+        const auto* data = outputs[0].GetTensorData<float>();
         stemsOut.assign(data, data + count);
     }
 };

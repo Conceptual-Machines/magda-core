@@ -180,8 +180,7 @@ void CompiledFlangerCurveView::paint(juce::Graphics& g) {
     }
 
     // Current delay time from LFO position.
-    const float lfoBi =
-        static_cast<float>(std::sin(lfoPhase_ * juce::MathConstants<double>::twoPi));
+    const auto lfoBi = static_cast<float>(std::sin(lfoPhase_ * juce::MathConstants<double>::twoPi));
     const float delayMs = kCenterMs + lfoBi * depth_ * kSwingMs;
     const float delaySec = delayMs / 1000.0f;
 

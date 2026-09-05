@@ -391,7 +391,7 @@ void ParamSlotComponent::showLinkModeSlider(bool /*isNewLink*/, float initialAmo
             if (safeThis == nullptr || !safeThis->linkModeSlider_) {
                 return;
             }
-            float amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
+            auto amount = static_cast<float>(safeThis->linkModeSlider_->getValue() / 100.0);
 
             if (safeThis->activeMod_.isValid() && safeThis->onModAmountChanged) {
                 magda::ControlTarget thisTarget =

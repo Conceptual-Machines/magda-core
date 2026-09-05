@@ -190,7 +190,7 @@ void TransportPanel::paint(juce::Graphics& g) {
 
         // Separator between header and value, on the boundary the layout drew
         // between the two labels rather than a second guess at it.
-        const float sepY = static_cast<float>(layout_.cpuValue.getY());
+        const auto sepY = static_cast<float>(layout_.cpuValue.getY());
 
         // CPU usage fill bar in value area
         if (currentCpuUsage > 0.0f) {

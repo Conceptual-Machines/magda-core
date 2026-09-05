@@ -21,9 +21,8 @@ namespace magda::daw::audio::ramp_curve {
  * point.
  */
 inline double applyRampCurve(double t, float depth, float skew, bool hardAngle = false) {
-    double d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
-    double s =
-        static_cast<double>(juce::jlimit(0.01, 0.99, 0.5 + static_cast<double>(skew) * 0.49));
+    auto d = static_cast<double>(juce::jlimit(-0.99f, 0.99f, depth));
+    auto s = static_cast<double>(juce::jlimit(0.01, 0.99, 0.5 + static_cast<double>(skew) * 0.49));
 
     if (std::abs(d) < 0.001)
         return t;

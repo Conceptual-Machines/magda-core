@@ -777,7 +777,7 @@ void AutomationLaneComponent::paintScaleLabelsFor(juce::Graphics& g, juce::Recta
             // Clamp to range and convert back to normalized for positioning.
             double clamped = juce::jlimit(static_cast<double>(paramInfo.minValue),
                                           static_cast<double>(paramInfo.maxValue), realValue);
-            double normValue = static_cast<double>(
+            auto normValue = static_cast<double>(
                 ParameterUtils::realToNormalized(static_cast<float>(clamped), paramInfo));
             int y = area.getY() + normToYOffset(normValue);
 

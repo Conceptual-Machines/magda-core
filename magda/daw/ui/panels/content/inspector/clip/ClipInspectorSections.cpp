@@ -1600,7 +1600,7 @@ void ClipInspector::initGrooveSection() {
     grooveStrengthValue_->onValueChange = [this]() {
         if (selectedClipIds_.empty())
             return;
-        float newStrength = static_cast<float>(grooveStrengthValue_->getValue());
+        auto newStrength = static_cast<float>(grooveStrengthValue_->getValue());
         magda::ClipBatchEdit batch("Set Clip Groove Strength", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
@@ -1834,7 +1834,7 @@ void ClipInspector::initPlaybackSection() {
     beatSensitivityValue_->onValueChange = [this]() {
         if (selectedClipIds_.empty())
             return;
-        float sensitivity = static_cast<float>(beatSensitivityValue_->getValue());
+        auto sensitivity = static_cast<float>(beatSensitivityValue_->getValue());
         magda::ClipBatchEdit batch("Set Clip Beat Sensitivity", selectedClipIds_.size());
         for (auto cid : selectedClipIds_) {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);

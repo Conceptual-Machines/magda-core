@@ -109,7 +109,7 @@ void CompiledClipperCurveView::timerCallback() {
     };
 
     float drive = driveDb_;
-    float modeF = static_cast<float>(mode_);
+    auto modeF = static_cast<float>(mode_);
 
     if (compiledPlugin_ != nullptr) {
         drive = readPluginSlot(Clip::kDriveSlot, drive);

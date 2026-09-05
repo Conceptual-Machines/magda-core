@@ -564,7 +564,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
     if (bpm <= 0.0)
         return;
     double secondsPerBeat = 60.0 / bpm;
-    double beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
+    auto beatsPerBar = static_cast<double>(timeRuler_->getTimeSigNumerator());
 
     // Match the arrangement (GridConstants::computeGridInterval): never draw grid
     // lines or bar numbers denser than ~50px. The display interval grows to
@@ -858,8 +858,8 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
     double firstDrawnTime = 0.0;
 
     auto drawMarkersForCycle = [&](double cycleOffset, double sourceStart, double sourceEnd) {
-        const float top = static_cast<float>(waveformRect.getY());
-        const float bottom = static_cast<float>(waveformRect.getBottom());
+        const auto top = static_cast<float>(waveformRect.getY());
+        const auto bottom = static_cast<float>(waveformRect.getBottom());
         for (double t : transientTimes_) {
             if (t < sourceStart || t >= sourceEnd)
                 continue;
@@ -882,7 +882,7 @@ void WaveformGridComponent::paintTransientMarkers(juce::Graphics& g, const magda
             g.drawVerticalLine(px, top, bottom);
 
             // Downward-pointing handle triangle flush with the top edge.
-            const float fx = static_cast<float>(px);
+            const auto fx = static_cast<float>(px);
             juce::Path handle;
             handle.addTriangle(fx - kHandleHalfW, top, fx + kHandleHalfW, top, fx, top + kHandleH);
             g.setColour(handleColour);
@@ -1832,8 +1832,8 @@ void WaveformGridComponent::paintWarpMarkers(juce::Graphics& g, const magda::Cli
 
         // Draw small triangle handle at top
         juce::Path triangle;
-        float fx = static_cast<float>(px);
-        float fy = static_cast<float>(waveformRect.getY());
+        auto fx = static_cast<float>(px);
+        auto fy = static_cast<float>(waveformRect.getY());
         triangle.addTriangle(fx - 4.0f, fy, fx + 4.0f, fy, fx, fy + 6.0f);
         g.fillPath(triangle);
     }

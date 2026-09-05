@@ -670,7 +670,7 @@ void CompiledMultibandCurveView::mouseWheelMove(const juce::MouseEvent& e,
     const bool fine = gesture.type == magda::GestureActionType::AdjustValueFine ||
                       gesture.type == magda::GestureActionType::AdjustSecondaryValueFine;
     const float step = fine ? 0.125f : 0.25f;
-    const float y = static_cast<float>(e.y);
+    const auto y = static_cast<float>(e.y);
     const float upperY = dbToY(upperThresholdDb_[idx]);
     const float lowerY = dbToY(lowerThresholdDb_[idx]);
     const bool aboveZone = y < (upperY + lowerY) * 0.5f;

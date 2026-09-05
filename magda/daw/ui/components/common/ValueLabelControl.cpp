@@ -263,7 +263,7 @@ void ValueLabelControl::paint(juce::Graphics& g) {
 
         if (fillMode_ == FillMode::PanCentre) {
             const float centreX = bounds.getCentreX();
-            const float normalizedPan = static_cast<float>(juce::jlimit(-1.0, 1.0, value_));
+            const auto normalizedPan = static_cast<float>(juce::jlimit(-1.0, 1.0, value_));
 
             if (std::abs(normalizedPan) < 0.01f) {
                 g.fillRect(centreX - 1.0f, bounds.getY(), 2.0f, bounds.getHeight());
@@ -277,7 +277,7 @@ void ValueLabelControl::paint(juce::Graphics& g) {
         } else if (fillMode_ == FillMode::BottomToTop) {
             const double norm = fillProportion();
             if (norm > 0.0) {
-                float fillH = static_cast<float>(bounds.getHeight() * norm);
+                auto fillH = static_cast<float>(bounds.getHeight() * norm);
                 g.fillRoundedRectangle(bounds.getX(), bounds.getBottom() - fillH, bounds.getWidth(),
                                        fillH, 2.0f);
             }

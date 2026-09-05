@@ -258,7 +258,7 @@ void MacroKnobComponent::paint(juce::Graphics& g) {
     auto knobArea = knobBounds.removeFromTop(KNOB_SIZE);
 
     // Center the knob horizontally
-    float knobDiameter = static_cast<float>(KNOB_SIZE - 4);
+    auto knobDiameter = static_cast<float>(KNOB_SIZE - 4);
     float knobX = knobArea.getCentreX() - knobDiameter / 2.0f;
     float knobY = knobArea.getCentreY() - knobDiameter / 2.0f;
     auto knobRect = juce::Rectangle<float>(knobX, knobY, knobDiameter, knobDiameter);

@@ -62,7 +62,7 @@ void RampCurveDisplay::paint(juce::Graphics& g) {
 
         // Apply curve with cycles to get the x position
         float pos = playbackPos_;
-        float curvedPos =
+        auto curvedPos =
             static_cast<float>(daw::audio::sequencer::StepClock::applyRampCurveWithCycles(
                 pos, depth_, skew_, cycles_, hardAngle_));
         curvedPos = juce::jlimit(0.0f, 1.0f, curvedPos);

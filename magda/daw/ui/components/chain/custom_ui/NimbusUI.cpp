@@ -179,10 +179,10 @@ void NimbusUI::paintBuffer(juce::Graphics& g) {
     }
     const float life = haveAudio ? (0.22f + 0.78f * energy) : 0.5f;  // gentle idle baseline
 
-    const float position = (float)controls_[kPosition].slider->getValue();
-    const float size = (float)controls_[kSize].slider->getValue();
-    const float density = (float)controls_[kDensity].slider->getValue();
-    const float texture = (float)controls_[kTexture].slider->getValue();
+    const auto position = (float)controls_[kPosition].slider->getValue();
+    const auto size = (float)controls_[kSize].slider->getValue();
+    const auto density = (float)controls_[kDensity].slider->getValue();
+    const auto texture = (float)controls_[kTexture].slider->getValue();
 
     // Cloud drifts horizontally with Position, widens with Size, spreads and
     // jitters with Texture, thickens with Density.

@@ -393,7 +393,7 @@ void ControllerProfilesPage::onAddClicked() {
                        [this, profiles](int result) {
                            if (result <= 0)
                                return;
-                           size_t idx = static_cast<size_t>(result - 1);
+                           auto idx = static_cast<size_t>(result - 1);
                            if (idx >= profiles.size())
                                return;
                            onProfilePicked(profiles[idx]);
@@ -788,7 +788,7 @@ class LuaScriptsPage : public juce::Component {
                            [self, availableCopy](int result) {
                                if (result <= 0)
                                    return;
-                               const size_t idx = static_cast<size_t>(result - 1);
+                               const auto idx = static_cast<size_t>(result - 1);
                                if (idx >= availableCopy.size())
                                    return;
                                auto& cfg = magda::Config::getInstance();

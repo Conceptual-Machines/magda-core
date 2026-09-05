@@ -293,16 +293,16 @@ void AudioThumbnailManager::drawWaveformFromSamples(
 
     const double sampleRate = reader->sampleRate;
     const juce::int64 totalFileLength = reader->lengthInSamples;
-    const juce::int64 startSample = juce::jlimit<juce::int64>(
+    const auto startSample = juce::jlimit<juce::int64>(
         0, totalFileLength, static_cast<juce::int64>(startTime * sampleRate));
-    const juce::int64 endSample = juce::jlimit<juce::int64>(
+    const auto endSample = juce::jlimit<juce::int64>(
         startSample, totalFileLength, static_cast<juce::int64>(endTime * sampleRate));
     const juce::int64 totalSamples = endSample - startSample;
 
     if (totalSamples <= 0)
         return;
 
-    const float midY = static_cast<float>(bounds.getCentreY());
+    const auto midY = static_cast<float>(bounds.getCentreY());
     const float halfHeight = static_cast<float>(height) * 0.5f * verticalZoom;
     const double samplesPerPixel = static_cast<double>(totalSamples) / width;
 
@@ -349,7 +349,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                 float val = s0 + static_cast<float>(frac) * (s1 - s0);
 
                 float y = chMidY - val * chHalfHeight;
-                float px = static_cast<float>(bounds.getX() + x);
+                auto px = static_cast<float>(bounds.getX() + x);
 
                 if (x == 0)
                     path.startNewSubPath(px, y);
@@ -391,7 +391,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
             chunkBuffer.setSize(numChannels, maxChunk);
         }
 
-        const size_t w = static_cast<size_t>(width);
+        const auto w = static_cast<size_t>(width);
 
         for (int ch = 0; ch < numChannels; ++ch) {
             float chMidY = midY;
@@ -406,7 +406,7 @@ void AudioThumbnailManager::drawWaveformFromSamples(
             std::vector<float> maxValues(w);
 
             for (int x = 0; x < width; ++x) {
-                const juce::int64 colStart =
+                const auto colStart =
                     static_cast<juce::int64>(static_cast<double>(x) * totalSamples / width);
                 const juce::int64 colEnd = std::min(
                     static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width),

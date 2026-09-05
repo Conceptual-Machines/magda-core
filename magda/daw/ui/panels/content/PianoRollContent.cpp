@@ -1842,8 +1842,8 @@ void PianoRollContent::drawSidebar(juce::Graphics& g, juce::Rectangle<int> area)
     const int topDividerY = topClusterBottom + padding / 2;
     const int bottomDividerY = bottomClusterTop - padding / 2;
 
-    const float x1 = static_cast<float>(area.getX() + 5);
-    const float x2 = static_cast<float>(area.getRight() - 5);
+    const auto x1 = static_cast<float>(area.getX() + 5);
+    const auto x2 = static_cast<float>(area.getRight() - 5);
     if (bottomDividerY - topDividerY > padding) {
         g.drawHorizontalLine(topDividerY, x1, x2);
         g.drawHorizontalLine(bottomDividerY, x1, x2);

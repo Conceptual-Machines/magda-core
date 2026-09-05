@@ -543,7 +543,7 @@ void InstructionExecutor::applySetProps(int trackId, const juce::StringPairArray
         auto val = props.getValue(key, "");
         if (key == "vol" || key == "volume_db") {
             double db = val.getDoubleValue();
-            float vol = static_cast<float>(std::pow(10.0, db / 20.0));
+            auto vol = static_cast<float>(std::pow(10.0, db / 20.0));
             undo.executeCommand(std::make_unique<SetTrackVolumeCommand>(trackId, vol));
         } else if (key == "pan") {
             undo.executeCommand(std::make_unique<SetTrackPanCommand>(trackId, val.getFloatValue()));

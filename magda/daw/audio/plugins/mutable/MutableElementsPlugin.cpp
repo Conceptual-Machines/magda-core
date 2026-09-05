@@ -195,7 +195,7 @@ struct MutableElementsPlugin::Impl {
             primed_ = true;
         }
         for (int i = 0; i < n; ++i) {
-            const float t = static_cast<float>(frac_);
+            const auto t = static_cast<float>(frac_);
             outL[i] = cubic(xL_, t);
             if (outR != nullptr)
                 outR[i] = cubic(xR_, t);

@@ -339,7 +339,7 @@ void SpectrumAnalyzerUI::pollOverlayData() {
     fft_->performFrequencyOnlyForwardTransform(overlayScratch_.data());
 
     const float norm = 2.0f / static_cast<float>(fftSize_);
-    const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
     for (int i = 0; i < numBins_; ++i) {
         const float mag = overlayScratch_[static_cast<size_t>(i)] * norm;
         float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
@@ -604,7 +604,7 @@ void SpectrumAnalyzerUI::timerCallback() {
 
     const float norm = 2.0f / static_cast<float>(fftSize_);
     const double sr = telemetry_->sampleRate();
-    const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
     for (int i = 0; i < numBins_; ++i) {
         const float mag = fftData_[static_cast<size_t>(i)] * norm;
         float db = 20.0f * std::log10(std::max(mag, 1.0e-6f));
@@ -712,7 +712,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
         // and smoothing. Drawn in a neutral colour, secondary to this track.
         if (overlayValid_ && !overlaySmoothedDb_.empty()) {
             const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
-            const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+            const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
             juce::Path op;
             bool started = false;
             for (int i = 1; i < numBins_; ++i) {  // skip DC
@@ -754,7 +754,7 @@ void SpectrumAnalyzerUI::paint(juce::Graphics& g) {
     }
 
     const double sr = (telemetry_ != nullptr) ? telemetry_->sampleRate() : 44100.0;
-    const float binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
+    const auto binHz = static_cast<float>(sr / static_cast<double>(fftSize_));
 
     auto buildPath = [&](const std::vector<float>& db) {
         juce::Path p;

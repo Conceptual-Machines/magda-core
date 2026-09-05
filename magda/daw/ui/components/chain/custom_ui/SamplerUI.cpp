@@ -620,10 +620,10 @@ void SamplerUI::syncEnvGraph() {
         i.paramIndex = idx;
         return i;
     };
-    const float a = static_cast<float>(attackSlider_.getValue());
-    const float d = static_cast<float>(decaySlider_.getValue());
-    const float s = static_cast<float>(sustainSlider_.getValue());
-    const float r = static_cast<float>(releaseSlider_.getValue());
+    const auto a = static_cast<float>(attackSlider_.getValue());
+    const auto d = static_cast<float>(decaySlider_.getValue());
+    const auto s = static_cast<float>(sustainSlider_.getValue());
+    const auto r = static_cast<float>(releaseSlider_.getValue());
     envGraph_.setStage(AdsrGraph::Attack, 0, timeInfo(0.001f, 5.0f, 0, a), a);
     envGraph_.setStage(AdsrGraph::Decay, 1, timeInfo(0.001f, 5.0f, 1, d), d);
     magda::ParameterInfo si;
@@ -639,7 +639,7 @@ void SamplerUI::syncEnvGraph() {
 float SamplerUI::secondsToPixelX(double seconds, juce::Rectangle<int> waveArea) const {
     if (sampleLength_ <= 0.0)
         return static_cast<float>(waveArea.getX());
-    float x =
+    auto x =
         static_cast<float>(waveArea.getX() + (seconds - scrollOffsetSeconds_) * pixelsPerSecond_);
     // Clamp so rightmost markers remain visible within the clip region
     return juce::jmin(x, static_cast<float>(waveArea.getRight() - 1));
@@ -759,7 +759,7 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
     }
 
     if (currentDrag_ == DragTarget::Scroll) {
-        double pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
+        auto pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
         double timeDelta = pixelDelta / pixelsPerSecond_;
         double visibleDuration = static_cast<double>(waveArea.getWidth()) / pixelsPerSecond_;
         double maxScroll = juce::jmax(0.0, sampleLength_ - visibleDuration);
@@ -814,7 +814,7 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
     }
 
     if (currentDrag_ == DragTarget::LoopRegion) {
-        double pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
+        auto pixelDelta = static_cast<double>(e.getDistanceFromDragStartX());
         double timeDelta = pixelDelta / pixelsPerSecond_;
         double regionLen = loopDragStartR_ - loopDragStartL_;
 

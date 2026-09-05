@@ -148,9 +148,9 @@ struct BasicPitchTranscriber::Impl {
         Ort::RunOptions runOpts;
         auto outputs = session.Run(runOpts, inputNames, &tensor, 1, outputNames, 3);
 
-        const float* noteData = outputs[0].GetTensorData<float>();
-        const float* onsetData = outputs[1].GetTensorData<float>();
-        const float* contourData = outputs[2].GetTensorData<float>();
+        const auto* noteData = outputs[0].GetTensorData<float>();
+        const auto* onsetData = outputs[1].GetTensorData<float>();
+        const auto* contourData = outputs[2].GetTensorData<float>();
 
         note.insert(note.end(), noteData,
                     noteData + static_cast<size_t>(bp::kAnnotNFrames) * bp::kNoteFreqBins);

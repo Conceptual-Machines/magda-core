@@ -182,8 +182,8 @@ void TimelineComponent::paint(juce::Graphics& g) {
     int arrangementTop = chordHeight;  // Arrangement starts below chord row
 
     auto visibleX = getVisibleXRange(g, getWidth());
-    const float visibleLeft = static_cast<float>(visibleX.getStart());
-    const float visibleRight = static_cast<float>(visibleX.getEnd());
+    const auto visibleLeft = static_cast<float>(visibleX.getStart());
+    const auto visibleRight = static_cast<float>(visibleX.getEnd());
 
     // Draw border for the visible slice only. At deep zoom the timeline component can be
     // millions of pixels wide, and sending that full rectangle to JUCE's software renderer
@@ -197,7 +197,7 @@ void TimelineComponent::paint(juce::Graphics& g) {
     if (isXVisible(g, getWidth(), 0))
         g.drawLine(0.0f, 0.0f, 0.0f, static_cast<float>(getHeight()), 1.0f);
     if (isXVisible(g, getWidth(), getWidth() - 1)) {
-        float rightEdge = static_cast<float>(getWidth() - 1);
+        auto rightEdge = static_cast<float>(getWidth() - 1);
         g.drawLine(rightEdge, 0.0f, rightEdge, static_cast<float>(getHeight()), 1.0f);
     }
 
@@ -844,8 +844,8 @@ void TimelineComponent::drawMarkerGuides(juce::Graphics& g) {
 
     auto visibleX = getVisibleXRange(g, getWidth());
     // Span the bars ruler from the label row down to the ticks.
-    const float top = static_cast<float>(rulerTop);
-    const float bottom = static_cast<float>(rulerBottom);
+    const auto top = static_cast<float>(rulerTop);
+    const auto bottom = static_cast<float>(rulerBottom);
     const int selectedMarkerId =
         timelineListener_.get() ? timelineListener_.get()->getState().selectedMarkerId : 0;
 
@@ -1087,7 +1087,7 @@ void TimelineComponent::drawTimeMarkers(juce::Graphics& g) {
         double markerIntervalBeats = GridConstants::computeGridInterval(
             gridQuantize, pixelsPerBeat, timeSignatureNumerator, minPixelSpacing);
 
-        double barLengthBeats = static_cast<double>(timeSignatureNumerator);
+        auto barLengthBeats = static_cast<double>(timeSignatureNumerator);
 
         // Check if grid interval aligns with bar and beat boundaries
         bool alignsWithBars =
@@ -1320,7 +1320,7 @@ void TimelineComponent::drawSection(juce::Graphics& g, const ArrangementSection&
         g.setColour(section.colour.withAlpha(0.5f));
         // Draw dotted border to indicate locked state
         const float dashLengths[] = {2.0f, 2.0f};
-        float sectionTop = static_cast<float>(chordHeight);
+        auto sectionTop = static_cast<float>(chordHeight);
         auto sectionBottom = static_cast<float>(sectionArea.getBottom());
 
         if (isXVisible(g, getWidth(), startX)) {
@@ -1445,9 +1445,9 @@ void TimelineComponent::drawLoopMarkerFlags(juce::Graphics& g) {
     }
 
     const int stripTop = rulerRows().loopTop;
-    const float startX =
+    const auto startX =
         static_cast<float>(beatsToPixel(loopStartBeats) + LayoutConfig::TIMELINE_LEFT_PADDING);
-    const float endX =
+    const auto endX =
         static_cast<float>(beatsToPixel(loopEndBeats) + LayoutConfig::TIMELINE_LEFT_PADDING);
 
     LoopStripRenderer::draw(g, startX, endX, stripTop, LayoutConfig::loopStripHeight, getWidth(),
@@ -1591,13 +1591,13 @@ void TimelineComponent::drawTimeSelection(juce::Graphics& g) {
     // endpoint markers and double as the drag handles (see hitTimeSelectionEdge).
     const auto handleColour = DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY_SOFT);
     const float cy = static_cast<float>(rows.playheadTop + rows.playheadBottom) * 0.5f;
-    const float dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
+    const auto dh = static_cast<float>(rows.playheadBottom - rows.playheadTop);
     constexpr float dw = 8.0f;
     g.setColour(handleColour);
     const auto diamond = [&](int x) {
         if (!isXVisible(g, getWidth(), x))
             return;
-        const float fx = static_cast<float>(x);
+        const auto fx = static_cast<float>(x);
         juce::Path d;
         d.startNewSubPath(fx, cy - dh / 2.0f);
         d.lineTo(fx + dw / 2.0f, cy);

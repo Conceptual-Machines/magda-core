@@ -284,7 +284,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void paint(juce::Graphics& g) override {
         auto borderColour = DarkTheme::getColour(DarkTheme::BORDER);
         float left = 12.0f;
-        float right = static_cast<float>(getWidth() - 12);
+        auto right = static_cast<float>(getWidth() - 12);
 
         // Separator above registered list
         if (registeredLabel_.isVisible()) {

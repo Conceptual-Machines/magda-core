@@ -649,7 +649,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
                 t = t.dropLastCharacters(percent.length()).trim();
             if (t.isEmpty())
                 return std::nullopt;
-            float parsed = static_cast<float>(t.getDoubleValue());
+            auto parsed = static_cast<float>(t.getDoubleValue());
             if (storesPercentAsUnitFraction(info))
                 parsed *= 0.01f;
             return clamp(parsed);
@@ -698,7 +698,7 @@ std::optional<float> parseValue(const juce::String& text, const ParameterInfo& i
             t = t.dropLastCharacters(percent.length()).trim();
         if (t.isEmpty())
             return std::nullopt;
-        float parsed = static_cast<float>(t.getDoubleValue());
+        auto parsed = static_cast<float>(t.getDoubleValue());
         if (storesPercentAsUnitFraction(info))
             parsed *= 0.01f;
         return clamp(parsed);

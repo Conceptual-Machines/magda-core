@@ -258,7 +258,7 @@ void MagdaEqCompiledPlugin::processAudio(DeviceProcessContext& context) {
         if (static_cast<int>(bandStates.size()) < hostChannels)
             bandStates.resize(static_cast<size_t>(hostChannels));
 
-    const float sampleRate = static_cast<float>(currentSampleRate());
+    const auto sampleRate = static_cast<float>(currentSampleRate());
     std::array<bool, kBandCount> bandEnabled{};
     std::array<RbjCoeffs, kBandCount> coeffs{};
     for (int band = 0; band < kBandCount; ++band) {

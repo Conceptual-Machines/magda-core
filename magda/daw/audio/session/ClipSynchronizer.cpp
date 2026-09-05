@@ -142,7 +142,7 @@ bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, dou
         changed = true;
     }
 
-    const double loops = static_cast<double>(loopCount);
+    const auto loops = static_cast<double>(loopCount);
     if (std::abs(teClip.followActionNumLoops.get() - loops) > 0.0001) {
         teClip.followActionNumLoops = loops;
         changed = true;
@@ -1469,8 +1469,8 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
             continue;
         }
 
-        double v1 = static_cast<double>(ev.value);
-        double v2 = static_cast<double>(next.value);
+        auto v1 = static_cast<double>(ev.value);
+        auto v2 = static_cast<double>(next.value);
 
         // Skip dense interpolation across constant-value segments: emitting
         // dozens of identical pitch-wheel/CC events every beat is pure waste
