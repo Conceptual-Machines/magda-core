@@ -114,42 +114,8 @@ struct TrackInfo {
     TrackInfo(TrackInfo&&) = default;
     TrackInfo& operator=(TrackInfo&&) = default;
 
-    // Copy constructor - deep copies chainElements
-    TrackInfo(const TrackInfo& other)
-        : id(other.id),
-          type(other.type),
-          name(other.name),
-          colour(other.colour),
-          parentId(other.parentId),
-          childIds(other.childIds),
-          volume(other.volume),
-          pan(other.pan),
-          manualVolume(other.manualVolume),
-          manualPan(other.manualPan),
-          muted(other.muted),
-          soloed(other.soloed),
-          recordArmed(other.recordArmed),
-          inputMonitor(other.inputMonitor),
-          frozen(other.frozen),
-          playbackMode(other.playbackMode),
-          mixerChannelWidth(other.mixerChannelWidth),
-          mixerFaderTopInset(other.mixerFaderTopInset),
-          activeSessionClipId(other.activeSessionClipId),
-          midiInputDevice(other.midiInputDevice),
-          midiOutputDevice(other.midiOutputDevice),
-          audioInputDevice(other.audioInputDevice),
-          audioOutputDevice(other.audioOutputDevice),
-          sends(other.sends),
-          auxBusIndex(other.auxBusIndex),
-          multiOutLink(other.multiOutLink),
-          chain(other.chain),
-          viewSettings(other.viewSettings),
-          mods(other.mods),
-          macros(other.macros),
-          globalModsPanelOpen(other.globalModsPanelOpen),
-          globalMacrosPanelOpen(other.globalMacrosPanelOpen),
-          selectedGlobalModIndex(other.selectedGlobalModIndex),
-          selectedGlobalMacroIndex(other.selectedGlobalMacroIndex) {}
+    // Copy constructor. chain deep-copies via TrackChain's own copy constructor.
+    TrackInfo(const TrackInfo& other) = default;
 
     // Copy assignment - deep copies chainElements
     TrackInfo& operator=(const TrackInfo& other) {

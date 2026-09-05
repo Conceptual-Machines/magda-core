@@ -208,21 +208,8 @@ struct RackInfo {
     RackInfo(RackInfo&&) = default;
     RackInfo& operator=(RackInfo&&) = default;
 
-    // Copy constructor
-    RackInfo(const RackInfo& other)
-        : id(other.id),
-          name(other.name),
-          chains(other.chains),  // ChainInfo has its own deep copy
-          bypassed(other.bypassed),
-          deltaSolo(other.deltaSolo),
-          expanded(other.expanded),
-          volume(other.volume),
-          pan(other.pan),
-          modPanelOpen(other.modPanelOpen),
-          paramPanelOpen(other.paramPanelOpen),
-          macros(other.macros),
-          mods(other.mods),
-          sidechain(other.sidechain) {}
+    // Copy constructor. chains deep-copies via ChainInfo's own copy constructor.
+    RackInfo(const RackInfo& other) = default;
 
     // Copy assignment
     RackInfo& operator=(const RackInfo& other) {

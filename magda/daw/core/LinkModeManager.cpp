@@ -15,9 +15,7 @@ LinkModeManager& LinkModeManager::getInstance() {
     return instance;
 }
 
-LinkModeManager::LinkModeManager() {
-    // Start with no link mode active
-}
+LinkModeManager::LinkModeManager() = default;
 
 // ============================================================================
 // Mod Link Mode
