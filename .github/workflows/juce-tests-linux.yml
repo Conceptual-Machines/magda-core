@@ -158,10 +158,39 @@ jobs:
         # Async work can otherwise leak across shared-engine suites and only
         # manifest intermittently. Repeating the same process catches those
         # cross-test lifetime regressions before they land.
+        #
+        # The ten repetitions are independent samples, so they run
+        # concurrently: sequentially they took 16m35s of a 24-minute job.
+        # Explicit --server-num per run, because concurrent xvfb-run -a
+        # instances race for the same display number.
+        outdir=$(mktemp -d)
         for run in $(seq 1 10); do
-          echo "JUCE test run ${run}/10"
-          xvfb-run -a "$JUCE_TEST_BIN"
+          (
+            xvfb-run -a --server-num=$((90 + run)) "$JUCE_TEST_BIN" \
+              > "${outdir}/run-${run}.log" 2>&1
+            echo $? > "${outdir}/run-${run}.rc"
+          ) &
         done
+
+        while true; do
+          finished=$(ls "${outdir}"/run-*.rc 2>/dev/null | wc -l)
+          echo "${finished}/10 runs finished"
+          [ "$finished" -eq 10 ] && break
+          sleep 15
+        done
+        wait
+
+        failed=0
+        for run in $(seq 1 10); do
+          rc=$(cat "${outdir}/run-${run}.rc")
+          echo "===== JUCE test run ${run}/10 (exit ${rc}) ====="
+          cat "${outdir}/run-${run}.log"
+          [ "$rc" -ne 0 ] && failed=$((failed + 1))
+        done
+        if [ "$failed" -gt 0 ]; then
+          echo "${failed} of 10 JUCE test runs failed"
+          exit 1
+        fi
 
     - name: Show sccache statistics
       if: steps.sccache.outcome == 'success'
