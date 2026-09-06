@@ -953,7 +953,6 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setDeviceParameterValueFromPlugin(const ChainNodePath& devicePath, int paramIndex,
                                            float value);
     void setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex, float value) override;
-    bool isChordTrackMuted() const override;
 
     /**
      * @brief Get plugin latency for a device by querying the audio engine

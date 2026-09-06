@@ -1,6 +1,7 @@
 #include "AudioBridge.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
@@ -18,6 +19,8 @@
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -359,6 +362,53 @@ void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
     }
 }
 
+namespace {
+
+/**
+ * @brief Push a chord track's audition state to the Chord Engines on it (#2314).
+ *
+ * The device used to poll a `DeviceTrackContext` for this; an engine-built one
+ * has no session to poll, so the host pushes it where it already applies the
+ * mute. The audition toggle is the track's own mute, which is why this sits
+ * beside `setMute` rather than anywhere of its own.
+ *
+ * @param teTrack   the engine track whose plugins carry the devices
+ * @param trackInfo the model track it was built from; anything but a chord
+ *                  track returns immediately
+ */
+void pushChordAudition(te::AudioTrack& teTrack, const magda::TrackInfo& trackInfo) {
+    if (trackInfo.type != magda::TrackType::Chord)
+        return;
+
+    const auto push = [&trackInfo](te::Plugin* plugin) {
+        if (auto* engine = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                magda::daw::audio::MidiChordEnginePlugin>(plugin))
+            engine->setChordTrackMuted(trackInfo.muted);
+    };
+
+    // Racks too, to any depth. `deviceFromPlugin` unwraps the host's device
+    // adapter and nothing else, so a Chord Engine dropped in a rack lives in
+    // that rack type's own plugin list; and a nested rack is a rack type of its
+    // own with a RackInstance in the outer one (RackSyncManager), so one level
+    // of descent still misses it.
+    //
+    // Unguarded recursion, like chain_walk's own descent: racks nest as a tree,
+    // and a rack that contained itself would already be a cycle in the model.
+    const std::function<void(te::Plugin*)> visit = [&](te::Plugin* plugin) {
+        push(plugin);
+
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
+            if (rackInstance->type != nullptr)
+                for (auto* innerPlugin : rackInstance->type->getPlugins())
+                    visit(innerPlugin);
+    };
+
+    for (auto* plugin : teTrack.pluginList)
+        visit(plugin);
+}
+
+}  // namespace
+
 void AudioBridge::trackPropertyChanged(int trackId) {
     // Track property changed (volume, pan, mute, solo, recordArmed) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
@@ -368,6 +418,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync mute/solo to track
             track->setMute(trackInfo->muted);
             track->setSolo(trackInfo->soloed);
+            pushChordAudition(*track, *trackInfo);
 
             // Sync freeze state
             if (trackInfo->frozen != track->isFrozen(te::AudioTrack::individualFreeze)) {
@@ -459,6 +510,15 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+
+    // A Chord Engine that has just been created has never been told what the
+    // audition toggle is set to, and the toggle only pushes when it changes.
+    // Creating a chord track lands here rather than in the full sync as well:
+    // createTrack notifies before it adds the default devices, so the sync that
+    // followed had no engine to reach (#2314).
+    if (auto* teTrack = getAudioTrack(trackId))
+        if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
+            pushChordAudition(*teTrack, *trackInfo);
 
     // An added/removed external insert claims/releases its hardware ports
     // (#1623). Cheap and idempotent when no inserts changed.
@@ -966,6 +1026,7 @@ void AudioBridge::syncAll() {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
             teTrack->setSolo(track.soloed);
+            pushChordAudition(*teTrack, track);
 
             // Sync audio output routing (group/aux targets now exist from first pass)
             trackController_.setTrackAudioOutput(track.id, track.audioOutputDevice);

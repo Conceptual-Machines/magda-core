@@ -82,12 +82,6 @@ DevicePluginPtr createDrumGridPlugin(const DevicePluginCreationContext& context)
     return ta::pluginHandle(new DrumGridPlugin(ta::creationInfo(context)));
 }
 
-DevicePluginPtr createMidiChordEnginePlugin(const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    return ta::pluginHandle(
-        new MidiChordEnginePlugin(ta::creationInfo(context), services.trackContext));
-}
-
 std::unique_ptr<MagdaDevice> createOscilloscopeDevice(const DevicePluginCreationContext& context) {
     auto services = getDeviceServices(context.sessionKey);
     return std::make_unique<OscilloscopePlugin>(services.defaults.oscilloscope);
@@ -323,12 +317,12 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .browserCategory = "MIDI",
          .description = "MIDI processor for chord generation, voicing, and harmonic transforms.",
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
-         .matchesPlugin = matches<MidiChordEnginePlugin>,
+         .matchesPlugin = matchesDevice<MidiChordEnginePlugin>,
          .showInBrowser = true,
          .tags = kChordEngineTags,
          .tagCount = static_cast<int>(std::size(kChordEngineTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createMidiChordEnginePlugin});
+         .createDevice = createDevice<MidiChordEnginePlugin>});
     add(registry,
         {.pluginId = ArpeggiatorPlugin::xmlTypeName,
          .displayName = "Arpeggiator",

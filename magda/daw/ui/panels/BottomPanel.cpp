@@ -13,6 +13,7 @@
 #include "BinaryData.h"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
+#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "content/AudioClipPropertiesContent.hpp"
 #include "content/AutomationClipEditorContent.hpp"
 #include "content/ChordPanelContent.hpp"
@@ -73,12 +74,15 @@ daw::audio::MidiChordEnginePlugin* findChordEngine(TrackId trackId) {
         return nullptr;
 
     for (auto* plugin : teTrack->pluginList) {
-        if (auto* ce = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin))
+        if (auto* ce =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiChordEnginePlugin>(
+                    plugin))
             return ce;
         if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
             if (rackInstance->type != nullptr) {
                 for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* ce = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(innerPlugin))
+                    if (auto* ce = daw::audio::tracktion_adapter::deviceFromPlugin<
+                            daw::audio::MidiChordEnginePlugin>(innerPlugin))
                         return ce;
                 }
             }

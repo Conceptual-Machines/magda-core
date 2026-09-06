@@ -41,9 +41,6 @@ class SchemaTestServices final : public audio::DeviceIdAllocator, public audio::
     void ensureDeviceIdAbove(magda::DeviceId id) override {
         nextDeviceId_ = std::max(nextDeviceId_, id + 1);
     }
-    bool isChordTrackMuted() const override {
-        return false;
-    }
     void setDeviceParameterValueFromPlugin(magda::DeviceId, int, float) override {}
 
   private:

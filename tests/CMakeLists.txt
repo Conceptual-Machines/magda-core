@@ -57,6 +57,7 @@ set(TEST_SOURCES
     devices/test_internal_plugin_registry.cpp
     # Engine-neutral internal device state schema v2 (issue #1887)
     devices/test_device_state_codec.cpp
+    devices/test_chord_engine_device.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_external_insert_registry.cpp
     devices/test_external_insert_enablement.cpp
@@ -639,6 +640,7 @@ target_sources(magda_juce_tests PRIVATE
     midi/test_midi_signal_routing_juce.cpp
     devices/test_drum_grid_serialization_juce.cpp
     devices/test_sampler_relocate_juce.cpp
+    devices/test_chord_audition_push_juce.cpp
     devices/test_device_services_juce.cpp
     devices/test_insert_config_bridge_juce.cpp
     devices/test_device_param_schema_juce.cpp
