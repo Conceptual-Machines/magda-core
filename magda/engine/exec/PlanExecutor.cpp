@@ -1184,6 +1184,12 @@ void PlanExecutor::publishValueTaps() {
 
 void PlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                            juce::AudioBuffer<float>& output) {
+    // Flush-to-zero for everything this block runs (#2240). A device that feeds
+    // its own output back through a filter decays into the denormal range and
+    // stays there, where on Intel every multiply is a microcode trap; the mode
+    // is per thread, so it is set where the render is and not once at startup.
+    const juce::ScopedNoDenormals noDenormals;
+
     const auto start = beginBlock(values, requestedBlock, output);
     if (!start.render) {
         resolveParameters(values, start.block);

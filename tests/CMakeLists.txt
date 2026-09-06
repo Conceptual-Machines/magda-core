@@ -342,6 +342,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_executor.cpp)
     list(APPEND TEST_SOURCES engine/test_parallel_executor.cpp)
+    list(APPEND TEST_SOURCES engine/test_render_denormals.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_layout.cpp)
     # The note-range gate a pad chain needs (#2200).
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
