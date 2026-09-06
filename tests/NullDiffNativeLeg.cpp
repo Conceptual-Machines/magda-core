@@ -18,6 +18,7 @@
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
@@ -448,28 +449,24 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
             if (clip.trackId != track.id)
                 continue;
 
-            // The arrangement's clips, which is what an arrangement lane is.
-            // Filtered here rather than left to the compiler's own guard,
-            // because the two are answering different questions: the guard
-            // exists so that a caller who put a session clip in an arrangement
-            // lane hears about it, and this leg is the caller deciding what
-            // goes in one.
+            // Sorted into the lane it belongs to rather than left to the
+            // compiler's own guard, because the two are answering different
+            // questions: the guard exists so that a caller who put a session
+            // clip in an arrangement lane hears about it, and this leg is the
+            // caller deciding what goes in one.
             //
-            // A code-built case never had the distinction to make -- every clip
-            // in the corpus is an arrangement clip -- and a real project always
-            // does, since the session and the arrangement are two views of one
-            // project and both are saved. Without this the demo project reports
-            // sixty-four diagnostics for having a session view, and every one of
-            // them would make it unmeasurable.
+            // A session clip is a slot, positioned by scene rather than by
+            // beat, and it sounds only once something launches it (#2441). The
+            // demo project's sixty-four were dropped here until now, and were
+            // sixty-four diagnostics before that.
             //
-            // The same rule the incumbent already applies at the same point:
+            // Where the incumbent puts the same split:
             // ClipSynchronizer::syncArrangementClipToEngine refuses a session
-            // clip and the launcher schedules it instead, so an offline
-            // arrangement render plays the arrangement on both sides.
-            if (clip.view != ClipView::Arrangement)
-                continue;
-
-            lane.clips.push_back(clip);
+            // clip and syncSessionClipToSlot puts it in a te::ClipSlot.
+            if (clip.view == ClipView::Session)
+                lane.session.push_back(clip);
+            else
+                lane.clips.push_back(clip);
         }
         lanes.push_back(std::move(lane));
     }
@@ -543,8 +540,42 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     ClipVoicePool voices(files, reader, context);
     voices.setSnapshot(snapshot);
 
+    // A handle per slot the snapshot compiled, published whole, which is what
+    // RuntimeStateStore::publishHandles does for playback (#2441). Built once
+    // and never replaced, so every incarnation is left at zero: what the number
+    // exists to catch is a slot emptied and refilled between the click and the
+    // block, and a render has no in between.
+    std::map<SlotKey, std::unique_ptr<LaunchHandle>> handleStore;
+    auto handleTable = std::make_shared<LaunchHandleTable>();
+
+    for (const auto& track : snapshot->tracks)
+        for (const auto& slot : track.session) {
+            const SlotKey key{track.trackId, slot.sceneIndex};
+            auto& handle = handleStore[key];
+            handle = std::make_unique<LaunchHandle>();
+            handleTable->entries.push_back(LaunchHandleTable::Entry{
+                .key = key, .handle = handle.get(), .follow = slot.follow});
+        }
+
+    // The audio thread's binary search depends on it, and the snapshot already
+    // arrives in this order.
+    std::sort(handleTable->entries.begin(), handleTable->entries.end(),
+              [](const auto& a, const auto& b) { return a.key < b.key; });
+
+    // Whether this case has a session at all, which decides how the
+    // arrangement's sources are built below. An empty table renders the same
+    // arrangement either way (sectionHold over no entries is the whole block),
+    // so this leaves a case without one on the path it has always taken.
+    const auto hasSession = !handleTable->entries.empty();
+
+    LaunchHandleFeed handles;
+    LaunchRequestQueue requests;
+    handles.publish(handleTable);
+
     std::map<TrackId, std::unique_ptr<ClipAudioSource>> audioSources;
     std::map<TrackId, std::unique_ptr<ClipMidiSource>> midiSources;
+    std::map<TrackId, std::unique_ptr<ClipAudioSource>> sessionAudioSources;
+    std::map<TrackId, std::unique_ptr<ClipMidiSource>> sessionMidiSources;
     std::vector<std::unique_ptr<Passthrough>> passthroughs;
 
     // The devices the app's own factory built, kept alive for the render. One
@@ -571,9 +602,16 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
 
     for (const auto& op : plan.ops) {
         switch (op.kind) {
+            // A track's arrangement source reads the handles too, so that it
+            // knows the block a slot took the track off it and where in that
+            // block it happened (#2302). Only where there is a session to take
+            // it: a case with no slots is the render it always was.
             case OpKind::ClipAudio: {
                 auto source =
-                    std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed());
+                    hasSession
+                        ? std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed(),
+                                                            handles, Section::Arrangement)
+                        : std::make_unique<ClipAudioSource>(op.key.trackId, clips, voices.feed());
                 source->prepare(context);
                 bindings.clipAudio[op.key.trackId] = source.get();
                 audioSources[op.key.trackId] = std::move(source);
@@ -581,10 +619,41 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
             }
 
             case OpKind::ClipMidi: {
-                auto source = std::make_unique<ClipMidiSource>(op.key.trackId, clips);
+                auto source = hasSession ? std::make_unique<ClipMidiSource>(
+                                               op.key.trackId, clips, handles, Section::Arrangement)
+                                         : std::make_unique<ClipMidiSource>(op.key.trackId, clips);
                 source->prepare(context);
                 bindings.clipMidi[op.key.trackId] = source.get();
                 midiSources[op.key.trackId] = std::move(source);
+                break;
+            }
+
+            // The session's two, bound only for a case that has one. The plan
+            // emits these for every clip-carrying track whether or not the
+            // project has a session, and the executor reports an unbound
+            // session op only when something else bound one, so a case with no
+            // slots binds none of them and says nothing (PlanExecutor.cpp).
+            case OpKind::SessionAudio: {
+                if (!hasSession)
+                    break;
+
+                auto source = std::make_unique<ClipAudioSource>(
+                    op.key.trackId, clips, voices.feed(), handles, Section::Session);
+                source->prepare(context);
+                bindings.sessionAudio[op.key.trackId] = source.get();
+                sessionAudioSources[op.key.trackId] = std::move(source);
+                break;
+            }
+
+            case OpKind::SessionMidi: {
+                if (!hasSession)
+                    break;
+
+                auto source = std::make_unique<ClipMidiSource>(op.key.trackId, clips, handles,
+                                                               Section::Session);
+                source->prepare(context);
+                bindings.sessionMidi[op.key.trackId] = source.get();
+                sessionMidiSources[op.key.trackId] = std::move(source);
                 break;
             }
 
@@ -752,13 +821,28 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                     result.primingSamples = std::max(result.primingSamples, entry.preRollSamples);
     }
 
+    // What the case asked to launch, queued before the first block rather than
+    // driven during the render (#2441).
+    //
+    // In monotonic beats, which start at zero on the render's first block: the
+    // clock accumulates the beats it has rolled and the locate never enters
+    // them (TransportClock.cpp). A render has no pre-roll to count, which the
+    // fork's does -- the incumbent leg's launch works out its own origin.
+    if (!value.launches.empty()) {
+        LaunchRequestQueue::Gesture gesture(requests);
+        for (const auto& launch : value.launches)
+            gesture.play(SlotKey{launch.trackId, launch.sceneIndex}, launch.beat - value.startBeat);
+    }
+
     OfflineRenderRequest request;
     request.startBeat = value.startBeat;
     request.endBeat = value.endBeat;
     request.blockSize = value.blockSize;
 
     BufferSink sink(value.channels);
-    const auto rendered = renderOffline(executor, values, context, tempo, request, sink, &voices);
+    const auto rendered = renderOffline(
+        executor, values, context, tempo, request, sink, &voices,
+        OfflineLauncher{hasSession ? &handles : nullptr, hasSession ? &requests : nullptr});
 
     if (rendered.refused) {
         result.failure = "the offline render refused the plan it was given";
@@ -771,7 +855,11 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     // that every entry it provisioned has been through it.
     for (const auto& [trackId, source] : audioSources)
         result.starvedVoices += source->starvedVoices();
+    for (const auto& [trackId, source] : sessionAudioSources)
+        result.starvedVoices += source->starvedVoices();
     for (const auto& [trackId, source] : midiSources)
+        result.droppedMidiEvents += source->droppedEvents();
+    for (const auto& [trackId, source] : sessionMidiSources)
         result.droppedMidiEvents += source->droppedEvents();
 
     // Every eligible track gets an entry, including one whose tap never fired.

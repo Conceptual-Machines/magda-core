@@ -33,6 +33,29 @@ namespace magda::engine {
 /// not take a prefetch thread and a stream pool with it.
 class ClipVoicePool;
 
+/// The launcher's two halves, named for the same reason.
+class LaunchHandleFeed;
+class LaunchRequestQueue;
+
+/**
+ * @brief The launcher a render drives, for one whose session slots sound (#2441).
+ *
+ * Both or neither. A table nothing can ask of never launches anything, and a
+ * queue with no table has nothing to apply a launch to, so a render given one
+ * half would render an arrangement and say it had a session.
+ *
+ * Absent for a bounce, which is what every render was until now: the session is
+ * not what a bounce prints.
+ */
+struct OfflineLauncher {
+    LaunchHandleFeed* handles = nullptr;
+    LaunchRequestQueue* requests = nullptr;
+
+    bool present() const {
+        return handles != nullptr && requests != nullptr;
+    }
+};
+
 /** What to render, and how much of the machine to hand it. */
 struct OfflineRenderRequest {
     /// The stretch of timeline to render, in beats, half-open. Beats because
@@ -130,6 +153,11 @@ class OfflineRenderSink {
  * it. Two things provisioning one pool is a race over which readers exist,
  * which is what the pool's own threading contract already says.
  *
+ * @p launcher is what makes a session slot sound. Its handles are advanced
+ * before the plan on every block, which is where playback advances them
+ * (EngineSession.cpp) and the only place they can be: a handle must see each
+ * block exactly once and a slot's two sources both read it.
+ *
  * @p shouldContinue is asked once per block and may be empty. A render of a
  * long range is the one thing in the engine a user is left waiting for, so it
  * is interruptible from the start rather than once someone complains.
@@ -141,6 +169,7 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
                                   ClipVoicePool* voices = nullptr,
+                                  const OfflineLauncher& launcher = {},
                                   const std::function<bool()>& shouldContinue = {});
 
 }  // namespace magda::engine

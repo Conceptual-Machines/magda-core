@@ -47,6 +47,17 @@ namespace {
 /// is never going to finish does not hold the suite up.
 constexpr int kProxyTimeoutMs = 20000;
 
+/// The clip in the slot @p launch names, or null for a case that asked to
+/// launch a slot it did not fill.
+const ClipInfo* sessionClipIn(const Case& value, const LaunchInfo& launch) {
+    for (const auto& clip : value.clips)
+        if (clip.view == ClipView::Session && clip.trackId == launch.trackId &&
+            clip.sceneIndex == launch.sceneIndex)
+            return &clip;
+
+    return nullptr;
+}
+
 /// Records what reaches the instrument slot. The comparison point on this side,
 /// and it has to be the same point as on the other: what a synth receives.
 ///
@@ -1046,8 +1057,24 @@ IncumbentRender renderIncumbent(const Case& value) {
     ClipManager::getInstance().clearAllClips();
     for (const auto& clip : value.clips)
         ClipManager::getInstance().restoreClip(clip);
-    for (const auto& clip : value.clips)
-        clipSync.syncClipToEngine(clip.id);
+
+    // Each clip through the sync path its view belongs to. syncClipToEngine
+    // refuses a session clip and always has -- the launcher owns those -- so a
+    // case with a session in it reached neither engine until something asked
+    // for the other path (#2441).
+    for (const auto& clip : value.clips) {
+        if (clip.view == ClipView::Session)
+            clipSync.syncSessionClipToSlot(clip.id);
+        else
+            clipSync.syncClipToEngine(clip.id);
+    }
+
+    // Whether a track's arranger still plays underneath its launcher: the
+    // model's TrackPlaybackMode, and the fork's playSlotClips. Through the app's
+    // own single writer for that property, and after the tracks are in
+    // TrackManager, which is where it reads them from.
+    for (const auto& track : value.tracks)
+        clipSync.trackPropertyChanged(static_cast<int>(track.id));
 
     // --- wait for the proxies -----------------------------------------------
 
@@ -1072,6 +1099,55 @@ IncumbentRender renderIncumbent(const Case& value) {
         edit->tempoSequence.toTime(te::BeatPosition::fromBeats(value.startBeat)).inSeconds();
     const auto endSeconds =
         edit->tempoSequence.toTime(te::BeatPosition::fromBeats(value.endBeat)).inSeconds();
+
+    // --- the launch ----------------------------------------------------------
+    //
+    // Queued before the render, in the monotonic beats a handle names a position
+    // in (#2441). Not through ClipSynchronizer::launchSessionClip, which
+    // resolves the clip's LaunchQuantize against a transport this has none of;
+    // the beat a case declares is the resolved one.
+    //
+    // Those beats do not begin at zero here. A render rolls its playhead through
+    // pre-roll before the range and ProcessState counts a monotonic beat for
+    // every block it rolls for, so the fork is already that far along when the
+    // range's first block runs, where the engine's own count starts. Launching
+    // both at zero put the fork's run 11264 samples ahead.
+    //
+    // How much of the pre-roll counts is the fork's arithmetic
+    // (tracktion_NodeRenderContext.cpp:117, 203-217): `(rate / 2) / blockSize +
+    // 1` blocks ahead of the range, with the playhead started at the halfway
+    // one. Written out rather than measured, so the day the fork changes it
+    // these cases fail and say so.
+    if (!value.launches.empty()) {
+        const auto preRollBlocks =
+            static_cast<int>((value.sampleRate / 2.0) / value.blockSize + 1.0) / 2;
+        const auto preRollSeconds =
+            static_cast<double>(preRollBlocks) * value.blockSize / value.sampleRate;
+
+        // The beats those blocks covered. Each contributed its own edit beat
+        // range and they are adjacent, so the sum telescopes to the span.
+        const auto preRollBeats =
+            edit->tempoSequence.toBeats(te::TimePosition::fromSeconds(startSeconds)).inBeats() -
+            edit->tempoSequence
+                .toBeats(te::TimePosition::fromSeconds(startSeconds - preRollSeconds))
+                .inBeats();
+
+        for (const auto& launch : value.launches) {
+            const auto* clip = sessionClipIn(value, launch);
+            auto* teClip = clip != nullptr ? clipSync.getSessionTeClip(clip->id) : nullptr;
+            auto handle = teClip != nullptr ? teClip->getLaunchHandle() : nullptr;
+
+            if (handle == nullptr) {
+                result.failure = "no launch handle for the slot the case launches";
+                ClipManager::getInstance().clearAllClips();
+                ProjectManager::getInstance().setTempo(previousTempo);
+                return result;
+            }
+
+            handle->play(te::MonotonicBeat{
+                te::BeatPosition::fromBeats(preRollBeats + (launch.beat - value.startBeat))});
+        }
+    }
 
     juce::TemporaryFile destination(".wav");
 

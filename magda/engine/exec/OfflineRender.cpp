@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "clip/ClipVoicePool.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "transport/TransportState.hpp"
 
 namespace magda::engine {
@@ -93,7 +94,7 @@ class LatencyTrimmedSink final : public OfflineRenderSink {
 OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
-                                  ClipVoicePool* voices,
+                                  ClipVoicePool* voices, const OfflineLauncher& launcher,
                                   const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
@@ -195,6 +196,13 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                     voices->service();
                     voices->fillNow();
                 }
+
+                // Before the plan and over every handle, which is where playback
+                // puts it (EngineSession.cpp): a handle sees each block exactly
+                // once, and a slot's audio and MIDI sources both read what this
+                // decided.
+                if (launcher.present())
+                    advanceLaunchHandles(*launcher.handles, *launcher.requests, segment.block);
 
                 executor.process(values, segment.block, piece);
             }
