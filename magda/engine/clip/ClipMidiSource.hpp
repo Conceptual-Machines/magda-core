@@ -98,6 +98,14 @@ class ClipMidiSource final : public EngineMidiSource {
     /// On the audio thread. @p out arrives cleared.
     void render(const BlockInfo& block, juce::MidiBuffer& out) override;
 
+    /// True for a block where the session handed this track back to its
+    /// arrangement: a discontinuity the transport never moved for. Raised only
+    /// because this block also chases -- a device that drops what it holds gets
+    /// it re-asserted on the same buffer (#2418).
+    bool raisedAllNotesOff() const override {
+        return raisedAllNotesOff_;
+    }
+
     /**
      * @brief Events this track had to leave out of a block.
      *
@@ -227,6 +235,8 @@ class ClipMidiSource final : public EngineMidiSource {
 
     TrackId trackId_;
     ClipSnapshotFeed& clips_;
+
+    bool raisedAllNotesOff_ = false;
 
     /// The section. Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;

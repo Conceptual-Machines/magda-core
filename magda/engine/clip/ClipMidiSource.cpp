@@ -516,6 +516,7 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
 
 void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     bytesUsed_ = 0;
+    raisedAllNotesOff_ = false;
 
     // What a previous block could not fit goes out first, before anything can
     // start a note of the same pitch behind it.
@@ -614,8 +615,10 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         // ended when it lost the track and the timeline ran on underneath.
         // Resuming without a chase leaves a sustained pad silent, which is the
         // case playLane already answers for a locate.
-        if (hold.gained)
+        if (hold.gained) {
             lane.continuous = false;
+            raisedAllNotesOff_ = true;
+        }
     }
 
     // The session owns every sample. The arrangement owes note-offs on the

@@ -223,6 +223,7 @@ void PlanExecutor::reset() {
     crossfades_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
+    midiSlotPanic_.clear();
     slotChannels_.clear();
     midiByteBounds_.clear();
     portOffsets_.clear();
@@ -693,6 +694,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     }
 
     midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
+    midiSlotPanic_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
     midiByteBounds_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
     for (std::size_t i = 0; i < numOps; ++i) {
         for (std::size_t port = 0; port < plan.ops[i].outputs.size(); ++port) {
@@ -899,6 +901,14 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+bool PlanExecutor::midiInPanic(const PortRef& ref) const {
+    return ref.valid() && midiSlotPanic_[static_cast<std::size_t>(slotFor(ref))] != 0;
+}
+
+void PlanExecutor::setMidiOutPanic(OpId op, int port, bool panic) {
+    midiSlotPanic_[static_cast<std::size_t>(slotFor(PortRef{op, port}))] = panic ? 1 : 0;
 }
 
 PlanExecutor::BlockStart PlanExecutor::beginBlock(const PlanValues& values,
@@ -1236,12 +1246,15 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::SessionMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            bool panic = false;
             if (!value.silent && midiSourceForOp_[i] != nullptr) {
                 midiSourceForOp_[i]->render(block, out);
                 // Bytes, not events: one SysEx dump outweighs a thousand
                 // notes, and an event count would wave it through.
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
+                panic = midiSourceForOp_[i]->raisedAllNotesOff();
             }
+            setMidiOutPanic(id, 0, panic);
             break;
         }
 
@@ -1317,6 +1330,10 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             out.clear();
             midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
                                                                  numSamples);
+            // Undelayed. The line holds events, not the discontinuity that
+            // produced them, and a device is owed its panic on the block that
+            // caused it rather than a latency later (#2418).
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
             jassert(out.data.size() <=
                     midiByteBounds_[static_cast<std::size_t>(slotFor(PortRef{id, 0}))]);
             break;
@@ -1347,10 +1364,14 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::MergeMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            bool panic = false;
             if (!value.silent)
                 for (const auto& input : op.inputs)
-                    if (input.valid())
+                    if (input.valid()) {
                         out.addEvents(midiIn(input), 0, numSamples, 0);
+                        panic = panic || midiInPanic(input);
+                    }
+            setMidiOutPanic(id, 0, panic);
 
             // After the merge and on silent blocks too, so a tap reads what the
             // chain reads rather than what the executor felt like reporting: a
@@ -1369,6 +1390,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // transposed, or it is not and this pad never sees it.
             auto& out = midiOut(id, 0);
             out.clear();
+            setMidiOutPanic(id, 0, !value.silent && midiInPanic(op.inputs[0]));
 
             if (value.silent)
                 break;
@@ -1415,6 +1437,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (producesMidi) {
                 deviceMidiOut = &midiOut(id, 1);
                 deviceMidiOut->clear();
+                // Cleared with the buffer and beside it, so every early return
+                // below leaves the port saying the same thing the buffer does.
+                setMidiOutPanic(id, 1, false);
             }
             // A multi-out instrument's further pairs sit on the ports after
             // the main audio and any MIDI, so the count is what is left.
@@ -1470,6 +1495,20 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
+                                    // What reached the port, plus the block's
+                                    // own playhead jump, which both hosts raise
+                                    // per device rather than passing it along a
+                                    // chain.
+                                    //
+                                    // Deliberately not this track going quiet. A
+                                    // panic says the host is about to re-assert
+                                    // what should sound, and only a jump does
+                                    // (playLane chases on !continuous); mute here
+                                    // is a gain with the track still rendering, so
+                                    // nothing is withheld and nothing would come
+                                    // back (#2418).
+                                    .midiInAllNotesOff =
+                                        !block.continuous || midiInPanic(op.inputs[1]),
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
                                     .params = paramValues_.device(window.first, window.count),
@@ -1496,6 +1535,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 deviceBlock.extraOutputs = {pairs.data(), static_cast<std::size_t>(multiOutPairs)};
                 device->process(deviceBlock);
             }
+
+            // What the device left on its output, for whatever the port feeds.
+            // A device that produces MIDI and says nothing drops the panic,
+            // which is what the fork does with its fresh output buffer.
+            if (producesMidi)
+                setMidiOutPanic(id, 1, deviceBlock.midiOutAllNotesOff);
 
             // Everything downstream reads slots at full width, so each port
             // has to fill one. A mono port's channel is copied to both sides,
@@ -1549,8 +1594,10 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi) {
                 auto& outMidiBuffer = midiOut(id, 1);
                 outMidiBuffer.clear();
-                if (!value.silent && op.inputs[1].valid())
+                const bool carries = !value.silent && op.inputs[1].valid();
+                if (carries)
                     outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
+                setMidiOutPanic(id, 1, carries && midiInPanic(op.inputs[1]));
             }
             break;
         }
