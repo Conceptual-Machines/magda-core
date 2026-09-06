@@ -400,6 +400,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The lane a launch arrives on (#2305): the block it lands in, the order it
     # keeps, and that it cannot be applied twice or reach a slot that has gone.
     list(APPEND TEST_SOURCES engine/test_launch_requests.cpp)
+    list(APPEND TEST_SOURCES engine/test_launch_behaviour.cpp)
     # What a slot publishes about itself (#2303): the block's own reading,
     # rather than a UI polling the launcher a frame behind the audio.
     list(APPEND TEST_SOURCES engine/test_launch_tap.cpp)
