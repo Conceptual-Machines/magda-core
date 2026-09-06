@@ -386,17 +386,21 @@ TEST_CASE("Every project renders the same audio at 64, 512 and 4096", "[nulldiff
     // has justified is how a real difference ends up inside an expected one.
     // They are named so that neither a new failure nor a fixed one is quiet.
     //
-    // plugin.compiled.instrument is the fifth, and the only one that arrives
-    // with its mechanism. It asks the claim above of a compiled poly instrument
-    // directly rather than through a project, and the answer is no: mydsp_poly
-    // returns a released voice to the free pool inside compute(), when the peak
-    // it just mixed falls under VOICE_STOP_LEVEL (poly-dsp.h), so which voice
-    // is free is a function of how the block was cut. The case diverges by
-    // 0.6 at 64 and first differs at sample 44100, the second chord's onset,
-    // which is the first note-on that can be handed a different voice. Every
-    // compiled synth MAGDA ships is one of these. See #2436.
+    // plugin.compiled.instrument was the fifth, and the only one that arrived
+    // with its mechanism: mydsp_poly returns a released voice to the free pool
+    // inside compute() when the RMS of that one call falls under
+    // VOICE_STOP_LEVEL (poly-dsp.h), so which voice was free -- and therefore
+    // which voice the next note-on was handed, and what phase its oscillators
+    // were at -- was a function of how the block was cut. It diverged by 0.6 at
+    // 64, first at sample 44100, the second chord's onset. The device now
+    // judges that level over a fixed window of the render rather than over
+    // whatever the host asked for (#2436), and the case holds at every rung, so
+    // it is gated like the rest. Every compiled synth MAGDA ships is one of
+    // these, which is why it is worth a case of its own.
     const std::set<std::string> knownDependent{
-        "plugin.compiled.instrument", "project.demo", "project.faust", "project.fmchain",
+        "project.demo",
+        "project.faust",
+        "project.fmchain",
         "project.sidechain",
     };
 

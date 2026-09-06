@@ -181,6 +181,8 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
                                          /*group*/ false);
     poly_->init(sampleRate);
     numOutputs_ = poly_->getNumOutputs();
+    voiceLevels_.assign(static_cast<size_t>(numVoices()), {});
+    renderPosition_ = 0;
 
     PolyVoiceHarvester harvester;
     poly_->buildUserInterface(&harvester);
@@ -320,6 +322,65 @@ void MagdaCompiledPolyInstrument::releasePolyVoicesForPitch(int pitch) {
     }
 }
 
+void MagdaCompiledPolyInstrument::snapshotVoiceStates() {
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    if (impl == nullptr)
+        return;
+
+    const auto voices = std::min(voiceLevels_.size(), impl->fVoiceTable.size());
+    for (size_t i = 0; i < voices; ++i)
+        voiceLevels_[i].noteBeforeCompute = impl->fVoiceTable[i]->fCurNote;
+}
+
+void MagdaCompiledPolyInstrument::foldVoiceLevels(int samples) {
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    if (impl == nullptr)
+        return;
+
+    const auto voices = std::min(voiceLevels_.size(), impl->fVoiceTable.size());
+    for (size_t i = 0; i < voices; ++i) {
+        auto* voice = impl->fVoiceTable[i];
+        auto& level = voiceLevels_[i];
+
+        // A voice the engine did not compute left its level from whenever it
+        // last sounded, and a free one starts its next note with a clean window.
+        if (level.noteBeforeCompute == kFreeVoice) {
+            level.sumSquares = 0.0;
+            level.samples = 0;
+            continue;
+        }
+
+        // Put back what compute() freed: the level of one call is not the
+        // window's, and the window is where the decision belongs (#2436).
+        if (level.noteBeforeCompute == kReleaseVoice && voice->fCurNote == kFreeVoice)
+            voice->fCurNote = kReleaseVoice;
+
+        // mixCheckVoice returns the RMS of the call it was handed, so the
+        // window's RMS is the sample-weighted mean of the squares.
+        level.sumSquares += static_cast<double>(voice->fLevel) * voice->fLevel * samples;
+        level.samples += samples;
+    }
+}
+
+void MagdaCompiledPolyInstrument::closeVoiceLevelWindow() {
+    auto* impl = static_cast<mydsp_poly*>(poly_.get());
+    if (impl == nullptr)
+        return;
+
+    const auto voices = std::min(voiceLevels_.size(), impl->fVoiceTable.size());
+    for (size_t i = 0; i < voices; ++i) {
+        auto* voice = impl->fVoiceTable[i];
+        auto& level = voiceLevels_[i];
+
+        if (voice->fCurNote == kReleaseVoice && level.samples > 0 &&
+            std::sqrt(level.sumSquares / level.samples) < VOICE_STOP_LEVEL)
+            voice->fCurNote = kFreeVoice;
+
+        level.sumSquares = 0.0;
+        level.samples = 0;
+    }
+}
+
 bool MagdaCompiledPolyInstrument::handleMonoNoteOn(int note, int velocity, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
     const bool wasEmpty = heldNotes_.empty();
@@ -427,6 +488,9 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     ::dsp* active =
         (mode == Poly) ? static_cast<::dsp*>(poly_.get()) : static_cast<::dsp*>(monoVoice_.get());
 
+    // Only the poly engine allocates voices; the mono voice is driven by hand.
+    const bool windowedVoices = (mode == Poly && poly_ != nullptr);
+
     const bool hasOutputStage = gainSlot() >= 0;
     const float gain =
         hasOutputStage ? juce::Decibels::decibelsToGain(slotRealValue(gainSlot())) : 1.0f;
@@ -439,10 +503,23 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     auto renderSegment = [&](int segStart, int segLen) {
         int done = 0;
         while (done < segLen) {
-            const int chunk = std::min(segLen - done, maxChunk);
+            // Cut on the voice-level grid as well as the block, so a window is
+            // the same stretch of the render whatever the host's buffer is.
+            const int windowLeft = static_cast<int>(kVoiceLevelWindowSamples -
+                                                    renderPosition_ % kVoiceLevelWindowSamples);
+            const int chunk = std::min({segLen - done, maxChunk, windowLeft});
             for (int ch = 0; ch < numOutputs_; ++ch)
                 outPtrs_[static_cast<size_t>(ch)] = scratchOut_.getWritePointer(ch % scratchCh);
+
+            if (windowedVoices)
+                snapshotVoiceStates();
             active->compute(chunk, nullptr, outPtrs_.data());
+            if (windowedVoices) {
+                foldVoiceLevels(chunk);
+                if ((renderPosition_ + chunk) % kVoiceLevelWindowSamples == 0)
+                    closeVoiceLevelWindow();
+            }
+            renderPosition_ += chunk;
 
             // Gain, peak limiter and NaN panic, for a device that leaves its
             // output stage to the wrapper. A synth whose dsp trims and

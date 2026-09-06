@@ -2,6 +2,7 @@
 
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -191,6 +192,41 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // still-monitored live input that fed it), so unbalanced deliveries must
     // never strand a sounding voice.
     void releasePolyVoicesForPitch(int pitch);
+
+    /// Records what each voice was before a compute() call, so a voice the
+    /// engine frees inside the window can be put back until the window closes.
+    void snapshotVoiceStates();
+    /// Folds one compute() call's voice levels into the open window.
+    void foldVoiceLevels(int samples);
+    /// Ends the window: a released voice whose level over the whole of it is
+    /// under the engine's stop level goes back to the free pool.
+    void closeVoiceLevelWindow();
+
+    /// The stretch of the timeline a released voice's level is judged over.
+    ///
+    /// mydsp_poly frees a released voice inside compute() when the RMS of that
+    /// one call is under VOICE_STOP_LEVEL, so which voice is free -- and
+    /// therefore which voice the next note-on lands on, and what phase its
+    /// oscillators are at -- was a function of how the host cut the render up.
+    /// Judging the level over a fixed window of the timeline makes it a
+    /// function of the render instead (#2436).
+    ///
+    /// 64 samples: the shortest window a host asks for today, so no voice is
+    /// held longer than one already is at that buffer size.
+    static constexpr std::int64_t kVoiceLevelWindowSamples = 64;
+
+    /// One voice's level over the open window, and what it was before the last
+    /// compute() call.
+    struct VoiceLevel {
+        double sumSquares = 0.0;
+        int samples = 0;
+        int noteBeforeCompute = 0;
+    };
+    std::vector<VoiceLevel> voiceLevels_;
+    /// Samples rendered since prepare(), which is what the window grid counts.
+    /// Never re-anchored on a transport edge: those are found per block, and a
+    /// grid moved by one would be a grid the host's buffer size decides.
+    std::int64_t renderPosition_ = 0;
     /// Takes the held-note stack's storage, off the audio thread.
     void reserveHeldNotes();
     /// One entry per MIDI pitch, which handleMonoNoteOn() keeps it to.
