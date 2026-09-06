@@ -157,7 +157,7 @@ struct MutableRingsPlugin::Impl {
         chunkPos_ = kBlock;
         std::memset(xL_, 0, sizeof(xL_));
         std::memset(xR_, 0, sizeof(xR_));
-        strumPending_ = false;
+        pendingCount_ = 0;
         currentNote_ = 60;
     }
 
@@ -178,9 +178,13 @@ struct MutableRingsPlugin::Impl {
 
     // Each note-on retunes and fires a one-block strum; Rings rotates voices so
     // earlier notes keep ringing (polyphony). No note-off: decay is the Damping.
+    //
+    // Queued rather than applied here, because the strum is consumed once per
+    // internal block: a chord arrives as note-ons at one timestamp, and writing
+    // the note straight in left only the last of them a string (#2364).
     void noteOn(int n) {
-        currentNote_ = n;
-        strumPending_ = true;
+        if (pendingCount_ < kMaxPendingNotes)
+            pendingNotes_[static_cast<size_t>(pendingCount_++)] = n;
     }
 
     void generate(float* outL, float* outR, int n) {
@@ -212,17 +216,27 @@ struct MutableRingsPlugin::Impl {
   private:
     inline void nextSource(float& l, float& r) {
         if (chunkPos_ >= kBlock) {
+            // One queued note per block, which is the rate Rings strums at.
+            bool strum = false;
+            if (pendingCount_ > 0) {
+                currentNote_ = pendingNotes_[0];
+                for (int i = 1; i < pendingCount_; ++i)
+                    pendingNotes_[static_cast<size_t>(i - 1)] =
+                        pendingNotes_[static_cast<size_t>(i)];
+                --pendingCount_;
+                strum = true;
+            }
+
             rings::PerformanceState ps{};
             ps.internal_exciter = true;  // internal plucker; no audio input
             ps.internal_strum = false;   // we drive strum from MIDI
             ps.internal_note = false;    // we supply the note
-            ps.strum = strumPending_;
+            ps.strum = strum;
             ps.tonic = 0.0f;
             ps.fm = 0.0f;
             ps.note = static_cast<float>(currentNote_) + transpose_;
             ps.chord = chord_;
             part_.Process(ps, patch_, silence_, out_, aux_, static_cast<size_t>(kBlock));
-            strumPending_ = false;
             chunkPos_ = 0;
         }
         l = out_[chunkPos_];
@@ -245,7 +259,11 @@ struct MutableRingsPlugin::Impl {
     float xR_[4]{};
     bool primed_ = false;
 
-    bool strumPending_ = false;
+    /// Note-ons waiting for an internal block to strum them. A chord is four
+    /// voices at most, and a queue several times that outlives any host block.
+    static constexpr int kMaxPendingNotes = 16;
+    std::array<int, kMaxPendingNotes> pendingNotes_{};
+    int pendingCount_ = 0;
     int currentNote_ = 60;
     int chord_ = 0;
     float transpose_ = 0.0f;

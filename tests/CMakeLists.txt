@@ -71,6 +71,7 @@ set(TEST_SOURCES
     devices/test_known_plugin_list_duplicates.cpp
     devices/test_device_parameter_pagination.cpp
     devices/test_mutable_clouds.cpp
+    devices/test_mutable_rings_chord.cpp
     devices/test_arpeggiator_input.cpp
     devices/test_arpeggiator_transport.cpp
     devices/test_midi_strum_lifecycle.cpp
