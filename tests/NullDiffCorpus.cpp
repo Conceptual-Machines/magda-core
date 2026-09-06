@@ -15,6 +15,7 @@
 #include "core/TimeStretchModes.hpp"
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/MagdaSamplerPlugin.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 
 /**
@@ -676,6 +677,58 @@ magda::DeviceInfo samplerDevice(magda::DeviceId id, const juce::File& sampleFile
     doc.root.props.set("rootNote", 60);
     doc.root.props.set("loopEnabled", false);
     device.pluginState = magda::device_state::encode(doc);
+
+    return device;
+}
+
+/// The Poly Synth's shortest envelope stage, in the milliseconds its slots
+/// carry. Every amp stage sits here, so the note is as near a gate as the
+/// device allows and the window the case excludes stays short.
+constexpr float kPolySynthEnvelopeMs = 1.0f;
+
+/// How long the amp release takes to leave the corpus floor, which is not the
+/// stage's own length: the DSP's envelope is en.adsre, a one-pole, so the
+/// number above is where it is 60 dB down rather than where it ends. Three of
+/// them measures -209 dB, against a floor of -120.
+constexpr double kPolySynthReleaseSettlingSeconds = 3.0 * kPolySynthEnvelopeMs / 1000.0;
+
+/// The Poly Synth, which is MagdaCompiledPolyInstrument and therefore every
+/// compiled synth MAGDA ships, as a project would save it (#2352).
+///
+/// The whole slot table travels, defaults and all: a gap in an internal
+/// device's parameter indices is a diagnostic rather than a render
+/// (ParamTableCompiler::Builder). The amp envelope is flattened on top of it,
+/// and the filter's envelope amount is already zero by default, so the only
+/// thing shaping a note is its gate.
+magda::DeviceInfo polySynthDevice(magda::DeviceId id) {
+    using PolySynth = magda::daw::audio::compiled::MagdaPolySynthCompiledPlugin;
+
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Poly Synth";
+    device.pluginId = PolySynth::xmlTypeName;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.isInstrument = true;
+    device.canReceiveMidi = true;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 0;
+    device.audioOutputChannels = 2;
+
+    const PolySynth metadata;
+    for (auto index = 0; index < metadata.parameterCount(); ++index) {
+        auto info = metadata.parameterInfo(index);
+        info.currentValue = info.defaultValue;
+        device.parameters.push_back(std::move(info));
+    }
+
+    // Values travel on the model, which owns them since #2317.
+    const auto set = [&device](int index, float value) {
+        device.parameters[static_cast<size_t>(index)].currentValue = value;
+    };
+    set(PolySynth::kAmpAttackSlot, kPolySynthEnvelopeMs);
+    set(PolySynth::kAmpDecaySlot, kPolySynthEnvelopeMs);
+    set(PolySynth::kAmpSustainSlot, 1.0f);
+    set(PolySynth::kAmpReleaseSlot, kPolySynthEnvelopeMs);
 
     return device;
 }
@@ -2659,6 +2712,50 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
             // free, and two pitches at once so the pitch ratio is exercised.
             clip.midiNotes.push_back(note(60, at, 1.0, 100));
             clip.midiNotes.push_back(note(67, at, 2.5, 80));
+        }
+        value.clips.push_back(std::move(clip));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // The compiled poly instrument on both legs (#2352). Every synth MAGDA
+        // ships is one of these, and none of them had been measured against the
+        // fork before this case: the corpus's other instruments answer a
+        // note-on with an impulse, so what they pin is that a note arrived and
+        // where, not which voice took it or when it was let go.
+        auto track = plainTrack();
+        track.chain.fxChainElements.emplace_back(polySynthDevice(987));
+
+        auto value = newCase("plugin.compiled.instrument",
+                             "a compiled poly instrument's voice allocation", std::move(track));
+        value.endBeat = 8.0;
+
+        // A sustaining instrument with an envelope, so it hears the fork's
+        // note-end nudge the way the sampler does (#2271).
+        value.audioChangesAtNoteEnds = true;
+        value.noteEndReleaseSeconds = kPolySynthReleaseSettlingSeconds;
+        value.mechanism =
+            "the fork ends every note 0.0001 s early (MidiNote::getPlaybackTime) and the engine "
+            "keeps the authored length; the two legs then run the same one-pole release four "
+            "samples apart, so the three time constants it takes to leave the floor are named "
+            "per note and taken out of the residual, everything else held to bit identity";
+
+        auto clip = midiClip(344, 0.0, 8.0);
+        for (auto index = 0; index < 4; ++index) {
+            const auto at = static_cast<double>(index) * 2.0;
+            // Three voices held at once and released in an order the onsets do
+            // not give: the middle pitch goes first, the lowest last, and the
+            // lowest is still sounding when the next chord arrives, so a voice
+            // is reused rather than always free.
+            //
+            // Every length is a whole half-beat, which at 120 bpm is a whole
+            // number of samples. A note ending between two samples is rounded
+            // one way here and the other way by the fork, and the window below
+            // is derived from this end rather than found in the residual.
+            clip.midiNotes.push_back(note(48 + index, at, 2.5, 100));
+            clip.midiNotes.push_back(note(55 + index, at, 1.0, 100));
+            clip.midiNotes.push_back(note(64 + index, at, 1.5, 100));
         }
         value.clips.push_back(std::move(clip));
 
