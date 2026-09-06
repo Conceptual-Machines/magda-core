@@ -2290,3 +2290,238 @@ TEST_CASE("Synced handles agree in beats and in samples", "[engine][clip][sessio
     REQUIRE(follower.blockStatus().beforeEvent.origin.has_value());
     CHECK(*follower.blockStatus().beforeEvent.origin == *leader.blockStatus().beforeEvent.origin);
 }
+
+// =============================================================================
+// Two tracks, one in each section, at the same time (#2306)
+// =============================================================================
+
+namespace {
+
+constexpr magda::TrackId kSessionTrack = 11;
+constexpr magda::TrackId kArrangementTrack = 12;
+
+/**
+ * @brief Two tracks that render together, one launched and one not.
+ *
+ * SwitchRig above is one track handing itself between its two sections. This is
+ * the other half of the same claim: a session that has taken one track has not
+ * taken the others, and a project mid-performance is normally in both states at
+ * once. Every track carries both sources whether or not it is launched, which
+ * is what makes this worth asserting rather than assuming.
+ */
+struct PairRig {
+    PairRig() {
+        table.entries.push_back(LaunchHandleTable::Entry{.key = SlotKey{kSessionTrack, kScene},
+                                                         .handle = &sessionHandle});
+        table.entries.push_back(LaunchHandleTable::Entry{.key = SlotKey{kArrangementTrack, kScene},
+                                                         .handle = &idleHandle});
+        handles.publish(std::make_shared<const LaunchHandleTable>(table));
+
+        for (auto* source :
+             {&launchedArrangement, &launchedSession, &idleArrangement, &idleSession})
+            source->prepare(context());
+
+        for (auto* buffer :
+             {&launchedArrangementOut, &launchedSessionOut, &idleArrangementOut, &idleSessionOut}) {
+            buffer->setSize(2, kBlockSize);
+            buffer->clear();
+        }
+    }
+
+    /// A clip on @p track's timeline, sounding @p level from beat zero.
+    void giveArrangement(magda::TrackId track, magda::ClipId id, float level) {
+        auto& lane = laneFor(track);
+        lane.audio.push_back(clipOver(id, beats(0.0, 1000.0)));
+        addStream(track, lane.audio.back(), level);
+    }
+
+    /// A slot on @p track, @p lengthBeats long, sounding @p level.
+    void giveSlot(magda::TrackId track, magda::ClipId id, double lengthBeats, float level) {
+        SessionSlotPlayback slot;
+        slot.sceneIndex = kScene;
+        slot.lengthBeats = lengthBeats;
+        slot.audio.push_back(clipOver(id, beats(0.0, lengthBeats)));
+
+        auto& lane = laneFor(track);
+        lane.session.push_back(std::move(slot));
+        addStream(track, lane.session.back().audio.front(), level);
+    }
+
+    void publish() {
+        auto compiled = std::make_shared<ClipSnapshot>();
+        compiled->tracks.push_back(launched);
+        compiled->tracks.push_back(idle);
+        clips.publish(std::move(compiled));
+        streams.publish(std::make_shared<const ClipStreamTable>(streamTable));
+    }
+
+    /// One block through the launcher and all four sources, in the order the
+    /// session does it: every handle advanced before anything renders.
+    void render(int index, bool continuous = true) {
+        const auto block = blockAt(index, continuous);
+
+        fill();
+        magda::engine::advanceLaunchHandles(handles, requests, block);
+
+        // A section renders into its own buffer and the track is the sum, which
+        // is how a hand-over can be checked for a hole or a doubling.
+        launchedArrangement.render(block, juce::dsp::AudioBlock<float>(launchedArrangementOut));
+        launchedSession.render(block, juce::dsp::AudioBlock<float>(launchedSessionOut));
+        idleArrangement.render(block, juce::dsp::AudioBlock<float>(idleArrangementOut));
+        idleSession.render(block, juce::dsp::AudioBlock<float>(idleSessionOut));
+    }
+
+    /// What the launched track sounds: both of its sections together.
+    float launchedAt(int sample) const {
+        return launchedArrangementOut.getSample(0, sample) +
+               launchedSessionOut.getSample(0, sample);
+    }
+
+    /// And the track nobody launched.
+    float idleAt(int sample) const {
+        return idleArrangementOut.getSample(0, sample) + idleSessionOut.getSample(0, sample);
+    }
+
+    float launchedPeak() const {
+        return std::max(launchedArrangementOut.getMagnitude(0, kBlockSize),
+                        launchedSessionOut.getMagnitude(0, kBlockSize));
+    }
+
+    float idlePeak() const {
+        return std::max(idleArrangementOut.getMagnitude(0, kBlockSize),
+                        idleSessionOut.getMagnitude(0, kBlockSize));
+    }
+
+    void roll(int first, int last) {
+        for (auto index = first; index <= last; ++index)
+            render(index, index != first);
+    }
+
+    void fill() {
+        auto worked = true;
+        while (worked) {
+            worked = false;
+            for (const auto& entry : streamTable.entries)
+                worked = entry.stream->fill() || worked;
+        }
+    }
+
+    TrackClipPlayback& laneFor(magda::TrackId track) {
+        return track == kSessionTrack ? launched : idle;
+    }
+
+    TrackClipPlayback launched{kSessionTrack, {}, {}};
+    TrackClipPlayback idle{kArrangementTrack, {}, {}};
+
+    ClipSnapshotFeed clips;
+    ClipStreamFeed streams;
+
+    LaunchHandle sessionHandle;
+    LaunchHandle idleHandle;
+    LaunchHandleTable table;
+    LaunchHandleFeed handles;
+    magda::engine::LaunchRequestQueue requests;
+
+    // Both sections on both tracks, because that is what a session builds: a
+    // track nobody has launched still carries a session source.
+    ClipAudioSource launchedArrangement{kSessionTrack, clips, streams, handles,
+                                        Section::Arrangement};
+    ClipAudioSource launchedSession{kSessionTrack, clips, streams, handles, Section::Session};
+    ClipAudioSource idleArrangement{kArrangementTrack, clips, streams, handles,
+                                    Section::Arrangement};
+    ClipAudioSource idleSession{kArrangementTrack, clips, streams, handles, Section::Session};
+
+    ClipStreamTable streamTable;
+    juce::AudioBuffer<float> launchedArrangementOut;
+    juce::AudioBuffer<float> launchedSessionOut;
+    juce::AudioBuffer<float> idleArrangementOut;
+    juce::AudioBuffer<float> idleSessionOut;
+
+  private:
+    void addStream(magda::TrackId track, const AudioClipPlayback& clip, float level) {
+        const auto& event = clip.events.front();
+
+        auto stream = std::make_shared<PrefetchStream>(
+            magda::engine::readThrough(std::make_unique<LevelReader>(level),
+                                       magda::engine::sourceReadFor(event, kSampleRate)),
+            context(), magda::engine::PrefetchSettings{1024, 8});
+
+        streamTable.entries.push_back(
+            ClipStreamTable::Entry{track, clip.clipId, event.eventId, stream});
+    }
+};
+
+}  // namespace
+
+TEST_CASE("One track's session plays beside another track's arrangement",
+          "[engine][clip][session][section]") {
+    PairRig rig;
+    rig.giveArrangement(kSessionTrack, 1, 1.0f);
+    rig.giveSlot(kSessionTrack, 2, 4.0, 0.5f);
+    rig.giveArrangement(kArrangementTrack, 3, 0.25f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    REQUIRE(rig.launchedAt(0) == Approx(1.0f));
+    REQUIRE(rig.idleAt(0) == Approx(0.25f));
+
+    // One track is launched. The other was never asked for anything, and a
+    // launch is a fact about a track rather than about the session.
+    rig.sessionHandle.play(std::nullopt);
+    rig.render(2);
+
+    SECTION("the launched track is on its slot") {
+        CHECK(rig.launchedAt(kBlockSize - 1) == Approx(0.5f));
+    }
+
+    SECTION("the other track is still on its arrangement") {
+        CHECK(rig.idleAt(0) == Approx(0.25f));
+        CHECK(rig.idleAt(kBlockSize - 1) == Approx(0.25f));
+    }
+
+    SECTION("the two are sounding in the same block") {
+        CHECK(rig.launchedPeak() > 0.0f);
+        CHECK(rig.idlePeak() > 0.0f);
+    }
+}
+
+TEST_CASE("A track nobody launched keeps its arrangement through the whole scene",
+          "[engine][clip][session][section]") {
+    PairRig rig;
+    rig.giveSlot(kSessionTrack, 1, 1.0, 0.5f);
+    rig.giveArrangement(kArrangementTrack, 2, 0.25f);
+    rig.publish();
+
+    // The launched track loops its slot for four blocks. The other track's
+    // arrangement is the same level on every one of them: a handle advancing
+    // does not reach a track it does not belong to.
+    rig.sessionHandle.setLooping(kBeatsPerBlock);
+    rig.sessionHandle.play(std::nullopt);
+
+    for (auto index = 0; index < 4; ++index) {
+        rig.render(index, index != 0);
+
+        INFO("block " << index);
+        CHECK(rig.idleAt(0) == Approx(0.25f));
+        CHECK(rig.idleAt(kBlockSize - 1) == Approx(0.25f));
+    }
+}
+
+TEST_CASE("Handing one track back does not touch the other", "[engine][clip][session][section]") {
+    PairRig rig;
+    rig.giveArrangement(kSessionTrack, 1, 1.0f);
+    rig.giveSlot(kSessionTrack, 2, 4.0, 0.5f);
+    rig.giveArrangement(kArrangementTrack, 3, 0.25f);
+    rig.publish();
+
+    rig.sessionHandle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.launchedAt(kBlockSize - 1) == Approx(0.5f));
+
+    rig.sessionHandle.stop(std::nullopt);
+    rig.sessionHandle.releaseSection();
+    rig.render(2);
+
+    CHECK(rig.launchedAt(kBlockSize - 1) == Approx(1.0f));
+    CHECK(rig.idleAt(kBlockSize - 1) == Approx(0.25f));
+}
