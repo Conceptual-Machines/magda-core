@@ -407,10 +407,11 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     for (std::size_t i = 0; i < numTracks; ++i)
         indexById[tracks_[i].id] = i;
 
-    // The chord track is a monitor-only progression lane and never renders.
+    // The chord track is a monitor lane: it sounds while somebody is listening
+    // and never reaches a file (CompileOptions::monitorTracks, #2446).
     std::vector<bool> skipped(numTracks, false);
     for (std::size_t i = 0; i < numTracks; ++i)
-        skipped[i] = tracks_[i].type == TrackType::Chord;
+        skipped[i] = !options_.monitorTracks && tracks_[i].type == TrackType::Chord;
 
     std::vector<std::vector<std::size_t>> successors(numTracks);
     std::vector<int> indegree(numTracks, 0);
