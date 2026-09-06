@@ -1836,6 +1836,86 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     }
 
     {
+        // The same shape as rack.nested.latency with nothing nested: latency in
+        // the track chain ahead of a rack, and latency inside the rack. Present
+        // to say whether a divergence there is about nesting or about racks.
+        ChainInfo chain;
+        chain.id = 1;
+        chain.name = "Delayed";
+        chain.elements.emplace_back(hostedDevice(985, HostedRole::Latency));
+
+        std::vector<ChainInfo> chains;
+        chains.push_back(std::move(chain));
+
+        TrackInfo track;
+        track.id = kTrack;
+        track.type = TrackType::Media;
+        track.name = "Rack Latency";
+        track.audioOutputDevice = "master";
+        track.chain.fxChainElements.emplace_back(hostedDevice(986, HostedRole::Latency));
+        track.chain.fxChainElements.push_back(
+            makeRackElement(rackOf(715, "Latency", std::move(chains))));
+
+        auto value = newRackCase("rack.latency", "latency before and inside a rack, not nested",
+                                 std::move(track));
+
+        const auto source = writeSource(scratchDirectory, "racklatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(340, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        // Latency both before a nested rack and inside it, with delta solo on
+        // the inner one.
+        //
+        // A rack instance compensates its dry path against its wet path during
+        // the transform pass, but the buses the wet path runs through connect
+        // during that same pass. A nested instance can therefore be visited
+        // before the inner rack's own input return has found its send, at which
+        // point the wet latency is short by everything preceding the instance,
+        // and a compensation computed once from that number stays wrong.
+        //
+        // Delta solo is what makes it readable: the rack returns wet minus dry,
+        // which is silence while the two are aligned and a pair of
+        // opposite-polarity impulses one compensation apart when they are not.
+        ChainInfo innerChain;
+        innerChain.id = 1;
+        innerChain.name = "Delayed";
+        innerChain.elements.emplace_back(hostedDevice(983, HostedRole::Latency));
+
+        std::vector<ChainInfo> innerChains;
+        innerChains.push_back(std::move(innerChain));
+        auto inner = rackOf(713, "Inner Latency", std::move(innerChains));
+        inner.deltaSolo = true;
+
+        ChainInfo outerChain;
+        outerChain.id = 1;
+        outerChain.name = "Nesting";
+        outerChain.elements.emplace_back(hostedDevice(984, HostedRole::Latency));
+        outerChain.elements.push_back(makeRackElement(std::move(inner)));
+
+        std::vector<ChainInfo> outerChains;
+        outerChains.push_back(std::move(outerChain));
+        outerChains.push_back(gainChain(2, "Sibling", 987, 0.125f));
+
+        auto value = newRackCase("rack.nested.latency",
+                                 "latency before and inside a nested rack, delta soloed",
+                                 rackTrack(kTrack, "Nested Latency",
+                                           rackOf(714, "Outer Latency", std::move(outerChains))));
+
+        // A beat in, for the reason plugin.latency starts there: a render of a
+        // project whose plugin reports latency comes back from the incumbent
+        // with its first samples missing, and this case is about alignment.
+        const auto source = writeSource(scratchDirectory, "racknestedlatency", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClip(339, 1.0, 7.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
         // A chain routed to an aux output of the rack, which reaches nothing in
         // either engine: RackSyncManager wires it to output pins three and up
         // and the rack instance on the track reads pins one and two, so there

@@ -262,17 +262,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
         //    really are the same sound. Their envelope lock is not yet reliable
         //    on all of them, because the search window holds too few swells to
         //    be sure of, and no bound goes in until it is.
-        //  - rack.nested does not fail over a bound at all: the incumbent
-        //    renders a nested rack as if it were not there. RackInstance's own
-        //    applyToBuffer is empty and the processing lives in
-        //    RackInstanceNode, which only EditNodeBuilder substitutes; the rack
-        //    graph's own node builder wraps every plugin it holds in a plain
-        //    PluginNode, so a rack inside a rack is built, connected and then
-        //    passed straight through. The engine processes it, so the case is
-        //    the engine being right rather than a bound nobody has justified,
-        //    and it comes off this list when the fork is fixed (#2171).
         const std::set<std::string> underCalibration{
-            "rack.nested",
             "rate.48k",
             "speed.ratio",
             "fades.speedramp",
