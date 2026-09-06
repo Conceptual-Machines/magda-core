@@ -9,12 +9,8 @@ namespace magda::engine {
 
 namespace {
 
-/**
- * @brief @p source's samples at @p rate, through the curve a file at another
- *        rate is read through.
- *
- * The same buffer back when the rates already agree.
- */
+/// @p source at @p rate, through the curve io/SourceReaders.hpp reads a file
+/// at another rate through. A copy when the rates already agree.
 juce::AudioBuffer<float> atRate(const juce::AudioBuffer<float>& source, double sourceRate,
                                 double rate) {
     if (sourceRate <= 0.0 || rate <= 0.0 || std::abs(sourceRate - rate) < 1e-9) {
@@ -62,8 +58,7 @@ std::unique_ptr<InsertCapturePlayback> InsertCapturePlayback::create(const Inser
     if (!capture.window().covers(window))
         return nullptr;
 
-    // A render reads every channel of its slot, so a capture of fewer is a
-    // channel of silence nobody asked for.
+    // A render reads every channel of its slot.
     if (capture.numChannels() < context.numChannels)
         return nullptr;
 
@@ -97,8 +92,7 @@ InsertCapturePlayback::InsertCapturePlayback(juce::AudioBuffer<float> audio,
 
 void InsertCapturePlayback::receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
                                     juce::MidiBuffer& midi) {
-    // Filled completely or cleared completely, like an audio source's: what the
-    // seam promises is a block with no holes in it.
+    // Filled or cleared completely, as the seam promises.
     audio.clear();
 
     if (!block.playing)
@@ -134,8 +128,8 @@ void InsertCapturePlayback::receive(const BlockInfo& block, juce::dsp::AudioBloc
         if (offset >= block.numSamples)
             break;
 
-        // Rebuilt at the length it was sent at, since that is what says whether
-        // the second byte is data or the next message.
+        // At the length it was sent at: that is what says whether the second
+        // byte is data or the next message.
         const auto message =
             event->numBytes >= 3
                 ? juce::MidiMessage(event->status, event->data1, event->data2)

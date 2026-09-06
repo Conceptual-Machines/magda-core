@@ -55,9 +55,8 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
                                    juce::MidiBuffer& midi) {
     live_.receive(block, audio, midi);
 
-    // A stopped block covers no timeline, so there is nowhere in the window to
-    // put what it returned. The graph still ran and the hardware still spoke;
-    // what it said belongs to no instant.
+    // A stopped block covers no timeline, so what it returned belongs at no
+    // position in the window.
     if (!block.playing || covered_.empty())
         return;
 
@@ -65,8 +64,7 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
     const auto blockStart =
         std::llround((block.seconds.start - window_.startSeconds) * sampleRate_);
 
-    // The part of the block the window holds, which is all of it for every
-    // block of a pass that stays inside the range.
+    // The part of the block the window holds.
     const auto from = std::max<std::int64_t>(blockStart, 0);
     const auto to = std::min<std::int64_t>(blockStart + block.numSamples, windowSamples);
     if (to <= from)
@@ -85,9 +83,8 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
     markCovered(from, to);
 
     for (const auto metadata : midi) {
-        // Three bytes and no more, which is the whole of what a hardware return
-        // speaks in. A longer message is dropped, and a capture that dropped one
-        // is not complete.
+        // Three bytes and no more. A dropped message makes the capture
+        // incomplete rather than silently thinner.
         if (metadata.numBytes < 1 || metadata.numBytes > 3) {
             midiOverflowed_.store(true, std::memory_order_relaxed);
             continue;
@@ -143,8 +140,8 @@ InsertCapture InsertCaptureSession::take() const {
     contents.complete = !covered_.empty() && missingSamples() == 0 &&
                         !midiOverflowed_.load(std::memory_order_relaxed);
 
-    // Sorted, because a pass that looped wrote later blocks over earlier
-    // positions and a reader walks this forwards.
+    // A pass that looped wrote later blocks at earlier positions; readers walk
+    // this forwards.
     std::sort(contents.midi.begin(), contents.midi.end(),
               [](const CapturedMidiEvent& first, const CapturedMidiEvent& second) {
                   return first.sample < second.sample;

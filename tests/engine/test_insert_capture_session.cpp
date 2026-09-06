@@ -159,8 +159,8 @@ juce::AudioBuffer<float> replay(InsertCapturePlayback& playback, int blockSize, 
     for (auto at = 0; at < totalSamples; at += blockSize) {
         const auto count = std::min(blockSize, totalSamples - at);
 
-        // Dirtied on purpose: the seam says a block comes back filled or
-        // cleared, never partly whatever was there.
+        // Dirtied on purpose: a block comes back filled or cleared, never part
+        // of each.
         buffer.clear();
         for (auto channel = 0; channel < kChannels; ++channel)
             for (auto sample = 0; sample < blockSize; ++sample)
@@ -189,8 +189,7 @@ TEST_CASE("A pass writes what the hardware returned", "[engine][insert][2279]") 
     HardwareStub hardware;
     const auto capture = captureOfWholePass(hardware);
 
-    // The pass ran through the hardware, block for block: a capture session in
-    // the way must not change what the pass sounded like.
+    // Block for block: a session in the way must not change the pass.
     CHECK(hardware.sentBlocks == kWindowSamples / kBlock);
     CHECK(hardware.receivedBlocks == kWindowSamples / kBlock);
 
@@ -198,8 +197,7 @@ TEST_CASE("A pass writes what the hardware returned", "[engine][insert][2279]") 
     REQUIRE(capture.lengthInSamples() == kWindowSamples);
     CHECK(capture.sampleRate() == kRate);
 
-    // The round trip is kept in seconds, so it survives being read at another
-    // rate. At the pass's own rate it is the number the hardware reported.
+    // Kept in seconds, so it survives another rate.
     CHECK(capture.roundTripSeconds() == Catch::Approx(kLatency / kRate));
 
     for (auto channel = 0; channel < kChannels; ++channel)
@@ -214,8 +212,7 @@ TEST_CASE("A pass that seeked over the window leaves a capture nothing can use",
     HardwareStub hardware;
     InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, kChannels);
 
-    // Blocks 4 and 5 never happen, which is what a pass that seeked looks like
-    // from here.
+    // Blocks 4 and 5 never happen, which is what a seek looks like from here.
     runPass(session, {0, 1, 2, 3, 6, 7});
 
     CHECK(session.missingSamples() == 2 * kBlock);
@@ -223,8 +220,7 @@ TEST_CASE("A pass that seeked over the window leaves a capture nothing can use",
     const auto capture = session.take();
     CHECK_FALSE(capture.complete());
 
-    // And that is the end of it: there is no playback to bind, so no render can
-    // write the hole into a file.
+    // And nothing to bind, so no render writes the hole into a file.
     CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate)) ==
           nullptr);
 }
@@ -236,8 +232,7 @@ TEST_CASE("A pass over the same window twice covers it once", "[engine][insert][
     runPass(session, everyBlock(kWindowSamples / kBlock));
     REQUIRE(session.missingSamples() == 0);
 
-    // A pass that looped writes positions it already wrote. What is counted is
-    // the window covered, not the blocks that went by.
+    // What is counted is the window covered, not the blocks that went by.
     runPass(session, {0, 1, 2});
     CHECK(session.missingSamples() == 0);
     CHECK(session.take().complete());
@@ -251,9 +246,7 @@ TEST_CASE("A playback returns the capture where the pass received it", "[engine]
         InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
     REQUIRE(playback != nullptr);
 
-    // The same round trip the live pass had. The capture holds what came back
-    // at the moment it came back, so the compensation that lined the pass up
-    // lines the bounce up with it.
+    // The live pass's round trip, so the same compensation lines both up.
     CHECK(playback->latencySamples() == kLatency);
 
     const auto replayed = replay(*playback, 256, kRate, kWindowSamples);
@@ -288,21 +281,19 @@ TEST_CASE("A capture taken at another rate is resampled, not refused", "[engine]
     HardwareStub hardware;
     const auto capture = captureOfWholePass(hardware);
 
-    // What the incumbent does at the end of its pass: an export at another rate
-    // must not need a second trip through the hardware.
+    // As InsertRenderCaptureService does: another rate must not need a second
+    // trip through the hardware.
     auto playback =
         InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(2.0 * kRate));
     REQUIRE(playback != nullptr);
 
-    // The round trip is the same duration, which at twice the rate is twice the
-    // samples.
+    // The same duration, which at twice the rate is twice the samples.
     CHECK(playback->latencySamples() == 2 * kLatency);
 
     const auto replayed = replay(*playback, 256, 2.0 * kRate, 2 * kWindowSamples);
 
-    // The tone the hardware sent, at the instants the render asks about. A
-    // margin, because this is interpolated: what is under test is that the
-    // signal survived, not that a curve reproduced it exactly.
+    // A margin because this is interpolated: the claim is that the signal
+    // survived, not that a curve reproduced it.
     for (auto at = 8; at < 2 * kWindowSamples - 8; at += 37) {
         const auto seconds = at / (2.0 * kRate);
         INFO("sample " << at);
@@ -335,8 +326,7 @@ TEST_CASE("A capture narrower than the render is refused", "[engine][insert][227
     const auto capture = session.take();
     REQUIRE(capture.complete());
 
-    // A stereo render reads both channels, and a capture of one has nothing to
-    // put in the second.
+    // A stereo render reads both channels.
     CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate, 2)) ==
           nullptr);
     CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate, 1)) !=
@@ -398,9 +388,9 @@ TEST_CASE("A block the transport is not moving through returns silence", "[engin
     juce::MidiBuffer midi;
     juce::dsp::AudioBlock<float> audio(buffer);
 
-    // A bounce's tail runs the graph with the transport stopped. Nothing left
-    // the machine during those blocks, so nothing comes back: the outboard's
-    // own decay is in the capture only as far as the window went.
+    // A bounce's tail runs the graph stopped. Nothing left the machine, so
+    // nothing comes back: the outboard's decay is captured only as far as the
+    // window went.
     playback->receive(blockAt(0, kBlock, kRate, false), audio, midi);
 
     for (auto channel = 0; channel < kChannels; ++channel)

@@ -9,36 +9,21 @@
 
 /**
  * @file InsertCapture.hpp
- * @brief What the hardware said, kept so a bounce can play it back (#2279).
+ * @brief What the hardware said during a live pass, kept for a bounce (#2279).
  *
- * A render pulls an hour of timeline in a minute and no outboard answers at
- * that speed, so a bounce plays back a recording of a live pass instead. This
- * is the recording: the audio and MIDI that came back, the rate it was taken
- * at, the window it covers, and the round trip measured with it.
- *
- * Immutable once taken. A capture that could still be written to is one every
- * reader has to defend against, and the only question anyone asks of it -- can
- * this serve that render? -- is answered once, by InsertCapturePlayback.
+ * Immutable once taken. Whether it can serve a render is asked once, by
+ * InsertCapturePlayback.
  */
 
 namespace magda::engine {
 
-/**
- * @brief The stretch of timeline a capture covers, in seconds.
- *
- * Seconds rather than samples because a capture is written at whatever rate the
- * device was open at and read at whatever rate the export asked for, and a
- * position counted in samples means a different instant on each side.
- */
+/// The stretch a capture covers. Seconds, since it is written at the device's
+/// rate and read at the export's.
 struct CaptureWindow {
     double startSeconds = 0.0;
     double endSeconds = 0.0;
 
-    /**
-     * @brief Below any sample at any rate a device runs at.
-     *
-     * So it absorbs the rounding in the seconds arithmetic and nothing else.
-     */
+    /// Below a sample at any rate: this absorbs double rounding, nothing else.
     static constexpr double kEpsilonSeconds = 1e-9;
 
     double lengthSeconds() const {
@@ -53,22 +38,12 @@ struct CaptureWindow {
     bool operator==(const CaptureWindow&) const = default;
 };
 
-/**
- * @brief One short message, at one sample from the window's start.
- *
- * Three data bytes and no more, the bound the clip events already carry
- * (clip/MidiEventList.hpp): what a capture costs stays counted in events rather
- * than in bytes, and the write path can size its room up front.
- */
+/// One short message, at a sample from the window's start. Three data bytes and
+/// no more, as clip/MidiEventList.hpp.
 struct CapturedMidiEvent {
     std::int64_t sample = 0;
 
-    /**
-     * @brief One, two or three.
-     *
-     * A hardware return speaks clock and program change as well as notes, and a
-     * message replayed a byte longer than it was sent is a different message.
-     */
+    /// A program change replayed three bytes long is a different message.
     std::uint8_t numBytes = 0;
 
     std::uint8_t status = 0;
@@ -78,27 +53,18 @@ struct CapturedMidiEvent {
 
 class InsertCapture {
   public:
-    /// Everything a capture is, moved in once. InsertCaptureSession fills it.
+    /// Filled by InsertCaptureSession and moved in once.
     struct Contents {
         juce::AudioBuffer<float> audio;
         std::vector<CapturedMidiEvent> midi;
         CaptureWindow window;
         double sampleRate = 0.0;
 
-        /**
-         * @brief The live insert's round trip, in seconds.
-         *
-         * Seconds so that reading the capture at another rate keeps the delay
-         * the pass actually had.
-         */
+        /// Seconds, so reading at another rate keeps the delay the pass had.
         double roundTripSeconds = 0.0;
 
-        /**
-         * @brief Every sample of the window was written and no event dropped.
-         *
-         * A pass that seeked over part of the window leaves this false, and
-         * nothing can be built on it.
-         */
+        /// Every sample written and no event dropped. False after a pass that
+        /// seeked over the window, and nothing can be built on it.
         bool complete = false;
     };
 
