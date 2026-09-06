@@ -125,7 +125,10 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 void applyMidiOnlyDeviceHeaderVisibility(const DeviceSlotTraits& traits,
                                          const magda::DeviceInfo& device,
                                          juce::Component* modButton, juce::Component* macroButton) {
-    if (device.deviceType != magda::DeviceType::MIDI)
+    // The Chord Engine by name as well as by type: it stopped being a
+    // DeviceType::MIDI device when it was declared for what it is (#2427), and
+    // what it has to modulate did not change -- nothing.
+    if (device.deviceType != magda::DeviceType::MIDI && !traits.isChordEngine)
         return;
 
     setVisibleIfPresent(modButton, false);

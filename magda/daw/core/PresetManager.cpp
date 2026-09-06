@@ -270,6 +270,12 @@ bool PresetManager::loadChainPreset(const juce::String& presetName,
         outChainElements.push_back(std::move(element));
     }
     legacy_devices::migrateRetiredDevicesInChain(outChainElements);
+
+    // A preset saved before #2427 carries the Chord Engine declared as a MIDI
+    // producer, and a preset loader does not go through the project's staging
+    // pass, so inserting one would put the old declaration back into a project
+    // that had already been migrated.
+    legacy_devices::normalizeChordEngineRoleInChain(outChainElements);
     device_param_migrations::migrateChainPreset(outChainElements);
     namespace hydration = daw::audio::device_state_hydration;
     hydration::hydrateChainElements(outChainElements,
@@ -363,6 +369,7 @@ bool PresetManager::loadRackPreset(const juce::String& presetName, RackInfo& out
         return false;
     }
     legacy_devices::migrateRetiredDevicesInRack(outRack);
+    legacy_devices::normalizeChordEngineRoleInRack(outRack);
     device_param_migrations::migrateRackPreset(outRack);
     namespace hydration = daw::audio::device_state_hydration;
     hydration::hydrateRack(outRack, hydration::provenanceFromMagdaVersion(savedVersion));

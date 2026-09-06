@@ -821,6 +821,65 @@ void migrateRetiredDevicesInProject(std::vector<TrackInfo>& tracks, TrackInfo* m
     });
 }
 
+bool normalizeChordEngineRole(DeviceInfo& device) {
+    if (!device.pluginId.equalsIgnoreCase("midichordengine"))
+        return false;
+
+    auto changed = false;
+
+    if (device.deviceType != DeviceType::Analysis) {
+        device.deviceType = DeviceType::Analysis;
+        changed = true;
+    }
+
+    // Set alongside the type rather than left to it: Analysis does not imply a
+    // MIDI input the way MIDI did, and the device has one.
+    if (!device.canReceiveMidi) {
+        device.canReceiveMidi = true;
+        changed = true;
+    }
+
+    return changed;
+}
+
+bool normalizeChordEngineRoleInChain(std::vector<ChainElement>& elements) {
+    auto changed = false;
+
+    // Pads and nested racks included: the device shows in the browser, so it
+    // can be dropped anywhere a device goes.
+    chain_walk::forEachDevice(elements, {}, chain_walk::Pads::Enter,
+                              [&changed](DeviceInfo& device, const ChainNodePath&) {
+                                  changed = normalizeChordEngineRole(device) || changed;
+                                  return true;
+                              });
+
+    return changed;
+}
+
+bool normalizeChordEngineRoleInRack(RackInfo& rack) {
+    auto changed = false;
+    for (auto& chain : rack.chains)
+        changed = normalizeChordEngineRoleInChain(chain.elements) || changed;
+    return changed;
+}
+
+bool normalizeChordEngineRoleInProject(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+    auto changed = false;
+
+    const auto fix = [&changed](TrackInfo& track) {
+        changed = normalizeChordEngineRoleInChain(track.chain.fxChainElements) || changed;
+        for (auto& postFx : track.chain.postFxChainElements)
+            changed = normalizeChordEngineRole(postFx.device) || changed;
+    };
+
+    for (auto& track : tracks)
+        fix(track);
+    if (masterTrack != nullptr)
+        fix(*masterTrack);
+
+    return changed;
+}
+
 void migrateRetiredDevicesInChain(std::vector<ChainElement>& elements) {
     migrateFragment(elements);
 }

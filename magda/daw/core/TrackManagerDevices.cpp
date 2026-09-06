@@ -13,6 +13,7 @@
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
+#include "LegacyDeviceAliases.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
@@ -2091,6 +2092,12 @@ DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& dev
     stampDefaultKitIfMissing(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
+
+    // The browser hands over a type derived from where the device is filed, and
+    // the Chord Engine is filed under MIDI. Corrected here, on the one path
+    // every insertion goes through, rather than at each of the six places that
+    // read a browser category (#2427).
+    legacy_devices::normalizeChordEngineRole(newDevice);
     return newDevice;
 }
 

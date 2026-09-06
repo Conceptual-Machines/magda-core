@@ -225,3 +225,11 @@ TEST_CASE("Device packs can contribute parameter aliases", "[internal-plugin-reg
     REQUIRE(registry.getParameterAliases().size() == 1);
     REQUIRE(registry.getParameterAliases().front().paramIndex == 2);
 }
+
+TEST_CASE("The Chord Engine is not a MIDI generator", "[devices][registry]") {
+    // It reads the chain's MIDI and writes none (#2427). The tag is what
+    // TrackManager reads to keep generators off the master track, and what the
+    // slot traits read; being tagged one gave it both by mistake.
+    CHECK_FALSE(magda::daw::audio::isInternalMidiGeneratorPlugin("midichordengine"));
+    CHECK(magda::daw::audio::internalPluginHasTag("midichordengine", "chord-engine"));
+}

@@ -117,3 +117,26 @@ TEST_CASE("MIDI controls are capability-based for non-instrument devices",
     REQUIRE(magda::hasMidiOutput(nonInstrumentMidiGenerator));
     REQUIRE_FALSE(magda::supportsMidiSourceToggle(nonInstrumentMidiGenerator));
 }
+
+TEST_CASE("A MIDI listener reads the chain and gets no thru toggle", "[plugin_capabilities]") {
+    // The Chord Engine as it is declared since #2427: it reads the chain's MIDI
+    // to detect chords and writes none.
+    magda::DeviceInfo listener;
+    listener.pluginId = "midichordengine";
+    listener.isInstrument = false;
+    listener.deviceType = magda::DeviceType::Analysis;
+    listener.canReceiveMidi = true;
+
+    const auto caps = magda::midiCapabilitiesForDevice(listener);
+
+    REQUIRE(caps.hasMidiInput);
+    REQUIRE(magda::hasMidiInput(listener));
+
+    // The half that was wrong. A MIDI output it never writes to gave it a thru
+    // toggle that does nothing, and a plan compiled for a chord track would
+    // merge that output back over the input and double every note.
+    REQUIRE_FALSE(caps.hasMidiOutput);
+    REQUIRE_FALSE(magda::hasMidiOutput(listener));
+    REQUIRE_FALSE(caps.supportsMidiInputThruToggle);
+    REQUIRE_FALSE(magda::supportsMidiInputThruToggle(listener));
+}

@@ -190,7 +190,8 @@ constexpr const char* kFaustInstrumentAliases[] = {"faustinstrument"};
 constexpr const char* kTracktionTags[] = {"tracktion-engine"};
 constexpr const char* kExternalInsertTags[] = {"tracktion-engine", "external-insert"};
 constexpr const char* kDrumGridTags[] = {"drum-grid"};
-constexpr const char* kChordEngineTags[] = {"chord-engine", "midi-generator"};
+// Not midi-generator: it reads the chain's MIDI and writes none (#2427).
+constexpr const char* kChordEngineTags[] = {"chord-engine"};
 constexpr const char* kArpeggiatorTags[] = {"arpeggiator", "midi-generator"};
 constexpr const char* kStrumTags[] = {"strum"};
 constexpr const char* kStepSequencerTags[] = {"step-sequencer", "midi-generator"};
