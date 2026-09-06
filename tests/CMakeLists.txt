@@ -418,6 +418,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_pcm_quantiser.cpp)
     list(APPEND TEST_SOURCES engine/test_audio_file_sink.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
+    # What an armed or monitoring track hears (#2459): the callback's own
+    # samples, its own piece of a split callback, and nothing between callbacks.
+    list(APPEND TEST_SOURCES engine/test_live_input.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
