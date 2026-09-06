@@ -10,6 +10,7 @@
 #include "core/TrackInfo.hpp"
 #include "exec/OfflineRender.hpp"
 #include "exec/PlanValues.hpp"
+#include "io/AudioFileSink.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
@@ -219,7 +220,7 @@ struct Harness {
     }
 
     magda::engine::OfflineRenderResult render(const OfflineRenderRequest& request,
-                                              CollectingSink& sink,
+                                              OfflineRenderSink& sink,
                                               const std::function<bool()>& shouldContinue = {}) {
         return magda::engine::renderOffline(executor, values, context, tempo, request, sink,
                                             nullptr, {}, shouldContinue);
@@ -603,4 +604,57 @@ TEST_CASE("An empty range renders nothing through a plan that reports latency",
     CHECK(result.samplesRendered == 0);
     CHECK(sink.blocks == 0);
     CHECK(latent.blocksProcessed == 0);
+}
+
+TEST_CASE("A render reaches a file as the range it asked for", "[engine][offline][2447]") {
+    // The two halves of a bounce meeting: a plan that is behind the timeline,
+    // and the sink that writes what comes out of it. What lands on disk is the
+    // range from its first sample, so nothing here renders a pre-roll and
+    // nothing reads the file back to cut one off.
+    std::vector<float> reference;
+    {
+        Harness harness;
+        REQUIRE(harness.prepare(512).empty());
+
+        CollectingSink sink;
+        REQUIRE_FALSE(harness.render({0.0, 4.0, 0.0, 512}, sink).refused);
+        reference = sink.samples;
+    }
+
+    Harness harness(true);
+    LatentDevice latent(333);
+    bindLatentDevice(harness, latent);
+    REQUIRE(harness.executor.prepare(harness.plan, harness.bindings, harness.context).empty());
+
+    auto file = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                    .getChildFile("magda_offline_render_test");
+    file.createDirectory();
+    file = file.getChildFile("range.wav");
+    file.deleteFile();
+
+    // Float, so the file is the render rather than the render on a grid: what
+    // is under test here is where the samples start, not what they round to.
+    auto sink = magda::engine::AudioFileSink::create(
+        file, {.format = magda::engine::AudioFileFormat::wav, .bitDepth = 32}, harness.context);
+    REQUIRE(sink != nullptr);
+
+    const auto result = harness.render({0.0, 4.0, 0.0, 512}, *sink);
+    CHECK_FALSE(result.refused);
+    CHECK(sink->samplesWritten() == result.samplesRendered);
+    REQUIRE(sink->close());
+
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::unique_ptr<juce::AudioFormatReader> reader(formats.createReaderFor(file));
+    REQUIRE(reader != nullptr);
+    REQUIRE(reader->lengthInSamples == static_cast<juce::int64>(reference.size()));
+
+    juce::AudioBuffer<float> stored(static_cast<int>(reader->numChannels),
+                                    static_cast<int>(reader->lengthInSamples));
+    reader->read(&stored, 0, stored.getNumSamples(), 0, true, true);
+
+    for (std::size_t sample = 0; sample < reference.size(); ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(stored.getSample(0, static_cast<int>(sample)) == approx(reference[sample]));
+    }
 }
