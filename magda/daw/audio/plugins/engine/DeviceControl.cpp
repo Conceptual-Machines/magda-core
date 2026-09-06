@@ -36,6 +36,9 @@ CaptureOutcome CaptureOutcome::failed(juce::String reason) {
 
 const magda::ExternalPluginSnapshot& CaptureOutcome::snapshot() const {
     jassert(ok());
+    // The jassert above is this accessor's contract; it compiles out in
+    // release, where a caller that skipped ok() has already broken it.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return *snapshot_;
 }
 

@@ -16,6 +16,11 @@ double LaunchHandle::virtualStart(const SyncRange& piece) const {
     // Derived from monotonic elapsed, which is the one quantity that survives
     // the wrap. It may sit before the block or before zero, and that is what it
     // means: the run began that far back.
+    //
+    // Both callers only reach here while playState_ == playing, which run_
+    // always agrees with (beginRun/joinRun set both together; endRun clears
+    // both).
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return piece.timeline.start - (piece.monotonic.start - run_->originBeat);
 }
 
@@ -24,6 +29,9 @@ double LaunchHandle::elapsedSecondsAt(const SyncRange& piece) const {
     // accumulation of per-block seconds. Between rate changes: a count that
     // spans one counts samples that were not all worth the same amount of time,
     // which is what followRate is for.
+    //
+    // Same invariant as virtualStart: only called while playState_ == playing.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     return (piece.monotonicSamples.start - run_->origin).seconds(run_->sampleRate);
 }
 
@@ -182,6 +190,8 @@ void LaunchHandle::releaseSection() {
     // sources' backs is a step nobody can ramp. The stop and the hand-back are
     // one request, so a launch arriving before the next block replaces both.
     stop(std::nullopt);
+    // stop() just above unconditionally assigns pending_ a value.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     pending_->releasesSection = true;
 }
 
@@ -263,6 +273,8 @@ void LaunchHandle::applyEvent(const SyncRange& range, bool fromPending, const Bl
         return;
     }
 
+    // fromPending is only ever true when advanceOver's own pending_ check passed.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
     const auto pending = *pending_;
     pending_.reset();
 

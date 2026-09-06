@@ -179,6 +179,9 @@ void AudioFileSink::write(const juce::AudioBuffer<float>& block, int numSamples)
         for (auto channel = 0; channel < numChannels_; ++channel)
             scratch_.copyFrom(channel, 0, block, channel, 0, numSamples);
 
+        // This else branch of `if (!quantiser_)` only runs when quantiser_ has
+        // a value; the resizeCodes() call above doesn't touch it.
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         quantiser_->processToCodes(scratch_, numSamples, codeChannels_.data());
 
         // The integer path, which is the only one allowed after the quantiser:

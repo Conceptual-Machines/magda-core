@@ -1092,6 +1092,9 @@ struct RemoteMcpServer::Impl {
 
         const auto& reply = waiter->reply;
         if (reply.failed()) {
+            // failed() is error.has_value(); the analyzer doesn't see through
+            // the accessor.
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
             writeJson(response, reply.error->httpStatus, jsonRpcError(id, *reply.error));
             return;
         }

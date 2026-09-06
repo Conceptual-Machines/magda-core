@@ -378,6 +378,9 @@ Response RemoteApiService::execute(const OperationDescriptor& operation, const j
     }
 
     if (result.failed())
+        // failed() is error.has_value(); the analyzer doesn't see through the
+        // accessor.
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access)
         return Response::failure(*result.error, revision);
 
     // Only a committed write moves the revision. A read, a write that failed

@@ -184,6 +184,9 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
             for (const auto& choice : *entry.choices)
                 choicesElem->createNewChildElement("Choice")->setAttribute("label", choice);
         }
+        // NOLINTBEGIN(bugprone-unchecked-optional-access) - guarded by the
+        // entry.valueTable check on the very next line; the analyzer loses
+        // track of it across the nested loop below.
         if (entry.valueTable && !entry.valueTable->empty()) {
             juce::String tableStr;
             for (size_t j = 0; j < entry.valueTable->size(); ++j) {
@@ -193,6 +196,7 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
             }
             paramElem->setAttribute("valueTable", tableStr);
         }
+        // NOLINTEND(bugprone-unchecked-optional-access)
     }
 
     if (config.aiPrompt.isNotEmpty())
