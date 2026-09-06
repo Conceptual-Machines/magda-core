@@ -386,7 +386,15 @@ TrackId TrackManager::createTrack(const juce::String& name, TrackType type) {
         engine.uniqueId = "midichordengine";
         engine.fileOrIdentifier = "midichordengine";
         engine.isInstrument = false;
-        engine.deviceType = DeviceType::MIDI;
+
+        // A transparent tap that reads the chain's MIDI and writes none
+        // (#2427). Not DeviceType::MIDI, which is the role of a device that
+        // produces MIDI: DeviceInfo::emitsMidi() reads the type, so declaring
+        // it that way gave the engine a MIDI output it never writes to, a thru
+        // toggle that does nothing, and a merge behind it that would double
+        // every note the moment a chord track compiles.
+        engine.deviceType = DeviceType::Analysis;
+        engine.canReceiveMidi = true;
         engine.format = PluginFormat::Internal;
         addDeviceToTrack(trackId, engine);
 

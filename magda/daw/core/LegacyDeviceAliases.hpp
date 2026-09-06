@@ -143,6 +143,24 @@ void migrateRetiredDevicesInProject(std::vector<TrackInfo>& tracks, TrackInfo* m
 void migrateRetiredDevicesInChain(std::vector<ChainElement>& elements);
 void migrateRetiredDevicesInRack(RackInfo& rack);
 
+/**
+ * @brief Bring the Chord Engine's declared role up to date (#2427).
+ *
+ * It was created as a `DeviceType::MIDI` device, which is the role of a device
+ * that produces MIDI: `DeviceInfo::emitsMidi()` reads the type, so the model
+ * gave it a MIDI output it never writes to and a thru toggle that does
+ * nothing, and a plan compiled for a chord track would put a merge behind it
+ * and double every note. It reads the chain's MIDI and writes none, which is
+ * `DeviceType::Analysis` plus `canReceiveMidi`.
+ *
+ * A migration rather than a fix at the creation site alone, because
+ * `deviceType` is saved per device: every project with a chord track in it
+ * carries the old declaration.
+ *
+ * @return whether anything was changed.
+ */
+bool migrateChordEngineRole(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack);
+
 }  // namespace legacy_devices
 
 }  // namespace magda

@@ -517,3 +517,69 @@ TEST_CASE("Migrating the IR Reverb keeps the links and lanes that addressed it",
     CHECK(lanes.size() == 1);
     CHECK(clips.size() == 1);
 }
+
+// =============================================================================
+// The Chord Engine's declared role (#2427)
+// =============================================================================
+
+namespace {
+
+DeviceInfo savedChordEngine() {
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "Chord Engine";
+    device.pluginId = "midichordengine";
+    device.uniqueId = "midichordengine";
+    device.format = PluginFormat::Internal;
+
+    // What every project with a chord track in it carries: the role of a device
+    // that produces MIDI, on one that produces none.
+    device.deviceType = DeviceType::MIDI;
+    device.canReceiveMidi = false;
+    return device;
+}
+
+TrackInfo trackCarrying(DeviceInfo device) {
+    TrackInfo track;
+    track.id = 1;
+    track.type = TrackType::Chord;
+    track.chain.fxChainElements.emplace_back(std::move(device));
+    return track;
+}
+
+DeviceInfo& deviceOf(TrackInfo& track) {
+    return std::get<DeviceInfo>(track.chain.fxChainElements.front());
+}
+
+}  // namespace
+
+TEST_CASE("A saved Chord Engine is declared for what it is", "[devices][legacy][aliases]") {
+    std::vector<TrackInfo> tracks{trackCarrying(savedChordEngine())};
+
+    REQUIRE(legacy_devices::migrateChordEngineRole(tracks, nullptr));
+
+    auto& device = deviceOf(tracks.front());
+
+    // Reads the chain's MIDI, writes none. Both halves matter: the type alone
+    // would take its MIDI input away with its output.
+    CHECK(device.consumesMidi());
+    CHECK_FALSE(device.emitsMidi());
+    CHECK(device.deviceType == DeviceType::Analysis);
+
+    // Idempotent, so a project loaded twice is migrated once.
+    CHECK_FALSE(legacy_devices::migrateChordEngineRole(tracks, nullptr));
+}
+
+TEST_CASE("The Chord Engine migration leaves other devices alone", "[devices][legacy][aliases]") {
+    auto other = savedChordEngine();
+    other.pluginId = "arpeggiator";
+    other.uniqueId = "arpeggiator";
+
+    std::vector<TrackInfo> tracks{trackCarrying(other)};
+
+    CHECK_FALSE(legacy_devices::migrateChordEngineRole(tracks, nullptr));
+
+    // An arpeggiator does produce MIDI, and the declaration that says so is the
+    // one this migration must not touch.
+    CHECK(deviceOf(tracks.front()).emitsMidi());
+}

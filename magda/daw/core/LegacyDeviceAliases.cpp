@@ -821,6 +821,40 @@ void migrateRetiredDevicesInProject(std::vector<TrackInfo>& tracks, TrackInfo* m
     });
 }
 
+bool migrateChordEngineRole(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+    auto changed = false;
+
+    // Every chain rather than the chord track's own: the device shows in the
+    // browser, so it can be dropped anywhere, racks included.
+    const auto fix = [&changed](TrackInfo& track) {
+        const auto visit = [&changed](DeviceInfo& device, const ChainNodePath&) {
+            if (!device.pluginId.equalsIgnoreCase("midichordengine"))
+                return true;
+
+            if (device.deviceType != DeviceType::Analysis) {
+                device.deviceType = DeviceType::Analysis;
+                changed = true;
+            }
+            if (!device.canReceiveMidi) {
+                device.canReceiveMidi = true;
+                changed = true;
+            }
+            return true;
+        };
+
+        chain_walk::forEachDevice(track.chain.fxChainElements, {}, chain_walk::Pads::Enter, visit);
+        for (auto& postFx : track.chain.postFxChainElements)
+            visit(postFx.device, {});
+    };
+
+    for (auto& track : tracks)
+        fix(track);
+    if (masterTrack != nullptr)
+        fix(*masterTrack);
+
+    return changed;
+}
+
 void migrateRetiredDevicesInChain(std::vector<ChainElement>& elements) {
     migrateFragment(elements);
 }

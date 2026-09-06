@@ -174,7 +174,8 @@ bool prepareDeviceSlotContentFrame(juce::Rectangle<int>& contentArea,
         // wet-dry mix. Note-strip utilities keep the strip for their MIDI
         // activity display (gain + mix hidden inside layoutMeterStrip); any other
         // MIDI device drops the strip entirely so the body uses the full width.
-        const bool isMidiDevice = device.deviceType == magda::DeviceType::MIDI;
+        const bool isMidiDevice =
+            device.deviceType == magda::DeviceType::MIDI || traits.isChordEngine;
         const int effectiveMeterWidth =
             (isMidiDevice && !isMidiUtility(traits)) ? 0 : meterStripWidth;
         layoutMeterStrip(contentArea, traits, controls, effectiveMeterWidth);
