@@ -19,6 +19,7 @@
 #include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/audio/racks/InstrumentRackManager.hpp"
 #include "magda/daw/audio/sequencer/StepClock.hpp"
+#include "magda/daw/core/ChainRoutingModel.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/StepPatternCommands.hpp"
@@ -55,6 +56,17 @@ bool hasMidiOutputConnection(te::RackType& rackType) {
     return false;
 }
 
+/// The MIDI policy the wrapper wires from, as PluginManagerSync computes it.
+magda::routing::ChainRoutingNode instrumentRouting(bool producesMidi, bool midiInThru = false) {
+    magda::DeviceInfo device;
+    device.id = 1;
+    device.isInstrument = true;
+    device.deviceType = magda::DeviceType::Instrument;
+    device.producesMidi = producesMidi;
+    device.midiInThru = midiInThru;
+    return magda::routing::makeRoutingNode(device);
+}
+
 class ScopedDeviceServicesRegistration {
   public:
     ScopedDeviceServicesRegistration(te::Edit& edit, magda::daw::audio::DeviceServices services)
@@ -80,6 +92,8 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testInstrumentRackPassesMidiThrough(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testInstrumentWrapperWiresPluginMidiOnlyForAMidiEmittingDevice(); });
         magda::test::runWithCleanJuceState(
             [this] { testStepSequencerLoadsAProjectSavedWithMidiThru(); });
         magda::test::runWithCleanJuceState([this] { testStepSequencerStepRecordingStopsAtEnd(); });
@@ -141,7 +155,7 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
         ScopedDeviceServicesRegistration servicesRegistration(*edit, deviceServices);
 
         magda::InstrumentRackManager rackManager(*edit);
-        auto rackPlugin = rackManager.wrapInstrument(instrument);
+        auto rackPlugin = rackManager.wrapInstrument(instrument, instrumentRouting(false));
         expect(rackPlugin != nullptr, "Instrument must be wrapped");
 
         auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
@@ -167,25 +181,31 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
 
         expect(hasConnection(rackType, rackIO, 0, synthId, 0),
                "Rack MIDI input must feed the instrument");
-        expect(hasConnection(rackType, synthId, 0, rackIO, 0),
-               "Instrument's own MIDI output must always reach the rack output so a "
-               "wrapped sequencer/arp triggers downstream instruments");
+        expect(!hasConnection(rackType, synthId, 0, rackIO, 0),
+               "A plain instrument declares no MIDI output, so its pin 0 must not reach the "
+               "rack output - TE hands it the rack's own input and it would double every "
+               "note against the raw passthrough (#2346)");
         expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
-               "Raw MIDI in thru is on by default (preserves historic passthrough)");
+               "A plain instrument forwards the raw MIDI input to the rack output");
 
-        // Toggling MIDI in thru adds/removes only the raw-input passthrough.
+        // Both MIDI paths are re-derived live from the routing model.
         rackManager.recordWrapping(magda::ChainNodePath::topLevelDevice(0, 1), rackInstance->type,
                                    instrument, rackPlugin);
-        rackManager.setMidiInThru(1, true);
+        rackManager.updateMidiRouting(1, instrumentRouting(true, /*midiInThru*/ true));
         expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
                "Enabling MIDI in thru wires the raw-input passthrough");
         expect(hasConnection(rackType, synthId, 0, rackIO, 0),
-               "Plugin MIDI output stays wired when in-thru is enabled");
-        rackManager.setMidiInThru(1, false);
+               "A MIDI-emitting device's plugin output is wired alongside the passthrough");
+        rackManager.updateMidiRouting(1, instrumentRouting(true, /*midiInThru*/ false));
         expect(!hasConnection(rackType, rackIO, 0, rackIO, 0),
                "Disabling MIDI in thru removes the raw-input passthrough");
         expect(hasConnection(rackType, synthId, 0, rackIO, 0),
                "Plugin MIDI output stays wired when in-thru is disabled");
+        rackManager.updateMidiRouting(1, instrumentRouting(false));
+        expect(hasConnection(rackType, rackIO, 0, rackIO, 0),
+               "A plain instrument always forwards the raw input");
+        expect(!hasConnection(rackType, synthId, 0, rackIO, 0),
+               "A device that stops declaring a MIDI output has its pin 0 unwired again");
 
         expect(hasConnection(rackType, rackIO, 1, rackIO, 1),
                "Rack must preserve left audio passthrough");
@@ -255,6 +275,81 @@ class MidiSignalRoutingTest final : public juce::UnitTest {
                                   "Unbound meter tap should pass audio through unchanged");
         expectWithinAbsoluteError(buffer.getSample(1, 0), -0.25f, 0.0001f,
                                   "Unbound meter tap should pass audio through unchanged");
+    }
+
+    void testInstrumentWrapperWiresPluginMidiOnlyForAMidiEmittingDevice() {
+        beginTest("Instrument wrapper wires plugin MIDI out only for a MIDI-emitting device");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto edit = te::test_utilities::createTestEdit(*wrapper.getEngine(), 1);
+        expect(edit != nullptr, "Test edit must be created");
+        if (!edit)
+            return;
+
+        magda::DeviceMeteringManager metering;
+        magda::daw::audio::DeviceServices deviceServices;
+        deviceServices.meteringContext = &metering;
+        ScopedDeviceServicesRegistration servicesRegistration(*edit, deviceServices);
+
+        magda::InstrumentRackManager rackManager(*edit);
+        const auto rackIO = te::EditItemID();
+
+        struct Case {
+            const char* name;
+            magda::routing::ChainRoutingNode routing;
+            int numOutputChannels;
+            bool expectPluginMidi;
+            bool expectRawThru;
+        };
+
+        magda::DeviceInfo sidechained;
+        sidechained.id = 2;
+        sidechained.isInstrument = true;
+        sidechained.deviceType = magda::DeviceType::Instrument;
+        sidechained.producesMidi = true;
+        sidechained.sidechain.type = magda::SidechainConfig::Type::MIDI;
+        sidechained.sidechain.sourceTrackId = 7;
+
+        const Case cases[] = {
+            {"MIDI-emitting instrument", instrumentRouting(true), 2, true, false},
+            {"MIDI-emitting instrument with in-thru", instrumentRouting(true, true), 2, true, true},
+            {"plain instrument", instrumentRouting(false), 2, false, true},
+            {"multi-out MIDI-emitting instrument", instrumentRouting(true), 4, true, false},
+            {"multi-out plain instrument", instrumentRouting(false), 4, false, true},
+            // Fed from another track, so nothing of its MIDI belongs in this chain.
+            {"MIDI-sidechained instrument", magda::routing::makeRoutingNode(sidechained), 2, false,
+             false},
+        };
+
+        for (const auto& testCase : cases) {
+            auto instrument =
+                createCustomPlugin(*edit, magda::daw::audio::MagdaSamplerPlugin::xmlTypeName);
+            expect(instrument != nullptr, "Sampler plugin must be created");
+            if (!instrument)
+                continue;
+
+            const auto synthId = instrument->itemID;
+            auto rackPlugin = testCase.numOutputChannels > 2
+                                  ? rackManager.wrapMultiOutInstrument(
+                                        instrument, testCase.numOutputChannels, testCase.routing)
+                                  : rackManager.wrapInstrument(instrument, testCase.routing);
+
+            auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
+            expect(rackInstance != nullptr && rackInstance->type != nullptr,
+                   juce::String(testCase.name) + ": instrument must be wrapped");
+            if (rackInstance == nullptr || rackInstance->type == nullptr)
+                continue;
+
+            auto& rackType = *rackInstance->type;
+            expect(hasConnection(rackType, rackIO, 0, synthId, 0),
+                   juce::String(testCase.name) + ": rack MIDI input must feed the instrument");
+            expect(hasConnection(rackType, synthId, 0, rackIO, 0) == testCase.expectPluginMidi,
+                   juce::String(testCase.name) + ": plugin MIDI output to the rack output must " +
+                       (testCase.expectPluginMidi ? "be wired" : "be absent (#2346)"));
+            expect(hasConnection(rackType, rackIO, 0, rackIO, 0) == testCase.expectRawThru,
+                   juce::String(testCase.name) + ": raw MIDI passthrough must " +
+                       (testCase.expectRawThru ? "be wired" : "be absent"));
+        }
     }
 
     /// The MagdaDevice inside a host wrapper plugin (#2299).

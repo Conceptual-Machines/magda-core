@@ -6,6 +6,7 @@
 #include <map>
 
 #include "../../core/ChainNodePath.hpp"
+#include "../../core/ChainRoutingModel.hpp"
 
 namespace magda {
 
@@ -19,15 +20,13 @@ namespace te = tracktion;
  * that passes audio through and sums it with the synth output, so both audio clips
  * and synth output are audible on the same track.
  *
- * Rack wiring:
+ * Rack wiring (the MIDI pins follow ChainRoutingModel's policy for the device):
  *   MIDI in:           rack I/O pin 0 --> synth pin 0
- *   Plugin MIDI out:   synth pin 0 --> rack out pin 0 (always; lets a wrapped
- *                      sequencer/arp trigger downstream instruments)
- *   MIDI in thru:      rack I/O pin 0 --> rack out pin 0 (when passRawMidiInput;
+ *   Plugin MIDI out:   synth pin 0 --> rack out pin 0 (when outputsPluginMidi();
+ *                      lets a wrapped sequencer/arp trigger downstream instruments)
+ *   MIDI in thru:      rack I/O pin 0 --> rack out pin 0 (when passesRawMidiInput();
  *                      keeps the incoming MIDI flowing to every downstream device
- *                      so MIDI-triggered modulations fire anywhere in the chain.
- *                      Derived from ChainRoutingModel: always true for a plain
- *                      instrument, midiInThru-controlled for a MIDI-output device.)
+ *                      so MIDI-triggered modulations fire anywhere in the chain)
  *   Audio passthrough: rack I/O pin 1 --> rack out pin 1, pin 2 --> rack out pin 2
  *   Synth output:      synth pin 1/2 --> meter tap pin 1/2 --> rack out pin 1/2
  *   (Multiple connections to same output pin are summed by TE automatically)
@@ -39,22 +38,23 @@ class InstrumentRackManager {
     /**
      * @brief Wrap an instrument plugin in a RackType with audio passthrough
      * @param instrument The instrument plugin to wrap
-     * @param passRawMidiInput Keep the raw MIDI input flowing to the rack output
-     *                   (so devices after the instrument still see the notes).
-     *                   Compute from routing::makeRoutingNode(device).passesRawMidiInput().
+     * @param routing The device's MIDI policy, from routing::makeRoutingNode(device).
+     *                It decides which of the two MIDI paths to the rack output are
+     *                wired (see the class comment).
      * @return The RackInstance plugin to insert on the track (or nullptr on failure)
      */
-    te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument, bool passRawMidiInput = true);
+    te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument,
+                                   const routing::ChainRoutingNode& routing);
 
     /**
      * @brief Wrap a multi-output instrument in a RackType with all output pins exposed
      * @param instrument The instrument plugin to wrap
      * @param numOutputChannels Total number of output channels (e.g. 32 for 16 stereo pairs)
-     * @param passRawMidiInput See wrapInstrument().
+     * @param routing See wrapInstrument().
      * @return The main RackInstance plugin (outputs 1,2) to insert on the track
      */
     te::Plugin::Ptr wrapMultiOutInstrument(te::Plugin::Ptr instrument, int numOutputChannels,
-                                           bool passRawMidiInput = true);
+                                           const routing::ChainRoutingNode& routing);
 
     /**
      * @brief Create a RackInstance for a specific output pair from a multi-out instrument
@@ -116,13 +116,14 @@ class InstrumentRackManager {
     te::RackType::Ptr getRackType(DeviceId deviceId) const;
 
     /**
-     * @brief Toggle the "MIDI in thru" passthrough on a wrapped instrument live
+     * @brief Rewire a wrapped instrument's two MIDI paths to the rack output live
      * @param deviceId The MAGDA device ID
-     * @param enabled  When true, raw MIDI input is passed past the plugin to the
-     *                 rack output; when false it is not. The plugin's own MIDI
-     *                 output to the rack output is always wired and unaffected.
+     * @param routing The device's current MIDI policy, from
+     *                routing::makeRoutingNode(device). Both the raw-input
+     *                passthrough and the plugin's own MIDI output follow it, so a
+     *                midiInThru or sidechain change lands without re-wrapping.
      */
-    void setMidiInThru(DeviceId deviceId, bool enabled);
+    void updateMidiRouting(DeviceId deviceId, const routing::ChainRoutingNode& routing);
 
     /**
      * @brief Check if a TE plugin on a track is one of our wrapper racks
