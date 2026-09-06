@@ -645,14 +645,17 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     };
 
     // Where the step is actually played: swing on odd steps, then quantize
-    // pulling that toward a regular grid. Both are monotonic in the step
-    // index, so the walk below can key on this instead of the raw grid and a
+    // pulling that toward a regular grid. Neither can carry a step past its
+    // neighbour, so the walk below keys on this instead of the raw grid and a
     // step warped past the block end stays pending rather than being consumed
     // unplayed (#2362).
     auto warpedStepBeat = [&](int step) -> double {
         double beat = computeStepBeat(step);
+        // Half the gap to the next step, not half the nominal rate: Time Bend
+        // can compress two steps onto one beat, and a fixed offset would then
+        // swing the odd one past the even one that follows it.
         if (step % 2 == 1 && swingVal > 0.0f)
-            beat += static_cast<double>(swingVal) * stepBeats * 0.5;
+            beat += static_cast<double>(swingVal) * (computeStepBeat(step + 1) - beat) * 0.5;
 
         if (quantizeAmount > 0.0f && quantizeSubVal > 0) {
             double gridSpacing = cycleBeats / static_cast<double>(quantizeSubVal);

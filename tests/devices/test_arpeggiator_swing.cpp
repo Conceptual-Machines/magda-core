@@ -15,6 +15,10 @@ juce::MidiMessage on(int note) {
     return juce::MidiMessage::noteOn(1, note, juce::uint8{91});
 }
 
+using Input = std::initializer_list<juce::MidiMessage>;
+const Input kNothing{};
+const Input kChord{on(60), on(64), on(67), on(72)};
+
 /// Note-ons over @p blocks of contiguous playback, the first carrying @p input.
 int countNoteOns(Rig& rig, int blocks, std::initializer_list<juce::MidiMessage> input) {
     int noteOns = 0;
@@ -53,4 +57,31 @@ TEST_CASE("Arpeggiator plays a step quantize pulls back into an earlier block",
     // the 1/16 steps do not sit on it: step 1 snaps back to 0.234375 and step 2
     // forward to 0.515625, each across a block boundary. Over 0.683 beats.
     CHECK(countNoteOns(rig, 32, {on(60), on(64), on(67)}) == 3);
+}
+
+TEST_CASE("Arpeggiator keeps a swung step inside the gap Time Bend leaves it",
+          "[arpeggiator][midi][swing]") {
+    Rig rig;
+    rig.setRate(Arp::Rate::Sixteenth);
+    // Depth -1 with a hard angle pins the first half of the cycle onto its
+    // start, so steps sit on top of each other and there is no room for swing
+    // to move the odd ones into.
+    rig.arp.setParameterValue(Arp::kRamp, -1.0f);
+    rig.arp.setParameterValue(Arp::kSwing, 1.0f);
+    rig.arp.hardAngle.store(true);
+
+    double lastPlayed = -1.0;
+    for (int block = 0; block < 100; ++block) {
+        const double blockStart = block * kBlockSeconds;
+        auto midi = rig.run(blockStart, block == 0 ? kChord : kNothing, true, false, kBlockSeconds);
+        for (int i = 0; i < midi.size(); ++i) {
+            const double stamp = midi.message(i).getTimeStamp();
+            REQUIRE(stamp >= 0.0);
+            REQUIRE(stamp < kBlockSeconds);
+            if (midi.message(i).isNoteOn()) {
+                CHECK(blockStart + stamp >= lastPlayed);
+                lastPlayed = blockStart + stamp;
+            }
+        }
+    }
 }
