@@ -34,13 +34,17 @@ class InsertCapturePlayback final : public EngineInsert {
                                                          const CaptureWindow& window,
                                                          const RenderContext& context);
 
-    /// The round trip the live pass had, at the render's rate. The capture holds
-    /// what came back when it came back, so the same compensation lines both up.
+    /**
+     * @brief The round trip the live pass had, at the render's rate.
+     *
+     * The capture holds what came back when it came back, so the same
+     * compensation lines both up.
+     */
     int latencySamples() const override {
         return latencySamples_;
     }
 
-    /// Nothing leaves the machine during a bounce.
+    /** @brief Nothing leaves the machine during a bounce. */
     void send(const BlockInfo&, juce::dsp::AudioBlock<const float>,
               const juce::MidiBuffer&) override {}
 

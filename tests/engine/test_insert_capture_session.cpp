@@ -60,7 +60,7 @@ float valueFor(std::int64_t sample, int channel) {
     return static_cast<float>(std::sin(phase) * (channel == 0 ? 1.0 : 0.5));
 }
 
-/// One message the stub hands back, at an absolute sample of the pass.
+/** @brief One message the stub hands back, at an absolute sample of the pass. */
 struct StubMessage {
     std::int64_t sample = 0;
     juce::MidiMessage message;
@@ -110,7 +110,7 @@ class HardwareStub final : public EngineInsert {
     int receivedBlocks = 0;
 };
 
-/// Run @p blocks of a pass through @p session, starting at sample zero.
+/** @brief Run @p blockIndices of a pass through @p session, from sample zero. */
 void runPass(InsertCaptureSession& session, const std::vector<int>& blockIndices,
              int blockSize = kBlock) {
     juce::AudioBuffer<float> buffer(kChannels, blockSize);
@@ -136,7 +136,7 @@ std::vector<int> everyBlock(int count) {
     return indices;
 }
 
-/// A whole pass, taken.
+/** @brief A whole pass, taken. */
 InsertCapture captureOfWholePass(HardwareStub& hardware) {
     InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, kChannels);
     runPass(session, everyBlock(kWindowSamples / kBlock));
@@ -147,7 +147,7 @@ RenderContext contextAt(double rate, int channels = kChannels) {
     return RenderContext{rate, 512, channels};
 }
 
-/// Everything @p playback returns over the window, in blocks of @p blockSize.
+/** @brief Everything @p playback returns, in blocks of @p blockSize. */
 juce::AudioBuffer<float> replay(InsertCapturePlayback& playback, int blockSize, double rate,
                                 int totalSamples, juce::MidiBuffer* collected = nullptr) {
     juce::AudioBuffer<float> whole(kChannels, totalSamples);

@@ -17,8 +17,11 @@
 
 namespace magda::engine {
 
-/// The stretch a capture covers. Seconds, since it is written at the device's
-/// rate and read at the export's.
+/**
+ * @brief The stretch a capture covers.
+ *
+ * Seconds, since it is written at the device's rate and read at the export's.
+ */
 struct CaptureWindow {
     double startSeconds = 0.0;
     double endSeconds = 0.0;
@@ -38,8 +41,11 @@ struct CaptureWindow {
     bool operator==(const CaptureWindow&) const = default;
 };
 
-/// One short message, at a sample from the window's start. Three data bytes and
-/// no more, as clip/MidiEventList.hpp.
+/**
+ * @brief One short message, at a sample from the window's start.
+ *
+ * Three data bytes and no more, as clip/MidiEventList.hpp.
+ */
 struct CapturedMidiEvent {
     std::int64_t sample = 0;
 
@@ -53,7 +59,7 @@ struct CapturedMidiEvent {
 
 class InsertCapture {
   public:
-    /// Filled by InsertCaptureSession and moved in once.
+    /** @brief Filled by InsertCaptureSession and moved in once. */
     struct Contents {
         juce::AudioBuffer<float> audio;
         std::vector<CapturedMidiEvent> midi;

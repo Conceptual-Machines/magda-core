@@ -33,8 +33,12 @@ class InsertCaptureSession final : public EngineInsert {
     InsertCaptureSession(EngineInsert& live, const CaptureWindow& window, double sampleRate,
                          int numChannels, int midiCapacity = 0);
 
-    /// Room for a window's MIDI, in events. A DIN return cannot deliver more:
-    /// 31250 baud at ten bits a byte is about 1041 three-byte messages a second.
+    /**
+     * @brief Room for a window's MIDI, in events.
+     *
+     * A DIN return cannot deliver more: 31250 baud at ten bits a byte is about
+     * 1041 three-byte messages a second.
+     */
     static int defaultMidiCapacity(const CaptureWindow& window);
 
     void prepare(const RenderContext& context) override;
@@ -45,15 +49,19 @@ class InsertCaptureSession final : public EngineInsert {
     void receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
                  juce::MidiBuffer& midi) override;
 
-    /// What the pass wrote. Off the audio thread, after the pass.
+    /** @brief What the pass wrote. Off the audio thread, after the pass. */
     InsertCapture take() const;
 
-    /// Samples of the window nothing has written yet. A counter rather than a
-    /// scan, so reading it from another thread costs the pass nothing.
+    /**
+     * @brief Samples of the window nothing has written yet.
+     *
+     * A counter rather than a scan, so reading it from another thread costs the
+     * pass nothing.
+     */
     std::int64_t missingSamples() const;
 
   private:
-    /// Mark [@p from, @p to) written, counting only what was not already.
+    /** @brief Mark [@p from, @p to) written, counting only what was not already. */
     void markCovered(std::int64_t from, std::int64_t to);
 
     EngineInsert& live_;
