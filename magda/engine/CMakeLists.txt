@@ -122,6 +122,11 @@ add_library(magda_engine STATIC
     transport/ClickGenerator.hpp
     analysis/TransientDetector.cpp
     analysis/TransientDetector.hpp
+    insert/InsertCaptureSession.cpp
+    insert/InsertCapturePlayback.cpp
+    insert/InsertCapture.hpp
+    insert/InsertCaptureSession.hpp
+    insert/InsertCapturePlayback.hpp
     io/AudioFileReader.cpp
     io/AudioFileSink.cpp
     io/AudioFileSink.hpp
@@ -201,7 +206,7 @@ endforeach()
 
 set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
     "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/"
-    "launch/")
+    "launch/" "insert/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"

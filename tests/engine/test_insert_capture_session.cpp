@@ -1,0 +1,404 @@
+#include <juce_dsp/juce_dsp.h>
+
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <cmath>
+#include <numbers>
+#include <vector>
+
+#include "insert/InsertCapturePlayback.hpp"
+#include "insert/InsertCaptureSession.hpp"
+
+/**
+ * @file test_insert_capture_session.cpp
+ * @brief A pass, a capture and a bounce that plays it back (#2279).
+ *
+ * The claim: what a render gets out of a capture is what the hardware said
+ * during the pass, at the same position and with the same round trip, and a
+ * capture that cannot say that does not become a playback at all.
+ */
+
+using magda::engine::BlockInfo;
+using magda::engine::CaptureWindow;
+using magda::engine::EngineInsert;
+using magda::engine::InsertCapture;
+using magda::engine::InsertCapturePlayback;
+using magda::engine::InsertCaptureSession;
+using magda::engine::RenderContext;
+
+namespace {
+
+constexpr double kRate = 48000.0;
+constexpr int kChannels = 2;
+constexpr int kBlock = 128;
+constexpr int kWindowSamples = 1024;
+constexpr int kLatency = 64;
+
+CaptureWindow windowOf(int samples, double rate = kRate) {
+    return {0.0, samples / rate};
+}
+
+BlockInfo blockAt(std::int64_t startSample, int numSamples, double rate = kRate,
+                  bool playing = true) {
+    BlockInfo block;
+    block.numSamples = numSamples;
+    block.sampleRate = rate;
+    block.playing = playing;
+    block.seconds = {static_cast<double>(startSample) / rate,
+                     static_cast<double>(startSample + numSamples) / rate};
+    return block;
+}
+
+/// What the hardware "says" at one instant. A tone rather than a ramp, so the
+/// resampled case has something a wrong curve would visibly damage.
+float valueFor(std::int64_t sample, int channel) {
+    const auto phase = 2.0 * std::numbers::pi * 100.0 * static_cast<double>(sample) / kRate;
+    return static_cast<float>(std::sin(phase) * (channel == 0 ? 1.0 : 0.5));
+}
+
+/// One message the stub hands back, at an absolute sample of the pass.
+struct StubMessage {
+    std::int64_t sample = 0;
+    juce::MidiMessage message;
+};
+
+/// The outboard, as far as these tests need one: it answers with a tone derived
+/// from where the block is, so what it said at an instant is checkable without
+/// recording it a second time.
+class HardwareStub final : public EngineInsert {
+  public:
+    int latencySamples() const override {
+        return kLatency;
+    }
+
+    void send(const BlockInfo&, juce::dsp::AudioBlock<const float> audio,
+              const juce::MidiBuffer& midi) override {
+        ++sentBlocks;
+        sentSamples += static_cast<int>(audio.getNumSamples());
+        sentMidiEvents += midi.getNumEvents();
+    }
+
+    void receive(const BlockInfo& block, juce::dsp::AudioBlock<float> audio,
+                 juce::MidiBuffer& midi) override {
+        ++receivedBlocks;
+
+        const auto start = std::llround(block.seconds.start * kRate);
+
+        for (std::size_t channel = 0; channel < audio.getNumChannels(); ++channel)
+            for (auto at = 0; at < block.numSamples; ++at)
+                audio.setSample(static_cast<int>(channel), at,
+                                valueFor(start + at, static_cast<int>(channel)));
+
+        for (const auto& pending : returns) {
+            const auto offset = pending.sample - start;
+            if (offset >= 0 && offset < block.numSamples)
+                midi.addEvent(pending.message, static_cast<int>(offset));
+        }
+    }
+
+    std::vector<StubMessage> returns;
+    int sentBlocks = 0;
+    int sentSamples = 0;
+    int sentMidiEvents = 0;
+    int receivedBlocks = 0;
+};
+
+/// Run @p blocks of a pass through @p session, starting at sample zero.
+void runPass(InsertCaptureSession& session, const std::vector<int>& blockIndices,
+             int blockSize = kBlock) {
+    juce::AudioBuffer<float> buffer(kChannels, blockSize);
+    juce::MidiBuffer midi;
+
+    for (const auto index : blockIndices) {
+        buffer.clear();
+        midi.clear();
+
+        const auto start = static_cast<std::int64_t>(index) * blockSize;
+        const auto block = blockAt(start, blockSize);
+
+        juce::dsp::AudioBlock<float> audio(buffer);
+        session.send(block, juce::dsp::AudioBlock<const float>(audio), midi);
+        session.receive(block, audio, midi);
+    }
+}
+
+std::vector<int> everyBlock(int count) {
+    std::vector<int> indices;
+    for (auto at = 0; at < count; ++at)
+        indices.push_back(at);
+    return indices;
+}
+
+/// A whole pass, taken.
+InsertCapture captureOfWholePass(HardwareStub& hardware) {
+    InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, kChannels);
+    runPass(session, everyBlock(kWindowSamples / kBlock));
+    return session.take();
+}
+
+RenderContext contextAt(double rate, int channels = kChannels) {
+    return RenderContext{rate, 512, channels};
+}
+
+/// Everything @p playback returns over the window, in blocks of @p blockSize.
+juce::AudioBuffer<float> replay(InsertCapturePlayback& playback, int blockSize, double rate,
+                                int totalSamples, juce::MidiBuffer* collected = nullptr) {
+    juce::AudioBuffer<float> whole(kChannels, totalSamples);
+    whole.clear();
+
+    juce::AudioBuffer<float> buffer(kChannels, blockSize);
+    juce::MidiBuffer midi;
+
+    for (auto at = 0; at < totalSamples; at += blockSize) {
+        const auto count = std::min(blockSize, totalSamples - at);
+
+        // Dirtied on purpose: the seam says a block comes back filled or
+        // cleared, never partly whatever was there.
+        buffer.clear();
+        for (auto channel = 0; channel < kChannels; ++channel)
+            for (auto sample = 0; sample < blockSize; ++sample)
+                buffer.setSample(channel, sample, -99.0f);
+
+        midi.clear();
+
+        juce::dsp::AudioBlock<float> audio(buffer);
+        playback.receive(blockAt(at, count, rate),
+                         audio.getSubBlock(0, static_cast<std::size_t>(count)), midi);
+
+        for (auto channel = 0; channel < kChannels; ++channel)
+            whole.copyFrom(channel, at, buffer, channel, 0, count);
+
+        if (collected != nullptr)
+            for (const auto metadata : midi)
+                collected->addEvent(metadata.data, metadata.numBytes, at + metadata.samplePosition);
+    }
+
+    return whole;
+}
+
+}  // namespace
+
+TEST_CASE("A pass writes what the hardware returned", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    const auto capture = captureOfWholePass(hardware);
+
+    // The pass ran through the hardware, block for block: a capture session in
+    // the way must not change what the pass sounded like.
+    CHECK(hardware.sentBlocks == kWindowSamples / kBlock);
+    CHECK(hardware.receivedBlocks == kWindowSamples / kBlock);
+
+    REQUIRE(capture.complete());
+    REQUIRE(capture.lengthInSamples() == kWindowSamples);
+    CHECK(capture.sampleRate() == kRate);
+
+    // The round trip is kept in seconds, so it survives being read at another
+    // rate. At the pass's own rate it is the number the hardware reported.
+    CHECK(capture.roundTripSeconds() == Catch::Approx(kLatency / kRate));
+
+    for (auto channel = 0; channel < kChannels; ++channel)
+        for (auto at = 0; at < kWindowSamples; ++at) {
+            INFO("channel " << channel << " sample " << at);
+            REQUIRE(capture.audio().getSample(channel, at) == valueFor(at, channel));
+        }
+}
+
+TEST_CASE("A pass that seeked over the window leaves a capture nothing can use",
+          "[engine][insert][2279]") {
+    HardwareStub hardware;
+    InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, kChannels);
+
+    // Blocks 4 and 5 never happen, which is what a pass that seeked looks like
+    // from here.
+    runPass(session, {0, 1, 2, 3, 6, 7});
+
+    CHECK(session.missingSamples() == 2 * kBlock);
+
+    const auto capture = session.take();
+    CHECK_FALSE(capture.complete());
+
+    // And that is the end of it: there is no playback to bind, so no render can
+    // write the hole into a file.
+    CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate)) ==
+          nullptr);
+}
+
+TEST_CASE("A pass over the same window twice covers it once", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, kChannels);
+
+    runPass(session, everyBlock(kWindowSamples / kBlock));
+    REQUIRE(session.missingSamples() == 0);
+
+    // A pass that looped writes positions it already wrote. What is counted is
+    // the window covered, not the blocks that went by.
+    runPass(session, {0, 1, 2});
+    CHECK(session.missingSamples() == 0);
+    CHECK(session.take().complete());
+}
+
+TEST_CASE("A playback returns the capture where the pass received it", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    const auto capture = captureOfWholePass(hardware);
+
+    auto playback =
+        InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
+    REQUIRE(playback != nullptr);
+
+    // The same round trip the live pass had. The capture holds what came back
+    // at the moment it came back, so the compensation that lined the pass up
+    // lines the bounce up with it.
+    CHECK(playback->latencySamples() == kLatency);
+
+    const auto replayed = replay(*playback, 256, kRate, kWindowSamples);
+
+    for (auto channel = 0; channel < kChannels; ++channel)
+        for (auto at = 0; at < kWindowSamples; ++at) {
+            INFO("channel " << channel << " sample " << at);
+            REQUIRE(replayed.getSample(channel, at) == valueFor(at, channel));
+        }
+}
+
+TEST_CASE("How a bounce cuts its blocks is not in the playback", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    const auto capture = captureOfWholePass(hardware);
+
+    auto small = InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
+    auto large = InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
+    REQUIRE(small != nullptr);
+    REQUIRE(large != nullptr);
+
+    const auto cut = replay(*small, 64, kRate, kWindowSamples);
+    const auto whole = replay(*large, 512, kRate, kWindowSamples);
+
+    for (auto channel = 0; channel < kChannels; ++channel)
+        for (auto at = 0; at < kWindowSamples; ++at) {
+            INFO("channel " << channel << " sample " << at);
+            REQUIRE(cut.getSample(channel, at) == whole.getSample(channel, at));
+        }
+}
+
+TEST_CASE("A capture taken at another rate is resampled, not refused", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    const auto capture = captureOfWholePass(hardware);
+
+    // What the incumbent does at the end of its pass: an export at another rate
+    // must not need a second trip through the hardware.
+    auto playback =
+        InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(2.0 * kRate));
+    REQUIRE(playback != nullptr);
+
+    // The round trip is the same duration, which at twice the rate is twice the
+    // samples.
+    CHECK(playback->latencySamples() == 2 * kLatency);
+
+    const auto replayed = replay(*playback, 256, 2.0 * kRate, 2 * kWindowSamples);
+
+    // The tone the hardware sent, at the instants the render asks about. A
+    // margin, because this is interpolated: what is under test is that the
+    // signal survived, not that a curve reproduced it exactly.
+    for (auto at = 8; at < 2 * kWindowSamples - 8; at += 37) {
+        const auto seconds = at / (2.0 * kRate);
+        INFO("sample " << at);
+        REQUIRE(replayed.getSample(0, at) ==
+                Catch::Approx(std::sin(2.0 * std::numbers::pi * 100.0 * seconds)).margin(0.01));
+    }
+}
+
+TEST_CASE("A capture that does not cover the render is refused", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    InsertCaptureSession session(hardware, windowOf(kBlock), kRate, kChannels);
+    runPass(session, {0});
+
+    const auto capture = session.take();
+    REQUIRE(capture.complete());
+
+    // It serves what it covers.
+    CHECK(InsertCapturePlayback::create(capture, windowOf(kBlock), contextAt(kRate)) != nullptr);
+
+    // And nothing more than that.
+    CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate)) ==
+          nullptr);
+}
+
+TEST_CASE("A capture narrower than the render is refused", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    InsertCaptureSession session(hardware, windowOf(kWindowSamples), kRate, 1);
+    runPass(session, everyBlock(kWindowSamples / kBlock));
+
+    const auto capture = session.take();
+    REQUIRE(capture.complete());
+
+    // A stereo render reads both channels, and a capture of one has nothing to
+    // put in the second.
+    CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate, 2)) ==
+          nullptr);
+    CHECK(InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate, 1)) !=
+          nullptr);
+}
+
+TEST_CASE("MIDI comes back where it went in, at the length it was sent", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    hardware.returns = {
+        {10, juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100))},
+        {kBlock * 2 + 5, juce::MidiMessage::programChange(1, 7)},
+        {kBlock * 3, juce::MidiMessage::midiClock()},
+    };
+
+    const auto capture = captureOfWholePass(hardware);
+    REQUIRE(capture.midi().size() == 3);
+
+    auto playback =
+        InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
+    REQUIRE(playback != nullptr);
+
+    juce::MidiBuffer collected;
+    replay(*playback, 256, kRate, kWindowSamples, &collected);
+
+    std::vector<std::pair<int, juce::MidiMessage>> events;
+    for (const auto metadata : collected)
+        events.emplace_back(metadata.samplePosition, metadata.getMessage());
+
+    REQUIRE(events.size() == 3);
+
+    CHECK(events[0].first == 10);
+    CHECK(events[0].second.isNoteOn());
+    CHECK(events[0].second.getNoteNumber() == 60);
+
+    // Two bytes, and it has to come back as two: a program change replayed
+    // three bytes long is a different message.
+    CHECK(events[1].first == kBlock * 2 + 5);
+    CHECK(events[1].second.isProgramChange());
+    CHECK(events[1].second.getRawDataSize() == 2);
+
+    CHECK(events[2].first == kBlock * 3);
+    CHECK(events[2].second.isMidiClock());
+    CHECK(events[2].second.getRawDataSize() == 1);
+}
+
+TEST_CASE("A block the transport is not moving through returns silence", "[engine][insert][2279]") {
+    HardwareStub hardware;
+    const auto capture = captureOfWholePass(hardware);
+
+    auto playback =
+        InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(kRate));
+    REQUIRE(playback != nullptr);
+
+    juce::AudioBuffer<float> buffer(kChannels, kBlock);
+    for (auto channel = 0; channel < kChannels; ++channel)
+        for (auto at = 0; at < kBlock; ++at)
+            buffer.setSample(channel, at, -99.0f);
+
+    juce::MidiBuffer midi;
+    juce::dsp::AudioBlock<float> audio(buffer);
+
+    // A bounce's tail runs the graph with the transport stopped. Nothing left
+    // the machine during those blocks, so nothing comes back: the outboard's
+    // own decay is in the capture only as far as the window went.
+    playback->receive(blockAt(0, kBlock, kRate, false), audio, midi);
+
+    for (auto channel = 0; channel < kChannels; ++channel)
+        for (auto at = 0; at < kBlock; ++at) {
+            INFO("channel " << channel << " sample " << at);
+            REQUIRE(buffer.getSample(channel, at) == 0.0f);
+        }
+}
