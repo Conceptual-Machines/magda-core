@@ -74,6 +74,7 @@ set(TEST_SOURCES
     devices/test_mutable_rings_chord.cpp
     devices/test_arpeggiator_input.cpp
     devices/test_arpeggiator_passthru.cpp
+    devices/test_arpeggiator_swing.cpp
     devices/test_arpeggiator_transport.cpp
     devices/test_midi_strum_lifecycle.cpp
     devices/test_midi_strum_provenance.cpp
