@@ -29,37 +29,58 @@ bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
     return false;
 }
 
-/// What the arp does not consume, copied onto its output in timestamp order
-/// (#2417).
-///
-/// Notes are the device's material: they go in and an arpeggio comes out.
-/// Everything else the channel carries -- mod wheel, expression, sustain,
-/// bend, aftertouch, program change -- is addressed to the instrument behind
-/// this one, and reaches it nowhere else: thru carries the held chord too, so
-/// a track that wants the pedal cannot have it without the notes under it.
-///
-/// Forwarded on channel 1, the one the generated notes are on, so an
-/// instrument that keeps per-channel state applies them to what it is
-/// playing. SysEx is not forwarded: copying one allocates on the audio thread
-/// (JUCE holds anything past eight bytes on the heap), and it addresses a
-/// device rather than the notes.
+/**
+ * @brief What the arp does not consume, copied onto its output in timestamp
+ *        order (#2417).
+ *
+ * Notes are the device's material: they go in and an arpeggio comes out.
+ * Everything else the channel carries -- mod wheel, expression, sustain,
+ * bend, aftertouch, program change -- is addressed to the instrument behind
+ * this one, and reaches it nowhere else: thru carries the held chord too, so
+ * a track that wants the pedal cannot have it without the notes under it.
+ *
+ * Forwarded on channel 1, the one the generated notes are on, so an
+ * instrument that keeps per-channel state applies them to what it is
+ * playing. SysEx is not forwarded: copying one allocates on the audio thread
+ * (JUCE holds anything past eight bytes on the heap), and it addresses a
+ * device rather than the notes.
+ */
 class NonNoteForwarder {
   public:
+    /**
+     * @param in The block's MIDI input.
+     * @param offsetSeconds The host's sub-block offset, added to every input
+     *                      timestamp.
+     * @param blockDurationSecs The block's length, which no event is read past.
+     */
     NonNoteForwarder(const DeviceMidiInput& in, double offsetSeconds, double blockDurationSecs)
         : in_(in), offsetSeconds_(offsetSeconds), blockDurationSecs_(blockDurationSecs) {}
 
-    /// Where in the block the host put event @p index: its timestamp with the
-    /// host's sub-block offset added, inside the block it belongs to. The one
-    /// answer the arp reads an input time by, so a forwarded message and the
-    /// notes generated around it share a timeline (#2415).
+    /**
+     * @brief Where in the block the host put an input event.
+     *
+     * The one answer the arp reads an input time by, so a forwarded message and
+     * the notes generated around it share a timeline (#2415).
+     *
+     * @param index Index into the block's MIDI input.
+     * @return Seconds from the block start: the event's timestamp with the
+     *         host's sub-block offset added, inside the block it belongs to.
+     */
     double timeOf(int index) const {
         return juce::jlimit(0.0, blockDurationSecs_,
                             in_.message(index).getTimeStamp() + offsetSeconds_);
     }
 
-    /// Everything up to and including @p timeInBlock. A message coincident
-    /// with a generated note goes out first: a controller moved on the beat
-    /// belongs to the note that starts on it.
+    /**
+     * @brief Forwards everything up to and including @p timeInBlock.
+     *
+     * A message coincident with a generated note goes out first: a controller
+     * moved on the beat belongs to the note that starts on it.
+     *
+     * @param midi Where the arp writes its output.
+     * @param timeInBlock Seconds from the block start; nothing later is
+     *                    forwarded yet.
+     */
     void flushUpTo(DeviceMidiOutput& midi, double timeInBlock) {
         for (const int count = in_.size(); next_ < count; ++next_) {
             const auto& message = in_.message(next_);
@@ -78,6 +99,10 @@ class NonNoteForwarder {
         }
     }
 
+    /**
+     * @brief Forwards whatever is left of the block.
+     * @param midi Where the arp writes its output.
+     */
     void flushRest(DeviceMidiOutput& midi) {
         flushUpTo(midi, std::numeric_limits<double>::max());
     }
@@ -495,8 +520,8 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         midi.addEvent({std::move(message), sourceId});
     };
 
-    /// A note-off at its own instant in the block, behind the non-note traffic
-    /// that precedes it (#2415).
+    // A note-off at its own instant in the block, behind the non-note traffic
+    // that precedes it (#2415).
     const auto emitNoteOff = [&](int noteNumber, double timeInBlock, std::uint32_t source) {
         if (noteNumber < 0)
             return;
@@ -504,7 +529,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
         sendNoteOff(midi, noteNumber, source, timeInBlock);
     };
 
-    /// Closes the note the arp is sounding, wherever it is being closed.
+    // Closes the note the arp is sounding, wherever it is being closed.
     const auto closeSoundingNote = [&](double timeInBlock) {
         const std::uint32_t source = lastPlayedSourceId_;
         emitNoteOff(takeSoundingNote(), timeInBlock, source);
@@ -541,13 +566,13 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // --- 3. Where the input sits in the block ---
     const auto eventTime = [&](int index) { return forward.timeOf(index); };
 
-    /// The pattern's material changes here, so the block is cut here.
+    // The pattern's material changes here, so the block is cut here.
     const auto changesPattern = [](const juce::MidiMessage& message) {
         return message.isNoteOnOrOff() || message.isAllNotesOff() || message.isAllSoundOff();
     };
 
-    /// Everything the arp was doing, dropped where the input dropped it: the
-    /// note it sounds, its walk, and the clock the walk runs on.
+    // Everything the arp was doing, dropped where the input dropped it: the
+    // note it sounds, its walk, and the clock the walk runs on.
     const auto restartAt = [&](double timeInBlock) {
         const std::uint32_t source = lastPlayedSourceId_;
         emitNoteOff(resetArpState(), timeInBlock, source);
