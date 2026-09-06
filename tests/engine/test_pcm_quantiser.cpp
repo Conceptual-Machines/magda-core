@@ -345,6 +345,39 @@ TEST_CASE("Every code survives the writer that stores it", "[engine][io][dither]
     }
 }
 
+TEST_CASE("Both ends of the format survive the writer", "[engine][io][dither][2248]") {
+    for (const auto bits : {16, 24}) {
+        INFO("bits " << bits);
+
+        juce::AudioBuffer<float> buffer(1, 4);
+        buffer.setSample(0, 0, -1.0f);
+        buffer.setSample(0, 1, 1.0f);
+        buffer.setSample(0, 2, -1.0f);
+        buffer.setSample(0, 3, 1.0f);
+
+        std::vector<int> codes(4, 0);
+        int* channels[1] = {codes.data()};
+
+        // No dither, so what comes out is what the range holds rather than what
+        // a noise step made of it.
+        PcmQuantiser quantiser(bits, 1, DitherMode::none);
+        quantiser.processToCodes(buffer, 4, channels);
+
+        // Two's complement is not symmetric and the integer path stores what it
+        // is given, so the most negative code is one the format holds and this
+        // has no business rounding it up.
+        const auto scale = static_cast<double>(1ULL << static_cast<unsigned>(bits - 1));
+        CHECK(buffer.getSample(0, 0) == -1.0f);
+        CHECK(buffer.getSample(0, 1) == Catch::Approx((scale - 1.0) / scale));
+
+        const auto stored = throughWriter(buffer, codes, bits);
+        for (auto at = 0; at < 4; ++at) {
+            INFO("sample " << at);
+            REQUIRE(stored.getSample(0, at) == buffer.getSample(0, at));
+        }
+    }
+}
+
 TEST_CASE("Dither at 24 bits does not depend on the code's parity", "[engine][io][dither][2248]") {
     // A code near full scale is around eight million, where a float's own
     // spacing is a whole LSB. Done in float, the dither is rounded away before

@@ -31,8 +31,10 @@ double scaleFor(int bits) {
     return static_cast<double>(1ULL << static_cast<unsigned>(bits - 1));
 }
 
-/// The largest code a writer will store. It clips to `maxValue` at both ends,
-/// so the negative side stops one short of what the format could hold.
+/// The largest positive code. The negative end reaches one further, which is
+/// `-scaleFor(bits)`: two's complement is not symmetric and the integer path
+/// stores what it is given (`AudioData::Int16::setAsInt32LE` is a shift, not a
+/// clamp), so stopping short of it would throw away a code the format holds.
 double maxCodeFor(int bits) {
     return scaleFor(bits) - 1.0;
 }
@@ -136,10 +138,11 @@ void PcmQuantiser::quantise(juce::AudioBuffer<float>& buffer, int numSamples, in
                 state.errors[0] = wanted - rounded;
             }
 
-            // Clipped where the writer clips. A code past the end is stored as
-            // the end whatever this does, and letting it through would put the
-            // shaper's feedback a step away from what the file holds.
-            const auto code = juce::jlimit(-maxCode_, maxCode_, rounded);
+            // Held inside the format, which is not a symmetric range: the
+            // negative end is one step further out. Clipping rather than
+            // wrapping, and clipping here rather than in the writer, so the
+            // shaper's feedback is never a step away from what the file holds.
+            const auto code = juce::jlimit(-scale_, maxCode_, rounded);
             samples[at] = static_cast<float>(code / scale_);
 
             if (codes != nullptr)
