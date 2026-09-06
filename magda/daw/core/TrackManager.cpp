@@ -15,6 +15,7 @@
 #include "Config.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
+#include "LegacyDeviceAliases.hpp"
 #include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
@@ -2216,6 +2217,12 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     applyCachedCapabilitiesToDevice(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
+
+    // This section stamps its own ids from its own counter and so does not go
+    // through prepareNewDevice, which is where the main chain's insertions are
+    // corrected. The declaration a browser drop carries is wrong here for the
+    // same reason it is wrong there (#2427).
+    legacy_devices::normalizeChordEngineRole(newDevice);
 
     auto& elements = track->chain.postFxChainElements;
     insertIndex = std::clamp(insertIndex, 0, static_cast<int>(elements.size()));

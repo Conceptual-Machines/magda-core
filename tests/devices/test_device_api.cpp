@@ -604,3 +604,31 @@ TEST_CASE("A Chord Engine is inserted as a listener, whatever the browser said",
 
     tracks.clearAllTracks();
 }
+
+TEST_CASE("A Chord Engine dropped into post-FX is a listener too", "[device-api][mutation]") {
+    // Post-FX stamps its ids from its own counter and does not go through
+    // prepareNewDevice, so the correction the main chain gets had to be made
+    // here as well (#2427).
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Chords post-fx");
+
+    DeviceInfo fromBrowser;
+    fromBrowser.name = "Chord Engine";
+    fromBrowser.pluginId = "midichordengine";
+    fromBrowser.format = PluginFormat::Internal;
+    fromBrowser.deviceType = DeviceType::MIDI;
+
+    const auto deviceId = tracks.addDeviceToPostFx(trackId, fromBrowser);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    const auto* track = tracks.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.postFxChainElements.size() == 1);
+
+    const auto& device = track->chain.postFxChainElements.front().device;
+    CHECK(device.deviceType == DeviceType::Analysis);
+    CHECK(device.consumesMidi());
+    CHECK_FALSE(device.emitsMidi());
+
+    tracks.clearAllTracks();
+}
