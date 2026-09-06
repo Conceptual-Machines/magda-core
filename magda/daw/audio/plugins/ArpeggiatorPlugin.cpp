@@ -45,8 +45,17 @@ bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
 /// device rather than the notes.
 class NonNoteForwarder {
   public:
-    NonNoteForwarder(const DeviceMidiInput& in, double offsetSeconds)
-        : in_(in), offsetSeconds_(offsetSeconds) {}
+    NonNoteForwarder(const DeviceMidiInput& in, double offsetSeconds, double blockDurationSecs)
+        : in_(in), offsetSeconds_(offsetSeconds), blockDurationSecs_(blockDurationSecs) {}
+
+    /// Where in the block the host put event @p index: its timestamp with the
+    /// host's sub-block offset added, inside the block it belongs to. The one
+    /// answer the arp reads an input time by, so a forwarded message and the
+    /// notes generated around it share a timeline (#2415).
+    double timeOf(int index) const {
+        return juce::jlimit(0.0, blockDurationSecs_,
+                            in_.message(index).getTimeStamp() + offsetSeconds_);
+    }
 
     /// Everything up to and including @p timeInBlock. A message coincident
     /// with a generated note goes out first: a controller moved on the beat
@@ -54,7 +63,8 @@ class NonNoteForwarder {
     void flushUpTo(DeviceMidiOutput& midi, double timeInBlock) {
         for (const int count = in_.size(); next_ < count; ++next_) {
             const auto& message = in_.message(next_);
-            if (message.getTimeStamp() + offsetSeconds_ > timeInBlock)
+            const double time = timeOf(next_);
+            if (time > timeInBlock)
                 return;
             // Channel messages only: getChannel() is 0 for SysEx and for
             // everything the transport carries.
@@ -63,6 +73,7 @@ class NonNoteForwarder {
 
             auto forwarded = message;  // short message: inline storage, no allocation
             forwarded.setChannel(1);
+            forwarded.setTimeStamp(time);
             midi.addEvent({std::move(forwarded), in_.sourceId(next_)});
         }
     }
@@ -73,9 +84,8 @@ class NonNoteForwarder {
 
   private:
     const DeviceMidiInput& in_;
-    /// The host's sub-block offset, added to every input timestamp the way the
-    /// arp adds it when placing the same events on its own timeline (#2415).
     double offsetSeconds_ = 0.0;
+    double blockDurationSecs_ = 0.0;
     int next_ = 0;
 };
 
@@ -475,7 +485,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // What the arp passes on rather than consumes, emitted beside the notes it
     // generates. The guard covers the returns below: a block the arp leaves
     // early is still a block the instrument behind it is owed its pedal on.
-    NonNoteForwarder forward(in, context.midiTimeOffsetSeconds);
+    NonNoteForwarder forward(in, context.midiTimeOffsetSeconds, blockDurationSecs);
     const juce::ScopeGuard forwardRest{[&] { forward.flushRest(midi); }};
 
     const auto addTimedMessage = [&](juce::MidiMessage message, double timeInBlock,
@@ -529,10 +539,7 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     }
 
     // --- 3. Where the input sits in the block ---
-    const auto eventTime = [&](int index) {
-        return juce::jlimit(0.0, blockDurationSecs,
-                            in.message(index).getTimeStamp() + context.midiTimeOffsetSeconds);
-    };
+    const auto eventTime = [&](int index) { return forward.timeOf(index); };
 
     /// The pattern's material changes here, so the block is cut here.
     const auto changesPattern = [](const juce::MidiMessage& message) {

@@ -11,13 +11,9 @@
 
 namespace {
 using magda::test::Arp;
+using magda::test::at;
 using magda::test::DeviceMidiBuffer;
 using Rig = magda::test::ArpRig;
-
-juce::MidiMessage at(juce::MidiMessage message, double timeStamp) {
-    message.setTimeStamp(timeStamp);
-    return message;
-}
 }  // namespace
 
 TEST_CASE("Arpeggiator forwards the non-note traffic its notes displace",
@@ -114,9 +110,9 @@ TEST_CASE("Arpeggiator merges forwarded traffic into its output in timestamp ord
     rig.setRate(Arp::Rate::Sixteenth);
     auto midi = rig.run(0.0,
                         {juce::MidiMessage::noteOn(1, 60, juce::uint8{91}),
-                         at(juce::MidiMessage::controllerEvent(1, 1, 20), 0.2),
-                         at(juce::MidiMessage::controllerEvent(1, 1, 30), 0.25),
-                         at(juce::MidiMessage::controllerEvent(1, 1, 40), 0.3)},
+                         at(0.2, juce::MidiMessage::controllerEvent(1, 1, 20)),
+                         at(0.25, juce::MidiMessage::controllerEvent(1, 1, 30)),
+                         at(0.3, juce::MidiMessage::controllerEvent(1, 1, 40))},
                         true, false, 0.5);
 
     REQUIRE(midi.size() > 6);
@@ -168,7 +164,7 @@ TEST_CASE("Arpeggiator passes a buffer panic on beside what it forwards",
     rig.liveSourceIds = {rig.source};
     rig.startNote();
 
-    auto midi = rig.run(0.05, {at(juce::MidiMessage::controllerEvent(1, 64, 127), 0.01)}, true,
+    auto midi = rig.run(0.05, {at(0.01, juce::MidiMessage::controllerEvent(1, 64, 127))}, true,
                         /*panic=*/true);
 
     CHECK(midi.allNotesOff);

@@ -231,6 +231,27 @@ TEST_CASE("Arpeggiator plays a step from the notes held when it sounds",
     CHECK(playedTheNewPitch);
 }
 
+TEST_CASE("Arpeggiator reads a host's sub-block offset once, for everything it emits",
+          "[arpeggiator][midi][event-time]") {
+    Rig rig;
+    rig.startNote();
+
+    // A host that hands the device a sub-block says where its buffer starts.
+    // The offset belongs to every time the arp reads, so the reset it forwards
+    // and the note-off it answers with land together rather than a sub-block
+    // apart.
+    rig.midiTimeOffset = 0.01;
+    const double offsetInBlock = rig.midiTimeOffset + 0.005;
+    auto midi = rig.run(kBlockSeconds, {at(0.005, juce::MidiMessage::allNotesOff(1))});
+
+    REQUIRE(midi.size() == 2);
+    CHECK(midi.message(0).isController());
+    CHECK(midi.message(0).getTimeStamp() == Catch::Approx(offsetInBlock));
+    CHECK(midi.message(1).isNoteOff());
+    CHECK(midi.message(1).getNoteNumber() == 60);
+    CHECK(midi.message(1).getTimeStamp() == Catch::Approx(offsetInBlock));
+}
+
 TEST_CASE("Arpeggiator plays the same phrase however the host cuts its callbacks",
           "[arpeggiator][midi][event-time]") {
     // Held, released and replaced at times that fall inside a block for one

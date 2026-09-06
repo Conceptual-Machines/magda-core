@@ -30,6 +30,9 @@ struct ArpRig {
     /// playback, so a test says which of the two this phrase is.
     std::uint32_t source = 42;
     std::vector<std::uint32_t> liveSourceIds;
+    /// What the host says the timestamps on its buffer are offset by, which is
+    /// how a sub-block reaches a device.
+    double midiTimeOffset = 0.0;
 
     explicit ArpRig(bool latch = false) {
         arp.prepare({.sampleRate = 48000.0, .maximumBlockSize = 2400});
@@ -61,6 +64,7 @@ struct ArpRig {
         context.timelineStartSeconds = start;
         context.timelineEndSeconds = start + seconds;
         context.isPlaying = playing;
+        context.midiTimeOffsetSeconds = midiTimeOffset;
         context.liveSourceIds = liveSourceIds.empty() ? nullptr : liveSourceIds.data();
         context.numLiveSourceIds = static_cast<int>(liveSourceIds.size());
         arp.process(context);
