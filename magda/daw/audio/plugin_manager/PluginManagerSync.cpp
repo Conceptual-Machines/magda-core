@@ -1335,15 +1335,14 @@ void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plu
                     auto* track = self.trackController_.getAudioTrack(trackId);
                     int pluginIdx = track ? track->pluginList.indexOf(plugin.get()) : -1;
 
-                    const bool passRawMidi =
-                        routing::makeRoutingNode(*devInfo).passesRawMidiInput();
+                    const auto routingNode = routing::makeRoutingNode(*devInfo);
                     te::Plugin::Ptr rackPlugin;
                     if (numOutputChannels > 2) {
                         rackPlugin = self.instrumentRackManager_.wrapMultiOutInstrument(
-                            plugin, numOutputChannels, passRawMidi);
+                            plugin, numOutputChannels, routingNode);
                     } else {
                         rackPlugin =
-                            self.instrumentRackManager_.wrapInstrument(plugin, passRawMidi);
+                            self.instrumentRackManager_.wrapInstrument(plugin, routingNode);
                     }
 
                     if (rackPlugin) {
@@ -2480,13 +2479,13 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
             // Remember the plugin's position before wrapping removes it from the track
             int pluginIdx = track->pluginList.indexOf(plugin.get());
 
-            const bool passRawMidi = routing::makeRoutingNode(device).passesRawMidiInput();
+            const auto routingNode = routing::makeRoutingNode(device);
             te::Plugin::Ptr rackPlugin;
             if (numOutputChannels > 2) {
                 rackPlugin = instrumentRackManager_.wrapMultiOutInstrument(
-                    plugin, numOutputChannels, passRawMidi);
+                    plugin, numOutputChannels, routingNode);
             } else {
-                rackPlugin = instrumentRackManager_.wrapInstrument(plugin, passRawMidi);
+                rackPlugin = instrumentRackManager_.wrapInstrument(plugin, routingNode);
             }
 
             if (rackPlugin) {

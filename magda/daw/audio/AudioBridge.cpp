@@ -615,10 +615,11 @@ void AudioBridge::devicePropertyChanged(const ChainNodePath& devicePath) {
         if (auto* rackInstance = rackManager.getRackInstance(deviceId)) {
             rackInstance->setEnabled(effectiveEnabled);
         }
-        // Keep the wrapper's raw-MIDI passthrough in sync with the routing model
-        // (always on for a plain instrument; midiInThru-controlled for a
-        // MIDI-output device), so notes keep reaching downstream devices.
-        rackManager.setMidiInThru(deviceId, routing::makeRoutingNode(*device).passesRawMidiInput());
+        // Keep the wrapper's MIDI paths in sync with the routing model: the raw
+        // passthrough (always on for a plain instrument; midiInThru-controlled
+        // for a MIDI-output device) so notes keep reaching downstream devices,
+        // and the plugin's own MIDI output.
+        rackManager.updateMidiRouting(deviceId, routing::makeRoutingNode(*device));
     }
 
     // Push gain to the audio-graph atomic so DeviceGainNode picks it up.
