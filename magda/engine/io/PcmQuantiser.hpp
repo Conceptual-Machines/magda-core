@@ -2,7 +2,9 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <cstdint>
+#include <vector>
 
 /**
  * @file PcmQuantiser.hpp
@@ -59,8 +61,8 @@ enum class DitherMode : std::uint8_t {
  */
 class PcmQuantiser {
   public:
-    /// @p bits is the target depth: 16 or 24. @p channels sizes the shaper's
-    /// per-channel history.
+    /// @p bits is the target depth: 16 or 24. @p channels sizes the per-channel
+    /// state, which is one shaper history and one generator each.
     PcmQuantiser(int bits, int channels, DitherMode mode, std::uint32_t seed = kDefaultSeed);
 
     /// Round @p buffer's first @p numSamples in place onto the target's grid.
@@ -68,7 +70,23 @@ class PcmQuantiser {
     /// be once it is stored, not how it is stored.
     void process(juce::AudioBuffer<float>& buffer, int numSamples);
 
-    /// Forget the shaper's history and restart the sequence. What a second
+    /**
+     * @brief The same, also writing each code into @p codes.
+     *
+     * One int32 per sample per channel, the target's bits at the top, which is
+     * what juce::AudioFormatWriter::write takes. That path is the only one a
+     * writer may use after this unit.
+     *
+     * `writeFromAudioSampleBuffer` must not be: it converts float to int32 by
+     * `roundToInt(INT_MAX * sample)` and the format then keeps the top bits, so
+     * the effective factor is `2^(bits-1) - 2^(bits-31)` rather than
+     * `2^(bits-1)` and a code lands one low wherever the product falls short.
+     * No float can carry a chosen code through it, which is the whole reason
+     * the codes are handed over rather than inferred.
+     */
+    void processToCodes(juce::AudioBuffer<float>& buffer, int numSamples, int* const* codes);
+
+    /// Forget the shaper's history and restart every generator. What a second
     /// render of the same range needs to produce the same file.
     void reset();
 
@@ -84,19 +102,33 @@ class PcmQuantiser {
     static constexpr int kShaperTaps = 9;
 
   private:
-    /// The next uniform in [-0.5, 0.5).
-    float nextUniform();
+    /// One channel's own generator and shaper history.
+    ///
+    /// Per channel rather than shared, so a render cut into different block
+    /// sizes hands each channel the same draws: OfflineRenderRequest promises
+    /// the audio is sample-identical at any block size.
+    struct Channel {
+        std::uint32_t random = kDefaultSeed;
+        std::array<double, kShaperTaps> errors{};
+    };
+
+    /// The next uniform on [-0.5, 0.5), advancing @p state.
+    static double nextUniform(std::uint32_t& state);
+
+    /// The shared walk. @p codes is null for the float-only path.
+    void quantise(juce::AudioBuffer<float>& buffer, int numSamples, int* const* codes);
 
     int bits_ = 16;
     DitherMode mode_ = DitherMode::tpdf;
     float lsb_ = 0.0f;
-    float scale_ = 0.0f;
-    std::uint32_t seed_ = kDefaultSeed;
-    std::uint32_t state_ = kDefaultSeed;
 
-    /// Per channel, most recent first. Sized at construction so process() never
-    /// allocates.
-    juce::AudioBuffer<float> errors_;
+    /// In double throughout: at 24 bits a float's spacing near full scale is a
+    /// whole code, which would round the dither away before it was applied.
+    double scale_ = 0.0;
+    double maxCode_ = 0.0;
+
+    std::uint32_t seed_ = kDefaultSeed;
+    std::vector<Channel> channels_;
 };
 
 }  // namespace magda::engine

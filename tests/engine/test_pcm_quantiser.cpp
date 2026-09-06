@@ -1,8 +1,10 @@
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -253,5 +255,143 @@ TEST_CASE("Asking for no dither rounds and nothing else", "[engine][io][dither][
         INFO("sample " << at);
         CHECK(buffer.getSample(0, at) ==
               Catch::Approx(std::nearbyint(expected.getSample(0, at) / lsb) * lsb).margin(1e-7));
+    }
+}
+
+// =============================================================================
+// What the writer on the other side of this makes of it
+// =============================================================================
+
+namespace {
+
+/// @p buffer's codes through a WAV writer at @p bits and back, which is the
+/// only thing that says this unit's grid is the one the file holds.
+juce::AudioBuffer<float> throughWriter(const juce::AudioBuffer<float>& buffer,
+                                       const std::vector<int>& codes, int bits) {
+    juce::MemoryBlock block;
+
+    {
+        juce::WavAudioFormat wav;
+        std::unique_ptr<juce::OutputStream> stream =
+            std::make_unique<juce::MemoryOutputStream>(block, false);
+        auto options = juce::AudioFormatWriterOptions()
+                           .withSampleRate(kSampleRate)
+                           .withNumChannels(buffer.getNumChannels())
+                           .withBitsPerSample(bits);
+
+        auto writer = wav.createWriterFor(stream, options);
+        REQUIRE(writer != nullptr);
+
+        // The integer path. writeFromAudioSampleBuffer would re-quantise
+        // through INT_MAX and lose a code, which is what PcmQuantiser's own
+        // documentation says and what this case exists to hold it to.
+        const int* channels[1] = {codes.data()};
+        REQUIRE(writer->write(channels, buffer.getNumSamples()));
+    }
+
+    juce::WavAudioFormat wav;
+    std::unique_ptr<juce::AudioFormatReader> reader(
+        wav.createReaderFor(new juce::MemoryInputStream(block, false), true));
+    REQUIRE(reader != nullptr);
+
+    juce::AudioBuffer<float> read(buffer.getNumChannels(), buffer.getNumSamples());
+    reader->read(&read, 0, buffer.getNumSamples(), 0, true, true);
+    return read;
+}
+
+/// How often a DC input already sitting on a code is left there. Ideal TPDF
+/// says three times in four, whatever code it is.
+double fractionUnchanged(int bits, double code) {
+    constexpr int kDraws = 20000;
+    const auto scale = static_cast<double>(1ULL << static_cast<unsigned>(bits - 1));
+    const auto level = static_cast<float>(code / scale);
+
+    juce::AudioBuffer<float> buffer(1, kDraws);
+    for (auto at = 0; at < kDraws; ++at)
+        buffer.setSample(0, at, level);
+
+    PcmQuantiser quantiser(bits, 1, DitherMode::tpdf);
+    quantiser.process(buffer, kDraws);
+
+    auto unchanged = 0;
+    for (auto at = 0; at < kDraws; ++at)
+        if (buffer.getSample(0, at) == level)
+            ++unchanged;
+
+    return static_cast<double>(unchanged) / kDraws;
+}
+
+}  // namespace
+
+TEST_CASE("Every code survives the writer that stores it", "[engine][io][dither][2248]") {
+    for (const auto bits : {16, 24}) {
+        INFO("bits " << bits);
+
+        auto buffer = tone(512, 0.8f);
+        std::vector<int> codes(512, 0);
+        int* channels[1] = {codes.data()};
+
+        PcmQuantiser quantiser(bits, 1, DitherMode::tpdf);
+        quantiser.processToCodes(buffer, 512, channels);
+
+        // Nothing rounds after the dither. A code written and read back is the
+        // code, at both depths, which is the whole claim this unit makes.
+        const auto stored = throughWriter(buffer, codes, bits);
+
+        for (auto at = 0; at < 512; ++at) {
+            INFO("sample " << at);
+            REQUIRE(stored.getSample(0, at) == buffer.getSample(0, at));
+        }
+    }
+}
+
+TEST_CASE("Dither at 24 bits does not depend on the code's parity", "[engine][io][dither][2248]") {
+    // A code near full scale is around eight million, where a float's own
+    // spacing is a whole LSB. Done in float, the dither is rounded away before
+    // it is applied and how often depends on whether the code is even.
+    const auto even = fractionUnchanged(24, 6000000.0);
+    const auto odd = fractionUnchanged(24, 6000001.0);
+
+    INFO("even " << even << ", odd " << odd);
+    CHECK(even == Catch::Approx(0.75).margin(0.04));
+    CHECK(odd == Catch::Approx(0.75).margin(0.04));
+}
+
+TEST_CASE("Block size is a batching choice and nothing else", "[engine][io][dither][2248]") {
+    for (const auto mode : {DitherMode::tpdf, DitherMode::shaped}) {
+        INFO("mode " << static_cast<int>(mode));
+
+        juce::AudioBuffer<float> whole(2, 1024);
+        juce::AudioBuffer<float> split(2, 1024);
+        for (auto channel = 0; channel < 2; ++channel)
+            for (auto at = 0; at < 1024; ++at) {
+                const auto value = 0.3f * static_cast<float>(std::sin(0.01 * at * (channel + 1)));
+                whole.setSample(channel, at, value);
+                split.setSample(channel, at, value);
+            }
+
+        PcmQuantiser one(16, 2, mode);
+        one.process(whole, 1024);
+
+        // The same render cut in two. OfflineRenderRequest says the audio is
+        // sample-identical at any block size, which a generator shared between
+        // the channels would break.
+        PcmQuantiser two(16, 2, mode);
+        juce::AudioBuffer<float> first(2, 512);
+        juce::AudioBuffer<float> second(2, 512);
+        for (auto channel = 0; channel < 2; ++channel) {
+            first.copyFrom(channel, 0, split, channel, 0, 512);
+            second.copyFrom(channel, 0, split, channel, 512, 512);
+        }
+        two.process(first, 512);
+        two.process(second, 512);
+
+        for (auto channel = 0; channel < 2; ++channel)
+            for (auto at = 0; at < 1024; ++at) {
+                INFO("channel " << channel << " sample " << at);
+                const auto cut =
+                    at < 512 ? first.getSample(channel, at) : second.getSample(channel, at - 512);
+                REQUIRE(whole.getSample(channel, at) == cut);
+            }
     }
 }
