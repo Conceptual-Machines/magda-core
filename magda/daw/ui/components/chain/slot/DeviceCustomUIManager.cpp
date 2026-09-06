@@ -348,8 +348,7 @@ class CallbackDeviceCommandController final : public magda::DeviceCommandControl
         std::function<juce::var(const juce::Identifier&, const juce::var&)> execute)
         : execute_(std::move(execute)) {}
 
-    juce::var executeCommand(const juce::Identifier& command,
-                             const juce::var& arguments = {}) override {
+    juce::var executeCommand(const juce::Identifier& command, const juce::var& arguments) override {
         return execute_ ? execute_(command, arguments) : juce::var{};
     }
 

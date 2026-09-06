@@ -32,8 +32,7 @@ class GenericSoundDesignAgent : public SoundDesignAgent {
                             juce::String customPrompt = {});
 
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
-                                  llm::Conversation& conversation,
-                                  TokenCallback onToken = {}) override;
+                                  llm::Conversation& conversation, TokenCallback onToken) override;
 
     void setCategoryOverride(const juce::String& category) override {
         categoryOverride_ = category;

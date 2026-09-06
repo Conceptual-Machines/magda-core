@@ -74,8 +74,7 @@ class AutomationApi {
     virtual const AutomationClipInfo* getClip(AutomationClipId clipId) const = 0;
     virtual void deleteClip(AutomationClipId clipId) = 0;
     virtual void moveClip(AutomationClipId clipId, double startBeats) = 0;
-    virtual void resizeClip(AutomationClipId clipId, double lengthBeats,
-                            bool fromStart = false) = 0;
+    virtual void resizeClip(AutomationClipId clipId, double lengthBeats, bool fromStart) = 0;
     virtual AutomationClipId duplicateClip(AutomationClipId clipId) = 0;
     virtual void setClipName(AutomationClipId clipId, const juce::String& name) = 0;
     virtual void setClipColour(AutomationClipId clipId, juce::Colour colour) = 0;

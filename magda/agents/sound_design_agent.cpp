@@ -28,8 +28,7 @@ class FourOscSoundDesignAgent : public SoundDesignAgent {
     explicit FourOscSoundDesignAgent(PluginApi* plugins) : plugins_(plugins) {}
 
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
-                                  llm::Conversation& conversation,
-                                  TokenCallback onToken = {}) override {
+                                  llm::Conversation& conversation, TokenCallback onToken) override {
         if (plugins_ == nullptr)
             return "(MagdaApi plugin operations are unavailable)";
 
@@ -163,8 +162,7 @@ class PolyStepSequencerSoundDesignAgent : public SoundDesignAgent {
     }
 
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
-                                  llm::Conversation& conversation,
-                                  TokenCallback onToken = {}) override {
+                                  llm::Conversation& conversation, TokenCallback onToken) override {
         if (plugins_ == nullptr)
             return "(MagdaApi plugin operations are unavailable)";
 
@@ -269,8 +267,7 @@ class StepSequencerSoundDesignAgent : public SoundDesignAgent {
     }
 
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
-                                  llm::Conversation& conversation,
-                                  TokenCallback onToken = {}) override {
+                                  llm::Conversation& conversation, TokenCallback onToken) override {
         if (plugins_ == nullptr)
             return "(MagdaApi plugin operations are unavailable)";
 

@@ -28,8 +28,7 @@ class FaustCoderAgent : public CoderAgent {
     }
 
     juce::String generateAndApply(const juce::String& prompt, const ChainNodePath& path,
-                                  llm::Conversation& conversation,
-                                  TokenCallback onToken = {}) override {
+                                  llm::Conversation& conversation, TokenCallback onToken) override {
         if (plugins_ == nullptr)
             return "(MagdaApi plugin operations are unavailable)";
 
