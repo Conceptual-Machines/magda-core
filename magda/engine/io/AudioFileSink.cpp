@@ -54,7 +54,7 @@ class ReportingStream final : public juce::OutputStream {
 
     bool write(const void* data, std::size_t numBytes) override {
         const auto ok = note(file_->write(data, numBytes));
-        report_->bytes = std::max(report_->bytes, file_->getPosition());
+        report_->bytes = std::max(report_->bytes, static_cast<std::int64_t>(file_->getPosition()));
         return ok;
     }
 
