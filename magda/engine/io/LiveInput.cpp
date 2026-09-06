@@ -12,21 +12,43 @@ constexpr int kEventOverheadBytes = 6;
 
 }  // namespace
 
+void LiveInputFeed::prepare(int maxChannels, int maxBlockSize) {
+    const auto channels = std::max(scratch_.getNumChannels(), std::max(0, maxChannels));
+    const auto samples = std::max(scratch_.getNumSamples(), std::max(0, maxBlockSize));
+
+    if (channels != scratch_.getNumChannels() || samples != scratch_.getNumSamples())
+        scratch_.setSize(channels, samples, false, true, false);
+}
+
 void LiveInputFeed::beginCallback(const LiveInputBlock& input, int numSamples) {
-    callbackAudio_ = input.audio;
     midi_ = input.midi;
 
-    const auto delivered = static_cast<int>(callbackAudio_.getNumSamples());
-    const auto silent = callbackAudio_.getNumChannels() == 0;
+    const auto delivered = static_cast<int>(input.audio.getNumSamples());
+    const auto deliveredChannels = static_cast<int>(input.audio.getNumChannels());
+    const auto wanted = std::min(numSamples, delivered);
+
+    const auto channels = std::min(deliveredChannels, scratch_.getNumChannels());
+    const auto samples = std::min(wanted, scratch_.getNumSamples());
 
     // A host that delivered fewer input samples than it asked to render is a
-    // host bug, and the blocks past what it delivered read silence rather than
-    // whatever is behind the pointer.
-    const bool enough = silent || delivered >= numSamples;
+    // host bug; what it did deliver is copied, and the rest of the block is
+    // silence rather than whatever is behind the pointer.
+    const bool enough = deliveredChannels == 0 || delivered >= numSamples;
     jassert(enough);
     juce::ignoreUnused(enough);
 
-    callbackSamples_ = silent ? 0 : std::min(numSamples, delivered);
+    if (deliveredChannels > 0 && (channels < deliveredChannels || samples < wanted))
+        unfit_.fetch_add(1, std::memory_order_relaxed);
+
+    // The copy, and the reason this holds a buffer rather than the caller's
+    // pointers: that memory may be the output buffer, which is cleared and
+    // written before any input op runs.
+    for (auto channel = 0; channel < channels; ++channel)
+        scratch_.copyFrom(
+            channel, 0, input.audio.getChannelPointer(static_cast<std::size_t>(channel)), samples);
+
+    callbackChannels_ = samples > 0 ? channels : 0;
+    callbackSamples_ = callbackChannels_ > 0 ? samples : 0;
 
     beginSegment(0, 0);
 }
@@ -35,19 +57,22 @@ void LiveInputFeed::beginSegment(int startSample, int numSamples) {
     segmentStart_ = startSample;
     segmentSamples_ = numSamples;
 
-    if (startSample < 0 || numSamples <= 0 || startSample + numSamples > callbackSamples_) {
+    if (callbackChannels_ <= 0 || startSample < 0 || numSamples <= 0 ||
+        startSample + numSamples > callbackSamples_) {
         audio_ = {};
         return;
     }
 
-    audio_ = callbackAudio_.getSubBlock(static_cast<std::size_t>(startSample),
-                                        static_cast<std::size_t>(numSamples));
+    audio_ = juce::dsp::AudioBlock<const float>(scratch_)
+                 .getSubsetChannelBlock(0, static_cast<std::size_t>(callbackChannels_))
+                 .getSubBlock(static_cast<std::size_t>(startSample),
+                              static_cast<std::size_t>(numSamples));
 }
 
 void LiveInputFeed::endCallback() {
-    callbackAudio_ = {};
     audio_ = {};
     midi_ = {};
+    callbackChannels_ = 0;
     callbackSamples_ = 0;
     segmentStart_ = 0;
     segmentSamples_ = 0;

@@ -224,6 +224,11 @@ class EngineSession {
      * them through RuntimeStateFactory::createAudioInput / createMidiInput;
      * process() narrows it to each block as it goes. One per session rather
      * than one per source, since every input op reads the same callback.
+     *
+     * Prepare it when the audio device opens, with the channels and block size
+     * that device delivers: the feed copies each callback's input, and the room
+     * for that copy cannot be taken while a callback is running. An unprepared
+     * feed reads silence and counts what it could not hold.
      */
     LiveInputFeed& liveInputs() {
         return liveInputs_;

@@ -67,11 +67,34 @@ struct LiveInputBlock {
  * (EngineSession::process), and each piece renders separately. The input is
  * not timeline material and knows nothing about that, so the feed holds the
  * callback's input once and hands out the window belonging to the piece in
- * flight. Written and read on the audio thread only, within one callback.
+ * flight.
+ *
+ * Held as a copy rather than as the caller's pointers, because a host may
+ * hand the same memory for input and output -- an AudioProcessor is given one
+ * buffer for both -- and the render clears and fills the output before an
+ * input op reads anything. A borrowed view of that memory would be zeros by
+ * the time a source looked at it.
+ *
+ * The room for the copy is taken by @ref prepare, so the copy itself cannot
+ * allocate. Written and read on the audio thread only, within one callback.
  */
 class LiveInputFeed {
   public:
-    /// Audio thread, once per callback, before any block of it renders.
+    /**
+     * @brief Room for what a callback may deliver. Off the audio thread.
+     *
+     * Called when the audio device opens or changes, like every other prepare
+     * in the engine, and never while a callback can run: it allocates. It only
+     * ever grows, so a session preparing for its plan cannot shrink what the
+     * host sized for its interface.
+     *
+     * A feed with no room reads silence and counts the callback
+     * (@ref unfitCallbacks), which is what a host that never prepared gets.
+     */
+    void prepare(int maxChannels, int maxBlockSize);
+
+    /// Audio thread, once per callback, before any block of it renders and
+    /// before anything writes to the output.
     void beginCallback(const LiveInputBlock& input, int numSamples);
 
     /// Audio thread, per block of that callback, before the plan runs.
@@ -97,13 +120,29 @@ class LiveInputFeed {
      */
     int appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out, int maxBytes) const;
 
+    /// Callbacks whose input did not fit the room prepare() took, in channels
+    /// or in samples. Read from any thread; what did not fit reads silence.
+    std::uint32_t unfitCallbacks() const {
+        return unfit_.load(std::memory_order_relaxed);
+    }
+
+    int preparedChannels() const {
+        return scratch_.getNumChannels();
+    }
+
+    int preparedBlockSize() const {
+        return scratch_.getNumSamples();
+    }
+
   private:
-    juce::dsp::AudioBlock<const float> callbackAudio_;
+    juce::AudioBuffer<float> scratch_;
     juce::dsp::AudioBlock<const float> audio_;
     std::span<const LiveMidiStream> midi_;
+    int callbackChannels_ = 0;
     int callbackSamples_ = 0;
     int segmentStart_ = 0;
     int segmentSamples_ = 0;
+    std::atomic<std::uint32_t> unfit_{0};
 };
 
 /**

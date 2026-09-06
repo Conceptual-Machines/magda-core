@@ -189,6 +189,7 @@ TEST_CASE("An input op is compiled for a track that is armed or monitoring in",
 TEST_CASE("A live audio input reads the callback's own samples", "[engine][live-input]") {
     const auto captured = rampBuffer(2, kBlockSize);
     LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
     feed.beginCallback({blockOf(captured), {}}, kBlockSize);
     feed.beginSegment(0, kBlockSize);
 
@@ -247,6 +248,7 @@ TEST_CASE("A live audio input reads the callback's own samples", "[engine][live-
 TEST_CASE("A live audio input renders silence with no callback around it", "[engine][live-input]") {
     const auto captured = rampBuffer(2, kBlockSize);
     LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
     static constexpr std::array<int, 2> stereo{0, 1};
     LiveAudioInput input(feed, stereo);
 
@@ -283,6 +285,7 @@ TEST_CASE("A live MIDI input keeps the offsets the host stamped", "[engine][live
                                                 LiveMidiStream{2, &pads}};
 
     LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
     feed.beginCallback({{}, streams}, kBlockSize);
     feed.beginSegment(0, kBlockSize);
 
@@ -333,6 +336,7 @@ TEST_CASE("A live MIDI burst past the port's budget is dropped and counted",
     const std::array<LiveMidiStream, 1> streams{LiveMidiStream{1, &flood}};
 
     LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
     feed.beginCallback({{}, streams}, kBlockSize);
     feed.beginSegment(0, kBlockSize);
 
@@ -348,6 +352,7 @@ TEST_CASE("A live MIDI burst past the port's budget is dropped and counted",
 TEST_CASE("An input declares its latency and the plan is not compensated for it",
           "[engine][live-input]") {
     LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
     static constexpr std::array<int, 2> stereo{0, 1};
     const LiveAudioInput input(feed, stereo, 512);
     const LiveMidiInput midi(feed, kAnyLiveMidiSource, 512);
@@ -372,6 +377,7 @@ TEST_CASE("A monitoring track hears its live input through the plan", "[engine][
     LiveInputFactory factory;
     EngineSession session(factory);
     factory.feed = &session.liveInputs();
+    session.liveInputs().prepare(2, kBlockSize);
 
     const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::In, false)};
     const auto plan = compile(tracks);
@@ -405,6 +411,7 @@ TEST_CASE("Each piece of a callback the loop wraps inside reads its own input",
     LiveInputFactory factory;
     EngineSession session(factory);
     factory.feed = &session.liveInputs();
+    session.liveInputs().prepare(2, kBlockSize);
 
     const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::In, false)};
     const auto plan = compile(tracks);
@@ -440,4 +447,84 @@ TEST_CASE("Each piece of a callback the loop wraps inside reads its own input",
     for (auto sample = 0; sample < kBlockSize; ++sample)
         CHECK(tapped.rendered[tail + static_cast<std::size_t>(sample)] ==
               captured.getSample(0, sample));
+}
+
+TEST_CASE("A host handing one buffer for input and output keeps its input",
+          "[engine][live-input]") {
+    LiveInputFactory factory;
+    EngineSession session(factory);
+    factory.feed = &session.liveInputs();
+    session.liveInputs().prepare(2, kBlockSize);
+
+    const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::In, false)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+    REQUIRE(factory.lastAudioInput != nullptr);
+
+    // An AudioProcessor is handed one buffer for both, and the render clears
+    // and fills the output before an input op reads anything. The feed copies
+    // the input at the top of the callback, so the two do not have to be
+    // different memory (#2467 review).
+    auto shared = rampBuffer(2, kBlockSize);
+    session.process(kBlockSize, shared, {blockOf(shared), {}});
+
+    auto& tapped = *factory.lastAudioInput;
+    REQUIRE(tapped.rendered.size() == static_cast<std::size_t>(kBlockSize));
+
+    const auto expected = rampBuffer(2, kBlockSize);
+    for (auto sample = 0; sample < kBlockSize; ++sample)
+        CHECK(tapped.rendered[static_cast<std::size_t>(sample)] == expected.getSample(0, sample));
+
+    CHECK(shared.getMagnitude(0, kBlockSize) > 0.0f);
+    CHECK(session.liveInputs().unfitCallbacks() == 0);
+}
+
+TEST_CASE("A feed with no room for a callback reads silence and counts it",
+          "[engine][live-input]") {
+    const auto captured = rampBuffer(2, kBlockSize);
+    static constexpr std::array<int, 2> stereo{0, 1};
+
+    SECTION("with nothing prepared at all") {
+        LiveInputFeed feed;
+        LiveAudioInput input(feed, stereo);
+
+        feed.beginCallback({blockOf(captured), {}}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+
+        juce::AudioBuffer<float> out(2, kBlockSize);
+        input.render(blockInfo(kBlockSize), juce::dsp::AudioBlock<float>(out));
+
+        CHECK(out.getMagnitude(0, kBlockSize) == 0.0f);
+        CHECK(feed.unfitCallbacks() == 1);
+    }
+
+    SECTION("and with room for fewer channels than arrived") {
+        LiveInputFeed feed;
+        feed.prepare(1, kBlockSize);
+        LiveAudioInput input(feed, stereo);
+
+        feed.beginCallback({blockOf(captured), {}}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+
+        juce::AudioBuffer<float> out(2, kBlockSize);
+        input.render(blockInfo(kBlockSize), juce::dsp::AudioBlock<float>(out));
+
+        // The channel it had room for is the input's; the one it did not is
+        // silence, counted twice over: by the feed and by the source.
+        for (auto sample = 0; sample < kBlockSize; ++sample)
+            CHECK(out.getSample(0, sample) == captured.getSample(0, sample));
+
+        CHECK(out.getMagnitude(1, 0, kBlockSize) == 0.0f);
+        CHECK(feed.unfitCallbacks() == 1);
+        CHECK(input.missingChannelBlocks() == 1);
+    }
+
+    SECTION("and prepare only ever grows the room") {
+        LiveInputFeed feed;
+        feed.prepare(4, 512);
+        feed.prepare(2, kBlockSize);
+
+        CHECK(feed.preparedChannels() == 4);
+        CHECK(feed.preparedBlockSize() == 512);
+    }
 }
