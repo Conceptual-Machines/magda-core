@@ -1,29 +1,31 @@
 ---
 name: doxygen-comments
-description: Doxygen comment form for C++. Load before writing or editing a comment on a class, struct, enum, method, free function, or file header. Anything longer than one line on those is a /** @brief */ block, never a run of // or /// lines.
+description: Doxygen comment form for C++. Load before writing or editing a comment on a class, struct, enum, function, method, or file header. Those get a /** @brief */ block; fields and lines inside a body get /// or //.
 ---
 
 # Doxygen, Not Multiline
 
-A comment on a class, struct, enum, method or free function that runs to more than one line is
-a Doxygen block. A stack of `//` or `///` lines above a declaration is the wrong form, whatever
-it says.
+What decides the form is **what is being documented**, not how long the comment is.
 
-This is about form only. `comments-not-essays` governs length and still applies: `@brief` is one
-sentence and the body is a short paragraph at most.
+- A **class, struct, enum, function or method** gets a `/** */` block with `@brief`.
+- **Anything else** -- a field, a constant, an enumerator, a line inside a body -- gets `///` or `//`.
 
-Reach for one line first. A `///` that fits on one line is the shortest right answer, and turning
-a wordy two-line `///` into a four-line block makes it longer rather than better -- cut it to one
-line instead. The block form is for what genuinely needs a second thought after the brief.
+A run of `//` or `///` lines above a class or a function is the wrong form whatever it says.
+This is about the form a comment takes, not about what has to carry one: a declaration that needs
+no comment gets none.
 
-## The two forms
+Length is `comments-not-essays`' job and still applies: `@brief` is one sentence, and the body
+under it is a short paragraph at most. A block that has nothing to add after the brief stays on
+one line.
 
-One line, on a field, an enumerator or a method whose name nearly says it:
+## The forms
 
-    /// One least significant bit of the target, as a float amplitude.
-    float lsb() const;
+One sentence, which is most of them:
 
-More than one line, anywhere:
+    /** @brief Room for a window's MIDI, in events. */
+    static int defaultMidiCapacity(const CaptureWindow& window);
+
+A second thought after the brief:
 
     /**
      * @brief Rounds a block to @p bits, dithering on the way.
@@ -33,9 +35,14 @@ More than one line, anywhere:
      */
     PcmQuantiser(int bits, int channels, DitherMode mode);
 
+Not a function, not a class:
+
+    /// Seconds, so reading at another rate keeps the delay the pass had.
+    double roundTripSeconds = 0.0;
+
 Never:
 
-- two or more `//` or `///` lines stacked above a declaration
+- a run of `//` or `///` lines above a class or a function
 - `/* */` with one star (Doxygen ignores it)
 - `\brief`, `\param` -- this repo is `@`, with no exceptions
 
@@ -55,7 +62,7 @@ the tag rather than write it.
 
 Referring to a parameter in prose is `@p name`:
 
-    /// Round @p buffer's first @p numSamples in place onto the target's grid.
+    /** @brief Round @p buffer's first @p numSamples onto the target's grid. */
 
 ## Where the block lives
 
@@ -64,7 +71,7 @@ On the declaration, once.
 - Anything a header declares: the block is in the header. The definition in the `.cpp` repeats
   nothing; notes inside the body are plain `//` lines about mechanics.
 - A file-local helper (anonymous namespace, `static`): the block sits on the definition, since
-  that is the only declaration there is.
+  that is the only declaration there is. It is still a function, so it still gets a block.
 
 ## File headers
 
@@ -81,26 +88,23 @@ Every engine and model file opens with one:
 
 ## Enums
 
-The enum gets a block or a `///`; each enumerator gets whatever it needs, in the same two forms:
+The enum is a type, so it gets a block. Its enumerators are not, so they get `///`:
 
+    /** @brief What is added before the round. */
     enum class DitherMode : std::uint8_t {
         /// Round and nothing else. For a target with no quantisation to hide.
         none,
 
-        /**
-         * @brief Two uniform randoms summed, scaled to one LSB.
-         *
-         * The default wherever the target is fixed point: a triangular
-         * distribution is what makes the error independent of the signal.
-         */
+        /// Two uniform randoms summed, scaled to one LSB. The default wherever
+        /// the target is fixed point.
         tpdf,
     };
 
 ## When you touch old code
 
-A multi-line `//` run on a class or method gets converted while you are there. It is a form fix,
-not a rewrite: keep the words, change the wrapper, cut anything the length rule forbids.
+A `//` run on a class or a function gets converted while you are there. It is a form fix, not a
+rewrite: keep the words, change the wrapper, cut anything the length rule forbids.
 
 The reverse is never right. Do not flatten a `/** @brief */` block into `///` lines to lower the
-number `scripts/comment_ratio.py` reports -- the ratio is a proxy for prose, and the doc block
-form is not what makes a file wordy.
+number `scripts/comment_ratio.py` reports -- the ratio is a proxy for prose, and the block form
+is not what makes a file wordy.
