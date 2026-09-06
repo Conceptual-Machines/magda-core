@@ -47,6 +47,39 @@ struct TempoPoint {
     double bpm = 120.0;
 };
 
+/**
+ * @brief A slot this case launches, and the beat both legs launch it on (#2441).
+ *
+ * The corpus renders an offline arrangement and neither leg has anything that
+ * launches by itself, so a session clip put in a case sounds on neither side
+ * until something says this. Both legs queue it before the render, against the
+ * same beat, which is what makes the two runs start on one sample rather than
+ * on whichever moment each engine happened to begin at.
+ *
+ * No quantization, and that is not an omission. Quantization is the host's:
+ * MAGDA resolves a clip's LaunchQuantize into a beat and hands the engine that
+ * beat (ClipSynchronizer::launchSessionClip), and the native side's requests
+ * carry a beat for the same reason. What a case declares is therefore the beat
+ * a launch was already resolved to, and where the grid put it is #2306's to
+ * assert rather than this corpus's to null.
+ */
+struct LaunchInfo {
+    TrackId trackId = INVALID_TRACK_ID;
+    int sceneIndex = 0;
+
+    /// The timeline beat to start the run on.
+    ///
+    /// Both engines take a launch inside a block on the sample its beat falls
+    /// on, and they round to it differently -- the engine floors the offset it
+    /// derives through the tempo map, the fork rounds the beat's proportion of
+    /// the block. So a case that wants a null puts the launch on the render's
+    /// own start beat, where the answer is sample zero on both sides and every
+    /// block after it is the ordinary clip render #2306 says it is. The field
+    /// is a beat rather than a flag because the difference above is a finding
+    /// to pin, and pinning it needs a case that can ask for one.
+    double beat = 0.0;
+};
+
 /// What a case wrote to disk and told the source pool about. Carried on the
 /// case so that a leg never has to probe a file to find out what it is.
 struct SourceFact {
@@ -110,6 +143,11 @@ struct Case {
     std::vector<ClipInfo> clips;
     std::vector<SourceFact> sources;
     std::vector<TempoPoint> tempo{{0.0, 120.0}};
+
+    /// The slots this case launches, in the order it wants them asked for.
+    /// Empty for every case that renders an arrangement, which is all of them
+    /// but the session ones.
+    std::vector<LaunchInfo> launches;
 
     /// The automation the project plays, and the clips a clip-based lane names
     /// (#2123). Model values like the rest of a case: both legs are handed the

@@ -522,6 +522,26 @@ ClipInfo midiClip(ClipId id, double startBeat, double lengthBeats) {
     return midiClipOn(kTrack, id, startBeat, lengthBeats);
 }
 
+/// The same clip, in a slot rather than on the timeline (#2441).
+///
+/// A slot has no beat: the compiler normalises the placement away and compiles
+/// it from the origin, and the fork's ClipOwner sets a slot clip's start to zero
+/// when it is inserted. What survives is the length, the scene, and everything
+/// the clip itself is made of.
+ClipInfo inSlot(ClipInfo clip, int sceneIndex) {
+    clip.view = ClipView::Session;
+    clip.sceneIndex = sceneIndex;
+    return clip;
+}
+
+/// @p track, with its session in front of its arrangement. The model's
+/// TrackPlaybackMode, which the incumbent syncs to the fork's playSlotClips and
+/// the engine expresses as the section hold a launched handle takes (#2302).
+TrackInfo launching(TrackInfo track) {
+    track.playbackMode = TrackPlaybackMode::Session;
+    return track;
+}
+
 MidiNote note(int pitch, double startBeat, double lengthBeats, int velocity = 100) {
     MidiNote value;
     value.noteNumber = pitch;
@@ -2358,6 +2378,79 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         value.mechanism =
             "the fork's arranger path drops midiOffset on an unlooped clip while its session "
             "path applies it; the engine applies it either way";
+
+        corpus.push_back(std::move(value));
+    }
+
+    // --- the session -----------------------------------------------------------
+    //
+    // The first cases in the corpus whose material is in a slot rather than on
+    // the timeline (#2441). Both legs are handed the same launch and queue it
+    // before the render, in monotonic beats, which begin at zero on the render's
+    // first block on both sides -- so the two runs start on one sample rather
+    // than on whichever moment each engine happened to begin at.
+    //
+    // Launched on the render's own start beat and over a slot longer than the
+    // render, so neither end of a run is in these. What a launch inside a block
+    // rounds to and what happens when a run ends are #2306's, which asserts
+    // them; these null what #2306 calls the ordinary clip render in between.
+
+    {
+        auto value = newCase("session.launch", "an audio slot playing from the first sample",
+                             launching(plainTrack()));
+        value.endBeat = 8.0;
+
+        // A tone, whose file is windowed at both ends, so the slot's first
+        // sample is silence. Both engines take a step out of a launched clip's
+        // first samples and only one of them asks first whether there is a step
+        // to take: the fork's SlotControlNode de-clicks whatever the block
+        // begins with, while the engine leaves a voice that begins at its own
+        // start alone, on the grounds that what looks like a step there is the
+        // material's own attack (ClipVoice.cpp). Impulses put a full-scale
+        // transient on exactly that sample, so an impulse case here would be
+        // measuring the launch instant, which #2306 asserts and this does not.
+        // The difference itself is #2444.
+        //
+        // Nothing interpolates between the two at one rate and ratio one, so the
+        // ordinary floor still applies: the tone is here for what its first
+        // sample is, not for what an interpolator would do to it.
+        const auto source = writeSource(scratchDirectory, "session", tone());
+        value.sources.push_back(source);
+
+        // Sixteen beats against an eight-beat render, so the run never reaches
+        // its own end inside the case.
+        value.clips.push_back(inSlot(audioClip(400, 0.0, 16.0, source), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
+        auto value = newCase("session.launch.midi", "a MIDI slot playing from the first sample",
+                             launching(instrumentTrack()));
+        value.endBeat = 8.0;
+
+        auto clip = midiClip(410, 0.0, 16.0);
+        for (auto index = 0; index < 8; ++index)
+            clip.midiNotes.push_back(
+                note(60 + index, static_cast<double>(index), 0.5, 40 + index * 10));
+        value.clips.push_back(inSlot(std::move(clip), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        value.tier = AudioTier::None;
+        value.compareMidiStreams = true;
+
+        // The fork's launcher path does not make the nudge its arranger path
+        // makes. MidiNote::getPlaybackTime pulls every note-off back by a tenth
+        // of a millisecond to keep an off ahead of an on at the same instant,
+        // and that is what the corpus's default allows for; a clip played from
+        // a slot reaches the graph through LoopingMidiNode and keeps the length
+        // the note was drawn at, which is what the engine does everywhere.
+        //
+        // Declared as the zero it is rather than left at the corpus default, so
+        // the case is asserting that the two agree exactly rather than
+        // forgiving four samples of whatever.
+        value.incumbentNoteEndEarlySeconds = 0.0;
 
         corpus.push_back(std::move(value));
     }

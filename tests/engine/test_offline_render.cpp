@@ -222,7 +222,7 @@ struct Harness {
                                               CollectingSink& sink,
                                               const std::function<bool()>& shouldContinue = {}) {
         return magda::engine::renderOffline(executor, values, context, tempo, request, sink,
-                                            nullptr, shouldContinue);
+                                            nullptr, {}, shouldContinue);
     }
 
     std::vector<TrackInfo> tracks;

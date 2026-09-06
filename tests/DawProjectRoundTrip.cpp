@@ -605,6 +605,12 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         {"midi.mpe", {internalDevices(), controllers()}},
         {"midi.fold", {internalDevices(), groove()}},
         {"midi.offset", {internalDevices()}},
+        // The session cases (#2441). The slot itself makes the trip -- the
+        // format has scenes and clip slots, and the clip comes back in the
+        // right one with its notes and its length -- so the only declaration
+        // either of them needs is the one every instrument track in the corpus
+        // needs, and the audio one has no chain to lose.
+        {"session.launch.midi", {internalDevices()}},
     };
 
     return table;
