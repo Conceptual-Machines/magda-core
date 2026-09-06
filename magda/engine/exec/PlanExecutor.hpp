@@ -590,11 +590,6 @@ class PlanExecutor {
     std::vector<EngineAudioSource*> audioSourceForOp_;
     std::vector<EngineMidiSource*> midiSourceForOp_;
 
-    /// Whether each op's track was inaudible last block, for the edge a device
-    /// panics on (#2418). Only the op's own thread touches its entry, so the
-    /// parallel executor reads and writes it the same way.
-    std::vector<char> wasInaudible_;
-
     /// Handed to ops whose input slot the plan left unconnected. Kept
     /// zeroed: nothing writes to it.
     juce::AudioBuffer<float> silence_;

@@ -501,12 +501,6 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
                 playLane(out, material, slot.midi, from, to);
             });
 
-            // A slot that begins sounding here started material the transport
-            // never moved for, which is the same discontinuity a device is
-            // owed as the arrangement's hold.gained below (#2418).
-            if (!status.soundingAtStart && status.playingAtEnd())
-                raisedAllNotesOff_ = true;
-
             // The session's own way for a note to end: a stop is not a hole,
             // not a snapshot swap and not the end of a span.
             //

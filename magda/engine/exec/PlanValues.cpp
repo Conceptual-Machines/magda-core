@@ -325,11 +325,6 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         return;
     }
 
-    // Every op of the track, not just the one that applies the gain: a device
-    // is several ops upstream of its TrackMute and has no other way to hear
-    // about it (#2418).
-    value.trackInaudible = !isAudible(*track);
-
     // A rack chain that mute or a sibling's solo has taken out of the mix
     // contributes neither audio nor MIDI, so its ops go silent rather than
     // taking a zero gain: the current engine simply does not connect the chain,

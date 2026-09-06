@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <vector>
 
+#include "EngineSessionScaffold.hpp"
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -46,6 +47,14 @@ class LaunchingSource final : public EngineMidiSource {
     }
 
     bool launched = false;
+};
+
+/// Renders silence, so a compiled plan's audio slot has a source bound.
+class SilentAudio final : public magda::engine::EngineAudioSource {
+  public:
+    void render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<float> out) override {
+        out.clear();
+    }
 };
 
 /// Records the panic it was handed, block by block, and writes whatever it was
@@ -144,12 +153,6 @@ struct ChainHarness {
         block.continuous = continuous;
         executor.process(values, block, output);
     }
-
-    /// Every op of the track, the way the resolver marks them.
-    void setTrackInaudible(bool inaudible) {
-        for (auto& value : values.ops)
-            value.trackInaudible = inaudible;
-    }
 };
 
 /// Two MidiInput ops merged into one device, which is what a track with two
@@ -240,30 +243,6 @@ TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec
     CHECK_FALSE(harness.second.lastHeard());
 }
 
-TEST_CASE("the block a track goes inaudible panics its devices once", "[engine][exec][2418]") {
-    // The fork's TrackMuteState::wasJustMuted edge. Only the block it changes
-    // on: a device panicking every block it spends muted would drop a chord
-    // the player is still holding.
-    ChainHarness harness;
-    harness.prepare();
-
-    harness.render();
-    CHECK_FALSE(harness.first.lastHeard());
-
-    harness.setTrackInaudible(true);
-    harness.render();
-    CHECK(harness.first.lastHeard());
-
-    harness.render();
-    CHECK_FALSE(harness.first.lastHeard());
-
-    // Coming back is not a discontinuity: nothing was withheld while the track
-    // was muted, because the engine keeps processing it (its meters stay live).
-    harness.setTrackInaudible(false);
-    harness.render();
-    CHECK_FALSE(harness.first.lastHeard());
-}
-
 TEST_CASE("a device forwards its panic to the next device in the chain", "[engine][exec][2418]") {
     ChainHarness harness;
     harness.first.forwards = true;
@@ -330,46 +309,68 @@ TEST_CASE("a merge with nothing to report carries no panic", "[engine][exec][241
     CHECK_FALSE(harness.device.lastHeard());
 }
 
-TEST_CASE("mute marks every op of the track inaudible, not just the muting stage",
-          "[engine][exec][2418]") {
-    // The device is several ops upstream of its TrackMute and reads no gain, so
-    // the resolver has to say it on the op rather than only where it silences.
-    magda::TrackInfo track;
-    track.id = 1;
-    track.type = magda::TrackType::Media;
-    track.name = "Track 1";
-    track.muted = true;
+TEST_CASE("muting a track raises no panic on its devices", "[engine][exec][2418]") {
+    // MAGDA's mute is a gain with the track still rendering, so its meters stay
+    // live and nothing is withheld from a device: there is nothing for one to
+    // recover from. The fork raises a panic here because it stops the track's
+    // contents; carrying the flag without carrying that behaviour would tell a
+    // device to drop a chord nothing is going to chase back, and neither the
+    // mute nor the unmute leaves the block discontinuous for playLane to chase
+    // on (#2418 review).
+    auto track = magda::test::makeTrack(1);
+    auto instrument = magda::DeviceInfo{};
+    instrument.id = 7;
+    instrument.name = "Instrument";
+    instrument.deviceType = magda::DeviceType::Instrument;
+    instrument.isInstrument = true;
+    instrument.canReceiveMidi = true;
+    instrument.format = magda::PluginFormat::Internal;
+    track.chain.fxChainElements.push_back(magda::makeDeviceElement(instrument));
 
-    magda::TrackInfo master;
-    master.id = magda::MASTER_TRACK_ID;
-    master.type = magda::TrackType::Master;
-    master.name = "Master";
-
+    const auto master = magda::test::makeMaster();
     const auto plan = magda::engine::compileRenderPlan({track}, master, {});
-    PlanValues values;
-    const auto messages = magda::engine::resolvePlanValues(plan, {track}, master, values);
+
+    LaunchingSource source;
+    SilentAudio audio;
+    PanicProbe probe;
+    PlanBindings bindings;
+    bindings.clipMidi[1] = &source;
+    bindings.clipAudio[1] = &audio;
+    bindings.devices[DeviceKey{7}] = &probe;
+
+    PlanExecutor executor;
+    const auto messages = executor.prepare(plan, bindings, RenderContext{44100.0, kBlockSize, 2});
     for (const auto& message : messages)
-        UNSCOPED_INFO("resolve: " << message);
+        UNSCOPED_INFO("prepare: " << message);
     REQUIRE(messages.empty());
 
-    bool sawTrackOp = false;
-    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
-        const auto& op = plan.ops[i];
-        if (op.key.trackId != 1)
-            continue;
-        // A delay and a fade have no model location and are left at unity, so
-        // they carry no audibility either (PlanValues.cpp).
-        if (op.kind == OpKind::Delay || op.kind == OpKind::Crossfade)
-            continue;
-        sawTrackOp = true;
-        UNSCOPED_INFO("op " << i << " " << magda::engine::toString(op.kind));
-        CHECK(values.ops[i].trackInaudible);
-    }
-    CHECK(sawTrackOp);
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    PlanValues values;
 
-    // The master is still heard: mute is the track's, and nothing it feeds
-    // inherits it upwards.
-    for (std::size_t i = 0; i < plan.ops.size(); ++i)
-        if (plan.ops[i].key.trackId == magda::MASTER_TRACK_ID)
-            CHECK_FALSE(values.ops[i].trackInaudible);
+    const auto renderWith = [&](bool muted) {
+        auto model = track;
+        model.muted = muted;
+        const auto valueMessages = magda::engine::resolvePlanValues(plan, {model}, master, values);
+        REQUIRE(valueMessages.empty());
+
+        output.clear();
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.playing = true;
+        block.continuous = true;
+        executor.process(values, block, output);
+    };
+
+    renderWith(false);
+    REQUIRE_FALSE(probe.heard.empty());
+    CHECK_FALSE(probe.lastHeard());
+
+    renderWith(true);
+    CHECK_FALSE(probe.lastHeard());
+
+    renderWith(true);
+    CHECK_FALSE(probe.lastHeard());
+
+    renderWith(false);
+    CHECK_FALSE(probe.lastHeard());
 }

@@ -1653,29 +1653,30 @@ TEST_CASE("Releasing the section brings the arrangement's MIDI back",
     }
 }
 
-TEST_CASE("A launched slot raises a panic on the block it starts",
-          "[engine][clip][session][2418]") {
-    // A discontinuity the transport never moved for. A device downstream is
-    // holding what the slot before it played and has nothing else to hear it
-    // from: the flag beside the port is what says so (#2418).
+TEST_CASE("A launched slot raises no panic", "[engine][clip][session][2418]") {
+    // A launch is self-describing: the slot it replaces owes note-offs for
+    // everything it started (endSlot), so a device downstream hears the release
+    // in the stream and needs no flag. Raising one would be worse than useless
+    // here -- the launched slot starts at its own origin and chases nothing, and
+    // a slot still sounding beside it is never re-asserted, so a device told to
+    // drop what it holds would lose that chord for good (#2418 review).
     MidiRig rig;
     rig.publish({sessionMidiClip(1, 4.0, {MidiNote{60, 100, 0.0, 1.0, 0, {}}})});
 
     rig.roll(0, 3);
-    CHECK(rig.panicBlocks().empty());
-
     rig.handle.play(std::nullopt);
     rig.roll(4, 8);
 
-    // The block the launch fires in, and no block after it: a slot that goes on
-    // playing is not a discontinuity every block.
-    CHECK(rig.panicBlocks() == std::vector<int>{4});
+    REQUIRE(rig.noteOns().size() == 1);  // it did launch
+    CHECK(rig.panicBlocks().empty());
 }
 
 TEST_CASE("Handing a track back to its arrangement raises a panic",
           "[engine][clip][session][2418]") {
-    // The mirror of the launch above, and the same reason the hand-back sets
-    // BlockInfo::continuous false for the chase below it.
+    // The one launch-side discontinuity that is owed a flag, because it is the
+    // one the source chases: the hand-back sets BlockInfo::continuous false, so
+    // playLane re-asserts the controllers and the notes the instant is inside.
+    // A device dropping what it holds here gets it straight back (#2418).
     MidiSwitchRig rig;
     rig.publish({arrangementMidiClip(1, 0.0, 16.0, {MidiNote{64, 100, 0.5, 12.0, 0, {}}})},
                 {sessionMidiClip(2, 16.0, {MidiNote{67, 100, 0.0, 16.0, 0, {}}})});

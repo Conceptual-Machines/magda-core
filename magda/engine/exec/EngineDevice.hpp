@@ -216,11 +216,15 @@ class EngineMidiSource {
     /// kMaxMidiBytesPerPort of encoded MIDI, SysEx included.
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
 
-    /// Whether the block just rendered was a discontinuity of the source's
-    /// own -- a slot the session launched where the transport never moved
-    /// (#2418). Raises the panic flag on the port it feeds, beside the one
-    /// every device takes from BlockInfo::continuous. Read straight after
-    /// render(); false for a source that only follows the timeline.
+    /// Whether the block just rendered was a discontinuity of the source's own
+    /// -- a section hand-over the transport never moved for (#2418). Raises the
+    /// panic flag on the port it feeds, beside the one every device takes from
+    /// BlockInfo::continuous. Read straight after render(); false for a source
+    /// that only follows the timeline.
+    ///
+    /// Only for a block the source also chases on. A panic tells a device to
+    /// drop what it is holding because what should still sound is about to be
+    /// re-asserted; raised without that, it silences a sustained chord for good.
     virtual bool raisedAllNotesOff() const {
         return false;
     }

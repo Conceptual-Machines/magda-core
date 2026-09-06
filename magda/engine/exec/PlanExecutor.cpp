@@ -224,7 +224,6 @@ void PlanExecutor::reset() {
     audioSlots_.clear();
     midiSlots_.clear();
     midiSlotPanic_.clear();
-    wasInaudible_.clear();
     slotChannels_.clear();
     midiByteBounds_.clear();
     portOffsets_.clear();
@@ -276,7 +275,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
-    wasInaudible_.assign(numOps, 0);
     meterForOp_.assign(numOps, nullptr);
     midiTapForOp_.assign(numOps, nullptr);
     paramWindowForOp_.assign(numOps, ParamTable::DeviceWindow{});
@@ -1433,14 +1431,6 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
         case OpKind::Device: {
             auto audio = audioOut(id, 0, numSamples);
-
-            // The block a track goes inaudible is the one its devices are owed
-            // a panic on, which is the edge the fork reads as
-            // TrackMuteState::wasJustMuted (#2418). Taken before anything below
-            // can leave early, so the edge is not missed on a silent block.
-            const bool justInaudible = value.trackInaudible && wasInaudible_[i] == 0;
-            wasInaudible_[i] = value.trackInaudible ? 1 : 0;
-
             const auto producesMidi =
                 op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
             juce::MidiBuffer* deviceMidiOut = nullptr;
@@ -1505,13 +1495,20 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
-                                    // What reached the port, plus the two
-                                    // discontinuities the block itself carries:
-                                    // a playhead jump and a track just muted.
-                                    // Both hosts raise them per device rather
-                                    // than passing them along a chain (#2418).
-                                    .midiInAllNotesOff = !block.continuous || justInaudible ||
-                                                         midiInPanic(op.inputs[1]),
+                                    // What reached the port, plus the block's
+                                    // own playhead jump, which both hosts raise
+                                    // per device rather than passing it along a
+                                    // chain.
+                                    //
+                                    // Deliberately not this track going quiet. A
+                                    // panic says the host is about to re-assert
+                                    // what should sound, and only a jump does
+                                    // (playLane chases on !continuous); mute here
+                                    // is a gain with the track still rendering, so
+                                    // nothing is withheld and nothing would come
+                                    // back (#2418).
+                                    .midiInAllNotesOff =
+                                        !block.continuous || midiInPanic(op.inputs[1]),
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
                                     .params = paramValues_.device(window.first, window.count),
