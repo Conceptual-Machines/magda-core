@@ -192,7 +192,6 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     /// hold on the rest. What a clip left behind has no note-off coming once
     /// the transport stops, and none at all when a seek moves off it.
     void retainLiveHeldNotes();
-    void sendAllNotesOff(DeviceMidiOutput& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.
     int resetArpState();
@@ -202,6 +201,33 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
         int length = 0;
     };
     ExpandedSequence buildSequence() const;
+
+    /// What one process() call holds still: where the block's MIDI goes, the
+    /// clock it runs on, and the settings the walk reads. Defined in the .cpp,
+    /// which is the only place a block exists.
+    struct BlockScope;
+
+    /// One stretch of a block over which the held notes do not change, and the
+    /// step positions that follow from them.
+    struct Stretch;
+
+    /// Applies one input event where the host put it: the pattern the arp plays
+    /// from an instant is the one its input had at that instant (#2415).
+    void applyInputEvent(BlockScope& block, int index, double timeInBlock);
+
+    /// Plays one stretch: its span on the clock, the sequence the notes held
+    /// through it make, and the steps that land inside it.
+    void playStretch(BlockScope& block, double startSecs, double endSecs);
+
+    /// Walks @p stretch's steps, emitting a note for each one it holds.
+    void walkSteps(BlockScope& block, const Stretch& stretch);
+
+    /// Closes the note the arp is sounding, at the instant that closed it.
+    void closeSoundingNote(BlockScope& block, double timeInBlock);
+
+    /// Everything the arp was doing, dropped where the input dropped it: the
+    /// note it sounds, its walk, and the clock the walk runs on.
+    void restartAt(BlockScope& block, double timeInBlock);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ArpeggiatorPlugin)
 };
