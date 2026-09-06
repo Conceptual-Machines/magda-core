@@ -26,12 +26,13 @@ InsertCaptureSession::InsertCaptureSession(EngineInsert& live, const CaptureWind
     const auto samples =
         static_cast<int>(std::llround(window_.lengthSeconds() * std::max(0.0, sampleRate)));
 
-    audio_.setSize(std::max(1, numChannels), std::max(0, samples));
+    audio_.setSize(std::max(0, numChannels), std::max(0, samples));
     audio_.clear();
 
-    covered_.assign(static_cast<std::size_t>(std::max(0, samples)), false);
+    writtenBy_.assign(static_cast<std::size_t>(std::max(0, samples)), 0);
     midi_.resize(
         static_cast<std::size_t>(midiCapacity > 0 ? midiCapacity : defaultMidiCapacity(window_)));
+    midiWrites_.assign(midi_.size(), 0);
 }
 
 void InsertCaptureSession::prepare(const RenderContext& context) {
@@ -57,10 +58,10 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
 
     // A stopped block covers no timeline, so what it returned belongs at no
     // position in the window.
-    if (!block.playing || covered_.empty())
+    if (!block.playing || writtenBy_.empty())
         return;
 
-    const auto windowSamples = static_cast<std::int64_t>(covered_.size());
+    const auto windowSamples = static_cast<std::int64_t>(writtenBy_.size());
     const auto blockStart =
         std::llround((block.seconds.start - window_.startSeconds) * sampleRate_);
 
@@ -70,8 +71,16 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
     if (to <= from)
         return;
 
-    const auto channels =
-        std::min(static_cast<int>(audio.getNumChannels()), audio_.getNumChannels());
+    // A return narrower than the capture leaves a channel nothing wrote, and
+    // marking the span covered anyway would export that channel as silence.
+    if (static_cast<int>(audio.getNumChannels()) < audio_.getNumChannels()) {
+        narrowReturn_.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    ++writeId_;
+
+    const auto channels = audio_.getNumChannels();
     const auto count = static_cast<int>(to - from);
     const auto sourceOffset = static_cast<int>(from - blockStart);
 
@@ -95,10 +104,15 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
             continue;
 
         if (midiCount_ >= static_cast<int>(midi_.size())) {
-            midiOverflowed_.store(true, std::memory_order_relaxed);
-            break;
+            compactMidi();
+
+            if (midiCount_ >= static_cast<int>(midi_.size())) {
+                midiOverflowed_.store(true, std::memory_order_relaxed);
+                break;
+            }
         }
 
+        midiWrites_[static_cast<std::size_t>(midiCount_)] = writeId_;
         auto& event = midi_[static_cast<std::size_t>(midiCount_)];
         event.sample = at;
         event.numBytes = static_cast<std::uint8_t>(metadata.numBytes);
@@ -113,32 +127,57 @@ void InsertCaptureSession::markCovered(std::int64_t from, std::int64_t to) {
     std::int64_t added = 0;
 
     for (auto at = from; at < to; ++at) {
-        auto covered = covered_[static_cast<std::size_t>(at)];
-        if (!covered) {
-            covered_[static_cast<std::size_t>(at)] = true;
+        auto& stamp = writtenBy_[static_cast<std::size_t>(at)];
+        if (stamp == 0)
             ++added;
-        }
+        stamp = writeId_;
     }
 
     if (added > 0)
         writtenSamples_.fetch_add(added, std::memory_order_relaxed);
 }
 
+void InsertCaptureSession::compactMidi() {
+    auto kept = 0;
+
+    for (auto at = 0; at < midiCount_; ++at) {
+        const auto sample = static_cast<std::size_t>(midi_[static_cast<std::size_t>(at)].sample);
+        if (writtenBy_[sample] != midiWrites_[static_cast<std::size_t>(at)])
+            continue;
+
+        midi_[static_cast<std::size_t>(kept)] = midi_[static_cast<std::size_t>(at)];
+        midiWrites_[static_cast<std::size_t>(kept)] = midiWrites_[static_cast<std::size_t>(at)];
+        ++kept;
+    }
+
+    midiCount_ = kept;
+}
+
 std::int64_t InsertCaptureSession::missingSamples() const {
-    return static_cast<std::int64_t>(covered_.size()) -
+    return static_cast<std::int64_t>(writtenBy_.size()) -
            writtenSamples_.load(std::memory_order_relaxed);
 }
 
 InsertCapture InsertCaptureSession::take() const {
     InsertCapture::Contents contents;
     contents.audio.makeCopyOf(audio_);
-    contents.midi.assign(midi_.begin(), midi_.begin() + midiCount_);
+
+    // Only what the write that still owns its position put there: a pass that
+    // went over a stretch again replaced its audio, and its messages with it.
+    contents.midi.reserve(static_cast<std::size_t>(midiCount_));
+    for (auto at = 0; at < midiCount_; ++at) {
+        const auto& event = midi_[static_cast<std::size_t>(at)];
+        if (writtenBy_[static_cast<std::size_t>(event.sample)] ==
+            midiWrites_[static_cast<std::size_t>(at)])
+            contents.midi.push_back(event);
+    }
     contents.window = window_;
     contents.sampleRate = sampleRate_;
     contents.roundTripSeconds =
         sampleRate_ > 0.0 ? static_cast<double>(live_.latencySamples()) / sampleRate_ : 0.0;
-    contents.complete = !covered_.empty() && missingSamples() == 0 &&
-                        !midiOverflowed_.load(std::memory_order_relaxed);
+    contents.complete = !writtenBy_.empty() && missingSamples() == 0 &&
+                        !midiOverflowed_.load(std::memory_order_relaxed) &&
+                        !narrowReturn_.load(std::memory_order_relaxed);
 
     // A pass that looped wrote later blocks at earlier positions; readers walk
     // this forwards.

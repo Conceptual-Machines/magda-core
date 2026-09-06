@@ -61,8 +61,16 @@ class InsertCaptureSession final : public EngineInsert {
     std::int64_t missingSamples() const;
 
   private:
-    /** @brief Mark [@p from, @p to) written, counting only what was not already. */
+    /** @brief Stamp [@p from, @p to) with this write, counting what was new. */
     void markCovered(std::int64_t from, std::int64_t to);
+
+    /**
+     * @brief Drop the events a later write has replaced.
+     *
+     * In place and only when the room runs out, so a pass that loops for an
+     * hour is not held to the events of the passes it overwrote.
+     */
+    void compactMidi();
 
     EngineInsert& live_;
     CaptureWindow window_;
@@ -71,16 +79,35 @@ class InsertCaptureSession final : public EngineInsert {
     juce::AudioBuffer<float> audio_;
 
     std::vector<CapturedMidiEvent> midi_;
+
+    /// The write each event arrived in, so one a later pass replaced can be
+    /// told from one it kept. Beside the events rather than in them: which pass
+    /// wrote a message is the session's business, not the capture's.
+    std::vector<std::uint32_t> midiWrites_;
+
     int midiCount_ = 0;
 
-    /// A bit a sample rather than a list of ranges: a pass that seeks leaves as
-    /// many holes as the transport was driven to make.
-    std::vector<bool> covered_;
+    /**
+     * @brief The write that last covered each sample, and zero for never.
+     *
+     * Per sample rather than a list of ranges: a pass that seeks leaves as many
+     * holes as the transport was driven to make. Numbered rather than flagged
+     * so a revisited stretch takes its MIDI with it -- audio is overwritten by
+     * the copy, and an event has to be dropped by something.
+     */
+    std::vector<std::uint32_t> writtenBy_;
+
+    /// Counts up per write. Zero is never written, so this starts at one.
+    std::uint32_t writeId_ = 0;
 
     /// Read from another thread; written only by the audio thread.
     std::atomic<std::int64_t> writtenSamples_{0};
 
     std::atomic<bool> midiOverflowed_{false};
+
+    /// A return with fewer channels than the capture owns. Allocated width is
+    /// not recorded width, and the difference would export as silence.
+    std::atomic<bool> narrowReturn_{false};
 };
 
 }  // namespace magda::engine
