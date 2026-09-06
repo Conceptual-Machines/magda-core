@@ -154,7 +154,8 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     clips_.publish(std::move(clips));
 }
 
-void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
+void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
+                            const LiveInputBlock& input) {
     output.clear();
 
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
@@ -179,6 +180,11 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
     // of it is not a wrong answer, it is someone else's memory.
     jassert(numSamples <= output.getNumSamples());
     numSamples = std::min(numSamples, output.getNumSamples());
+
+    // What the device captured, held once for the callback and narrowed to
+    // each block below. Ended before returning, so a source reached outside a
+    // callback reads nothing rather than the last one's samples.
+    liveInputs_.beginCallback(input, numSamples);
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the
@@ -206,6 +212,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
                                        segment.startSample, segment.block.numSamples);
 
+        liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
+
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the
         // pool's window starts here, and a clip inside it has until the next
@@ -228,6 +236,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
             (*render)->click->render(transport->tempo, transport->click, segment.block,
                                      segment.countingIn, output, segment.startSample);
     }
+
+    liveInputs_.endCallback();
 }
 
 }  // namespace magda::engine

@@ -9,6 +9,7 @@
 #include "exec/ParallelPlanExecutor.hpp"
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
+#include "io/LiveInput.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
@@ -203,12 +204,30 @@ class EngineSession {
      * wraps inside renders as two blocks back to back, and neither straddles
      * the wrap.
      *
+     * @p input is what the device just captured (#2459), read by the live
+     * sources an armed or monitoring track compiles. Default for a host with
+     * no inputs and for every offline render, where the ops are not compiled
+     * at all.
+     *
      * Renders silence until a plan is published, and the cursor stands
      * still while it does: the sample rate is only settled when a plan is
      * prepared, and a clock with no idea how long a sample lasts would be
      * inventing a position, not reporting one.
      */
-    void process(int numSamples, juce::AudioBuffer<float>& output);
+    void process(int numSamples, juce::AudioBuffer<float>& output,
+                 const LiveInputBlock& input = {});
+
+    /**
+     * @brief The feed a live source reads its block from.
+     *
+     * The host builds LiveAudioInput and LiveMidiInput against this and binds
+     * them through RuntimeStateFactory::createAudioInput / createMidiInput;
+     * process() narrows it to each block as it goes. One per session rather
+     * than one per source, since every input op reads the same callback.
+     */
+    LiveInputFeed& liveInputs() {
+        return liveInputs_;
+    }
 
     /// Where the transport is, in beats. Readable from any thread; what a
     /// playhead is drawn from.
@@ -342,6 +361,11 @@ class EngineSession {
     /// is, a property of the session rather than of any plan, and a plan
     /// swap must not move it.
     TransportClock clock_;
+
+    /// The callback's live input, narrowed per block. Outside every epoch for
+    /// the same reason the clock is: what the device captured is a property of
+    /// the callback, not of the plan rendering it.
+    LiveInputFeed liveInputs_;
 
     /// What the model held at the last publish. Kept so a values publish
     /// escalated into a structural one has a set to publish with; retention
