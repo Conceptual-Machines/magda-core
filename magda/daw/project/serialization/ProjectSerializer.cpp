@@ -379,7 +379,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
         // DeviceType::MIDI device, which is the role of one that produces MIDI,
         // and it produces none. Before the parameter migrations for no reason
         // of its own; it touches nothing they read.
-        legacy_devices::migrateChordEngineRole(outData.tracks, outData.masterTrack.get());
+        legacy_devices::normalizeChordEngineRoleInProject(outData.tracks,
+                                                          outData.masterTrack.get());
 
         // Then any device that renumbered its parameters, so a saved link still
         // addresses the parameter it was made against (#2079). After the

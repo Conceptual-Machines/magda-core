@@ -144,22 +144,29 @@ void migrateRetiredDevicesInChain(std::vector<ChainElement>& elements);
 void migrateRetiredDevicesInRack(RackInfo& rack);
 
 /**
- * @brief Bring the Chord Engine's declared role up to date (#2427).
+ * @brief State what the Chord Engine's declaration has to be (#2427).
  *
- * It was created as a `DeviceType::MIDI` device, which is the role of a device
- * that produces MIDI: `DeviceInfo::emitsMidi()` reads the type, so the model
- * gave it a MIDI output it never writes to and a thru toggle that does
- * nothing, and a plan compiled for a chord track would put a merge behind it
- * and double every note. It reads the chain's MIDI and writes none, which is
- * `DeviceType::Analysis` plus `canReceiveMidi`.
+ * It reads the chain's MIDI to detect chords and writes none, which is
+ * `DeviceType::Analysis` plus `canReceiveMidi`. Declared `DeviceType::MIDI` it
+ * is the role of a device that produces MIDI: `DeviceInfo::emitsMidi()` reads
+ * the type, so the model gives it a MIDI output it never writes to, a thru
+ * toggle that does nothing, and a merge behind it that doubles every note the
+ * moment a chord track compiles.
  *
- * A migration rather than a fix at the creation site alone, because
- * `deviceType` is saved per device: every project with a chord track in it
- * carries the old declaration.
+ * Applied on the way in as well as on the way up, and both are needed for the
+ * same reason: the declaration arrives wrong from more than one direction.
+ * `deviceType` is saved per device, so every project and every chain or rack
+ * preset with a chord track in it carries the old one; and a device dropped
+ * from the browser takes its type from the registry's browser category, which
+ * is "MIDI" and is about where it is filed rather than what it does.
  *
- * @return whether anything was changed.
+ * @return whether anything was changed, so a caller can tell a fresh insert
+ *         from one it had to correct.
  */
-bool migrateChordEngineRole(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack);
+bool normalizeChordEngineRole(DeviceInfo& device);
+bool normalizeChordEngineRoleInChain(std::vector<ChainElement>& elements);
+bool normalizeChordEngineRoleInRack(RackInfo& rack);
+bool normalizeChordEngineRoleInProject(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack);
 
 }  // namespace legacy_devices
 

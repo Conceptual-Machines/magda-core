@@ -821,30 +821,55 @@ void migrateRetiredDevicesInProject(std::vector<TrackInfo>& tracks, TrackInfo* m
     });
 }
 
-bool migrateChordEngineRole(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+bool normalizeChordEngineRole(DeviceInfo& device) {
+    if (!device.pluginId.equalsIgnoreCase("midichordengine"))
+        return false;
+
     auto changed = false;
 
-    // Every chain rather than the chord track's own: the device shows in the
-    // browser, so it can be dropped anywhere, racks included.
+    if (device.deviceType != DeviceType::Analysis) {
+        device.deviceType = DeviceType::Analysis;
+        changed = true;
+    }
+
+    // Set alongside the type rather than left to it: Analysis does not imply a
+    // MIDI input the way MIDI did, and the device has one.
+    if (!device.canReceiveMidi) {
+        device.canReceiveMidi = true;
+        changed = true;
+    }
+
+    return changed;
+}
+
+bool normalizeChordEngineRoleInChain(std::vector<ChainElement>& elements) {
+    auto changed = false;
+
+    // Pads and nested racks included: the device shows in the browser, so it
+    // can be dropped anywhere a device goes.
+    chain_walk::forEachDevice(elements, {}, chain_walk::Pads::Enter,
+                              [&changed](DeviceInfo& device, const ChainNodePath&) {
+                                  changed = normalizeChordEngineRole(device) || changed;
+                                  return true;
+                              });
+
+    return changed;
+}
+
+bool normalizeChordEngineRoleInRack(RackInfo& rack) {
+    auto changed = false;
+    for (auto& chain : rack.chains)
+        changed = normalizeChordEngineRoleInChain(chain.elements) || changed;
+    return changed;
+}
+
+bool normalizeChordEngineRoleInProject(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack) {
+    auto changed = false;
+
     const auto fix = [&changed](TrackInfo& track) {
-        const auto visit = [&changed](DeviceInfo& device, const ChainNodePath&) {
-            if (!device.pluginId.equalsIgnoreCase("midichordengine"))
-                return true;
-
-            if (device.deviceType != DeviceType::Analysis) {
-                device.deviceType = DeviceType::Analysis;
-                changed = true;
-            }
-            if (!device.canReceiveMidi) {
-                device.canReceiveMidi = true;
-                changed = true;
-            }
-            return true;
-        };
-
-        chain_walk::forEachDevice(track.chain.fxChainElements, {}, chain_walk::Pads::Enter, visit);
+        changed = normalizeChordEngineRoleInChain(track.chain.fxChainElements) || changed;
         for (auto& postFx : track.chain.postFxChainElements)
-            visit(postFx.device, {});
+            changed = normalizeChordEngineRole(postFx.device) || changed;
     };
 
     for (auto& track : tracks)
