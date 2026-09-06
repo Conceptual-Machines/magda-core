@@ -50,7 +50,7 @@ class TrackHeadersPanel : public juce::Component,
     void timerCallback() override;
 
     // TrackManagerListener
-    void tracksChanged() override;
+    void tracksChanged() final;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(magda::TrackId trackId) override;
     void devicePropertyChanged(const magda::ChainNodePath& devicePath) override;

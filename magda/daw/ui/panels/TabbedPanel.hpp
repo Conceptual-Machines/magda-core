@@ -104,6 +104,11 @@ class TabbedPanel : public juce::Component, public PanelStateListener {
      */
     virtual juce::Rectangle<int> getTabBarBounds();
 
+    // Call from every derived class's constructor, once the members its own
+    // overrides of the hooks above depend on exist, and before any code that
+    // assumes getActiveContent() is already valid.
+    void completeConstruction();
+
   private:
     PanelLocation location_;
     bool collapsed_ = false;

@@ -78,15 +78,15 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     int getLeftPanelWidth() const override {
         return SIDEBAR_WIDTH + ZOOM_STRIP_WIDTH + labelWidth_ + LABEL_DIVIDER_WIDTH;
     }
-    void updateGridSize() override;
+    void updateGridSize() final;
     void setGridPixelsPerBeat(double ppb) override;
     void setGridPlayheadPosition(double position) override;
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
-    void onGridResolutionChanged() override;
+    void onGridResolutionChanged() final;
     void updateGridLoopRegion() override;
     void setGridPhasePreview(double beats, bool active) override;
-    void applyOverlayTracks() override;
+    void applyOverlayTracks() final;
 
     // Fold hooks (base owns foldEnabled_/applyFold): drum fold filters the pad
     // rows to those that have notes rather than using the pitch fold map.
@@ -95,7 +95,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void updateLaneToggleStates() override;
 
     // Override velocity lane methods
-    void updateVelocityLane() override;
+    void updateVelocityLane() final;
 
     // Live MIDI note monitor hooks (plumbing lives in MidiEditorContent):
     // highlight the played pad row and scroll it into view.

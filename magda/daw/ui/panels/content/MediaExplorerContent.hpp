@@ -36,7 +36,7 @@ class MediaExplorerContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
 
     void onActivated() override;

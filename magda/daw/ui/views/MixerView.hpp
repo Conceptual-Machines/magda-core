@@ -58,7 +58,7 @@ class MixerView : public juce::Component,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
     bool keyPressed(const juce::KeyPress& key) override;
     void mouseMove(const juce::MouseEvent& event) override;
@@ -76,7 +76,7 @@ class MixerView : public juce::Component,
     void trackDevicesChanged(TrackId trackId) override;
     void devicePropertyChanged(const ChainNodePath& devicePath) override;
     void masterChannelChanged() override;
-    void trackSelectionChanged(TrackId trackId) override;
+    void trackSelectionChanged(TrackId trackId) final;
 
     // SelectionManagerListener
     void selectionTypeChanged(SelectionType newType) override;
@@ -116,7 +116,7 @@ class MixerView : public juce::Component,
 
         void paint(juce::Graphics& g) override;
         void paintOverChildren(juce::Graphics& g) override;
-        void resized() override;
+        void resized() final;
         void mouseDown(const juce::MouseEvent& event) override;
         void lookAndFeelChanged() override;
 

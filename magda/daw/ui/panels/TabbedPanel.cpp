@@ -25,8 +25,11 @@ TabbedPanel::TabbedPanel(PanelLocation location) : location_(location), tabBar_(
 
     // Register as listener
     PanelController::getInstance().addListener(this);
+}
 
-    // Initialize from current state
+void TabbedPanel::completeConstruction() {
+    // Deferred from the constructor: resized()/getContentBounds()/onContentWillSwitch()
+    // are virtual, and subclasses (BottomPanel) override them (#2391).
     updateFromState();
 }
 

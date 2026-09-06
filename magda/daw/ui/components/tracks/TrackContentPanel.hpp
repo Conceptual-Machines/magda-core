@@ -52,7 +52,7 @@ class TrackContentPanel : public juce::Component,
 
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
 
     // Keyboard handling
     bool keyPressed(const juce::KeyPress& key) override;
@@ -61,7 +61,7 @@ class TrackContentPanel : public juce::Component,
     void timelineStateChanged(const TimelineState& state, ChangeFlags changes) override;
 
     // TrackManagerListener implementation
-    void tracksChanged() override;
+    void tracksChanged() final;
     void trackSelectionChanged(magda::TrackId trackId) override;
     void trackPropertyChanged(int trackId) override;
 

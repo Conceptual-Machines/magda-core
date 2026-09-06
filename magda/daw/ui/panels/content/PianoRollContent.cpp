@@ -350,6 +350,9 @@ PianoRollContent::PianoRollContent() {
         gridComponent_->setClip(editingClipId_);
         updateTimeRuler();
     }
+
+    // Deferred from the base constructor: needs gridComponent_ to exist (#2391).
+    applyClipGridSettings();
 }
 
 void PianoRollContent::applyOverlayTracks() {

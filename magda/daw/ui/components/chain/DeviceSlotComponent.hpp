@@ -135,8 +135,8 @@ class DeviceSlotComponent : public NodeComponent,
     }
 
     // Mod/macro data providers
-    const magda::ModArray* getModsData() const override;
-    const magda::MacroArray* getMacrosData() const override;
+    const magda::ModArray* getModsData() const final;
+    const magda::MacroArray* getMacrosData() const final;
     std::vector<std::pair<magda::DeviceId, juce::String>> getAvailableDevices() const override;
     std::map<magda::DeviceId, std::vector<juce::String>> getDeviceParamNames() const override;
 
