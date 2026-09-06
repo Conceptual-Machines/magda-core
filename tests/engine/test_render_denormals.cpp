@@ -1,6 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
+#include <condition_variable>
 #include <limits>
 #include <memory>
+#include <mutex>
+#include <thread>
+#include <vector>
 
 #include "NullDiffGain.hpp"
 #include "core/TrackInfo.hpp"
@@ -61,20 +66,82 @@ class DenormalProbe final : public EngineDevice {
     bool rendered = false;
 };
 
-/// One track carrying one device, feeding the master.
-RenderPlan planWithDevice(magda::DeviceId device) {
-    magda::TrackInfo track;
-    track.id = 1;
-    track.type = magda::TrackType::Media;
-    track.name = "Track";
-    track.chain.fxChainElements.emplace_back(magda::nulldiff::gainDevice(device));
+/**
+ * @brief Two devices that stay inside process() until both are.
+ *
+ * The pool's caller takes work as well as waking the workers
+ * (RenderThreadPool::render), so a plan with one device is usually rendered by
+ * the thread that asked for it, under the executor's own guard. One op cannot
+ * prove a worker set anything. Two that have to overlap can, because one thread
+ * cannot be inside both.
+ *
+ * Blocking inside process() is a thing no real device may do. It is safe here
+ * for the reason it is safe in test_parallel_executor.cpp: the branches are
+ * independent, and the wait times out rather than hanging.
+ */
+struct Meeting {
+    std::mutex mutex;
+    std::condition_variable arrived;
+    int inside = 0;
+    bool met = false;
+};
+
+/// Records the thread it ran on and what a denormal came to there.
+class RendezvousProbe final : public EngineDevice {
+  public:
+    explicit RendezvousProbe(Meeting& meeting) : meeting_(meeting) {}
+
+    void process(DeviceBlock&) override {
+        product = multiplyDenormal();
+        thread = std::this_thread::get_id();
+
+        std::unique_lock<std::mutex> lock(meeting_.mutex);
+        if (++meeting_.inside >= 2) {
+            meeting_.met = true;
+            meeting_.arrived.notify_all();
+        } else {
+            meeting_.arrived.wait_for(lock, std::chrono::seconds(2),
+                                      [this] { return meeting_.met; });
+        }
+        --meeting_.inside;
+    }
+
+    void setMidiInputBoundBytes(int) override {}
+    void setMidiOutputBoundBytes(int) override {}
+
+    bool forwardsMidiInput() const override {
+        return false;
+    }
+
+    float product = std::numeric_limits<float>::quiet_NaN();
+    std::thread::id thread;
+
+  private:
+    Meeting& meeting_;
+};
+
+/// One track per device, each feeding the master.
+RenderPlan planWithDevices(const std::vector<magda::DeviceId>& devices) {
+    std::vector<magda::TrackInfo> tracks;
+    for (std::size_t at = 0; at < devices.size(); ++at) {
+        magda::TrackInfo track;
+        track.id = static_cast<magda::TrackId>(at + 1);
+        track.type = magda::TrackType::Media;
+        track.name = "Track " + juce::String(track.id);
+        track.chain.fxChainElements.emplace_back(magda::nulldiff::gainDevice(devices[at]));
+        tracks.push_back(std::move(track));
+    }
 
     magda::TrackInfo master;
     master.id = magda::MASTER_TRACK_ID;
     master.type = magda::TrackType::Master;
     master.name = "Master";
 
-    return compileRenderPlan({track}, master);
+    return compileRenderPlan(tracks, master);
+}
+
+RenderPlan planWithDevice(magda::DeviceId device) {
+    return planWithDevices({device});
 }
 
 PlanBindings bindingsFor(const RenderPlan& plan, EngineDevice& probe) {
@@ -138,15 +205,22 @@ TEST_CASE("A device renders with flush-to-zero on", "[engine][render][denormals]
 }
 
 TEST_CASE("A device rendered on a pool thread has it too", "[engine][render][denormals][2240]") {
-    const auto plan = planWithDevice(11);
+    const auto plan = planWithDevices({11, 12});
 
-    DenormalProbe probe;
-    auto bindings = bindingsFor(plan, probe);
+    Meeting meeting;
+    RendezvousProbe first(meeting);
+    RendezvousProbe second(meeting);
+
+    PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == OpKind::Device)
+            bindings.devices[op.key.deviceKey()] = op.key.deviceId == 11
+                                                       ? static_cast<EngineDevice*>(&first)
+                                                       : static_cast<EngineDevice*>(&second);
+
     auto values = valuesFor(plan);
 
-    // The workers set their own, since the flag belongs to the thread and the
-    // executor's caller is not the one running the op.
-    RenderThreadPool pool(2, false);
+    RenderThreadPool pool(3, false);
     ParallelPlanExecutor executor(&pool);
     prepared(executor, plan, bindings);
 
@@ -154,8 +228,16 @@ TEST_CASE("A device rendered on a pool thread has it too", "[engine][render][den
     output.clear();
     executor.process(values, oneBlock(), output);
 
-    REQUIRE(probe.rendered);
-    CHECK(probe.product == 0.0f);
+    // Both were inside process() at once, so one thread cannot have run them:
+    // at least one is a worker, and it set its own mode rather than inheriting
+    // the caller's.
+    REQUIRE(meeting.met);
+    REQUIRE(first.thread != second.thread);
+    CHECK((first.thread != std::this_thread::get_id() ||
+           second.thread != std::this_thread::get_id()));
+
+    CHECK(first.product == 0.0f);
+    CHECK(second.product == 0.0f);
 }
 
 TEST_CASE("The mode does not outlive the block it was set for",
