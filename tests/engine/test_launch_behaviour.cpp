@@ -231,8 +231,12 @@ TEST_CASE("A stop replaces a launch that has not fired", "[engine][session][laun
     }
     rig.rollTo(3.0, 1);
 
+    // Never started, rather than started and then stopped. A stop clears the
+    // run it ended, so the run it did not have is the last run there has been:
+    // both of the checks above pass on a slot that played beat one to beat two.
     CHECK_FALSE(rig.playing(0, 0));
     CHECK_FALSE(rig.at(0, 0).playedSampleRange().has_value());
+    CHECK_FALSE(rig.at(0, 0).lastPlayedRange().has_value());
 }
 
 TEST_CASE("A stop later than the launch it replaces still cancels it",
@@ -257,6 +261,7 @@ TEST_CASE("A stop later than the launch it replaces still cancels it",
 
     CHECK_FALSE(rig.playing(0, 0));
     CHECK_FALSE(rig.at(0, 0).playedSampleRange().has_value());
+    CHECK_FALSE(rig.at(0, 0).lastPlayedRange().has_value());
 }
 
 TEST_CASE("A scene lands on the same sample at every block size",
