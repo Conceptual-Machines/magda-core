@@ -150,8 +150,13 @@ class BoundProbe final : public magda::engine::EngineDevice {
         outBound = bytes;
     }
 
+    bool forwardsMidiInput() const override {
+        return forwards;
+    }
+
     int bound = -1;
     int outBound = -1;
+    bool forwards = false;
 };
 
 /// Copies its input to its output reversed, dropping the middle event, on
@@ -681,6 +686,46 @@ TEST_CASE("the executor tells a device what it may write, apart from what it may
     // The gain emits no MIDI at all, and is told so rather than being left at
     // whatever it assumed.
     CHECK(gainProbe.outBound == 0);
+}
+
+TEST_CASE("the executor budgets a forwarding device's output for its input as well",
+          "[engine][devices][2417]") {
+    // The exception to the case above. A MIDI FX that consumes notes hands the
+    // rest of the channel on, since thru would bring the notes back with it,
+    // so its port holds what reached it as well as what it makes. Same three
+    // producers as above, so the two figures can be read against each other.
+    magda::TrackInfo instrument;
+    instrument.id = 1;
+    instrument.type = magda::TrackType::Media;
+    instrument.name = "Instrument";
+    instrument.recordArmed = true;  // what makes the input route active
+    instrument.midiInputDevice = "midi-hardware";
+
+    auto arp = magda::nulldiff::synthDevice(10);
+    arp.producesMidi = true;  // so the plan gives the op a MIDI output port
+    instrument.chain.fxChainElements.emplace_back(arp);
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+    master.type = magda::TrackType::Master;
+    master.name = "Master";
+
+    const auto plan = magda::engine::compileRenderPlan({instrument}, master);
+
+    BoundProbe probe;
+    probe.forwards = true;
+
+    magda::engine::PlanBindings bindings;
+    for (const auto& op : plan.ops)
+        if (op.kind == magda::engine::OpKind::Device)
+            bindings.devices[op.key.deviceKey()] = &probe;
+
+    magda::engine::PlanExecutor executor;
+    executor.prepare(plan, bindings, contextFor(), nullptr, nullptr);
+    REQUIRE(executor.isPrepared());
+
+    REQUIRE(probe.bound == 3 * magda::engine::kMaxMidiBytesPerPort);
+    CHECK(probe.outBound == probe.bound + magda::engine::kMaxMidiBytesPerPort);
 }
 
 TEST_CASE("a device forwards long messages by copying them, never in place",

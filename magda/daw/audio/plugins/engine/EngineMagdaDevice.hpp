@@ -86,6 +86,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     void reset() override;
     void setMidiInputBoundBytes(int bytes) override;
     void setMidiOutputBoundBytes(int bytes) override;
+    bool forwardsMidiInput() const override;
     int latencySamples() const override;
     void process(magda::engine::DeviceBlock& block) override;
 
@@ -132,10 +133,11 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     /// than before it could.
     int midiInputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
-    /// What the executor reserved on the output port, which is one producer's
-    /// worth: a device emits what it made, and MIDI thru is the plan's merge
-    /// behind it (#2345, #2347). The constant until it says otherwise, for the
-    /// reason above.
+    /// What the executor reserved on the output port: one producer's worth,
+    /// plus the input's when the device forwards part of it (#2417). A device
+    /// emits what it made, and MIDI thru is the plan's merge behind it
+    /// (#2345, #2347). The constant until it says otherwise, for the reason
+    /// above.
     int midiOutputBoundBytes_ = magda::engine::kMaxMidiBytesPerPort;
 
     double sampleRate_ = 44100.0;

@@ -1,6 +1,7 @@
 #include "plugins/ArpeggiatorPlugin.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include "transport/RampCurve.hpp"
 
@@ -27,6 +28,52 @@ bool isLiveSource(const DeviceProcessContext& context, std::uint32_t sourceId) {
     }
     return false;
 }
+
+/// What the arp does not consume, copied onto its output in timestamp order
+/// (#2417).
+///
+/// Notes are the device's material: they go in and an arpeggio comes out.
+/// Everything else the channel carries -- mod wheel, expression, sustain,
+/// bend, aftertouch, program change -- is addressed to the instrument behind
+/// this one, and reaches it nowhere else: thru carries the held chord too, so
+/// a track that wants the pedal cannot have it without the notes under it.
+///
+/// Forwarded on channel 1, the one the generated notes are on, so an
+/// instrument that keeps per-channel state applies them to what it is
+/// playing. SysEx is not forwarded: copying one allocates on the audio thread
+/// (JUCE holds anything past eight bytes on the heap), and it addresses a
+/// device rather than the notes.
+class NonNoteForwarder {
+  public:
+    explicit NonNoteForwarder(const DeviceMidiInput& in) : in_(in) {}
+
+    /// Everything up to and including @p timeInBlock. A message coincident
+    /// with a generated note goes out first: a controller moved on the beat
+    /// belongs to the note that starts on it.
+    void flushUpTo(DeviceMidiOutput& midi, double timeInBlock) {
+        for (const int count = in_.size(); next_ < count; ++next_) {
+            const auto& message = in_.message(next_);
+            if (message.getTimeStamp() > timeInBlock)
+                return;
+            // Channel messages only: getChannel() is 0 for SysEx and for
+            // everything the transport carries.
+            if (message.getChannel() == 0 || message.isNoteOnOrOff())
+                continue;
+
+            auto forwarded = message;  // short message: inline storage, no allocation
+            forwarded.setChannel(1);
+            midi.addEvent({std::move(forwarded), in_.sourceId(next_)});
+        }
+    }
+
+    void flushRest(DeviceMidiOutput& midi) {
+        flushUpTo(midi, std::numeric_limits<double>::max());
+    }
+
+  private:
+    const DeviceMidiInput& in_;
+    int next_ = 0;
+};
 
 /// One slot's metadata. The ids, order and display ranges are pinned to what
 /// the retired host-native plugin registered, because saved links address the
@@ -425,6 +472,12 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     auto& midi = *context.midiOut;
     const bool isLatched = displayValue(kLatch) >= 0.5f;
 
+    // What the arp passes on rather than consumes, emitted beside the notes it
+    // generates. The guard covers the returns below: a block the arp leaves
+    // early is still a block the instrument behind it is owed its pedal on.
+    NonNoteForwarder forward(in);
+    const juce::ScopeGuard forwardRest{[&] { forward.flushRest(midi); }};
+
     // --- 1. Capture incoming MIDI ---
     // Only one note can be sounding on entry, and this pass generates none, so
     // one pending note-off is enough.
@@ -483,7 +536,10 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     }
 
     // --- 2. Pass the panic on and close the note the input pass ended ---
+    // One flush covers every note-off below that lands at the top of the
+    // block, since none of them advances past that instant.
     midi.setAllNotesOff(inputPanic);
+    forward.flushUpTo(midi, 0.0);
     sendNoteOff(midi, pendingNoteOff, lastPlayedSourceId_);
 
     // --- 3. Handle transport transitions ---
@@ -591,8 +647,9 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // Block duration in seconds (MIDI timestamps stay in seconds, not samples)
     double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
 
-    const auto addTimedMessage = [&midi](juce::MidiMessage message, double timeInBlock,
-                                         std::uint32_t sourceId) {
+    const auto addTimedMessage = [&](juce::MidiMessage message, double timeInBlock,
+                                     std::uint32_t sourceId) {
+        forward.flushUpTo(midi, timeInBlock);
         message.setTimeStamp(timeInBlock);
         midi.addEvent({std::move(message), sourceId});
     };

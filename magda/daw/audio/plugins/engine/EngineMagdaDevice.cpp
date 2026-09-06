@@ -209,6 +209,12 @@ void EngineMagdaDevice::setMidiOutputBoundBytes(int bytes) {
     sizeMidiScratch();
 }
 
+bool EngineMagdaDevice::forwardsMidiInput() const {
+    // Only meaningful for a device the plan reads MIDI from: what a device
+    // that declares no output writes is dropped either way.
+    return properties_.forwardsMidiInput && properties_.producesMidi;
+}
+
 void EngineMagdaDevice::sizeMidiScratch() {
     // Every caller runs off the audio thread, and each runs again when another
     // does: prepare() sizes from whatever bounds are known, and the executor

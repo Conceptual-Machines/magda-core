@@ -70,6 +70,7 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
             .shortName = "Arp",
             .takesMidiInput = true,
             .producesMidi = true,
+            .forwardsMidiInput = true,
         };
     }
 
