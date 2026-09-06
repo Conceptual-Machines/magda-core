@@ -37,7 +37,7 @@ class InspectorContainer : public PanelContent, public magda::SelectionManagerLi
     void onDeactivated() override;
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
 
     /**
      * @brief Set the timeline controller reference

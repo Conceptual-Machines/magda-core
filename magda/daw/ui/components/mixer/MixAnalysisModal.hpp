@@ -23,7 +23,7 @@ class MixAnalysisModal : public juce::Component, public MixAnalysisService::List
     ~MixAnalysisModal() override;
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void parentHierarchyChanged() override;  // block input once shown + rendering
 
     // MixAnalysisService::Listener

@@ -148,7 +148,7 @@ class MainWindow::MainComponent : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override;
-    void trackPropertyChanged(int trackId) override;
+    void trackPropertyChanged(int trackId) final;
 
     // MidiLearnCoordinatorListener
     void midiLearnStateChanged(const magda::ChainNodePath& path, int paramIndex,

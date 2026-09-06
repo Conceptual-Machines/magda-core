@@ -75,7 +75,7 @@ class AIChatConsoleContent : public PanelContent,
     }
 
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
     void lookAndFeelChanged() override;
 
     void onActivated() override;
@@ -99,9 +99,9 @@ class AIChatConsoleContent : public PanelContent,
 
     // SelectionManagerListener
     void selectionTypeChanged(magda::SelectionType newType) override;
-    void trackSelectionChanged(magda::TrackId trackId) override;
+    void trackSelectionChanged(magda::TrackId trackId) final;
     void multiTrackSelectionChanged(const std::unordered_set<magda::TrackId>& trackIds) override;
-    void clipSelectionChanged(magda::ClipId clipId) override;
+    void clipSelectionChanged(magda::ClipId clipId) final;
     void multiClipSelectionChanged(const std::unordered_set<magda::ClipId>& clipIds) override;
     void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
 

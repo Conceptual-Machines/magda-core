@@ -74,7 +74,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialize the engine
     bool initialize() override;
-    void shutdown() override;
+    void shutdown() final;
     bool hasActiveEdit() const override {
         return currentEdit_ != nullptr;
     }
