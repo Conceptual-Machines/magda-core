@@ -73,6 +73,18 @@ class MidiChordEnginePlugin : public MagdaDevice, private juce::Timer {
         chordTrackMuted_.store(muted, std::memory_order_relaxed);
     }
 
+    /**
+     * @brief What the host last pushed.
+     *
+     * Read by the tests that hold the host to pushing it at all, which is the
+     * half a device cannot check for itself.
+     *
+     * @return whether the chord track's audition is off.
+     */
+    bool chordTrackMuted() const {
+        return chordTrackMuted_.load(std::memory_order_relaxed);
+    }
+
     // --- Chord detection state (message-thread readable) ---
 
     /** Current detected chord display name (e.g. "Cmaj7", "Am"). Empty if no chord held. */

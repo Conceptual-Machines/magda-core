@@ -7,7 +7,13 @@ namespace {
 
 namespace audio = magda::daw::audio;
 
-/// One block of a held triad through the device.
+/**
+ * @brief Run one block of a held triad through @p engine.
+ *
+ * @param engine  the device under test
+ * @param playing what the host says the transport is doing, which is half of
+ *                the audition condition
+ */
 void playTriad(audio::MidiChordEnginePlugin& engine, bool playing) {
     magda::test::DeviceMidiBuffer midi;
     for (const auto note : {60, 64, 67})

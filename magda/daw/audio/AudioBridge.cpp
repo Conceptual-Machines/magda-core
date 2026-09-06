@@ -363,20 +363,39 @@ void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
 
 namespace {
 
-/// Push a chord track's audition state to the Chord Engines on it (#2314).
-///
-/// The device used to poll a `DeviceTrackContext` for this; an engine-built one
-/// has no session to poll, so the host pushes it where it already applies the
-/// mute. The audition toggle is the track's own mute, which is why this sits
-/// beside `setMute` rather than anywhere of its own.
+/**
+ * @brief Push a chord track's audition state to the Chord Engines on it (#2314).
+ *
+ * The device used to poll a `DeviceTrackContext` for this; an engine-built one
+ * has no session to poll, so the host pushes it where it already applies the
+ * mute. The audition toggle is the track's own mute, which is why this sits
+ * beside `setMute` rather than anywhere of its own.
+ *
+ * @param teTrack   the engine track whose plugins carry the devices
+ * @param trackInfo the model track it was built from; anything but a chord
+ *                  track returns immediately
+ */
 void pushChordAudition(te::AudioTrack& teTrack, const magda::TrackInfo& trackInfo) {
     if (trackInfo.type != magda::TrackType::Chord)
         return;
 
-    for (auto* plugin : teTrack.pluginList)
+    const auto push = [&trackInfo](te::Plugin* plugin) {
         if (auto* engine = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
                 magda::daw::audio::MidiChordEnginePlugin>(plugin))
             engine->setChordTrackMuted(trackInfo.muted);
+    };
+
+    // Racks too. `deviceFromPlugin` unwraps the host's device adapter and
+    // nothing else, so a Chord Engine dropped inside a rack lives in the rack
+    // type's own plugin list and a top-level walk never reaches it.
+    for (auto* plugin : teTrack.pluginList) {
+        push(plugin);
+
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
+            if (rackInstance->type != nullptr)
+                for (auto* innerPlugin : rackInstance->type->getPlugins())
+                    push(innerPlugin);
+    }
 }
 
 }  // namespace
@@ -482,6 +501,15 @@ void AudioBridge::trackDevicesChanged(TrackId trackId) {
     DBG("AudioBridge::trackDevicesChanged: trackId=" << trackId);
     // Devices on a track changed - resync that track's plugins
     syncTrackPlugins(trackId);
+
+    // A Chord Engine that has just been created has never been told what the
+    // audition toggle is set to, and the toggle only pushes when it changes.
+    // Creating a chord track lands here rather than in the full sync as well:
+    // createTrack notifies before it adds the default devices, so the sync that
+    // followed had no engine to reach (#2314).
+    if (auto* teTrack = getAudioTrack(trackId))
+        if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
+            pushChordAudition(*teTrack, *trackInfo);
 
     // An added/removed external insert claims/releases its hardware ports
     // (#1623). Cheap and idempotent when no inserts changed.
