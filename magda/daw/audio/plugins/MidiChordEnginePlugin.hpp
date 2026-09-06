@@ -1,6 +1,6 @@
 #pragma once
 
-#include <tracktion_engine/tracktion_engine.h>
+#include <juce_events/juce_events.h>
 
 #include <atomic>
 
@@ -8,27 +8,30 @@
 #include "../../music/ChordSuggestionEngine.hpp"
 #include "../../music/KeyModeHistogram.hpp"
 #include "../../music/ScaleDetector.hpp"
-#include "plugins/DeviceServices.hpp"
+#include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
 
-namespace te = tracktion::engine;
-
 /**
- * @brief MIDI analysis plugin that provides real-time chord detection and suggestions.
+ * @brief The chord detector: it reads the chain's MIDI and writes none (#2314).
  *
- * Transparent passthrough — does not modify audio or MIDI. Dropped onto a track to
- * enable chord analysis for that track. On the audio thread, note-on/off events are
- * collected; on the message thread, a timer periodically runs detection and updates
- * exposed state that the UI reads.
+ * A listener rather than a MIDI effect. On the audio thread it records the
+ * notes going past; on the message thread a timer runs detection and updates
+ * the state the UI reads. Nothing it does reaches the signal, which is what
+ * `DeviceType::Analysis` and a `properties()` with no `producesMidi` say
+ * (#2427).
  *
  * Dual UI surface:
  * - Inline/window: real-time chord display, key indicator, suggestion grid
  * - Editor panel chord row: timeline overlay + drag-and-drop from suggestions
+ *
+ * The timer is the device's own, which two other MagdaDevices already do
+ * (FaustPlugin): only `process()` belongs to the audio thread, and the
+ * analysis behind it is message-thread work on a plain object the host owns.
  */
-class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
+class MidiChordEnginePlugin : public MagdaDevice, private juce::Timer {
   public:
-    MidiChordEnginePlugin(const te::PluginCreationInfo& info, DeviceTrackContext* trackContext);
+    MidiChordEnginePlugin();
     ~MidiChordEnginePlugin() override;
 
     static const char* getPluginName() {
@@ -36,43 +39,39 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     }
     static const char* xmlTypeName;
 
-    // --- te::Plugin overrides ---
-    juce::String getName() const override {
-        return getPluginName();
-    }
-    juce::String getPluginType() override {
-        return xmlTypeName;
-    }
-    juce::String getShortName(int) override {
-        return "Chord";
-    }
-    juce::String getSelectableDescription() override {
-        return getName();
+    // --- MagdaDevice ---
+
+    DeviceProperties properties() const override {
+        return {
+            .pluginId = xmlTypeName,
+            .name = getPluginName(),
+            .shortName = "Chord",
+            .takesMidiInput = true,
+            .producesMidi = false,
+        };
     }
 
-    void initialise(const te::PluginInitialisationInfo&) override;
-    void deinitialise() override;
+    void prepare(const DevicePrepareContext& context) override;
+    void release() override;
     void reset() override;
+    void process(DeviceProcessContext& context) override;
 
-    void applyToBuffer(const te::PluginRenderContext&) override;
-
-    bool takesMidiInput() override {
-        return true;
+    /**
+     * @brief Whether the chord track's audition is off, pushed by the host.
+     *
+     * A value rather than a lookup (#2314): the old plugin polled a
+     * `DeviceTrackContext` for the chord track's mute, and an engine-built
+     * device has no session to poll. The host owns the model and pushes this
+     * when it changes.
+     *
+     * Read together with the block's own `isPlaying`, so live authoring while
+     * the transport is stopped still detects. What it skips is the recording,
+     * not the signal: the chain's MIDI belongs to the host and a muted chord
+     * track is already silent.
+     */
+    void setChordTrackMuted(bool muted) {
+        chordTrackMuted_.store(muted, std::memory_order_relaxed);
     }
-    bool takesAudioInput() override {
-        return true;
-    }
-    bool isSynth() override {
-        return false;
-    }
-    bool producesAudioWhenNoAudioInput() override {
-        return false;
-    }
-    double getTailLength() const override {
-        return 0.0;
-    }
-
-    void restorePluginStateFromValueTree(const juce::ValueTree&) override;
 
     // --- Chord detection state (message-thread readable) ---
 
@@ -159,8 +158,6 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     }
 
   private:
-    DeviceTrackContext* trackContext_ = nullptr;
-
     // --- Audio-thread state (lock-free) ---
 
     // SPSC ring buffer for note events from audio thread → message thread
@@ -185,10 +182,9 @@ class MidiChordEnginePlugin : public te::Plugin, private juce::Timer {
     // Suppress detection during preview playback
     std::atomic<bool> detectionSuppressed_{false};
 
-    // Audition muted (chord track mute / speaker off): drop all incoming MIDI so
-    // neither this engine's detection nor the downstream instrument sees it.
-    // Polled from the message thread (timerCallback), read on the audio thread.
-    std::atomic<bool> auditionMuted_{false};
+    // The chord track's audition (its mute), pushed by the host and read on the
+    // audio thread beside the block's own isPlaying.
+    std::atomic<bool> chordTrackMuted_{false};
 
     // --- Message-thread state ---
     magda::music::ChordSuggestionEngine suggestionEngine_;

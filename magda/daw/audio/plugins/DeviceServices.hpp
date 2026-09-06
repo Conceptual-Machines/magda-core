@@ -21,7 +21,6 @@ class DeviceTrackContext {
   public:
     virtual ~DeviceTrackContext() = default;
 
-    virtual bool isChordTrackMuted() const = 0;
     virtual void setDeviceParameterValueFromPlugin(DeviceId deviceId, int paramIndex,
                                                    float value) = 0;
 };

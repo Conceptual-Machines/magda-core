@@ -18,6 +18,8 @@
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceServices.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
+#include "plugins/MidiChordEnginePlugin.hpp"
+#include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "session/SessionMonitorPlugin.hpp"
 
 namespace magda {
@@ -359,6 +361,26 @@ void AudioBridge::syncRecordArmedToTE(TrackId trackId) {
     }
 }
 
+namespace {
+
+/// Push a chord track's audition state to the Chord Engines on it (#2314).
+///
+/// The device used to poll a `DeviceTrackContext` for this; an engine-built one
+/// has no session to poll, so the host pushes it where it already applies the
+/// mute. The audition toggle is the track's own mute, which is why this sits
+/// beside `setMute` rather than anywhere of its own.
+void pushChordAudition(te::AudioTrack& teTrack, const magda::TrackInfo& trackInfo) {
+    if (trackInfo.type != magda::TrackType::Chord)
+        return;
+
+    for (auto* plugin : teTrack.pluginList)
+        if (auto* engine = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
+                magda::daw::audio::MidiChordEnginePlugin>(plugin))
+            engine->setChordTrackMuted(trackInfo.muted);
+}
+
+}  // namespace
+
 void AudioBridge::trackPropertyChanged(int trackId) {
     // Track property changed (volume, pan, mute, solo, recordArmed) - sync to Tracktion Engine
     auto* track = getAudioTrack(trackId);
@@ -368,6 +390,7 @@ void AudioBridge::trackPropertyChanged(int trackId) {
             // Sync mute/solo to track
             track->setMute(trackInfo->muted);
             track->setSolo(trackInfo->soloed);
+            pushChordAudition(*track, *trackInfo);
 
             // Sync freeze state
             if (trackInfo->frozen != track->isFrozen(te::AudioTrack::individualFreeze)) {
@@ -966,6 +989,7 @@ void AudioBridge::syncAll() {
             // Sync mute/solo state to TE (essential on project load)
             teTrack->setMute(track.muted);
             teTrack->setSolo(track.soloed);
+            pushChordAudition(*teTrack, track);
 
             // Sync audio output routing (group/aux targets now exist from first pass)
             trackController_.setTrackAudioOutput(track.id, track.audioOutputDevice);

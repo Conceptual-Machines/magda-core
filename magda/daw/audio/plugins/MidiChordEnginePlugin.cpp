@@ -4,29 +4,25 @@ namespace magda::daw::audio {
 
 const char* MidiChordEnginePlugin::xmlTypeName = "midichordengine";
 
-MidiChordEnginePlugin::MidiChordEnginePlugin(const te::PluginCreationInfo& info,
-                                             DeviceTrackContext* trackContext)
-    : te::Plugin(info), trackContext_(trackContext) {
+MidiChordEnginePlugin::MidiChordEnginePlugin() {
     for (auto& n : heldNotes_)
         n.store(0, std::memory_order_relaxed);
-    // Start timer here as fallback — initialise() may not be called
-    // if the graph isn't rebuilt after plugin insertion.
+
+    // Started here rather than in prepare(), because the UI reads this device
+    // whether or not a graph was ever built for it: a chord track sitting in a
+    // stopped project still shows what its panel detected.
     startTimerHz(30);
 }
 
 MidiChordEnginePlugin::~MidiChordEnginePlugin() {
     stopTimer();
-    notifyListenersOfDeletion();
 }
 
-void MidiChordEnginePlugin::initialise(const te::PluginInitialisationInfo& info) {
-    sampleRate_ = info.sampleRate;
-    startTimerHz(30);  // ~33ms polling interval
+void MidiChordEnginePlugin::prepare(const DevicePrepareContext& context) {
+    sampleRate_ = context.sampleRate;
 }
 
-void MidiChordEnginePlugin::deinitialise() {
-    stopTimer();
-}
+void MidiChordEnginePlugin::release() {}
 
 void MidiChordEnginePlugin::reset() {
     heldNoteCount_.store(0, std::memory_order_relaxed);
@@ -37,27 +33,31 @@ void MidiChordEnginePlugin::reset() {
 // Audio thread
 // =============================================================================
 
-void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
-    // Transparent passthrough — don't modify audio or MIDI
-
-    if (!fc.bufferForMidiMessages)
+void MidiChordEnginePlugin::process(DeviceProcessContext& context) {
+    // Nothing is written anywhere: the chain's MIDI is the host's to pass on
+    // and this device declares no output of its own (#2427). What happens here
+    // is recording, and every early return below skips only that.
+    if (context.midiIn == nullptr)
         return;
 
-    // Audition muted (chord track speaker off): drop all MIDI here, before it
-    // reaches this engine's detection or the downstream instrument.
-    if (auditionMuted_.load(std::memory_order_relaxed)) {
-        fc.bufferForMidiMessages->clear();
+    // Audition off while the transport rolls. The old plugin cleared the
+    // buffer here so nothing downstream heard it; a listener has no buffer to
+    // clear and needs none, because the audition toggle is the chord track's
+    // own mute and a muted track is already silent (#2314). What is left to do
+    // is keep playback out of the detection, which is this.
+    if (chordTrackMuted_.load(std::memory_order_relaxed) && context.isPlaying) {
         heldNoteCount_.store(0, std::memory_order_relaxed);
         return;
     }
 
-    // Skip recording during preview playback or when plugin is bypassed/disabled
-    if (detectionSuppressed_.load(std::memory_order_relaxed) || !isEnabled())
+    // Skip recording during preview playback.
+    if (detectionSuppressed_.load(std::memory_order_relaxed))
         return;
 
-    const double blockTimeSeconds = static_cast<double>(fc.bufferStartSample) / sampleRate_;
+    const double blockTimeSeconds = context.timelineStartSeconds;
 
-    for (const auto& msg : *fc.bufferForMidiMessages) {
+    for (int index = 0; index < context.midiIn->size(); ++index) {
+        const auto& msg = context.midiIn->message(index);
         if (msg.isNoteOn()) {
             // Add to held notes
             int count = heldNoteCount_.load(std::memory_order_relaxed);
@@ -111,26 +111,6 @@ void MidiChordEnginePlugin::applyToBuffer(const te::PluginRenderContext& fc) {
 // =============================================================================
 
 void MidiChordEnginePlugin::timerCallback() {
-    // Drop playback MIDI before it enters this engine when the chord track is
-    // muted (audition off) AND the transport is playing. Live authoring while
-    // stopped is unaffected. Chord-track state comes from the injected project context.
-    {
-        const bool playing = edit.getTransport().isPlaying();
-        auditionMuted_.store(trackContext_ != nullptr && trackContext_->isChordTrackMuted() &&
-                                 playing,
-                             std::memory_order_relaxed);
-    }
-
-    if (!isEnabled()) {
-        // Flush stale FIFO events by consuming them (safe — we're the reader).
-        // Don't call reset() here as it races with the audio thread writer.
-        int start1, size1, start2, size2;
-        noteFifo_.prepareToRead(noteFifo_.getNumReady(), start1, size1, start2, size2);
-        noteFifo_.finishedRead(size1 + size2);
-        heldNoteCount_.store(0, std::memory_order_relaxed);
-        return;
-    }
-
     processNoteEvents();
 
     // Debounce: if held note count changed since last detection, wait
@@ -375,10 +355,6 @@ void MidiChordEnginePlugin::refreshSuggestions() {
         cachedSuggestions_ = suggestionEngine_.generateSuggestions(recentChords, suggestionParams_);
     }
     listeners_.call(&Listener::suggestionsChanged, this);
-}
-
-void MidiChordEnginePlugin::restorePluginStateFromValueTree(const juce::ValueTree&) {
-    // No persistent parameters yet — suggestion params could be saved here later
 }
 
 }  // namespace magda::daw::audio

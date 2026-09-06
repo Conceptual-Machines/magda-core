@@ -34,7 +34,9 @@ void bindDeviceSlotMidiCustomUIs(DeviceCustomUIManager& customUI,
     auto plugin = bridge->getPlugin(nodePath);
 
     if (auto* chordEngineUI = customUI.getChordEngineUI()) {
-        if (auto* chordPlugin = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get()))
+        if (auto* chordPlugin =
+                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiChordEnginePlugin>(
+                    plugin.get()))
             chordEngineUI->setChordEngine(chordPlugin, nodePath.trackId);
     }
 

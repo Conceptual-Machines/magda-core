@@ -963,7 +963,8 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         parent.addAndMakeVisible(*chordEngineUI_);
         // Connect to the plugin instance
         if (auto plugin = getLivePlugin()) {
-            if (auto* cp = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(plugin.get())) {
+            if (auto* cp = daw::audio::tracktion_adapter::deviceFromPlugin<
+                    daw::audio::MidiChordEnginePlugin>(plugin.get())) {
                 chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
                 chordPlugin_ = cp;
             }

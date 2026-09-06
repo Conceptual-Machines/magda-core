@@ -39,11 +39,6 @@ class TestDeviceServices final : public audio::DeviceIdAllocator, public audio::
         nextDeviceId = std::max(nextDeviceId, id + 1);
     }
 
-    bool isChordTrackMuted() const override {
-        ++chordMuteReads;
-        return chordTrackMuted;
-    }
-
     void setDeviceParameterValueFromPlugin(magda::DeviceId deviceId, int paramIndex,
                                            float value) override {
         lastDeviceId = deviceId;
@@ -52,8 +47,6 @@ class TestDeviceServices final : public audio::DeviceIdAllocator, public audio::
     }
 
     magda::DeviceId nextDeviceId = 700;
-    bool chordTrackMuted = true;
-    mutable int chordMuteReads = 0;
     magda::DeviceId lastDeviceId = magda::INVALID_DEVICE_ID;
     int lastParamIndex = -1;
     float lastValue = 0.0f;
@@ -196,10 +189,19 @@ class DeviceServicesInjectionTest final : public juce::UnitTest {
                 expect(midiReceive->getReplaceExistingMidi());
             }
 
+            // The Chord Engine is a MagdaDevice (#2314), so the session holds the
+            // host's wrapper and the device is reached through it. It used to poll
+            // the track context for the chord track's mute; the host pushes that
+            // now, so there is no service read left to assert here.
             auto chordPlugin = createCustomPlugin(*edit, audio::MidiChordEnginePlugin::xmlTypeName);
-            expect(dynamic_cast<audio::MidiChordEnginePlugin*>(chordPlugin.get()) != nullptr);
-            juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
-            expect(testServices.chordMuteReads > 0);
+            auto* chordEngine =
+                audio::tracktion_adapter::deviceFromPlugin<audio::MidiChordEnginePlugin>(
+                    chordPlugin.get());
+            expect(chordEngine != nullptr);
+            if (chordEngine != nullptr) {
+                expect(chordEngine->properties().takesMidiInput);
+                expect(!chordEngine->properties().producesMidi);
+            }
 
 #if defined(MAGDA_PRO_DEVICES_ENABLED) && MAGDA_PRO_DEVICES_ENABLED
             auto proPlugin = createCustomPlugin(*edit, "magda-pro-stub");
