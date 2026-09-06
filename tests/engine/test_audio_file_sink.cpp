@@ -1,5 +1,11 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#if !JUCE_WINDOWS
+    #include <sys/resource.h>
+
+    #include <csignal>
+#endif
+
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <memory>
@@ -98,10 +104,17 @@ void requireSame(const juce::AudioBuffer<float>& stored, const juce::AudioBuffer
         }
 }
 
+/// A directory of its own, so a case can say what is left in it.
+juce::File emptyDirectory(const juce::String& name) {
+    auto directory = scratch().getChildFile(name);
+    directory.deleteRecursively();
+    directory.createDirectory();
+    return directory;
+}
+
 /// Write @p source through a sink of @p spec, one block, and hand back the file.
-juce::File writeThrough(const juce::String& name, const AudioFileSpec& spec,
-                        const juce::AudioBuffer<float>& source) {
-    const auto file = destination(name);
+juce::File writeInto(const juce::File& file, const AudioFileSpec& spec,
+                     const juce::AudioBuffer<float>& source) {
     const RenderContext context{kSampleRate, source.getNumSamples(), source.getNumChannels()};
 
     auto sink = AudioFileSink::create(file, spec, context);
@@ -112,6 +125,11 @@ juce::File writeThrough(const juce::String& name, const AudioFileSpec& spec,
     REQUIRE(sink->close());
 
     return file;
+}
+
+juce::File writeThrough(const juce::String& name, const AudioFileSpec& spec,
+                        const juce::AudioBuffer<float>& source) {
+    return writeInto(destination(name), spec, source);
 }
 
 }  // namespace
@@ -296,4 +314,83 @@ TEST_CASE("A block narrower than the file is refused rather than stored",
     // whose second channel is whatever was in that memory.
     CHECK(sink->samplesWritten() == 0);
     CHECK_FALSE(sink->close());
+}
+
+TEST_CASE("A refused render leaves the file that was already there", "[engine][io][render][2447]") {
+    const auto directory = emptyDirectory("refusals");
+    const auto file = directory.getChildFile("export.wav");
+
+    const auto source = material(2);
+    writeInto(file, {.format = AudioFileFormat::wav, .bitDepth = 16}, source);
+    const auto before = readBack(file);
+
+    // A shape the format will not take rather than a depth it will not take:
+    // FLAC holds eight channels, and the refusal comes from the encoder, past
+    // every check that could be made of the spec on its own.
+    const RenderContext nine{kSampleRate, 512, 9};
+    CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::flac, .bitDepth = 24}, nine) ==
+          nullptr);
+
+    const RenderContext stereo{kSampleRate, 512, 2};
+    CHECK(AudioFileSink::create(file, {.format = AudioFileFormat::wav, .bitDepth = 20}, stereo) ==
+          nullptr);
+
+    // Yesterday's export, still there. A render that never ran has no business
+    // costing anyone the last one that did.
+    requireSame(readBack(file), before);
+
+    // And nothing beside it: the file a refused render opened is its own to
+    // clean up.
+    CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
+}
+
+TEST_CASE("A render the disk did not take is not a successful render",
+          "[engine][io][render][2447]") {
+#if JUCE_WINDOWS
+    SUCCEED("The file size limit this needs is POSIX");
+#else
+    for (const auto format : {AudioFileFormat::wav, AudioFileFormat::flac}) {
+        INFO("format " << static_cast<int>(format));
+
+        const auto directory = emptyDirectory("full_disk");
+        const auto file =
+            directory.getChildFile(format == AudioFileFormat::flac ? "export.flac" : "export.wav");
+
+        const auto source = material(2);
+        writeInto(file, {.format = format, .bitDepth = 16}, source);
+        const auto before = readBack(file);
+
+        auto sink = AudioFileSink::create(file, {.format = format, .bitDepth = 16},
+                                          RenderContext{kSampleRate, kSamples, 2});
+        REQUIRE(sink != nullptr);
+
+        // The whole render fits in the stream's own buffer, so nothing has
+        // reached the disk yet and every write here succeeds. What runs out of
+        // room is the finish -- the header written back over the front, the
+        // encoder flushed -- which is where a writer has no way left to say so.
+        rlimit previous{};
+        REQUIRE(getrlimit(RLIMIT_FSIZE, &previous) == 0);
+        auto* previousHandler = std::signal(SIGXFSZ, SIG_IGN);
+        const rlimit limited{512, previous.rlim_max};
+        REQUIRE(setrlimit(RLIMIT_FSIZE, &limited) == 0);
+
+        sink->write(source, kSamples);
+        const auto closed = sink->close();
+
+        REQUIRE(setrlimit(RLIMIT_FSIZE, &previous) == 0);
+        std::signal(SIGXFSZ, previousHandler);
+
+        // Reported, rather than a full disk coming back as a finished export.
+        CHECK_FALSE(closed);
+        CHECK(sink->samplesWritten() == kSamples);
+
+        sink.reset();
+
+        // And the destination is what it was, because the render never reached
+        // it: a file that could not be written does not cost anyone the file
+        // that was already there.
+        requireSame(readBack(file), before);
+        CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
+    }
+#endif
 }

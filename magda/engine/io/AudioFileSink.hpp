@@ -33,6 +33,10 @@
 
 namespace magda::engine {
 
+/// What the writer's own stream saw, which outlives the writer. Defined in the
+/// .cpp: nothing outside this unit has a use for it.
+struct StreamReport;
+
 /// The containers a render can be stored in, which is what the export dialog
 /// already offers.
 enum class AudioFileFormat : std::uint8_t {
@@ -61,9 +65,14 @@ class AudioFileSink final : public OfflineRenderSink {
      * @brief A sink writing @p destination, or null.
      *
      * Null for a spec no format holds (FLAC above 24 bits, a depth nothing
-     * writes) and for a file that could not be opened or replaced. Refused here
-     * rather than at the first block, so a render nothing can store is never
-     * run.
+     * writes), a format that will not take the render's shape, and a file that
+     * could not be opened. Refused here rather than at the first block, so a
+     * render nothing can store is never run.
+     *
+     * Nothing is written to @p destination itself until close(). The render
+     * goes to a file beside it, so a refusal here and a failure later both
+     * leave whatever was already there -- which, for an export somebody is
+     * re-rendering, is the last one that worked.
      *
      * The rate and the channel count come from @p context rather than from the
      * caller. They are what the plan was prepared with, and a header that
@@ -86,12 +95,16 @@ class AudioFileSink final : public OfflineRenderSink {
     void write(const juce::AudioBuffer<float>& block, int numSamples) override;
 
     /**
-     * @brief Finish the file, and say whether it holds the render.
+     * @brief Finish the file, put it at the destination, and say whether it
+     *        holds the render.
      *
-     * Idempotent, and the destructor calls it. False means a block did not
-     * reach the disk, and what is there is a prefix of the render rather than
-     * the render: short, not corrupt, which is the same thing a cancelled
-     * render leaves and is the caller's to keep or delete.
+     * Idempotent, and the destructor calls it. False means the render did not
+     * reach the disk whole -- a block refused, or a finish that ran out of
+     * space -- and in that case the destination is left exactly as it was.
+     *
+     * A render that was cancelled is not a render that failed: what the sink
+     * was handed is written, and a short bounce is the caller's to keep or
+     * delete, which is what the render's own contract already says.
      */
     bool close();
 
@@ -101,13 +114,24 @@ class AudioFileSink final : public OfflineRenderSink {
     }
 
   private:
-    AudioFileSink(std::unique_ptr<juce::AudioFormatWriter> writer, int numChannels,
+    AudioFileSink(std::unique_ptr<juce::AudioFormatWriter> writer,
+                  std::unique_ptr<juce::TemporaryFile> temporary,
+                  std::shared_ptr<StreamReport> report, int numChannels,
                   std::optional<PcmQuantiser> quantiser);
 
     /// Room for @p numSamples of codes, and the per-channel pointers into it.
     void resizeCodes(int numSamples);
 
     std::unique_ptr<juce::AudioFormatWriter> writer_;
+
+    /// Where the render is written, and what puts it at the destination once
+    /// there is a whole file to put there.
+    std::unique_ptr<juce::TemporaryFile> temporary_;
+
+    /// Shared with the writer's stream, which the writer destroys: what it says
+    /// about the last of the file is only readable after that.
+    std::shared_ptr<StreamReport> report_;
+
     int numChannels_ = 2;
 
     /// Unset for a float target, where there is no grid to land on.
@@ -127,6 +151,7 @@ class AudioFileSink final : public OfflineRenderSink {
 
     std::int64_t samplesWritten_ = 0;
     bool failed_ = false;
+    bool closed_ = false;
 };
 
 }  // namespace magda::engine

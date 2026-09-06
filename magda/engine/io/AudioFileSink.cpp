@@ -1,8 +1,28 @@
 #include "io/AudioFileSink.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace magda::engine {
+
+/**
+ * @brief A file stream that keeps what the writer never reports.
+ *
+ * The writer owns its stream and finishes the file while it is being destroyed:
+ * a WAV header rewritten over the front, a FLAC encoder flushed. A disk that
+ * has filled up fails there, after the last write anything could have checked,
+ * and the writer is already gone by the time anyone could ask. So the report is
+ * held apart from both and read once it is.
+ *
+ * Bytes as well as failures. JUCE's stream keeps only its last operation's
+ * result, and a flush that fails inside a seek is overwritten by the header
+ * write that follows it, so a file can end up short with nothing having
+ * returned false. What the writer handed over is the length the file has to be.
+ */
+struct StreamReport {
+    bool failed = false;
+    std::int64_t bytes = 0;
+};
 
 namespace {
 
@@ -11,6 +31,51 @@ std::unique_ptr<juce::AudioFormat> formatFor(AudioFileFormat format) {
         return std::make_unique<juce::FlacAudioFormat>();
     return std::make_unique<juce::WavAudioFormat>();
 }
+
+class ReportingStream final : public juce::OutputStream {
+  public:
+    ReportingStream(std::unique_ptr<juce::FileOutputStream> file,
+                    std::shared_ptr<StreamReport> report)
+        : file_(std::move(file)), report_(std::move(report)) {}
+
+    ~ReportingStream() override {
+        flush();
+    }
+
+    ReportingStream(const ReportingStream&) = delete;
+    ReportingStream& operator=(const ReportingStream&) = delete;
+    ReportingStream(ReportingStream&&) = delete;
+    ReportingStream& operator=(ReportingStream&&) = delete;
+
+    void flush() override {
+        file_->flush();
+        note(file_->getStatus().wasOk());
+    }
+
+    bool write(const void* data, std::size_t numBytes) override {
+        const auto ok = note(file_->write(data, numBytes));
+        report_->bytes = std::max(report_->bytes, file_->getPosition());
+        return ok;
+    }
+
+    bool setPosition(juce::int64 position) override {
+        return note(file_->setPosition(position));
+    }
+
+    juce::int64 getPosition() override {
+        return file_->getPosition();
+    }
+
+  private:
+    bool note(bool ok) {
+        if (!ok)
+            report_->failed = true;
+        return ok;
+    }
+
+    std::unique_ptr<juce::FileOutputStream> file_;
+    std::shared_ptr<StreamReport> report_;
+};
 
 }  // namespace
 
@@ -29,20 +94,21 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
     const auto floating = spec.bitDepth >= 32;
 
     auto format = formatFor(spec.format);
-    if (!format->getPossibleBitDepths().contains(spec.bitDepth))
-        return nullptr;
 
-    // Replaced rather than appended to: a FileOutputStream over an existing
-    // file starts at its end, so a second render into the same name would be
-    // written after the first one's header.
-    if (destination.existsAsFile() && !destination.deleteFile())
-        return nullptr;
+    // Beside the destination, never over it. Everything below can still refuse
+    // -- a format that will not take the channel count, a disk that will not
+    // open -- and a caller re-rendering an export over yesterday's must not
+    // lose yesterday's to a render that never ran. The destination is written
+    // once, in close(), by a render that reached the end.
+    auto temporary = std::make_unique<juce::TemporaryFile>(destination);
 
-    auto file = std::make_unique<juce::FileOutputStream>(destination);
+    auto file = std::make_unique<juce::FileOutputStream>(temporary->getFile());
     if (!file->openedOk())
         return nullptr;
 
-    std::unique_ptr<juce::OutputStream> stream = std::move(file);
+    auto report = std::make_shared<StreamReport>();
+    std::unique_ptr<juce::OutputStream> stream =
+        std::make_unique<ReportingStream>(std::move(file), report);
 
     const auto options =
         juce::AudioFormatWriterOptions()
@@ -52,22 +118,41 @@ std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destinati
             .withSampleFormat(floating ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                        : juce::AudioFormatWriterOptions::SampleFormat::integral);
 
+    auto* handedOver = stream.get();
     auto writer = format->createWriterFor(stream, options);
-    if (writer == nullptr)
+
+    if (writer == nullptr) {
+        // A failed createWriterFor is documented to leave the stream where it
+        // was, and JUCE's FLAC writer does not: an encoder that refuses the
+        // channel count or the rate takes the pointer and then drops it
+        // (~FlacWriter, juce_FlacAudioFormat.cpp), which leaks the open file.
+        // Reclaimed here rather than leaked. Worth re-reading on a JUCE bump --
+        // a version that deleted it instead would make this a double free, and
+        // the FLAC refusal case in test_audio_file_sink.cpp is what says so.
+        const std::unique_ptr<juce::OutputStream> reclaimed(stream == nullptr ? handedOver
+                                                                              : nullptr);
         return nullptr;
+    }
 
     std::optional<PcmQuantiser> quantiser;
     if (!floating)
         quantiser.emplace(spec.bitDepth, channels,
                           spec.dither.value_or(defaultDitherFor(spec.bitDepth)));
 
-    return std::unique_ptr<AudioFileSink>(
-        new AudioFileSink(std::move(writer), channels, std::move(quantiser)));
+    return std::unique_ptr<AudioFileSink>(new AudioFileSink(std::move(writer), std::move(temporary),
+                                                            std::move(report), channels,
+                                                            std::move(quantiser)));
 }
 
-AudioFileSink::AudioFileSink(std::unique_ptr<juce::AudioFormatWriter> writer, int numChannels,
+AudioFileSink::AudioFileSink(std::unique_ptr<juce::AudioFormatWriter> writer,
+                             std::unique_ptr<juce::TemporaryFile> temporary,
+                             std::shared_ptr<StreamReport> report, int numChannels,
                              std::optional<PcmQuantiser> quantiser)
-    : writer_(std::move(writer)), numChannels_(numChannels), quantiser_(std::move(quantiser)) {}
+    : writer_(std::move(writer)),
+      temporary_(std::move(temporary)),
+      report_(std::move(report)),
+      numChannels_(numChannels),
+      quantiser_(std::move(quantiser)) {}
 
 AudioFileSink::~AudioFileSink() {
     close();
@@ -124,10 +209,32 @@ void AudioFileSink::resizeCodes(int numSamples) {
 }
 
 bool AudioFileSink::close() {
-    // Destroying the writer is what finishes the file: it writes the header it
-    // could not write until the length was known, and flushes the encoder.
+    if (closed_)
+        return !failed_;
+
+    closed_ = true;
+
+    // Destroying the writer is what finishes the file: the header it could not
+    // write until the length was known, and whatever the encoder still holds.
     writer_.reset();
-    return !failed_;
+
+    // Only now, because until now the stream had nothing to say. Short counts
+    // as failed: the bytes the writer handed over are the length the file has
+    // to be, and one that stops shorter is a render the disk did not take.
+    if (report_->failed || temporary_->getFile().getSize() != report_->bytes)
+        failed_ = true;
+
+    // The one moment the destination changes. A render that failed leaves it
+    // alone, so what was there yesterday survives today's full disk.
+    if (failed_)
+        return false;
+
+    if (!temporary_->overwriteTargetFileWithTemporary()) {
+        failed_ = true;
+        return false;
+    }
+
+    return true;
 }
 
 }  // namespace magda::engine
