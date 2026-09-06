@@ -123,6 +123,8 @@ add_library(magda_engine STATIC
     analysis/TransientDetector.cpp
     analysis/TransientDetector.hpp
     io/AudioFileReader.cpp
+    io/AudioFileSink.cpp
+    io/AudioFileSink.hpp
     io/PcmQuantiser.cpp
     io/PcmQuantiser.hpp
     io/SourceLoopInfo.cpp
