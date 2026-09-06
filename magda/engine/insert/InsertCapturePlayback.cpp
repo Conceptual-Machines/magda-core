@@ -12,25 +12,75 @@ namespace magda::engine {
 
 namespace {
 
+/// Kaiser beta for about 80 dB of rejection, and the transition width that the
+/// tap count below buys at it: (80 - 8) / (2.285 * 101) radians a sample.
+constexpr double kStopbandBeta = 8.0;
+constexpr double kTransition = 0.05;
+constexpr int kTaps = 101;
+
 /**
- * @brief @p source with everything above @p cutoff taken out.
+ * @brief A linear-phase low-pass at @p cutoff, @p taps long.
+ *
+ * Built here rather than by juce::dsp::FilterDesign, which takes the centre tap
+ * as order / 2 whatever the parity: an even tap count comes out asymmetric, and
+ * an asymmetric filter has no one delay to take back off. Odd length, so the
+ * centre is a tap and the delay is exactly half of what is left.
+ */
+std::vector<float> lowPassTaps(double cutoff, double sampleRate, int taps) {
+    const auto length = taps | 1;
+    const auto centre = (length - 1) / 2;
+    const auto normalised = cutoff / sampleRate;
+
+    std::vector<float> coefficients(static_cast<std::size_t>(length), 0.0f);
+
+    for (auto at = 0; at < length; ++at) {
+        const auto from = static_cast<double>(at - centre);
+        const auto ideal =
+            from == 0.0 ? 2.0 * normalised
+                        : std::sin(2.0 * juce::MathConstants<double>::pi * normalised * from) /
+                              (juce::MathConstants<double>::pi * from);
+
+        coefficients[static_cast<std::size_t>(at)] = static_cast<float>(ideal);
+    }
+
+    juce::dsp::WindowingFunction<float> window(static_cast<std::size_t>(length),
+                                               juce::dsp::WindowingFunction<float>::kaiser, false,
+                                               static_cast<float>(kStopbandBeta));
+    window.multiplyWithWindowingTable(coefficients.data(), static_cast<std::size_t>(length));
+
+    // Unity at DC, so what is inside the pass band comes back at the level it
+    // went in.
+    auto sum = 0.0;
+    for (const auto tap : coefficients)
+        sum += static_cast<double>(tap);
+
+    if (sum != 0.0)
+        for (auto& tap : coefficients)
+            tap = static_cast<float>(static_cast<double>(tap) / sum);
+
+    return coefficients;
+}
+
+/**
+ * @brief @p source with everything above the target's Nyquist taken out.
  *
  * What a rate reduction needs and interpolation does not do: dropping samples
  * folds whatever sat above the new Nyquist back down into the audible band, and
- * an outboard return carries plenty up there. Linear phase, so the delay it
- * adds is exactly half its length and comes straight back off.
+ * an outboard return carries plenty up there.
  *
- * 102 taps at the design below, run once over the capture rather than per
- * block, and only when the export asks for a lower rate than the pass had.
+ * 101 taps, run once over the capture rather than per block, and only when the
+ * export asks for a lower rate than the pass had.
  */
 juce::AudioBuffer<float> bandLimited(const juce::AudioBuffer<float>& source, double sourceRate,
-                                     double cutoff) {
-    const auto coefficients = juce::dsp::FilterDesign<float>::designFIRLowpassKaiserMethod(
-        static_cast<float>(cutoff), sourceRate, 0.05f, -80.0f);
+                                     double targetRate) {
+    // The stopband starts at the target's Nyquist: everything the render has no
+    // room for is already down before it can fold.
+    const auto cutoff =
+        std::max(0.25 * targetRate, (0.5 * targetRate) - (0.5 * kTransition * sourceRate));
 
-    const auto* taps = coefficients->getRawCoefficients();
-    const auto length = static_cast<int>(coefficients->getFilterOrder() + 1);
-    const auto delay = length / 2;
+    const auto taps = lowPassTaps(cutoff, sourceRate, kTaps);
+    const auto length = static_cast<int>(taps.size());
+    const auto delay = (length - 1) / 2;
     const auto last = source.getNumSamples() - 1;
 
     juce::AudioBuffer<float> filtered(source.getNumChannels(), source.getNumSamples());
@@ -44,7 +94,7 @@ juce::AudioBuffer<float> bandLimited(const juce::AudioBuffer<float>& source, dou
 
             for (auto tap = 0; tap < length; ++tap)
                 sum +=
-                    static_cast<double>(taps[tap]) *
+                    static_cast<double>(taps[static_cast<std::size_t>(tap)]) *
                     static_cast<double>(from[std::clamp(at + delay - tap, 0, std::max(0, last))]);
 
             to[at] = static_cast<float>(sum);
@@ -73,8 +123,8 @@ juce::AudioBuffer<float> atRate(const juce::AudioBuffer<float>& source, double s
     const auto length = static_cast<int>(std::llround(source.getNumSamples() / ratio));
 
     // Below the target's Nyquist with room for the filter to come down in.
-    const auto limited = rate < sourceRate ? bandLimited(source, sourceRate, 0.45 * rate)
-                                           : juce::AudioBuffer<float>();
+    const auto limited =
+        rate < sourceRate ? bandLimited(source, sourceRate, rate) : juce::AudioBuffer<float>();
     const auto& material = rate < sourceRate ? limited : source;
 
     juce::AudioBuffer<float> resampled(material.getNumChannels(), std::max(0, length));

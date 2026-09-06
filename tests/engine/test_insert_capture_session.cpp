@@ -459,24 +459,59 @@ TEST_CASE("A return narrower than the capture leaves it incomplete", "[engine][i
           nullptr);
 }
 
+/** @brief A capture of @p frequency taken at twice the render's rate. */
+InsertCapture captureAt96k(HardwareStub& hardware, double frequency) {
+    hardware.frequency = frequency;
+
+    const auto captureRate = 2.0 * kRate;
+    InsertCaptureSession session(hardware, windowOf(kWindowSamples, captureRate), captureRate,
+                                 kChannels);
+    runPass(session, everyBlock(kWindowSamples / kBlock), kBlock, kChannels, captureRate);
+
+    return session.take();
+}
+
+TEST_CASE("What the render has room for comes back at its own level and time",
+          "[engine][insert][2279]") {
+    HardwareStub hardware;
+
+    // 10 kHz, which both rates carry. The filter in front of the rate reduction
+    // must leave it where it was: a gain error or a shift here is the same
+    // filter being asymmetric, which is what an even tap count makes it.
+    const auto capture = captureAt96k(hardware, 10000.0);
+    REQUIRE(capture.complete());
+
+    auto playback = InsertCapturePlayback::create(capture, capture.window(), contextAt(kRate));
+    REQUIRE(playback != nullptr);
+
+    const auto samples = kWindowSamples / 2;
+    const auto replayed = replay(*playback, 256, kRate, samples);
+
+    auto sum = 0.0;
+    auto counted = 0;
+
+    for (auto at = 128; at < samples - 128; ++at) {
+        const auto value = replayed.getSample(0, at);
+        sum += static_cast<double>(value) * value;
+        ++counted;
+
+        INFO("sample " << at);
+        REQUIRE(value == Catch::Approx(valueAt(at, 0, kRate, 10000.0)).margin(0.02));
+    }
+
+    CHECK(std::sqrt(sum / std::max(1, counted)) == Catch::Approx(std::sqrt(0.5)).margin(0.01));
+}
+
 TEST_CASE("What the render has no room for does not come back inside it",
           "[engine][insert][2279]") {
     HardwareStub hardware;
 
     // 30 kHz, which a 96 kHz pass carries and a 48 kHz render cannot: dropped
     // samples alone would fold it to 18 kHz at the level it was sent.
-    hardware.frequency = 30000.0;
-
-    const auto captureRate = 2.0 * kRate;
-    const auto window = windowOf(kWindowSamples, captureRate);
-
-    InsertCaptureSession session(hardware, window, captureRate, kChannels);
-    runPass(session, everyBlock(kWindowSamples / kBlock), kBlock, kChannels, captureRate);
-
-    const auto capture = session.take();
+    const auto capture = captureAt96k(hardware, 30000.0);
     REQUIRE(capture.complete());
 
-    auto playback = InsertCapturePlayback::create(capture, window, contextAt(kRate));
+    auto playback = InsertCapturePlayback::create(capture, capture.window(), contextAt(kRate));
     REQUIRE(playback != nullptr);
 
     const auto replayed = replay(*playback, 256, kRate, kWindowSamples / 2);
@@ -491,7 +526,9 @@ TEST_CASE("What the render has no room for does not come back inside it",
         ++counted;
     }
 
+    // Far enough down to be the filter working rather than a filter with a
+    // hole in it: an asymmetric kernel of the same length leaves it at 0.026.
     const auto rms = std::sqrt(sum / std::max(1, counted));
     INFO("rms " << rms);
-    CHECK(rms < 0.05);
+    CHECK(rms < 0.005);
 }
