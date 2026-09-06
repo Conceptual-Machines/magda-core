@@ -1,6 +1,7 @@
 #include "AudioBridge.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <unordered_set>
 
 #include "../core/AutomationManager.hpp"
@@ -385,17 +386,25 @@ void pushChordAudition(te::AudioTrack& teTrack, const magda::TrackInfo& trackInf
             engine->setChordTrackMuted(trackInfo.muted);
     };
 
-    // Racks too. `deviceFromPlugin` unwraps the host's device adapter and
-    // nothing else, so a Chord Engine dropped inside a rack lives in the rack
-    // type's own plugin list and a top-level walk never reaches it.
-    for (auto* plugin : teTrack.pluginList) {
+    // Racks too, to any depth. `deviceFromPlugin` unwraps the host's device
+    // adapter and nothing else, so a Chord Engine dropped in a rack lives in
+    // that rack type's own plugin list; and a nested rack is a rack type of its
+    // own with a RackInstance in the outer one (RackSyncManager), so one level
+    // of descent still misses it.
+    //
+    // Unguarded recursion, like chain_walk's own descent: racks nest as a tree,
+    // and a rack that contained itself would already be a cycle in the model.
+    const std::function<void(te::Plugin*)> visit = [&](te::Plugin* plugin) {
         push(plugin);
 
         if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
             if (rackInstance->type != nullptr)
                 for (auto* innerPlugin : rackInstance->type->getPlugins())
-                    push(innerPlugin);
-    }
+                    visit(innerPlugin);
+    };
+
+    for (auto* plugin : teTrack.pluginList)
+        visit(plugin);
 }
 
 }  // namespace

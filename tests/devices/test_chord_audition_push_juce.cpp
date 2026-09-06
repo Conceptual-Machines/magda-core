@@ -33,6 +33,41 @@ audio::MidiChordEnginePlugin* engineOn(magda::AudioBridge& bridge, TrackId track
     return nullptr;
 }
 
+/**
+ * @brief Every Chord Engine on @p trackId, at any rack depth.
+ *
+ * Its own descent rather than the one under test: a finder sharing the walk it
+ * is checking would pass for the same reason the walk was wrong.
+ *
+ * @param bridge  the live bridge holding the engine's tracks
+ * @param trackId the track to search
+ * @return the devices, outermost first.
+ */
+std::vector<audio::MidiChordEnginePlugin*> everyEngineOn(magda::AudioBridge& bridge,
+                                                         TrackId trackId) {
+    std::vector<audio::MidiChordEnginePlugin*> found;
+
+    auto* teTrack = bridge.getAudioTrack(trackId);
+    if (teTrack == nullptr)
+        return found;
+
+    const std::function<void(te::Plugin*)> visit = [&](te::Plugin* plugin) {
+        if (auto* engine =
+                audio::tracktion_adapter::deviceFromPlugin<audio::MidiChordEnginePlugin>(plugin))
+            found.push_back(engine);
+
+        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin))
+            if (rackInstance->type != nullptr)
+                for (auto* innerPlugin : rackInstance->type->getPlugins())
+                    visit(innerPlugin);
+    };
+
+    for (auto* plugin : teTrack->pluginList)
+        visit(plugin);
+
+    return found;
+}
+
 }  // namespace
 
 /**
@@ -89,6 +124,51 @@ class ChordAuditionPushTests : public juce::UnitTest {
         bridge->trackPropertyChanged(static_cast<int>(trackId));
 
         expect(!engine->chordTrackMuted(), "the toggle must reach the device");
+
+        beginTest("An engine inside a nested rack is told too");
+
+        // A nested rack is a rack type of its own with a RackInstance in the
+        // outer one (RackSyncManager), so a walk that descends one level still
+        // misses what is inside it.
+        const auto outerRack = tracks.addRackToTrack(trackId, "Outer");
+        expect(outerRack != INVALID_RACK_ID, "the outer rack must be created");
+
+        const auto outerRackPath = ChainNodePath::rack(trackId, outerRack);
+        const auto* rack = tracks.getRackByPath(outerRackPath);
+        expect(rack != nullptr && !rack->chains.empty(), "the outer rack must have a chain");
+        if (rack == nullptr || rack->chains.empty())
+            return;
+
+        const auto outerChainPath = outerRackPath.withChain(rack->chains.front().id);
+        const auto innerRack = tracks.addRackToChainByPath(outerChainPath, "Inner");
+        expect(innerRack != INVALID_RACK_ID, "the inner rack must be created");
+
+        const auto innerRackPath = outerChainPath.withRack(innerRack);
+        const auto* inner = tracks.getRackByPath(innerRackPath);
+        expect(inner != nullptr && !inner->chains.empty(), "the inner rack must have a chain");
+        if (inner == nullptr || inner->chains.empty())
+            return;
+
+        DeviceInfo nested;
+        nested.name = "Chord Engine";
+        nested.pluginId = "midichordengine";
+        nested.format = PluginFormat::Internal;
+
+        const auto nestedId = tracks.addDeviceToChainByPath(
+            innerRackPath.withChain(inner->chains.front().id), nested);
+        expect(nestedId != INVALID_DEVICE_ID, "the nested engine must be created");
+
+        track->muted = true;
+        bridge->trackPropertyChanged(static_cast<int>(trackId));
+
+        // Every engine the track carries, not the nested one by name: what the
+        // push owes is that none of them is missed.
+        const auto engines = everyEngineOn(*bridge, trackId);
+        expectGreaterThan(static_cast<int>(engines.size()), 1,
+                          "the nested engine must reach the graph beside the track's own");
+
+        for (auto* each : engines)
+            expect(each->chordTrackMuted(), "every engine on the track must be told");
 
         tracks.clearAllTracks();
     }
