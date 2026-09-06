@@ -729,14 +729,39 @@ TEST_CASE("Liveness propagates downstream from a live input", "[engine][plan][co
     CHECK(liveOf(plan.outputOps.front()));
 }
 
-TEST_CASE("The chord track is excluded from the plan", "[engine][plan][compiler]") {
+TEST_CASE("The chord track is what a plan for a file leaves out", "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(9, TrackType::Chord)};
 
-    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-    requireWellFormed(plan);
+    // The default, which is what a bounce compiles under. Asserted as the
+    // default rather than by asking for it: a caller that forgets to say what
+    // its plan is for must not print a chord track into somebody's master
+    // (#2446).
+    const auto bounce = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(bounce);
 
-    for (const auto& op : plan.ops)
+    for (const auto& op : bounce.ops)
         CHECK(op.key.trackId != 9);
+}
+
+TEST_CASE("The chord track is in a plan for playback", "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(9, TrackType::Chord)};
+
+    // Its mute is the audition toggle, so a playback plan that left it out
+    // would be a chord track that never sounds (#2446).
+    magda::engine::CompileOptions options;
+    options.monitorTracks = true;
+
+    const auto playback = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+    requireWellFormed(playback);
+
+    auto reached = false;
+    for (const auto& op : playback.ops)
+        reached = reached || op.key.trackId == 9;
+    CHECK(reached);
+
+    // And the plan is larger for it, rather than the track being named by an
+    // op the default plan already had.
+    CHECK(playback.ops.size() > magda::engine::compileRenderPlan(tracks, makeMaster()).ops.size());
 }
 
 TEST_CASE("A send cycle is broken and reported", "[engine][plan][compiler]") {
