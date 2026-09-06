@@ -493,6 +493,358 @@ ArpeggiatorPlugin::ExpandedSequence ArpeggiatorPlugin::buildSequence() const {
 // Audio thread
 // =============================================================================
 
+/**
+ * @brief What one process() call holds still.
+ *
+ * The parameters are read once, here: a block is one position for every slot,
+ * whatever the input does inside it. What changes inside a block is what the
+ * player holds, and that belongs to the stretches below.
+ */
+struct ArpeggiatorPlugin::BlockScope {
+    DeviceProcessContext& context;
+    const DeviceMidiInput& in;
+    DeviceMidiOutput& midi;
+    NonNoteForwarder forward;
+
+    double blockDurationSecs = 0.0;
+    bool isLatched = false;
+
+    /// The transport's clock, against the free-running one a stopped transport
+    /// leaves the arp on.
+    bool onTransportClock = false;
+    double blockStartBeat = 0.0;
+    double blockEndBeat = 0.0;
+
+    Pattern pattern = Pattern::Up;
+    double stepBeats = 0.5;
+    float gate = 1.0f;
+    float swing = 0.0f;
+    float ramp = 0.0f;
+    float skew = 0.0f;
+    VelocityMode velocityMode = VelocityMode::Original;
+    int fixedVelocity = 100;
+    float quantizeAmount = 0.0f;
+    int quantizeSubdivisions = 16;
+    bool hardAngleCurve = false;
+    int rampCycleCount = 1;
+
+    /**
+     * @brief Where in the block the host put an input event.
+     * @param index Index into the block's MIDI input.
+     * @return Seconds from the block start.
+     */
+    double eventTime(int index) const {
+        return forward.timeOf(index);
+    }
+
+    /**
+     * @brief Emits an event the arp generated, behind the non-note traffic that
+     *        precedes it.
+     * @param message The event; its timestamp is set from @p timeInBlock.
+     * @param timeInBlock Seconds from the block start.
+     * @param sourceId The provenance to stamp it with.
+     */
+    void addTimedMessage(juce::MidiMessage message, double timeInBlock, std::uint32_t sourceId) {
+        forward.flushUpTo(midi, timeInBlock);
+        message.setTimeStamp(timeInBlock);
+        midi.addEvent({std::move(message), sourceId});
+    }
+
+    /**
+     * @brief Emits a note-off, or nothing when @p noteNumber is negative.
+     * @param noteNumber The note to close, or -1 for none.
+     * @param timeInBlock Seconds from the block start.
+     * @param sourceId The provenance its note-on carried.
+     */
+    void emitNoteOff(int noteNumber, double timeInBlock, std::uint32_t sourceId) {
+        if (noteNumber < 0)
+            return;
+        forward.flushUpTo(midi, timeInBlock);
+        sendNoteOff(midi, noteNumber, sourceId, timeInBlock);
+    }
+};
+
+/**
+ * @brief One stretch of a block over which the held notes do not change.
+ *
+ * The block is cut where the input changes what is held (#2415) and each piece
+ * walks its own steps against its own span, so a step plays the chord that was
+ * down when it sounded.
+ */
+struct ArpeggiatorPlugin::Stretch {
+    const BlockScope& block;
+
+    double startSecs = 0.0;
+    double endSecs = 0.0;
+    double durationSecs = 0.0;
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+
+    /// The grid the walk is anchored to, and the notes it steps through.
+    double originBeat = 0.0;
+    ExpandedSequence seq;
+    /// One full pass through the sequence.
+    double cycleBeats = 0.0;
+
+    /**
+     * @brief Where a beat inside this stretch lands in the block.
+     * @param beat A beat between startBeat and endBeat.
+     * @return Seconds from the block start.
+     */
+    double timeOf(double beat) const {
+        return startSecs + (beat - startBeat) / (endBeat - startBeat) * durationSecs;
+    }
+
+    /**
+     * @brief The grid position of a step, warped by the ramp curve inside its
+     *        cycle. Without ramp, steps are evenly spaced.
+     * @param step Global step index.
+     * @return The beat the step sits on before swing and quantize.
+     */
+    double gridBeat(int step) const {
+        const int cycle = step / seq.length;
+        const int stepInCycle = step % seq.length;
+        const double cycleStart = originBeat + cycle * cycleBeats;
+
+        if (std::abs(block.ramp) > 0.001f && seq.length > 1) {
+            const double tLinear =
+                static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
+            const double tCurved = ramp_curve::applyRampCurveWithCycles(
+                tLinear, block.ramp, block.skew, block.rampCycleCount, block.hardAngleCurve);
+            return cycleStart + tCurved * cycleBeats;
+        }
+        return cycleStart + stepInCycle * block.stepBeats;
+    }
+
+    /**
+     * @brief Where the step is actually played: swing on odd steps, then
+     *        quantize pulling that toward a regular grid.
+     *
+     * Neither can carry a step past its neighbour, so the walk keys on this
+     * instead of the raw grid and a step warped past the end of a stretch stays
+     * pending rather than being consumed unplayed (#2362).
+     *
+     * @param step Global step index.
+     * @return The beat the step is played on.
+     */
+    double warpedStepBeat(int step) const {
+        double beat = gridBeat(step);
+        // Half the gap to the next step, not half the nominal rate: Time Bend
+        // can compress two steps onto one beat, and a fixed offset would then
+        // swing the odd one past the even one that follows it.
+        if (step % 2 == 1 && block.swing > 0.0f)
+            beat += static_cast<double>(block.swing) * (gridBeat(step + 1) - beat) * 0.5;
+
+        if (block.quantizeAmount > 0.0f && block.quantizeSubdivisions > 0) {
+            const double gridSpacing = cycleBeats / static_cast<double>(block.quantizeSubdivisions);
+            const double snapped = std::round(beat / gridSpacing) * gridSpacing;
+            beat += (snapped - beat) * static_cast<double>(block.quantizeAmount);
+        }
+        return beat;
+    }
+};
+
+void ArpeggiatorPlugin::closeSoundingNote(BlockScope& block, double timeInBlock) {
+    const std::uint32_t source = lastPlayedSourceId_;
+    block.emitNoteOff(takeSoundingNote(), timeInBlock, source);
+}
+
+void ArpeggiatorPlugin::restartAt(BlockScope& block, double timeInBlock) {
+    const std::uint32_t source = lastPlayedSourceId_;
+    block.emitNoteOff(resetArpState(), timeInBlock, source);
+    freeRunSamples_ = 0.0;
+}
+
+void ArpeggiatorPlugin::applyInputEvent(BlockScope& block, int index, double timeInBlock) {
+    const auto& msg = block.in.message(index);
+    const auto sourceId = block.in.sourceId(index);
+    const bool fromLiveSource = isLiveSource(block.context, sourceId);
+
+    if (msg.isNoteOn()) {
+        ++physicallyHeldCount_;
+
+        // Latch: if old set is stale (all keys were released), clear before adding
+        if (block.isLatched && latchedSetStale_) {
+            heldCount_ = 0;
+            nextOrder_ = 0;
+            latchedSetStale_ = false;
+        }
+
+        const bool wasEmpty = (heldCount_ == 0);
+        addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource, sourceId);
+        if (wasEmpty && heldCount_ > 0)
+            restartAt(block, timeInBlock);
+    } else if (msg.isNoteOff()) {
+        --physicallyHeldCount_;
+        if (physicallyHeldCount_ < 0)
+            physicallyHeldCount_ = 0;
+
+        // Latch keeps the note in the pattern and only marks the set stale once
+        // every key is up.
+        releaseHeldNote(msg.getNoteNumber(), fromLiveSource, !block.isLatched);
+        if (block.isLatched && physicallyHeldCount_ == 0)
+            latchedSetStale_ = true;
+    } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
+        clearHeldNotes();
+        restartAt(block, timeInBlock);
+    }
+}
+
+void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
+    // Catch up to the stretch. Cycles are evenly spaced whatever the warp does
+    // inside one, so the cycle is a division and only its steps are walked:
+    // bounded work, not one pass per skipped step.
+    if (stretch.warpedStepBeat(currentStep_) < stretch.startBeat) {
+        // Warp carries a step across the cycle boundary either way, so the
+        // division lands a cycle early and the walk closes the rest.
+        const int cycle = static_cast<int>(std::floor((stretch.startBeat - stretch.originBeat) /
+                                                      stretch.cycleBeats)) -
+                          1;
+        currentStep_ = std::max(currentStep_, cycle * stretch.seq.length);
+        while (stretch.warpedStepBeat(currentStep_) < stretch.startBeat)
+            ++currentStep_;
+    }
+
+    for (;;) {
+        const double stepBeat = stretch.warpedStepBeat(currentStep_);
+        // Left where it is rather than consumed: a step the warp moved past this
+        // stretch is played by the stretch that holds it, so the same input
+        // plays the same notes however the host cuts its callbacks up (#2415).
+        if (stepBeat >= stretch.endBeat)
+            break;
+
+        // Never ahead of the stretch it is played in: the catch-up above leaves
+        // the walk on a step at or after the start, and a sequence rebuilt
+        // mid-block can only move one closer to it.
+        const double timeInBlock = std::max(stretch.startSecs, stretch.timeOf(stepBeat));
+
+        // Note-off for previous note
+        if (lastPlayedNote_ >= 0) {
+            block.addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
+                                  lastPlayedSourceId_);
+            lastPlayedNote_ = -1;
+        }
+
+        // Determine which note to play
+        int stepIdx;
+        if (block.pattern == Pattern::Random) {
+            stepIdx = arpRandom_.nextInt(stretch.seq.length);
+        } else {
+            stepIdx = currentStep_ % stretch.seq.length;
+        }
+
+        const auto& note = stretch.seq.notes[static_cast<size_t>(stepIdx)];
+
+        // Determine velocity
+        int vel = note.velocity;
+        if (block.velocityMode == VelocityMode::Fixed) {
+            vel = block.fixedVelocity;
+        } else if (block.velocityMode == VelocityMode::Accent) {
+            vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
+        }
+
+        // Note-on, carrying the provenance of whoever holds the pitch, so a
+        // device behind this one reads it the way this one does (#2416).
+        const std::uint32_t noteSource = note.liveHolds > 0 ? note.liveSourceId : note.hostSourceId;
+        block.addTimedMessage(
+            juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
+            timeInBlock, noteSource);
+
+        lastPlayedNote_ = note.noteNumber;
+        lastPlayedSourceId_ = noteSource;
+        setMidiOutDisplay(note.noteNumber, vel);
+
+        // Schedule note-off
+        const double noteOffBeat = stepBeat + block.stepBeats * static_cast<double>(block.gate);
+        if (noteOffBeat < stretch.endBeat) {
+            block.addTimedMessage(juce::MidiMessage::noteOff(1, note.noteNumber),
+                                  stretch.timeOf(noteOffBeat), noteSource);
+            lastPlayedNote_ = -1;
+            lastNoteOffBeat_ = -1.0;
+            clearMidiOutDisplay();
+        } else {
+            // Note-off in a later stretch, or a later block
+            lastNoteOffBeat_ = noteOffBeat;
+        }
+
+        ++currentStep_;
+        currentPlayStep_.store(currentStep_ % stretch.seq.length, std::memory_order_relaxed);
+        currentSeqLength_.store(stretch.seq.length, std::memory_order_relaxed);
+    }
+}
+
+void ArpeggiatorPlugin::playStretch(BlockScope& block, double startSecs, double endSecs) {
+    // Nothing to play: close what is sounding and idle the clock.
+    if (heldCount_ == 0 || (!block.context.isPlaying && physicallyHeldCount_ <= 0)) {
+        closeSoundingNote(block, startSecs);
+        freeRunSamples_ = 0.0;
+        lastBlockEndBeat_ = -1.0;
+        return;
+    }
+
+    Stretch stretch{.block = block};
+    stretch.startSecs = startSecs;
+    stretch.endSecs = endSecs;
+    stretch.durationSecs = endSecs - startSecs;
+    if (stretch.durationSecs <= 0.0)
+        return;
+
+    if (block.onTransportClock) {
+        // The block's span, divided the way the output timestamps are computed:
+        // a beat and a time within the block are each other's inverse.
+        const double beats = block.blockEndBeat - block.blockStartBeat;
+        stretch.startBeat = block.blockStartBeat + (startSecs / block.blockDurationSecs) * beats;
+        stretch.endBeat = block.blockStartBeat + (endSecs / block.blockDurationSecs) * beats;
+    } else {
+        // Free-running clock — get tempo from timeline position 0
+        const double bpm =
+            block.context.tempoMap != nullptr ? block.context.tempoMap->bpmAtSeconds(0.0) : 120.0;
+        const double beatsPerSample = bpm / (60.0 * sampleRate_);
+        stretch.startBeat = freeRunSamples_ * beatsPerSample;
+        freeRunSamples_ += stretch.durationSecs * sampleRate_;
+        stretch.endBeat = freeRunSamples_ * beatsPerSample;
+    }
+
+    if (stretch.endBeat <= stretch.startBeat)
+        return;
+
+    // Seeks, loop wraps and the switch between the two clocks all arrive as a
+    // stretch that does not continue the last one. Only some of them reach the
+    // device as a panic and a loop wrap reaches it as nothing at all, so the
+    // timeline is what the walk trusts (#2416).
+    constexpr double kContiguousBeats = 1.0e-3;
+    if (lastBlockEndBeat_ < 0.0 ||
+        std::abs(stretch.startBeat - lastBlockEndBeat_) > kContiguousBeats) {
+        closeSoundingNote(block, startSecs);
+        currentStep_ = 0;
+        arpOriginBeat_ = -1.0;
+    }
+    lastBlockEndBeat_ = stretch.endBeat;
+
+    stretch.seq = buildSequence();
+    if (stretch.seq.length == 0)
+        return;
+    stretch.cycleBeats = stretch.seq.length * block.stepBeats;
+
+    // Anchor on the grid at the point the pattern starts from, which is where
+    // the chord arrived rather than wherever its block began.
+    if (arpOriginBeat_ < 0.0)
+        arpOriginBeat_ = std::floor(stretch.startBeat / block.stepBeats) * block.stepBeats;
+    stretch.originBeat = arpOriginBeat_;
+
+    // The note-off an earlier stretch scheduled into this one.
+    if (lastPlayedNote_ >= 0 && lastNoteOffBeat_ >= 0.0 && lastNoteOffBeat_ < stretch.endBeat) {
+        block.addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_),
+                              std::max(startSecs, stretch.timeOf(lastNoteOffBeat_)),
+                              lastPlayedSourceId_);
+        lastPlayedNote_ = -1;
+        lastNoteOffBeat_ = -1.0;
+        clearMidiOutDisplay();
+    }
+
+    walkSteps(block, stretch);
+}
+
 void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     if (context.midiIn == nullptr || context.midiOut == nullptr || context.numSamples <= 0)
         return;
@@ -502,38 +854,40 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     displayedRamp_.store(displayValue(kRamp), std::memory_order_relaxed);
     displayedSkew_.store(displayValue(kSkew), std::memory_order_relaxed);
 
-    const auto& in = *context.midiIn;
-    auto& midi = *context.midiOut;
-    const bool isLatched = displayValue(kLatch) >= 0.5f;
     const double blockDurationSecs = static_cast<double>(context.numSamples) / sampleRate_;
+    const bool onTransportClock = context.isPlaying && context.tempoMap != nullptr;
+
+    BlockScope block{
+        .context = context,
+        .in = *context.midiIn,
+        .midi = *context.midiOut,
+        .forward =
+            NonNoteForwarder(*context.midiIn, context.midiTimeOffsetSeconds, blockDurationSecs),
+        .blockDurationSecs = blockDurationSecs,
+        .isLatched = displayValue(kLatch) >= 0.5f,
+        .onTransportClock = onTransportClock,
+        .blockStartBeat =
+            onTransportClock ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0,
+        .blockEndBeat =
+            onTransportClock ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0,
+        .pattern = static_cast<Pattern>(displayIndex(kPattern)),
+        .stepBeats = rateToBeats(static_cast<Rate>(displayIndex(kRate))),
+        .gate = juce::jlimit(0.01f, 1.0f, displayValue(kGate)),
+        .swing = juce::jlimit(0.0f, 1.0f, displayValue(kSwing)),
+        .ramp = juce::jlimit(-1.0f, 1.0f, displayValue(kRamp)),
+        .skew = juce::jlimit(-1.0f, 1.0f, displayValue(kSkew)),
+        .velocityMode = static_cast<VelocityMode>(displayIndex(kVelMode)),
+        .fixedVelocity = juce::jlimit(1, 127, displayIndex(kFixedVel)),
+        .quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.load(std::memory_order_relaxed)),
+        .quantizeSubdivisions = juce::jlimit(16, 512, quantizeSub.load(std::memory_order_relaxed)),
+        .hardAngleCurve = hardAngle.load(std::memory_order_relaxed),
+        .rampCycleCount = juce::jlimit(1, 8, rampCycles.load(std::memory_order_relaxed)),
+    };
 
     // What the arp passes on rather than consumes, emitted beside the notes it
     // generates. The guard covers the returns below: a block the arp leaves
     // early is still a block the instrument behind it is owed its pedal on.
-    NonNoteForwarder forward(in, context.midiTimeOffsetSeconds, blockDurationSecs);
-    const juce::ScopeGuard forwardRest{[&] { forward.flushRest(midi); }};
-
-    const auto addTimedMessage = [&](juce::MidiMessage message, double timeInBlock,
-                                     std::uint32_t sourceId) {
-        forward.flushUpTo(midi, timeInBlock);
-        message.setTimeStamp(timeInBlock);
-        midi.addEvent({std::move(message), sourceId});
-    };
-
-    // A note-off at its own instant in the block, behind the non-note traffic
-    // that precedes it (#2415).
-    const auto emitNoteOff = [&](int noteNumber, double timeInBlock, std::uint32_t source) {
-        if (noteNumber < 0)
-            return;
-        forward.flushUpTo(midi, timeInBlock);
-        sendNoteOff(midi, noteNumber, source, timeInBlock);
-    };
-
-    // Closes the note the arp is sounding, wherever it is being closed.
-    const auto closeSoundingNote = [&](double timeInBlock) {
-        const std::uint32_t source = lastPlayedSourceId_;
-        emitNoteOff(takeSoundingNote(), timeInBlock, source);
-    };
+    const juce::ScopeGuard forwardRest{[&] { block.forward.flushRest(block.midi); }};
 
     // --- 1. The buffer's panic, which the host raises for the block ---
     // Hosts raise this without a CC event, on a playhead jump or a track they
@@ -541,321 +895,60 @@ void ArpeggiatorPlugin::process(DeviceProcessContext& context) {
     // position without a note-off for what should not. So the host's notes go
     // and come back on the same buffer, while keys proven to be a player's are
     // not the host's to withdraw (#2416).
-    const bool inputPanic = in.isAllNotesOff();
-    midi.setAllNotesOff(inputPanic);
+    const bool inputPanic = block.in.isAllNotesOff();
+    block.midi.setAllNotesOff(inputPanic);
     if (inputPanic) {
-        closeSoundingNote(0.0);
+        closeSoundingNote(block, 0.0);
         retainLiveHeldNotes();
     }
 
     // --- 2. Transport transitions ---
     if (context.isPlaying && !wasPlaying_) {
-        // The transport and the free-running clock are different clocks, so
-        // the walk re-anchors below instead of carrying its step across.
+        // The transport and the free-running clock are different clocks, so the
+        // walk re-anchors below instead of carrying its step across.
         lastBlockEndBeat_ = -1.0;
     } else if (!context.isPlaying && wasPlaying_) {
         // Keys under the player's fingers keep the arp free-running; notes a
-        // clip left behind are dropped, because their note-off is never
-        // coming once the transport stops (#2416).
-        closeSoundingNote(0.0);
+        // clip left behind are dropped, because their note-off is never coming
+        // once the transport stops (#2416).
+        closeSoundingNote(block, 0.0);
         retainLiveHeldNotes();
         resetArpState();
         freeRunSamples_ = 0.0;
     }
 
-    // --- 3. Where the input sits in the block ---
-    const auto eventTime = [&](int index) { return forward.timeOf(index); };
-
-    // The pattern's material changes here, so the block is cut here.
-    const auto changesPattern = [](const juce::MidiMessage& message) {
-        return message.isNoteOnOrOff() || message.isAllNotesOff() || message.isAllSoundOff();
-    };
-
-    // Everything the arp was doing, dropped where the input dropped it: the
-    // note it sounds, its walk, and the clock the walk runs on.
-    const auto restartAt = [&](double timeInBlock) {
-        const std::uint32_t source = lastPlayedSourceId_;
-        emitNoteOff(resetArpState(), timeInBlock, source);
-        freeRunSamples_ = 0.0;
-    };
-
-    const auto applyEvent = [&](int index, double timeInBlock) {
-        const auto& msg = in.message(index);
-        const auto sourceId = in.sourceId(index);
-        const bool fromLiveSource = isLiveSource(context, sourceId);
-
-        if (msg.isNoteOn()) {
-            ++physicallyHeldCount_;
-
-            // Latch: if old set is stale (all keys were released), clear before adding
-            if (isLatched && latchedSetStale_) {
-                heldCount_ = 0;
-                nextOrder_ = 0;
-                latchedSetStale_ = false;
-            }
-
-            const bool wasEmpty = (heldCount_ == 0);
-            addHeldNote(msg.getNoteNumber(), msg.getVelocity(), fromLiveSource, sourceId);
-            if (wasEmpty && heldCount_ > 0)
-                restartAt(timeInBlock);
-        } else if (msg.isNoteOff()) {
-            --physicallyHeldCount_;
-            if (physicallyHeldCount_ < 0)
-                physicallyHeldCount_ = 0;
-
-            // Latch keeps the note in the pattern and only marks the set
-            // stale once every key is up.
-            releaseHeldNote(msg.getNoteNumber(), fromLiveSource, !isLatched);
-            if (isLatched && physicallyHeldCount_ == 0)
-                latchedSetStale_ = true;
-        } else if (msg.isAllNotesOff() || msg.isAllSoundOff()) {
-            clearHeldNotes();
-            restartAt(timeInBlock);
-        }
-    };
-
-    // --- 4. Settings the walk reads, fixed for the block ---
-    const auto pat = static_cast<Pattern>(displayIndex(kPattern));
-    const double stepBeats = rateToBeats(static_cast<Rate>(displayIndex(kRate)));
-    const float gateVal = juce::jlimit(0.01f, 1.0f, displayValue(kGate));
-    const float swingVal = juce::jlimit(0.0f, 1.0f, displayValue(kSwing));
-    const float rampVal = juce::jlimit(-1.0f, 1.0f, displayValue(kRamp));
-    const float skewVal = juce::jlimit(-1.0f, 1.0f, displayValue(kSkew));
-    const auto velMode = static_cast<VelocityMode>(displayIndex(kVelMode));
-    const int fixedVel = juce::jlimit(1, 127, displayIndex(kFixedVel));
-    const float quantizeAmount = juce::jlimit(0.0f, 1.0f, quantize.load(std::memory_order_relaxed));
-    const int quantizeSubVal = juce::jlimit(16, 512, quantizeSub.load(std::memory_order_relaxed));
-    const bool hardAngleVal = hardAngle.load(std::memory_order_relaxed);
-
-    // The block's beat span on the transport clock, which every segment
-    // divides. The free-running clock counts samples and is read per segment.
-    const bool onTransportClock = context.isPlaying && context.tempoMap != nullptr;
-    const double blockStartBeat =
-        onTransportClock ? context.tempoMap->beatsAtSeconds(context.timelineStartSeconds) : 0.0;
-    const double blockEndBeat =
-        onTransportClock ? context.tempoMap->beatsAtSeconds(context.timelineEndSeconds) : 0.0;
-
-    // --- 5. One stretch of the block over which the held notes do not change ---
-    const auto generate = [&](double segStartSecs, double segEndSecs) {
-        // Nothing to play: close what is sounding and idle the clock.
-        if (heldCount_ == 0 || (!context.isPlaying && physicallyHeldCount_ <= 0)) {
-            closeSoundingNote(segStartSecs);
-            freeRunSamples_ = 0.0;
-            lastBlockEndBeat_ = -1.0;
-            return;
-        }
-
-        const double segDurationSecs = segEndSecs - segStartSecs;
-        if (segDurationSecs <= 0.0)
-            return;
-
-        double segStartBeat = 0.0;
-        double segEndBeat = 0.0;
-        if (onTransportClock) {
-            // Divided the way the output timestamps are computed below, so a
-            // beat and a time within the block are each other's inverse.
-            const double beats = blockEndBeat - blockStartBeat;
-            segStartBeat = blockStartBeat + (segStartSecs / blockDurationSecs) * beats;
-            segEndBeat = blockStartBeat + (segEndSecs / blockDurationSecs) * beats;
-        } else {
-            // Free-running clock — get tempo from timeline position 0
-            const double bpm =
-                context.tempoMap != nullptr ? context.tempoMap->bpmAtSeconds(0.0) : 120.0;
-            const double beatsPerSample = bpm / (60.0 * sampleRate_);
-            segStartBeat = freeRunSamples_ * beatsPerSample;
-            freeRunSamples_ += segDurationSecs * sampleRate_;
-            segEndBeat = freeRunSamples_ * beatsPerSample;
-        }
-
-        if (segEndBeat <= segStartBeat)
-            return;
-
-        // Seeks, loop wraps and the switch between the two clocks all arrive as
-        // a stretch that does not continue the last one. Only some of them
-        // reach the device as a panic and a loop wrap reaches it as nothing at
-        // all, so the timeline is what the walk trusts (#2416).
-        constexpr double kContiguousBeats = 1.0e-3;
-        if (lastBlockEndBeat_ < 0.0 ||
-            std::abs(segStartBeat - lastBlockEndBeat_) > kContiguousBeats) {
-            closeSoundingNote(segStartSecs);
-            currentStep_ = 0;
-            arpOriginBeat_ = -1.0;
-        }
-        lastBlockEndBeat_ = segEndBeat;
-
-        const auto seq = buildSequence();
-        if (seq.length == 0)
-            return;
-
-        // Cycle length in beats (one full pass through the sequence)
-        const double cycleBeats = seq.length * stepBeats;
-
-        // Anchor on the grid at the point the pattern starts from, which is
-        // where the chord arrived rather than wherever its block began.
-        if (arpOriginBeat_ < 0.0)
-            arpOriginBeat_ = std::floor(segStartBeat / stepBeats) * stepBeats;
-
-        // Compute the beat position for a given global step index.
-        // With ramp, steps within each cycle are warped by the bezier curve.
-        // Without ramp, steps are evenly spaced at stepBeats intervals.
-        const auto computeStepBeat = [&](int step) -> double {
-            int cycle = step / seq.length;
-            int stepInCycle = step % seq.length;
-            double cycleStart = arpOriginBeat_ + cycle * cycleBeats;
-
-            if (std::abs(rampVal) > 0.001f && seq.length > 1) {
-                int cyc = juce::jlimit(1, 8, rampCycles.load(std::memory_order_relaxed));
-                double tLinear = static_cast<double>(stepInCycle) / static_cast<double>(seq.length);
-                double tCurved = ramp_curve::applyRampCurveWithCycles(tLinear, rampVal, skewVal,
-                                                                      cyc, hardAngleVal);
-                return cycleStart + tCurved * cycleBeats;
-            }
-            return cycleStart + stepInCycle * stepBeats;
-        };
-
-        // Where the step is actually played: swing on odd steps, then quantize
-        // pulling that toward a regular grid. Neither can carry a step past its
-        // neighbour, so the walk below keys on this instead of the raw grid and
-        // a step warped past the end of a stretch stays pending rather than
-        // being consumed unplayed (#2362).
-        const auto warpedStepBeat = [&](int step) -> double {
-            double beat = computeStepBeat(step);
-            // Half the gap to the next step, not half the nominal rate: Time
-            // Bend can compress two steps onto one beat, and a fixed offset
-            // would then swing the odd one past the even one that follows it.
-            if (step % 2 == 1 && swingVal > 0.0f)
-                beat += static_cast<double>(swingVal) * (computeStepBeat(step + 1) - beat) * 0.5;
-
-            if (quantizeAmount > 0.0f && quantizeSubVal > 0) {
-                const double gridSpacing = cycleBeats / static_cast<double>(quantizeSubVal);
-                const double snapped = std::round(beat / gridSpacing) * gridSpacing;
-                beat += (snapped - beat) * static_cast<double>(quantizeAmount);
-            }
-            return beat;
-        };
-
-        const auto timeOf = [&](double beat) {
-            const double frac = (beat - segStartBeat) / (segEndBeat - segStartBeat);
-            return segStartSecs + frac * segDurationSecs;
-        };
-
-        // --- Note-off a previous stretch scheduled into this one ---
-        if (lastPlayedNote_ >= 0 && lastNoteOffBeat_ >= 0.0 && lastNoteOffBeat_ < segEndBeat) {
-            addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_),
-                            std::max(segStartSecs, timeOf(lastNoteOffBeat_)), lastPlayedSourceId_);
-            lastPlayedNote_ = -1;
-            lastNoteOffBeat_ = -1.0;
-            clearMidiOutDisplay();
-        }
-
-        // Catch up to the stretch. Cycles are evenly spaced whatever the warp
-        // does inside one, so the cycle is a division and only its steps are
-        // walked: bounded work, not one pass per skipped step.
-        if (warpedStepBeat(currentStep_) < segStartBeat) {
-            // Warp carries a step across the cycle boundary either way, so the
-            // division lands a cycle early and the walk closes the rest.
-            const int cycle =
-                static_cast<int>(std::floor((segStartBeat - arpOriginBeat_) / cycleBeats)) - 1;
-            currentStep_ = std::max(currentStep_, cycle * seq.length);
-            while (warpedStepBeat(currentStep_) < segStartBeat)
-                ++currentStep_;
-        }
-
-        // --- Walk steps and generate notes ---
-        for (;;) {
-            const double stepBeat = warpedStepBeat(currentStep_);
-            // Left where it is rather than consumed: a step the warp moved past
-            // this stretch is played by the stretch that holds it, so the same
-            // input plays the same notes however the host cuts its callbacks up
-            // (#2415).
-            if (stepBeat >= segEndBeat)
-                break;
-
-            // Never ahead of the stretch it is played in: the catch-up
-            // above leaves the walk on a step at or after the start, and a
-            // sequence rebuilt mid-block can only move one closer to it.
-            const double timeInBlock = std::max(segStartSecs, timeOf(stepBeat));
-
-            // Note-off for previous note
-            if (lastPlayedNote_ >= 0) {
-                addTimedMessage(juce::MidiMessage::noteOff(1, lastPlayedNote_), timeInBlock,
-                                lastPlayedSourceId_);
-                lastPlayedNote_ = -1;
-            }
-
-            // Determine which note to play
-            int stepIdx;
-            if (pat == Pattern::Random) {
-                stepIdx = arpRandom_.nextInt(seq.length);
-            } else {
-                stepIdx = currentStep_ % seq.length;
-            }
-
-            const auto& note = seq.notes[static_cast<size_t>(stepIdx)];
-
-            // Determine velocity
-            int vel = note.velocity;
-            if (velMode == VelocityMode::Fixed) {
-                vel = fixedVel;
-            } else if (velMode == VelocityMode::Accent) {
-                vel = (currentStep_ % 4 == 0) ? juce::jmin(127, note.velocity + 30) : note.velocity;
-            }
-
-            // Note-on, carrying the provenance of whoever holds the pitch, so
-            // a device behind this one reads it the way this one does (#2416).
-            const std::uint32_t noteSource =
-                note.liveHolds > 0 ? note.liveSourceId : note.hostSourceId;
-            addTimedMessage(
-                juce::MidiMessage::noteOn(1, note.noteNumber, static_cast<juce::uint8>(vel)),
-                timeInBlock, noteSource);
-
-            lastPlayedNote_ = note.noteNumber;
-            lastPlayedSourceId_ = noteSource;
-            setMidiOutDisplay(note.noteNumber, vel);
-
-            // Schedule note-off
-            const double noteOffBeat = stepBeat + stepBeats * static_cast<double>(gateVal);
-            if (noteOffBeat < segEndBeat) {
-                addTimedMessage(juce::MidiMessage::noteOff(1, note.noteNumber), timeOf(noteOffBeat),
-                                noteSource);
-                lastPlayedNote_ = -1;
-                lastNoteOffBeat_ = -1.0;
-                clearMidiOutDisplay();
-            } else {
-                // Note-off in a later stretch, or a later block
-                lastNoteOffBeat_ = noteOffBeat;
-            }
-            ++currentStep_;
-            currentPlayStep_.store(currentStep_ % seq.length, std::memory_order_relaxed);
-            currentSeqLength_.store(seq.length, std::memory_order_relaxed);
-        }
-    };
-
-    // --- 6. Walk the block, cut where the input changes what is held ---
-    const int incomingCount = in.size();
+    // --- 3. The block, cut where the input changes what is held ---
+    // The pattern the arp plays from a given instant is the one its input had
+    // at that instant: a latch replacement or a panic nine tenths of the way
+    // through a block leaves the steps before it alone (#2415).
+    const int incomingCount = block.in.size();
     int nextEvent = 0;
-    double segmentStartSecs = 0.0;
+    double stretchStartSecs = 0.0;
     for (;;) {
+        // Everything the host stamped at this instant, before anything is
+        // played for it.
         while (nextEvent < incomingCount) {
-            if (!changesPattern(in.message(nextEvent))) {
-                ++nextEvent;
+            const auto& msg = block.in.message(nextEvent);
+            const bool changesPattern =
+                msg.isNoteOnOrOff() || msg.isAllNotesOff() || msg.isAllSoundOff();
+            if (!changesPattern) {
+                ++nextEvent;  // the forwarder carries it, in its own time
                 continue;
             }
-            if (eventTime(nextEvent) > segmentStartSecs)
+            if (block.eventTime(nextEvent) > stretchStartSecs)
                 break;
-            applyEvent(nextEvent, segmentStartSecs);
+            applyInputEvent(block, nextEvent, stretchStartSecs);
             ++nextEvent;
         }
 
-        const double segmentEndSecs =
-            nextEvent < incomingCount ? eventTime(nextEvent) : blockDurationSecs;
-        generate(segmentStartSecs, segmentEndSecs);
+        playStretch(block, stretchStartSecs,
+                    nextEvent < incomingCount ? block.eventTime(nextEvent) : blockDurationSecs);
 
         // Input stamped at or past the block end still changes what the next
         // block holds; it just has no stretch of this one left to play in.
         if (nextEvent >= incomingCount)
             break;
-        segmentStartSecs = segmentEndSecs;
+        stretchStartSecs = block.eventTime(nextEvent);
     }
 
     // Re-asserted rather than left to whichever input event ran last: a chord
