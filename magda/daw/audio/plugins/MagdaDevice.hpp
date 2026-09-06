@@ -18,6 +18,12 @@ struct DeviceProperties {
     /// The device emits MIDI of its own, written to DeviceProcessContext::midiOut.
     /// Its input never passes through it: thru is the host's merge (#2347).
     bool producesMidi = false;
+    /// The device copies part of its input onto its output: what it consumes
+    /// is its material, and the rest belongs to whatever plays its notes (the
+    /// arpeggiator's non-note traffic, #2417). Not thru, which is the host's
+    /// whole-stream merge; a host sizes this device's MIDI output for its
+    /// input as well as its own production.
+    bool forwardsMidiInput = false;
     bool takesAudioInput = true;
     bool isSynth = false;
     bool producesAudioWithoutInput = false;

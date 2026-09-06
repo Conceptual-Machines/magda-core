@@ -73,6 +73,7 @@ set(TEST_SOURCES
     devices/test_mutable_clouds.cpp
     devices/test_mutable_rings_chord.cpp
     devices/test_arpeggiator_input.cpp
+    devices/test_arpeggiator_passthru.cpp
     devices/test_arpeggiator_transport.cpp
     devices/test_midi_strum_lifecycle.cpp
     devices/test_midi_strum_provenance.cpp
@@ -642,6 +643,8 @@ target_sources(magda_juce_tests PRIVATE
     devices/test_convolution_device_juce.cpp
     # One device, one discontinuity, both adapters (#2418).
     devices/test_device_panic_flag_juce.cpp
+    # The traffic the same device passes on rather than consumes (#2417).
+    devices/test_device_midi_passthru_juce.cpp
     devices/test_mutable_add_not_replace_juce.cpp
     devices/test_master_sidechain_juce.cpp
     midi/test_midi_bridge_note_events_juce.cpp

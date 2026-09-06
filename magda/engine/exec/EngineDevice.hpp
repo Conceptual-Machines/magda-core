@@ -184,6 +184,19 @@ class EngineDevice {
      */
     virtual void setMidiOutputBoundBytes(int) {}
 
+    /**
+     * @brief Whether part of this device's MIDI input leaves on its output.
+     *
+     * A device is a producer, not a conduit: thru is the plan's merge behind
+     * it (#2345). A MIDI FX that consumes notes and hands the rest of the
+     * channel's traffic to the instrument behind it is the exception, and its
+     * output port is budgeted for what reached it as well as what it makes
+     * (#2417). Read off the audio thread, beside the two bounds above.
+     */
+    virtual bool forwardsMidiInput() const {
+        return false;
+    }
+
     /// Samples the device delays its output by. Read but not yet compensated:
     /// latency compensation is its own slice, and the executor reports any
     /// non-zero value from prepare() rather than pretending it is aligned.

@@ -42,6 +42,12 @@ The interactive curve display shows the timing transformation in real time. Duri
 
 Depth, Skew, and Cycles can be linked to [Macros](../modulation/macros.md) for automatable timing modulation — morph from straight to swung patterns in real time.
 
+## MIDI pass-through
+
+The Arpeggiator replaces the notes you play with its own pattern, and passes everything else on the channel to the instrument behind it — mod wheel, expression, sustain, pitch bend, aftertouch and program change all reach the synth unchanged. Sustain still holds the arpeggiated notes, and the wheel still bends them.
+
+Turn on **MIDI thru** in the device header only when you want the chord itself to play alongside the pattern: thru passes the raw input on, notes included.
+
 ## Usage
 
 1. Place the Arpeggiator before an instrument on a track's device chain

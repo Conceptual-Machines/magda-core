@@ -45,8 +45,10 @@ struct ArpRig {
                                                                 arp.parameterInfo(Arp::kRate)));
     }
 
+    /// @p seconds is the block length: long enough to hold several arp steps
+    /// when a case needs the output to interleave with something (#2417).
     DeviceMidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
-                         bool playing = true, bool panic = false) {
+                         bool playing = true, bool panic = false, double seconds = 0.05) {
         DeviceMidiBuffer in;
         in.allNotesOff = panic;
         for (const auto& message : input)
@@ -56,9 +58,9 @@ struct ArpRig {
         context.midiIn = &in;
         context.midiOut = &out;
         context.tempoMap = &tempo;
-        context.numSamples = 2400;
+        context.numSamples = static_cast<int>(seconds * 48000.0);
         context.timelineStartSeconds = start;
-        context.timelineEndSeconds = start + 0.05;
+        context.timelineEndSeconds = start + seconds;
         context.isPlaying = playing;
         context.liveSourceIds = liveSourceIds.empty() ? nullptr : liveSourceIds.data();
         context.numLiveSourceIds = static_cast<int>(liveSourceIds.size());

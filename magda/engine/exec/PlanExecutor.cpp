@@ -673,6 +673,25 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         // a device doing it as well made every note a pair (#2345). So a device
         // is a producer like any other and its port stays at the budget every
         // port starts on.
+        //
+        // Unless it says otherwise: a MIDI FX that consumes notes hands the
+        // rest of the channel on, since thru would bring the notes back with
+        // it (#2417). Its port holds what it makes and what reached it, and
+        // what reached it is a merge's sum rather than one producer's budget.
+        if (op.kind == OpKind::Device) {
+            const auto* device = deviceForOp_[i];
+            const auto hasMidiOut = op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+            if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
+                continue;
+
+            const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
+                                      ? portMidiBytes[flatPort(op.inputs[1])]
+                                      : 0;
+            portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
+                kMaxMidiBytesPerPort + reaching;
+            continue;
+        }
+
         if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
             op.kind != OpKind::MidiNoteGate)
             continue;

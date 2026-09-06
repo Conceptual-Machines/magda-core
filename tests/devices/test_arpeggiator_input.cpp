@@ -31,9 +31,13 @@ TEST_CASE("Arpeggiator upstream panic stops its sounding note exactly once",
         INFO("controller " << controller);
         Rig rig;
         rig.startNote();
+        // The reset travels on to whatever plays the notes (#2417), and the
+        // arp closes what it was sounding once behind it.
         auto midi = rig.run(0.05, {juce::MidiMessage::controllerEvent(1, controller, 0)});
-        REQUIRE(midi.size() == 1);
-        checkOff(midi);
+        REQUIRE(midi.size() == 2);
+        CHECK(midi.message(0).isController());
+        CHECK(midi.message(0).getControllerNumber() == controller);
+        checkOff(midi, 1);
         CHECK(rig.run(0.1).size() == 0);
         CHECK(rig.run(0.5).size() == 0);
     }
@@ -47,11 +51,15 @@ TEST_CASE("Arpeggiator input resets retain a single pending note-off",
     auto midi = rig.run(0.5, {juce::MidiMessage::noteOn(1, 64, juce::uint8{80}),
                               juce::MidiMessage::allNotesOff(1), juce::MidiMessage::allSoundOff(1),
                               juce::MidiMessage::noteOn(1, 67, juce::uint8{73})});
-    REQUIRE(midi.size() == 2);
-    checkOff(midi);
-    CHECK(midi.message(1).isNoteOn());
-    CHECK(midi.message(1).getNoteNumber() == 67);
-    CHECK(midi.message(1).getVelocity() == 73);
+    // Both resets forwarded ahead of it (#2417), then one note-off however
+    // many resets the block carried.
+    REQUIRE(midi.size() == 4);
+    CHECK(midi.message(0).isController());
+    CHECK(midi.message(1).isController());
+    checkOff(midi, 2);
+    CHECK(midi.message(3).isNoteOn());
+    CHECK(midi.message(3).getNoteNumber() == 67);
+    CHECK(midi.message(3).getVelocity() == 73);
 }
 
 TEST_CASE("Arpeggiator buffer panic drops a latched chord it cannot prove is live",
@@ -78,11 +86,14 @@ TEST_CASE("Arpeggiator buffer panic permits fresh input without duplicate note-o
         0.5, {juce::MidiMessage::allNotesOff(1), juce::MidiMessage::noteOn(1, 67, juce::uint8{73})},
         true, true);
     CHECK(midi.isAllNotesOff());
-    REQUIRE(midi.size() == 2);
-    checkOff(midi);
-    CHECK(midi.message(1).isNoteOn());
-    CHECK(midi.message(1).getNoteNumber() == 67);
-    CHECK(midi.message(1).getVelocity() == 73);
+    // The forwarded reset (#2417), then the single note-off the panic and the
+    // controller between them are owed.
+    REQUIRE(midi.size() == 3);
+    CHECK(midi.message(0).isController());
+    checkOff(midi, 1);
+    CHECK(midi.message(2).isNoteOn());
+    CHECK(midi.message(2).getNoteNumber() == 67);
+    CHECK(midi.message(2).getVelocity() == 73);
 }
 
 TEST_CASE("Arpeggiator forwards buffer panic even with no sounding note",
