@@ -33,8 +33,14 @@ class TrackApi {
 
     virtual void setTrackName(TrackId trackId, const juce::String& name) = 0;
     virtual void setTrackColour(TrackId trackId, juce::Colour colour) = 0;
-    virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation = false) = 0;
-    virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation = false) = 0;
+    virtual void setTrackVolume(TrackId trackId, float volume, bool fromAutomation) = 0;
+    void setTrackVolume(TrackId trackId, float volume) {
+        setTrackVolume(trackId, volume, false);
+    }
+    virtual void setTrackPan(TrackId trackId, float pan, bool fromAutomation) = 0;
+    void setTrackPan(TrackId trackId, float pan) {
+        setTrackPan(trackId, pan, false);
+    }
     virtual void setTrackMuted(TrackId trackId, bool muted) = 0;
     virtual void setTrackSoloed(TrackId trackId, bool soloed) = 0;
     virtual void setTrackRecordArmed(TrackId trackId, bool armed) = 0;

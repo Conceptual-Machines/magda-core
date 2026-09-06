@@ -20,7 +20,10 @@ class ClipApi {
     virtual std::vector<ClipId> getClipsOnTrack(TrackId trackId) const = 0;
 
     virtual ClipId createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats,
-                                       ClipView view = ClipView::Arrangement) = 0;
+                                       ClipView view) = 0;
+    ClipId createMidiClipBeats(TrackId trackId, double startBeats, double lengthBeats) {
+        return createMidiClipBeats(trackId, startBeats, lengthBeats, ClipView::Arrangement);
+    }
     virtual void deleteClip(ClipId clipId) = 0;
 
     virtual void setClipName(ClipId clipId, const juce::String& name) = 0;
@@ -32,9 +35,8 @@ class ClipApi {
 
     virtual bool addMidiNote(ClipId clipId, double startBeat, int noteNumber, double lengthBeats,
                              int velocity) = 0;
-    virtual bool quantizeMidiNotes(
-        ClipId clipId, const std::vector<size_t>& noteIndices, double gridResolution,
-        MidiNoteQuantizeMode mode = MidiNoteQuantizeMode::StartAndLength) = 0;
+    virtual bool quantizeMidiNotes(ClipId clipId, const std::vector<size_t>& noteIndices,
+                                   double gridResolution, MidiNoteQuantizeMode mode) = 0;
     virtual bool sliceMidiNotes(ClipId clipId, const std::vector<size_t>& noteIndices,
                                 int subdivisions) = 0;
     virtual bool transposeMidiClip(ClipId clipId, int semitones) = 0;

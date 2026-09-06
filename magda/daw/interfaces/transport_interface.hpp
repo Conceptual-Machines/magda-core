@@ -42,7 +42,7 @@ class TransportInterface {
      * @param beat The beat within the bar (1-based)
      * @param tick The tick within the beat (0-based)
      */
-    virtual void locateMusical(int bar, int beat, int tick = 0) = 0;
+    virtual void locateMusical(int bar, int beat, int tick) = 0;
 
     /**
      * @brief Get current playback position in seconds
