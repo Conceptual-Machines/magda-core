@@ -25,9 +25,10 @@ class InsertCapturePlayback final : public EngineInsert {
      * narrower than the render. Failing here rather than carrying a flag is the
      * point (#2279): a render that cannot be served has nothing to bind.
      *
-     * Another rate is resampled rather than refused, as InsertRenderCaptureService
-     * does on completion, through the curve a file at another rate is read
-     * through (io/SourceReaders.hpp). Off the audio thread: this allocates.
+     * Another rate is resampled rather than refused, so an export at 96 kHz of
+     * a session tracked at 44.1 needs no second live pass. The curve is the one
+     * io/SourceReaders.hpp reads a file at another rate through. Off the audio
+     * thread: this allocates.
      */
     static std::unique_ptr<InsertCapturePlayback> create(const InsertCapture& capture,
                                                          const CaptureWindow& window,

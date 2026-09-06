@@ -281,8 +281,7 @@ TEST_CASE("A capture taken at another rate is resampled, not refused", "[engine]
     HardwareStub hardware;
     const auto capture = captureOfWholePass(hardware);
 
-    // As InsertRenderCaptureService does: another rate must not need a second
-    // trip through the hardware.
+    // Another rate must not need a second trip through the hardware.
     auto playback =
         InsertCapturePlayback::create(capture, windowOf(kWindowSamples), contextAt(2.0 * kRate));
     REQUIRE(playback != nullptr);

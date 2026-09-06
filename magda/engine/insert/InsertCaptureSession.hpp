@@ -26,9 +26,9 @@ class InsertCaptureSession final : public EngineInsert {
      * @p live is owned by the caller and must outlive this. Room for the whole
      * window is taken here, so the write path never allocates.
      *
-     * In memory rather than on disk, where the incumbent puts it: a disk-backed
-     * capture needs the FIFO and writer thread recording (#1895) is about to
-     * build, and goes through here when they exist.
+     * In memory rather than on disk: a disk-backed capture needs the FIFO and
+     * writer thread recording (#1895) is about to build, and goes through here
+     * when they exist.
      */
     InsertCaptureSession(EngineInsert& live, const CaptureWindow& window, double sampleRate,
                          int numChannels, int midiCapacity = 0);
