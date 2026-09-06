@@ -12,6 +12,10 @@ it says.
 This is about form only. `comments-not-essays` governs length and still applies: `@brief` is one
 sentence and the body is a short paragraph at most.
 
+Reach for one line first. A `///` that fits on one line is the shortest right answer, and turning
+a wordy two-line `///` into a four-line block makes it longer rather than better -- cut it to one
+line instead. The block form is for what genuinely needs a second thought after the brief.
+
 ## The two forms
 
 One line, on a field, an enumerator or a method whose name nearly says it:
