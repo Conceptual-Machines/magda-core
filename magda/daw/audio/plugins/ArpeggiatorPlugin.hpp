@@ -192,7 +192,6 @@ class ArpeggiatorPlugin : public MidiMagdaDevice {
     /// hold on the rest. What a clip left behind has no note-off coming once
     /// the transport stops, and none at all when a seek moves off it.
     void retainLiveHeldNotes();
-    void sendAllNotesOff(DeviceMidiOutput& midi);
     int takeSoundingNote();
     // Returns the note that the caller must release when resetting during processing.
     int resetArpState();

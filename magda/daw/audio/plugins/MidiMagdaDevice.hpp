@@ -35,10 +35,17 @@ class MidiMagdaDevice : public MagdaDevice {
 
     /** Send note-off for the given note (channel 1, like the retired base).
      *  The source is the one the note-on carried, so a device downstream reads
-     *  the pair as one note from one origin (#2416). */
-    static void sendNoteOff(DeviceMidiOutput& midi, int noteNumber, std::uint32_t sourceId = 0) {
-        if (noteNumber >= 0)
-            midi.addEvent({juce::MidiMessage::noteOff(1, noteNumber), sourceId});
+     *  the pair as one note from one origin (#2416). @p timeInBlock is seconds
+     *  from the block start, like every other timestamp the SDK carries: a note
+     *  closed by something that happened inside the block is closed there
+     *  rather than at its top (#2415). */
+    static void sendNoteOff(DeviceMidiOutput& midi, int noteNumber, std::uint32_t sourceId = 0,
+                            double timeInBlock = 0.0) {
+        if (noteNumber < 0)
+            return;
+        auto message = juce::MidiMessage::noteOff(1, noteNumber);
+        message.setTimeStamp(timeInBlock);
+        midi.addEvent({std::move(message), sourceId});
     }
 
     /** Clear the MIDI output note display (no note playing). */

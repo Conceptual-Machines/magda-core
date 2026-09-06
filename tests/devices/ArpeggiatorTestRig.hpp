@@ -2,7 +2,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
-#include <initializer_list>
 #include <vector>
 
 #include "TestDeviceMidiBuffer.hpp"
@@ -47,7 +46,7 @@ struct ArpRig {
 
     /// @p seconds is the block length: long enough to hold several arp steps
     /// when a case needs the output to interleave with something (#2417).
-    DeviceMidiBuffer run(double start, std::initializer_list<juce::MidiMessage> input = {},
+    DeviceMidiBuffer run(double start, const std::vector<juce::MidiMessage>& input = {},
                          bool playing = true, bool panic = false, double seconds = 0.05) {
         DeviceMidiBuffer in;
         in.allNotesOff = panic;
@@ -75,6 +74,13 @@ struct ArpRig {
         REQUIRE(midi.message(0).getNoteNumber() == 60);
     }
 };
+
+/// An input event where the host put it, in the units the SDK carries:
+/// seconds from the start of the block (#2415).
+inline juce::MidiMessage at(double timeInBlock, juce::MidiMessage message) {
+    message.setTimeStamp(timeInBlock);
+    return message;
+}
 
 inline void checkNoteOff(const DeviceMidiBuffer& midi, int index = 0, int noteNumber = 60) {
     REQUIRE(midi.size() > index);
