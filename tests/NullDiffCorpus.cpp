@@ -2400,21 +2400,15 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
                              launching(plainTrack()));
         value.endBeat = 8.0;
 
-        // A tone, whose file is windowed at both ends, so the slot's first
-        // sample is silence. Both engines take a step out of a launched clip's
-        // first samples and only one of them asks first whether there is a step
-        // to take: the fork's SlotControlNode de-clicks whatever the block
-        // begins with, while the engine leaves a voice that begins at its own
-        // start alone, on the grounds that what looks like a step there is the
-        // material's own attack (ClipVoice.cpp). Impulses put a full-scale
-        // transient on exactly that sample, so an impulse case here would be
-        // measuring the launch instant, which #2306 asserts and this does not.
-        // The difference itself is #2444.
-        //
-        // Nothing interpolates between the two at one rate and ratio one, so the
-        // ordinary floor still applies: the tone is here for what its first
-        // sample is, not for what an interpolator would do to it.
-        const auto source = writeSource(scratchDirectory, "session", tone());
+        // Impulses, which put a full-scale transient on the slot's very first
+        // sample. That is the sample both engines take a step out of when a
+        // launch begins, and the one they used to disagree about: the fork
+        // de-clicked whatever a launched block began with and removed the
+        // transient, where the engine leaves a voice that begins at its own
+        // start alone (ClipVoice.cpp). Fixed in the fork for #2444, and this
+        // material is what holds it fixed -- a tone would pass either way,
+        // because its file is windowed and its first sample is silence.
+        const auto source = writeSource(scratchDirectory, "session", impulses());
         value.sources.push_back(source);
 
         // Sixteen beats against an eight-beat render, so the run never reaches
