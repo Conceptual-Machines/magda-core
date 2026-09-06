@@ -34,8 +34,11 @@ struct CaptureWindow {
     double startSeconds = 0.0;
     double endSeconds = 0.0;
 
-    /// Below any sample at any rate a device runs at, so this absorbs the
-    /// rounding in the seconds arithmetic and nothing else.
+    /**
+     * @brief Below any sample at any rate a device runs at.
+     *
+     * So it absorbs the rounding in the seconds arithmetic and nothing else.
+     */
     static constexpr double kEpsilonSeconds = 1e-9;
 
     double lengthSeconds() const {
@@ -60,9 +63,12 @@ struct CaptureWindow {
 struct CapturedMidiEvent {
     std::int64_t sample = 0;
 
-    /// One, two or three. A hardware return speaks clock and program change as
-    /// well as notes, and a message replayed a byte longer than it was sent is
-    /// a different message.
+    /**
+     * @brief One, two or three.
+     *
+     * A hardware return speaks clock and program change as well as notes, and a
+     * message replayed a byte longer than it was sent is a different message.
+     */
     std::uint8_t numBytes = 0;
 
     std::uint8_t status = 0;
@@ -79,13 +85,20 @@ class InsertCapture {
         CaptureWindow window;
         double sampleRate = 0.0;
 
-        /// The live insert's round trip, in seconds so that reading the capture
-        /// at another rate keeps the delay the pass actually had.
+        /**
+         * @brief The live insert's round trip, in seconds.
+         *
+         * Seconds so that reading the capture at another rate keeps the delay
+         * the pass actually had.
+         */
         double roundTripSeconds = 0.0;
 
-        /// Every sample of the window was written and no event was dropped. A
-        /// pass that seeked over part of the window leaves this false, and
-        /// nothing can be built on it.
+        /**
+         * @brief Every sample of the window was written and no event dropped.
+         *
+         * A pass that seeked over part of the window leaves this false, and
+         * nothing can be built on it.
+         */
         bool complete = false;
     };
 

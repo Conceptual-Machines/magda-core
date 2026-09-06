@@ -9,8 +9,12 @@ namespace magda::engine {
 
 namespace {
 
-/// @p capture's samples at @p rate, through the curve a file at another rate is
-/// read through. The same buffer back when the rates already agree.
+/**
+ * @brief @p source's samples at @p rate, through the curve a file at another
+ *        rate is read through.
+ *
+ * The same buffer back when the rates already agree.
+ */
 juce::AudioBuffer<float> atRate(const juce::AudioBuffer<float>& source, double sourceRate,
                                 double rate) {
     if (sourceRate <= 0.0 || rate <= 0.0 || std::abs(sourceRate - rate) < 1e-9) {

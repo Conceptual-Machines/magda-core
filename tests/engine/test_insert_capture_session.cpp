@@ -49,8 +49,12 @@ BlockInfo blockAt(std::int64_t startSample, int numSamples, double rate = kRate,
     return block;
 }
 
-/// What the hardware "says" at one instant. A tone rather than a ramp, so the
-/// resampled case has something a wrong curve would visibly damage.
+/**
+ * @brief What the hardware "says" at one instant.
+ *
+ * A tone rather than a ramp, so the resampled case has something a wrong curve
+ * would visibly damage.
+ */
 float valueFor(std::int64_t sample, int channel) {
     const auto phase = 2.0 * std::numbers::pi * 100.0 * static_cast<double>(sample) / kRate;
     return static_cast<float>(std::sin(phase) * (channel == 0 ? 1.0 : 0.5));
@@ -62,9 +66,12 @@ struct StubMessage {
     juce::MidiMessage message;
 };
 
-/// The outboard, as far as these tests need one: it answers with a tone derived
-/// from where the block is, so what it said at an instant is checkable without
-/// recording it a second time.
+/**
+ * @brief The outboard, as far as these tests need one.
+ *
+ * It answers with a tone derived from where the block is, so what it said at an
+ * instant is checkable without recording it a second time.
+ */
 class HardwareStub final : public EngineInsert {
   public:
     int latencySamples() const override {

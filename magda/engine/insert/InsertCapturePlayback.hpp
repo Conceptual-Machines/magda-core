@@ -70,8 +70,11 @@ class InsertCapturePlayback final : public EngineInsert {
 
     juce::AudioBuffer<float> audio_;
 
-    /// Sorted by sample, at the render's rate, so a block finds its own events
-    /// by a search rather than a walk.
+    /**
+     * @brief The capture's messages, sorted by sample, at the render's rate.
+     *
+     * Sorted so that a block finds its own events by a search rather than a walk.
+     */
     std::vector<CapturedMidiEvent> midi_;
 
     CaptureWindow window_;
