@@ -2409,6 +2409,7 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         // material's own attack (ClipVoice.cpp). Impulses put a full-scale
         // transient on exactly that sample, so an impulse case here would be
         // measuring the launch instant, which #2306 asserts and this does not.
+        // The difference itself is #2444.
         //
         // Nothing interpolates between the two at one rate and ratio one, so the
         // ordinary floor still applies: the tone is here for what its first
