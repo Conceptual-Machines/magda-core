@@ -5,9 +5,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <future>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -205,6 +207,14 @@ class StubPlugin final : public juce::AudioPluginInstance {
                 samples[sample] = (samples[sample] * level) + marker;
         }
 
+        // What a plugin that has gone wrong leaves behind, on demand: a NaN
+        // and an infinity in the first two samples of the first channel.
+        if (writesNonFinite && written > 0 && buffer.getNumSamples() >= 2) {
+            auto* samples = buffer.getWritePointer(0);
+            samples[0] = std::numeric_limits<float>::quiet_NaN();
+            samples[1] = std::numeric_limits<float>::infinity();
+        }
+
         if (emitsMidi) {
             midi.clear();
             midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 0);
@@ -396,6 +406,9 @@ class StubPlugin final : public juce::AudioPluginInstance {
     int preparedBlockSize = 0;
     int prepareCount = 0;
     bool nonRealtimeAtPrepare = false;
+
+    /// Whether this block's output carries a NaN and an infinity (#2240).
+    bool writesNonFinite = false;
 
     int channelsSeen = 0;
     int samplesSeen = 0;
@@ -3098,4 +3111,57 @@ TEST_CASE("Two captures of one device do not overlap", "[engine][external][contr
 
     CHECK(taken == 4);
     CHECK(mostAtOnce == 1);
+}
+
+TEST_CASE("A plugin's NaN and infinity never leave the device", "[engine][external][2240]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->writesNonFinite = true;
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.fill(0.5f);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    // Cleared rather than clamped. A NaN is not a level to be managed: it
+    // survives every gain, poisons every sum it reaches, and the track stays
+    // broken after the plugin that made it has been bypassed.
+    CHECK(block.buffer.getSample(0, 0) == 0.0f);
+    CHECK(block.buffer.getSample(0, 1) == 0.0f);
+
+    for (int channel = 0; channel < block.buffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < block.buffer.getNumSamples(); ++sample) {
+            INFO("channel " << channel << " sample " << sample);
+            REQUIRE(std::isfinite(block.buffer.getSample(channel, sample)));
+        }
+}
+
+TEST_CASE("The dry signal survives a plugin that produced nothing usable",
+          "[engine][external][2240]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->writesNonFinite = true;
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    // Half dry, half wet: the wet side of these two samples is gone and the dry
+    // side is what the slot was handed, which is the whole point of clearing
+    // before the dry is added back rather than after.
+    ParamArena arena({0.5f, 0.5f, 1.0f, 0.0f});
+    Block block(context, 2);
+    block.fill(0.5f);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    CHECK(block.buffer.getSample(0, 0) == Catch::Approx(0.25f));
+    CHECK(block.buffer.getSample(0, 1) == Catch::Approx(0.25f));
 }

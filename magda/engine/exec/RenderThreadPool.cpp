@@ -1,5 +1,7 @@
 #include "exec/RenderThreadPool.hpp"
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <algorithm>
 
 namespace magda::engine {
@@ -19,6 +21,10 @@ class RenderThreadPool::Worker final : public juce::Thread {
         : juce::Thread("MAGDA render " + juce::String(index)), pool_(pool) {}
 
     void run() override {
+        // For the thread rather than per job: flush-to-zero is a CPU mode this
+        // thread carries, and a worker does nothing but render (#2240).
+        const juce::ScopedNoDenormals noDenormals;
+
         while (!threadShouldExit()) {
             wait(-1);
             if (threadShouldExit())

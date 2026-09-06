@@ -43,6 +43,30 @@ std::optional<magda::ParameterInfo> modelParameterAt(const magda::DeviceInfo& de
     return std::nullopt;
 }
 
+/**
+ * @brief Replace anything that is not a number with silence (#2240).
+ *
+ * A NaN is not a loud sound, it is a permanent one: it survives every gain,
+ * poisons every sum it reaches, and the track stays silent-but-broken after the
+ * plugin that made it has been bypassed. An infinity does the same on the first
+ * multiply by zero. Neither is a level to be managed, so neither is clamped:
+ * they are cleared.
+ *
+ * Deliberately not the fork's rule, which clamps to a magnitude of 100 and only
+ * looks at all when the CPU raised its denormal flag during the call, on Intel.
+ * That gate is for denormals and says nothing about a NaN, and the magnitude is
+ * a number nothing derives: +40 dBFS protects no speaker.
+ */
+void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
+    for (int channel = 0; channel < audio.getNumChannels(); ++channel) {
+        auto* samples = audio.getWritePointer(channel);
+
+        for (int at = 0; at < numSamples; ++at)
+            if (!std::isfinite(samples[at]))
+                samples[at] = 0.0f;
+    }
+}
+
 }  // namespace
 
 /**
@@ -411,6 +435,7 @@ void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
 
     if (dryGain_ <= kDryLevelFloor) {
         instance_->processBlock(audio, midi_);
+        clearNonFinite(audio, numSamples);
 
         if (wetGain_ < kWetLevelCeiling)
             audio.applyGain(0, numSamples, wetGain_);
@@ -424,6 +449,10 @@ void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
         dryScratch_.copyFrom(channel, 0, audio, channel, 0, numSamples);
 
     instance_->processBlock(audio, midi_);
+
+    // Before the dry is added back, so a plugin that produced nothing usable
+    // leaves the dry signal rather than poisoning it.
+    clearNonFinite(audio, numSamples);
 
     if (wetGain_ < kWetLevelCeiling)
         audio.applyGain(0, numSamples, wetGain_);

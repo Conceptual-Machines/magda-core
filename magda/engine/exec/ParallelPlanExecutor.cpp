@@ -195,6 +195,11 @@ void ParallelPlanExecutor::takeWork() {
 
 void ParallelPlanExecutor::process(const PlanValues& values, const BlockInfo& requestedBlock,
                                    juce::AudioBuffer<float>& output) {
+    // This thread's share of the block (#2240). The workers set their own, in
+    // RenderThreadPool::Worker, since the mode is per thread and a worker only
+    // ever renders.
+    const juce::ScopedNoDenormals noDenormals;
+
     const auto start = core_.beginBlock(values, requestedBlock, output);
     if (!start.render || plan_ == nullptr)
         return;
