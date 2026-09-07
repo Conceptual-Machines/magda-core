@@ -9,13 +9,6 @@ namespace magda::engine {
 
 namespace {
 
-/// A wrap anchors the cursor exactly on the loop start, so anything further off
-/// than this is a locate rather than a pass boundary.
-constexpr double kLoopStartTolerance = 1.0e-6;
-
-/// How short the final pass has to be to count as a stop rather than a take.
-constexpr double kFullPassFraction = 0.95;
-
 int takeChannels(const TakeRecorderSettings& settings) {
     return std::max<int>(1, static_cast<int>(settings.channels.size()));
 }
@@ -32,34 +25,15 @@ RecordStreamSettings queueFor(const TakeRecorderSettings& settings) {
     return queue;
 }
 
-bool atLoopStart(const BlockInfo& block, const LoopRange& loop) {
-    return loop.valid() && std::abs(block.beats.start - loop.startBeat) <= kLoopStartTolerance;
-}
+/// The passes' lengths, which is what says which of them plays.
+std::vector<std::int64_t> passLengths(std::span<const RecordedPass> passes) {
+    std::vector<std::int64_t> lengths;
+    lengths.reserve(passes.size());
 
-/**
- * @brief The last full pass, stepping back one if the final pass was cut short.
- *
- * Only the last pass can be cut short, and only the first can run long: a
- * negative adjustment pads its head, and @p headPadding is that padding when
- * the take's own first pass is still here to carry it. Discounted rather than
- * measured, so a pass is judged against what was played rather than against a
- * correction at the top of the file.
- */
-std::size_t activeTake(std::span<const RecordedPass> passes, std::int64_t headPadding) {
-    const auto played = [&](std::size_t pass) {
-        return passes[pass].samples - (pass == 0 ? headPadding : 0);
-    };
+    for (const auto& pass : passes)
+        lengths.push_back(pass.samples);
 
-    std::int64_t longest = 0;
-    for (std::size_t pass = 0; pass < passes.size(); ++pass)
-        longest = std::max(longest, played(pass));
-
-    const auto last = passes.size() - 1;
-    if (passes.size() > 1 &&
-        static_cast<double>(played(last)) < static_cast<double>(longest) * kFullPassFraction)
-        return last - 1;
-
-    return last;
+    return lengths;
 }
 
 }  // namespace
@@ -216,7 +190,7 @@ RecordedTake TakeRecorder::finish() {
     }
 
     if (!passes.empty()) {
-        const auto active = activeTake(passes, headPadding);
+        const auto active = activeTake(passLengths(passes), headPadding);
         result_.file = passes[active].file;
 
         // One pass is an ordinary clip, and the model keeps `takes` empty for

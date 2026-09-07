@@ -4,15 +4,15 @@
 
 #include <atomic>
 #include <cstdint>
-#include <farbot/RealtimeObject.hpp>
-#include <memory>
 #include <vector>
 
 #include "core/ClipInfo.hpp"
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/RecordStream.hpp"
+#include "io/RecordingFeed.hpp"
 #include "io/TakeFileSink.hpp"
+#include "io/TakePasses.hpp"
 #include "transport/TransportState.hpp"
 
 /**
@@ -131,12 +131,12 @@ struct TakeRecorderSettings {
  * not counting in, and stops at the first block it is not: a take is closed by
  * a stop, and a second play is a second take.
  */
-class TakeRecorder {
+class TakeRecorder final : public TakeCapture {
   public:
     TakeRecorder(const LiveInputFeed& feed, const RenderContext& context,
                  TakeRecorderSettings settings);
 
-    ~TakeRecorder() = default;
+    ~TakeRecorder() override = default;
 
     /// Neither copied nor moved: the queue holds a reference to the sink.
     TakeRecorder(const TakeRecorder&) = delete;
@@ -150,14 +150,7 @@ class TakeRecorder {
         return stream_;
     }
 
-    /**
-     * @brief Take what this block carried. On the audio thread, once a block.
-     *
-     * @p loop is the transport's, and is what tells a loop wrap from a locate:
-     * a wrap opens the next pass, and anything else ends the take, since
-     * material after a jump belongs where the cursor went.
-     */
-    void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop);
+    void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
 
     /// Samples offered to the queue so far. Read from any thread; what a
     /// running take is drawn from (#2463).
@@ -247,50 +240,6 @@ class TakeRecorder {
 
     std::atomic<std::int64_t> captured_{0};
     std::atomic<bool> rolling_{false};
-};
-
-/// The takes a callback feeds. Not owned: whoever publishes them keeps them
-/// alive until it has published something that does not name them.
-using RecordingTakes = std::vector<TakeRecorder*>;
-
-/**
- * @brief What the audio thread records into, replaced on the publishing thread.
- *
- * A feed rather than part of a plan, for the reason the clips are one: arming a
- * track recompiles a plan, but starting a recording is not a structural edit
- * and must not cost one. Publishing waits for the block the callback is in, so
- * a take taken out of the set is one nothing is writing to by the time the call
- * returns, which is what makes it safe to finish.
- */
-class RecordingFeed {
-    using Published = farbot::RealtimeObject<std::shared_ptr<const RecordingTakes>,
-                                             farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
-
-  public:
-    /// On the publishing thread.
-    void publish(std::shared_ptr<const RecordingTakes> takes) {
-        published_.nonRealtimeReplace(std::move(takes));
-    }
-
-    /// What is live, for as long as this exists. On the audio thread. Null
-    /// until something is published, which is a session recording nothing.
-    class Reader {
-      public:
-        explicit Reader(RecordingFeed& feed) : access_(feed.published_) {}
-
-        const RecordingTakes* get() const noexcept {
-            return (*access_).get();
-        }
-        explicit operator bool() const noexcept {
-            return get() != nullptr;
-        }
-
-      private:
-        Published::ScopedAccess<farbot::ThreadType::realtime> access_;
-    };
-
-  private:
-    Published published_;
 };
 
 }  // namespace magda::engine

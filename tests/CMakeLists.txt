@@ -427,6 +427,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # An arrangement audio take (#2461): where it starts against a declared
     # input latency and a count-in, how a loop splits it, and which pass plays.
     list(APPEND TEST_SOURCES engine/test_take_recorder.cpp)
+    # A MIDI take (#2462): where an event lands, what a held note gets for a
+    # length, and which pass owns one that crossed a wrap.
+    list(APPEND TEST_SOURCES engine/test_midi_take_recorder.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
