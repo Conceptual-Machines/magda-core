@@ -20,7 +20,7 @@ class PromptInterface {
      * @param context Optional context about current DAW state
      * @return The model's response
      */
-    virtual std::string sendPrompt(const std::string& prompt, const std::string& context = "") = 0;
+    virtual std::string sendPrompt(const std::string& prompt, const std::string& context) = 0;
 
     /**
      * @brief Send a prompt asynchronously
@@ -30,7 +30,7 @@ class PromptInterface {
      */
     virtual void sendPromptAsync(const std::string& prompt,
                                  std::function<void(const std::string&)> callback,
-                                 const std::string& context = "") = 0;
+                                 const std::string& context) = 0;
 
     /**
      * @brief Generate musical suggestions based on current state
@@ -39,7 +39,7 @@ class PromptInterface {
      * @return Suggested musical elements (chords, melodies, etc.)
      */
     virtual std::string generateMusicalSuggestion(const std::string& style,
-                                                  const std::string& current_progression = "") = 0;
+                                                  const std::string& current_progression) = 0;
 
     /**
      * @brief Convert natural language to DAW commands
@@ -53,7 +53,7 @@ class PromptInterface {
      * @param topic Optional specific topic to get help about
      * @return Help text
      */
-    virtual std::string getHelp(const std::string& topic = "") = 0;
+    virtual std::string getHelp(const std::string& topic) = 0;
 
     /**
      * @brief Set the current DAW context for better responses

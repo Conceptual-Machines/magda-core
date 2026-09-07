@@ -96,7 +96,7 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     void sendAllNotesOffToExternalInserts();
     void locate(double position_seconds) override;
-    void locateMusical(int bar, int beat, int tick = 0) override;
+    void locateMusical(int bar, int beat, int tick) override;
     double getCurrentPosition() const override;
     void getCurrentMusicalPosition(int& bar, int& beat, int& tick) const override;
     bool isPlaying() const override;
@@ -364,8 +364,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * Crash files are stored in: ~/Library/Application Support/MAGDA/
      * Call clearPluginExclusions() to retry scanning problematic plugins.
      */
-    void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback = nullptr) override;
+    void startPluginScan(std::function<void(float, const juce::String&)> progressCallback) override;
 
     /**
      * @brief Abort an in-progress plugin scan
@@ -443,10 +442,10 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     void detectNewPlugins(
         std::function<void(PluginScanPhase phase, const juce::String& currentPlugin)>
-            statusCallback = nullptr,
+            statusCallback,
         std::function<void(bool success, int addedCount, int totalCount,
                            const juce::StringArray& failedPlugins)>
-            completionCallback = nullptr) override;
+            completionCallback) override;
     void setPluginScanCompletionCallback(
         std::function<void(bool, int, const juce::StringArray&)> callback) override {
         onPluginScanComplete = std::move(callback);

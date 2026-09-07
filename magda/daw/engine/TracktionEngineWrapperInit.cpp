@@ -80,21 +80,23 @@ void TracktionEngineWrapper::initializePluginFormats() {
     // wants a flat string; format the phase here.
     if (!isHeadlessRuntime() && Config::getInstance().getScanPluginsOnStartup()) {
         auto splashStatus = onPluginScanStatus;
-        detectNewPlugins([splashStatus](PluginScanPhase phase, const juce::String& currentPlugin) {
-            if (!splashStatus)
-                return;
-            switch (phase) {
-                case PluginScanPhase::Discovering:
-                    splashStatus("Checking for new plugins...");
-                    break;
-                case PluginScanPhase::UpToDate:
-                    splashStatus("Plugins up to date");
-                    break;
-                case PluginScanPhase::Scanning:
-                    splashStatus("Scanning: " + pluginDisplayName(currentPlugin));
-                    break;
-            }
-        });
+        detectNewPlugins(
+            [splashStatus](PluginScanPhase phase, const juce::String& currentPlugin) {
+                if (!splashStatus)
+                    return;
+                switch (phase) {
+                    case PluginScanPhase::Discovering:
+                        splashStatus("Checking for new plugins...");
+                        break;
+                    case PluginScanPhase::UpToDate:
+                        splashStatus("Plugins up to date");
+                        break;
+                    case PluginScanPhase::Scanning:
+                        splashStatus("Scanning: " + pluginDisplayName(currentPlugin));
+                        break;
+                }
+            },
+            nullptr);
     }
 
     // Log registered plugin formats
