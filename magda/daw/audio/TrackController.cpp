@@ -19,11 +19,8 @@ te::InputDevice::MonitorMode toTeMonitorMode(InputMonitorMode mode) {
 }
 
 bool inputHasTarget(te::InputDeviceInstance& input, te::EditItemID targetID) {
-    for (auto existingTargetID : input.getTargets()) {
-        if (existingTargetID == targetID)
-            return true;
-    }
-    return false;
+    const auto matchesTarget = [targetID](auto id) { return id == targetID; };
+    return std::ranges::any_of(input.getTargets(), matchesTarget);
 }
 
 te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
@@ -32,12 +29,12 @@ te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
         return nullptr;
 
     auto* owner = &inputDeviceInstance->owner;
-    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
-        if (midiInput && midiInput.get() == owner)
-            return midiInput.get();
-    }
-
-    return nullptr;
+    const auto matchesOwner = [owner](const auto& midiInput) {
+        return midiInput && midiInput.get() == owner;
+    };
+    const auto midiInputs = engine.getDeviceManager().getMidiInDevices();
+    const auto found = std::ranges::find_if(midiInputs, matchesOwner);
+    return found == midiInputs.end() ? nullptr : found->get();
 }
 
 te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
@@ -46,12 +43,10 @@ te::WaveInputDevice* getLiveWaveInputDevice(te::Engine& engine,
         return nullptr;
 
     auto* owner = &inputDeviceInstance->owner;
-    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
-        if (waveInput == owner)
-            return waveInput;
-    }
-
-    return nullptr;
+    const auto matchesOwner = [owner](auto* waveInput) { return waveInput == owner; };
+    const auto waveInputs = engine.getDeviceManager().getWaveInputDevices();
+    const auto found = std::ranges::find_if(waveInputs, matchesOwner);
+    return found == waveInputs.end() ? nullptr : *found;
 }
 
 te::WaveInputDevice* getLiveTrackWaveInputDevice(
@@ -61,18 +56,16 @@ te::WaveInputDevice* getLiveTrackWaveInputDevice(
         return nullptr;
 
     auto* owner = &inputDeviceInstance->owner;
-    for (const auto& [magdaId, teTrack] : trackMapping) {
-        if (!teTrack)
-            continue;
-        auto* waveInput = &teTrack->getWaveInputDevice();
-        if (waveInput == owner) {
-            if (sourceTrackId)
-                *sourceTrackId = magdaId;
-            return waveInput;
-        }
-    }
+    const auto matchesOwner = [owner](const auto& entry) {
+        return entry.second && &entry.second->getWaveInputDevice() == owner;
+    };
+    const auto found = std::ranges::find_if(trackMapping, matchesOwner);
+    if (found == trackMapping.end())
+        return nullptr;
 
-    return nullptr;
+    if (sourceTrackId)
+        *sourceTrackId = found->first;
+    return &found->second->getWaveInputDevice();
 }
 
 }  // namespace
@@ -193,18 +186,15 @@ static te::VolumeAndPanPlugin* getFaderPlugin(te::AudioTrack* track) {
     if (!track)
         return nullptr;
     auto& plugins = track->pluginList;
+    const auto isLevelMeter = [](auto* p) {
+        return dynamic_cast<te::LevelMeterPlugin*>(p) != nullptr;
+    };
     // Search from end — the fader should be the last VolumeAndPan before LevelMeter(s)
     for (int i = plugins.size() - 1; i >= 0; --i) {
         if (auto* vp = dynamic_cast<te::VolumeAndPanPlugin*>(plugins[i])) {
             // Check that everything after this is a LevelMeterPlugin
-            bool onlyMetersAfter = true;
-            for (int j = i + 1; j < plugins.size(); ++j) {
-                if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[j])) {
-                    onlyMetersAfter = false;
-                    break;
-                }
-            }
-            if (onlyMetersAfter)
+            const auto rest = std::ranges::subrange(plugins.begin() + i + 1, plugins.end());
+            if (std::ranges::all_of(rest, isLevelMeter))
                 return vp;
         }
     }
@@ -313,11 +303,12 @@ juce::String TrackController::getTrackAudioOutput(TrackId trackId) const {
     if (auto* destTrack = output.getDestinationTrack()) {
         // Find the MAGDA TrackId for this TE track
         juce::ScopedLock lock(trackLock_);
-        for (const auto& [magdaId, teTrack] : trackMapping_) {
-            if (teTrack == destTrack) {
-                return "track:" + juce::String(magdaId);
-            }
-        }
+        const auto matchesTrack = [destTrack](const auto& entry) {
+            return entry.second == destTrack;
+        };
+        const auto found = std::ranges::find_if(trackMapping_, matchesTrack);
+        if (found != trackMapping_.end())
+            return "track:" + juce::String(found->first);
     }
 
     // Return the output device ID for round-trip consistency
@@ -556,18 +547,18 @@ juce::String TrackController::getTrackAudioInput(TrackId trackId) const {
             }
             if (!waveInput)
                 continue;
-            auto targets = inputDeviceInstance->getTargets();
-            for (auto targetID : targets) {
-                if (targetID == track->itemID) {
-                    if (sourceTrackId != INVALID_TRACK_ID)
-                        return "track:" + juce::String(sourceTrackId);
-                    // Return "default" if this is the first input (for round-trip consistency)
-                    if (i == 0) {
-                        return "default";
-                    }
-                    return waveInput->getName();
-                }
+            const auto matchesTrackId = [target = track->itemID](auto targetID) {
+                return targetID == target;
+            };
+            if (!std::ranges::any_of(inputDeviceInstance->getTargets(), matchesTrackId))
+                continue;
+            if (sourceTrackId != INVALID_TRACK_ID)
+                return "track:" + juce::String(sourceTrackId);
+            // Return "default" if this is the first input (for round-trip consistency)
+            if (i == 0) {
+                return "default";
             }
+            return waveInput->getName();
         }
     }
 

@@ -474,10 +474,7 @@ bool SetMultipleMidiNoteVelocitiesCommand::canMergeWith(const UndoableCommand* o
     if (!o || o->clipId_ != clipId_ || o->entries_.size() != entries_.size())
         return false;
     // Same note set (same order, which the gesture builds deterministically).
-    for (size_t i = 0; i < entries_.size(); ++i)
-        if (entries_[i].noteIndex != o->entries_[i].noteIndex)
-            return false;
-    return true;
+    return std::ranges::equal(entries_, o->entries_, {}, &Applied::noteIndex, &Applied::noteIndex);
 }
 
 void SetMultipleMidiNoteVelocitiesCommand::mergeWith(const UndoableCommand* other) {

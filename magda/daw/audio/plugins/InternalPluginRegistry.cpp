@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <mutex>
+#include <ranges>
 #include <vector>
 
 #include "plugins/MagdaDevice.hpp"
@@ -14,12 +15,11 @@ bool typeMatchesAlias(const juce::String& type, const InternalPluginSpec& spec) 
     if (spec.pluginId != nullptr && type.equalsIgnoreCase(spec.pluginId))
         return true;
 
-    for (int i = 0; i < spec.loadAliasCount; ++i)
-        if (spec.loadAliases != nullptr && spec.loadAliases[i] != nullptr &&
-            type.equalsIgnoreCase(spec.loadAliases[i]))
-            return true;
-
-    return false;
+    const auto matchesAlias = [&](int i) {
+        return spec.loadAliases != nullptr && spec.loadAliases[i] != nullptr &&
+               type.equalsIgnoreCase(spec.loadAliases[i]);
+    };
+    return std::ranges::any_of(std::views::iota(0, std::max(0, spec.loadAliasCount)), matchesAlias);
 }
 
 const juce::Identifier& typeProperty() {
@@ -50,9 +50,11 @@ bool InternalPluginRegistry::registerPlugin(InternalPluginSpec spec) {
             return false;
         if (findForLoadType(spec.loadAliases[i]) != nullptr)
             return false;
-        for (int previous = 0; previous < i; ++previous)
-            if (juce::String(spec.loadAliases[i]).equalsIgnoreCase(spec.loadAliases[previous]))
-                return false;
+        const auto duplicatesEarlier = [&](int previous) {
+            return juce::String(spec.loadAliases[i]).equalsIgnoreCase(spec.loadAliases[previous]);
+        };
+        if (std::ranges::any_of(std::views::iota(0, i), duplicatesEarlier))
+            return false;
     }
 
     auto owned = std::make_unique<InternalPluginSpec>(std::move(spec));
@@ -65,11 +67,11 @@ bool InternalPluginRegistry::registerParameterAlias(InternalParameterAliasSpec a
     if (alias.pluginKey == nullptr || alias.alias == nullptr || alias.paramIndex < 0)
         return false;
 
-    const auto duplicate = std::find_if(
-        parameterAliases_.begin(), parameterAliases_.end(), [&alias](const auto& existing) {
-            return juce::String(existing.pluginKey).equalsIgnoreCase(alias.pluginKey) &&
-                   juce::String(existing.alias).equalsIgnoreCase(alias.alias);
-        });
+    const auto matchesAlias = [&alias](const auto& existing) {
+        return juce::String(existing.pluginKey).equalsIgnoreCase(alias.pluginKey) &&
+               juce::String(existing.alias).equalsIgnoreCase(alias.alias);
+    };
+    const auto duplicate = std::ranges::find_if(parameterAliases_, matchesAlias);
     if (duplicate != parameterAliases_.end())
         return false;
 
@@ -90,10 +92,9 @@ const InternalPluginSpec* InternalPluginRegistry::find(const juce::String& plugi
 }
 
 const InternalPluginSpec* InternalPluginRegistry::findForLoadType(const juce::String& type) const {
-    for (const auto& spec : specs_)
-        if (typeMatchesAlias(type, *spec))
-            return spec.get();
-    return nullptr;
+    const auto matchesType = [&type](const auto& spec) { return typeMatchesAlias(type, *spec); };
+    const auto found = std::ranges::find_if(specs_, matchesType);
+    return found == specs_.end() ? nullptr : found->get();
 }
 
 bool registerDevicePack(DevicePackRegistration registerDevices) {
@@ -102,9 +103,8 @@ bool registerDevicePack(DevicePackRegistration registerDevices) {
 
     auto& state = registryState();
     const std::scoped_lock lock(state.mutex);
-    if (state.initialized ||
-        std::find(state.packRegistrations.begin(), state.packRegistrations.end(),
-                  registerDevices) != state.packRegistrations.end())
+    if (state.initialized || std::ranges::find(state.packRegistrations, registerDevices) !=
+                                 state.packRegistrations.end())
         return false;
 
     state.packRegistrations.push_back(registerDevices);
@@ -144,11 +144,11 @@ const InternalPluginSpec* findInternalPluginSpecForLoadType(const juce::String& 
 bool internalPluginHasTag(const InternalPluginSpec& spec, const char* tag) {
     if (tag == nullptr)
         return false;
-    for (int i = 0; i < spec.tagCount; ++i)
-        if (spec.tags != nullptr && spec.tags[i] != nullptr &&
-            juce::String(spec.tags[i]).equalsIgnoreCase(tag))
-            return true;
-    return false;
+    const auto matchesTag = [&](int i) {
+        return spec.tags != nullptr && spec.tags[i] != nullptr &&
+               juce::String(spec.tags[i]).equalsIgnoreCase(tag);
+    };
+    return std::ranges::any_of(std::views::iota(0, std::max(0, spec.tagCount)), matchesTag);
 }
 
 bool internalPluginHasTag(const juce::String& pluginId, const char* tag) {
@@ -158,10 +158,10 @@ bool internalPluginHasTag(const juce::String& pluginId, const char* tag) {
 }
 
 const InternalPluginSpec* findInternalPluginSpecWithTag(const char* tag) {
-    for (const auto* spec : getAllInternalPluginSpecs())
-        if (internalPluginHasTag(*spec, tag))
-            return spec;
-    return nullptr;
+    const auto hasTag = [tag](const auto* spec) { return internalPluginHasTag(*spec, tag); };
+    const auto specs = getAllInternalPluginSpecs();
+    const auto found = std::ranges::find_if(specs, hasTag);
+    return found == specs.end() ? nullptr : *found;
 }
 
 bool isInternalAnalysisPlugin(const juce::String& pluginId) {

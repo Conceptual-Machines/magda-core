@@ -40,22 +40,22 @@ ResolveResult TargetResolver::resolve(const Target& target) const {
 
                 // Path absent -- try to materialise against focused chain
                 auto devices = chainContext_.devicesInFocusedChain();
-                for (const auto& dw : devices) {
-                    if (dw.device == nullptr)
-                        continue;
-                    auto alias = pluginNameToAlias(dw.device->name);
-                    if (alias == stored->pluginTypeKey) {
-                        int paramIdx = findParamByKey(*dw.device, normalizeParamName(t.name));
-                        if (paramIdx < 0)
-                            paramIdx = stored->paramIndex;  // fallback to stored index
+                const auto matchesPluginType = [&](const ChainContext::DeviceWithPath& dw) {
+                    return dw.device != nullptr &&
+                           pluginNameToAlias(dw.device->name) == stored->pluginTypeKey;
+                };
+                if (const auto found = std::ranges::find_if(devices, matchesPluginType);
+                    found != devices.end()) {
+                    int paramIdx = findParamByKey(*found->device, normalizeParamName(t.name));
+                    if (paramIdx < 0)
+                        paramIdx = stored->paramIndex;  // fallback to stored index
 
-                        ResolveResult r;
-                        r.target.devicePath = dw.path;
-                        r.target.paramIndex = paramIdx;
-                        r.sourceLabel = "@" + t.name + " (materialised)";
-                        r.resolved = true;
-                        return r;
-                    }
+                    ResolveResult r;
+                    r.target.devicePath = found->path;
+                    r.target.paramIndex = paramIdx;
+                    r.sourceLabel = "@" + t.name + " (materialised)";
+                    r.resolved = true;
+                    return r;
                 }
 
                 return ResolveResult::failure("Alias path absent and no matching device in "
@@ -200,22 +200,21 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
 
     // Path absent -> scan focused chain for matching plugin type
     auto devices = chainContext_.devicesInFocusedChain();
-    for (const auto& dw : devices) {
-        if (dw.device == nullptr)
-            continue;
-        auto alias = pluginNameToAlias(dw.device->name);
-        if (alias == stored->pluginTypeKey) {
-            int paramIdx = findParamByKey(*dw.device, normalizeParamName(sigil.paramKey));
-            if (paramIdx < 0)
-                paramIdx = stored->paramIndex;
+    const auto matchesPluginType = [&](const ChainContext::DeviceWithPath& dw) {
+        return dw.device != nullptr && pluginNameToAlias(dw.device->name) == stored->pluginTypeKey;
+    };
+    if (const auto found = std::ranges::find_if(devices, matchesPluginType);
+        found != devices.end()) {
+        int paramIdx = findParamByKey(*found->device, normalizeParamName(sigil.paramKey));
+        if (paramIdx < 0)
+            paramIdx = stored->paramIndex;
 
-            ResolveResult r;
-            r.target.devicePath = dw.path;
-            r.target.paramIndex = paramIdx;
-            r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (chain scan)";
-            r.resolved = true;
-            return r;
-        }
+        ResolveResult r;
+        r.target.devicePath = found->path;
+        r.target.paramIndex = paramIdx;
+        r.sourceLabel = "@" + sigil.pluginKey + "." + sigil.paramKey + " (chain scan)";
+        r.resolved = true;
+        return r;
     }
 
     return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
@@ -229,18 +228,15 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
 // static
 const ChainContext::DeviceWithPath* TargetResolver::findFirstMatchingDevice(
     const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey) {
-    for (const auto& dw : devices) {
+    const auto matchesName = [&pluginKey](const ChainContext::DeviceWithPath& dw) {
         if (dw.device == nullptr)
-            continue;
-
+            return false;
         // Match against normalised plugin alias OR normalised device name
-        auto alias = pluginNameToAlias(dw.device->name);
-        bool nameMatch = (alias == pluginKey) || (normalizeParamName(dw.device->name) == pluginKey);
-
-        if (nameMatch)
-            return &dw;
-    }
-    return nullptr;
+        const auto alias = pluginNameToAlias(dw.device->name);
+        return alias == pluginKey || normalizeParamName(dw.device->name) == pluginKey;
+    };
+    const auto found = std::ranges::find_if(devices, matchesName);
+    return found == devices.end() ? nullptr : &(*found);
 }
 
 // ============================================================================
@@ -250,15 +246,19 @@ const ChainContext::DeviceWithPath* TargetResolver::findFirstMatchingDevice(
 // static
 int TargetResolver::findParamByKey(const DeviceInfo& device, const juce::String& paramKey) {
     // First: exact normalised match
-    for (const auto& p : device.parameters) {
-        if (normalizeParamName(p.name) == paramKey)
-            return p.paramIndex;
-    }
+    const auto matchesExact = [&paramKey](const ParameterInfo& p) {
+        return normalizeParamName(p.name) == paramKey;
+    };
+    if (const auto found = std::ranges::find_if(device.parameters, matchesExact);
+        found != device.parameters.end())
+        return found->paramIndex;
     // Second: prefix match (paramKey is a prefix of the normalised param name)
-    for (const auto& p : device.parameters) {
-        if (normalizeParamName(p.name).startsWith(paramKey))
-            return p.paramIndex;
-    }
+    const auto matchesPrefix = [&paramKey](const ParameterInfo& p) {
+        return normalizeParamName(p.name).startsWith(paramKey);
+    };
+    if (const auto found = std::ranges::find_if(device.parameters, matchesPrefix);
+        found != device.parameters.end())
+        return found->paramIndex;
     return -1;
 }
 

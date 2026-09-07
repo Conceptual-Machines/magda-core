@@ -15,27 +15,24 @@ ControllerRegistry& ControllerRegistry::getInstance() {
 
 void ControllerRegistry::add(const Controller& c) {
     // Update if exists, otherwise append
-    for (auto& existing : controllers_) {
-        if (existing.id == c.id) {
-            existing = c;
-            rebuildSnapshot();
-            notifyListeners();
-            return;
-        }
+    const auto matchesId = [&c](const Controller& existing) { return existing.id == c.id; };
+    if (const auto found = std::ranges::find_if(controllers_, matchesId);
+        found != controllers_.end()) {
+        *found = c;
+    } else {
+        controllers_.push_back(c);
     }
-    controllers_.push_back(c);
     rebuildSnapshot();
     notifyListeners();
 }
 
 void ControllerRegistry::update(const Controller& c) {
-    for (auto& existing : controllers_) {
-        if (existing.id == c.id) {
-            existing = c;
-            rebuildSnapshot();
-            notifyListeners();
-            return;
-        }
+    const auto matchesId = [&c](const Controller& existing) { return existing.id == c.id; };
+    if (const auto found = std::ranges::find_if(controllers_, matchesId);
+        found != controllers_.end()) {
+        *found = c;
+        rebuildSnapshot();
+        notifyListeners();
     }
 }
 
@@ -52,22 +49,20 @@ void ControllerRegistry::remove(const ControllerId& id) {
 bool ControllerRegistry::rematchInputPorts(const juce::Array<juce::MidiDeviceInfo>& liveInputs) {
     bool changed = false;
     for (auto& c : controllers_) {
-        bool identifierLive = false;
-        for (const auto& dev : liveInputs) {
-            if (dev.identifier == c.inputPort) {
-                identifierLive = true;
-                break;
-            }
-        }
+        const auto matchesIdentifier = [&c](const juce::MidiDeviceInfo& dev) {
+            return dev.identifier == c.inputPort;
+        };
+        const bool identifierLive = std::ranges::any_of(liveInputs, matchesIdentifier);
         if (identifierLive || c.inputPortName.isEmpty())
             continue;
 
-        for (const auto& dev : liveInputs) {
-            if (dev.name == c.inputPortName) {
-                c.inputPort = dev.identifier;
-                changed = true;
-                break;
-            }
+        const auto matchesName = [&c](const juce::MidiDeviceInfo& dev) {
+            return dev.name == c.inputPortName;
+        };
+        if (const auto found = std::ranges::find_if(liveInputs, matchesName);
+            found != liveInputs.end()) {
+            c.inputPort = found->identifier;
+            changed = true;
         }
     }
     if (changed) {
@@ -86,17 +81,15 @@ std::vector<Controller> ControllerRegistry::all() const {
 }
 
 std::optional<Controller> ControllerRegistry::find(const ControllerId& id) const {
-    for (const auto& c : controllers_)
-        if (c.id == id)
-            return c;
-    return std::nullopt;
+    const auto matchesId = [&id](const Controller& c) { return c.id == id; };
+    const auto found = std::ranges::find_if(controllers_, matchesId);
+    return found == controllers_.end() ? std::nullopt : std::make_optional(*found);
 }
 
 std::optional<Controller> ControllerRegistry::findByInputPort(const juce::String& portId) const {
-    for (const auto& c : controllers_)
-        if (c.inputPort == portId)
-            return c;
-    return std::nullopt;
+    const auto matchesPort = [&portId](const Controller& c) { return c.inputPort == portId; };
+    const auto found = std::ranges::find_if(controllers_, matchesPort);
+    return found == controllers_.end() ? std::nullopt : std::make_optional(*found);
 }
 
 bool ControllerRegistry::isControllerInputPort(const juce::String& portId) const {
@@ -104,10 +97,8 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& portId) const
     auto snap = std::atomic_load(&snapshot_);
     if (!snap)
         return false;
-    for (const auto& c : *snap)
-        if (c.inputPort == portId)
-            return true;
-    return false;
+    const auto matchesPort = [&portId](const Controller& c) { return c.inputPort == portId; };
+    return std::ranges::any_of(*snap, matchesPort);
 }
 
 bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifier,
@@ -116,10 +107,10 @@ bool ControllerRegistry::isControllerInputPort(const juce::String& liveIdentifie
     auto snap = std::atomic_load(&snapshot_);
     if (!snap)
         return false;
-    for (const auto& c : *snap)
-        if (magda::midi::matches(c.inputPort, liveIdentifier, liveName))
-            return true;
-    return false;
+    const auto matchesLive = [&](const Controller& c) {
+        return magda::midi::matches(c.inputPort, liveIdentifier, liveName);
+    };
+    return std::ranges::any_of(*snap, matchesLive);
 }
 
 // ============================================================================

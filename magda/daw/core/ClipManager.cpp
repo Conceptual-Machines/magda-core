@@ -958,7 +958,7 @@ void ClipManager::forceNotifyMultipleClipPropertiesChanged(const std::vector<Cli
         return;
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipPropertiesChanged(clipIds);
         }
     }
@@ -2825,15 +2825,15 @@ std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view)
 
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
     const double bpm = currentProjectTempoOrDefault();
-    for (const auto& [id, clip] : clips_) {
+    const auto coversTime = [&](const auto& entry) {
+        const auto& clip = entry.second;
         const double clipStart = clip.getTimelineStart(bpm);
         const double clipEnd = clip.getTimelineEnd(bpm);
-        if (clip.view == ClipView::Arrangement && clip.trackId == trackId && time >= clipStart &&
-            time < clipEnd) {
-            return clip.id;
-        }
-    }
-    return INVALID_CLIP_ID;
+        return clip.view == ClipView::Arrangement && clip.trackId == trackId && time >= clipStart &&
+               time < clipEnd;
+    };
+    const auto found = std::ranges::find_if(clips_, coversTime);
+    return found == clips_.end() ? INVALID_CLIP_ID : found->second.id;
 }
 
 std::vector<ClipId> ClipManager::getClipsInRange(TrackId trackId, double startTime,
@@ -2939,7 +2939,7 @@ void ClipManager::stopAllClips() {
 // ============================================================================
 
 void ClipManager::addListener(ClipManagerListener* listener) {
-    if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
+    if (listener && std::ranges::find(listeners_, listener) == listeners_.end()) {
         listeners_.push_back(listener);
     }
 }
@@ -3043,7 +3043,7 @@ void ClipManager::notifyClipsChanged() {
     // (e.g., ClipComponent destroyed when TrackContentPanel rebuilds)
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipsChanged();
         }
     }
@@ -3068,8 +3068,7 @@ void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
     if (batchDepth_ > 0) {
         // Coalesce: record once, fire at end of outermost batch.
         auto append = [this](ClipId id) {
-            if (std::find(batchedClipIds_.begin(), batchedClipIds_.end(), id) ==
-                batchedClipIds_.end()) {
+            if (std::ranges::find(batchedClipIds_, id) == batchedClipIds_.end()) {
                 batchedClipIds_.push_back(id);
             }
         };
@@ -3080,7 +3079,7 @@ void ClipManager::notifyClipPropertyChanged(ClipId clipId) {
     }
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipPropertyChanged(clipId);
             for (auto siblingId : siblings)
                 listener->clipPropertyChanged(siblingId);
@@ -3108,7 +3107,7 @@ void ClipManager::endBatch() {
 
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipPropertiesChanged(ids);
         }
     }
@@ -3128,7 +3127,7 @@ ClipManager::ScopedListenerMuteForTests::~ScopedListenerMuteForTests() {
 void ClipManager::notifyClipSelectionChanged(ClipId clipId) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipSelectionChanged(clipId);
         }
     }
@@ -3137,7 +3136,7 @@ void ClipManager::notifyClipSelectionChanged(ClipId clipId) {
 void ClipManager::notifyClipPlaybackStateChanged(ClipId clipId) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipPlaybackStateChanged(clipId);
         }
     }
@@ -3146,7 +3145,7 @@ void ClipManager::notifyClipPlaybackStateChanged(ClipId clipId) {
 void ClipManager::notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipPlaybackRequested(clipId, request);
         }
     }
@@ -3156,18 +3155,15 @@ void ClipManager::notifyClipDragPreview(ClipId clipId, double previewStartTime,
                                         double previewLength) {
     auto listenersCopy = listeners_;
     for (auto* listener : listenersCopy) {
-        if (std::find(listeners_.begin(), listeners_.end(), listener) != listeners_.end()) {
+        if (std::ranges::find(listeners_, listener) != listeners_.end()) {
             listener->clipDragPreview(clipId, previewStartTime, previewLength);
         }
     }
 }
 
 juce::String ClipManager::generateClipName(ClipType type) const {
-    int count = 1;
-    for (const auto& [id, clip] : clips_) {
-        if (clip.getType() == type)
-            count++;
-    }
+    const auto isType = [type](const auto& entry) { return entry.second.getType() == type; };
+    const int count = 1 + static_cast<int>(std::ranges::count_if(clips_, isType));
 
     if (type == ClipType::Audio) {
         return "Audio " + juce::String(count);
@@ -3261,7 +3257,7 @@ void ClipManager::copyBeatRangeToClipboard(double startBeat, double endBeat,
             continue;
         // Filter by track if trackIds is non-empty
         if (!trackIds.empty()) {
-            if (std::find(trackIds.begin(), trackIds.end(), clip.trackId) == trackIds.end())
+            if (std::ranges::find(trackIds, clip.trackId) == trackIds.end())
                 continue;
         }
 
@@ -3596,8 +3592,8 @@ double ClipManager::getClipboardBeatSpan() const {
 }
 
 bool ClipManager::clipboardRequiresTargetTrack() const {
-    return std::any_of(clipboard_.begin(), clipboard_.end(),
-                       [](const auto& clip) { return clip.trackId == INVALID_TRACK_ID; });
+    const auto hasNoTargetTrack = [](const auto& clip) { return clip.trackId == INVALID_TRACK_ID; };
+    return std::ranges::any_of(clipboard_, hasNoTargetTrack);
 }
 
 void ClipManager::clearClipboard() {

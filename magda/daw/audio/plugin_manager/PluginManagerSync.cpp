@@ -388,8 +388,8 @@ void PluginManager::syncAllPlugins() {
 
             // Also purge stale sidechain monitors
             for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
-                auto trackExists = std::any_of(tracks.begin(), tracks.end(),
-                                               [&](const auto& t) { return t.id == it->first; });
+                const auto matchesId = [&](const auto& t) { return t.id == it->first; };
+                auto trackExists = std::ranges::any_of(tracks, matchesId);
                 if (!trackExists) {
                     if (it->second)
                         monitorPluginsToDelete.push_back(it->second.get());
@@ -497,8 +497,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             if (isDrumGridPadPathLocked(devicePath))
                 continue;
 
-            bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=
-                         magdaDevices.end();
+            bool found = std::ranges::find(magdaDevices, devicePath) != magdaDevices.end();
             if (!found) {
                 toRemove.push_back(devicePath);
                 pluginsToDelete.push_back(sd.plugin);
@@ -561,7 +560,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     {
         auto syncedIds = rackSyncManager_.getSyncedRackIdsForTrack(trackId);
         for (auto rackId : syncedIds) {
-            if (std::find(magdaRacks.begin(), magdaRacks.end(), rackId) == magdaRacks.end()) {
+            if (std::ranges::find(magdaRacks, rackId) == magdaRacks.end()) {
                 rackSyncManager_.removeRack(rackId);
             }
         }
@@ -681,13 +680,11 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
             auto rackInstance = rackSyncManager_.syncRack(trackId, rackInfo);
             if (rackInstance) {
                 // Check if this rack instance is already on the track
-                bool alreadyOnTrack = false;
-                for (auto i : teTrack->pluginList) {
-                    if (i == rackInstance.get()) {
-                        alreadyOnTrack = true;
-                        break;
-                    }
-                }
+                const auto matchesRackInstance = [&rackInstance](auto* p) {
+                    return p == rackInstance.get();
+                };
+                const bool alreadyOnTrack =
+                    std::ranges::any_of(teTrack->pluginList, matchesRackInstance);
 
                 if (!alreadyOnTrack) {
                     teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
@@ -731,13 +728,10 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Any track with auxBusIndex: ensure AuxReturnPlugin exists with correct bus number
     if (trackInfo->auxBusIndex >= 0) {
-        bool hasReturn = false;
-        for (auto i : teTrack->pluginList) {
-            if (dynamic_cast<te::AuxReturnPlugin*>(i)) {
-                hasReturn = true;
-                break;
-            }
-        }
+        const auto isAuxReturn = [](auto* p) {
+            return dynamic_cast<te::AuxReturnPlugin*>(p) != nullptr;
+        };
+        const bool hasReturn = std::ranges::any_of(teTrack->pluginList, isAuxReturn);
         if (!hasReturn) {
             auto ret = edit_.getPluginCache().createNewPlugin(te::AuxReturnPlugin::xmlTypeName, {});
             if (ret) {
@@ -1395,14 +1389,14 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
     for (int i = track.pluginList.size() - 1; i >= 0; --i) {
         if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(track.pluginList[i])) {
             const int bus = auxSend->getBusNumber();
-            if (std::find(desiredBuses.begin(), desiredBuses.end(), bus) == desiredBuses.end())
+            if (std::ranges::find(desiredBuses, bus) == desiredBuses.end())
                 auxSend->deleteFromParent();
         }
     }
 
     for (const auto& send : trackInfo.sends) {
-        const bool exists = std::find(existingSendBuses.begin(), existingSendBuses.end(),
-                                      send.busIndex) != existingSendBuses.end();
+        const bool exists =
+            std::ranges::find(existingSendBuses, send.busIndex) != existingSendBuses.end();
         if (exists)
             continue;
         auto sendPlugin =
@@ -1469,13 +1463,13 @@ void PluginManager::appendStripOrder(TrackId trackId, const TrackInfo& trackInfo
         for (const auto& send : trackInfo.sends) {
             if (send.preFader != preFader)
                 continue;
-            for (auto i : track.pluginList) {
-                if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(i);
-                    aux != nullptr && aux->getBusNumber() == send.busIndex) {
-                    desiredOrder.push_back(aux);
-                    break;
-                }
-            }
+            const auto matchesBus = [busIndex = send.busIndex](auto* p) {
+                auto* aux = dynamic_cast<te::AuxSendPlugin*>(p);
+                return aux != nullptr && aux->getBusNumber() == busIndex;
+            };
+            const auto found = std::ranges::find_if(track.pluginList, matchesBus);
+            if (found != track.pluginList.end())
+                desiredOrder.push_back(*found);
         }
     };
 
@@ -1530,26 +1524,21 @@ void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* 
 
     // Where the fader goes: immediately before the first plugin that belongs
     // after it, or at the end when nothing does.
-    int firstPostFader = -1;
-    for (int i = 0; i < plugins.size(); ++i) {
-        if (plugins[i] == volPanRaw)
-            continue;
-        if (postFaderPlugins.count(plugins[i]) != 0) {
-            firstPostFader = i;
-            break;
-        }
-    }
+    const auto isPostFader = [volPanRaw, &postFaderPlugins](auto* p) {
+        return p != volPanRaw && postFaderPlugins.count(p) != 0;
+    };
+    const auto firstPostFaderIt = std::ranges::find_if(plugins, isPostFader);
+    const int firstPostFader =
+        firstPostFaderIt == plugins.end() ? -1 : plugins.indexOf(*firstPostFaderIt);
 
     if (firstPostFader < 0) {
         // Nothing post-fader: the fader is last but for the meter, which is the
         // rule this function has always enforced.
-        bool needsMove = false;
-        for (int i = volPanIndex + 1; i < plugins.size(); ++i) {
-            if (!dynamic_cast<te::LevelMeterPlugin*>(plugins[i])) {
-                needsMove = true;
-                break;
-            }
-        }
+        const auto isNotLevelMeter = [](auto* p) {
+            return dynamic_cast<te::LevelMeterPlugin*>(p) == nullptr;
+        };
+        const auto rest = std::ranges::subrange(plugins.begin() + volPanIndex + 1, plugins.end());
+        const bool needsMove = std::ranges::any_of(rest, isNotLevelMeter);
         if (!needsMove)
             return;
 
@@ -1667,8 +1656,7 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
             if (isDrumGridPadPathLocked(devicePath))
                 continue;
 
-            const bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=
-                               magdaDevices.end();
+            const bool found = std::ranges::find(magdaDevices, devicePath) != magdaDevices.end();
             if (!found) {
                 toRemove.push_back(devicePath);
                 pluginsToDelete.push_back(sd.plugin);
@@ -1734,13 +1722,11 @@ void PluginManager::syncMultiOutTrack(TrackId trackId, const TrackInfo& trackInf
         rackInstance = instrumentRackManager_.createOutputInstance(
             link.sourceDeviceId, link.outputPairIndex, outPair.firstPin, outPair.numChannels);
         if (rackInstance) {
-            bool alreadyOnTrack = false;
-            for (auto i : teTrack->pluginList) {
-                if (i == rackInstance.get()) {
-                    alreadyOnTrack = true;
-                    break;
-                }
-            }
+            const auto matchesRackInstance = [&rackInstance](auto* p) {
+                return p == rackInstance.get();
+            };
+            const bool alreadyOnTrack =
+                std::ranges::any_of(teTrack->pluginList, matchesRackInstance);
             if (!alreadyOnTrack)
                 teTrack->pluginList.insertPlugin(rackInstance, -1, nullptr);
         }
@@ -1921,16 +1907,10 @@ void PluginManager::syncMasterPlugins() {
             if (!sd.plugin)
                 continue;
             // Check if plugin belongs to master plugin list
-            bool belongsToMaster = false;
-            for (auto i : masterList) {
-                if (i == sd.plugin.get()) {
-                    belongsToMaster = true;
-                    break;
-                }
-            }
+            const auto matchesPlugin = [&sd](auto* p) { return p == sd.plugin.get(); };
+            const bool belongsToMaster = std::ranges::any_of(masterList, matchesPlugin);
             if (belongsToMaster) {
-                bool found = std::find(magdaDevices.begin(), magdaDevices.end(), devicePath) !=
-                             magdaDevices.end();
+                bool found = std::ranges::find(magdaDevices, devicePath) != magdaDevices.end();
                 if (!found) {
                     toRemove.push_back(devicePath);
                     pluginsToDelete.push_back(sd.plugin);
@@ -2683,14 +2663,14 @@ void PluginManager::drumGridChainsChanged(daw::audio::DrumGridPlugin* plugin) {
 
     {
         juce::ScopedLock lock(pluginLock_);
-        for (const auto& [devicePath, synced] : syncedDevices_) {
-            const auto deviceId = devicePath.getDeviceId();
-            if (synced.plugin.get() == plugin ||
-                instrumentRackManager_.getInnerPlugin(deviceId) == plugin) {
-                matchedPath = devicePath;
-                foundMatch = true;
-                break;
-            }
+        const auto matchesPlugin = [this, plugin](const auto& entry) {
+            return entry.second.plugin.get() == plugin ||
+                   instrumentRackManager_.getInnerPlugin(entry.first.getDeviceId()) == plugin;
+        };
+        if (const auto found = std::ranges::find_if(syncedDevices_, matchesPlugin);
+            found != syncedDevices_.end()) {
+            matchedPath = found->first;
+            foundMatch = true;
         }
     }
 
@@ -2906,11 +2886,11 @@ DeviceInfo* PluginManager::padDeviceFor(const ChainNodePath& drumGridPath,
         return nullptr;
 
     const auto deviceId = padDevicePath.getDeviceId();
-    for (auto& element : pad->elements)
-        if (isDevice(element) && getDevice(element).id == deviceId)
-            return &getDevice(element);
-
-    return nullptr;
+    const auto matchesDeviceId = [deviceId](auto& element) {
+        return isDevice(element) && getDevice(element).id == deviceId;
+    };
+    const auto found = std::ranges::find_if(pad->elements, matchesDeviceId);
+    return found == pad->elements.end() ? nullptr : &getDevice(*found);
 }
 
 void PluginManager::syncDrumGridMultiOutTracks(const ChainNodePath& drumGridPath,
