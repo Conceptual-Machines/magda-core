@@ -115,7 +115,8 @@ class AudioThumbnailManager {
      *
      * Must be called from the message thread.
      */
-    void requestBPMDetection(const juce::String& filePath, std::function<void(double)> onComplete);
+    void requestBPMDetection(const juce::String& filePath,
+                             const std::function<void(double)>& onComplete);
 
     /**
      * @brief Get cached transient times for an audio file

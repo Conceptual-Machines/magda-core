@@ -187,7 +187,7 @@ class TrackController {
      * Usage: trackController.withTrackMapping([&](const auto& mapping) { ... });
      */
     void withTrackMapping(
-        std::function<void(const std::map<TrackId, te::AudioTrack*>&)> callback) const;
+        const std::function<void(const std::map<TrackId, te::AudioTrack*>&)>& callback) const;
 
     // =========================================================================
     // Metering Coordination (for PluginManager)
@@ -220,7 +220,8 @@ class TrackController {
      * Used by AudioBridge for meter updates in timer thread.
      * Provides mutable access so callers can call getAndClearAudioLevel().
      */
-    void withMeterClients(std::function<void(std::map<TrackId, MeterClientEntry>&)> callback);
+    void withMeterClients(
+        const std::function<void(std::map<TrackId, MeterClientEntry>&)>& callback);
 
   private:
     // References to Tracktion Engine (not owned)

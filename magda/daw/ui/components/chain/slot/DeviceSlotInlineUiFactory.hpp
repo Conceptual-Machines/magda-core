@@ -63,7 +63,7 @@ struct DeviceSlotInlineUiCallbackContext {
 };
 
 DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
-    DeviceSlotInlineUiCallbackContext context);
+    const DeviceSlotInlineUiCallbackContext& context);
 
 DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 const DeviceSlotTraits& traits,
@@ -96,6 +96,6 @@ void readAndPushDeviceSlotInlineUiModMatrix(magda::DeviceId deviceId,
 void configureDeviceSlotLinkableSliders(
     const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,
     const magda::ChainNodePath& nodePath, const DeviceSlotModulationContext& context,
-    std::function<void(LinkableTextSlider&)> configureCallbacks);
+    const std::function<void(LinkableTextSlider&)>& configureCallbacks);
 
 }  // namespace magda::daw::ui

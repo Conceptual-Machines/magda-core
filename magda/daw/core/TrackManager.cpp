@@ -1320,7 +1320,7 @@ void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
     auto self = std::ranges::find_if(tracks_, matchesId);
     if (self == tracks_.end())
         return;
-    const TrackInfo info = *self;
+    const TrackInfo& info = *self;
     tracks_.erase(self);
 
     if (anchor == INVALID_TRACK_ID) {

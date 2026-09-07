@@ -12,7 +12,7 @@ namespace magda {
 class CreateTrackCommand : public UndoableCommand {
   public:
     explicit CreateTrackCommand(TrackType type = TrackType::Media,
-                                const juce::String& name = juce::String(),
+                                juce::String name = juce::String(),
                                 TrackId afterTrackId = INVALID_TRACK_ID);
 
     void execute() override;
@@ -121,7 +121,7 @@ class DuplicateTrackCommand : public UndoableCommand {
  */
 class AddDeviceToTrackCommand : public UndoableCommand {
   public:
-    AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device);
+    AddDeviceToTrackCommand(TrackId trackId, DeviceInfo device);
 
     void execute() override;
     void undo() override;
@@ -145,8 +145,8 @@ class AddDeviceToTrackCommand : public UndoableCommand {
  */
 class MoveChainElementCommand : public UndoableCommand {
   public:
-    MoveChainElementCommand(const ChainNodePath& sourceElementPath,
-                            const ChainNodePath& destinationChainPath, int insertIndex);
+    MoveChainElementCommand(ChainNodePath sourceElementPath, ChainNodePath destinationChainPath,
+                            int insertIndex);
 
     void execute() override;
     void undo() override;
@@ -178,7 +178,7 @@ class MoveChainElementCommand : public UndoableCommand {
 class MoveChainElementsCommand : public UndoableCommand {
   public:
     MoveChainElementsCommand(std::vector<ChainNodePath> sourceElementPaths,
-                             const ChainNodePath& destinationChainPath, int insertIndex);
+                             ChainNodePath destinationChainPath, int insertIndex);
 
     void execute() override;
     void undo() override;
@@ -209,7 +209,7 @@ class MoveChainElementsCommand : public UndoableCommand {
 
 class PasteChainElementsCommand : public UndoableCommand {
   public:
-    PasteChainElementsCommand(const ChainNodePath& destinationChainPath,
+    PasteChainElementsCommand(ChainNodePath destinationChainPath,
                               std::vector<ChainElement> elements, int insertIndex);
 
     void execute() override;
@@ -270,7 +270,7 @@ class WrapChainElementsInRackCommand : public UndoableCommand {
 
 class SetMacroNameCommand : public UndoableCommand {
   public:
-    SetMacroNameCommand(const ChainNodePath& path, int macroIndex, const juce::String& newName);
+    SetMacroNameCommand(ChainNodePath path, int macroIndex, juce::String newName);
 
     void execute() override;
     void undo() override;
@@ -290,7 +290,7 @@ class SetMacroNameCommand : public UndoableCommand {
 
 class SetModNameCommand : public UndoableCommand {
   public:
-    SetModNameCommand(const ChainNodePath& path, int modIndex, const juce::String& newName);
+    SetModNameCommand(ChainNodePath path, int modIndex, juce::String newName);
 
     void execute() override;
     void undo() override;
@@ -313,8 +313,7 @@ class SetModNameCommand : public UndoableCommand {
  */
 class CreateTrackWithDeviceCommand : public UndoableCommand {
   public:
-    CreateTrackWithDeviceCommand(const juce::String& trackName, TrackType type,
-                                 const DeviceInfo& device);
+    CreateTrackWithDeviceCommand(juce::String trackName, TrackType type, DeviceInfo device);
 
     void execute() override;
     void undo() override;
@@ -346,8 +345,7 @@ class CreateTrackWithDeviceCommand : public UndoableCommand {
  */
 class AddDeviceByPathCommand : public UndoableCommand {
   public:
-    AddDeviceByPathCommand(const ChainNodePath& parentPath, const DeviceInfo& device,
-                           int insertIndex = -1);
+    AddDeviceByPathCommand(ChainNodePath parentPath, DeviceInfo device, int insertIndex = -1);
 
     void execute() override;
     void undo() override;

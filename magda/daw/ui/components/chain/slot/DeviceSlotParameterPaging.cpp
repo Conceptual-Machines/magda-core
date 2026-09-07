@@ -13,7 +13,7 @@ namespace magda::daw::ui {
 
 namespace {
 
-void reloadPage(DeviceSlotParameterPagingCallbacks callbacks) {
+void reloadPage(const DeviceSlotParameterPagingCallbacks& callbacks) {
     if (callbacks.reloadParameterSlots)
         callbacks.reloadParameterSlots();
     if (callbacks.updateParamModulation)
@@ -28,7 +28,7 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
                                     ParamHostComponent& paramGrid,
                                     CompiledDevicePanel* compiledPanel,
                                     const DeviceSlotTraits& traits,
-                                    DeviceSlotParameterPagingCallbacks callbacks) {
+                                    const DeviceSlotParameterPagingCallbacks& callbacks) {
     // Each parameter slot stores a copy of this callback and invokes it on a
     // later mouse drag, so it must NOT capture the function-local `compiledPanel`
     // pointer / `callbacks` struct by reference - those die when this function

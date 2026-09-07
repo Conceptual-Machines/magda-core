@@ -425,7 +425,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
 }
 
 bool ProjectManager::loadProject(const juce::File& file,
-                                 std::function<void(const ProjectInfo&)> onBeforeCommit) {
+                                 const std::function<void(const ProjectInfo&)>& onBeforeCommit) {
     // Check for unsaved changes in current project
     if (isDirty_ && !showUnsavedChangesDialog()) {
         return false;
@@ -521,8 +521,8 @@ bool ProjectManager::exportDawProject(const juce::File& file) {
 }
 
 void ProjectManager::importDawProjectAsync(
-    const juce::File& file, std::function<void(const ProjectInfo&)> onBeforeCommit,
-    std::function<void(bool, const juce::String&)> onComplete) {
+    const juce::File& file, const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+    const std::function<void(bool, const juce::String&)>& onComplete) {
     // Pre-flight checks on the message thread.
     if (isDirty_ && !showUnsavedChangesDialog()) {
         if (onComplete)
@@ -548,7 +548,7 @@ void ProjectManager::importDawProjectAsync(
     joinBackgroundThread();
 
     const auto startingRevision = mutationRevision_;
-    auto fileCopy = file;
+    const auto& fileCopy = file;
     loadThread_ =
         std::thread([fileCopy, importedDir, startingRevision, onBeforeCommit, onComplete, this]() {
             auto staged = std::make_shared<StagedProjectData>();
@@ -599,9 +599,9 @@ void ProjectManager::importDawProjectAsync(
         });
 }
 
-void ProjectManager::loadProjectAsync(const juce::File& file,
-                                      std::function<void(const ProjectInfo&)> onBeforeCommit,
-                                      std::function<void(bool, const juce::String&)> onComplete) {
+void ProjectManager::loadProjectAsync(
+    const juce::File& file, const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+    const std::function<void(bool, const juce::String&)>& onComplete) {
     // Pre-flight checks on the message thread
     if (isDirty_ && !showUnsavedChangesDialog()) {
         if (onComplete)
@@ -635,7 +635,7 @@ void ProjectManager::loadProjectAsync(const juce::File& file,
     joinBackgroundThread();
 
     const auto startingRevision = mutationRevision_;
-    auto originalFile = file;
+    const auto& originalFile = file;
 
     // Launch background thread for I/O + parse + staging
     loadThread_ = std::thread([fileCopy, originalFile, recoveredFromAutosave, onBeforeCommit,

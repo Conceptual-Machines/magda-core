@@ -200,7 +200,7 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return {};
 
-        const auto command = tokens[static_cast<int>(index++)];
+        const auto& command = tokens[static_cast<int>(index++)];
         for (const auto& spec : commandSpecs())
             if (command == spec.name)
                 return (this->*spec.handler)(tokens, index);
@@ -228,7 +228,7 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return fail("add-track requires <audio|group|aux|chord>");
 
-        const auto typeToken = tokens[static_cast<int>(index++)];
+        const auto& typeToken = tokens[static_cast<int>(index++)];
         auto type = parseTrackType(typeToken);
         if (!type)
             return fail("Unsupported track type: " + typeToken);
@@ -364,7 +364,7 @@ class CommandDispatcher {
         if (index >= static_cast<size_t>(tokens.size()))
             return fail("add-internal-instrument requires <plugin-id>");
 
-        const auto pluginId = tokens[static_cast<int>(index++)];
+        const auto& pluginId = tokens[static_cast<int>(index++)];
         auto name = pluginId;
         if (index < static_cast<size_t>(tokens.size()) &&
             !isCommand(tokens[static_cast<int>(index)]))

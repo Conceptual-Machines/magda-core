@@ -1453,6 +1453,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 const auto* clip = clipManager.getClip(clipId);
                 if (clip && clip->isMidi()) {
                     std::vector<size_t> allIndices;
+                    allIndices.reserve(clip->midiNotes.size());
                     for (size_t i = 0; i < clip->midiNotes.size(); ++i)
                         allIndices.push_back(i);
                     selectionManager.selectNotes(clipId, allIndices);

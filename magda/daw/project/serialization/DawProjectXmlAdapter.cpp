@@ -558,7 +558,7 @@ void addBuiltinParam(DeviceInfo& device, int slot, juce::StringRef name, double 
 // explicit ms unit just in case a host writes one.
 double dawSecondsToMs(const juce::XmlElement& e) {
     const double v = e.getDoubleAttribute("value");
-    const auto unit = e.getStringAttribute("unit");
+    const auto& unit = e.getStringAttribute("unit");
     return (unit == "milliseconds" || unit == "ms") ? v : v * 1000.0;
 }
 
@@ -1164,7 +1164,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                 track.name =
                     trackElement->getStringAttribute("name", "Track " + juce::String(track.id));
                 track.colour = colourFromDawProject(trackElement->getStringAttribute("color"));
-                const auto contentType = trackElement->getStringAttribute("contentType");
+                const auto& contentType = trackElement->getStringAttribute("contentType");
                 track.type = contentType.contains("tracks") ? TrackType::Group : TrackType::Media;
                 track.parentId = parentId;
                 const size_t trackIndex = document.tracks.size();
@@ -1252,7 +1252,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                                     parseEqualizerDevice(*devEl, device);
                                 if (auto* enabled = devEl->getChildByName("Enabled"))
                                     device.bypassed = !enabled->getBoolAttribute("value", true);
-                                track.chain.fxChainElements.push_back(std::move(device));
+                                track.chain.fxChainElements.emplace_back(std::move(device));
                                 continue;
                             }
 
@@ -1283,7 +1283,7 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                             if (auto* state = devEl->getChildByName("State"))
                                 device.pluginState = state->getStringAttribute("path");
 
-                            track.chain.fxChainElements.push_back(std::move(device));
+                            track.chain.fxChainElements.emplace_back(std::move(device));
                         }
                     }
                 }

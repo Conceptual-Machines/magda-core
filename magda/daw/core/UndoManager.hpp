@@ -213,7 +213,7 @@ class UndoManager {
  */
 class CompoundCommand : public UndoableCommand {
   public:
-    explicit CompoundCommand(const juce::String& description,
+    explicit CompoundCommand(juce::String description,
                              std::vector<std::unique_ptr<UndoableCommand>> commands);
 
     void execute() override;

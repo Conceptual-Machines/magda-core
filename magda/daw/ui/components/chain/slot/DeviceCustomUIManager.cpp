@@ -397,7 +397,7 @@ magda::PluginFormat pluginFormatFromDescription(const juce::PluginDescription& d
 }
 
 magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
-                                         tracktion::engine::Plugin::Ptr plugin) {
+                                         const tracktion::engine::Plugin::Ptr& plugin) {
     magda::DeviceInfo device;
     device.id = deviceId;
     device.name = plugin ? plugin->getName() : juce::String();
@@ -786,8 +786,9 @@ void DeviceCustomUIManager::readAndPushModMatrix(magda::DeviceId /*deviceId*/) {
 
     // Build parameter name list for the add-popup destination dropdown
     std::vector<std::pair<int, juce::String>> paramNames;
+    paramNames.reserve(autoParams.size());
     for (int pi = 0; pi < autoParams.size(); ++pi)
-        paramNames.push_back({pi, autoParams[pi]->getParameterName()});
+        paramNames.emplace_back(pi, autoParams[pi]->getParameterName());
     fourOscUI_->setModMatrixParameterNames(paramNames);
 
     // Read mod matrix entries
@@ -1016,7 +1017,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         };
         polyStepSequencerUI_->onPatternEdited =
             [this](const juce::String& description,
-                   std::function<void(magda::step_pattern::PolyPattern&)> edit,
+                   const std::function<void(magda::step_pattern::PolyPattern&)>& edit,
                    magda::StepPatternGesture gesture) {
                 // The faceplate's token says which drag a continuous edit
                 // belongs to, so two drags never merge into one undo (#2335).
@@ -1048,7 +1049,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         };
         stepSequencerUI_->onPatternEdited =
             [this](const juce::String& description,
-                   std::function<void(magda::step_pattern::MonoPattern&)> edit,
+                   const std::function<void(magda::step_pattern::MonoPattern&)>& edit,
                    magda::StepPatternGesture gesture) {
                 // See the poly sequencer above.
                 const int gestureId = stepSequencerUI_ != nullptr

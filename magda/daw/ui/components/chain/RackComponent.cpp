@@ -24,7 +24,7 @@ namespace {
 /// that follows destroys the button whose click is still on the stack; the path
 /// is taken by value for the same reason. Both constructors below share this,
 /// so the top-level and nested X do the same thing (#2232).
-void requestRackDeletion(magda::ChainNodePath rackPath) {
+void requestRackDeletion(const magda::ChainNodePath& rackPath) {
     juce::MessageManager::callAsync([rackPath]() {
         magda::UndoManager::getInstance().executeCommand(
             std::make_unique<magda::RemoveRackByPathCommand>(rackPath));

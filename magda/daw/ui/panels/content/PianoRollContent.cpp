@@ -657,7 +657,7 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle batch note selection changes (lasso, deselect-all, Cmd+click toggle)
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
-                                                    std::vector<size_t> noteIndices) {
+                                                    const std::vector<size_t>& noteIndices) {
         if (noteIndices.empty()) {
             // Clear note selection — preserve clip selection
             magda::SelectionManager::getInstance().clearNoteSelection();
@@ -692,7 +692,8 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle legato from right-click context menu: stretch each selected note to
     // the next selected onset (one undo step via the batch resize command).
-    gridComponent_->onLegatoNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onLegatoNotes = [](magda::ClipId clipId,
+                                       const std::vector<size_t>& noteIndices) {
         const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
         if (!clip || !clip->isMidi())
             return;
@@ -705,7 +706,7 @@ void PianoRollContent::setupGridCallbacks() {
     };
 
     // Handle copy from context menu
-    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, const std::vector<size_t>& noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
     };
 
@@ -743,7 +744,7 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle duplicate from context menu
     gridComponent_->onDuplicateNotes = [this](magda::ClipId clipId,
-                                              std::vector<size_t> noteIndices) {
+                                              const std::vector<size_t>& noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || !clip->isMidi())
@@ -805,7 +806,7 @@ void PianoRollContent::setupGridCallbacks() {
 
     // Handle chord block drops from the chord panel
     gridComponent_->onChordDropped = [](magda::ClipId clipId, double beat, double noteLength,
-                                        std::vector<std::pair<int, int>> notes,
+                                        const std::vector<std::pair<int, int>>& notes,
                                         juce::String chordName) {
         if (notes.empty())
             return;
@@ -2091,7 +2092,7 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
 
         for (const auto& note : clip->midiNotes) {
             if (note.chordGroup == it->chordGroup) {
-                chordNotes.push_back({note.noteNumber, note.velocity});
+                chordNotes.emplace_back(note.noteNumber, note.velocity);
                 minBeat = std::min(minBeat, note.startBeat);
                 maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
             }

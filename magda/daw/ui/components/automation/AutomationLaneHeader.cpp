@@ -419,27 +419,25 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                 for (const auto& [db, label] : dbValues) {
                     float norm =
                         ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
-                    gridValues.push_back({static_cast<double>(norm), label});
+                    gridValues.emplace_back(static_cast<double>(norm), label);
                 }
             } else if (lane.target.kind == ControlTarget::Kind::TrackPan) {
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)), "R"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(0.5f, paramInfo)),
-                     "50R"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo)), "C"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(-0.5f, paramInfo)),
-                     "50L"});
-                gridValues.push_back(
-                    {static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)), "L"});
+                gridValues.emplace_back(
+                    static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)), "R");
+                gridValues.emplace_back(
+                    static_cast<double>(ParameterUtils::realToNormalized(0.5f, paramInfo)), "50R");
+                gridValues.emplace_back(
+                    static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo)), "C");
+                gridValues.emplace_back(
+                    static_cast<double>(ParameterUtils::realToNormalized(-0.5f, paramInfo)), "50L");
+                gridValues.emplace_back(
+                    static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)), "L");
             } else if (paramInfo.scale == ParameterScale::Boolean) {
                 // A switch has exactly two meaningful positions. Without
                 // this it falls through to the 10% grid at the bottom of
                 // the chain and reads as a continuous percentage.
-                gridValues.push_back({1.0, "On"});
-                gridValues.push_back({0.0, "Off"});
+                gridValues.emplace_back(1.0, "On");
+                gridValues.emplace_back(0.0, "Off");
             } else if (paramInfo.isBipolar()) {
                 // Bipolar params (EQ gain, pitch, etc): symmetric labels
                 // around zero so the 0 line lands mid-lane. Use the larger
@@ -457,7 +455,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                     else
                         label = juce::String(rounded);
                     label += paramInfo.unit;
-                    gridValues.push_back({static_cast<double>(norm), label});
+                    gridValues.emplace_back(static_cast<double>(norm), label);
                 }
             } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
                 // Discrete: use the choices array as label source. Each
@@ -471,15 +469,15 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                 if (!paramInfo.labelTicks.empty()) {
                     for (const auto& [realValue, label] : paramInfo.labelTicks) {
                         float norm = ParameterUtils::realToNormalized(realValue, paramInfo);
-                        gridValues.push_back({static_cast<double>(norm), label});
+                        gridValues.emplace_back(static_cast<double>(norm), label);
                     }
                 } else {
                     int numChoices = static_cast<int>(paramInfo.choices.size());
                     for (int i = 0; i < numChoices; ++i) {
                         float norm =
                             ParameterUtils::realToNormalized(static_cast<float>(i), paramInfo);
-                        gridValues.push_back(
-                            {static_cast<double>(norm), paramInfo.choices[static_cast<size_t>(i)]});
+                        gridValues.emplace_back(static_cast<double>(norm),
+                                                paramInfo.choices[static_cast<size_t>(i)]);
                     }
                 }
             } else if (paramInfo.unit.isNotEmpty()) {
@@ -490,7 +488,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                         ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
                     juce::String label =
                         juce::String(static_cast<int>(std::round(real))) + paramInfo.unit;
-                    gridValues.push_back({norm, label});
+                    gridValues.emplace_back(norm, label);
                 }
             } else if (paramInfo.displayText) {
                 // displayText wraps TE's valueToString, which expects a
@@ -511,22 +509,21 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                         teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
                     }
                     auto text = paramInfo.displayText->format(teRaw);
-                    gridValues.push_back(
-                        {norm, text.isNotEmpty()
-                                   ? text
-                                   : juce::String(static_cast<int>(norm * 100)) + "%"});
+                    gridValues.emplace_back(
+                        norm, text.isNotEmpty() ? text
+                                                : juce::String(static_cast<int>(norm * 100)) + "%");
                 }
             } else if (!paramInfo.valueTable.empty()) {
                 for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
                     int idx = juce::jlimit(
                         0, static_cast<int>(paramInfo.valueTable.size()) - 1,
                         static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
-                    gridValues.push_back(
-                        {norm, paramInfo.valueTable[static_cast<size_t>(idx)].trim()});
+                    gridValues.emplace_back(norm,
+                                            paramInfo.valueTable[static_cast<size_t>(idx)].trim());
                 }
             } else {
                 for (int i = 1; i < 10; ++i)
-                    gridValues.push_back({i / 10.0, juce::String(i * 10) + "%"});
+                    gridValues.emplace_back(i / 10.0, juce::String(i * 10) + "%");
             }
 
             g.setFont(FontManager::getInstance().getUIFont(8.0f));

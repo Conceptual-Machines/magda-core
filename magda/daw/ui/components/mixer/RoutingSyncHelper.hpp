@@ -26,7 +26,7 @@ namespace RoutingSyncHelper {
 inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
                                       TrackId currentTrackId = INVALID_TRACK_ID,
                                       std::map<int, TrackId>* outInputTrackMapping = nullptr,
-                                      juce::BigInteger enabledInputChannels = {},
+                                      const juce::BigInteger& enabledInputChannels = {},
                                       std::map<int, juce::String>* outChannelMapping = nullptr,
                                       const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
@@ -139,7 +139,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
 inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId currentTrackId,
                                        juce::AudioIODevice* device,
                                        std::map<int, TrackId>& outTrackMapping,
-                                       juce::BigInteger enabledOutputChannels = {},
+                                       const juce::BigInteger& enabledOutputChannels = {},
                                        std::map<int, juce::String>* outChannelMapping = nullptr,
                                        const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
@@ -464,7 +464,8 @@ inline void syncSelectorsFromTrack(
         // options are available before any track input is selected — otherwise
         // the first "track:" selection could never be made.
         populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                  enabledInputChannels, inputChannelMapping, teDeviceNames);
+                                  std::move(enabledInputChannels), inputChannelMapping,
+                                  teDeviceNames);
         if (hasAudioInput) {
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID
@@ -545,7 +546,7 @@ inline void syncSelectorsFromTrack(
     // Update Audio Output selector
     if (audioOutSelector) {
         populateAudioOutputOptions(audioOutSelector, currentTrackId, device, outputTrackMapping,
-                                   enabledOutputChannels, outputChannelMapping,
+                                   std::move(enabledOutputChannels), outputChannelMapping,
                                    teOutputDeviceNames);
         juce::String currentAudioOutput = track.audioOutputDevice;
         if (currentAudioOutput.isEmpty()) {

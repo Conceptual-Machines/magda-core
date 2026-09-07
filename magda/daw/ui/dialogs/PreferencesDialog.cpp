@@ -343,7 +343,7 @@ class GeneralPage : public juce::Component {
         }
 
         if (availableLanguages_.empty())
-            availableLanguages_.push_back("en");
+            availableLanguages_.emplace_back("en");
 
         auto currentLang = juce::String(config.getLanguage());
         initialLanguage_ = currentLang;
@@ -1215,7 +1215,7 @@ class AppearancePage : public juce::Component {
         swatch->setPaintingIsUnclipped(true);
         addAndMakeVisible(*swatch);
         colourSwatches_.push_back(std::move(swatch));
-        swatchColours_.push_back(juce::Colour(colour));
+        swatchColours_.emplace_back(colour);
 
         // Hex editor (RGB only, no alpha — we force 0xFF)
         auto hex = std::make_unique<juce::TextEditor>();
@@ -2089,7 +2089,7 @@ class PathsPage : public juce::Component {
             (kind == Kind::Data) ? magda::paths::alwaysOSDefault() : presetsDefaultDir();
         juce::String oldPath =
             original.empty() ? defaultDir.getFullPathName() : juce::String(original);
-        juce::String newPath = picked.getFullPathName();
+        const juce::String& newPath = picked.getFullPathName();
 
         const juce::String titleKey = (kind == Kind::Data)
                                           ? "preferences.paths.migration.data_title"
@@ -3285,7 +3285,7 @@ void scaleExplicitFonts(juce::Component& component, double ratio) {
     if (magda::resolvesOwnFonts(component))
         return;
 
-    const auto scaleFont = [ratio](juce::Font font) {
+    const auto scaleFont = [ratio](const juce::Font& font) {
         return font.withHeight(font.getHeight() * static_cast<float>(ratio));
     };
 

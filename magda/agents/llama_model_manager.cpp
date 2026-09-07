@@ -155,7 +155,7 @@ std::string LlamaModelManager::applyTemplate(const std::string& systemPrompt,
 }
 
 LlamaModelManager::InferenceResult LlamaModelManager::infer(const InferenceRequest& req,
-                                                            TokenCallback onToken) {
+                                                            const TokenCallback& onToken) {
     std::scoped_lock lock(mutex_);
     InferenceResult result;
 

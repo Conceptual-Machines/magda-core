@@ -116,7 +116,7 @@ void linkCompiledParameter(int paramIndex, float amount,
 }  // namespace
 
 DeviceSlotInlineUiCallbacks makeDeviceSlotInlineUiCallbacks(
-    DeviceSlotInlineUiCallbackContext context) {
+    const DeviceSlotInlineUiCallbackContext& context) {
     DeviceSlotInlineUiCallbacks callbacks;
     callbacks.onParameterChanged = [context](int paramIndex, float value) {
         if (!context.getNodePath)
@@ -269,7 +269,7 @@ void readAndPushDeviceSlotInlineUiModMatrix(magda::DeviceId deviceId,
 void configureDeviceSlotLinkableSliders(
     const std::vector<LinkableTextSlider*>& sliders, const magda::DeviceInfo& device,
     const magda::ChainNodePath& nodePath, const DeviceSlotModulationContext& context,
-    std::function<void(LinkableTextSlider&)> configureCallbacks) {
+    const std::function<void(LinkableTextSlider&)>& configureCallbacks) {
     for (int i = 0; i < static_cast<int>(sliders.size()); ++i) {
         auto* slider = sliders[static_cast<size_t>(i)];
         if (slider == nullptr)

@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <utility>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
@@ -390,8 +392,8 @@ ParameterConfigDialog::~ParameterConfigDialog() {
     setLookAndFeel(nullptr);
 }
 
-ParameterConfigDialog::ParameterConfigDialog(const juce::String& pluginName)
-    : pluginName_(pluginName) {
+ParameterConfigDialog::ParameterConfigDialog(juce::String pluginName)
+    : pluginName_(std::move(pluginName)) {
     // Use the shared dialog look-and-feel so every button / combo /
     // text editor in the dialog picks up the theme font (Inter) instead
     // of JUCE's platform default. Children inherit unless they set their
@@ -1183,7 +1185,7 @@ void ParameterConfigDialog::runDetection() {
                     safeThis->aiResolved_ = resolved;
                 },
                 // onComplete
-                [safeThis](std::vector<magda::DetectedParameterInfo> aiResults) {
+                [safeThis](const std::vector<magda::DetectedParameterInfo>& aiResults) {
                     if (!safeThis)
                         return;
                     safeThis->applyDetectionResults(aiResults);

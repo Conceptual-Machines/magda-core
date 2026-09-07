@@ -4,6 +4,7 @@
 #include <functional>
 #include <limits>
 #include <ranges>
+#include <utility>
 
 #include "../audio/AudioBridge.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -125,9 +126,8 @@ int dropIndexForHome(TrackManager& tm, const ChainNodePath& elementPath,
 // CreateTrackCommand
 // ============================================================================
 
-CreateTrackCommand::CreateTrackCommand(TrackType type, const juce::String& name,
-                                       TrackId afterTrackId)
-    : type_(type), name_(name), afterTrackId_(afterTrackId) {}
+CreateTrackCommand::CreateTrackCommand(TrackType type, juce::String name, TrackId afterTrackId)
+    : type_(type), name_(std::move(name)), afterTrackId_(afterTrackId) {}
 
 void CreateTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -366,8 +366,8 @@ void DuplicateTrackCommand::undo() {
 // AddDeviceToTrackCommand
 // ============================================================================
 
-AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, const DeviceInfo& device)
-    : trackId_(trackId), device_(device) {}
+AddDeviceToTrackCommand::AddDeviceToTrackCommand(TrackId trackId, DeviceInfo device)
+    : trackId_(trackId), device_(std::move(device)) {}
 
 void AddDeviceToTrackCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -389,11 +389,11 @@ void AddDeviceToTrackCommand::undo() {
 // MoveChainElementCommand
 // ============================================================================
 
-MoveChainElementCommand::MoveChainElementCommand(const ChainNodePath& sourceElementPath,
-                                                 const ChainNodePath& destinationChainPath,
+MoveChainElementCommand::MoveChainElementCommand(ChainNodePath sourceElementPath,
+                                                 ChainNodePath destinationChainPath,
                                                  int insertIndex)
-    : sourceElementPath_(sourceElementPath),
-      destinationChainPath_(destinationChainPath),
+    : sourceElementPath_(std::move(sourceElementPath)),
+      destinationChainPath_(std::move(destinationChainPath)),
       insertIndex_(insertIndex) {}
 
 ChainNodePath MoveChainElementCommand::buildMovedPath(
@@ -452,10 +452,10 @@ void MoveChainElementCommand::undo() {
 // ============================================================================
 
 MoveChainElementsCommand::MoveChainElementsCommand(std::vector<ChainNodePath> sourceElementPaths,
-                                                   const ChainNodePath& destinationChainPath,
+                                                   ChainNodePath destinationChainPath,
                                                    int insertIndex)
     : sourceElementPaths_(std::move(sourceElementPaths)),
-      destinationChainPath_(destinationChainPath),
+      destinationChainPath_(std::move(destinationChainPath)),
       insertIndex_(insertIndex) {}
 
 void MoveChainElementsCommand::execute() {
@@ -587,10 +587,10 @@ void MoveChainElementsCommand::undo() {
 // PasteChainElementsCommand
 // ============================================================================
 
-PasteChainElementsCommand::PasteChainElementsCommand(const ChainNodePath& destinationChainPath,
+PasteChainElementsCommand::PasteChainElementsCommand(ChainNodePath destinationChainPath,
                                                      std::vector<ChainElement> elements,
                                                      int insertIndex)
-    : destinationChainPath_(destinationChainPath),
+    : destinationChainPath_(std::move(destinationChainPath)),
       templateElements_(std::move(elements)),
       insertIndex_(insertIndex) {}
 
@@ -773,9 +773,8 @@ void WrapChainElementsInRackCommand::undo() {
 // SetMacroNameCommand / SetModNameCommand
 // ============================================================================
 
-SetMacroNameCommand::SetMacroNameCommand(const ChainNodePath& path, int macroIndex,
-                                         const juce::String& newName)
-    : path_(path), macroIndex_(macroIndex), newName_(newName) {
+SetMacroNameCommand::SetMacroNameCommand(ChainNodePath path, int macroIndex, juce::String newName)
+    : path_(std::move(path)), macroIndex_(macroIndex), newName_(std::move(newName)) {
     const auto& trackManager = TrackManager::getInstance();
     auto node = trackManager.resolveChainNode(path_);
     if (!node.valid() || node.macros == nullptr || macroIndex_ < 0 ||
@@ -802,9 +801,8 @@ void SetMacroNameCommand::applyName(const juce::String& name) {
     TrackManager::getInstance().notifyModulationNamesChanged(path_.trackId);
 }
 
-SetModNameCommand::SetModNameCommand(const ChainNodePath& path, int modIndex,
-                                     const juce::String& newName)
-    : path_(path), modIndex_(modIndex), newName_(newName) {
+SetModNameCommand::SetModNameCommand(ChainNodePath path, int modIndex, juce::String newName)
+    : path_(std::move(path)), modIndex_(modIndex), newName_(std::move(newName)) {
     const auto& trackManager = TrackManager::getInstance();
     auto node = trackManager.resolveChainNode(path_);
     if (!node.valid() || node.mods == nullptr || modIndex_ < 0 ||
@@ -835,9 +833,9 @@ void SetModNameCommand::applyName(const juce::String& name) {
 // CreateTrackWithDeviceCommand
 // ============================================================================
 
-CreateTrackWithDeviceCommand::CreateTrackWithDeviceCommand(const juce::String& trackName,
-                                                           TrackType type, const DeviceInfo& device)
-    : trackName_(trackName), type_(type), device_(device) {}
+CreateTrackWithDeviceCommand::CreateTrackWithDeviceCommand(juce::String trackName, TrackType type,
+                                                           DeviceInfo device)
+    : trackName_(std::move(trackName)), type_(type), device_(std::move(device)) {}
 
 void CreateTrackWithDeviceCommand::execute() {
     auto& trackManager = TrackManager::getInstance();
@@ -919,9 +917,9 @@ void capturePluginStatesUnder(const std::vector<ChainElement>& elements,
 
 }  // namespace
 
-AddDeviceByPathCommand::AddDeviceByPathCommand(const ChainNodePath& parentPath,
-                                               const DeviceInfo& device, int insertIndex)
-    : parentPath_(parentPath), device_(device), insertIndex_(insertIndex) {}
+AddDeviceByPathCommand::AddDeviceByPathCommand(ChainNodePath parentPath, DeviceInfo device,
+                                               int insertIndex)
+    : parentPath_(std::move(parentPath)), device_(std::move(device)), insertIndex_(insertIndex) {}
 
 void AddDeviceByPathCommand::execute() {
     auto& tm = TrackManager::getInstance();

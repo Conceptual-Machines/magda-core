@@ -317,7 +317,8 @@ void PluginManager::ensureMidiReceive(const ChainNodePath& devicePath, TrackId s
         return plugin;
     };
 
-    auto configureSidechainDependency = [&](te::Plugin::Ptr plugin, TrackId midiSourceTrackId) {
+    auto configureSidechainDependency = [&](const te::Plugin::Ptr& plugin,
+                                            TrackId midiSourceTrackId) {
         if (!plugin || midiSourceTrackId == trackId)
             return;
 
@@ -572,7 +573,8 @@ void PluginManager::detachRackRuntimeForChainMove(RackId rackId) {
     rackSyncManager_.removeRackForMove(rackId);
 }
 
-void PluginManager::restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin) {
+void PluginManager::restorePluginState(const ChainNodePath& devicePath,
+                                       const te::Plugin::Ptr& plugin) {
     auto& tm = TrackManager::getInstance();
     auto* devInfo = tm.getDeviceInChainByPath(devicePath);
     if (!devInfo || devInfo->pluginState.isEmpty()) {

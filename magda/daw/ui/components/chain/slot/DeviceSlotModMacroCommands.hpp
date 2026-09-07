@@ -45,7 +45,7 @@ void notifyDeviceSlotModCurveChanged(const magda::ChainNodePath& nodePath);
 void setDeviceSlotMacroValue(const magda::ChainNodePath& nodePath, int macroIndex, float value,
                              const DeviceSlotModMacroCommandCallbacks& callbacks);
 void setDeviceSlotMacroTarget(const magda::ChainNodePath& nodePath, int macroIndex,
-                              magda::ControlTarget target,
+                              const magda::ControlTarget& target,
                               const DeviceSlotModMacroCommandCallbacks& callbacks);
 void renameDeviceSlotMacro(const magda::ChainNodePath& nodePath, int macroIndex,
                            const juce::String& name);
@@ -55,7 +55,7 @@ void setDeviceSlotMacroLinkAmount(const magda::ChainNodePath& nodePath, int macr
                                   magda::ControlTarget target, float amount,
                                   const DeviceSlotModMacroCommandCallbacks& callbacks);
 void createDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIndex,
-                               magda::ControlTarget target, float amount,
+                               const magda::ControlTarget& target, float amount,
                                const DeviceSlotModMacroCommandCallbacks& callbacks);
 void removeDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIndex,
                                magda::ControlTarget target,
@@ -74,7 +74,7 @@ void setDeviceSlotModLinkEnabled(const magda::ChainNodePath& nodePath, int modIn
                                  magda::ControlTarget target, bool enabled,
                                  const DeviceSlotModMacroCommandCallbacks& callbacks);
 void createDeviceSlotModLink(const magda::ChainNodePath& nodePath, int modIndex,
-                             magda::ControlTarget target, float amount,
+                             const magda::ControlTarget& target, float amount,
                              const DeviceSlotModMacroCommandCallbacks& callbacks);
 void removeDeviceSlotModLink(const magda::ChainNodePath& nodePath, int modIndex,
                              magda::ControlTarget target,

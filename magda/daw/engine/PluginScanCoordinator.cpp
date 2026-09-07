@@ -39,7 +39,7 @@ juce::File PluginScanCoordinator::getScannerExecutable() {
     auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 
     juce::StringArray triedPaths;
-    auto tryCandidate = [&triedPaths](juce::File candidate) -> juce::File {
+    auto tryCandidate = [&triedPaths](const juce::File& candidate) -> juce::File {
         triedPaths.add(candidate.getFullPathName());
         return candidate.existsAsFile() ? candidate : juce::File();
     };

@@ -1,5 +1,7 @@
 #include "ChainTreeDialog.hpp"
 
+#include <utility>
+
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "core/SelectionManager.hpp"
@@ -16,9 +18,8 @@ namespace magda {
  */
 class ChainTreeItemBase : public juce::TreeViewItem {
   public:
-    explicit ChainTreeItemBase(const juce::String& text, const juce::String& icon = "",
-                               const ChainNodePath& path = {})
-        : text_(text), icon_(icon), path_(path) {}
+    explicit ChainTreeItemBase(juce::String text, juce::String icon = "", ChainNodePath path = {})
+        : text_(std::move(text)), icon_(std::move(icon)), path_(std::move(path)) {}
 
     bool mightContainSubItems() override {
         return false;  // Override in containers

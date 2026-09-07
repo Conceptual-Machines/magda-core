@@ -471,7 +471,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Remove button
         auto removeBtn =
             std::make_unique<juce::TextButton>(juce::String::charToString(0x2715));  // ✕
-        auto pid = providerId;
+        const auto& pid = providerId;
         removeBtn->onClick = [this, pid]() { removeProvider(pid); };
         listContainer_.addAndMakeVisible(*removeBtn);
         entry.removeBtn = removeBtn.get();

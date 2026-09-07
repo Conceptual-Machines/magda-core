@@ -327,6 +327,7 @@ void ChordClipContent::commitBlockDrag() {
     if (copyDrag_) {
         if (moved) {
             std::vector<int> pitches;
+            pitches.reserve(dragNotes_.size());
             for (const auto& dn : dragNotes_)
                 pitches.push_back(dn.note);
             insertChordAtBeat(dragNewStart_, pitches);
@@ -528,6 +529,7 @@ void ChordClipContent::openChordEditor(int annIndex) {
         const auto chord =
             magda::music::ChordEngine::getInstance().buildChordInversion(r, q, inv, oct);
         std::vector<int> pitches;
+        pitches.reserve(chord.notes.size());
         for (const auto& note : chord.notes)
             pitches.push_back(note.noteNumber);
         const int idx = annotationIndexAtBeat(bar + 0.001);
@@ -732,6 +734,7 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
     const auto chord = magda::music::ChordEngine::getInstance().buildChordInRootPosition(
         magda::music::ChordRoot::C, magda::music::ChordQuality::Major, 4);
     std::vector<int> pitches;
+    pitches.reserve(chord.notes.size());
     for (const auto& note : chord.notes)
         pitches.push_back(note.noteNumber);
 

@@ -805,7 +805,7 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     std::vector<PortDesc> outputs{
         PortDesc{SignalKind::Audio, static_cast<std::uint8_t>(outputWidth)}};
     if (producesMidi)
-        outputs.push_back(SignalKind::Midi);
+        outputs.emplace_back(SignalKind::Midi);
 
     // The further pairs are ports on the same op, after the main audio and any
     // MIDI. They carry the device's raw output: the slot's gain trim and meter
@@ -815,8 +815,8 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     const auto firstMultiOutPort = static_cast<int>(outputs.size());
     for (int pair = 0; pair < multiOutPairCount; ++pair) {
         const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair) + 1];
-        outputs.push_back(
-            {SignalKind::Audio, static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2))});
+        outputs.emplace_back(SignalKind::Audio,
+                             static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2)));
     }
 
     // Only a device that reads the bus is connected to it.
@@ -1007,7 +1007,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                              OpRole::RackChainFader, 0,       site.segment};
         std::vector<PortDesc> faderOutputs{SignalKind::Audio};
         if (generatesMidi)
-            faderOutputs.push_back(SignalKind::Midi);
+            faderOutputs.emplace_back(SignalKind::Midi);
 
         const auto faderOp =
             addOp(OpKind::Fader, faderKey,

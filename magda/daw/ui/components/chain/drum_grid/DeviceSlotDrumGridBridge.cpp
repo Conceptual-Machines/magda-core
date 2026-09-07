@@ -1,5 +1,7 @@
 #include "drum_grid/DeviceSlotDrumGridBridge.hpp"
 
+#include <utility>
+
 #include "NodeComponent.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "core/LinkModeManager.hpp"
@@ -39,8 +41,8 @@ void refreshMacroUi(const PadChainLinkCallbacks& callbacks) {
 }
 
 template <typename Control>
-void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
-    control.onModLinkedWithAmount = [callbacks](int modIndex, magda::ControlTarget target,
+void wireLinkableControl(Control& control, const PadChainLinkCallbacks& callbacks) {
+    control.onModLinkedWithAmount = [callbacks](int modIndex, const magda::ControlTarget& target,
                                                 float amount) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
@@ -73,7 +75,7 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
     control.onModUnlinked = [callbacks](int modIndex, magda::ControlTarget target) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
-        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
+        magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, std::move(target));
         refreshModUi(callbacks);
     };
 
@@ -82,7 +84,7 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
         auto rackPath = nearestRackPathForDevicePath(nodePath);
         if (rackPath.isValid())
-            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, target);
+            magda::TrackManager::getInstance().removeModLink(rackPath, modIndex, std::move(target));
         refreshModUi(callbacks);
     };
 
@@ -92,11 +94,11 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
         auto trackId = nodePath.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeModLink(
-                magda::ChainNodePath::trackLevel(trackId), modIndex, target);
+                magda::ChainNodePath::trackLevel(trackId), modIndex, std::move(target));
         refreshModUi(callbacks);
     };
 
-    control.onModAmountChanged = [callbacks](int modIndex, magda::ControlTarget target,
+    control.onModAmountChanged = [callbacks](int modIndex, const magda::ControlTarget& target,
                                              float amount) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
@@ -118,7 +120,8 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
             callbacks.updateParamModulation();
     };
 
-    control.onMacroLinkedWithAmount = [callbacks](int macroIndex, magda::ControlTarget target,
+    control.onMacroLinkedWithAmount = [callbacks](int macroIndex,
+                                                  const magda::ControlTarget& target,
                                                   float amount) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
@@ -152,7 +155,7 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
 
     control.onMacroLinked = [callbacks](int macroIndex, magda::ControlTarget target) {
         if (callbacks.onMacroTargetChanged)
-            callbacks.onMacroTargetChanged(macroIndex, target);
+            callbacks.onMacroTargetChanged(macroIndex, std::move(target));
         if (callbacks.updateParamModulation)
             callbacks.updateParamModulation();
     };
@@ -160,7 +163,7 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
     control.onMacroUnlinked = [callbacks](int macroIndex, magda::ControlTarget target) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
-        magda::TrackManager::getInstance().removeMacroLink(nodePath, macroIndex, target);
+        magda::TrackManager::getInstance().removeMacroLink(nodePath, macroIndex, std::move(target));
         refreshMacroUi(callbacks);
     };
 
@@ -170,11 +173,11 @@ void wireLinkableControl(Control& control, PadChainLinkCallbacks callbacks) {
         auto trackId = nodePath.trackId;
         if (trackId != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeMacroLink(
-                magda::ChainNodePath::trackLevel(trackId), macroIndex, target);
+                magda::ChainNodePath::trackLevel(trackId), macroIndex, std::move(target));
         refreshMacroUi(callbacks);
     };
 
-    control.onMacroAmountChanged = [callbacks](int macroIndex, magda::ControlTarget target,
+    control.onMacroAmountChanged = [callbacks](int macroIndex, const magda::ControlTarget& target,
                                                float amount) {
         const auto nodePath =
             callbacks.getNodePath ? callbacks.getNodePath() : magda::ChainNodePath{};
@@ -354,9 +357,9 @@ void appendAvailableDevices(const DrumGridUI* drumGridUI,
             for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
                 int devId = dg->getPluginDeviceId(chain->index, pi);
                 if (devId >= 0) {
-                    devices.push_back(
-                        {devId,
-                         chain->name + ": " + chain->plugins[static_cast<size_t>(pi)]->getName()});
+                    devices.emplace_back(devId,
+                                         chain->name + ": " +
+                                             chain->plugins[static_cast<size_t>(pi)]->getName());
                 }
             }
         }

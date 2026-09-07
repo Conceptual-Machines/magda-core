@@ -98,7 +98,7 @@ MediaCollector::Plan MediaCollector::scan() {
             return -1;
         }
 
-        const auto key = file.getFullPathName();
+        const auto& key = file.getFullPathName();
         auto it = indexByPath.find(key);
         if (it != indexByPath.end())
             return static_cast<long>(it->second);

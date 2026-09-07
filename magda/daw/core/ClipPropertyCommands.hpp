@@ -14,8 +14,8 @@ namespace magda {
  */
 class SetClipNameCommand : public UndoableCommand {
   public:
-    SetClipNameCommand(ClipId clipId, const juce::String& newName)
-        : clipId_(clipId), newName_(newName) {
+    SetClipNameCommand(ClipId clipId, juce::String newName)
+        : clipId_(clipId), newName_(std::move(newName)) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
             oldName_ = clip->name;
@@ -912,8 +912,8 @@ class SetClipColourCommand : public UndoableCommand {
  */
 class SetClipGrooveTemplateCommand : public UndoableCommand {
   public:
-    SetClipGrooveTemplateCommand(ClipId clipId, const juce::String& newTemplate)
-        : clipId_(clipId), newTemplate_(newTemplate) {
+    SetClipGrooveTemplateCommand(ClipId clipId, juce::String newTemplate)
+        : clipId_(clipId), newTemplate_(std::move(newTemplate)) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
             oldTemplate_ = clip->grooveTemplate;

@@ -63,8 +63,8 @@ PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile)
                          databaseFile.getParentDirectory().getChildFile("plugin_exclusions.txt")}) {
 }
 
-PluginMetadataStore::PluginMetadataStore(const juce::File& databaseFile, LegacyFiles legacyFiles)
-    : file_(databaseFile), legacyFiles_(std::move(legacyFiles)) {
+PluginMetadataStore::PluginMetadataStore(juce::File databaseFile, LegacyFiles legacyFiles)
+    : file_(std::move(databaseFile)), legacyFiles_(std::move(legacyFiles)) {
     (void)file_.getParentDirectory().createDirectory();
     db_.open(utf8(file_.getFullPathName()), "open plugin metadata database");
 

@@ -174,7 +174,7 @@ std::optional<AutomationTarget> toAutomationTarget(const juce::var& json) {
     // Edit-scoped kinds (tempo) carry no path — the schema permits null there.
     // For everything else the path must resolve, or the target would name a
     // device that does not exist and the lane would be created against nothing.
-    if (const auto path = json["devicePath"]; path.isObject()) {
+    if (const auto& path = json["devicePath"]; path.isObject()) {
         const auto resolved = toChainNodePath(devicePathFromJson(path));
         if (!resolved)
             return std::nullopt;
@@ -503,7 +503,7 @@ HandlerResult devicesAdd(MagdaApi& api, const juce::var& input, const RequestCon
         return HandlerResult::fail(ErrorCode::NotFound, "no catalogue entry " + catalogId);
 
     ChainNodePath parent;
-    if (const auto parentPath = input["parentPath"]; parentPath.isObject()) {
+    if (const auto& parentPath = input["parentPath"]; parentPath.isObject()) {
         const auto resolved = toChainNodePath(devicePathFromJson(parentPath));
         if (!resolved)
             return HandlerResult::fail(ErrorCode::ValidationFailed, "parentPath does not resolve");
@@ -1294,7 +1294,7 @@ HandlerResult tracksMove(MagdaApi& api, const juce::var& input, const RequestCon
 HandlerResult groovesList(MagdaApi& api, const juce::var&, const RequestContext&) {
     std::vector<juce::var> items;
     for (const auto& name : api.grooves().getTemplateNames())
-        items.push_back(name);
+        items.emplace_back(name);
     return HandlerResult::ok(toJsonArray(items));
 }
 
@@ -1377,7 +1377,7 @@ std::vector<juce::uint8> readByteArray(const juce::var& value) {
 HandlerResult midiListOutputPorts(MagdaApi& api, const juce::var&, const RequestContext&) {
     std::vector<juce::var> items;
     for (const auto& name : api.midi().getOutputPortNames())
-        items.push_back(name);
+        items.emplace_back(name);
     return HandlerResult::ok(toJsonArray(items));
 }
 

@@ -190,7 +190,7 @@ ParamHostComponent::~ParamHostComponent() = default;
 
 void ParamHostComponent::updateParameterSlots(
     const magda::DeviceInfo& device, int currentPage,
-    std::function<void(int paramIndex, double value)> onValueChanged) {
+    const std::function<void(int paramIndex, double value)>& onValueChanged) {
     const auto previousSpans = cellSpans_;
     cellSpans_.assign(static_cast<size_t>(std::max(0, cellCount_)), 1);
     usedRows_ = 0;

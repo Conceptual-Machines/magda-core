@@ -1160,7 +1160,7 @@ RackId TrackManager::wrapChainElementsInRack(const std::vector<ChainNodePath>& p
 
         const int index = getChainElementIndex(path);
         if (index >= 0)
-            orderedPaths.push_back({index, path});
+            orderedPaths.emplace_back(index, path);
     }
 
     if (orderedPaths.empty())

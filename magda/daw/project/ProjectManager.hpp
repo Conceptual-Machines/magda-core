@@ -97,7 +97,7 @@ class ProjectManager {
      * @return true on success
      */
     bool loadProject(const juce::File& file,
-                     std::function<void(const ProjectInfo&)> onBeforeCommit = nullptr);
+                     const std::function<void(const ProjectInfo&)>& onBeforeCommit = nullptr);
 
     /**
      * @brief Export the current project to a .dawproject interchange archive.
@@ -113,8 +113,8 @@ class ProjectManager {
      * @param onComplete (success, errorMessage); empty error on user cancel.
      */
     void importDawProjectAsync(const juce::File& file,
-                               std::function<void(const ProjectInfo&)> onBeforeCommit,
-                               std::function<void(bool, const juce::String&)> onComplete);
+                               const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                               const std::function<void(bool, const juce::String&)>& onComplete);
 
     /**
      * @brief Load project asynchronously (heavy I/O on background thread, commit on message thread)
@@ -125,8 +125,8 @@ class ProjectManager {
      * @param onComplete Callback invoked on message thread after commit: (success, errorMessage)
      */
     void loadProjectAsync(const juce::File& file,
-                          std::function<void(const ProjectInfo&)> onBeforeCommit,
-                          std::function<void(bool, const juce::String&)> onComplete);
+                          const std::function<void(const ProjectInfo&)>& onBeforeCommit,
+                          const std::function<void(bool, const juce::String&)>& onComplete);
 
     /**
      * @brief Close current project

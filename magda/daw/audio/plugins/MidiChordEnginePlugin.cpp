@@ -234,7 +234,7 @@ void MidiChordEnginePlugin::runDetection() {
 
     for (int i = 0; i < count; ++i) {
         int noteNum = heldNotes_[static_cast<size_t>(i)].load(std::memory_order_relaxed);
-        heldNotes.push_back({noteNum, 100});
+        heldNotes.emplace_back(noteNum, 100);
     }
 
     if (heldNotes.empty()) {

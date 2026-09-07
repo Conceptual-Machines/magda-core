@@ -50,7 +50,7 @@ class LlamaModelManager {
 
     using TokenCallback = std::function<bool(const std::string& token)>;
 
-    InferenceResult infer(const InferenceRequest& req, TokenCallback onToken = nullptr);
+    InferenceResult infer(const InferenceRequest& req, const TokenCallback& onToken = nullptr);
 
   private:
 #ifdef MAGDA_ENABLE_TEST_HOOKS
