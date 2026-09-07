@@ -357,11 +357,11 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
 
     // --- BPM: filename > metadata ---
     if (auto p = parseBpmFromPath(path)) {
-        f.bpm = *p;
+        f.bpm = p;
     } else if (auto m = metadataBpm(decoded->metadata)) {
-        f.bpm = *m;
+        f.bpm = m;
     } else if (auto d = dspBpm(path)) {
-        f.bpm = *d;
+        f.bpm = d;
     }
 
     // --- Key: filename > DSP ---

@@ -329,11 +329,11 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
             if (override_.unit)
                 entry.unit = *override_.unit;
             if (override_.scale)
-                entry.scale = *override_.scale;
+                entry.scale = override_.scale;
             if (override_.minValue)
-                entry.rangeMin = *override_.minValue;
+                entry.rangeMin = override_.minValue;
             if (override_.maxValue)
-                entry.rangeMax = *override_.maxValue;
+                entry.rangeMax = override_.maxValue;
             // A new display range moves the anchor the way a fresh AI-Detect
             // would: to its midpoint.
             if (override_.minValue || override_.maxValue) {
