@@ -70,7 +70,7 @@ te::Plugin* findRackPlugin(te::RackType& rackType, te::EditItemID id) {
     const auto matchesId = [id](const te::Plugin* plugin) {
         return plugin && plugin->itemID == id;
     };
-    const auto found = std::ranges::find_if(plugins, matchesId);
+    const auto* const found = std::ranges::find_if(plugins, matchesId);
     return found == plugins.end() ? nullptr : *found;
 }
 
@@ -203,7 +203,7 @@ void RackSyncManager::resyncRack(TrackId trackId, const RackInfo& rackInfo) {
     {
         auto connections = rackType->getConnections();
         for (int i = connections.size(); --i >= 0;) {
-            auto* conn = connections[i];
+            const auto* conn = connections[i];
             rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                        conn->destPin);
         }
@@ -650,7 +650,7 @@ te::AutomatableParameter* RackSyncManager::findRackModifierParameter(RackId rack
     const auto matchesParamId = [&wantedID](const te::AutomatableParameter* p) {
         return p && p->paramID == wantedID;
     };
-    const auto foundParam = std::ranges::find_if(params, matchesParamId);
+    const auto* const foundParam = std::ranges::find_if(params, matchesParamId);
     return foundParam == params.end() ? nullptr : *foundParam;
 }
 
@@ -665,7 +665,7 @@ void RackSyncManager::resyncAllModifiers(TrackId trackId) {
             if (track.id != trackId)
                 continue;
             for (const auto& element : track.chain.fxChainElements) {
-                if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
+                if (const auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
                     const auto& rackInfo = **rackPtr;
@@ -704,7 +704,7 @@ void RackSyncManager::updateAllModifierProperties(TrackId trackId) {
             if (track.id != trackId)
                 continue;
             for (const auto& element : track.chain.fxChainElements) {
-                if (auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
+                if (const auto* rackPtr = std::get_if<std::unique_ptr<RackInfo>>(&element)) {
                     if (!*rackPtr || (*rackPtr)->id != rackId)
                         continue;
                     updateRackModulationProperties(synced, **rackPtr);
@@ -1024,7 +1024,7 @@ void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackI
         if (rackType) {
             auto connections = rackType->getConnections();
             for (int i = connections.size(); --i >= 0;) {
-                auto* conn = connections[i];
+                const auto* conn = connections[i];
                 rackType->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                            conn->destPin);
             }
@@ -1085,7 +1085,7 @@ void RackSyncManager::rebuildConnectionsRecursive(SyncedRack& synced, const Rack
 
             auto connections = typeIt->second->getConnections();
             for (int i = connections.size(); --i >= 0;) {
-                auto* conn = connections[i];
+                const auto* conn = connections[i];
                 typeIt->second->removeConnection(conn->sourceID, conn->sourcePin, conn->destID,
                                                  conn->destPin);
             }
@@ -1095,7 +1095,7 @@ void RackSyncManager::rebuildConnectionsRecursive(SyncedRack& synced, const Rack
 
     auto connections = rackType.getConnections();
     for (int i = connections.size(); --i >= 0;) {
-        auto* conn = connections[i];
+        const auto* conn = connections[i];
         rackType.removeConnection(conn->sourceID, conn->sourcePin, conn->destID, conn->destPin);
     }
     buildConnectionsForRack(synced, rackInfo, rackPath, rackType);

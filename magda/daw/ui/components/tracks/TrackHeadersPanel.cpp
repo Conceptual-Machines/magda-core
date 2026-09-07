@@ -3790,7 +3790,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 bool TrackHeadersPanel::isIORoutingVisible() const {
     if (trackHeaders.empty())
         return showIORouting_;
-    for (auto& h : trackHeaders) {
+    for (const auto& h : trackHeaders) {
         if (h->showIORouting)
             return true;
     }

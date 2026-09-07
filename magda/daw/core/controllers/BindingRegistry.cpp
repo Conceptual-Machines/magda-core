@@ -198,7 +198,7 @@ bool sourcesOverlap(const BindingSource& a, const BindingSource& b) {
 }
 
 bool isFocusedDeviceMacroResolver(const Target& t) {
-    if (auto* rr = std::get_if<ResolverRef>(&t))
+    if (const auto* rr = std::get_if<ResolverRef>(&t))
         return rr->kind == "focused.macro";
     return false;
 }
@@ -212,7 +212,7 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
 // (focused.macro and any future kinds) are profile-driven defaults and
 // do not count.
 bool isExplicitPluginParamTarget(const Target& t) {
-    if (auto* st = std::get_if<ControlTarget>(&t))
+    if (const auto* st = std::get_if<ControlTarget>(&t))
         return st->kind == ControlTarget::Kind::PluginParam;
     if (std::holds_alternative<AliasRef>(t))
         return true;
@@ -327,7 +327,7 @@ bool BindingRegistry::hasActiveStaticBindingForMacro(const ChainNodePath& device
                                                      int macroIndex) const {
     const auto check = [&](const std::vector<Binding>& vec) -> bool {
         const auto matchesMacro = [&](const Binding& b) {
-            auto* st = std::get_if<ControlTarget>(&b.target);
+            const auto* st = std::get_if<ControlTarget>(&b.target);
             return st != nullptr && st->kind == ControlTarget::Kind::DeviceMacro &&
                    st->devicePath == devicePath && st->paramIndex == macroIndex;
         };
@@ -341,7 +341,7 @@ int BindingRegistry::removeStaticBindingsForMacro(const ChainNodePath& devicePat
     std::vector<BindingId> toRemoveProject;
     auto collect = [&](const std::vector<Binding>& vec, std::vector<BindingId>& out) {
         for (const auto& b : vec) {
-            auto* st = std::get_if<ControlTarget>(&b.target);
+            const auto* st = std::get_if<ControlTarget>(&b.target);
             if (st == nullptr)
                 continue;
             if (st->kind != ControlTarget::Kind::DeviceMacro)

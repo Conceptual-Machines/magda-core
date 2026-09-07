@@ -138,7 +138,7 @@ std::string dumpParamTable(const ParamTable& table) {
 
         for (const auto& link : links) {
             std::ostringstream detail;
-            const auto source =
+            const auto* const source =
                 link.source.kind == ParamSourceRef::Kind::Parameter ? "param" : "mod";
             detail << "      <- " << source << "[" << rightAligned(link.source.index, 3) << "]"
                    << " amount=" << number(link.amount) << " bipolar=" << (link.bipolar ? 1 : 0);

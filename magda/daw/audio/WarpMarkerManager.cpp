@@ -227,7 +227,7 @@ void WarpMarkerManager::enableWarp(te::Edit& edit,
     double clipOffset = event->anchorSeconds();
 
     // Get cached transients from AudioThumbnailManager
-    auto* cachedTransients =
+    const auto* cachedTransients =
         AudioThumbnailManager::getInstance().getCachedTransients(event->sourceFilePath());
     DBG("WarpMarkerManager::enableWarp cachedTransients="
         << (cachedTransients ? juce::String(cachedTransients->size()) : "null")

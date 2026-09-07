@@ -102,7 +102,7 @@ juce::var emptyObjectSchema() {
 }
 
 juce::var arraySchema(const juce::var& itemSchema) {
-    auto schema = new juce::DynamicObject();
+    auto* schema = new juce::DynamicObject();
     schema->setProperty("type", "array");
     schema->setProperty("items", itemSchema);
     return schema;
@@ -890,12 +890,12 @@ juce::String toString(ErrorCode code) {
 }
 
 juce::var toJson(const Error& error) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("code", toString(error.code));
     object->setProperty("message", error.message);
     juce::Array<juce::var> issues;
     for (const auto& issue : error.issues) {
-        auto issueObject = new juce::DynamicObject();
+        auto* issueObject = new juce::DynamicObject();
         issueObject->setProperty("path", issue.path);
         issueObject->setProperty("code", issue.code);
         issueObject->setProperty("message", issue.message);
@@ -906,7 +906,7 @@ juce::var toJson(const Error& error) {
 }
 
 juce::var successEnvelope(const juce::var& result) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("ok", true);
     object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("result", result);
@@ -914,7 +914,7 @@ juce::var successEnvelope(const juce::var& result) {
 }
 
 juce::var errorEnvelope(const Error& error) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("ok", false);
     object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("error", toJson(error));
@@ -969,7 +969,7 @@ std::optional<Error> validateOperationInput(const OperationDescriptor& operation
 }
 
 juce::var toJson(const MidiNoteDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("note", dto.note);
     object->setProperty("velocity", dto.velocity);
     object->setProperty("startBeat", dto.startBeat);
@@ -978,7 +978,7 @@ juce::var toJson(const MidiNoteDto& dto) {
 }
 
 juce::var toJson(const ProjectDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("name", dto.name);
     object->setProperty("tempo", dto.tempo);
     object->setProperty("timeSignatureNumerator", dto.timeSignatureNumerator);
@@ -994,7 +994,7 @@ juce::var toJson(const ProjectDto& dto) {
 }
 
 juce::var toJson(const TrackDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("type", dto.type);
     object->setProperty("name", dto.name);
@@ -1015,7 +1015,7 @@ juce::var toJson(const TrackDto& dto) {
 }
 
 juce::var toJson(const ClipDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("type", dto.type);
@@ -1037,7 +1037,7 @@ juce::var toJson(const ClipDto& dto) {
 }
 
 juce::var toJson(const DeviceDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("rackId", nullableId(dto.rackId));
@@ -1053,7 +1053,7 @@ juce::var toJson(const DeviceDto& dto) {
 }
 
 juce::var toJson(const ChainDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("rackId", dto.rackId);
     object->setProperty("name", dto.name);
@@ -1069,7 +1069,7 @@ juce::var toJson(const ChainDto& dto) {
 }
 
 juce::var toJson(const RackDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("trackId", dto.trackId);
     object->setProperty("parentRackId", nullableId(dto.parentRackId));
@@ -1083,7 +1083,7 @@ juce::var toJson(const RackDto& dto) {
 }
 
 juce::var toJson(const DeviceGraphDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     juce::Array<juce::var> devices;
     juce::Array<juce::var> racks;
     juce::Array<juce::var> chains;
@@ -1100,7 +1100,7 @@ juce::var toJson(const DeviceGraphDto& dto) {
 }
 
 juce::var toJson(const DeviceCatalogEntryDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("catalogId", dto.catalogId);
     object->setProperty("name", dto.name);
     object->setProperty("manufacturer", dto.manufacturer);
@@ -1113,7 +1113,7 @@ juce::var toJson(const DeviceCatalogEntryDto& dto) {
 }
 
 juce::var toJson(const DeviceParameterDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("index", dto.index);
     object->setProperty("stableId", dto.stableId);
     object->setProperty("name", dto.name);
@@ -1135,7 +1135,7 @@ juce::var toJson(const DeviceParameterDto& dto) {
 }
 
 juce::var toJson(const SelectionDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("trackId", nullableId(dto.trackId));
     object->setProperty("clipId", nullableId(dto.clipId));
     object->setProperty("clipIds", integerArray(dto.clipIds));
@@ -1147,7 +1147,7 @@ juce::var toJson(const SelectionDto& dto) {
 }
 
 juce::var toJson(const TransportDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("playing", dto.playing);
     object->setProperty("recording", dto.recording);
     object->setProperty("loopEnabled", dto.loopEnabled);
@@ -1156,7 +1156,7 @@ juce::var toJson(const TransportDto& dto) {
 }
 
 juce::var toJson(const SessionSlotDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("trackId", dto.trackId);
     object->setProperty("sceneIndex", dto.sceneIndex);
     object->setProperty("clipId", dto.clipId);
@@ -1165,7 +1165,7 @@ juce::var toJson(const SessionSlotDto& dto) {
 }
 
 juce::var toJson(const SessionDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     juce::Array<juce::var> slots;
     for (const auto& slot : dto.slots)
         slots.add(toJson(slot));
@@ -1174,7 +1174,7 @@ juce::var toJson(const SessionDto& dto) {
 }
 
 juce::var toJson(const AutomationPointDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("beatPosition", dto.beatPosition);
     object->setProperty("value", dto.value);
@@ -1183,7 +1183,7 @@ juce::var toJson(const AutomationPointDto& dto) {
 }
 
 juce::var toJson(const DevicePathDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("trackId", dto.trackId);
     object->setProperty("section", dto.section);
     object->setProperty("trackLevel", dto.trackLevel);
@@ -1201,7 +1201,7 @@ juce::var toJson(const DevicePathDto& dto) {
 }
 
 juce::var toJson(const AutomationTargetDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("kind", dto.kind);
     object->setProperty("devicePath",
                         dto.devicePath.has_value() ? toJson(*dto.devicePath) : juce::var());
@@ -1213,7 +1213,7 @@ juce::var toJson(const AutomationTargetDto& dto) {
 }
 
 juce::var toJson(const AutomationLaneDto& dto) {
-    auto object = new juce::DynamicObject();
+    auto* object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
     object->setProperty("type", dto.type);
     object->setProperty("name", dto.name);
@@ -2215,11 +2215,11 @@ const OperationDescriptor* OperationRegistry::find(const juce::String& name) con
 }
 
 juce::var OperationRegistry::describe() const {
-    auto result = new juce::DynamicObject();
+    auto* result = new juce::DynamicObject();
     result->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     juce::Array<juce::var> operations;
     for (const auto& operation : operations_) {
-        auto object = new juce::DynamicObject();
+        auto* object = new juce::DynamicObject();
         object->setProperty("name", operation.name);
         object->setProperty("summary", operation.summary);
         object->setProperty("access", operation.access == OperationAccess::Read ? "read" : "write");

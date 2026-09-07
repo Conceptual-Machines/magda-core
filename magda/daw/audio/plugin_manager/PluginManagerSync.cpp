@@ -253,13 +253,15 @@ bool savedPluginStateMatchesRequestedType(const juce::ValueTree& savedState,
     if (savedType.equalsIgnoreCase(requestedType))
         return true;
 
-    if (auto* requestedCompiled = daw::audio::compiled::findCompiledPluginSpec(requestedType)) {
-        auto* savedCompiled = daw::audio::compiled::findCompiledPluginSpec(savedType);
+    if (const auto* requestedCompiled =
+            daw::audio::compiled::findCompiledPluginSpec(requestedType)) {
+        const auto* savedCompiled = daw::audio::compiled::findCompiledPluginSpec(savedType);
         return savedCompiled == requestedCompiled;
     }
 
-    if (auto* requestedInternal = daw::audio::findInternalPluginSpecForLoadType(requestedType)) {
-        auto* savedInternal = daw::audio::findInternalPluginSpecForLoadType(savedType);
+    if (const auto* requestedInternal =
+            daw::audio::findInternalPluginSpecForLoadType(requestedType)) {
+        const auto* savedInternal = daw::audio::findInternalPluginSpecForLoadType(savedType);
         return savedInternal == requestedInternal;
     }
 
@@ -759,7 +761,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
     syncDeviceModifiers(trackId, teTrack->getModifierList(),
                         &teTrack->getMacroParameterListForWriting(),
                         [teTrack](const std::function<void(te::Plugin*)>& visit) {
-                            for (auto plugin : teTrack->pluginList) {
+                            for (auto* plugin : teTrack->pluginList) {
                                 if (plugin)
                                     visit(plugin);
                             }
@@ -1107,13 +1109,13 @@ te::Plugin::Ptr PluginManager::loadBuiltInPlugin(TrackId trackId, const juce::St
 
     te::Plugin::Ptr plugin;
 
-    if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
+    if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
         juce::ValueTree pluginState(te::IDs::PLUGIN);
         pluginState.setProperty(te::IDs::type, spec->pluginId, nullptr);
         plugin = edit_.getPluginCache().createNewPlugin(pluginState);
         if (plugin)
             track->pluginList.insertPlugin(plugin, -1, nullptr);
-    } else if (auto* spec = daw::audio::findInternalPluginSpecForLoadType(type)) {
+    } else if (const auto* spec = daw::audio::findInternalPluginSpecForLoadType(type)) {
         if (spec->canCreateOnTrack) {
             plugin = daw::audio::tracktion_adapter::createInternalPlugin(*spec, edit_);
             if (plugin)
@@ -1377,7 +1379,7 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
     // appendStripOrder could not show, because it can only order plugins that
     // are already there.
     std::vector<int> existingSendBuses;
-    for (auto i : track.pluginList)
+    for (auto* i : track.pluginList)
         if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(i))
             existingSendBuses.push_back(auxSend->getBusNumber());
 
@@ -1413,7 +1415,7 @@ void PluginManager::reconcileSends(const TrackInfo& trackInfo, te::AudioTrack& t
     }
 
     for (const auto& send : trackInfo.sends) {
-        for (auto i : track.pluginList) {
+        for (auto* i : track.pluginList) {
             if (auto* auxSend = dynamic_cast<te::AuxSendPlugin*>(i);
                 auxSend != nullptr && auxSend->getBusNumber() == send.busIndex) {
                 auxSend->setGainDb(juce::Decibels::gainToDecibels(send.level));
@@ -1467,7 +1469,7 @@ void PluginManager::appendStripOrder(TrackId trackId, const TrackInfo& trackInfo
                 auto* aux = dynamic_cast<te::AuxSendPlugin*>(p);
                 return aux != nullptr && aux->getBusNumber() == busIndex;
             };
-            const auto found = std::ranges::find_if(track.pluginList, matchesBus);
+            auto* const found = std::ranges::find_if(track.pluginList, matchesBus);
             if (found != track.pluginList.end())
                 desiredOrder.push_back(*found);
         }
@@ -1527,7 +1529,7 @@ void PluginManager::ensureVolumePluginPosition(TrackId trackId, te::AudioTrack* 
     const auto isPostFader = [volPanRaw, &postFaderPlugins](auto* p) {
         return p != volPanRaw && postFaderPlugins.count(p) != 0;
     };
-    const auto firstPostFaderIt = std::ranges::find_if(plugins, isPostFader);
+    auto* const firstPostFaderIt = std::ranges::find_if(plugins, isPostFader);
     const int firstPostFader =
         firstPostFaderIt == plugins.end() ? -1 : plugins.indexOf(*firstPostFaderIt);
 
@@ -1593,7 +1595,7 @@ std::unordered_set<te::Plugin*> PluginManager::collectPostFaderPlugins(
     for (const auto& send : trackInfo->sends) {
         if (send.preFader)
             continue;
-        for (auto i : track.pluginList)
+        for (auto* i : track.pluginList)
             if (auto* aux = dynamic_cast<te::AuxSendPlugin*>(i);
                 aux != nullptr && aux->getBusNumber() == send.busIndex)
                 result.insert(aux);
@@ -1920,7 +1922,7 @@ void PluginManager::syncMasterPlugins() {
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         std::vector<te::Plugin*> scopePlugins;
         scopePlugins.reserve(masterList.size());
-        for (auto plugin : masterList) {
+        for (auto* plugin : masterList) {
             if (plugin)
                 scopePlugins.push_back(plugin);
         }
@@ -2099,9 +2101,10 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
     if (device.format == PluginFormat::Internal) {
         const auto& ps = device.pluginState;
 
-        if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
+        if (const auto* compiledSpec =
+                daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
             plugin = createInternalPlugin(compiledSpec->pluginId, ps);
-        } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
+        } else if (const auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateDetached)
                 plugin =
                     daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_, ps);
@@ -2261,11 +2264,12 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
     std::unique_ptr<DeviceProcessor> processor;
 
     if (device.format == PluginFormat::Internal) {
-        if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
+        if (const auto* compiledSpec =
+                daw::audio::compiled::findCompiledPluginSpec(device.pluginId)) {
             plugin = createInternalPlugin(compiledSpec->pluginId, device.pluginState);
             if (plugin)
                 track->pluginList.insertPlugin(plugin, insertIndex, nullptr);
-        } else if (auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
+        } else if (const auto* internalSpec = daw::audio::findInternalPluginSpec(device.pluginId)) {
             if (internalSpec->canCreateOnTrack) {
                 plugin = daw::audio::tracktion_adapter::createInternalPlugin(*internalSpec, edit_,
                                                                              device.pluginState);

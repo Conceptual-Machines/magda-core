@@ -99,7 +99,7 @@ template <typename DeviceType> const DeviceType* deviceFromPlugin(const te::Plug
     if (auto* device = dynamic_cast<const DeviceType*>(plugin))
         return device;
 
-    auto* adapter = dynamic_cast<const TracktionMagdaDevicePlugin*>(plugin);
+    const auto* adapter = dynamic_cast<const TracktionMagdaDevicePlugin*>(plugin);
     return adapter != nullptr ? dynamic_cast<const DeviceType*>(&adapter->device()) : nullptr;
 }
 

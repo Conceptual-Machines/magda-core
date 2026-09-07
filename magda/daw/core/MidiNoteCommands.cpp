@@ -246,12 +246,12 @@ void MoveMidiNoteCommand::undo() {
 }
 
 bool MoveMidiNoteCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherMove = dynamic_cast<const MoveMidiNoteCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveMidiNoteCommand*>(other);
     return otherMove && otherMove->clipId_ == clipId_ && otherMove->noteIndex_ == noteIndex_;
 }
 
 void MoveMidiNoteCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherMove = dynamic_cast<const MoveMidiNoteCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveMidiNoteCommand*>(other);
     if (otherMove) {
         newStartBeat_ = otherMove->newStartBeat_;
         newNoteNumber_ = otherMove->newNoteNumber_;
@@ -308,12 +308,12 @@ void ResizeMidiNoteCommand::undo() {
 }
 
 bool ResizeMidiNoteCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherResize = dynamic_cast<const ResizeMidiNoteCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeMidiNoteCommand*>(other);
     return otherResize && otherResize->clipId_ == clipId_ && otherResize->noteIndex_ == noteIndex_;
 }
 
 void ResizeMidiNoteCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherResize = dynamic_cast<const ResizeMidiNoteCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeMidiNoteCommand*>(other);
     if (otherResize) {
         newLengthBeats_ = otherResize->newLengthBeats_;
     }
@@ -411,13 +411,13 @@ void SetMidiNoteVelocityCommand::undo() {
 }
 
 bool SetMidiNoteVelocityCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherVelocity = dynamic_cast<const SetMidiNoteVelocityCommand*>(other);
+    const auto* otherVelocity = dynamic_cast<const SetMidiNoteVelocityCommand*>(other);
     return otherVelocity && otherVelocity->clipId_ == clipId_ &&
            otherVelocity->noteIndex_ == noteIndex_;
 }
 
 void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherVelocity = dynamic_cast<const SetMidiNoteVelocityCommand*>(other);
+    const auto* otherVelocity = dynamic_cast<const SetMidiNoteVelocityCommand*>(other);
     if (otherVelocity) {
         newVelocity_ = otherVelocity->newVelocity_;
     }
@@ -470,7 +470,7 @@ void SetMultipleMidiNoteVelocitiesCommand::undo() {
 }
 
 bool SetMultipleMidiNoteVelocitiesCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
+    const auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
     if (!o || o->clipId_ != clipId_ || o->entries_.size() != entries_.size())
         return false;
     // Same note set (same order, which the gesture builds deterministically).
@@ -478,7 +478,7 @@ bool SetMultipleMidiNoteVelocitiesCommand::canMergeWith(const UndoableCommand* o
 }
 
 void SetMultipleMidiNoteVelocitiesCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
+    const auto* o = dynamic_cast<const SetMultipleMidiNoteVelocitiesCommand*>(other);
     if (!o || o->entries_.size() != entries_.size())
         return;
     // Keep our captured old velocities; adopt the newer target velocities.
@@ -1131,12 +1131,12 @@ void TransposeMidiClipCommand::undo() {
 }
 
 bool TransposeMidiClipCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
+    const auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
     return otherTranspose && otherTranspose->clipId_ == clipId_;
 }
 
 void TransposeMidiClipCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
+    const auto* otherTranspose = dynamic_cast<const TransposeMidiClipCommand*>(other);
     if (otherTranspose) {
         semitones_ += otherTranspose->semitones_;
     }
@@ -1208,12 +1208,12 @@ void EditMidiCCEventCommand::undo() {
 }
 
 bool EditMidiCCEventCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
+    const auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void EditMidiCCEventCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
+    const auto* o = dynamic_cast<const EditMidiCCEventCommand*>(other);
     if (o)
         newValue_ = o->newValue_;
 }
@@ -1335,12 +1335,12 @@ void MoveMidiCCEventCommand::undo() {
 }
 
 bool MoveMidiCCEventCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
+    const auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void MoveMidiCCEventCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
+    const auto* o = dynamic_cast<const MoveMidiCCEventCommand*>(other);
     if (o) {
         newBeatPosition_ = o->newBeatPosition_;
         newValue_ = o->newValue_;
@@ -1390,12 +1390,12 @@ void MoveMidiPitchBendEventCommand::undo() {
 }
 
 bool MoveMidiPitchBendEventCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
+    const auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void MoveMidiPitchBendEventCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
+    const auto* o = dynamic_cast<const MoveMidiPitchBendEventCommand*>(other);
     if (o) {
         newBeatPosition_ = o->newBeatPosition_;
         newValue_ = o->newValue_;
@@ -1524,12 +1524,12 @@ void EditMidiPitchBendEventCommand::undo() {
 }
 
 bool EditMidiPitchBendEventCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
+    const auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void EditMidiPitchBendEventCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
+    const auto* o = dynamic_cast<const EditMidiPitchBendEventCommand*>(other);
     if (o)
         newValue_ = o->newValue_;
 }
@@ -1694,12 +1694,12 @@ void SetMidiCCEventTensionCommand::undo() {
 }
 
 bool SetMidiCCEventTensionCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
+    const auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void SetMidiCCEventTensionCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
+    const auto* o = dynamic_cast<const SetMidiCCEventTensionCommand*>(other);
     if (o)
         newTension_ = o->newTension_;
 }
@@ -1765,12 +1765,12 @@ void SetMidiPitchBendEventTensionCommand::undo() {
 }
 
 bool SetMidiPitchBendEventTensionCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
+    const auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
     return o && o->clipId_ == clipId_ && o->eventIndex_ == eventIndex_;
 }
 
 void SetMidiPitchBendEventTensionCommand::mergeWith(const UndoableCommand* other) {
-    auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
+    const auto* o = dynamic_cast<const SetMidiPitchBendEventTensionCommand*>(other);
     if (o)
         newTension_ = o->newTension_;
 }

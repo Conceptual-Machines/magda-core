@@ -4,7 +4,7 @@ namespace magda {
 
 std::string TracktionEngineWrapper::addMidiClip(const std::string& track_id, double start_time,
                                                 double length, const std::vector<MidiNote>& notes) {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (!track || !currentEdit_) {
         DBG("addMidiClip: Track not found or no edit: " << track_id);
         return "";
@@ -287,7 +287,7 @@ std::vector<MidiNote> TracktionEngineWrapper::getMidiClipNotes(const std::string
 }
 
 std::vector<std::string> TracktionEngineWrapper::getTrackClips(const std::string& track_id) const {
-    auto track = findTrackById(track_id);
+    auto* track = findTrackById(track_id);
     if (!track) {
         DBG("getTrackClips: Track not found: " << track_id);
         return {};

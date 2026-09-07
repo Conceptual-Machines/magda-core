@@ -434,7 +434,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
     }
 
     void addListEntry(const std::string& providerId) {
-        auto* info = findProviderInfo(providerId);
+        const auto* info = findProviderInfo(providerId);
         if (!info)
             return;
 
@@ -509,7 +509,7 @@ class AISettingsDialog::CloudPage : public juce::Component {
             return;
         }
 
-        auto* info = findProviderInfo(providerId);
+        const auto* info = findProviderInfo(providerId);
         if (!info)
             return;
 
@@ -1142,7 +1142,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         int nextId = 1;
         if (cloudPage) {
             for (const auto& pid : cloudPage->getConfiguredProviders()) {
-                auto* info = findProviderInfo(pid);
+                const auto* info = findProviderInfo(pid);
                 if (info)
                     providerCombo_.addItem(info->displayName, nextId++);
             }
@@ -1168,7 +1168,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         std::vector<std::pair<std::string, juce::String>> opts;
         if (cloudPage) {
             for (const auto& pid : cloudPage->getConfiguredProviders())
-                if (auto* info = findProviderInfo(pid))
+                if (const auto* info = findProviderInfo(pid))
                     opts.emplace_back(pid, juce::String(info->displayName));
         }
         opts.emplace_back(magda::provider::LLAMA_LOCAL, juce::String("Local"));
@@ -1558,13 +1558,13 @@ class AISettingsDialog::ConfigPage : public juce::Component {
             // Local: embedded GGUF or OpenAI-compatible server.
             outPresetId = (localSourceCombo_.getSelectedId() == 2) ? magda::preset::LOCAL_SERVER
                                                                    : magda::preset::LOCAL_EMBEDDED;
-            if (auto* preset = magda::findPreset(outPresetId))
+            if (const auto* preset = magda::findPreset(outPresetId))
                 for (const auto& [role, cfg] : preset->agents)
                     out[role] = cfg;
         } else if (mode == 2) {
             // Cloud
             outPresetId = presetId;
-            if (auto* preset = magda::findPreset(presetId)) {
+            if (const auto* preset = magda::findPreset(presetId)) {
                 for (const auto& [role, presetCfg] : preset->agents) {
                     auto cfg = presetCfg;
                     cfg.apiKey = "";
@@ -1672,7 +1672,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
 
     static Config::AgentLLMConfig makeCloudConfig(const std::string& role,
                                                   const std::string& presetId) {
-        if (auto* preset = magda::findPreset(presetId)) {
+        if (const auto* preset = magda::findPreset(presetId)) {
             auto it = preset->agents.find(role);
             if (it != preset->agents.end()) {
                 auto cfg = it->second;

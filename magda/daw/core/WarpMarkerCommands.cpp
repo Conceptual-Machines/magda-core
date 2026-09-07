@@ -59,7 +59,7 @@ void MoveWarpMarkerCommand::undo() {
 }
 
 bool MoveWarpMarkerCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other);
     if (!otherMove)
         return false;
 
@@ -68,7 +68,7 @@ bool MoveWarpMarkerCommand::canMergeWith(const UndoableCommand* other) const {
 }
 
 void MoveWarpMarkerCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveWarpMarkerCommand*>(other);
     if (otherMove) {
         // Keep our oldWarpTime_, update newWarpTime_ to the latest
         newWarpTime_ = otherMove->newWarpTime_;

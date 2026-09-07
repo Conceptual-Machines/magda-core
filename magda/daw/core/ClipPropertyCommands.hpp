@@ -113,7 +113,7 @@ class SetClipOffsetCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipOffsetCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipOffsetCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -165,7 +165,7 @@ class SetClipLoopPhaseCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLoopPhaseCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLoopPhaseCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -205,12 +205,12 @@ class SetClipLoopStartCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLoopStartCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLoopStartCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetClipLoopStartCommand*>(other);
+        const auto* o = static_cast<const SetClipLoopStartCommand*>(other);
         newLoopStart_ = o->newLoopStart_;
         bpm_ = o->bpm_;
     }
@@ -244,12 +244,12 @@ class SetClipLoopLengthCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLoopLengthCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLoopLengthCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetClipLoopLengthCommand*>(other);
+        const auto* o = static_cast<const SetClipLoopLengthCommand*>(other);
         newLoopLength_ = o->newLoopLength_;
         bpm_ = o->bpm_;
     }
@@ -280,12 +280,12 @@ class SetMidiClipLoopStartBeatsCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetMidiClipLoopStartBeatsCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetMidiClipLoopStartBeatsCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetMidiClipLoopStartBeatsCommand*>(other);
+        const auto* o = static_cast<const SetMidiClipLoopStartBeatsCommand*>(other);
         newLoopStartBeats_ = o->newLoopStartBeats_;
         bpm_ = o->bpm_;
     }
@@ -316,12 +316,12 @@ class SetMidiClipLoopLengthBeatsCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetMidiClipLoopLengthBeatsCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetMidiClipLoopLengthBeatsCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetMidiClipLoopLengthBeatsCommand*>(other);
+        const auto* o = static_cast<const SetMidiClipLoopLengthBeatsCommand*>(other);
         newLoopLengthBeats_ = o->newLoopLengthBeats_;
         bpm_ = o->bpm_;
     }
@@ -370,12 +370,12 @@ class SetClipLoopRangeCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLoopRangeCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLoopRangeCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetClipLoopRangeCommand*>(other);
+        const auto* o = static_cast<const SetClipLoopRangeCommand*>(other);
         newLoopStart_ = o->newLoopStart_;
         newLoopLength_ = o->newLoopLength_;
         bpm_ = o->bpm_;
@@ -412,7 +412,7 @@ class SetClipPitchCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipPitchCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipPitchCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -449,7 +449,7 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipSpeedRatioCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipSpeedRatioCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -511,7 +511,7 @@ class SetClipVolumeDBCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipVolumeDBCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipVolumeDBCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -546,7 +546,7 @@ class SetClipGainDBCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipGainDBCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipGainDBCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -581,7 +581,7 @@ class SetClipPanCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipPanCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipPanCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -645,7 +645,7 @@ class SetClipFadeInCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipFadeInCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipFadeInCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -682,7 +682,7 @@ class SetClipFadeOutCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipFadeOutCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipFadeOutCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -718,7 +718,7 @@ class SetClipLaunchFadeSamplesCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLaunchFadeSamplesCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLaunchFadeSamplesCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -754,12 +754,12 @@ class SetClipLengthBeatsCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipLengthBeatsCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipLengthBeatsCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetClipLengthBeatsCommand*>(other);
+        const auto* o = static_cast<const SetClipLengthBeatsCommand*>(other);
         newBeats_ = o->newBeats_;
         bpm_ = o->bpm_;
     }
@@ -957,7 +957,7 @@ class SetClipGrooveStrengthCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetClipGrooveStrengthCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetClipGrooveStrengthCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }

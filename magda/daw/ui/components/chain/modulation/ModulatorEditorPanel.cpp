@@ -1712,27 +1712,29 @@ void ModulatorEditorPanel::mouseDown(const juce::MouseEvent& e) {
 
             if (lmm.getLinkModeType() == magda::LinkModeType::Macro) {
                 const auto& sel = lmm.getMacroInLinkMode();
-                if (auto* macros = findMacrosAt(sel.parentPath)) {
+                if (const auto* macros = findMacrosAt(sel.parentPath)) {
                     if (sel.macroIndex >= 0 && sel.macroIndex < static_cast<int>(macros->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
                         t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
-                        if (auto* link = (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
+                        if (const auto* link =
+                                (*macros)[static_cast<size_t>(sel.macroIndex)].getLink(t))
                             initialAmount = link->amount;
                     }
                 }
             } else if (lmm.getLinkModeType() == magda::LinkModeType::Mod) {
                 const auto& sel = lmm.getModInLinkMode();
-                if (auto* mods = findModsAt(sel.parentPath)) {
+                if (const auto* mods = findModsAt(sel.parentPath)) {
                     if (sel.modIndex >= 0 && sel.modIndex < static_cast<int>(mods->size())) {
                         magda::ControlTarget t;
                         t.kind = magda::ControlTarget::Kind::ModParam;
                         t.devicePath = ownerDevicePath_;
                         t.modId = currentMod_.id;
                         t.modParamIndex = 0;
-                        if (auto* link = (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
+                        if (const auto* link =
+                                (*mods)[static_cast<size_t>(sel.modIndex)].getLink(t))
                             initialAmount = link->amount;
                     }
                 }

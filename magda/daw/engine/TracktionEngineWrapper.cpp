@@ -120,7 +120,7 @@ std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaRefere
                               }});
     };
 
-    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, true)) {
+    for (auto* plugin : tracktion::getAllPlugins(*currentEdit_, true)) {
         addSampler(plugin);
         if (auto* drumGrid = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
             for (const auto& chain : drumGrid->getChains())

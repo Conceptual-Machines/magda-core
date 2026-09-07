@@ -9,7 +9,7 @@ const char* SidechainMonitorPlugin::xmlTypeName = "midisidechainmonitor";
 
 SidechainMonitorPlugin::SidechainMonitorPlugin(const te::PluginCreationInfo& info)
     : te::Plugin(info) {
-    auto um = getUndoManager();
+    auto* um = getUndoManager();
     sourceTrackIdValue.referTo(state, juce::Identifier("sourceTrackId"), um, INVALID_TRACK_ID);
     sourceTrackId_ = sourceTrackIdValue.get();
 }

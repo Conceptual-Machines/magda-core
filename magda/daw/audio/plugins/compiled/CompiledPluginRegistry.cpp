@@ -80,7 +80,7 @@ const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
         return std::ranges::any_of(std::views::iota(0, std::max(0, spec->loadAliasCount)),
                                    matchesLoadAlias);
     };
-    const auto found = std::ranges::find_if(kAllSpecs, matchesSpec);
+    const auto* const found = std::ranges::find_if(kAllSpecs, matchesSpec);
     return found == std::end(kAllSpecs) ? nullptr : *found;
 }
 
