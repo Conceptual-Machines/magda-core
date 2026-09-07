@@ -33,12 +33,15 @@ void logDetector(const juce::String& msg) {
     f.appendText(msg + "\n");
 }
 
+// NOLINTBEGIN(bugprone-macro-parentheses) - the argument is streamed, so
+// parenthesising it would evaluate the << chain before it reaches the string
 #define DETECT_LOG(msg)                                                                            \
     do {                                                                                           \
         juce::String _s;                                                                           \
         _s << msg;                                                                                 \
         logDetector(_s);                                                                           \
     } while (0)
+// NOLINTEND(bugprone-macro-parentheses)
 
 // Strip leading numeric value from display text to extract unit suffix
 // e.g. "440.00 Hz" → "Hz", "-12.5 dB" → "dB", "50%" → "%"

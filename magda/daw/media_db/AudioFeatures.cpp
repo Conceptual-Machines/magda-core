@@ -301,6 +301,8 @@ SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, i
 
         if (analyseKey) {
             for (int bin = 1; bin < kFftBins; ++bin) {
+                // NOLINTNEXTLINE(bugprone-signed-char-misuse) - the sign carries the no-pitch-class
+                // sentinel
                 const int pitchClass = pitchClasses[bin];
                 if (pitchClass >= 0) {
                     chroma[static_cast<std::size_t>(pitchClass)] += fftData[bin];

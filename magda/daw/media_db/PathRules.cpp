@@ -301,6 +301,7 @@ std::optional<double> parseBpmFromPath(const std::filesystem::path& path) {
             if (bpm >= 30.0 && bpm <= 300.0) {
                 result = bpm;  // last sensible match wins
             }
+            // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
         } catch (...) {
             // unparseable group, ignore
         }

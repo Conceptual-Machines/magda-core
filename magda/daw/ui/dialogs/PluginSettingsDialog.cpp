@@ -80,6 +80,8 @@ void PluginSettingsDialog::ExcludedTableModel::paintCell(juce::Graphics& g, int 
         case 3:
             text = entry.timestamp;
             break;
+        default:  // dismissed, or a column with no text
+            break;
     }
 
     g.drawText(text, 4, 0, width - 8, height, juce::Justification::centredLeft);

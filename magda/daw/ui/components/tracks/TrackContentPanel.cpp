@@ -2197,6 +2197,8 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
                 if (safeThis && safeThis->onPasteRippleRequested)
                     safeThis->onPasteRippleRequested();
                 break;
+            default:  // menu dismissed
+                break;
         }
     });
 }

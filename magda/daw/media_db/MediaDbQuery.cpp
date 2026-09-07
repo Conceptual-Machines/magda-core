@@ -631,6 +631,7 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
                 if (!qvec.empty()) {
                     audio = audioScoresOnCandidates(sql, qvec, cosineCandidates);
                 }
+                // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
             } catch (const ClapTextEncoderError&) {
                 // Treat semantic side as unavailable for this query.
             }

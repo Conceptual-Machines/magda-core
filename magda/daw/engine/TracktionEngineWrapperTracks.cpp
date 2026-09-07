@@ -47,6 +47,7 @@ void TracktionEngineWrapper::deleteTrack(const std::string& track_id) {
             auto magdaTrackId = static_cast<TrackId>(std::stoi(track_id));
             recordingPreviews_.erase(magdaTrackId);
             sessionSlotRecordingTargets_.erase(magdaTrackId);
+            // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
         } catch (const std::exception&) {
             // Non-numeric id: no MAGDA-keyed state to clean up.
         }

@@ -1422,6 +1422,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
             const int low = op.noteGateLow;
             const int high = op.noteGateHigh;
+            // NOLINTNEXTLINE(bugprone-signed-char-misuse) - the sign carries a downward transpose
             const int transpose = op.noteGateTranspose;
 
             for (const auto metadata : midiIn(op.inputs[0])) {

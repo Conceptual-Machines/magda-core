@@ -490,6 +490,8 @@ class PlanExecutor {
     /// Where an op's output port keeps its buffer. Ports are flattened in
     /// op order so a PortRef resolves with two array reads and no branching.
     int slotFor(const PortRef& ref) const {
+        // NOLINTNEXTLINE(bugprone-misplaced-widening-cast) - port offsets are bounded by the plan
+        // size
         return portSlots_[static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)] +
                                                    ref.port)];
     }

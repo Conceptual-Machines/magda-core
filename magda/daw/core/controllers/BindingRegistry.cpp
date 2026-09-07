@@ -23,6 +23,8 @@ static std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& 
     return scope == BindingScope::Global ? global : project;
 }
 
+// NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter) - the only caller
+// passes long-lived members, never a temporary
 static const std::vector<Binding>& scopeVecConst(BindingScope scope,
                                                  const std::vector<Binding>& global,
                                                  const std::vector<Binding>& project) {
