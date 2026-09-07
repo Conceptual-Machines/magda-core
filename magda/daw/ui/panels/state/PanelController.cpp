@@ -187,7 +187,7 @@ void PanelController::addListener(PanelStateListener* listener) {
 }
 
 void PanelController::removeListener(PanelStateListener* listener) {
-    listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+    std::erase(listeners_, listener);
 }
 
 void PanelController::notifyPanelChanged(PanelLocation location) {

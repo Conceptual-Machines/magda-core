@@ -28,7 +28,7 @@ void PrefetchThread::add(PrefetchStream& stream) {
 
 void PrefetchThread::remove(PrefetchStream& stream) {
     const std::scoped_lock guard(lock_);
-    streams_.erase(std::remove(streams_.begin(), streams_.end(), &stream), streams_.end());
+    std::erase(streams_, &stream);
 }
 
 std::size_t PrefetchThread::streamCount() const {

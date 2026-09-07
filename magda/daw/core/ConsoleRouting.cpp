@@ -12,9 +12,8 @@ using Provider = AgentContextProvider;
 std::string normalizedAlias(std::string alias) {
     std::transform(alias.begin(), alias.end(), alias.begin(),
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-    alias.erase(std::remove_if(alias.begin(), alias.end(),
-                               [](unsigned char c) { return std::isspace(c) != 0; }),
-                alias.end());
+    const auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
+    std::erase_if(alias, isSpace);
     if (!alias.empty() && (alias.front() == '@' || alias.front() == '/'))
         alias.erase(alias.begin());
     return alias;

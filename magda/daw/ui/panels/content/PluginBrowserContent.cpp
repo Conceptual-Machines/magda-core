@@ -1176,12 +1176,8 @@ void PluginBrowserContent::renameFolder(const juce::String& oldName, const juce:
 void PluginBrowserContent::deleteFolder(const juce::String& name) {
     folderNames_.removeString(name);
     // Its plugins fall back to Unfiled.
-    for (auto it = pluginFolderByKey_.begin(); it != pluginFolderByKey_.end();) {
-        if (it->second == name)
-            it = pluginFolderByKey_.erase(it);
-        else
-            ++it;
-    }
+    const auto inFolder = [&](const auto& entry) { return entry.second == name; };
+    std::erase_if(pluginFolderByKey_, inFolder);
     saveFolders();
     rebuildTree();
 }

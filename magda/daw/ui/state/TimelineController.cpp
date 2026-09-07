@@ -58,7 +58,7 @@ void TimelineController::addListener(TimelineStateListener* listener) {
 }
 
 void TimelineController::removeListener(TimelineStateListener* listener) {
-    listeners.erase(std::remove(listeners.begin(), listeners.end(), listener), listeners.end());
+    std::erase(listeners, listener);
 }
 
 void TimelineController::addAudioEngineListener(AudioEngineListener* listener) {
@@ -69,9 +69,7 @@ void TimelineController::addAudioEngineListener(AudioEngineListener* listener) {
 }
 
 void TimelineController::removeAudioEngineListener(AudioEngineListener* listener) {
-    audioEngineListeners.erase(
-        std::remove(audioEngineListeners.begin(), audioEngineListeners.end(), listener),
-        audioEngineListeners.end());
+    std::erase(audioEngineListeners, listener);
 }
 
 // ===== Zoom Event Handlers =====
@@ -1162,12 +1160,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMark
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMarkerEvent& e) {
-    auto oldSize = state.markers.size();
-    state.markers.erase(
-        std::remove_if(state.markers.begin(), state.markers.end(),
-                       [&](const TimelineMarker& marker) { return marker.id == e.markerId; }),
-        state.markers.end());
-    if (state.markers.size() == oldSize)
+    const auto matchesMarkerId = [&](const TimelineMarker& marker) {
+        return marker.id == e.markerId;
+    };
+    if (std::erase_if(state.markers, matchesMarkerId) == 0)
         return ChangeFlags::None;
 
     if (state.selectedMarkerId == e.markerId)

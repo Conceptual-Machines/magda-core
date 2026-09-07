@@ -952,7 +952,7 @@ void Builder::orderAndBreakCycles() {
 
     for (std::size_t target = 0; target < params; ++target) {
         auto& links = perParam_[target];
-        const auto removed = std::remove_if(links.begin(), links.end(), [&](const ParamLink& link) {
+        const auto linkInsideCycle = [&](const ParamLink& link) {
             const auto source = static_cast<std::size_t>(link.source.index);
             switch (link.source.kind) {
                 case ParamSourceRef::Kind::Parameter:
@@ -961,14 +961,14 @@ void Builder::orderAndBreakCycles() {
                     return source < mods && insideCycle(target, nodeForMod(source));
             }
             return false;
-        });
+        };
+        const auto removedCount = std::erase_if(links, linkInsideCycle);
 
-        if (removed == links.end())
+        if (removedCount == 0)
             continue;
 
         diagnose(toString(table_.keys[target]) +
                  ": part of a modulation cycle; the links inside it are dropped");
-        links.erase(removed, links.end());
     }
 
     // A modifier whose own rate is inside the cycle stops reading it and runs

@@ -520,8 +520,7 @@ class MediaExplorerContent::SidebarComponent : public juce::Component {
             if (result == 1) {
                 // Remove
                 auto favorites = magda::Config::getInstance().getBrowserFavorites();
-                favorites.erase(std::remove(favorites.begin(), favorites.end(), path),
-                                favorites.end());
+                std::erase(favorites, path);
                 magda::Config::getInstance().setBrowserFavorites(favorites);
                 magda::Config::getInstance().save();
                 rebuildFavoriteButtons();
@@ -2077,7 +2076,7 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
                                                         alreadyIndexed](int result) {
             if (result == 1) {
                 auto favs = magda::Config::getInstance().getBrowserFavorites();
-                favs.erase(std::remove(favs.begin(), favs.end(), path), favs.end());
+                std::erase(favs, path);
                 magda::Config::getInstance().setBrowserFavorites(favs);
                 magda::Config::getInstance().save();
                 sidebarComponent_->rebuildFavoriteButtons();

@@ -517,7 +517,7 @@ TrackId TrackManager::groupTracks(const std::vector<TrackId>& trackIds, const ju
 
         if (auto* parent = getTrack(parentGroupId)) {
             auto& siblings = parent->childIds;
-            siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+            std::erase(siblings, groupId);
 
             auto insertIt = siblings.end();
             if (parentInsertIndex >= 0) {
@@ -571,7 +571,7 @@ std::vector<TrackId> TrackManager::ungroupTrack(TrackId groupId) {
 
     if (auto* parent = getTrack(parentGroupId)) {
         auto& siblings = parent->childIds;
-        siblings.erase(std::remove(siblings.begin(), siblings.end(), groupId), siblings.end());
+        std::erase(siblings, groupId);
 
         auto insertIt = siblings.end();
         if (groupSiblingIndex >= 0) {
@@ -629,8 +629,7 @@ void TrackManager::deleteTrack(TrackId trackId) {
     // If this track has a parent, remove it from parent's children
     if (track->hasParent()) {
         if (auto* parent = getTrack(track->parentId)) {
-            auto& children = parent->childIds;
-            children.erase(std::remove(children.begin(), children.end(), trackId), children.end());
+            std::erase(parent->childIds, trackId);
         }
     }
 
@@ -653,12 +652,9 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 
     // Remove sends targeting this track from all other tracks
+    const auto sendsToTrack = [trackId](const SendInfo& s) { return s.destTrackId == trackId; };
     for (auto& t : tracks_) {
-        auto& sends = t.sends;
-        sends.erase(
-            std::remove_if(sends.begin(), sends.end(),
-                           [trackId](const SendInfo& s) { return s.destTrackId == trackId; }),
-            sends.end());
+        std::erase_if(t.sends, sendsToTrack);
     }
 
     // Clear internal track-input routing on tracks listening to this track.
@@ -1297,7 +1293,7 @@ void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
         if (count <= 1)
             return;
         const int pos = juce::jlimit(1, count, oneBasedPosition);
-        order.erase(std::remove(order.begin(), order.end(), trackId), order.end());
+        std::erase(order, trackId);
         const TrackId before = (pos - 1 < static_cast<int>(order.size()))
                                    ? order[static_cast<size_t>(pos - 1)]
                                    : INVALID_TRACK_ID;
@@ -1346,8 +1342,7 @@ void TrackManager::removeTrackFromGroup(TrackId trackId) {
         return;
 
     if (auto* parent = getTrack(track->parentId)) {
-        auto& children = parent->childIds;
-        children.erase(std::remove(children.begin(), children.end(), trackId), children.end());
+        std::erase(parent->childIds, trackId);
     }
 
     track->parentId = INVALID_TRACK_ID;
@@ -1934,10 +1929,8 @@ void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
         return;
     }
 
-    auto& sends = source->sends;
-    sends.erase(std::remove_if(sends.begin(), sends.end(),
-                               [busIndex](const SendInfo& s) { return s.busIndex == busIndex; }),
-                sends.end());
+    const auto sendOnBus = [busIndex](const SendInfo& s) { return s.busIndex == busIndex; };
+    std::erase_if(source->sends, sendOnBus);
 
     notifyTrackDevicesChanged(sourceTrackId);
 }
@@ -3287,8 +3280,7 @@ void TrackManager::removeListener(TrackManagerListener* listener) {
         std::replace(listeners_.begin(), listeners_.end(), listener,
                      static_cast<TrackManagerListener*>(nullptr));
     } else {
-        listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener),
-                         listeners_.end());
+        std::erase(listeners_, listener);
     }
 }
 

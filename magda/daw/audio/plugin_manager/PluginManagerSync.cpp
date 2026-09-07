@@ -339,6 +339,10 @@ void PluginManager::syncAllPlugins() {
         {
             juce::ScopedLock lock(pluginLock_);
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
+            // Not std::erase_if: scopePlugins below reads syncedDevices_ live, so an
+            // orphan removed earlier in this pass must already be gone from it before
+            // the next orphan's teardown runs. A pre-teardown pass would keep every
+            // orphan visible to every other orphan's scopePlugins, changing behaviour.
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
                 if (validDevicePaths.find(it->first) == validDevicePaths.end() &&
                     !isDrumGridPadPathLocked(it->first)) {
