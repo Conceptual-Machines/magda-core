@@ -617,8 +617,6 @@ void PluginManager::purgeStaleEntries() {
     {
         juce::ScopedLock lock(pluginLock_);
 
-        // Keep teardown and erasure in one pass: deferring snapshots moves ownership
-        // out of each entry before it is destroyed.
         // syncedDevices_ (consolidates all per-device maps)
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
         for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
