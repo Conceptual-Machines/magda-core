@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <thread>
 #include <vector>
 
@@ -56,7 +57,7 @@ class ProjectManagerListener {
  *
  * Handles new/open/save/close operations and tracks unsaved changes.
  */
-class ProjectManager : private juce::Timer {
+class ProjectManager {
   public:
     static ProjectManager& getInstance();
 
@@ -327,10 +328,11 @@ class ProjectManager : private juce::Timer {
     friend class UndoManager;
 
     ProjectManager();
-    ~ProjectManager() override;
+    ~ProjectManager();
 
     void joinBackgroundThread();
-    void timerCallback() override;
+    void startAutoSaveTimer(int intervalMs);
+    void autoSaveTick();
     void performAutosave();
     void deleteAutosaveFile();
 
@@ -344,6 +346,11 @@ class ProjectManager : private juce::Timer {
     bool autoSaveEnabled_ = true;
     int undoableMutationDepth_ = 0;
     std::uint64_t mutationRevision_ = 0;
+
+    /// Held rather than inherited, and made only when autosave starts: a
+    /// juce::Timer that lives as long as this singleton outlives the message
+    /// system it needs, and JUCE tears the two down in that order.
+    std::unique_ptr<juce::TimedCallback> autoSaveTimer_;
 
     std::vector<ProjectManagerListener*> listeners_;
     juce::String lastError_;

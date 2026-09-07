@@ -17,7 +17,7 @@ class CustomChannelSelector : public juce::Component {
                           AudioEngine* audioEngine);
     ~CustomChannelSelector() override;
 
-    void resized() override;
+    void resized() final;
     void paint(juce::Graphics& g) override;
     void updateFromDevice();
     void applyToDevice();

@@ -67,7 +67,10 @@ class DeviceCommandController {
     virtual ~DeviceCommandController() = default;
 
     virtual juce::var executeCommand(const juce::Identifier& command,
-                                     const juce::var& arguments = {}) = 0;
+                                     const juce::var& arguments) = 0;
+    juce::var executeCommand(const juce::Identifier& command) {
+        return executeCommand(command, {});
+    }
 };
 
 /**

@@ -414,8 +414,9 @@ MidiEditorContent::MidiEditorContent() {
         }
     }
 
-    // Initialize grid from clip settings (or auto-compute from zoom)
-    applyClipGridSettings();
+    // Initial grid resolution is applied by each subclass, once its own grid
+    // component exists — onGridResolutionChanged() is virtual, and this base
+    // constructor can't reach a derived override yet (#2391).
 }
 
 MidiEditorContent::~MidiEditorContent() {

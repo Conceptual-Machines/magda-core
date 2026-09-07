@@ -418,7 +418,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
 
     // TrackManagerListener
     void tracksChanged() override {}
-    void masterChannelChanged() override;
+    void masterChannelChanged() final;
 
     // AutomationManagerListener
     void automationLanesChanged() override;

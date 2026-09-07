@@ -32,7 +32,7 @@ class AutomationLaneComponent : public juce::Component,
     void paint(juce::Graphics& g) override;
     void paintOverChildren(juce::Graphics& g) override;
     void modifierKeysChanged(const juce::ModifierKeys& modifiers) override;
-    void resized() override;
+    void resized() final;
 
     // Mouse interaction
     void mouseDown(const juce::MouseEvent& e) override;

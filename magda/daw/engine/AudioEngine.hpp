@@ -98,8 +98,11 @@ struct SamplerMediaReference {
 class OfflineRenderTask {
   public:
     virtual ~OfflineRenderTask() = default;
-    virtual OfflineRenderResult run(const std::function<bool()>& shouldCancel = {},
-                                    const std::function<void(float)>& onProgress = {}) = 0;
+    virtual OfflineRenderResult run(const std::function<bool()>& shouldCancel,
+                                    const std::function<void(float)>& onProgress) = 0;
+    OfflineRenderResult run() {
+        return run({}, {});
+    }
 };
 
 /**
@@ -252,12 +255,11 @@ class AudioEngine : public AudioEngineListener {
     virtual void addPluginListChangeListener(juce::ChangeListener* listener) = 0;
     virtual void removePluginListChangeListener(juce::ChangeListener* listener) = 0;
     virtual void startPluginScan(
-        std::function<void(float, const juce::String&)> progressCallback = nullptr) = 0;
+        std::function<void(float, const juce::String&)> progressCallback) = 0;
     virtual void abortPluginScan() = 0;
     virtual void detectNewPlugins(
-        std::function<void(PluginScanPhase, const juce::String&)> statusCallback = nullptr,
-        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback =
-            nullptr) = 0;
+        std::function<void(PluginScanPhase, const juce::String&)> statusCallback,
+        std::function<void(bool, int, int, const juce::StringArray&)> completionCallback) = 0;
     virtual void setPluginScanCompletionCallback(
         std::function<void(bool, int, const juce::StringArray&)> callback) = 0;
     virtual bool isPluginScanRunning() const = 0;

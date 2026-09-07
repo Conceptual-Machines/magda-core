@@ -1052,7 +1052,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
         updateSetupUI();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         const int rowH = 28;
         const int labelW = 80;
@@ -1785,7 +1785,7 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         refreshStatus();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         const int rowH = 24;
         const int labelW = 110;
@@ -2410,7 +2410,7 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         updateVisiblePage();
     }
 
-    void resized() override {
+    void resized() final {
         auto bounds = getLocalBounds().reduced(12);
         auto categoryRow = bounds.removeFromTop(28);
         categoryLabel_.setBounds(categoryRow.removeFromLeft(80));

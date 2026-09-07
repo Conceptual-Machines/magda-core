@@ -98,7 +98,7 @@ class BarsBeatsTicksLabel : public juce::Component {
 
     // Component overrides
     void paint(juce::Graphics& g) override;
-    void resized() override;
+    void resized() final;
 
   private:
     // Width each segment needs for the digits it is showing right now; the

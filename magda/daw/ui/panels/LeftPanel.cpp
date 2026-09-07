@@ -6,6 +6,7 @@ namespace magda {
 
 LeftPanel::LeftPanel() : TabbedPanel(daw::ui::PanelLocation::Right) {
     setName("Left Panel");
+    completeConstruction();
 }
 
 void LeftPanel::setCollapsed(bool collapsed) {

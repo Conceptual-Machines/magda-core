@@ -269,6 +269,11 @@ BottomPanel::BottomPanel() : TabbedPanel(daw::ui::PanelLocation::Bottom) {
     // Create header controls
     setupHeaderControls();
 
+    // All header members the overrides below depend on now exist, so this is
+    // the earliest safe point to activate content — updateContentBasedOnSelection()
+    // relies on getActiveContent() already being valid (#2391).
+    completeConstruction();
+
     // Register as listener for selection changes
     ClipManager::getInstance().addListener(this);
     TrackManager::getInstance().addListener(this);

@@ -2386,6 +2386,9 @@ DrumGridClipContent::DrumGridClipContent() {
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         setClip(editingClipId_);
     }
+
+    // Deferred from the base constructor: needs gridComponent_ to exist (#2391).
+    applyClipGridSettings();
 }
 
 DrumGridClipContent::~DrumGridClipContent() {
