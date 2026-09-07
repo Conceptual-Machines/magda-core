@@ -364,8 +364,7 @@ void AutomationManager::convertLaneToAbsolute(AutomationLaneId laneId) {
         *lane, [this](AutomationClipId clipId) { return getClip(clipId); },
         [this, laneId](double beat) { return getValueAtBeat(laneId, beat); });
 
-    const auto clipOnLane = [laneId](const AutomationClipInfo& c) { return c.laneId == laneId; };
-    std::erase_if(clips_, clipOnLane);
+    std::erase_if(clips_, [laneId](const AutomationClipInfo& c) { return c.laneId == laneId; });
     lane->clipIds.clear();
     lane->type = AutomationLaneType::Absolute;
     lane->absolutePoints.clear();
@@ -387,10 +386,8 @@ void AutomationManager::restoreLaneState(const AutomationLaneInfo& laneState,
 
     *lane = laneState;
     lane->authorityState = automationAuthorityForPersistence(lane->authorityState);
-    const auto clipOnLane = [&laneState](const AutomationClipInfo& c) {
-        return c.laneId == laneState.id;
-    };
-    std::erase_if(clips_, clipOnLane);
+    std::erase_if(clips_,
+                  [&laneState](const AutomationClipInfo& c) { return c.laneId == laneState.id; });
     for (const auto& clip : clips)
         clips_.push_back(clip);
 
@@ -405,16 +402,11 @@ void AutomationManager::deleteLane(AutomationLaneId laneId) {
 
     // Delete associated clips if clip-based
     if (lane->isClipBased()) {
-        for (auto clipId : lane->clipIds) {
-            const auto matchesClipId = [clipId](const AutomationClipInfo& c) {
-                return c.id == clipId;
-            };
-            std::erase_if(clips_, matchesClipId);
-        }
+        for (auto clipId : lane->clipIds)
+            std::erase_if(clips_, [clipId](const AutomationClipInfo& c) { return c.id == clipId; });
     }
 
-    const auto matchesLaneId = [laneId](const AutomationLaneInfo& l) { return l.id == laneId; };
-    std::erase_if(lanes_, matchesLaneId);
+    std::erase_if(lanes_, [laneId](const AutomationLaneInfo& l) { return l.id == laneId; });
 
     notifyLanesChanged();
 }
@@ -556,10 +548,8 @@ std::optional<double> AutomationManager::getTouchBaseline(const AutomationTarget
 }
 
 void AutomationManager::clearTouchBaseline(const AutomationTarget& target) {
-    const auto baselineForTarget = [&](const std::pair<AutomationTarget, double>& e) {
-        return e.first == target;
-    };
-    std::erase_if(touchBaselines_, baselineForTarget);
+    std::erase_if(touchBaselines_,
+                  [&](const std::pair<AutomationTarget, double>& e) { return e.first == target; });
 }
 
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {
@@ -676,8 +666,7 @@ void AutomationManager::deleteClip(AutomationClipId clipId) {
     }
 
     // Remove clip
-    const auto matchesClipId = [clipId](const AutomationClipInfo& c) { return c.id == clipId; };
-    std::erase_if(clips_, matchesClipId);
+    std::erase_if(clips_, [clipId](const AutomationClipInfo& c) { return c.id == clipId; });
 
     notifyClipsChanged(laneId);
 }
@@ -902,8 +891,8 @@ void AutomationManager::deletePoint(AutomationLaneId laneId, AutomationPointId p
     if (!lane || !lane->isAbsolute())
         return;
 
-    const auto matchesPointId = [pointId](const AutomationPoint& p) { return p.id == pointId; };
-    std::erase_if(lane->absolutePoints, matchesPointId);
+    std::erase_if(lane->absolutePoints,
+                  [pointId](const AutomationPoint& p) { return p.id == pointId; });
 
     notifyPointsChanged(laneId);
 }
@@ -969,8 +958,7 @@ void AutomationManager::deletePointFromClip(AutomationClipId clipId, AutomationP
     if (!clip)
         return;
 
-    const auto matchesPointId = [pointId](const AutomationPoint& p) { return p.id == pointId; };
-    std::erase_if(clip->points, matchesPointId);
+    std::erase_if(clip->points, [pointId](const AutomationPoint& p) { return p.id == pointId; });
 
     notifyClipsChanged(clip->laneId);
 }

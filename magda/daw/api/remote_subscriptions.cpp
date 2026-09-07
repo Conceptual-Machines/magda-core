@@ -379,8 +379,7 @@ SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disco
 void SubscriptionHub::removeClient(ClientId client) {
     {
         const std::scoped_lock lock(mutex_);
-        const auto matchesClient = [client](const Client& c) { return c.id == client; };
-        if (std::erase_if(clients_, matchesClient) == 0)
+        if (std::erase_if(clients_, [client](const Client& c) { return c.id == client; }) == 0)
             return;
         releaseIdleTopicsLocked();
     }

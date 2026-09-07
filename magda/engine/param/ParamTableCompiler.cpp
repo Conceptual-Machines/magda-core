@@ -952,7 +952,7 @@ void Builder::orderAndBreakCycles() {
 
     for (std::size_t target = 0; target < params; ++target) {
         auto& links = perParam_[target];
-        const auto linkInsideCycle = [&](const ParamLink& link) {
+        const auto dropped = std::erase_if(links, [&](const ParamLink& link) {
             const auto source = static_cast<std::size_t>(link.source.index);
             switch (link.source.kind) {
                 case ParamSourceRef::Kind::Parameter:
@@ -961,10 +961,9 @@ void Builder::orderAndBreakCycles() {
                     return source < mods && insideCycle(target, nodeForMod(source));
             }
             return false;
-        };
-        const auto removedCount = std::erase_if(links, linkInsideCycle);
+        });
 
-        if (removedCount == 0)
+        if (dropped == 0)
             continue;
 
         diagnose(toString(table_.keys[target]) +

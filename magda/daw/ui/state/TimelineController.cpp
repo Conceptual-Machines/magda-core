@@ -1160,10 +1160,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMark
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMarkerEvent& e) {
-    const auto matchesMarkerId = [&](const TimelineMarker& marker) {
-        return marker.id == e.markerId;
-    };
-    if (std::erase_if(state.markers, matchesMarkerId) == 0)
+    const auto removed = std::erase_if(
+        state.markers, [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    if (removed == 0)
         return ChangeFlags::None;
 
     if (state.selectedMarkerId == e.markerId)

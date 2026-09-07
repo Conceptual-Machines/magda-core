@@ -102,8 +102,7 @@ int ChangeSource::addListener(Listener listener) {
 void ChangeSource::removeListener(int token) {
     {
         const std::scoped_lock lock(listenerMutex_);
-        const auto matchesToken = [token](const auto& entry) { return entry.first == token; };
-        std::erase_if(listeners_, matchesToken);
+        std::erase_if(listeners_, [token](const auto& entry) { return entry.first == token; });
     }
     stopPumpIfIdle();
 }
