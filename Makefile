@@ -453,8 +453,8 @@ lint:
 		echo "              apt install clang-tidy   (Debian/Ubuntu)"; \
 		exit 1; \
 	fi
-	@echo "📋 Analyzing magda/daw sources..."
-	@find magda/daw -name "*.cpp" -type f -exec \
+	@echo "📋 Analyzing magda sources (tests are out of scope)..."
+	@find magda -name "*.cpp" -type f -exec \
 		$(CLANG_TIDY) \
 		{} \
 		--config-file=.clang-tidy \
@@ -508,7 +508,7 @@ lint-fix:
 	read REPLY; \
 	case "$$REPLY" in \
 		[Yy]*) \
-			find magda/daw -name "*.cpp" -type f -exec \
+			find magda -name "*.cpp" -type f -exec \
 				$(CLANG_TIDY) \
 				{} \
 				--config-file=.clang-tidy \
