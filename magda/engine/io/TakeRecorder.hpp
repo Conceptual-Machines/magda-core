@@ -74,8 +74,8 @@ struct RecordedTake {
     std::int64_t samplesLost = 0;
 
     /// Pass ends the write path could not be told about, which is two loop
-    /// passes run together in one file. Above zero and the takes below are not
-    /// one pass each.
+    /// passes run together in one file. Above zero and `clip.takes` is not one
+    /// pass each.
     std::int64_t passesLost = 0;
 
     /// Whether a file refused a write or could not be opened at all.
