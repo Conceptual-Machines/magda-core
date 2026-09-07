@@ -106,8 +106,8 @@ bool LuaRuntime::eval(const juce::String& chunk, const juce::String& chunkName) 
         return false;
 
     lastError_ = {};
-    auto chunkUtf8 = chunk.toRawUTF8();
-    auto nameUtf8 = chunkName.toRawUTF8();
+    const auto* chunkUtf8 = chunk.toRawUTF8();
+    const auto* nameUtf8 = chunkName.toRawUTF8();
     auto chunkLen = static_cast<std::size_t>(chunk.getNumBytesAsUTF8());
 
     int rc = luaL_loadbuffer(L_, chunkUtf8, chunkLen, nameUtf8);
@@ -141,7 +141,7 @@ std::optional<long long> LuaRuntime::evalToInt(const juce::String& chunk) {
     juce::String wrapped = "return (" + chunk + ")";
     lastError_ = {};
 
-    auto src = wrapped.toRawUTF8();
+    const auto* src = wrapped.toRawUTF8();
     auto srcLen = static_cast<std::size_t>(wrapped.getNumBytesAsUTF8());
     if (luaL_loadbuffer(L_, src, srcLen, "=eval") != LUA_OK) {
         size_t len = 0;
@@ -183,7 +183,7 @@ std::optional<juce::String> LuaRuntime::evalToString(const juce::String& chunk) 
     juce::String wrapped = "return (" + chunk + ")";
     lastError_ = {};
 
-    auto src = wrapped.toRawUTF8();
+    const auto* src = wrapped.toRawUTF8();
     auto srcLen = static_cast<std::size_t>(wrapped.getNumBytesAsUTF8());
     if (luaL_loadbuffer(L_, src, srcLen, "=eval") != LUA_OK) {
         size_t len = 0;

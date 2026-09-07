@@ -97,7 +97,7 @@ class ClipInspector::GroovePickerPopup : public juce::Component {
 
         // Click on template → select and close
         templateModel_.onItemClicked = [this](int row) {
-            auto& items = templateModel_.getItems();
+            const auto& items = templateModel_.getItems();
             if (row >= 0 && row < static_cast<int>(items.size())) {
                 owner_.onGrooveTemplateSelected(items[static_cast<size_t>(row)]);
                 // Dismiss the callout box we're hosted in

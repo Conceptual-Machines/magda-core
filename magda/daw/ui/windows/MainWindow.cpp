@@ -268,7 +268,7 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
     juce::Logger::writeToLog("[MainWindow] Menu bar ready");
 
     // Size and position the window within the display's work area
-    auto display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
+    const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay();
     if (display != nullptr) {
         auto workArea = display->userArea;  // Excludes taskbar
         // Leave some margin so the title bar and window frame are fully visible
@@ -604,7 +604,7 @@ MainWindow::MainComponent::MainComponent(AudioEngine* externalEngine) {
     transportHeight = layout.defaultTransportHeight;
 
     // Scale side panel defaults based on screen width
-    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
         int screenWidth = display->userArea.getWidth();
         if (screenWidth >= 2560) {  // Large display (1440p+)
             leftPanelWidth = rightPanelWidth = 400;
@@ -1231,7 +1231,7 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
         mainView->getTimelineController().dispatch(SetEditPositionEvent{0.0});
     };
     transportPanel->onGoToNext = [this]() {
-        auto& state = mainView->getTimelineController().getState();
+        const auto& state = mainView->getTimelineController().getState();
         mainView->getTimelineController().dispatch(SetEditPositionEvent{state.timelineLength});
     };
     transportPanel->onPlayheadEdit = [this](double beats) {

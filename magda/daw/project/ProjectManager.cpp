@@ -922,7 +922,7 @@ void ProjectManager::createTempMediaDirectory() {
 void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {
     if (mediaRoot == juce::File())
         return;
-    for (auto* subdir : kMediaSubdirs) {
+    for (const auto* subdir : kMediaSubdirs) {
         mediaRoot.getChildFile(subdir).createDirectory();
     }
 }
@@ -936,7 +936,7 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     // recorded correctly, and nothing may be stranded in the directory being
     // left behind.
     std::map<juce::String, juce::String> moves;
-    for (auto* subdir : kMediaSubdirs)
+    for (const auto* subdir : kMediaSubdirs)
         moveMediaTree(oldDir.getChildFile(subdir), newDir.getChildFile(subdir), moves,
                       OnCollision::Uniquify);
 

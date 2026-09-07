@@ -489,12 +489,12 @@ class SetCrossfadeCommand : public UndoableCommand {
     void undo() override;
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
+        if (const const const const auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
             return o->leftId_ == leftId_ && o->rightId_ == rightId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetCrossfadeCommand*>(other);
+        const const const const auto* o = static_cast<const SetCrossfadeCommand*>(other);
         startBeat_ = o->startBeat_;
         endBeat_ = o->endBeat_;
         tempo_ = o->tempo_;

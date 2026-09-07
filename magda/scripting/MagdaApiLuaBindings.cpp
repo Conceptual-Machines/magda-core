@@ -55,7 +55,7 @@ MagdaApi* getApi(lua_State* L) {
 
 // Push a `juce::String` as a Lua string (UTF-8).
 void pushJuceString(lua_State* L, const juce::String& s) {
-    auto raw = s.toRawUTF8();
+    const auto* raw = s.toRawUTF8();
     lua_pushlstring(L, raw, static_cast<size_t>(s.getNumBytesAsUTF8()));
 }
 

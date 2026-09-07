@@ -765,7 +765,7 @@ struct RemoteMcpServer::Impl {
         response.set_header("X-Accel-Buffering", "no");
 
         const auto keepAlive = std::chrono::milliseconds(options.keepAliveIntervalMs);
-        auto self = this;
+        auto* self = this;
 
         response.set_chunked_content_provider(
             "text/event-stream",

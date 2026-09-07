@@ -192,7 +192,7 @@ bool restoreWarpMarkersIfNeeded(te::WarpTimeManager& warpManager,
     // inserting the complete saved list would duplicate both boundaries.
     warpManager.removeAllMarkers();
 
-    auto& defaultMarkers = warpManager.getMarkers();
+    const auto& defaultMarkers = warpManager.getMarkers();
     warpManager.moveMarker(0, te::TimePosition::fromSeconds(markers.front().warpTime));
     warpManager.moveMarker(defaultMarkers.size() - 1,
                            te::TimePosition::fromSeconds(markers.back().warpTime));

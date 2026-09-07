@@ -245,7 +245,7 @@ void DrumGridPlugin::processChain(const AudioChainEntry& entry,
     chainMidi_.clear();
     chainMidi_.isAllNotesOff = inputMidi.isAllNotesOff;
 
-    for (auto& msg : inputMidi) {
+    for (const auto& msg : inputMidi) {
         if (msg.isNoteOnOrOff()) {
             int note = msg.getNoteNumber();
             if (note >= lowNote && note <= entry.highNote) {
@@ -614,7 +614,7 @@ const std::vector<std::unique_ptr<DrumGridPlugin::Chain>>& DrumGridPlugin::getCh
 }
 
 int DrumGridPlugin::getPluginDeviceId(int chainIndex, int pluginIndex) const {
-    auto* chain = getChainByIndex(chainIndex);
+    const auto* chain = getChainByIndex(chainIndex);
     if (!chain || pluginIndex < 0 || pluginIndex >= static_cast<int>(chain->plugins.size()))
         return -1;
     return chain->plugins[static_cast<size_t>(pluginIndex)]->state.getProperty(pluginDeviceIdProp,
@@ -646,13 +646,13 @@ DrumGridPlugin::Chain* DrumGridPlugin::getChainByIndexMutable(int chainIndex) {
 }
 
 int DrumGridPlugin::getChainPluginCount(int chainIndex) const {
-    if (auto* chain = getChainByIndex(chainIndex))
+    if (const auto* chain = getChainByIndex(chainIndex))
         return static_cast<int>(chain->plugins.size());
     return 0;
 }
 
 te::Plugin* DrumGridPlugin::getChainPlugin(int chainIndex, int pluginIndex) const {
-    if (auto* chain = getChainByIndex(chainIndex)) {
+    if (const auto* chain = getChainByIndex(chainIndex)) {
         if (pluginIndex >= 0 && pluginIndex < static_cast<int>(chain->plugins.size()))
             return chain->plugins[static_cast<size_t>(pluginIndex)].get();
     }
@@ -667,7 +667,7 @@ int DrumGridPlugin::getPadPluginCount(int padIndex) const {
     if (padIndex < 0 || padIndex >= maxPads)
         return 0;
     int midiNote = baseNote + padIndex;
-    if (auto* chain = getChainForNote(midiNote))
+    if (const auto* chain = getChainForNote(midiNote))
         return static_cast<int>(chain->plugins.size());
     return 0;
 }
@@ -676,7 +676,7 @@ te::Plugin* DrumGridPlugin::getPadPlugin(int padIndex, int pluginIndex) const {
     if (padIndex < 0 || padIndex >= maxPads)
         return nullptr;
     int midiNote = baseNote + padIndex;
-    if (auto* chain = getChainForNote(midiNote)) {
+    if (const auto* chain = getChainForNote(midiNote)) {
         if (pluginIndex >= 0 && pluginIndex < static_cast<int>(chain->plugins.size()))
             return chain->plugins[static_cast<size_t>(pluginIndex)].get();
     }
@@ -695,7 +695,7 @@ bool DrumGridPlugin::consumePadTrigger(int padIndex) {
 }
 
 std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
-    auto* chain = getChainByIndex(chainIndex);
+    const auto* chain = getChainByIndex(chainIndex);
     if (!chain)
         return {0.0f, 0.0f};
     int padIdx = padIndexFor(*chain);
@@ -708,7 +708,7 @@ std::pair<float, float> DrumGridPlugin::consumeChainPeak(int chainIndex) {
 }
 
 float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const {
-    auto* chain = getChainByIndex(chainIndex);
+    const auto* chain = getChainByIndex(chainIndex);
     if (!chain || pluginIndex < 0 || pluginIndex >= static_cast<int>(chain->pluginGains.size()))
         return 1.0f;
     return chain->pluginGains[static_cast<size_t>(pluginIndex)];
@@ -717,7 +717,7 @@ float DrumGridPlugin::getChainPluginGain(int chainIndex, int pluginIndex) const 
 std::pair<float, float> DrumGridPlugin::consumeChainPluginPeak(int chainIndex, int pluginIndex) {
     if (pluginIndex < 0 || pluginIndex >= maxFxPerChain)
         return {0.0f, 0.0f};
-    auto* chain = getChainByIndex(chainIndex);
+    const auto* chain = getChainByIndex(chainIndex);
     if (!chain)
         return {0.0f, 0.0f};
     int padIdx = padIndexFor(*chain);

@@ -120,12 +120,14 @@ class MoveAutomationPointCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const MoveAutomationPointCommand*>(other))
+        if (const const const const const const auto* o =
+                dynamic_cast<const MoveAutomationPointCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const MoveAutomationPointCommand*>(other);
+        const const const const const const auto* o =
+            static_cast<const MoveAutomationPointCommand*>(other);
         newBeatPosition_ = o->newBeatPosition_;
         newValue_ = o->newValue_;
     }
@@ -163,7 +165,8 @@ class SetAutomationPointTensionCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetAutomationPointTensionCommand*>(other))
+        if (const const const const const const auto* o =
+                dynamic_cast<const SetAutomationPointTensionCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
@@ -206,12 +209,14 @@ class SetAutomationPointHandlesCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const SetAutomationPointHandlesCommand*>(other))
+        if (const const const const const const auto* o =
+                dynamic_cast<const SetAutomationPointHandlesCommand*>(other))
             return o->pointId_ == pointId_ && o->laneId_ == laneId_ && o->clipId_ == clipId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        auto* o = static_cast<const SetAutomationPointHandlesCommand*>(other);
+        const const const const const const auto* o =
+            static_cast<const SetAutomationPointHandlesCommand*>(other);
         newInHandle_ = o->newInHandle_;
         newOutHandle_ = o->newOutHandle_;
     }
@@ -383,7 +388,8 @@ class MoveAutomationClipCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const MoveAutomationClipCommand*>(other))
+        if (const const const const const const auto* o =
+                dynamic_cast<const MoveAutomationClipCommand*>(other))
             return o->clipId_ == clipId_;
         return false;
     }
@@ -464,7 +470,8 @@ class ResizeAutomationClipCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (auto* o = dynamic_cast<const ResizeAutomationClipCommand*>(other))
+        if (const const const const const const auto* o =
+                dynamic_cast<const ResizeAutomationClipCommand*>(other))
             return o->clipId_ == clipId_ && o->fromStart_ == fromStart_;
         return false;
     }

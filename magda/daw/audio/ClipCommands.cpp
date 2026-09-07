@@ -126,7 +126,7 @@ class RenderProgressWindow : public juce::ThreadWithProgressWindow {
 // return set — its hardware return only exists live, so an offline bounce
 // needs the real-time capture pass first (#1623).
 bool trackNeedsInsertCapture(te::Track& track) {
-    for (auto plugin : track.pluginList) {
+    for (auto* plugin : track.pluginList) {
         if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin))
             if (insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
                 insert->inputDevice.get().isNotEmpty())
@@ -456,12 +456,12 @@ void MoveClipCommand::undo() {
 }
 
 bool MoveClipCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     return otherMove != nullptr && otherMove->clipId_ == clipId_;
 }
 
 void MoveClipCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
+    const auto* otherMove = dynamic_cast<const MoveClipCommand*>(other);
     if (otherMove) {
         // Keep our original snapshot, just update the target position
         newStartBeat_ = otherMove->newStartBeat_;
@@ -593,13 +593,13 @@ void ResizeClipCommand::performAction() {
 }
 
 bool ResizeClipCommand::canMergeWith(const UndoableCommand* other) const {
-    auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     return otherResize != nullptr && otherResize->clipId_ == clipId_ &&
            otherResize->fromStart_ == fromStart_;
 }
 
 void ResizeClipCommand::mergeWith(const UndoableCommand* other) {
-    auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
+    const auto* otherResize = dynamic_cast<const ResizeClipCommand*>(other);
     if (otherResize) {
         // Update to their new length
         newLengthBeats_ = otherResize->newLengthBeats_;
@@ -2158,7 +2158,7 @@ void BounceInPlaceCommand::execute() {
     };
     std::vector<PluginState> savedStates;
 
-    for (auto plugin : teTrack->pluginList) {
+    for (auto* plugin : teTrack->pluginList) {
         if (rackManager.isWrapperRack(plugin) ||
             dynamic_cast<te::InsertPlugin*>(plugin) != nullptr ||
             dynamic_cast<InsertCapturePlugin*>(plugin) != nullptr)

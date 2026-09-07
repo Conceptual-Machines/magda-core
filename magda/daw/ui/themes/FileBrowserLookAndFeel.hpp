@@ -207,7 +207,8 @@ class FileBrowserLookAndFeel : public juce::LookAndFeel_V4 {
                                   juce::RectanglePlacement::onlyReduceInSize,
                               false);
         } else {
-            if (auto* d = isDirectory ? getDefaultFolderImage() : getDefaultDocumentFileImage())
+            if (const const auto* d =
+                    isDirectory ? getDefaultFolderImage() : getDefaultDocumentFileImage())
                 d->drawWithin(
                     g,
                     juce::Rectangle<float>(2.0f, 2.0f, x - 4.0f, static_cast<float>(height) - 4.0f),

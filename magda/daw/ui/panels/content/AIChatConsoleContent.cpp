@@ -2693,19 +2693,19 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
         if (popupVisible) {
             switch (autocompletePopup_->getMode()) {
                 case AutocompletePopup::Mode::SlashCommand:
-                    if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                    if (const auto* cmd = autocompletePopup_->getSelectedCommand()) {
                         insertSlashCommand(cmd->name);
                         return true;
                     }
                     break;
                 case AutocompletePopup::Mode::Param:
-                    if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                    if (const auto* entry = autocompletePopup_->getSelectedParamEntry()) {
                         insertParamAlias(entry->pluginAlias, entry->paramAlias);
                         return true;
                     }
                     break;
                 case AutocompletePopup::Mode::Alias:
-                    if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                    if (const auto* entry = autocompletePopup_->getSelectedEntry()) {
                         insertAlias(entry->alias);
                         return true;
                     }
@@ -2732,19 +2732,19 @@ bool AIChatConsoleContent::keyPressed(const juce::KeyPress& key, juce::Component
     if (key == juce::KeyPress::tabKey) {
         switch (autocompletePopup_->getMode()) {
             case AutocompletePopup::Mode::SlashCommand:
-                if (auto* cmd = autocompletePopup_->getSelectedCommand()) {
+                if (const auto* cmd = autocompletePopup_->getSelectedCommand()) {
                     insertSlashCommand(cmd->name);
                     return true;
                 }
                 break;
             case AutocompletePopup::Mode::Param:
-                if (auto* entry = autocompletePopup_->getSelectedParamEntry()) {
+                if (const auto* entry = autocompletePopup_->getSelectedParamEntry()) {
                     insertParamAlias(entry->pluginAlias, entry->paramAlias);
                     return true;
                 }
                 break;
             case AutocompletePopup::Mode::Alias:
-                if (auto* entry = autocompletePopup_->getSelectedEntry()) {
+                if (const auto* entry = autocompletePopup_->getSelectedEntry()) {
                     insertAlias(entry->alias);
                     return true;
                 }

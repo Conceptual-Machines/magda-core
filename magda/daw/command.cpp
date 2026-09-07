@@ -15,7 +15,7 @@ Command::Command(const juce::var& json) {
     // Parse parameters
     auto* obj = json.getDynamicObject();
     if (obj) {
-        for (auto& prop : obj->getProperties()) {
+        for (const auto& prop : obj->getProperties()) {
             std::string key = prop.name.toString().toStdString();
             if (key == "command")
                 continue;

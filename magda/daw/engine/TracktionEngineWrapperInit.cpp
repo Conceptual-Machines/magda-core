@@ -184,7 +184,7 @@ void TracktionEngineWrapper::configureAudioDevices() {
 
     auto& dm = engine_->getDeviceManager();
     auto& juceDeviceManager = dm.deviceManager;
-    auto& deviceTypes = juceDeviceManager.getAvailableDeviceTypes();
+    const auto& deviceTypes = juceDeviceManager.getAvailableDeviceTypes();
 
     if (deviceTypes.isEmpty()) {
         return;
@@ -336,7 +336,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Set default tempo
     auto& tempoSeq = currentEdit_->tempoSequence;
     if (tempoSeq.getNumTempos() > 0) {
-        auto tempo = tempoSeq.getTempo(0);
+        auto* tempo = tempoSeq.getTempo(0);
         if (tempo) {
             tempo->setBpm(120.0);
         }
@@ -402,7 +402,7 @@ void TracktionEngineWrapper::createEditAndBridges() {
         // Capture zoom/scroll state
         if (auto* tc = TimelineController::getCurrent()) {
             const auto& timelineState = tc->getState();
-            auto& zoom = timelineState.zoom;
+            const auto& zoom = timelineState.zoom;
             auto& proj = ProjectManager::getInstance().getMutableProjectInfo();
             proj.horizontalZoom = zoom.horizontalZoom;
             proj.verticalZoom = zoom.verticalZoom;

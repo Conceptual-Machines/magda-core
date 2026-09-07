@@ -38,7 +38,7 @@ daw::audio::TrackMeasurementPlugin* PluginManager::ensureTrackMeasurementTap(Tra
         return nullptr;
 
     // Adopt an existing tap if one is already on the chain (e.g. after restore).
-    for (auto i : *list) {
+    for (auto* i : *list) {
         if (auto* existing = dynamic_cast<daw::audio::TrackMeasurementPlugin*>(i)) {
             trackMeasurementTaps_[trackId] = i;
             return existing;

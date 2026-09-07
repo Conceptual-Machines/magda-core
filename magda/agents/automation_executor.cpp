@@ -377,7 +377,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
         }
 
         if (std::holds_alternative<AutoClearOp>(inst.payload)) {
-            auto& op = std::get<AutoClearOp>(inst.payload);
+            const auto& op = std::get<AutoClearOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = std::move(err);
@@ -389,7 +389,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
         }
 
         if (std::holds_alternative<AutoFreeformOp>(inst.payload)) {
-            auto& op = std::get<AutoFreeformOp>(inst.payload);
+            const auto& op = std::get<AutoFreeformOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = std::move(err);
@@ -404,7 +404,7 @@ bool AutomationExecutor::execute(const std::vector<AutoInstruction>& instruction
         }
 
         if (std::holds_alternative<AutoShapeOp>(inst.payload)) {
-            auto& op = std::get<AutoShapeOp>(inst.payload);
+            const auto& op = std::get<AutoShapeOp>(inst.payload);
             auto laneId = resolveTarget(api_, op.target, err);
             if (laneId == INVALID_AUTOMATION_LANE_ID) {
                 error_ = std::move(err);

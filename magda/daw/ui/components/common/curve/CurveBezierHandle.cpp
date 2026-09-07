@@ -54,7 +54,7 @@ void CurveBezierHandle::mouseDrag(const juce::MouseEvent& e) {
         return;
 
     // Calculate delta in parent coordinates
-    auto parentComponent = getParentComponent();
+    auto* parentComponent = getParentComponent();
     if (!parentComponent)
         return;
 

@@ -164,12 +164,12 @@ void addAutomationPoints(juce::XmlElement& parent, const juce::String& id,
 void addTrackAutomation(juce::XmlElement& trackLanes, const ProjectDocument& document,
                         const TrackInfo& track) {
     const auto volumeTarget = ControlTarget::trackVolume(track.id);
-    if (auto* lane = findAbsoluteLane(document, volumeTarget))
+    if (const auto* lane = findAbsoluteLane(document, volumeTarget))
         addAutomationPoints(trackLanes, idFor("volumeAutomation", track.id),
                             idFor("volume", track.id), *lane);
 
     const auto panTarget = ControlTarget::trackPan(track.id);
-    if (auto* lane = findAbsoluteLane(document, panTarget))
+    if (const auto* lane = findAbsoluteLane(document, panTarget))
         addAutomationPoints(trackLanes, idFor("panAutomation", track.id), idFor("pan", track.id),
                             *lane);
 }

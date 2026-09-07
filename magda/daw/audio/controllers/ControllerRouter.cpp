@@ -279,7 +279,7 @@ void ControllerRouter::onMidiFromControllerPort(const juce::String& portId,
     if (hasExplicitOverride) {
         bindings.erase(std::remove_if(bindings.begin(), bindings.end(),
                                       [](const Binding& b) {
-                                          if (auto* rr = std::get_if<ResolverRef>(&b.target))
+                                          if (const auto* rr = std::get_if<ResolverRef>(&b.target))
                                               return rr->kind == "focused.macro";
                                           return false;
                                       }),

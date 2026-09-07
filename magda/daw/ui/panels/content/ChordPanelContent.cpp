@@ -989,7 +989,7 @@ void ChordPanelContent::layoutAIProgressionRows() {
         chordPlugin_ ? chordPlugin_->getAIProgressions() : std::vector<AIProgression>{};
     for (size_t i = 0; i < aiRows_.size() && i < aiProgsLayout.size(); ++i) {
         auto& row = aiRows_[i];
-        auto& prog = aiProgsLayout[i];
+        const auto& prog = aiProgsLayout[i];
 
         AIContainerPaintData::Row paintRow;
         paintRow.name = prog.name;

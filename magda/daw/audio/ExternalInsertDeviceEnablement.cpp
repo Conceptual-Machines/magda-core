@@ -64,7 +64,7 @@ bool ExternalInsertDeviceEnablement::refresh() {
     // return is one of TE's input devices; its send is an output device.
     std::set<juce::String> usedInputs, usedOutputs;
     const auto allPlugins = te::getAllPlugins(edit_, false);
-    for (auto plugin : allPlugins) {
+    for (auto* plugin : allPlugins) {
         auto* insert = dynamic_cast<te::InsertPlugin*>(plugin);
         if (insert == nullptr || !insert->isEnabled())
             continue;
@@ -106,7 +106,7 @@ bool ExternalInsertDeviceEnablement::refresh() {
     if (changed) {
         // A just-enabled device only resolves in the inserts after
         // updateDeviceTypes() re-runs against the new device lists.
-        for (auto plugin : allPlugins)
+        for (auto* plugin : allPlugins)
             if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin))
                 insert->updateDeviceTypes();
     }

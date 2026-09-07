@@ -13,7 +13,7 @@ namespace {
 
 bool comboItemsMatchDriverTypes(const juce::ComboBox& comboBox,
                                 juce::AudioDeviceManager& deviceManager) {
-    auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
+    const auto& deviceTypes = deviceManager.getAvailableDeviceTypes();
     if (comboBox.getNumItems() != deviceTypes.size())
         return false;
 

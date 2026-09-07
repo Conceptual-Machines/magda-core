@@ -59,7 +59,7 @@ bool ControllerRegistry::rematchInputPorts(const juce::Array<juce::MidiDeviceInf
         const auto matchesName = [&c](const juce::MidiDeviceInfo& dev) {
             return dev.name == c.inputPortName;
         };
-        if (const auto found = std::ranges::find_if(liveInputs, matchesName);
+        if (const auto* const found = std::ranges::find_if(liveInputs, matchesName);
             found != liveInputs.end()) {
             c.inputPort = found->identifier;
             changed = true;

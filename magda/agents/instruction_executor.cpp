@@ -250,7 +250,7 @@ bool InstructionExecutor::execute(const std::vector<Instruction>& instructions) 
     }
 
     // Multi-clip selection → populate selectedClips_ so SET/DEL apply to all
-    auto& uiClips = sm.getSelectedClips();
+    const auto& uiClips = sm.getSelectedClips();
     if (!uiClips.empty()) {
         selectedClips_.insert(uiClips.begin(), uiClips.end());
         // Derive track from first clip if no track selected

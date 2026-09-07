@@ -442,7 +442,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             const auto matchesIdentifier = [&midiDeviceId](const auto& d) {
                 return d.identifier == midiDeviceId;
             };
-            if (const auto found = std::ranges::find_if(juceDevices, matchesIdentifier);
+            if (auto* const found = std::ranges::find_if(juceDevices, matchesIdentifier);
                 found != juceDevices.end())
                 deviceName = found->name;
 
@@ -467,7 +467,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                     return &inputDeviceInstance->owner == midiDevice;
                 };
                 const auto allInputs = playbackContext->getAllInputs();
-                if (const auto found = std::ranges::find_if(allInputs, matchesOwner);
+                if (const auto* const found = std::ranges::find_if(allInputs, matchesOwner);
                     found != allInputs.end())
                     removedAnyRouting = (*found)->removeTarget(track->itemID, nullptr);
                 if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
@@ -487,7 +487,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                 return &inputDeviceInstance->owner == midiDevice;
             };
             const auto allInputs = playbackContext->getAllInputs();
-            if (const auto found = std::ranges::find_if(allInputs, matchesOwner);
+            if (const auto* const found = std::ranges::find_if(allInputs, matchesOwner);
                 found != allInputs.end()) {
                 auto result = (*found)->setTarget(track->itemID, true, nullptr);
                 if (result.has_value()) {

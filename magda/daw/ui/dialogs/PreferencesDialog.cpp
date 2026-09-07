@@ -161,7 +161,7 @@ juce::Rectangle<int> getPreferencesDialogContentSize() {
     constexpr int minW = 520;
     constexpr int minH = 380;
 
-    if (auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
+    if (const auto* display = juce::Desktop::getInstance().getDisplays().getPrimaryDisplay()) {
         const int maxW = display->userArea.getWidth() - 48;
         const int maxH = display->userArea.getHeight() - 96;
         return {juce::jmax(minW, juce::jmin(preferredW, maxW)),
