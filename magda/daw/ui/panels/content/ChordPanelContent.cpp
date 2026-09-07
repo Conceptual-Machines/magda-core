@@ -609,12 +609,9 @@ void ChordPanelContent::rebuildScaleBlocks() {
     std::set<std::string> validNames;
     for (const auto& scale : detectedScales_)
         validNames.insert(scale.name);
-    for (auto it = selectedScaleNames_.begin(); it != selectedScaleNames_.end();) {
-        if (validNames.find(*it) == validNames.end())
-            it = selectedScaleNames_.erase(it);
-        else
-            ++it;
-    }
+    std::erase_if(selectedScaleNames_, [&](const std::string& name) {
+        return validNames.find(name) == validNames.end();
+    });
 
     for (const auto& scale : detectedScales_) {
         auto block = std::make_unique<ScaleBlockComponent>(scale);

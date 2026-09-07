@@ -759,7 +759,7 @@ class LuaScriptsPage : public juce::Component {
                 auto& cfg = magda::Config::getInstance();
                 auto enabled = cfg.getEnabledFactoryLuaScripts();
                 const auto name = file.getFileName().toStdString();
-                enabled.erase(std::remove(enabled.begin(), enabled.end(), name), enabled.end());
+                std::erase(enabled, name);
                 cfg.setEnabledFactoryLuaScripts(std::move(enabled));
                 cfg.save();
                 if (file.getFileName() == scripting_app::activeLuaScriptName())

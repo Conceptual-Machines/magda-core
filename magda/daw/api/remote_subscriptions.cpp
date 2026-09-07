@@ -379,11 +379,8 @@ SubscriptionHub::ClientId SubscriptionHub::addClient(Sink sink, Disconnect disco
 void SubscriptionHub::removeClient(ClientId client) {
     {
         const std::scoped_lock lock(mutex_);
-        const auto found = std::remove_if(clients_.begin(), clients_.end(),
-                                          [client](const Client& c) { return c.id == client; });
-        if (found == clients_.end())
+        if (std::erase_if(clients_, [client](const Client& c) { return c.id == client; }) == 0)
             return;
-        clients_.erase(found, clients_.end());
         releaseIdleTopicsLocked();
     }
     // This runs on the departing connection's own thread, so the timers are
@@ -790,10 +787,8 @@ bool SubscriptionHub::dropAbandonedLocked() {
         if (abandoned(client) && client.disconnect != nullptr)
             departing.push_back(client.disconnect);
 
-    const auto removed = std::remove_if(clients_.begin(), clients_.end(), abandoned);
-    if (removed == clients_.end())
+    if (std::erase_if(clients_, abandoned) == 0)
         return false;
-    clients_.erase(removed, clients_.end());
 
     for (const auto& disconnect : departing)
         disconnect("subscriber is not consuming events");

@@ -339,6 +339,8 @@ void PluginManager::syncAllPlugins() {
         {
             juce::ScopedLock lock(pluginLock_);
             deferredHolders_.clear();  // Drain previous cycle's deferred holders
+            // Stays a manual loop: scopePlugins reads syncedDevices_ live, so each
+            // orphan must be gone before the next orphan's teardown runs.
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
                 if (validDevicePaths.find(it->first) == validDevicePaths.end() &&
                     !isDrumGridPadPathLocked(it->first)) {

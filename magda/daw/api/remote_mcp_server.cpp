@@ -747,7 +747,7 @@ struct RemoteMcpServer::Impl {
 
         {
             const std::scoped_lock lock(streamMutex);
-            streams.erase(std::remove(streams.begin(), streams.end(), stream), streams.end());
+            std::erase(streams, stream);
         }
 
         if (options.clients != nullptr)
@@ -1002,21 +1002,17 @@ struct RemoteMcpServer::Impl {
         // waiter behind that sweep.
         if (!running.load())
             return false;
-        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
-                                     [](const auto& weak) { return weak.expired(); }),
-                      waiters.end());
+        std::erase_if(waiters, [](const auto& weak) { return weak.expired(); });
         waiters.push_back(waiter);
         return true;
     }
 
     void unregisterWaiter(const std::shared_ptr<Waiter>& waiter) {
         const std::scoped_lock lock(waiterMutex);
-        waiters.erase(std::remove_if(waiters.begin(), waiters.end(),
-                                     [&](const auto& weak) {
-                                         const auto live = weak.lock();
-                                         return live == nullptr || live == waiter;
-                                     }),
-                      waiters.end());
+        std::erase_if(waiters, [&](const auto& weak) {
+            const auto live = weak.lock();
+            return live == nullptr || live == waiter;
+        });
     }
 
     void cancelWaiters() {

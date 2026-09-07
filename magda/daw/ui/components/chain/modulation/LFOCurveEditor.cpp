@@ -450,9 +450,7 @@ void LFOCurveEditor::onPointDeleted(uint32_t pointId) {
     const auto beforePoints = snapshotCurvePoints();
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
-    points_.erase(std::remove_if(points_.begin(), points_.end(),
-                                 [pointId](const CurvePoint& p) { return p.id == pointId; }),
-                  points_.end());
+    std::erase_if(points_, [pointId](const CurvePoint& p) { return p.id == pointId; });
 
     if (selectedPointId_ == pointId) {
         selectedPointId_ = INVALID_CURVE_POINT_ID;
@@ -478,14 +476,12 @@ void LFOCurveEditor::onDeleteSelectedPoints(const std::set<uint32_t>& pointIds) 
     const auto beforePreset = modInfo_ ? modInfo_->curvePreset : CurvePreset::Custom;
 
     size_t deleted = 0;
-    points_.erase(std::remove_if(points_.begin(), points_.end(),
-                                 [&](const CurvePoint& p) {
-                                     if (deleted >= deletable || pointIds.count(p.id) == 0)
-                                         return false;
-                                     ++deleted;
-                                     return true;
-                                 }),
-                  points_.end());
+    std::erase_if(points_, [&](const CurvePoint& p) {
+        if (deleted >= deletable || pointIds.count(p.id) == 0)
+            return false;
+        ++deleted;
+        return true;
+    });
 
     if (deleted == 0)
         return;

@@ -249,13 +249,7 @@ void OscFeedbackProjector::syncSurfaces() {
     // are never reused, so this is the assertion that they are not: a surface
     // whose id still matches under a different host would mean the whole echo
     // story had come apart.
-    for (auto it = surfaces_.begin(); it != surfaces_.end();) {
-        if (stillThere(*it)) {
-            ++it;
-            continue;
-        }
-        it = surfaces_.erase(it);
-    }
+    std::erase_if(surfaces_, [&](const Surface& surface) { return !stillThere(surface); });
 
     for (const auto& peer : peers) {
         // A peer that has only ever sent noise is not answered. See `OscPeers`:
