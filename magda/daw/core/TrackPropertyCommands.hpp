@@ -51,8 +51,7 @@ class SetTrackVolumeCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const const auto* o =
-                dynamic_cast<const SetTrackVolumeCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackVolumeCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -89,7 +88,7 @@ class SetTrackPanCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const const auto* o = dynamic_cast<const SetTrackPanCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackPanCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -123,8 +122,7 @@ class SetTrackMixerChannelWidthCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const const auto* o =
-                dynamic_cast<const SetTrackMixerChannelWidthCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackMixerChannelWidthCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -159,8 +157,7 @@ class SetTrackMixerFaderTopInsetCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const const auto* o =
-                dynamic_cast<const SetTrackMixerFaderTopInsetCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetTrackMixerFaderTopInsetCommand*>(other))
             return o->trackId_ == trackId_;
         return false;
     }
@@ -541,7 +538,7 @@ class SetSendLevelCommand : public UndoableCommand {
     }
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const const auto* o = dynamic_cast<const SetSendLevelCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetSendLevelCommand*>(other))
             return o->trackId_ == trackId_ && o->busIndex_ == busIndex_;
         return false;
     }
