@@ -1,6 +1,7 @@
 #include "io/RecordStream.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace magda::engine {
 
@@ -112,8 +113,11 @@ bool RecordStream::drain() {
         if (const auto available = write - read; available > 0) {
             const auto take = contiguousAudioToDrain(read, available);
             const auto offset = static_cast<std::size_t>(read & mask_);
-            const auto chunk = juce::dsp::AudioBlock<const float>(audio_).getSubBlock(
-                offset, static_cast<std::size_t>(take));
+            // as_const, and not for tidiness: the AudioBlock constructor taking a
+            // mutable buffer calls getArrayOfWritePointers, which writes the
+            // buffer's isClear flag that the audio thread's copyFrom writes too.
+            const auto chunk = juce::dsp::AudioBlock<const float>(std::as_const(audio_))
+                                   .getSubBlock(offset, static_cast<std::size_t>(take));
 
             if (!failed_.load(std::memory_order_relaxed) && !sink_.writeAudio(chunk, take))
                 failed_.store(true, std::memory_order_relaxed);
