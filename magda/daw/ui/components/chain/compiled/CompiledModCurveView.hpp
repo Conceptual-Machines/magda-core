@@ -26,7 +26,7 @@ class CompiledModCurveView final : public juce::Component,
   public:
     explicit CompiledModCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 110;
     }
 

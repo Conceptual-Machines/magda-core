@@ -18,7 +18,7 @@ class CompiledFilterCurveView final : public juce::Component,
   public:
     explicit CompiledFilterCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 

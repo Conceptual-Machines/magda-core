@@ -49,7 +49,7 @@ class MagdaFilterCompiledPlugin : public MagdaCompiledEffect {
     /// The modes @p engineIndex can actually produce. Each family's Faust
     /// source declares only its own set, and the host's dropdown mirrors that
     /// so it never offers a mode with no branch behind it.
-    std::vector<juce::String> modeChoicesForEngine(int engineIndex) const;
+    static std::vector<juce::String> modeChoicesForEngine(int engineIndex);
 
     int engineAwareModeSlot() const override {
         return kModeSlot;

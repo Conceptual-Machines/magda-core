@@ -197,7 +197,7 @@ class Compiler {
     TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
 
     /// The track this track's audio output feeds; the master by default.
-    TrackId resolveAudioDestination(const TrackInfo& track) const;
+    static TrackId resolveAudioDestination(const TrackInfo& track);
 
     void emitTrack(const TrackInfo& track);
 
@@ -385,7 +385,7 @@ TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
     return parseTrackRoute(track.midiInputDevice);
 }
 
-TrackId Compiler::resolveAudioDestination(const TrackInfo& track) const {
+TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
     const auto route = parseTrackRoute(track.audioOutputDevice);
     return route.namesTrack() ? route.trackId : MASTER_TRACK_ID;
 }

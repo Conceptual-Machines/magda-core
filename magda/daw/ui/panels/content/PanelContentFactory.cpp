@@ -91,7 +91,7 @@ std::vector<PanelContentType> PanelContentFactory::getAvailableTypes() const {
     return types;
 }
 
-PanelContentInfo PanelContentFactory::getContentInfo(PanelContentType type) const {
+PanelContentInfo PanelContentFactory::getContentInfo(PanelContentType type) {
     return PanelContentInfo{type, getContentTypeName(type), getContentTypeName(type),
                             getContentTypeIcon(type)};
 }

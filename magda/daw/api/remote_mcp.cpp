@@ -546,8 +546,7 @@ std::vector<juce::String> McpEndpoint::urisAffectedBy(Topic topic,
     return uris;
 }
 
-juce::var McpEndpoint::acknowledgment(const ListenFilter& filter,
-                                      const juce::var& subscriptionId) const {
+juce::var McpEndpoint::acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId) {
     juce::Array<juce::var> uris;
     for (const auto& uri : filter.resourceSubscriptions)
         uris.add(uri);

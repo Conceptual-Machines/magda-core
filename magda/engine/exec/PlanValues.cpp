@@ -130,7 +130,7 @@ class Resolver {
     ///
     /// Pads entered: a pad rack hangs off its device rather than sitting in the
     /// chain, and its chains carry mute, solo and a fader like any other's.
-    const RackInfo* findRack(const TrackInfo& track, RackId rackId) const {
+    static const RackInfo* findRack(const TrackInfo& track, RackId rackId) {
         return chain_walk::findRack(
             track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
             chain_walk::Pads::Enter,

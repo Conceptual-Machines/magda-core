@@ -281,7 +281,7 @@ const magda::AutomationClipInfo* AutomationClipEditorContent::getClip() const {
     return magda::AutomationManager::getInstance().getClip(selection_.clipId);
 }
 
-double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInfo& clip) const {
+double AutomationClipEditorContent::viewSpanBeats(const magda::AutomationClipInfo& clip) {
     // Looped -> one loop cycle (the clip's own timeline); else content length.
     const bool looped = clip.looping && clip.loopLengthBeats > 0.0;
     return juce::jmax(looped ? clip.loopLengthBeats : clip.lengthBeats, 0.25);

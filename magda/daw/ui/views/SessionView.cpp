@@ -4062,7 +4062,7 @@ void SessionView::clearDragGhost() {
     }
 }
 
-bool SessionView::isAudioFile(const juce::String& filename) const {
+bool SessionView::isAudioFile(const juce::String& filename) {
     static const juce::StringArray audioExtensions = {".wav",  ".aiff", ".aif", ".mp3", ".ogg",
                                                       ".flac", ".m4a",  ".wma", ".opus"};
 

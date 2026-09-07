@@ -124,8 +124,7 @@ std::vector<daw::audio::MaskingFinding> TrackMeasurementManager::getMaskingFindi
 }
 
 size_t TrackMeasurementManager::readTrackSpectrumSamples(TrackId trackId, float* dest,
-                                                         int numSamples,
-                                                         double& sampleRateOut) const {
+                                                         int numSamples, double& sampleRateOut) {
     auto* pm = pluginManager();
     if (pm == nullptr)
         return 0;

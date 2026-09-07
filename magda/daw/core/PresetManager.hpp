@@ -37,7 +37,7 @@ class PresetManager {
      * @brief Get the root presets directory
      * @return ~/Documents/MAGDA/Presets/
      */
-    juce::File getPresetsDirectory() const;
+    static juce::File getPresetsDirectory();
 
     /**
      * @brief Get the chains presets directory
@@ -236,7 +236,7 @@ class PresetManager {
     /**
      * @brief Get list of preset files in a directory
      */
-    juce::StringArray getPresetList(const juce::File& directory) const;
+    static juce::StringArray getPresetList(const juce::File& directory);
 
     juce::String lastError_;
     std::unordered_map<DeviceId, juce::String> suggestedNames_;

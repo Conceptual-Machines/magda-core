@@ -344,7 +344,7 @@ void ChainRowComponent::resized() {
     panLabel_.setBounds(bounds.removeFromLeft(panWidth));
 }
 
-int ChainRowComponent::getPreferredHeight() const {
+int ChainRowComponent::getPreferredHeight() {
     return ROW_HEIGHT;
 }
 

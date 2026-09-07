@@ -241,8 +241,8 @@ class MixerView : public juce::Component,
 
         std::vector<std::unique_ptr<MiniChainRow>> miniChainRows_;
         std::vector<MiniChainRowSignatureEntry> miniChainSignature_;
-        std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
-            const TrackInfo& track) const;
+        static std::vector<MiniChainRowSignatureEntry> buildMiniChainSignature(
+            const TrackInfo& track);
         void syncMiniChainRows(const TrackInfo& track);
         void rebuildMiniChainRows(const TrackInfo& track,
                                   std::vector<MiniChainRowSignatureEntry> signature);
@@ -349,14 +349,14 @@ class MixerView : public juce::Component,
     std::vector<std::unique_ptr<ChannelResizeHandle>> channelResizeHandles_;
     void wireChannelResizeHandle(ChannelResizeHandle& handle);
     void layoutChannelResizeHandles(int containerHeight);
-    int getTopLevelStripWidth(const ChannelStrip& strip) const;
+    static int getTopLevelStripWidth(const ChannelStrip& strip);
     std::vector<TrackId> getLayoutEditTargets(TrackId clickedId, bool allVisible) const;
     void applyChannelWidthDelta(TrackId clickedId, int deltaX, const juce::ModifierKeys& mods);
     void finishChannelWidthResize(const juce::ModifierKeys& mods);
     void resetChannelWidths(TrackId clickedId, const juce::ModifierKeys& mods);
     void commitChannelWidthResize();
-    void executeMixerLayoutCommands(const juce::String& description,
-                                    std::vector<std::unique_ptr<UndoableCommand>> commands);
+    static void executeMixerLayoutCommands(const juce::String& description,
+                                           std::vector<std::unique_ptr<UndoableCommand>> commands);
 
     // Left-edge vertical rail of view-toggle buttons (sends, routing, monitor,
     // mini oscilloscope, mini spectrum, mini FX chain). State persisted via
@@ -368,7 +368,7 @@ class MixerView : public juce::Component,
     void relayoutAllStrips();
     // Ensure every non-master track has (or lacks) the Oscilloscope /
     // Spectrum Analyzer post-FX device to match the mixer rail toggles.
-    void reconcileAnalysisDevices();
+    static void reconcileAnalysisDevices();
     bool isResizeDragging_ = false;
     bool wasPlaying_ = false;  // tracks transport edge to auto-reset peak holds
     bool pendingResizeUpdate_ = false;
@@ -402,7 +402,7 @@ class MixerView : public juce::Component,
     // Audio engine for metering
     AudioEngine* audioEngine_ = nullptr;
 
-    bool isInChannelResizeZone(const juce::Point<int>& pos) const;
+    static bool isInChannelResizeZone(const juce::Point<int>& pos);
 
     // Plugin drag-and-drop state
     bool showPluginDropOverlay_ = false;

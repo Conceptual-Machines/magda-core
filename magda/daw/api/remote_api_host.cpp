@@ -536,7 +536,7 @@ int RemoteApiHost::mcpPort() const {
     return mcpServer_ != nullptr ? mcpServer_->boundPort() : 0;
 }
 
-juce::File RemoteApiHost::tokenFile() const {
+juce::File RemoteApiHost::tokenFile() {
     return paths::dataDir().getChildFile(juce::String(kTokenFilePrefix) +
                                          juce::String(currentProcessId()) + kTokenFileSuffix);
 }

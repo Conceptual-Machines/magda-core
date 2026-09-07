@@ -300,7 +300,7 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
 }
 
 bool MidiInputRouter::isExternalInstrumentSendbackInput(TrackId trackId,
-                                                        const juce::String& inputName) const {
+                                                        const juce::String& inputName) {
     // Arm-gated: a record-armed track re-admits the synth's own ports so its
     // keyboard can be captured (Local Control off on the synth is the no-
     // double-trigger companion). Un-armed, the ports stay dropped so playback

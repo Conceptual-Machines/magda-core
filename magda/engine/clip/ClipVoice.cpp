@@ -166,7 +166,7 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
 
 void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
                           const BlockInfo& block, double startSeconds, double endSeconds,
-                          FadeCurve curve, bool rising) const {
+                          FadeCurve curve, bool rising) {
     const auto length = endSeconds - startSeconds;
     if (!(length > 0.0) || block.numSamples <= 0)
         return;

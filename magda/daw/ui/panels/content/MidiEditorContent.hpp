@@ -146,7 +146,7 @@ class MidiEditorContent : public PanelContent,
     // --- Multi-track overlay (ghost notes from other tracks, #1281) ---
     // Shared between piano roll and drum grid; each editor renders the
     // overlay in its own grid via applyOverlayTracks().
-    bool hasOverlayTracks() const {
+    static bool hasOverlayTracks() {
         return !overlayTrackIds_.empty();
     }
     // Sticky multi-select menu of other MIDI tracks (anchored at `anchor`);
@@ -161,7 +161,7 @@ class MidiEditorContent : public PanelContent,
     static bool isNotePreviewEnabled() {
         return notePreviewEnabled_;
     }
-    void setNotePreviewEnabled(bool enabled) {
+    static void setNotePreviewEnabled(bool enabled) {
         notePreviewEnabled_ = enabled;
     }
     // Update a gutter preview toggle to reflect `on`: crossed speaker in dimmed
@@ -222,7 +222,7 @@ class MidiEditorContent : public PanelContent,
     static bool velocityDrawerOpen_;
     static bool velocityLaneVisible_;
     void setVelocityDrawerVisible(bool visible);
-    bool isVelocityDrawerVisible() const {
+    static bool isVelocityDrawerVisible() {
         return velocityDrawerOpen_;
     }
     // Push the velocity-visible flag into the drawer, recompute drawer-open, and

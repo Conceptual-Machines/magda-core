@@ -915,7 +915,7 @@ juce::String AutomationLaneComponent::formatScaleValue(double normalizedValue) c
     return juce::String(static_cast<int>(normalizedValue * 100)) + "%";
 }
 
-int AutomationLaneComponent::valueToPixel(double value, int areaHeight) const {
+int AutomationLaneComponent::valueToPixel(double value, int areaHeight) {
     return static_cast<int>((1.0 - value) * areaHeight);
 }
 

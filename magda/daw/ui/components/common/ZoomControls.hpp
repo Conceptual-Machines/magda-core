@@ -50,7 +50,7 @@ class ZoomControls : public juce::Component {
     void handleSliderChange();
 
     // Styling
-    void setupButton(juce::TextButton& button, const juce::String& text);
+    static void setupButton(juce::TextButton& button, const juce::String& text);
     void setupSlider();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ZoomControls)

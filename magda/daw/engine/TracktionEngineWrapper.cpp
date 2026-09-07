@@ -13,7 +13,7 @@ namespace magda {
 // PDC Query Methods
 // =============================================================================
 
-double TracktionEngineWrapper::getPluginLatencySeconds(const std::string& effect_id) const {
+double TracktionEngineWrapper::getPluginLatencySeconds(const std::string& effect_id) {
     // TODO: Implement when we have effect tracking
     // For now, iterate all tracks and their plugins to find by ID
     juce::ignoreUnused(effect_id);

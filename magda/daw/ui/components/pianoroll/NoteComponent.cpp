@@ -465,7 +465,7 @@ void NoteComponent::timerCallback() {
     }
 }
 
-bool NoteComponent::isOnLeftEdge(int x) const {
+bool NoteComponent::isOnLeftEdge(int x) {
     return x < RESIZE_HANDLE_WIDTH;
 }
 

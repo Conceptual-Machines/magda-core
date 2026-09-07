@@ -35,7 +35,7 @@ PluginScanCoordinator::~PluginScanCoordinator() {
     workers_.clear();
 }
 
-juce::File PluginScanCoordinator::getScannerExecutable() const {
+juce::File PluginScanCoordinator::getScannerExecutable() {
     auto appBundle = juce::File::getSpecialLocation(juce::File::currentApplicationFile);
 
     juce::StringArray triedPaths;
@@ -523,7 +523,7 @@ void PluginScanCoordinator::saveExclusions() {
     }
 }
 
-juce::File PluginScanCoordinator::getScanReportFile() const {
+juce::File PluginScanCoordinator::getScanReportFile() {
     return magda::paths::lastScanReportFile();
 }
 

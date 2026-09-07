@@ -54,13 +54,13 @@ class FaustAgent {
     }
 
   private:
-    Result parseJson(const juce::String& text);
+    static Result parseJson(const juce::String& text);
 
     // Compile through faust-mcp. A disabled server intentionally stages code
     // for manual editing; an enabled server that cannot start or verify fails
     // closed and never reaches the live apply path.
-    bool compileCheck(const std::string& name, const std::string& source, std::string& errorOut,
-                      bool& verified);
+    static bool compileCheck(const std::string& name, const std::string& source,
+                             std::string& errorOut, bool& verified);
 
     // Shared body for generate / generateStreaming. Runs the conversational
     // generate-and-auto-fix loop: on a compile failure the broken reply is

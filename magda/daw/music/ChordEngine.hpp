@@ -51,17 +51,17 @@ class ChordEngine {
     ~ChordEngine();
 
     // Detection
-    [[nodiscard]] Chord detect(const std::vector<ChordNote>& heldNotes) const;
+    [[nodiscard]] static Chord detect(const std::vector<ChordNote>& heldNotes);
     Chord smartDetect(const std::vector<ChordNote>& notes) const;
     Chord detectPolychord(const std::vector<ChordNote>& notes) const;
-    bool isPolychordCandidate(const std::vector<ChordNote>& notes) const;
+    static bool isPolychordCandidate(const std::vector<ChordNote>& notes);
 
     // Creation
-    Chord buildChordInRootPosition(ChordRoot root, ChordQuality quality, int octave = 4) const;
+    static Chord buildChordInRootPosition(ChordRoot root, ChordQuality quality, int octave = 4);
     std::vector<Chord> buildChordInversions(ChordRoot root, ChordQuality quality,
                                             int octave = 4) const;
-    Chord buildChordInversion(ChordRoot root, ChordQuality quality, int inversion,
-                              int octave = 4) const;
+    static Chord buildChordInversion(ChordRoot root, ChordQuality quality, int inversion,
+                                     int octave = 4);
 
     // Utility
     static std::vector<int> getChordIntervals(ChordQuality quality);
@@ -69,8 +69,8 @@ class ChordEngine {
     static int getChordNoteCount(ChordQuality quality);
     static ChordSpec parseChordName(const juce::String& chordString);
     static juce::String chordSpecToString(const ChordSpec& spec, bool includeInversion = true);
-    std::vector<std::pair<juce::String, float>> findChordsFromNotes(
-        const std::vector<int>& pitchClasses) const;
+    static std::vector<std::pair<juce::String, float>> findChordsFromNotes(
+        const std::vector<int>& pitchClasses);
 
     // Finalize chord (sort notes, detect inversion, set displayName)
     static void finalizeChord(Chord& c);

@@ -92,7 +92,7 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     return devices;
 }
 
-std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiOutputs() const {
+std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiOutputs() {
     std::vector<MidiDeviceInfo> devices;
 
     auto midiOutputs = juce::MidiOutput::getAvailableDevices();

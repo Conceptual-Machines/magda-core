@@ -793,7 +793,7 @@ struct RemoteMcpServer::Impl {
     // Era selection
     // -----------------------------------------------------------------------
 
-    McpError unsupportedVersion(const juce::String& requested) const {
+    static McpError unsupportedVersion(const juce::String& requested) {
         juce::Array<juce::var> supported;
         for (const auto& version : mcpProtocolVersions())
             supported.add(version);
@@ -920,9 +920,10 @@ struct RemoteMcpServer::Impl {
      * two components acting on two different requests. Rejecting the
      * disagreement is what keeps that from being exploitable.
      */
-    std::optional<McpError> validateHeaders(const httplib::Request& request,
-                                            const juce::String& method, const juce::var& params,
-                                            const juce::String& version) const {
+    static std::optional<McpError> validateHeaders(const httplib::Request& request,
+                                                   const juce::String& method,
+                                                   const juce::var& params,
+                                                   const juce::String& version) {
         const auto mismatch = [](const juce::String& message) {
             return McpError{MCP_HEADER_MISMATCH, message, {}, httplib::StatusCode::BadRequest_400};
         };

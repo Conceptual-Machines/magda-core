@@ -1212,7 +1212,7 @@ MediaExplorerContent::~MediaExplorerContent() {
     previewCallback_.reset();
 }
 
-juce::File MediaExplorerContent::pickStartupFilesystemRoot() const {
+juce::File MediaExplorerContent::pickStartupFilesystemRoot() {
     // Saved default → user's Music folder → home. Returns the first that
     // exists as a directory.
     auto defaultDir = magda::Config::getInstance().getBrowserDefaultDirectory();
@@ -1701,23 +1701,23 @@ juce::String MediaExplorerContent::getMediaFilterPattern() const {
     return patterns.joinIntoString(";");
 }
 
-bool MediaExplorerContent::isAudioFile(const juce::File& file) const {
+bool MediaExplorerContent::isAudioFile(const juce::File& file) {
     auto ext = file.getFileExtension().toLowerCase();
     return ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".mp3" || ext == ".ogg" ||
            ext == ".flac";
 }
 
-bool MediaExplorerContent::isMidiFile(const juce::File& file) const {
+bool MediaExplorerContent::isMidiFile(const juce::File& file) {
     auto ext = file.getFileExtension().toLowerCase();
     return ext == ".mid" || ext == ".midi";
 }
 
-bool MediaExplorerContent::isMagdaClip(const juce::File& file) const {
+bool MediaExplorerContent::isMagdaClip(const juce::File& file) {
     auto ext = file.getFileExtension().toLowerCase();
     return ext == ".magdaclip";
 }
 
-bool MediaExplorerContent::isPresetFile(const juce::File& file) const {
+bool MediaExplorerContent::isPresetFile(const juce::File& file) {
     auto ext = file.getFileExtension().toLowerCase();
     return ext == ".magdapreset";
 }

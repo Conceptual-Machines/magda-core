@@ -65,7 +65,7 @@ juce::File ControllerProfileRegistry::userFileForProfileId(const juce::String& i
     return userControllersDirectory().getChildFile(filenameForProfileId(id));
 }
 
-juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::String& id) const {
+juce::File ControllerProfileRegistry::findSourceFileForProfileId(const juce::String& id) {
     // Try the canonical filename in the user dir first — fast path for
     // user-imported profiles (matches load() precedence: user wins over bundled).
     auto direct = userFileForProfileId(id);

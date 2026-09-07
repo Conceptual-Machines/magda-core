@@ -126,8 +126,8 @@ class AIChatConsoleContent : public PanelContent,
     void sendMessage(const juce::String& text);
     void cancelRequest();
     void restoreSendIcon();
-    void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
-                             std::size_t svgDataSize);
+    static void setThemedButtonIcon(juce::DrawableButton& button, const void* svgData,
+                                    std::size_t svgDataSize);
     void appendToChat(const juce::String& text);
     void updateContextBar();
     void showMidiContextPicker();
@@ -308,7 +308,7 @@ class AIChatConsoleContent : public PanelContent,
     juce::Label configStatusLabel_;
     std::unique_ptr<magda::SvgButton> serverToggleButton_;
     void updateConfigStatus();
-    bool isLocalPreset() const;
+    static bool isLocalPreset();
 
     // Plugin alias autocomplete
     struct AliasEntry {
@@ -339,9 +339,9 @@ class AIChatConsoleContent : public PanelContent,
     std::vector<AliasEntry> allAliases_;
 
     void buildAliasList();
-    std::vector<ParamAliasEntry> collectParamAliases(const juce::String& pluginAlias) const;
+    static std::vector<ParamAliasEntry> collectParamAliases(const juce::String& pluginAlias);
     juce::String resolveAliases(const juce::String& text);
-    juce::String rewriteSlashCommand(const juce::String& text);
+    static juce::String rewriteSlashCommand(const juce::String& text);
 
     // Slash commands live in their own module (SlashCommands.{hpp,cpp})
     // so they can be tested without standing up the full chat panel. The

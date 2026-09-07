@@ -59,8 +59,8 @@ class ChordAgent {
 
     /// Resolve the dedicated Chord agent role (with Config's Music fallback), send
     /// the request, stream when supported, and parse the structured result.
-    Result generate(const Input& input, TokenCallback onToken = {},
-                    CancelCallback shouldCancel = {}) const;
+    static Result generate(const Input& input, TokenCallback onToken = {},
+                           CancelCallback shouldCancel = {});
 };
 
 }  // namespace magda

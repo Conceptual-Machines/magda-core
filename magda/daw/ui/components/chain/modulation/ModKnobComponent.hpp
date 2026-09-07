@@ -274,7 +274,7 @@ class ModKnobComponent : public juce::Component, public magda::LinkModeManagerLi
     void modLinkModeChanged(bool active, const magda::ModSelection& selection) override;
 
     void showContextMenu();
-    void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
+    static void paintLinkIndicator(juce::Graphics& g, juce::Rectangle<int> area);
     void onNameLabelEdited();
     void onLinkButtonClicked();
 

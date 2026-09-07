@@ -31,7 +31,7 @@ class CompiledRingModCurveView final : public juce::Component,
   public:
     explicit CompiledRingModCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 120;
     }
 

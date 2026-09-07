@@ -28,7 +28,7 @@ class CompiledFlangerCurveView final : public juce::Component,
   public:
     explicit CompiledFlangerCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 130;
     }
 

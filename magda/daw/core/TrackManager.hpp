@@ -653,7 +653,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     bool setPadOutput(const ChainNodePath& gridPath, int padIndex, int outputIndex);
 
     /// Whether a bus can be assigned to @p gridPath's pads at all.
-    bool padBusesAvailable(const ChainNodePath& gridPath) const;
+    static bool padBusesAvailable(const ChainNodePath& gridPath);
 
     /// Put every pad back on the grid's own mix. True when any of them moved.
     ///
@@ -1350,7 +1350,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void syncMultiOutChildOutputsForSource(TrackId sourceTrackId);
 
     // Helper for recursive mod updates
-    void updateRackMods(const RackInfo& rack, double deltaTime);
+    static void updateRackMods(const RackInfo& rack, double deltaTime);
 
     juce::String generateTrackName() const;
 };

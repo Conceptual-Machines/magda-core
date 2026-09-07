@@ -86,7 +86,7 @@ class AutomationRecordingEngine {
     // here because shouldRecord() already returns false.
     bool requiresUserTouched() const;
     double getCurrentBeatTime() const;
-    double normalizeDeviceParam(const AutomationTarget& target, float rawValue);
+    static double normalizeDeviceParam(const AutomationTarget& target, float rawValue);
     bool shouldThinPoint(AutomationLaneId laneId, double beatTime, double value);
     void recordPoint(AutomationLaneId laneId, double beatTime, double normalizedValue);
     void flushFinalPoints();

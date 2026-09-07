@@ -31,7 +31,7 @@ class CompiledSaturatorCurveView final : public juce::Component,
   public:
     explicit CompiledSaturatorCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 

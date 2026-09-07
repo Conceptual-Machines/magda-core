@@ -243,7 +243,7 @@ void BrowseScaleRowComponent::mouseExit(const juce::MouseEvent&) {
     repaint();
 }
 
-int BrowseScaleRowComponent::getRowHeight() const {
+int BrowseScaleRowComponent::getRowHeight() {
     return ROW_HEIGHT;
 }
 

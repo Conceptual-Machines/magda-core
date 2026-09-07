@@ -153,8 +153,8 @@ class TrackContentPanel : public juce::Component,
     }
 
     // Automation lane management
-    void showAutomationLane(TrackId trackId, AutomationLaneId laneId);
-    void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
+    static void showAutomationLane(TrackId trackId, AutomationLaneId laneId);
+    static void hideAutomationLane(TrackId trackId, AutomationLaneId laneId);
     void toggleAutomationLane(TrackId trackId, AutomationLaneId laneId);
     bool isAutomationLaneVisible(TrackId trackId, AutomationLaneId laneId) const;
     bool getAutomationLaneBounds(AutomationLaneId laneId, juce::Rectangle<int>& bounds) const;

@@ -97,11 +97,11 @@ void MixerDebugPanel::resized() {
         viewport_->getWidth() - (viewport_->isVerticalScrollBarShown() ? 8 : 0), contentHeight_);
 }
 
-bool MixerDebugPanel::isInResizeZone(const juce::Point<int>& pos) const {
+bool MixerDebugPanel::isInResizeZone(const juce::Point<int>& pos) {
     return pos.y < resizeZoneHeight_;
 }
 
-bool MixerDebugPanel::isInDragZone(const juce::Point<int>& pos) const {
+bool MixerDebugPanel::isInDragZone(const juce::Point<int>& pos) {
     return pos.y >= resizeZoneHeight_ && pos.y < titleBarHeight_;
 }
 

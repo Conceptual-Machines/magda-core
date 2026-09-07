@@ -191,7 +191,7 @@ class ClipManager {
      * captured before the edit; the current (post-edit) state is the redo state.
      * Used by audio comp edits in CompService.
      */
-    void pushClipTakeUndo(const juce::String& desc, const ClipInfo& before);
+    static void pushClipTakeUndo(const juce::String& desc, const ClipInfo& before);
 
     /**
      * @brief Force a clips changed notification (used by undo system)
@@ -918,7 +918,7 @@ class ClipManager {
     void resolveOverlaps(ClipId dominantClipId);
 
     /// Reset a looped clip's length to its base loop length and disable looping
-    void resetLoopedClipLength(ClipInfo& clip);
+    static void resetLoopedClipLength(ClipInfo& clip);
 
     /// Move every event off @p from and onto @p to. Used when a relink target
     /// turns out to be pooled already, so one file keeps one source.
@@ -948,8 +948,8 @@ class ClipManager {
     // (bounded by the source read offset), right = past its current end
     // (bounded by the source duration). Unbounded (infinity) for looping
     // clips and when the source duration is unknown.
-    double availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const;
-    double availableRightExtensionBeats(const ClipInfo& clip, double bpm) const;
+    static double availableLeftExtensionBeats(const ClipInfo& clip, double bpm);
+    static double availableRightExtensionBeats(const ClipInfo& clip, double bpm);
 
     // Unified clip storage — ClipView is a property, not storage identity
     std::unordered_map<ClipId, ClipInfo> clips_;
@@ -1041,7 +1041,7 @@ class ClipManager {
     void notifyClipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request);
 
     // Clamp audio clip properties (offset, loopStart, loopLength) to file bounds
-    void sanitizeAudioClip(ClipInfo& clip);
+    static void sanitizeAudioClip(ClipInfo& clip);
 
     // Helper to generate unique clip name
     juce::String generateClipName(ClipType type) const;

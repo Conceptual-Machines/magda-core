@@ -144,9 +144,9 @@ class ClipVoice {
 
     /// Multiply the part of @p region inside [@p startSeconds, @p endSeconds)
     /// by a curve running across it, rising or falling.
-    void applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
-                   const BlockInfo& block, double startSeconds, double endSeconds, FadeCurve curve,
-                   bool rising) const;
+    static void applyFade(juce::dsp::AudioBlock<float> region, EdgeSample regionFirstSample,
+                          const BlockInfo& block, double startSeconds, double endSeconds,
+                          FadeCurve curve, bool rising);
 
     /// How much timeline one cell covers. Small enough that a curved rate is
     /// still nearly straight across one, and that is the only thing it has to

@@ -55,7 +55,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     void lookAndFeelChanged() override;
 
     // Legacy API for compatibility
-    void setCollapsed(bool collapsed);
+    static void setCollapsed(bool collapsed);
 
     // Get the current content type being displayed
     daw::ui::PanelContentType getActiveContentType() const;
@@ -152,7 +152,7 @@ class BottomPanel : public daw::ui::TabbedPanel,
     ClipId lastEditorClipId_ = INVALID_CLIP_ID;  // Track which clip we auto-defaulted for
 
     void onEditorTabChanged(int tabIndex);
-    void showDrumGridTabContextMenu(juce::Point<int> screenPos);
+    static void showDrumGridTabContextMenu(juce::Point<int> screenPos);
 
     // Mouse listener attached to drumGridTab_ to forward right-clicks to the
     // context-menu handler. SvgButton's onClick is left-click only.

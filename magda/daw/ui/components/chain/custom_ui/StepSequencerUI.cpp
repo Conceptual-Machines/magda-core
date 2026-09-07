@@ -864,7 +864,7 @@ void StepSequencerUI::mouseUp(const juce::MouseEvent&) {
 // Hit testing helpers
 // =============================================================================
 
-int StepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) const {
+int StepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) {
     if (numSteps <= 0 || areaWidth <= 0)
         return -1;
     int relX = x - areaX;

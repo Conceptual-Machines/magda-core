@@ -27,7 +27,7 @@ class CompiledChorusCurveView final : public juce::Component,
   public:
     explicit CompiledChorusCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 120;
     }
 

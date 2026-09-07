@@ -323,7 +323,7 @@ void TrackManager::setPadBypassed(const ChainNodePath& gridPath, int padIndex, b
     }
 }
 
-bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) const {
+bool TrackManager::padBusesAvailable(const ChainNodePath& gridPath) {
     // A multi-out child track is fed by the output instance
     // InstrumentRackManager makes when it wraps a top-level instrument. A grid
     // inside a MAGDA rack is loaded by RackSyncManager instead and has no entry

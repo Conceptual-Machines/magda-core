@@ -89,7 +89,7 @@ DrumkitManager::DrumkitManager() {
     }
 }
 
-juce::File DrumkitManager::getDrumkitsDirectory() const {
+juce::File DrumkitManager::getDrumkitsDirectory() {
     return magda::paths::drumkitsDir();
 }
 

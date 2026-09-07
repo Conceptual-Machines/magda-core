@@ -437,7 +437,7 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
         });
 }
 
-juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) const {
+juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) {
     if (format.startsWith("WAV"))
         return ".wav";
     else if (format == "FLAC")
@@ -445,7 +445,7 @@ juce::String MainWindow::getFileExtensionForFormat(const juce::String& format) c
     return ".wav";  // Default
 }
 
-int MainWindow::getBitDepthForFormat(const juce::String& format) const {
+int MainWindow::getBitDepthForFormat(const juce::String& format) {
     if (format == "WAV16")
         return 16;
     if (format == "WAV24")

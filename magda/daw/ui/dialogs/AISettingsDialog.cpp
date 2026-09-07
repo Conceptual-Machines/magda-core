@@ -704,7 +704,7 @@ class AISettingsDialog::LocalPage : public juce::Component {
         config.setLoadModelOnStartup(loadOnStartupToggle_.getToggleState());
     }
 
-    bool isModelLoaded() const {
+    static bool isModelLoaded() {
         return LlamaModelManager::getInstance().isLoaded();
     }
 
@@ -1180,7 +1180,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
                id == magda::provider::FAST_INFERENCE;
     }
 
-    std::string rowProviderGroupId(const AgentRow& row) const {
+    static std::string rowProviderGroupId(const AgentRow& row) {
         int idx = row.providerCombo.getSelectedId() - 1;
         if (idx >= 0 && idx < static_cast<int>(row.providerIds.size()))
             return row.providerIds[static_cast<size_t>(idx)];
@@ -1202,7 +1202,7 @@ class AISettingsDialog::ConfigPage : public juce::Component {
     // Select the combo item matching a provider id. openai_responses and
     // openai_chat share one "OpenAI" entry, and all local backends share one
     // "Local" entry.
-    void selectRowProviderById(AgentRow& row, std::string id) {
+    static void selectRowProviderById(AgentRow& row, std::string id) {
         if (id == magda::provider::OPENAI_RESPONSES)
             id = magda::provider::OPENAI_CHAT;
         if (isLocalProviderId(id))

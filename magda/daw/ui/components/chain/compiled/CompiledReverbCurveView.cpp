@@ -61,7 +61,7 @@ void CompiledReverbCurveView::updateFromDevice(const magda::DeviceInfo& device) 
     repaint();
 }
 
-float CompiledReverbCurveView::t60SecondsForEngine(int engineIndex, float decayDisplay) const {
+float CompiledReverbCurveView::t60SecondsForEngine(int engineIndex, float decayDisplay) {
     // Mirrors the time mappings inside each engine .dsp so the visual
     // matches what the user hears at a given Decay slot value.
     const float d01 = juce::jlimit(0.0f, 1.0f, decayDisplay / 100.0f);

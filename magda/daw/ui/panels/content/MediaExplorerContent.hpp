@@ -157,7 +157,7 @@ class MediaExplorerContent : public PanelContent,
 
     // Helper: best initial Filesystem root — saved default, then Music,
     // then Home. Always returns an existing directory.
-    [[nodiscard]] juce::File pickStartupFilesystemRoot() const;
+    [[nodiscard]] static juce::File pickStartupFilesystemRoot();
 
     // Public-facing query equivalent of the old libraryMode_ flag, used by
     // the type-icon click handler to know whether it's driving DB kind or
@@ -222,12 +222,12 @@ class MediaExplorerContent : public PanelContent,
     void navigateToDirectory(const juce::File& directory);
     void updateMediaFilter();
     juce::String getMediaFilterPattern() const;
-    bool isAudioFile(const juce::File& file) const;
-    bool isMidiFile(const juce::File& file) const;
-    bool isMagdaClip(const juce::File& file) const;
-    bool isPresetFile(const juce::File& file) const;
-    juce::String formatFileSize(int64_t bytes);
-    juce::String formatDuration(double seconds);
+    static bool isAudioFile(const juce::File& file);
+    static bool isMidiFile(const juce::File& file);
+    static bool isMagdaClip(const juce::File& file);
+    static bool isPresetFile(const juce::File& file);
+    static juce::String formatFileSize(int64_t bytes);
+    static juce::String formatDuration(double seconds);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MediaExplorerContent)
 };

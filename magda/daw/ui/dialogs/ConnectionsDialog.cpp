@@ -1154,7 +1154,7 @@ class OscSurfacesPage : public juce::Component, private juce::Timer {
         addAndMakeVisible(label);
     }
 
-    void layoutRow(juce::Rectangle<int>& area, juce::Label& label, juce::Component& field) {
+    static void layoutRow(juce::Rectangle<int>& area, juce::Label& label, juce::Component& field) {
         auto row = area.removeFromTop(kRowHeight);
         label.setBounds(row.removeFromLeft(kLabelWidth));
         field.setBounds(row.removeFromLeft(kFieldWidth));
