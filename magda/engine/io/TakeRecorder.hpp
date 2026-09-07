@@ -31,6 +31,19 @@
  * - The active take is the last full pass, since only the last one can be cut
  *   off mid-way.
  *
+ * Three positions are kept apart on purpose, because latency, tempo and a disk
+ * that falls behind separate them:
+ *
+ * - when a sample arrived, which is what the callback counts;
+ * - where it belongs, which is `arrival - latency` and the take's own index;
+ * - how much of it reached a file, which is the writer's and nobody else's.
+ *
+ * The contract with TakeFileSink follows from that. A pass end is named as a
+ * take index, and always before the audio past it is queued -- by the wrap that
+ * ended the pass, or, where a negative adjustment queues that audio first, by
+ * the block that saw the loop end coming. So the writer never reconstructs a
+ * boundary and a pass holds the same samples however often the disk is drained.
+ *
  * Nothing here makes a model object on the audio thread and no clip exists
  * until the recording ends: @ref TakeRecorder::finish is where a take becomes
  * one, on the thread that asked for it.
@@ -164,9 +177,16 @@ class TakeRecorder {
     /// The first block of the take: where it starts, and the head correction.
     void start(const BlockInfo& block, const LoopRange& loop);
 
-    /// A wrap: where the pass ends, handed to the sink as a position rather
-    /// than counted down to.
+    /// A wrap: where the pass ended, unless the block ahead of it said so.
     void openPass(const LoopRange& loop);
+
+    /// The loop end read off a block before its audio has been queued, which
+    /// is the only way a negative adjustment can name a boundary in time.
+    void markLoopEndAhead(const BlockInfo& block, const LoopRange& loop);
+
+    /// Hand the sink a pass end. The one place that does, so the rule above it
+    /// holds everywhere: named before the audio past it is queued.
+    void markBoundary(std::int64_t index, const LoopRange& loop);
 
     void stop();
 
@@ -204,13 +224,18 @@ class TakeRecorder {
     /// began where the loop does.
     std::int64_t firstBoundary_ = -1;
 
+    /// Whether this cycle's pass end has been named. One loop end is one
+    /// boundary, whether the wrap or the block ahead of it found it.
+    bool cycleBoundaryMarked_ = false;
+
     std::int64_t boundariesLost_ = 0;
 
+    /// Where the take begins, and where its audio reaches. The end is asked of
+    /// the tempo map rather than accumulated, so a tempo change inside a take
+    /// moves it by what actually happened.
     double startBeat_ = 0.0;
-
-    /// Beats the take covers, accumulated from what each block wrote. Not
-    /// derived from where the cursor ended: a wrap takes that back.
-    double capturedBeats_ = 0.0;
+    double startSeconds_ = 0.0;
+    double endBeat_ = 0.0;
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.

@@ -98,9 +98,10 @@ TakeRecorderSettings floatTake(std::vector<int> channels, int latencySamples = 0
  */
 class Rig {
   public:
-    Rig(const juce::File& directory, TakeRecorderSettings settings, int inputChannels = 2)
+    Rig(const juce::File& directory, TakeRecorderSettings settings, int inputChannels = 2,
+        TempoMap tempo = TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}}))
         : input_(inputChannels, kBlockSize) {
-        transport_.tempo = TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
+        transport_.tempo = std::move(tempo);
         feed_.prepare(inputChannels, kBlockSize);
 
         settings.directory = directory;
@@ -136,6 +137,12 @@ class Rig {
         }
     }
 
+    /// Empty the queue after every callback, the way the record thread would.
+    /// What a take holds must not depend on it.
+    void drainAsItGoes() {
+        drains_ = true;
+    }
+
     TakeRecorder& recorder() {
         return *recorder_;
     }
@@ -159,6 +166,10 @@ class Rig {
 
         feed_.endCallback();
         arrival_ += numSamples;
+
+        if (drains_)
+            while (recorder_->stream().drain()) {
+            }
     }
 
     TransportSnapshot transport_;
@@ -170,6 +181,8 @@ class Rig {
     /// Input samples delivered since the rig was made, which is what the
     /// material is numbered by.
     std::int64_t arrival_ = 0;
+
+    bool drains_ = false;
 };
 
 /// The arrival the take's first sample came from, read out of the file itself.
@@ -362,6 +375,65 @@ TEST_CASE("A loop shorter than the input latency still splits every pass",
     REQUIRE(take.clip.takes.size() == 8);
     for (const auto& pass : take.clip.takes)
         CHECK(readBack(juce::File(pass.filePath)).getNumSamples() == kLoopSamples);
+}
+
+TEST_CASE("A pass holds the same samples however often the disk is drained",
+          "[engine][io][record][2461]") {
+    // A negative adjustment queues a pass's last samples before the transport
+    // wraps, so a boundary named at the wrap would already be behind them and
+    // the pass would end wherever the writer had got to.
+    const auto passSamples = [](bool drains) {
+        Rig rig(emptyDirectory(drains ? "drained_each" : "drained_late"), floatTake({0, 1}, -128));
+        rig.loop(0.0, 2.0);
+        rig.play();
+
+        if (drains)
+            rig.drainAsItGoes();
+
+        rig.run(3 * 2 * kBeatSamples);
+
+        const auto take = rig.recorder().finish();
+        std::vector<int> lengths;
+        for (const auto& pass : take.clip.takes)
+            lengths.push_back(readBack(juce::File(pass.filePath)).getNumSamples());
+        return lengths;
+    };
+
+    const auto late = passSamples(false);
+    const auto each = passSamples(true);
+
+    REQUIRE(late == each);
+    REQUIRE_FALSE(late.empty());
+
+    // Three loops delivered, so three passes of the loop, and the padding the
+    // head gained comes out as a short pass of the fourth.
+    REQUIRE(late.size() == 4);
+    for (std::size_t pass = 0; pass < 3; ++pass) {
+        INFO("pass " << pass);
+        REQUIRE(late[pass] == 2 * kBeatSamples);
+    }
+
+    CHECK(late.back() == 128);
+}
+
+TEST_CASE("A take's length is measured where its audio sits, not where it arrived",
+          "[engine][io][record][2461]") {
+    // A step from 120 to 240 bpm at beat 1. The head correction moves the
+    // recorded stretch a latency earlier, and the beats it covers there are not
+    // the beats the arriving blocks counted.
+    Rig rig(emptyDirectory("tempo_step"), floatTake({0, 1}, 128), 2,
+            TempoMap({{0.0, 120.0, 0.0f}, {1.0, 120.0, 0.0f}, {1.0, 240.0, 0.0f}}, {{0.0, 4, 4}}));
+    rig.play();
+    rig.run(8000);
+
+    const auto take = rig.recorder().finish();
+    const auto stored = readBack(take.file);
+    REQUIRE(stored.getNumSamples() == 8000 - 128);
+
+    // A beat is 4000 samples until beat 1 and 2000 after it, so what the file
+    // holds reaches beat 2.936 and the clip has to say so.
+    CHECK(take.startBeat == Catch::Approx(0.0));
+    CHECK(take.lengthBeats == Catch::Approx(2.936));
 }
 
 TEST_CASE("A pass end the write path could not take is reported", "[engine][io][record][2461]") {

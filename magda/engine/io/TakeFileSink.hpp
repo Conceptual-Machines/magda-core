@@ -26,6 +26,11 @@
  * Boundaries travel on a lane of their own because the queue carries only
  * audio: where a loop wrapped is something only the audio thread knows, and a
  * chunk handed over here may straddle one.
+ *
+ * What the lane relies on is that a boundary is named before the audio past it
+ * is queued (io/TakeRecorder.hpp). That is what lets this split on a position
+ * rather than guess from one: nothing can be written past a boundary that has
+ * not arrived yet, so a pass holds the same samples whenever it is drained.
  */
 
 namespace magda::engine {
