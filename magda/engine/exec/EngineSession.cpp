@@ -220,6 +220,10 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
     PublishedTransport::ScopedAccess<farbot::ThreadType::realtime> transport(transport_);
 
+    // Held for the callback rather than fetched per block: what is being
+    // recorded cannot change in the middle of one.
+    const RecordingFeed::Reader takes(recording_);
+
     // One callback is one or more stretches of timeline. It is more than one
     // exactly when a loop wraps inside it, and the pieces are rendered as
     // separate blocks so that nothing downstream has to know a wrap can happen
@@ -233,6 +237,12 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
                                        segment.startSample, segment.block.numSamples);
 
         liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
+
+        // Before the plan and outside it: a take holds the input the device
+        // captured, not what the track's chain went on to make of it.
+        if (takes)
+            for (auto* recorder : *takes.get())
+                recorder->capture(segment.block, segment.countingIn, transport->loop);
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the

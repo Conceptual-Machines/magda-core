@@ -140,6 +140,8 @@ add_library(magda_engine STATIC
     io/PrefetchThread.cpp
     io/RecordStream.cpp
     io/RecordThread.cpp
+    io/TakeFileSink.cpp
+    io/TakeRecorder.cpp
     io/SourceReaders.cpp
     io/StreamingAudioSource.cpp
     io/FileAudioSource.cpp
@@ -149,6 +151,8 @@ add_library(magda_engine STATIC
     io/PrefetchThread.hpp
     io/RecordStream.hpp
     io/RecordThread.hpp
+    io/TakeFileSink.hpp
+    io/TakeRecorder.hpp
     io/SourceReaders.hpp
     io/StreamingAudioSource.hpp
     io/FileAudioSource.hpp

@@ -424,6 +424,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The write path a take goes to disk through (#2460): what it keeps, what
     # it refuses to overwrite, and what it says it lost.
     list(APPEND TEST_SOURCES engine/test_record_stream.cpp)
+    # An arrangement audio take (#2461): where it starts against a declared
+    # input latency and a count-in, how a loop splits it, and which pass plays.
+    list(APPEND TEST_SOURCES engine/test_take_recorder.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
