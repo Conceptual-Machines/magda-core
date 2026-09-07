@@ -1,6 +1,8 @@
 #include "CompiledPluginRegistry.hpp"
 
+#include <algorithm>
 #include <iterator>
+#include <ranges>
 
 namespace magda::daw::audio::compiled {
 
@@ -66,18 +68,20 @@ std::span<const CompiledPluginSpec* const> getAllCompiledPluginSpecs() {
 }
 
 const CompiledPluginSpec* findCompiledPluginSpec(const juce::String& pluginId) {
-    for (const auto* spec : kAllSpecs) {
+    const auto matchesSpec = [&pluginId](const auto* spec) {
         if (pluginId.equalsIgnoreCase(spec->pluginId))
-            return spec;
-
+            return true;
         if (spec->aliasKey != nullptr && pluginId.equalsIgnoreCase(spec->aliasKey))
-            return spec;
-
-        for (int i = 0; i < spec->loadAliasCount; ++i)
-            if (spec->loadAliases[i] != nullptr && pluginId.equalsIgnoreCase(spec->loadAliases[i]))
-                return spec;
-    }
-    return nullptr;
+            return true;
+        const auto matchesLoadAlias = [&](int i) {
+            return spec->loadAliases[i] != nullptr &&
+                   pluginId.equalsIgnoreCase(spec->loadAliases[i]);
+        };
+        return std::ranges::any_of(std::views::iota(0, std::max(0, spec->loadAliasCount)),
+                                   matchesLoadAlias);
+    };
+    const auto found = std::ranges::find_if(kAllSpecs, matchesSpec);
+    return found == std::end(kAllSpecs) ? nullptr : *found;
 }
 
 }  // namespace magda::daw::audio::compiled

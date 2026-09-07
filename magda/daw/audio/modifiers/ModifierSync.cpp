@@ -1,5 +1,7 @@
 #include "modifiers/ModifierSync.hpp"
 
+#include <algorithm>
+
 #include "modifiers/ADSRDebugLog.hpp"
 #include "modifiers/ModifierHelpers.hpp"
 
@@ -23,20 +25,18 @@ te::AutomatableParameter* resolveSameScopeModParam(
     if (teIt == scopeTeMods.end() || !teIt->second)
         return nullptr;
 
-    bool sync = false;
-    for (const auto& m : scopeMods) {
-        if (m.id == link.target.modId) {
-            sync = m.tempoSync;
-            break;
-        }
-    }
+    const auto matchesModId = [&link](const ModInfo& m) { return m.id == link.target.modId; };
+    const auto foundMod = std::ranges::find_if(scopeMods, matchesModId);
+    const bool sync = foundMod != scopeMods.end() && foundMod->tempoSync;
+
     const juce::String wantedID =
         link.target.modParamIndex == 0 ? (sync ? "rateType" : "rate") : "depth";
-    for (auto* p : teIt->second->getAutomatableParameters()) {
-        if (p && p->paramID == wantedID)
-            return p;
-    }
-    return nullptr;
+    const auto params = teIt->second->getAutomatableParameters();
+    const auto matchesParamId = [&wantedID](const te::AutomatableParameter* p) {
+        return p && p->paramID == wantedID;
+    };
+    const auto foundParam = std::ranges::find_if(params, matchesParamId);
+    return foundParam == params.end() ? nullptr : *foundParam;
 }
 
 // Insert a new TE modifier of the right type for `modInfo` into `modList`,

@@ -376,12 +376,12 @@ juce::String DrumGridPlugin::padStructureFingerprint(const magda::RackInfo& pads
 std::unique_ptr<DrumGridPlugin::Chain> DrumGridPlugin::takeChain(int index, bool& created) {
     created = false;
 
-    for (auto it = chains_.begin(); it != chains_.end(); ++it) {
-        if ((*it)->index == index) {
-            auto existing = std::move(*it);
-            chains_.erase(it);
-            return existing;
-        }
+    const auto matchesIndex = [index](const auto& chain) { return chain->index == index; };
+    const auto found = std::ranges::find_if(chains_, matchesIndex);
+    if (found != chains_.end()) {
+        auto existing = std::move(*found);
+        chains_.erase(found);
+        return existing;
     }
 
     created = true;
@@ -474,14 +474,15 @@ void DrumGridPlugin::syncPadPlugins(Chain& chain, const magda::ChainInfo& pad,
         // does not rebuild the instrument under it and cut the note it is
         // playing. Matched on the DeviceId the plugin carries, which is the one
         // thing the model and the mirror agree on.
+        const auto matchesDeviceId = [&padDevice](const auto& p) {
+            return p != nullptr &&
+                   static_cast<int>(p->state.getProperty(pluginDeviceIdProp, -1)) == padDevice.id;
+        };
+        const auto found = std::ranges::find_if(chain.plugins, matchesDeviceId);
         te::Plugin::Ptr plugin;
-        for (auto it = chain.plugins.begin(); it != chain.plugins.end(); ++it) {
-            if (*it != nullptr && static_cast<int>((*it)->state.getProperty(pluginDeviceIdProp,
-                                                                            -1)) == padDevice.id) {
-                plugin = *it;
-                chain.plugins.erase(it);
-                break;
-            }
+        if (found != chain.plugins.end()) {
+            plugin = *found;
+            chain.plugins.erase(found);
         }
 
         if (plugin == nullptr) {
@@ -621,27 +622,27 @@ int DrumGridPlugin::getPluginDeviceId(int chainIndex, int pluginIndex) const {
 }
 
 const DrumGridPlugin::Chain* DrumGridPlugin::getChainForNote(int midiNote) const {
-    for (const auto& chain : chains_) {
-        if (midiNote >= chain->lowNote && midiNote <= chain->highNote)
-            return chain.get();
-    }
-    return nullptr;
+    const auto inRange = [midiNote](const auto& chain) {
+        return midiNote >= chain->lowNote && midiNote <= chain->highNote;
+    };
+    const auto found = std::ranges::find_if(chains_, inRange);
+    return found == chains_.end() ? nullptr : found->get();
 }
 
 const DrumGridPlugin::Chain* DrumGridPlugin::getChainByIndex(int chainIndex) const {
-    for (const auto& chain : chains_) {
-        if (chain->index == chainIndex)
-            return chain.get();
-    }
-    return nullptr;
+    const auto matchesIndex = [chainIndex](const auto& chain) {
+        return chain->index == chainIndex;
+    };
+    const auto found = std::ranges::find_if(chains_, matchesIndex);
+    return found == chains_.end() ? nullptr : found->get();
 }
 
 DrumGridPlugin::Chain* DrumGridPlugin::getChainByIndexMutable(int chainIndex) {
-    for (auto& chain : chains_) {
-        if (chain->index == chainIndex)
-            return chain.get();
-    }
-    return nullptr;
+    const auto matchesIndex = [chainIndex](const auto& chain) {
+        return chain->index == chainIndex;
+    };
+    const auto found = std::ranges::find_if(chains_, matchesIndex);
+    return found == chains_.end() ? nullptr : found->get();
 }
 
 int DrumGridPlugin::getChainPluginCount(int chainIndex) const {

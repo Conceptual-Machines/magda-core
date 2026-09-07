@@ -81,13 +81,14 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (!track)
                 return 0.75;
-            for (const auto& send : track->sends) {
-                if (send.busIndex == target.sendBusIndex) {
-                    float db = gainToDb(send.level);
-                    return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
-                }
-            }
-            return 0.75;  // Default to unity when bus not found
+            const auto matchesBus = [&target](const SendInfo& send) {
+                return send.busIndex == target.sendBusIndex;
+            };
+            const auto found = std::ranges::find_if(track->sends, matchesBus);
+            if (found == track->sends.end())
+                return 0.75;  // Default to unity when bus not found
+            const float db = gainToDb(found->level);
+            return static_cast<double>(ParameterUtils::realToNormalized(db, paramInfo));
         }
         case ControlTarget::Kind::PluginParam: {
             // Prefer the live engine parameter: DeviceInfo::currentValue can
@@ -150,29 +151,24 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             const auto* track = TrackManager::getInstance().getTrack(target.devicePath.trackId);
             if (!track)
                 return std::nullopt;
+            const auto matchesModId = [&target](const ModInfo& m) { return m.id == target.modId; };
             const ModInfo* mod = nullptr;
             if (target.devicePath.isValid()) {
                 auto resolved = TrackManager::getInstance().resolvePath(target.devicePath);
                 if (resolved.valid && resolved.rack) {
-                    for (const auto& m : resolved.rack->mods)
-                        if (m.id == target.modId) {
-                            mod = &m;
-                            break;
-                        }
+                    const auto found = std::ranges::find_if(resolved.rack->mods, matchesModId);
+                    if (found != resolved.rack->mods.end())
+                        mod = &(*found);
                 } else if (resolved.valid && resolved.device) {
-                    for (const auto& m : resolved.device->mods)
-                        if (m.id == target.modId) {
-                            mod = &m;
-                            break;
-                        }
+                    const auto found = std::ranges::find_if(resolved.device->mods, matchesModId);
+                    if (found != resolved.device->mods.end())
+                        mod = &(*found);
                 }
             }
             if (!mod) {
-                for (const auto& m : track->mods)
-                    if (m.id == target.modId) {
-                        mod = &m;
-                        break;
-                    }
+                const auto found = std::ranges::find_if(track->mods, matchesModId);
+                if (found != track->mods.end())
+                    mod = &(*found);
             }
             if (!mod)
                 return std::nullopt;
@@ -412,19 +408,15 @@ void AutomationManager::deleteLane(AutomationLaneId laneId) {
 }
 
 AutomationLaneInfo* AutomationManager::getLane(AutomationLaneId laneId) {
-    for (auto& lane : lanes_) {
-        if (lane.id == laneId)
-            return &lane;
-    }
-    return nullptr;
+    const auto matchesId = [laneId](const AutomationLaneInfo& lane) { return lane.id == laneId; };
+    const auto found = std::ranges::find_if(lanes_, matchesId);
+    return found == lanes_.end() ? nullptr : &(*found);
 }
 
 const AutomationLaneInfo* AutomationManager::getLane(AutomationLaneId laneId) const {
-    for (const auto& lane : lanes_) {
-        if (lane.id == laneId)
-            return &lane;
-    }
-    return nullptr;
+    const auto matchesId = [laneId](const AutomationLaneInfo& lane) { return lane.id == laneId; };
+    const auto found = std::ranges::find_if(lanes_, matchesId);
+    return found == lanes_.end() ? nullptr : &(*found);
 }
 
 std::vector<AutomationLaneId> AutomationManager::getLanesForTrack(TrackId trackId) const {
@@ -511,7 +503,7 @@ void AutomationManager::dispatchAuthorityEvent(AutomationLaneId laneId,
 }
 
 void AutomationManager::setTargetUserTouched(const AutomationTarget& target, bool touched) {
-    auto it = std::find(userTouchedTargets_.begin(), userTouchedTargets_.end(), target);
+    auto it = std::ranges::find(userTouchedTargets_, target);
     if (touched) {
         if (it == userTouchedTargets_.end())
             userTouchedTargets_.push_back(target);
@@ -521,8 +513,7 @@ void AutomationManager::setTargetUserTouched(const AutomationTarget& target, boo
 }
 
 bool AutomationManager::isTargetUserTouched(const AutomationTarget& target) const {
-    return std::find(userTouchedTargets_.begin(), userTouchedTargets_.end(), target) !=
-           userTouchedTargets_.end();
+    return std::ranges::find(userTouchedTargets_, target) != userTouchedTargets_.end();
 }
 
 std::vector<AutomationTarget> AutomationManager::getUserTouchedTargets() const {
@@ -835,7 +826,7 @@ void AutomationManager::moveClipToFront(AutomationClipId clipId) {
     if (lane == nullptr)
         return;
     auto& ids = lane->clipIds;
-    auto it = std::find(ids.begin(), ids.end(), clipId);
+    auto it = std::ranges::find(ids, clipId);
     if (it == ids.end() || it == ids.begin())
         return;
     ids.erase(it);
@@ -1123,8 +1114,8 @@ void AutomationManager::notifyClipsChanged(AutomationLaneId laneId) {
 
 void AutomationManager::notifyPointsChanged(AutomationLaneId laneId) {
     if (notificationBatchDepth_ > 0) {
-        if (std::find(pendingPointsChangedLanes_.begin(), pendingPointsChangedLanes_.end(),
-                      laneId) == pendingPointsChangedLanes_.end()) {
+        if (std::ranges::find(pendingPointsChangedLanes_, laneId) ==
+            pendingPointsChangedLanes_.end()) {
             pendingPointsChangedLanes_.push_back(laneId);
         }
         return;
@@ -1212,7 +1203,7 @@ void AutomationManager::restoreClip(AutomationClipInfo& clip) {
     // delete) re-inserts the lane with its clipIds intact, so this is a
     // no-op there.
     if (auto* lane = getLane(laneId)) {
-        if (std::find(lane->clipIds.begin(), lane->clipIds.end(), clipId) == lane->clipIds.end())
+        if (std::ranges::find(lane->clipIds, clipId) == lane->clipIds.end())
             lane->clipIds.push_back(clipId);
     }
 

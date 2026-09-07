@@ -31,12 +31,12 @@ te::MidiInputDevice* getLiveMidiInputDevice(te::Engine& engine,
         return nullptr;
 
     auto* owner = &inputDeviceInstance->owner;
-    for (const auto& midiInput : engine.getDeviceManager().getMidiInDevices()) {
-        if (midiInput && midiInput.get() == owner)
-            return midiInput.get();
-    }
-
-    return nullptr;
+    const auto matchesOwner = [owner](const auto& midiInput) {
+        return midiInput && midiInput.get() == owner;
+    };
+    const auto midiInputs = engine.getDeviceManager().getMidiInDevices();
+    const auto found = std::ranges::find_if(midiInputs, matchesOwner);
+    return found == midiInputs.end() ? nullptr : found->get();
 }
 
 te::MidiInputDevice* getLiveTrackMidiInputDevice(TrackController& trackController,
@@ -48,16 +48,14 @@ te::MidiInputDevice* getLiveTrackMidiInputDevice(TrackController& trackControlle
     auto* owner = &inputDeviceInstance->owner;
     te::MidiInputDevice* result = nullptr;
     trackController.withTrackMapping([&](const auto& mapping) {
-        for (const auto& [magdaId, teTrack] : mapping) {
-            if (!teTrack)
-                continue;
-            auto* midiInput = &teTrack->getMidiInputDevice();
-            if (midiInput == owner) {
-                if (sourceTrackId)
-                    *sourceTrackId = magdaId;
-                result = midiInput;
-                return;
-            }
+        const auto matchesOwner = [owner](const auto& entry) {
+            return entry.second && &entry.second->getMidiInputDevice() == owner;
+        };
+        if (const auto found = std::ranges::find_if(mapping, matchesOwner);
+            found != mapping.end()) {
+            if (sourceTrackId)
+                *sourceTrackId = found->first;
+            result = &found->second->getMidiInputDevice();
         }
     });
 
@@ -73,12 +71,10 @@ te::InputDevice* getLiveInputDevice(te::Engine& engine,
         return nullptr;
 
     auto* owner = &inputDeviceInstance->owner;
-    for (auto* waveInput : engine.getDeviceManager().getWaveInputDevices()) {
-        if (waveInput == owner)
-            return waveInput;
-    }
-
-    return nullptr;
+    const auto matchesOwner = [owner](auto* waveInput) { return waveInput == owner; };
+    const auto waveInputs = engine.getDeviceManager().getWaveInputDevices();
+    const auto found = std::ranges::find_if(waveInputs, matchesOwner);
+    return found == waveInputs.end() ? nullptr : *found;
 }
 
 te::WaveInputDevice* getLiveTrackWaveInputDevice(TrackController& trackController,
@@ -89,15 +85,11 @@ te::WaveInputDevice* getLiveTrackWaveInputDevice(TrackController& trackControlle
     auto* owner = &inputDeviceInstance->owner;
     te::WaveInputDevice* result = nullptr;
     trackController.withTrackMapping([&](const auto& mapping) {
-        for (const auto& [magdaId, teTrack] : mapping) {
-            if (!teTrack)
-                continue;
-            auto* waveInput = &teTrack->getWaveInputDevice();
-            if (waveInput == owner) {
-                result = waveInput;
-                return;
-            }
-        }
+        const auto matchesOwner = [owner](const auto& entry) {
+            return entry.second && &entry.second->getWaveInputDevice() == owner;
+        };
+        if (const auto found = std::ranges::find_if(mapping, matchesOwner); found != mapping.end())
+            result = &found->second->getWaveInputDevice();
     });
 
     return result;
@@ -136,21 +128,19 @@ void MidiInputRouter::setRecordingQueue(RecordingNoteQueue* queue,
 TrackId MidiInputRouter::resolveTargetTrackId(te::EditItemID targetID) const {
     TrackId result = INVALID_TRACK_ID;
     trackController_.withTrackMapping([&](const auto& mapping) {
-        for (const auto& [magdaId, teTrack] : mapping) {
-            if (!teTrack)
-                continue;
-            if (teTrack->itemID == targetID) {
-                result = magdaId;
-                return;
-            }
+        const auto matchesTarget = [targetID](const auto& entry) {
+            if (!entry.second)
+                return false;
+            if (entry.second->itemID == targetID)
+                return true;
             // Session-slot recording targets the slot, not the track.
-            for (auto* slot : teTrack->getClipSlotList().getClipSlots()) {
-                if (slot && slot->itemID == targetID) {
-                    result = magdaId;
-                    return;
-                }
-            }
-        }
+            const auto matchesSlot = [targetID](auto* slot) {
+                return slot && slot->itemID == targetID;
+            };
+            return std::ranges::any_of(entry.second->getClipSlotList().getClipSlots(), matchesSlot);
+        };
+        if (const auto found = std::ranges::find_if(mapping, matchesTarget); found != mapping.end())
+            result = found->first;
     });
     return result;
 }
@@ -178,8 +168,7 @@ void MidiInputRouter::syncTrackMidiPreviewConsumers() {
             const auto* destInfo = tm.getTrack(destTrackId);
             if (!destInfo || !destInfo->recordArmed)
                 continue;
-            if (std::find(armedTargets.begin(), armedTargets.end(), destTrackId) ==
-                armedTargets.end())
+            if (std::ranges::find(armedTargets, destTrackId) == armedTargets.end())
                 armedTargets.push_back(destTrackId);
         }
 
@@ -209,29 +198,28 @@ void MidiInputRouter::handleAsyncUpdate() {
 }
 
 te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
+    // Only accept actual VirtualMidiInputDevice instances — a physical device
+    // with the same name would break the cast and leave the feature silently
+    // disabled.
+    const auto isQwertyDevice = [](const auto& dev) {
+        return dev->getName() == "QWERTY Keyboard" &&
+               dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr;
+    };
+
     if (!qwertyMidiDevice_) {
         // Check if it already exists (persisted from a previous session).
-        // Only accept actual VirtualMidiInputDevice instances — a physical
-        // device with the same name would break the cast and leave the
-        // feature silently disabled.
-        for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-            if (dev->getName() == "QWERTY Keyboard" &&
-                dynamic_cast<te::VirtualMidiInputDevice*>(dev.get())) {
-                qwertyMidiDevice_ = dev;
-                break;
-            }
-        }
+        const auto midiInputs = engine_.getDeviceManager().getMidiInDevices();
+        if (const auto found = std::ranges::find_if(midiInputs, isQwertyDevice);
+            found != midiInputs.end())
+            qwertyMidiDevice_ = *found;
 
         if (!qwertyMidiDevice_) {
             auto result = engine_.getDeviceManager().createVirtualMidiDevice("QWERTY Keyboard");
             if (result.wasOk()) {
-                for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-                    if (dev->getName() == "QWERTY Keyboard" &&
-                        dynamic_cast<te::VirtualMidiInputDevice*>(dev.get())) {
-                        qwertyMidiDevice_ = dev;
-                        break;
-                    }
-                }
+                const auto newMidiInputs = engine_.getDeviceManager().getMidiInDevices();
+                if (const auto found = std::ranges::find_if(newMidiInputs, isQwertyDevice);
+                    found != newMidiInputs.end())
+                    qwertyMidiDevice_ = *found;
                 if (qwertyMidiDevice_)
                     qwertyNeedsContextRefresh_ = true;
             } else {
@@ -276,12 +264,10 @@ bool MidiInputRouter::isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
         keys = surfaceOnlyMidiInputPorts_;
     }
 
-    for (const auto& key : keys) {
-        if (magda::midi::matches(key, liveIdentifier, liveName))
-            return true;
-    }
-
-    return false;
+    const auto matchesLive = [&](const juce::String& key) {
+        return magda::midi::matches(key, liveIdentifier, liveName);
+    };
+    return std::ranges::any_of(keys, matchesLive);
 }
 
 void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
@@ -453,20 +439,21 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
         } else {
             auto juceDevices = juce::MidiInput::getAvailableDevices();
             juce::String deviceName;
-            for (const auto& d : juceDevices) {
-                if (d.identifier == midiDeviceId) {
-                    deviceName = d.name;
-                    break;
-                }
-            }
+            const auto matchesIdentifier = [&midiDeviceId](const auto& d) {
+                return d.identifier == midiDeviceId;
+            };
+            if (const auto found = std::ranges::find_if(juceDevices, matchesIdentifier);
+                found != juceDevices.end())
+                deviceName = found->name;
 
             if (deviceName.isNotEmpty()) {
-                for (const auto& device : dm.getMidiInDevices()) {
-                    if (device && device->getName() == deviceName) {
-                        midiDevice = device.get();
-                        break;
-                    }
-                }
+                const auto matchesName = [&deviceName](const auto& device) {
+                    return device && device->getName() == deviceName;
+                };
+                const auto midiInputs = dm.getMidiInDevices();
+                if (const auto found = std::ranges::find_if(midiInputs, matchesName);
+                    found != midiInputs.end())
+                    midiDevice = found->get();
             }
         }
 
@@ -476,13 +463,13 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             // Control off on the synth); only "All Inputs" filters it out.
             if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
                 bool removedAnyRouting = false;
-                for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                    if (&inputDeviceInstance->owner == midiDevice) {
-                        if (inputDeviceInstance->removeTarget(track->itemID, nullptr))
-                            removedAnyRouting = true;
-                        break;
-                    }
-                }
+                const auto matchesOwner = [midiDevice](auto* inputDeviceInstance) {
+                    return &inputDeviceInstance->owner == midiDevice;
+                };
+                const auto allInputs = playbackContext->getAllInputs();
+                if (const auto found = std::ranges::find_if(allInputs, matchesOwner);
+                    found != allInputs.end())
+                    removedAnyRouting = (*found)->removeTarget(track->itemID, nullptr);
                 if (removedAnyRouting && playbackContext->isPlaybackGraphAllocated())
                     playbackContext->reallocate();
                 return;
@@ -496,14 +483,16 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                 teMonitorModeSpecific = toTeMonitorMode(trackInfo2->inputMonitor);
             midiDevice->setMonitorMode(teMonitorModeSpecific);
 
-            for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
-                if (&inputDeviceInstance->owner == midiDevice) {
-                    auto result = inputDeviceInstance->setTarget(track->itemID, true, nullptr);
-                    if (result.has_value()) {
-                        (*result)->recordEnabled = false;
-                        addedRouting = true;
-                    }
-                    break;
+            const auto matchesOwner = [midiDevice](auto* inputDeviceInstance) {
+                return &inputDeviceInstance->owner == midiDevice;
+            };
+            const auto allInputs = playbackContext->getAllInputs();
+            if (const auto found = std::ranges::find_if(allInputs, matchesOwner);
+                found != allInputs.end()) {
+                auto result = (*found)->setTarget(track->itemID, true, nullptr);
+                if (result.has_value()) {
+                    (*result)->recordEnabled = false;
+                    addedRouting = true;
                 }
             }
         }
@@ -579,13 +568,9 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
 
             midiDevice->setMonitorMode(teMonitorMode);
 
-            auto hadSlotTarget = false;
-            for (auto targetID : inputDeviceInstance->getTargets()) {
-                if (targetID == slot->itemID) {
-                    hadSlotTarget = true;
-                    break;
-                }
-            }
+            const auto matchesSlotTarget = [&](auto targetID) { return targetID == slot->itemID; };
+            const bool hadSlotTarget =
+                std::ranges::any_of(inputDeviceInstance->getTargets(), matchesSlotTarget);
 
             if (!hadSlotTarget) {
                 auto result = inputDeviceInstance->setTarget(slot->itemID, false, nullptr);
@@ -598,13 +583,9 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
             inputDeviceInstance->setRecordingEnabled(slot->itemID, true);
             armedSlot = true;
         } else {
-            bool hadSlotTarget = false;
-            for (auto targetID : inputDeviceInstance->getTargets()) {
-                if (targetID == slot->itemID) {
-                    hadSlotTarget = true;
-                    break;
-                }
-            }
+            const auto matchesSlotTarget = [&](auto targetID) { return targetID == slot->itemID; };
+            const bool hadSlotTarget =
+                std::ranges::any_of(inputDeviceInstance->getTargets(), matchesSlotTarget);
 
             if (hadSlotTarget) {
                 inputDeviceInstance->setRecordingEnabled(slot->itemID, false);
@@ -612,13 +593,11 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
                     changedRouting = true;
             }
 
-            bool hasTrackTarget = false;
-            for (auto targetID : inputDeviceInstance->getTargets()) {
-                if (targetID == track->itemID) {
-                    hasTrackTarget = true;
-                    break;
-                }
-            }
+            const auto matchesTrackTarget = [&](auto targetID) {
+                return targetID == track->itemID;
+            };
+            const bool hasTrackTarget =
+                std::ranges::any_of(inputDeviceInstance->getTargets(), matchesTrackTarget);
             if (hasTrackTarget)
                 inputDeviceInstance->setRecordingEnabled(track->itemID, trackInfo->recordArmed);
         }
@@ -669,25 +648,22 @@ juce::String MidiInputRouter::getTrackMidiInput(TrackId trackId) const {
     if (!playbackContext)
         return {};
 
+    const auto matchesTrackTarget = [&](auto targetID) { return targetID == track->itemID; };
+
     // Internal track routing takes precedence over hardware devices
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         TrackId sourceTrackId = INVALID_TRACK_ID;
-        if (getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId)) {
-            for (auto targetID : inputDeviceInstance->getTargets()) {
-                if (targetID == track->itemID)
-                    return "track:" + juce::String(sourceTrackId);
-            }
-        }
+        if (getLiveTrackMidiInputDevice(trackController_, inputDeviceInstance, &sourceTrackId) &&
+            std::ranges::any_of(inputDeviceInstance->getTargets(), matchesTrackTarget))
+            return "track:" + juce::String(sourceTrackId);
     }
 
     juce::StringArray midiInputs;
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
-            auto targets = inputDeviceInstance->getTargets();
-            for (auto targetID : targets) {
-                if (targetID == track->itemID)
+            for (auto targetID : inputDeviceInstance->getTargets())
+                if (matchesTrackTarget(targetID))
                     midiInputs.add(midiDevice->getName());
-            }
         }
     }
 
@@ -788,12 +764,14 @@ void MidiInputRouter::resyncAllInputMonitors() {
         bool anyAuto = false;
 
         for (auto targetID : inputDeviceInstance->getTargets()) {
-            for (const auto& trackInfo : tm.getTracks()) {
+            const auto matchesTarget = [&](const TrackInfo& trackInfo) {
                 auto* track = trackController_.getAudioTrack(trackInfo.id);
-                if (!track || targetID != track->itemID)
-                    continue;
-
-                switch (trackInfo.inputMonitor) {
+                return track && targetID == track->itemID;
+            };
+            const auto& tracks = tm.getTracks();
+            if (const auto found = std::ranges::find_if(tracks, matchesTarget);
+                found != tracks.end()) {
+                switch (found->inputMonitor) {
                     case InputMonitorMode::In:
                         anyIn = true;
                         break;
@@ -803,7 +781,6 @@ void MidiInputRouter::resyncAllInputMonitors() {
                     case InputMonitorMode::Off:
                         break;
                 }
-                break;
             }
         }
 

@@ -514,11 +514,10 @@ void PluginManager::removeDrumGridPadDevicesLocked(const ChainNodePath& drumGrid
 }
 
 bool PluginManager::isDrumGridPadPathLocked(const ChainNodePath& devicePath) const {
-    for (const auto& entry : drumGridPadDevices_) {
-        if (entry.second.find(devicePath) != entry.second.end())
-            return true;
-    }
-    return false;
+    const auto containsDevicePath = [&](const auto& entry) {
+        return entry.second.find(devicePath) != entry.second.end();
+    };
+    return std::ranges::any_of(drumGridPadDevices_, containsDevicePath);
 }
 
 void PluginManager::detachDeviceRuntimeForChainMove(const ChainNodePath& devicePath) {
@@ -691,24 +690,15 @@ void PluginManager::validateMappingConsistency() {
         if (owner) {
             if (devicePath.trackId == MASTER_TRACK_ID) {
                 const auto& masterList = edit_.getMasterPluginList();
-                bool foundOnMaster = false;
-                for (auto i : masterList) {
-                    if (i == sd.plugin.get()) {
-                        foundOnMaster = true;
-                        break;
-                    }
-                }
-                if (foundOnMaster)
+                const auto matchesPlugin = [&](auto i) { return i == sd.plugin.get(); };
+                if (std::ranges::any_of(masterList, matchesPlugin))
                     continue;
             }
 
-            bool found = false;
-            for (auto trackId : trackController_.getAllTrackIds()) {
-                if (trackController_.getAudioTrack(trackId) == owner) {
-                    found = true;
-                    break;
-                }
-            }
+            const auto matchesOwner = [&](auto trackId) {
+                return trackController_.getAudioTrack(trackId) == owner;
+            };
+            const bool found = std::ranges::any_of(trackController_.getAllTrackIds(), matchesOwner);
             if (!found) {
             }
         }
@@ -727,17 +717,13 @@ void PluginManager::validateMappingConsistency() {
     for (auto rackId : syncedRackIds) {
         // Can't easily check trackId without exposing internals, but we can check
         // the rack exists in TrackManager
-        bool found = false;
-        for (const auto& track : TrackManager::getInstance().getTracks()) {
-            for (const auto& element : track.chain.fxChainElements) {
-                if (isRack(element) && getRack(element).id == rackId) {
-                    found = true;
-                    break;
-                }
-            }
-            if (found)
-                break;
-        }
+        const auto rackExists = [rackId](const TrackInfo& track) {
+            const auto matchesRackId = [rackId](const ChainElement& element) {
+                return isRack(element) && getRack(element).id == rackId;
+            };
+            return std::ranges::any_of(track.chain.fxChainElements, matchesRackId);
+        };
+        const bool found = std::ranges::any_of(TrackManager::getInstance().getTracks(), rackExists);
         if (!found) {
         }
     }
