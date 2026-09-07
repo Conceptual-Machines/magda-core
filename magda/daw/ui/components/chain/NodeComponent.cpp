@@ -1694,29 +1694,17 @@ void NodeComponent::initializeModsMacrosPanels() {
 
     // Mod matrix: delete link
     modulatorEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
-        auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-        if (device) {
-            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
-        } else {
-            // Rack mod
-            magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
-        }
+        magda::TrackManager::getInstance().removeModLink(nodePath_, modIndex, target);
         updateModulatorEditor();
     };
 
     // Mod matrix: toggle bipolar
-    modulatorEditorPanel_->onModLinkBipolarChanged =
-        [this](int modIndex, magda::ControlTarget target, bool bipolar) {
-            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-            if (device) {
-                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                     bipolar);
-            } else {
-                magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target,
-                                                                     bipolar);
-            }
-            updateModulatorEditor();
-        };
+    modulatorEditorPanel_->onModLinkBipolarChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool bipolar) {
+        magda::TrackManager::getInstance().setModLinkBipolar(nodePath_, modIndex, target, bipolar);
+        updateModulatorEditor();
+    };
 
     // Mod matrix: enable/disable link without losing its amount
     modulatorEditorPanel_->onModLinkEnabledChanged = [this](int modIndex,
@@ -1727,17 +1715,11 @@ void NodeComponent::initializeModsMacrosPanels() {
     };
 
     // Mod matrix: change link amount
-    modulatorEditorPanel_->onModLinkAmountChanged =
-        [this](int modIndex, magda::ControlTarget target, float amount) {
-            auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
-            if (device) {
-                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                    amount);
-            } else {
-                magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target,
-                                                                    amount);
-            }
-        };
+    modulatorEditorPanel_->onModLinkAmountChanged = [this](int modIndex,
+                                                           magda::ControlTarget target,
+                                                           float amount) {
+        magda::TrackManager::getInstance().setModLinkAmount(nodePath_, modIndex, target, amount);
+    };
 
     addChildComponent(*modulatorEditorPanel_);
 

@@ -432,17 +432,11 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
 
     if (state.playhead.isPlaying != e.isPlaying) {
         state.playhead.isPlaying = e.isPlaying;
-        // If starting playback, sync playbackPosition to editPosition
-        if (e.isPlaying) {
-            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
-            state.playhead.playbackPosition =
-                state.beatsToSeconds(state.playhead.playbackPositionBeats);
-        } else {
-            // If stopping, reset playbackPosition to editPosition
-            state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
-            state.playhead.playbackPosition =
-                state.beatsToSeconds(state.playhead.playbackPositionBeats);
-        }
+        // Both edges do the same thing: starting syncs the playback position to
+        // the edit position, stopping resets it back to the same place.
+        state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+        state.playhead.playbackPosition =
+            state.beatsToSeconds(state.playhead.playbackPositionBeats);
         changed = true;
     }
 
