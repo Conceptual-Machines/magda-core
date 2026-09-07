@@ -53,9 +53,10 @@ class TakeFileSink final : public RecordSink {
     /**
      * @brief End the pass being written at @p takeSample. On the audio thread.
      *
-     * Counted from the take's first sample, so the record thread can split a
-     * chunk it was handed whole. False when the lane is full, which is a disk
-     * dozens of passes behind and a take already reporting lost samples.
+     * Counted from the take's first sample, and may be ahead of what has been
+     * written: the boundary is where the pass ends, not a signal that it has.
+     * False when the lane is full, which is a disk hundreds of passes behind,
+     * and what the caller does with that is say so on the finished take.
      */
     bool markPassEnd(std::int64_t takeSample);
 
@@ -106,9 +107,11 @@ class TakeFileSink final : public RecordSink {
 
     bool failed_ = false;
 
-    /// Outstanding pass ends. A loop pass is seconds of audio, so a lane this
-    /// deep is a disk that stopped writing rather than one running behind.
-    static constexpr std::size_t kBoundaryCapacity = 64;
+    /// Pass ends asked for and not reached yet. The counterpart of the queue's
+    /// own capacity: that bounds how far behind the disk may fall in samples,
+    /// and this bounds it in passes. What will not fit is refused rather than
+    /// dropped, so a take can say its passes ran together (#2461).
+    static constexpr std::size_t kBoundaryCapacity = 256;
 
     std::array<std::int64_t, kBoundaryCapacity> boundaries_{};
     std::atomic<std::uint64_t> boundaryWrite_{0};

@@ -326,6 +326,62 @@ TEST_CASE("A lead-in recorded before the loop is not a take", "[engine][io][reco
     CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
 }
 
+TEST_CASE("A lead-in kept for want of a whole pass stays where it was recorded",
+          "[engine][io][record][2461]") {
+    // The wrap has been seen, but the samples belonging to it are still a
+    // latency away when the transport stops, so the only pass captured is the
+    // lead-in. Placing that at the loop start would play it a beat early.
+    Rig rig(emptyDirectory("lead_in_only"), floatTake({0, 1}, 128));
+    rig.loop(0.0, 2.0);
+    rig.play(1.0);
+    rig.run(kBeatSamples + 64);
+
+    const auto take = rig.recorder().finish();
+    CHECK(take.clip.takes.empty());
+    CHECK(take.startBeat == Catch::Approx(1.0));
+    CHECK(take.lengthBeats == Catch::Approx((kBeatSamples + 64 - 128.0) / kBeatSamples));
+    CHECK(readBack(take.file).getNumSamples() == kBeatSamples + 64 - 128);
+}
+
+TEST_CASE("A loop shorter than the input latency still splits every pass",
+          "[engine][io][record][2461]") {
+    // Every wrap is a pass end that has not arrived yet, so several are
+    // outstanding at once. A boundary counted down to rather than named would
+    // be replaced by the next wrap and never reached.
+    constexpr int kLoopSamples = 64;
+    constexpr int kLatency = 128;
+
+    Rig rig(emptyDirectory("short_loop"), floatTake({0, 1}, kLatency));
+    rig.loop(0.0, static_cast<double>(kLoopSamples) / kBeatSamples);
+    rig.play();
+    rig.run(10 * kLoopSamples);
+
+    const auto take = rig.recorder().finish();
+
+    // Ten loops delivered, less the two the head correction gave up.
+    REQUIRE(take.clip.takes.size() == 8);
+    for (const auto& pass : take.clip.takes)
+        CHECK(readBack(juce::File(pass.filePath)).getNumSamples() == kLoopSamples);
+}
+
+TEST_CASE("A pass end the write path could not take is reported", "[engine][io][record][2461]") {
+    // A loop this short fills the boundary lane long before the audio queue,
+    // so the passes run together in one file. That is not a shorter recording
+    // and must not read as a clean one.
+    constexpr int kLoopSamples = 64;
+    constexpr int kPasses = 300;
+
+    Rig rig(emptyDirectory("boundary_overflow"), floatTake({0, 1}));
+    rig.loop(0.0, static_cast<double>(kLoopSamples) / kBeatSamples);
+    rig.play();
+    rig.run(kPasses * kLoopSamples);
+
+    const auto take = rig.recorder().finish();
+    CHECK(take.samplesLost == 0);
+    CHECK(take.passesLost > 0);
+    CHECK(static_cast<int>(take.clip.takes.size()) < kPasses - 1);
+}
+
 TEST_CASE("A stop mid-pass keeps what was recorded up to it", "[engine][io][record][2461]") {
     Rig rig(emptyDirectory("stop_mid_pass"), floatTake({0, 1}));
     rig.play();

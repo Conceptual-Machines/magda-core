@@ -60,6 +60,11 @@ struct RecordedTake {
     /// performance, and the boundaries between passes moved by as much.
     std::int64_t samplesLost = 0;
 
+    /// Pass ends the write path could not be told about, which is two loop
+    /// passes run together in one file. Above zero and the takes below are not
+    /// one pass each.
+    std::int64_t passesLost = 0;
+
     /// Whether a file refused a write or could not be opened at all.
     bool failed = false;
 
@@ -159,14 +164,14 @@ class TakeRecorder {
     /// The first block of the take: where it starts, and the head correction.
     void start(const BlockInfo& block, const LoopRange& loop);
 
-    /// A wrap: the pass ends a latency later, since that is when the samples
-    /// the wrap belongs to arrive.
+    /// A wrap: where the pass ends, handed to the sink as a position rather
+    /// than counted down to.
     void openPass(const LoopRange& loop);
 
     void stop();
 
-    /// This block's input, into the queue, split at a pass end if one falls
-    /// inside it.
+    /// This block's input, into the queue. Where a pass ends inside it is the
+    /// sink's to act on, since only the sink knows what reached the disk.
     void write(const BlockInfo& block);
 
     /// Where the take is, once there is nothing more to add to it.
@@ -189,21 +194,29 @@ class TakeRecorder {
     /// Arrivals still to drop before the take's first sample.
     int headDrop_ = 0;
 
-    /// Samples still to write before the current pass ends, or -1 for none.
-    int pendingSplit_ = -1;
-
+    /// Samples written to the queue, and the timeline the take has covered.
+    /// The second is the first read a latency earlier, which is why a pass
+    /// boundary is counted in it.
     std::int64_t written_ = 0;
+    std::int64_t arrivals_ = 0;
+
+    /// The first pass end asked for, or -1. What says whether any pass ever
+    /// began where the loop does.
+    std::int64_t firstBoundary_ = -1;
+
+    std::int64_t boundariesLost_ = 0;
 
     double startBeat_ = 0.0;
-    double lastBeat_ = 0.0;
-    double latencySeconds_ = 0.0;
+
+    /// Beats the take covers, accumulated from what each block wrote. Not
+    /// derived from where the cursor ended: a wrap takes that back.
+    double capturedBeats_ = 0.0;
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.
     bool startedAtLoopStart_ = false;
 
-    /// The loop a wrap was seen against, and whether one ever was.
-    bool wrapped_ = false;
+    /// The loop the last wrap was seen against.
     double loopStartBeat_ = 0.0;
     double loopEndBeat_ = 0.0;
 

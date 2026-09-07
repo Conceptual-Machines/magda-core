@@ -32,6 +32,16 @@ RecordStreamSettings queueFor(const TakeRecorderSettings& settings) {
     return queue;
 }
 
+/// The beats @p numSamples of @p block cover. A block is short enough that the
+/// tempo across it is a straight line, which is the same tolerance BlockInfo's
+/// own conversions take on a block with no map.
+double beatsFor(const BlockInfo& block, int numSamples) {
+    if (block.numSamples <= 0)
+        return 0.0;
+
+    return block.beats.length() * (static_cast<double>(numSamples) / block.numSamples);
+}
+
 bool atLoopStart(const BlockInfo& block, const LoopRange& loop) {
     return loop.valid() && std::abs(block.beats.start - loop.startBeat) <= kLoopStartTolerance;
 }
@@ -63,10 +73,6 @@ TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& conte
 
     if (settings_.latencySamples < 0)
         pad_.setSize(takeChannels(settings_), -settings_.latencySamples, false, true, false);
-
-    latencySeconds_ = context.sampleRate > 0.0
-                          ? static_cast<double>(settings_.latencySamples) / context.sampleRate
-                          : 0.0;
 }
 
 void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
@@ -95,10 +101,10 @@ void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRa
 
     write(block);
 
-    // What a take holds is what happened, and what happened at the end of this
-    // block arrives a latency later: the tail runs on by exactly as much as the
-    // head gave up.
-    lastBeat_ = block.beatAtTime(block.seconds.end - latencySeconds_);
+    // Timeline the take has covered, which is what a pass boundary is counted
+    // in. Not the samples written: those are the same stretch read a latency
+    // later, and the head correction is what puts the two back together.
+    arrivals_ += block.numSamples;
 }
 
 void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
@@ -115,19 +121,25 @@ void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
     if (const auto padded = pad_.getNumSamples(); padded > 0) {
         stream_.writeAudio(juce::dsp::AudioBlock<const float>(std::as_const(pad_)), padded);
         written_ += padded;
+        capturedBeats_ += beatsFor(block, padded);
         captured_.store(written_, std::memory_order_relaxed);
     }
 }
 
 void TakeRecorder::openPass(const LoopRange& loop) {
-    wrapped_ = true;
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
 
-    // The samples the wrap belongs to are still a latency away. A negative one
-    // puts that boundary in the past, where the only thing left is to end the
-    // pass here and be late by the adjustment.
-    pendingSplit_ = std::max(0, settings_.latencySamples);
+    // Where the pass ends, in the take's own samples: the timeline it has
+    // covered so far. The latency does not enter it -- the head correction
+    // already put sample i of the take at i samples past its start -- and the
+    // boundary is handed over now rather than counted down to, so a loop
+    // shorter than one cannot overtake the last one still pending.
+    if (firstBoundary_ < 0)
+        firstBoundary_ = arrivals_;
+
+    if (!sink_.markPassEnd(arrivals_))
+        ++boundariesLost_;
 }
 
 void TakeRecorder::stop() {
@@ -152,30 +164,15 @@ void TakeRecorder::write(const BlockInfo& block) {
         offset += dropped;
     }
 
-    for (;;) {
-        if (pendingSplit_ == 0) {
-            sink_.markPassEnd(written_);
-            pendingSplit_ = -1;
-        }
+    const auto kept = numSamples - offset;
+    if (kept <= 0)
+        return;
 
-        if (offset >= numSamples)
-            break;
-
-        auto chunk = numSamples - offset;
-        if (pendingSplit_ > 0)
-            chunk = std::min(chunk, pendingSplit_);
-
-        stream_.writeAudio(
-            captured.getSubBlock(static_cast<std::size_t>(offset), static_cast<std::size_t>(chunk)),
-            chunk);
-        written_ += chunk;
-
-        if (pendingSplit_ > 0)
-            pendingSplit_ -= chunk;
-
-        offset += chunk;
-    }
-
+    stream_.writeAudio(
+        captured.getSubBlock(static_cast<std::size_t>(offset), static_cast<std::size_t>(kept)),
+        kept);
+    written_ += kept;
+    capturedBeats_ += beatsFor(block, kept);
     captured_.store(written_, std::memory_order_relaxed);
 }
 
@@ -188,6 +185,7 @@ RecordedTake TakeRecorder::finish() {
     stream_.finish();
 
     result_.samplesLost = stream_.samplesLost();
+    result_.passesLost = boundariesLost_;
     result_.failed = stream_.failed() || sink_.failed();
 
     auto passes = sink_.passes();
@@ -223,16 +221,18 @@ RecordedTake TakeRecorder::finish() {
 }
 
 void TakeRecorder::placeClip(RecordedTake& take) const {
-    // Loop-aligned the moment a wrap happened: every pass that survived covers
-    // the loop, so that is where the clip goes and how long it is.
-    if (wrapped_) {
+    // Loop-aligned once a pass boundary has actually been reached, rather than
+    // once a wrap has been seen: a take stopped between the two holds only the
+    // stretch it began on, and putting that at the loop start would play it
+    // somewhere it was never recorded.
+    if (firstBoundary_ >= 0 && written_ > firstBoundary_) {
         take.startBeat = loopStartBeat_;
         take.lengthBeats = std::max(0.0, loopEndBeat_ - loopStartBeat_);
         return;
     }
 
     take.startBeat = startBeat_;
-    take.lengthBeats = std::max(0.0, lastBeat_ - startBeat_);
+    take.lengthBeats = std::max(0.0, capturedBeats_);
 }
 
 }  // namespace magda::engine
