@@ -57,7 +57,7 @@ void FourOscUI::updateModMatrix(const std::vector<ModMatrixEntry>& entries) {
     // Split entries by source: LFO sources -> LFO tab, Env sources -> ModEnv tab
     // ModSource enum: lfo1=0, lfo2=1, env1=2, env2=3
     std::vector<ModMatrixEntry> lfoEntries, envEntries;
-    for (auto& e : entries) {
+    for (const auto& e : entries) {
         if (e.modSourceId == 0 || e.modSourceId == 1)
             lfoEntries.push_back(e);
         else if (e.modSourceId == 2 || e.modSourceId == 3)

@@ -1619,7 +1619,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     auto& masterList = edit_.getMasterPluginList();
 
     // Check if a SessionMonitorPlugin already exists
-    for (auto i : masterList) {
+    for (auto* i : masterList) {
         if (auto* existing = dynamic_cast<SessionMonitorPlugin*>(i)) {
             sessionMonitorPlugin_ = existing;
             sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);
@@ -1633,7 +1633,7 @@ void AudioBridge::ensureSessionMonitorPlugin() {
     masterList.insertPlugin(pluginState, 0);
 
     // Find the newly created plugin
-    for (auto i : masterList) {
+    for (auto* i : masterList) {
         if (auto* mon = dynamic_cast<SessionMonitorPlugin*>(i)) {
             sessionMonitorPlugin_ = mon;
             sessionMonitorPlugin_->setSessionContext(&sessionAudioMonitor_);

@@ -619,7 +619,7 @@ void AutomationPlaybackEngine::writeMacroValueFromCurve(const AutomationTarget& 
         }
 
         auto position = edit_.getTransport().getPosition();
-        for (auto param : te::getAllParametersBeingModifiedBy(edit_, *macroParam))
+        for (auto* param : te::getAllParametersBeingModifiedBy(edit_, *macroParam))
             if (param)
                 param->updateFromAutomationSources(position);
     }

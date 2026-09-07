@@ -76,7 +76,7 @@ class MagdaEngineBehaviour : public tracktion::EngineBehaviour {
             return plugin;
 
         const auto type = info.state[tracktion::IDs::type].toString();
-        if (auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
+        if (const auto* spec = daw::audio::compiled::findCompiledPluginSpec(type)) {
             return daw::audio::compiled::createTracktionPlugin(*spec, info);
         }
         DBG("MagdaEngineBehaviour::createCustomPlugin - unknown type: " << type);

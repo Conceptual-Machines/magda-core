@@ -966,7 +966,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
         if (clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
@@ -997,7 +997,7 @@ void WaveformEditorContent::transientsChanged(const juce::String& filePath) {
     }
     if (magda::audioEventRef(*clip).sourceFilePath() != filePath)
         return;
-    auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
+    const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(filePath);
     if (cached) {
         double bpm = 120.0;
         if (auto* controller = magda::TimelineController::getCurrent())
@@ -1199,7 +1199,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
 
         // Check for cached transients or request async detection.
         if (clip && clip->isAudio() && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);
@@ -1517,7 +1517,7 @@ void WaveformEditorContent::requestTransientDetection() {
     if (bridge->getTransientTimes(editingClipId_)) {
         const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
         if (clip && !magda::audioEventRef(*clip).sourceFilePath().isEmpty()) {
-            auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
+            const auto* cached = magda::AudioThumbnailManager::getInstance().getCachedTransients(
                 magda::audioEventRef(*clip).sourceFilePath());
             if (cached) {
                 gridComponent_->setTransientTimes(*cached);

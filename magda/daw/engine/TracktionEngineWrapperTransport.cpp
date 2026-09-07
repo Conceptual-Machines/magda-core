@@ -111,7 +111,7 @@ void TracktionEngineWrapper::sendAllNotesOffToExternalInserts() {
 
     // Deliberately not gated on isEnabled(): a just-disabled insert may
     // still have a note-on in flight on its hardware synth.
-    for (auto plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
+    for (auto* plugin : tracktion::getAllPlugins(*currentEdit_, false)) {
         auto* insert = dynamic_cast<tracktion::InsertPlugin*>(plugin);
         if (insert == nullptr)
             continue;
@@ -273,7 +273,7 @@ void TracktionEngineWrapper::setTempo(double bpm) {
     if (currentEdit_) {
         auto& tempoSeq = currentEdit_->tempoSequence;
         if (tempoSeq.getNumTempos() > 0) {
-            auto tempo = tempoSeq.getTempo(0);
+            auto* tempo = tempoSeq.getTempo(0);
             if (tempo) {
                 tempo->setBpm(bpm);
             }

@@ -97,7 +97,7 @@ void pushMidiEvent(lua_State* L, const juce::String& deviceName, const juce::Mid
         lua_setfield(L, -2, "bytes");
     }
 
-    auto raw = deviceName.toRawUTF8();
+    const auto* raw = deviceName.toRawUTF8();
     lua_pushlstring(L, raw, static_cast<size_t>(deviceName.getNumBytesAsUTF8()));
     lua_setfield(L, -2, "port");
 }

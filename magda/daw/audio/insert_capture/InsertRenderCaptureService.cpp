@@ -26,7 +26,7 @@ constexpr int kProgressTimerHz = 10;
 // the ones whose returns the offline render cannot produce.
 std::vector<te::InsertPlugin*> routedInserts(te::Edit& edit) {
     std::vector<te::InsertPlugin*> result;
-    for (auto plugin : te::getAllPlugins(edit, false)) {
+    for (auto* plugin : te::getAllPlugins(edit, false)) {
         auto* insert = dynamic_cast<te::InsertPlugin*>(plugin);
         if (insert != nullptr && insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
             insert->inputDevice.get().isNotEmpty())

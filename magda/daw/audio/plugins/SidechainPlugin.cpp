@@ -140,7 +140,7 @@ void SidechainPlugin::process(DeviceProcessContext& context) {
 
     const int numChannels = context.audio->getNumChannels();
     const int numSamples = context.numSamples;
-    auto channels = context.audio->getArrayOfWritePointers();
+    const auto* channels = context.audio->getArrayOfWritePointers();
     const int offset = context.startSample;
 
     // The modifier writes the gain target at a coarse quantum (one hop per

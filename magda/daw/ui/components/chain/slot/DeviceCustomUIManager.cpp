@@ -418,7 +418,7 @@ magda::DeviceInfo projectPadPluginDevice(magda::DeviceId deviceId,
         device.isInstrument = ext->desc.isInstrument;
         device.deviceType =
             device.isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
-    } else if (auto* internalSpec =
+    } else if (const auto* internalSpec =
                    daw::audio::findInternalPluginSpecForLoadType(device.pluginId)) {
         device.pluginId = internalSpec->pluginId;
         device.name =
@@ -1323,7 +1323,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     auto getChainDisplayName = [](const daw::audio::DrumGridPlugin::Chain& chain) -> juce::String {
         if (chain.plugins.empty())
             return {};
-        auto& firstPlugin = chain.plugins[0];
+        const auto& firstPlugin = chain.plugins[0];
         if (firstPlugin == nullptr)
             return {};
         if (auto* sampler =
@@ -1341,7 +1341,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
     auto updatePadFromChain = [this, getChainDisplayName](daw::audio::DrumGridPlugin* dg,
                                                           int padIndex) {
         int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-        if (auto* chain = dg->getChainForNote(midiNote)) {
+        if (const auto* chain = dg->getChainForNote(midiNote)) {
             drumGridUI_->updatePadInfo(padIndex, getChainDisplayName(*chain), chain->mute.get(),
                                        chain->solo.get(), chain->level.get(), chain->pan.get(),
                                        chain->index, chain->bypassed.get(), chain->busOutput.get());
@@ -1706,7 +1706,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
             return result;
 
         int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
-        auto* chain = dg->getChainForNote(midiNote);
+        const auto* chain = dg->getChainForNote(midiNote);
         if (!chain)
             return result;
 
@@ -1728,7 +1728,7 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
         for (int pluginIndex = 0; pluginIndex < static_cast<int>(chain->plugins.size());
              ++pluginIndex) {
-            auto& plugin = chain->plugins[static_cast<size_t>(pluginIndex)];
+            const auto& plugin = chain->plugins[static_cast<size_t>(pluginIndex)];
             if (!plugin)
                 continue;
             PadChainPanel::PluginSlotInfo info;

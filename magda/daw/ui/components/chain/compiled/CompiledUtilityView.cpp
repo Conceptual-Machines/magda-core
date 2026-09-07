@@ -286,7 +286,7 @@ void CompiledUtilityView::updateLinkSlotValues() {
 
     auto update = [this](ParamSlotComponent& slot, int slotIndex, float fallback, bool& infoSet) {
         if (!infoSet) {
-            if (auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
+            if (const auto* param = parameterForSlot(deviceSnapshot_, slotIndex)) {
                 infoSet = true;
                 slot.setParameterInfo(*param);
             }

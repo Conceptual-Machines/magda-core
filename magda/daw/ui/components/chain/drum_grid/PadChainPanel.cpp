@@ -65,7 +65,7 @@ void PadChainPanel::refresh() {
 
 std::vector<tracktion::engine::Plugin*> PadChainPanel::getCollapsedPlugins() const {
     std::vector<tracktion::engine::Plugin*> result;
-    for (auto& slot : slots_) {
+    for (const auto& slot : slots_) {
         if (slot->isCollapsed() && slot->getPlugin())
             result.push_back(slot->getPlugin());
     }
@@ -146,7 +146,7 @@ int PadChainPanel::getContentWidth() const {
     // Must match resized() calculation: 2px left padding + slots + arrows + 2px right padding
     // plus DROP_ZONE_WIDTH (reserved outside the viewport)
     int width = 2;
-    for (auto& slot : slots_) {
+    for (const auto& slot : slots_) {
         if (width > 2)
             width += ARROW_WIDTH;
         width += slot->getPreferredWidth();
@@ -403,7 +403,7 @@ int PadChainPanel::calculateInsertIndex(int mouseX) const {
     int containerX = mouseX + viewport_.getViewPositionX() - viewport_.getX();
 
     for (size_t i = 0; i < slots_.size(); ++i) {
-        auto& slot = slots_[i];
+        const auto& slot = slots_[i];
         int slotMid = slot->getX() + slot->getWidth() / 2;
         if (containerX < slotMid)
             return static_cast<int>(i);

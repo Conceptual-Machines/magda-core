@@ -2806,7 +2806,7 @@ void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x,
     std::vector<std::pair<int, int>> simpleNotes;
 
     for (int t = 0; t < midi.getNumTracks(); ++t) {
-        auto* track = midi.getTrack(t);
+        const auto* track = midi.getTrack(t);
         if (!track)
             continue;
         for (int i = 0; i < track->getNumEvents(); ++i) {

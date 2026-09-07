@@ -23,10 +23,10 @@ std::unique_ptr<DeviceProcessor> createDeviceProcessorForPlugin(
         return processor;
     }
 
-    if (auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
+    if (const auto* compiledSpec = daw::audio::compiled::findCompiledPluginSpec(pluginId))
         return daw::audio::compiled::createTracktionProcessor(*compiledSpec, deviceId, plugin);
 
-    if (auto* internalSpec = daw::audio::findInternalPluginSpec(pluginId))
+    if (const auto* internalSpec = daw::audio::findInternalPluginSpec(pluginId))
         return daw::audio::tracktion_adapter::createInternalPluginProcessor(
             *internalSpec, deviceId, daw::audio::tracktion_adapter::pluginHandle(plugin));
 

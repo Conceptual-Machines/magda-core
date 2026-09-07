@@ -607,7 +607,7 @@ void Config::load() {
                         // Flat provider/baseUrl/apiKey/model is the pre-profile
                         // on-disk shape. Read it as the LLM backend payload.
                         auto& cfg = profile.llm;
-                        const auto read = llmObj != nullptr ? llmObj : agentObj;
+                        auto* const read = llmObj != nullptr ? llmObj : agentObj;
                         cfg.provider = read->getProperty("provider").toString().toStdString();
                         cfg.baseUrl = read->getProperty("baseUrl").toString().toStdString();
                         cfg.apiKey = read->getProperty("apiKey").toString().toStdString();

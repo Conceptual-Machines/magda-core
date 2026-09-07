@@ -728,7 +728,7 @@ void PluginBrowserContent::rebuildTree() {
 
             // Create parent category if needed
             if (categories.find(parentKey) == categories.end()) {
-                auto parentItem = new CategoryTreeItem(parentKey);
+                auto* parentItem = new CategoryTreeItem(parentKey);
                 root->addSubItem(parentItem);
                 categories[parentKey] = parentItem;
             }
@@ -737,7 +737,7 @@ void PluginBrowserContent::rebuildTree() {
             if (childKey.isNotEmpty()) {
                 juce::String fullKey = parentKey + "/" + childKey;
                 if (categories.find(fullKey) == categories.end()) {
-                    auto childItem = new CategoryTreeItem(childKey);
+                    auto* childItem = new CategoryTreeItem(childKey);
                     categories[parentKey]->addSubItem(childItem);
                     categories[fullKey] = childItem;
                 }
@@ -748,7 +748,7 @@ void PluginBrowserContent::rebuildTree() {
         } else {
             // Single-level grouping
             if (categories.find(groupKey) == categories.end()) {
-                auto item = new CategoryTreeItem(groupKey);
+                auto* item = new CategoryTreeItem(groupKey);
                 root->addSubItem(item);
                 categories[groupKey] = item;
             }
