@@ -33,12 +33,9 @@ inline void logAdsrAudio(const juce::String& message) {
 
 }  // namespace magda
 
-// NOLINTBEGIN(bugprone-macro-parentheses) - the argument is streamed, so
-// parenthesising it would evaluate the << chain before it reaches the string
 #define MAGDA_ADSR_AUDIO_LOG(expr)                                                                 \
     do {                                                                                           \
         juce::String magdaAdsrAudioLogMessage;                                                     \
         magdaAdsrAudioLogMessage << expr;                                                          \
         ::magda::logAdsrAudio(magdaAdsrAudioLogMessage);                                           \
     } while (false)
-// NOLINTEND(bugprone-macro-parentheses)

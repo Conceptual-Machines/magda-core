@@ -65,8 +65,6 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
     ordered.reserve(trackClips.size());
     for (const auto& clip : trackClips)
         ordered.push_back(&clip);
-    // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order) - the comparator orders by
-    // value, not by address
     std::sort(ordered.begin(), ordered.end(),
               [](const ClipInfo* a, const ClipInfo* b) { return clipSitsBelow(*a, *b); });
 

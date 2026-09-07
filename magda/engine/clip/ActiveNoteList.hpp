@@ -79,8 +79,6 @@ class ActiveNoteList {
     };
 
     static std::size_t index(int channel, int note) {
-        // NOLINTNEXTLINE(bugprone-misplaced-widening-cast) - channel 1-16 and note 0-127 cannot
-        // overflow int
         return static_cast<std::size_t>((channel - 1) * kNotes + note);
     }
 

@@ -124,8 +124,6 @@ void walk(const std::filesystem::path& root, const std::function<void(const Scan
                     if (auto sf = classify(entry.path())) {
                         try {
                             visit(*sf);
-                            // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the
-                            // deliberate ignore
                         } catch (...) {
                             // A single file's processing failure must not
                             // sink the whole scan; the indexer does its own
@@ -138,7 +136,6 @@ void walk(const std::filesystem::path& root, const std::function<void(const Scan
                         stack.push_back(entry.path());
                     }
                 }
-                // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
             } catch (const std::exception&) {
                 // Bad entry — skip and try to keep going in this directory.
             }

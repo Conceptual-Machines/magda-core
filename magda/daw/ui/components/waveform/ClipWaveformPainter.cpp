@@ -117,11 +117,11 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         }
 
         daw::ui::WarpedWaveformSpec wspec;
-        wspec.clipArea =
-            juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(),
-                                 juce::jmin(waveformArea.getWidth(),
-                                            juce::roundToInt(clipDisplayLength * pixelsPerSecond)),
-                                 waveformArea.getHeight());
+        wspec.clipArea = juce::Rectangle<int>(
+            waveformArea.getX(), waveformArea.getY(),
+            juce::jmin(waveformArea.getWidth(),
+                       static_cast<int>(clipDisplayLength * pixelsPerSecond + 0.5)),
+            waveformArea.getHeight());
         wspec.warpToPixelX = [&](double warpSeconds) {
             return waveformArea.getX() +
                    di.sourceToTimeline(warpSeconds - displayOffset) * pixelsPerSecond;
@@ -219,9 +219,9 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
                 double segmentDuration = juce::jmin(remainingTileDuration, fullSegmentDuration);
                 double segmentEnd = segmentTime + segmentDuration;
                 int segmentX =
-                    waveformArea.getX() + juce::roundToInt(segmentTime * pixelsPerSecond);
+                    waveformArea.getX() + static_cast<int>(segmentTime * pixelsPerSecond + 0.5);
                 int segmentRight =
-                    waveformArea.getX() + juce::roundToInt(segmentEnd * pixelsPerSecond);
+                    waveformArea.getX() + static_cast<int>(segmentEnd * pixelsPerSecond + 0.5);
                 auto segmentRect =
                     juce::Rectangle<int>(segmentX, waveformArea.getY(), segmentRight - segmentX,
                                          waveformArea.getHeight());
@@ -249,7 +249,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         if (fileDuration > 0.0 && fileEnd > fileDuration)
             fileEnd = fileDuration;
         double clampedTimelineDuration = di.sourceToTimeline(fileEnd - fileStart);
-        int drawWidth = juce::roundToInt(clampedTimelineDuration * pixelsPerSecond);
+        int drawWidth = static_cast<int>(clampedTimelineDuration * pixelsPerSecond + 0.5);
         drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
                                              waveformArea.getHeight());

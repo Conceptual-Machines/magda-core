@@ -2128,7 +2128,6 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
             }
         }
 
-        // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
     } catch (const std::exception& e) {
         // Return empty vector on error
     }

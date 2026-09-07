@@ -511,8 +511,6 @@ void AutomationPlaybackEngine::syncParameterListeners() {
 
     // Add listeners for new params; refresh info for existing ones so the
     // lane id tracks target re-binds.
-    // NOLINTNEXTLINE(bugprone-nondeterministic-pointer-iteration-order) - listener registration
-    // order is immaterial
     for (auto& [param, info] : desired) {
         auto [it, inserted] = listenedParams_.insert({param, info});
         if (inserted) {

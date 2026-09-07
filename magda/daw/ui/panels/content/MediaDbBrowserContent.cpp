@@ -2018,7 +2018,6 @@ void MediaDbBrowserContent::runSearch() {
                 }
                 magda::media::MediaDbQuery query(*self->searchDb_, nullptr, nullptr);
                 results = query.similarTo(seedId, filters, kPageSize, offset, sort);
-                // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
             } catch (...) {
                 // Empty result -> UI shows the "No results" empty state.
             }
@@ -2098,7 +2097,6 @@ void MediaDbBrowserContent::runSearch() {
             magda::media::MediaDbQuery query(*self->searchDb_, textEnc, tok);
             results = query.search(std::optional<std::string>{text}, filters, kPageSize, offset, {},
                                    sort);
-            // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
         } catch (...) {
             // Swallow — empty result set bounces back to the UI either way.
         }

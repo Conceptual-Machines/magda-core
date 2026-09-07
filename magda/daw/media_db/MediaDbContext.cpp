@@ -180,7 +180,6 @@ bool MediaDbContext::wipeAll() {
         juce::Logger::writeToLog(juce::String("[wipeAll] failed: ") + e.what());
         try {
             db_->execute("ROLLBACK");
-            // NOLINTNEXTLINE(bugprone-empty-catch) - the body documents the deliberate ignore
         } catch (...) {
             // best-effort cleanup; nothing to do if rollback also fails
         }

@@ -17,6 +17,11 @@ Checks: >-
   -bugprone-unchecked-optional-access,
   -bugprone-swapped-arguments,
   -bugprone-branch-clone,
+  -bugprone-empty-catch,
+  -bugprone-signed-char-misuse,
+  -bugprone-misplaced-widening-cast,
+  -bugprone-nondeterministic-pointer-iteration-order,
+  -bugprone-macro-parentheses,
   cert-oop54-cpp,
   performance-*,
   -performance-enum-size,
@@ -46,7 +51,7 @@ Checks: >-
 # and SIGSEGV on any file here. Not reproducible on LLVM 20.1.4: a sweep of all
 # 885 magda/ TUs ran to completion with both enabled, no crash, zero findings.
 #
-# Eight checks are off because they were noise here, not because their findings
+# Thirteen checks are off because they were noise here, not because their findings
 # were inconvenient - 237 sites, with only branch-clone yielding any defects:
 #   suspicious-include (31)      every hit is `#include "magda_*.generated.cpp"`,
 #                                the Faust DSP pipeline, which is deliberate.
@@ -71,6 +76,18 @@ Checks: >-
 #                                left every caller in another TU undefined.
 #   suspicious-call-argument     parameter-name similarity only; the calls match
 #     (10)                       their declarations.
+#
+#   empty-catch (9)              every body already carries a comment saying why
+#                                the exception is ignored.
+#   signed-char-misuse (3)       following it would break two of them: AudioFeatures
+#                                and PlanExecutor need the sign to carry a
+#                                no-pitch-class sentinel and a downward transpose.
+#   misplaced-widening-cast (3)  MIDI domains (channel 1-16, note 0-127) cannot
+#                                overflow int before the widen.
+#   nondeterministic-pointer-    ClipOcclusion sorts by a value comparator, not by
+#     iteration-order (2)        address; the other is listener registration order.
+#   macro-parentheses (2)        the argument is streamed, so parenthesising it
+#                                would evaluate the << chain before the string.
 #
 # modernize-use-integer-sign-comparison is off: its 656 hits were all deliberate
 # `x < static_cast<int>(v.size())` casts, and its fixer deletes the cast text but

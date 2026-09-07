@@ -186,7 +186,6 @@ bool QwertyMidiKeyboard::keyStateChanged(bool /*isKeyDown*/, juce::Component*) {
         bool stillDown = false;
 
         // Build reverse map inline — check each key that maps to this note
-        // NOLINTNEXTLINE(bugprone-signed-char-misuse) - ASCII key codes are positive
         for (int kc :
              {'A', 'S', 'D', 'F', 'G', 'H', 'J', 'W', 'E', 'T', 'Y', 'U', 'K', 'L', 'O', 'P'}) {
             if (keyToNote(kc) != note)
