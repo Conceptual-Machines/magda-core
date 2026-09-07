@@ -149,8 +149,8 @@ ConsoleAgentOrchestrator::ConsoleAgentOrchestrator(Workflows workflows)
     : workflows_(std::move(workflows)) {}
 
 ConsoleRunOutput ConsoleAgentOrchestrator::run(const ConsoleRunRequest& request,
-                                               ConsoleRunObserver observer,
-                                               CancellationToken cancellation) {
+                                               const ConsoleRunObserver& observer,
+                                               const CancellationToken& cancellation) {
     const CancellationToken combined([this, cancellation] {
         return cancelled_.load() || cancellation.isCancellationRequested();
     });

@@ -19,7 +19,7 @@ auto* compiledDevice(te::Plugin* plugin) {
 }  // namespace
 
 CompiledFaustProcessor::CompiledFaustProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : DeviceProcessor(deviceId, plugin) {}
+    : DeviceProcessor(deviceId, std::move(plugin)) {}
 
 int CompiledFaustProcessor::getParameterCount() const {
     const auto* host = compiledDevice(plugin_.get());

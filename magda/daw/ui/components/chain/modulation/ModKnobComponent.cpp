@@ -522,7 +522,7 @@ void ModKnobComponent::showContextMenu() {
 
         int unlinkIdx = result - kUnlinkBaseId;
         if (unlinkIdx >= 0 && unlinkIdx < static_cast<int>(unlinkTargets.size())) {
-            auto target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
+            const auto& target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
             safeThis->currentMod_.removeLink(target);
             safeThis->repaint();
             if (safeThis->onLinkRemoved)

@@ -257,7 +257,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     /// by path. A pad device is reached through the Drum Grid that owns it: its
     /// path's rack component is a DeviceId, which a Rack step cannot tell from
     /// a rack of the same number (#2207).
-    void registerRackPluginProcessor(const ChainNodePath& devicePath, te::Plugin::Ptr plugin,
+    void registerRackPluginProcessor(const ChainNodePath& devicePath, const te::Plugin::Ptr& plugin,
                                      const DeviceInfo& device, DeviceInfo* canonical);
 
     /// The model's device for a pad plugin path, through @p drumGridPath.
@@ -333,7 +333,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @param devicePath The device whose state to restore
      * @param plugin The TE plugin to apply state to
      */
-    static void restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
+    static void restorePluginState(const ChainNodePath& devicePath, const te::Plugin::Ptr& plugin);
 
     // =========================================================================
     // Utilities
@@ -661,7 +661,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     bool isDrumGridPadPathLocked(const ChainNodePath& devicePath) const;
 
     // Poll for async plugin load completion (TE's background thread instantiation)
-    void pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
+    void pollAsyncPluginLoad(const ChainNodePath& devicePath, const te::Plugin::Ptr& plugin);
 
     // Create a TE internal plugin, restoring saved ValueTree state if available.
     // Falls back to creating a fresh plugin from xmlTypeName when no saved state exists.

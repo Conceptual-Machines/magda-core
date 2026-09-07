@@ -157,7 +157,7 @@ magda::ParameterInfo discreteInfo(const FaustParamSlot& slot) {
         // an empty choice list for a menu/radio style, but if it does
         // we degrade to a single "(empty)" option so the slot is still
         // selectable.
-        info.choices.push_back("(empty)");
+        info.choices.emplace_back("(empty)");
     }
     info.minValue = 0.0f;
     info.maxValue = static_cast<float>(info.choices.size() - 1);

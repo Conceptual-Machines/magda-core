@@ -807,7 +807,7 @@ int readInt(const juce::var& object, const char* property) {
 
 template <typename Id>
 std::optional<Id> readNullableId(const juce::var& object, const char* property) {
-    const auto value = object[property];
+    const auto& value = object[property];
     if (value.isVoid())
         return std::nullopt;
     return decodeBoundedInt<Id>(value);
@@ -1464,9 +1464,9 @@ std::optional<AutomationLaneDto> automationLaneFromJson(const juce::var& json, E
     dto.id = readInt(json, "id");
     dto.type = json["type"].toString();
     dto.name = json["name"].toString();
-    const auto target = json["target"];
+    const auto& target = json["target"];
     dto.target.kind = target["kind"].toString();
-    if (const auto path = target["devicePath"]; path.isObject())
+    if (const auto& path = target["devicePath"]; path.isObject())
         dto.target.devicePath = devicePathFromJson(path);
     dto.target.parameterIndex = readInt(target, "parameterIndex");
     dto.target.modId = readInt(target, "modId");

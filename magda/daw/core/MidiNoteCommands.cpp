@@ -428,7 +428,7 @@ void SetMidiNoteVelocityCommand::mergeWith(const UndoableCommand* other) {
 // ============================================================================
 
 SetMultipleMidiNoteVelocitiesCommand::SetMultipleMidiNoteVelocitiesCommand(
-    ClipId clipId, std::vector<Entry> entries)
+    ClipId clipId, const std::vector<Entry>& entries)
     : clipId_(clipId) {
     const auto* clip = ClipManager::getInstance().getClip(clipId_);
     for (const auto& e : entries) {

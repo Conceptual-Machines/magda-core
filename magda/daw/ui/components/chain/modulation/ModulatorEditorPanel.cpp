@@ -1,5 +1,7 @@
 #include "modulation/ModulatorEditorPanel.hpp"
 
+#include <utility>
+
 #include "BinaryData.h"
 #include "core/AutomationInfo.hpp"
 #include "core/AutomationManager.hpp"
@@ -27,8 +29,8 @@ void ModMatrixContent::setLinks(const std::vector<LinkRow>& links) {
     repaint();
 }
 
-bool ModMatrixContent::updateLinkState(magda::ControlTarget target, float amount, bool bipolar,
-                                       bool enabled) {
+bool ModMatrixContent::updateLinkState(const magda::ControlTarget& target, float amount,
+                                       bool bipolar, bool enabled) {
     for (auto& link : links_) {
         if (link.target == target) {
             bool changed =
@@ -511,7 +513,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     // Time sliders fold their label into the value text (e.g. "A 10 ms") so
     // they don't need separate label components or hand-painted captions.
     auto setupEnvTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
-                                     std::function<float&()> field) {
+                                     const std::function<float&()>& field) {
         s.setRange(0.0, 30000.0, 1.0);
         s.setSkewForCentre(500.0);
         s.setValue(def, juce::dontSendNotification);
@@ -544,7 +546,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     addChildComponent(envSustainSlider_);
 
     auto setupCurveSlider = [this](TextSlider& s, const juce::String& tag,
-                                   std::function<float&()> field) {
+                                   const std::function<float&()>& field) {
         s.setRange(-0.5, 0.5, 0.01);
         s.setValue(0.0, juce::dontSendNotification);
         s.setFont(FontManager::getInstance().getUIFont(9.0f));
@@ -587,7 +589,7 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     // Random 0..1 sliders fold their label into the value text (e.g. "Shp 0.50").
     auto setupRandomSlider = [this](TextSlider& s, const juce::String& tag,
-                                    std::function<float&()> field) {
+                                    const std::function<float&()>& field) {
         s.setRange(0.0, 1.0, 0.01);
         s.setFont(FontManager::getInstance().getUIFont(9.0f));
         s.setShowFillIndicator(false);
@@ -623,22 +625,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
 
     modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted) {
-            onModLinkDeleted(selectedModIndex_, target);
+            onModLinkDeleted(selectedModIndex_, std::move(target));
         }
     };
     modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedModIndex_ >= 0 && onModLinkBipolarChanged) {
-            onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
+            onModLinkBipolarChanged(selectedModIndex_, std::move(target), bipolar);
         }
     };
     modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
         if (selectedModIndex_ >= 0 && onModLinkEnabledChanged) {
-            onModLinkEnabledChanged(selectedModIndex_, target, enabled);
+            onModLinkEnabledChanged(selectedModIndex_, std::move(target), enabled);
         }
     };
     modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged) {
-            onModLinkAmountChanged(selectedModIndex_, target, amount);
+            onModLinkAmountChanged(selectedModIndex_, std::move(target), amount);
         }
     };
 
@@ -661,22 +663,22 @@ ModulatorEditorPanel::ModulatorEditorPanel() {
     };
     followerEditorPanel_->onModLinkDeleted = [this](int idx, magda::ControlTarget target) {
         if (onModLinkDeleted)
-            onModLinkDeleted(idx, target);
+            onModLinkDeleted(idx, std::move(target));
     };
     followerEditorPanel_->onModLinkBipolarChanged = [this](int idx, magda::ControlTarget target,
                                                            bool bipolar) {
         if (onModLinkBipolarChanged)
-            onModLinkBipolarChanged(idx, target, bipolar);
+            onModLinkBipolarChanged(idx, std::move(target), bipolar);
     };
     followerEditorPanel_->onModLinkEnabledChanged = [this](int idx, magda::ControlTarget target,
                                                            bool enabled) {
         if (onModLinkEnabledChanged)
-            onModLinkEnabledChanged(idx, target, enabled);
+            onModLinkEnabledChanged(idx, std::move(target), enabled);
     };
     followerEditorPanel_->onModLinkAmountChanged = [this](int idx, magda::ControlTarget target,
                                                           float amount) {
         if (onModLinkAmountChanged)
-            onModLinkAmountChanged(idx, target, amount);
+            onModLinkAmountChanged(idx, std::move(target), amount);
     };
     addChildComponent(*followerEditorPanel_);
 }

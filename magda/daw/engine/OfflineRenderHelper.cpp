@@ -1,5 +1,7 @@
 #include "OfflineRenderHelper.hpp"
 
+#include <utility>
+
 #include "../audio/AudioBridge.hpp"
 #include "TracktionEngineWrapper.hpp"
 
@@ -67,9 +69,8 @@ void restorePluginsAfterOfflineRender(TracktionEngineWrapper& engine) {
 class TracktionOfflineRenderTask final : public OfflineRenderTask {
   public:
     TracktionOfflineRenderTask(TracktionEngineWrapper& engine, tracktion::Edit& edit,
-                               const OfflineRenderRequest& request,
-                               const juce::BigInteger& tracksToDo)
-        : request_(request), params_(edit) {
+                               OfflineRenderRequest request, const juce::BigInteger& tracksToDo)
+        : request_(std::move(request)), params_(edit) {
         params_.destFile = request_.destination;
         auto& formats = engine.getEngine()->getAudioFileFormatManager();
         params_.audioFormat = request_.format == OfflineRenderFormat::Flac ? formats.getFlacFormat()

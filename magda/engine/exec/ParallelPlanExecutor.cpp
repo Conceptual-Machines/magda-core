@@ -75,7 +75,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     // constants disagree with its ops did not come from the compiler.
     if (!carriesSchedule(plan)) {
         core_.reset();
-        messages.push_back(
+        messages.emplace_back(
             "plan does not carry the schedule its topology implies: its dependency counts, "
             "consumer edges or initially-ready set are missing or disagree with its ops, so it "
             "cannot be scheduled");

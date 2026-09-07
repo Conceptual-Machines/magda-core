@@ -38,8 +38,7 @@ class EditPadsCommand : public UndoableCommand {
   public:
     /// @p edit runs against the live model, addressed by @p gridPath. It runs
     /// once: redo restores the snapshot it produced.
-    EditPadsCommand(const ChainNodePath& gridPath, juce::String description,
-                    std::function<void()> edit);
+    EditPadsCommand(ChainNodePath gridPath, juce::String description, std::function<void()> edit);
 
     void execute() override;
     void undo() override;
@@ -82,7 +81,7 @@ class SetPadFaderCommand : public UndoableCommand {
     /// same fader is another. `UndoManager` merges adjacent commands with no
     /// timeout of its own, so without this one Undo would walk back every
     /// gesture since something else last intervened.
-    SetPadFaderCommand(const ChainNodePath& gridPath, int padIndex, Target target, float value,
+    SetPadFaderCommand(ChainNodePath gridPath, int padIndex, Target target, float value,
                        int gesture);
 
     void execute() override;

@@ -10,6 +10,7 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 #include "MediaDatabase.hpp"
 #include "MediaDbContext.hpp"
@@ -415,7 +416,7 @@ void setUserKeyRootForFile(const std::filesystem::path& path, std::optional<std:
     if (!ctx.ensureInitialized()) {
         return;
     }
-    setUserKeyRoot(ctx.db(), path, root);
+    setUserKeyRoot(ctx.db(), path, std::move(root));
 }
 
 void setUserKeyForFile(const std::filesystem::path& path, std::optional<std::string> root,

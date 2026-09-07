@@ -161,7 +161,7 @@ DevicePluginPtr createLevelMeterPlugin(const InternalPluginSpec&, DeviceSessionK
 }
 
 void add(InternalPluginRegistry& registry, InternalPluginSpec spec) {
-    const bool registered = registry.registerPlugin(std::move(spec));
+    const bool registered = registry.registerPlugin(spec);
     jassert(registered);
     juce::ignoreUnused(registered);
 }

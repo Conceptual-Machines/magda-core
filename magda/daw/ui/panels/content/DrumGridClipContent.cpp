@@ -2272,7 +2272,7 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     gridComponent_->onNoteSelectionChanged = [this](magda::ClipId clipId,
-                                                    std::vector<size_t> noteIndices) {
+                                                    const std::vector<size_t>& noteIndices) {
         if (noteIndices.empty()) {
             magda::SelectionManager::getInstance().clearNoteSelection();
         } else {
@@ -2290,7 +2290,7 @@ DrumGridClipContent::DrumGridClipContent() {
     };
 
     // Handle copy from context menu
-    gridComponent_->onCopyNotes = [](magda::ClipId clipId, std::vector<size_t> noteIndices) {
+    gridComponent_->onCopyNotes = [](magda::ClipId clipId, const std::vector<size_t>& noteIndices) {
         magda::ClipManager::getInstance().copyNotesToClipboard(clipId, noteIndices);
     };
 
@@ -2328,7 +2328,7 @@ DrumGridClipContent::DrumGridClipContent() {
 
     // Handle duplicate from context menu
     gridComponent_->onDuplicateNotes = [this](magda::ClipId clipId,
-                                              std::vector<size_t> noteIndices) {
+                                              const std::vector<size_t>& noteIndices) {
         auto& clipManager = magda::ClipManager::getInstance();
         const auto* clip = clipManager.getClip(clipId);
         if (!clip || !clip->isMidi())

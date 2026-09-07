@@ -8,7 +8,7 @@ namespace magda {
 
 class MCPClient {
   public:
-    MCPClient(const juce::String& command, const juce::StringArray& args);
+    MCPClient(juce::String command, juce::StringArray args);
     ~MCPClient();
 
     MCPClient(const MCPClient&) = delete;

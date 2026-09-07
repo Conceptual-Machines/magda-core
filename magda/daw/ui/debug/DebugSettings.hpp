@@ -62,7 +62,7 @@ class DebugSettings {
 
     // Listener for settings changes
     using Listener = std::function<void()>;
-    void addListener(Listener listener) {
+    void addListener(const Listener& listener) {
         listeners_.push_back(listener);
     }
 

@@ -13,8 +13,9 @@
 
 namespace magda {
 
-void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
-                        std::function<void(TrackId, AutomationLaneId)> onShowAutomationLane) {
+void showAutomationMenu(
+    TrackId trackId, juce::Component* relativeTo,
+    const std::function<void(TrackId, AutomationLaneId)>& onShowAutomationLane) {
     auto& automationManager = AutomationManager::getInstance();
 
     juce::PopupMenu menu;

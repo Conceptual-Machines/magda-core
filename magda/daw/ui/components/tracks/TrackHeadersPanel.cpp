@@ -1715,7 +1715,7 @@ void TrackHeadersPanel::setupTrackHeaderWithId(TrackHeader& header, int trackId)
 
     // Right-click the volume / pan readouts to show (or create) their
     // automation lane, mirroring the send-label menu in the inspector.
-    auto showAutomationLaneMenu = [](AutomationTarget target) {
+    auto showAutomationLaneMenu = [](const AutomationTarget& target) {
         auto& autoMgr = AutomationManager::getInstance();
         const bool hasLane = autoMgr.getLaneForTarget(target) != magda::INVALID_AUTOMATION_LANE_ID;
         juce::PopupMenu menu;

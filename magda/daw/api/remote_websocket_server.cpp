@@ -754,7 +754,7 @@ struct RemoteWebSocketServer::Impl {
             // connections are live. Everything else it needs is copied.
             subscriptions->handle(
                 connection->subscriber, method, params,
-                [log = options.audit, connection, id, method, idKey](Response response) {
+                [log = options.audit, connection, id, method, idKey](const Response& response) {
                     recordAudit(log, connection, method, idKey,
                                 response.ok ? AuditOutcome::Ok : AuditOutcome::Failed,
                                 response.ok ? juce::String() : toString(response.error.code));
@@ -774,7 +774,7 @@ struct RemoteWebSocketServer::Impl {
         const auto meta = parsed["meta"];
         auto deadlineMs = options.defaultDeadlineMs;
         if (meta.getDynamicObject() != nullptr) {
-            if (const auto key = meta["idempotencyKey"]; !key.isVoid()) {
+            if (const auto& key = meta["idempotencyKey"]; !key.isVoid()) {
                 if (!key.isString() || key.toString().isEmpty() || key.toString().length() > 256) {
                     refuse(connection, id, kInvalidRequest,
                            "meta.idempotencyKey must be a non-empty string of at most 256 "
@@ -785,7 +785,7 @@ struct RemoteWebSocketServer::Impl {
                 // reused and therefore cannot safely double as retry keys.
                 context.requestId = key.toString();
             }
-            if (const auto expected = meta["expectedRevision"]; !expected.isVoid()) {
+            if (const auto& expected = meta["expectedRevision"]; !expected.isVoid()) {
                 const auto revision =
                     jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
                 if (!revision.has_value()) {
@@ -800,7 +800,7 @@ struct RemoteWebSocketServer::Impl {
             // more — and never for none. Taking the minimum without checking the
             // sign lets -1 win it, after which a non-positive deadline is read as
             // "no deadline" and the request outlives every bound there is.
-            if (const auto requested = meta["deadlineMs"]; !requested.isVoid()) {
+            if (const auto& requested = meta["deadlineMs"]; !requested.isVoid()) {
                 const auto milliseconds =
                     jsonInteger(requested, 1, std::numeric_limits<int>::max());
                 if (!milliseconds.has_value()) {
@@ -813,7 +813,7 @@ struct RemoteWebSocketServer::Impl {
         }
         context.deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(deadlineMs);
 
-        service.dispatch(method, params, context, [connection, id](Response response) {
+        service.dispatch(method, params, context, [connection, id](const Response& response) {
             connection->complete(replyFor(id, response));
         });
     }

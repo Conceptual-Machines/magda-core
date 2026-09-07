@@ -144,11 +144,11 @@ LinkableTextSlider::LinkableTextSlider(TextSlider::Format format) : slider_(form
         }
     };
     // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
-    onMidiLearn = [](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+    onMidiLearn = [](const magda::ChainNodePath& path, int paramIdx, juce::String paramName) {
         magda::MidiLearnCoordinator::getInstance().beginLearn(
             magda::ControlTarget::pluginParam(path, paramIdx), paramName);
     };
-    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+    onMidiClear = [](const magda::ChainNodePath& path, int paramIdx) {
         magda::MidiLearnCoordinator::getInstance().clearMappings(
             magda::ControlTarget::pluginParam(path, paramIdx));
     };

@@ -110,7 +110,7 @@ void MixAnalysisService::runOffline() {
             progressText_ = msg;
             listeners_.call(&Listener::mixAnalysisChanged);
         },
-        [this, runId](mix::OfflineMixAnalysis::Result result) {
+        [this, runId](const mix::OfflineMixAnalysis::Result& result) {
             if (runId != runId_)
                 return;  // cancelled / superseded
             if (result.hasError)

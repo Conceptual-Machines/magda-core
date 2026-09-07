@@ -122,6 +122,7 @@ void TracktionEngineWrapper::setTrackColor(const std::string& track_id, int r, i
 
 std::vector<std::string> TracktionEngineWrapper::getAllTrackIds() const {
     std::vector<std::string> ids;
+    ids.reserve(trackMap_.size());
     for (const auto& pair : trackMap_) {
         ids.push_back(pair.first);
     }

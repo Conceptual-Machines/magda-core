@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <set>
+#include <utility>
 #include <vector>
 
 #include "../layout/LayoutConfig.hpp"
@@ -406,14 +407,13 @@ struct ArrangementSection {
     juce::String name;
     juce::Colour colour;
 
-    ArrangementSection(double start = 0.0, double end = 0.0,
-                       const juce::String& sectionName = "Section",
+    ArrangementSection(double start = 0.0, double end = 0.0, juce::String sectionName = "Section",
                        juce::Colour sectionColour = juce::Colours::blue)
         : startTime(start),
           endTime(end),
           startBeats(start * DEFAULT_BPM / 60.0),
           endBeats(end * DEFAULT_BPM / 60.0),
-          name(sectionName),
+          name(std::move(sectionName)),
           colour(sectionColour) {}
 
     double getDuration() const {
@@ -452,9 +452,9 @@ struct TimelineMarker {
     juce::String name;
     juce::Colour colour;
 
-    TimelineMarker(int markerId = 0, double beats = 0.0, const juce::String& markerName = "Marker",
+    TimelineMarker(int markerId = 0, double beats = 0.0, juce::String markerName = "Marker",
                    juce::Colour markerColour = juce::Colour(0xFF9E9E9E))
-        : id(markerId), positionBeats(beats), name(markerName), colour(markerColour) {
+        : id(markerId), positionBeats(beats), name(std::move(markerName)), colour(markerColour) {
         positionTime = beats * 60.0 / DEFAULT_BPM;
     }
 

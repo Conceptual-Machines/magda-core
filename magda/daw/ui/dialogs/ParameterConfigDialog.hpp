@@ -49,7 +49,7 @@ class ParameterConfigDialog : public juce::Component,
                               public juce::TableListBoxModel,
                               private juce::Timer {
   public:
-    ParameterConfigDialog(const juce::String& pluginName);
+    ParameterConfigDialog(juce::String pluginName);
     ~ParameterConfigDialog() override;
 
     void paint(juce::Graphics& g) override;

@@ -4,6 +4,7 @@
 #include <juce_llm/juce_llm.h>
 
 #include <ranges>
+#include <utility>
 
 #include "../../../../agents/internal_plugins.hpp"
 #include "../../../../agents/llm_presets.hpp"
@@ -24,7 +25,7 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
           owner_(owner),
           agent_(std::move(agent)),
           prompt_(std::move(prompt)),
-          path_(path),
+          path_(std::move(path)),
           conversation_(std::move(conversation)) {}
 
     void run() override {
@@ -62,8 +63,8 @@ class AIPanelComponent::GenerateThread : public juce::Thread {
     }
 
   private:
-    static void postResult(juce::WeakReference<AIPanelComponent> safeOwner, juce::String status,
-                           juce::String conversationJson) {
+    static void postResult(const juce::WeakReference<AIPanelComponent>& safeOwner,
+                           juce::String status, juce::String conversationJson) {
         juce::MessageManager::callAsync([safeOwner, status, conversationJson]() {
             if (auto* p = safeOwner.get())
                 p->onGenerationFinished(status, conversationJson);

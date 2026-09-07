@@ -303,7 +303,7 @@ class StemModelDownloader::Worker : public juce::Thread {
         return hash.toHexString();
     }
 
-    void postProgress(Progress p) {
+    void postProgress(const Progress& p) {
         if (!onProgress_)
             return;
         auto cb = onProgress_;

@@ -1,5 +1,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <utility>
+
 #include "../dialogs/ExportAudioDialog.hpp"
 #include "../dialogs/ExportMidiDialog.hpp"
 #include "MainWindow.hpp"
@@ -36,13 +38,13 @@ double timelineEndBeats(const ClipInfo& clip, double bpm) {
 class ExportProgressWindow : public juce::ThreadWithProgressWindow {
   public:
     ExportProgressWindow(std::unique_ptr<OfflineRenderSession> renderSession,
-                         const OfflineRenderRequest& request, const juce::File& outputFile,
+                         const OfflineRenderRequest& request, juce::File outputFile,
                          std::function<void()> onComplete, double prerollSeconds = 0.0,
                          double leadInSilence = 0.0)
         : ThreadWithProgressWindow(trEllipsis("export.progress.exporting_audio"), true, true),
           renderSession_(std::move(renderSession)),
           renderTask_(renderSession_ ? renderSession_->createTask(request) : nullptr),
-          outputFile_(outputFile),
+          outputFile_(std::move(outputFile)),
           onComplete_(std::move(onComplete)),
           prerollSeconds_(prerollSeconds),
           leadInSilence_(leadInSilence),

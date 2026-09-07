@@ -176,7 +176,7 @@ juce::BigInteger TracktionEngineWrapper::getEnabledWaveChannels(bool input) cons
     if (engine_ == nullptr)
         return channels;
 
-    const auto addEnabledChannels = [&channels](auto devices) {
+    const auto addEnabledChannels = [&channels](const auto& devices) {
         for (auto* device : devices) {
             if (device == nullptr || !device->isEnabled())
                 continue;
@@ -195,7 +195,7 @@ void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigI
     if (engine_ == nullptr)
         return;
 
-    const auto applyChannels = [&channels](auto devices) {
+    const auto applyChannels = [&channels](const auto& devices) {
         for (auto* device : devices) {
             if (device == nullptr)
                 continue;

@@ -90,7 +90,7 @@ inline MacroArray createDefaultMacros(int numMacros = NUM_MACROS) {
     MacroArray macros;
     macros.reserve(numMacros);
     for (int i = 0; i < numMacros; ++i) {
-        macros.push_back(MacroInfo(i));
+        macros.emplace_back(i);
     }
     return macros;
 }
@@ -101,7 +101,7 @@ inline MacroArray createDefaultMacros(int numMacros = NUM_MACROS) {
 inline void addMacroPage(MacroArray& macros) {
     int startIndex = static_cast<int>(macros.size());
     for (int i = 0; i < MACROS_PER_PAGE; ++i) {
-        macros.push_back(MacroInfo(startIndex + i));
+        macros.emplace_back(startIndex + i);
     }
 }
 

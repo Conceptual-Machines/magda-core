@@ -1,5 +1,7 @@
 #include "ChordBlockComponent.hpp"
 
+#include <utility>
+
 #include "core/MidiFileWriter.hpp"
 #include "music/NotationSettings.hpp"
 #include "project/ProjectManager.hpp"
@@ -9,7 +11,7 @@
 
 namespace magda::daw::ui {
 
-ChordBlockComponent::ChordBlockComponent(const magda::music::Chord& chord) : chord_(chord) {
+ChordBlockComponent::ChordBlockComponent(magda::music::Chord chord) : chord_(std::move(chord)) {
     setName("ChordBlock");
 }
 

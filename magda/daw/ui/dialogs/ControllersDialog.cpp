@@ -783,7 +783,7 @@ class LuaScriptsPage : public juce::Component {
             menu.addItem(static_cast<int>(i + 1), available[i].getFileName());
 
         juce::Component::SafePointer<LuaScriptsPage> self(this);
-        const auto availableCopy = available;
+        const auto& availableCopy = available;
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&addScriptButton_),
                            [self, availableCopy](int result) {
                                if (result <= 0)

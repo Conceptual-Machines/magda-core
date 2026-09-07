@@ -153,7 +153,7 @@ class MediaExplorerContent : public PanelContent,
         juce::File filesystemRoot;  // meaningful when mode == Filesystem
     };
     ViewState currentView_;
-    void applyView(ViewState target);
+    void applyView(const ViewState& target);
 
     // Helper: best initial Filesystem root — saved default, then Music,
     // then Home. Always returns an existing directory.

@@ -220,7 +220,7 @@ std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromCon
 
         // Count root notes
         if (chord.rootNoteNumber >= 0) {
-            const juce::String rootName = NOTE_NAMES[chord.rootNoteNumber % 12];
+            const juce::String& rootName = NOTE_NAMES[chord.rootNoteNumber % 12];
             rootCounts[rootName]++;
         }
 
@@ -498,7 +498,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         // Final safety: synthesize only when novelty allows non-diatonic/fallback content
         if (params.novelty > 0.0f) {
             for (int i = 0; i < 12 && static_cast<int>(suggestions.size()) < minDesired; ++i) {
-                juce::String rootName = NOTE_NAMES[i];
+                const juce::String& rootName = NOTE_NAMES[i];
                 juce::String quality = (i % 2 == 0) ? "maj" : "min";
                 auto chord = buildChordObject(rootName, quality, targetOctave, effectiveInversions,
                                               recentChords);
@@ -910,9 +910,9 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
             std::vector<ChordNote> notes;
             notes.reserve(lowerNotes.size() + upperNotes.size());
             for (int n : lowerNotes)
-                notes.push_back({n, 100});
+                notes.emplace_back(n, 100);
             for (int n : upperNotes)
-                notes.push_back({n, 100});
+                notes.emplace_back(n, 100);
             std::sort(notes.begin(), notes.end(),
                       [](auto& a, auto& b) { return a.noteNumber < b.noteNumber; });
 
@@ -1124,7 +1124,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
     // Helpers
     auto addNote = [&](int midi) {
         if (midi >= 0)
-            notes.push_back({midi, 100});
+            notes.emplace_back(midi, 100);
     };
     auto ensureSorted = [&]() {
         std::sort(notes.begin(), notes.end(),
@@ -1996,7 +1996,7 @@ juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) c
             // Only show scales with good confidence
             if (matchScore.matchedNotes.size() >= 3) {
                 // Format scale name without duplicating root note
-                juce::String rootNote = NOTE_NAMES[scale.rootNote % 12];
+                const juce::String& rootNote = NOTE_NAMES[scale.rootNote % 12];
                 juce::String scaleName = juce::String(scale.name);
 
                 // Check if scale name already starts with the root note
@@ -2124,7 +2124,7 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
                     scaleName = scaleName.replace("Aeolian", "Minor");
                 }
 
-                topScales.push_back({rootNote, scaleName});
+                topScales.emplace_back(rootNote, scaleName);
             }
         }
 

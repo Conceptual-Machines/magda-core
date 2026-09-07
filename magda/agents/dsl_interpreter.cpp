@@ -2642,6 +2642,7 @@ bool Interpreter::executeSetVelocity(const Params& params) {
     const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, int>> noteVelocities;
+    noteVelocities.reserve(noteSelIndices.size());
     for (auto idx : noteSelIndices)
         noteVelocities.emplace_back(idx, velocity);
 
@@ -2700,6 +2701,7 @@ bool Interpreter::executeResizeNotes(const Params& params) {
     const auto& noteSelIndices = sm.getNoteSelectionIndices();
 
     std::vector<std::pair<size_t, double>> noteLengths;
+    noteLengths.reserve(noteSelIndices.size());
     for (auto idx : noteSelIndices)
         noteLengths.emplace_back(idx, length);
 

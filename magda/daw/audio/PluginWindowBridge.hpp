@@ -41,21 +41,21 @@ class PluginWindowBridge {
      * @param plugin The Tracktion plugin
      * @param deviceId MAGDA device ID of the plugin
      */
-    void showPluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin);
+    void showPluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin);
 
     /**
      * @brief Hide/close the plugin's native editor window
      * @param plugin The Tracktion plugin
      * @param deviceId MAGDA device ID of the plugin
      */
-    void hidePluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin);
+    void hidePluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin);
 
     /**
      * @brief Check if a plugin window is currently open
      * @param plugin The Tracktion plugin
      * @return true if the plugin window is visible
      */
-    bool isPluginWindowOpen(te::Plugin::Ptr plugin) const;
+    bool isPluginWindowOpen(const te::Plugin::Ptr& plugin) const;
 
     /**
      * @brief Toggle the plugin's native editor window (open if closed, close if open)
@@ -63,7 +63,7 @@ class PluginWindowBridge {
      * @param deviceId MAGDA device ID of the plugin
      * @return true if the window is now open, false if now closed
      */
-    bool togglePluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin);
+    bool togglePluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin);
 
     /**
      * @brief Close all windows for a specific device

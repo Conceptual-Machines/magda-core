@@ -1,6 +1,7 @@
 #include "UndoManager.hpp"
 
 #include <ranges>
+#include <utility>
 
 #include "../project/ProjectManager.hpp"
 
@@ -203,9 +204,9 @@ void UndoManager::updateProjectDirtyState() {
 // CompoundCommand Implementation
 // ============================================================================
 
-CompoundCommand::CompoundCommand(const juce::String& description,
+CompoundCommand::CompoundCommand(juce::String description,
                                  std::vector<std::unique_ptr<UndoableCommand>> commands)
-    : description_(description), commands_(std::move(commands)) {}
+    : description_(std::move(description)), commands_(std::move(commands)) {}
 
 void CompoundCommand::execute() {
     // Execute all commands in order

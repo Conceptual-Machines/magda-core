@@ -74,7 +74,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // why. Asked of the executor rather than worked out here, so that the
     // answer cannot differ from the one the block itself will get.
     if (!prepared->executor.appliesValues(prepared->values)) {
-        messages.push_back(
+        messages.emplace_back(
             "the values published with this plan are not values it can render: they were "
             "resolved against a different plan, or against this one before it was whole. "
             "It is not published, because it would have rendered at unity");

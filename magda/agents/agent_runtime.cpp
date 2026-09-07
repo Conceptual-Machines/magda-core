@@ -50,7 +50,7 @@ AgentRuntime::AgentRuntime(Model& model, ToolExecutor& executor, ApprovalHook ap
       fastInferencePolicy_(fastInferencePolicy) {}
 
 RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput input,
-                            CancellationToken cancellation) {
+                            const CancellationToken& cancellation) {
     RunResult result;
     result.state = RunState::Running;
     result.finalRevision = input.projectRevision;

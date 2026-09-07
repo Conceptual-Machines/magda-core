@@ -64,11 +64,11 @@ step_pattern::PolyPattern currentPolyPattern(const ChainNodePath& devicePath) {
 // Mono
 // =============================================================================
 
-SetMonoStepPatternCommand::SetMonoStepPatternCommand(const ChainNodePath& devicePath,
+SetMonoStepPatternCommand::SetMonoStepPatternCommand(ChainNodePath devicePath,
                                                      step_pattern::MonoPattern pattern,
                                                      juce::String description,
                                                      StepPatternGesture gesture, int gestureId)
-    : devicePath_(devicePath),
+    : devicePath_(std::move(devicePath)),
       pattern_(pattern),
       description_(std::move(description)),
       gesture_(gesture),
@@ -117,11 +117,11 @@ void SetMonoStepPatternCommand::performAction() {
 // Poly
 // =============================================================================
 
-SetPolyStepPatternCommand::SetPolyStepPatternCommand(const ChainNodePath& devicePath,
+SetPolyStepPatternCommand::SetPolyStepPatternCommand(ChainNodePath devicePath,
                                                      step_pattern::PolyPattern pattern,
                                                      juce::String description,
                                                      StepPatternGesture gesture, int gestureId)
-    : devicePath_(devicePath),
+    : devicePath_(std::move(devicePath)),
       pattern_(pattern),
       description_(std::move(description)),
       gesture_(gesture),

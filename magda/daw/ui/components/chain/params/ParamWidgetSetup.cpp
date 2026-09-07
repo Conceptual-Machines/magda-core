@@ -20,7 +20,7 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
     // to TE raw so typed plugin display values can be matched by probing.
     if (info.displayText) {
         auto provider = info.displayText;
-        const magda::ParameterInfo infoCopy = info;
+        const magda::ParameterInfo& infoCopy = info;
         const float teMin = info.teMinValue;
         const float teSpan = info.teMaxValue - info.teMinValue;
         const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&

@@ -1,5 +1,7 @@
 #include "ChordPanelContent.hpp"
 
+#include <utility>
+
 #include "../../../../agents/chord_agent.hpp"
 #include "BinaryData.h"
 #include "core/ChordProgressionContext.hpp"
@@ -23,8 +25,8 @@ namespace magda::daw::ui {
 // ScaleBlockComponent
 // ============================================================================
 
-ScaleBlockComponent::ScaleBlockComponent(const magda::music::ScaleWithChords& scale)
-    : scale_(scale) {
+ScaleBlockComponent::ScaleBlockComponent(magda::music::ScaleWithChords scale)
+    : scale_(std::move(scale)) {
     setName("ScaleBlock");
     setRepaintsOnMouseActivity(true);
 }
@@ -80,7 +82,7 @@ void ScaleBlockComponent::mouseExit(const juce::MouseEvent& /*e*/) {
 // ScaleChordsPopup
 // ============================================================================
 
-ScaleChordsPopup::ScaleChordsPopup(const magda::music::ScaleWithChords& scale) : scale_(scale) {
+ScaleChordsPopup::ScaleChordsPopup(magda::music::ScaleWithChords scale) : scale_(std::move(scale)) {
     setName("ScaleChordsPopup");
 
     // Build chord blocks for each diatonic triad
@@ -203,8 +205,8 @@ void ScaleChordsPopup::showAt(juce::Component* parent, juce::Rectangle<int> targ
 // BrowseScaleRowComponent
 // ============================================================================
 
-BrowseScaleRowComponent::BrowseScaleRowComponent(const magda::music::ScaleWithChords& scale)
-    : scale_(scale) {
+BrowseScaleRowComponent::BrowseScaleRowComponent(magda::music::ScaleWithChords scale)
+    : scale_(std::move(scale)) {
     setName("BrowseScaleRow");
     setRepaintsOnMouseActivity(true);
 }
@@ -1385,7 +1387,7 @@ IDENTIFIER: /[a-zA-Z_#][a-zA-Z0-9_#]*/
                 return false;
 
             // Post token to UI thread for live display
-            auto tokenCopy = token;
+            const auto& tokenCopy = token;
             juce::MessageManager::callAsync([safeThis, tokenCopy]() {
                 if (!safeThis)
                     return;

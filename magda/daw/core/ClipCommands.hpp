@@ -258,7 +258,7 @@ class DeleteClipCommand : public SnapshotCommand<ClipInfo> {
 class CreateClipCommand : public ValidatedCommand {
   public:
     CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
-                      BeatDuration lengthBeats, const juce::String& audioFilePath = {},
+                      BeatDuration lengthBeats, juce::String audioFilePath = {},
                       ClipView view = ClipView::Arrangement, double tempo = 0.0,
                       ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
@@ -427,7 +427,7 @@ class JoinClipsCommand : public SnapshotCommand<JoinClipsState> {
  */
 class StretchClipCommand : public UndoableCommand {
   public:
-    StretchClipCommand(ClipId clipId, const ClipInfo& beforeState);
+    StretchClipCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Stretch Clip";
@@ -452,7 +452,7 @@ class StretchClipCommand : public UndoableCommand {
  */
 class SetFadeCommand : public UndoableCommand {
   public:
-    SetFadeCommand(ClipId clipId, const ClipInfo& beforeState);
+    SetFadeCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Adjust Fade";
@@ -489,12 +489,12 @@ class SetCrossfadeCommand : public UndoableCommand {
     void undo() override;
 
     bool canMergeWith(const UndoableCommand* other) const override {
-        if (const const const const auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
+        if (const auto* o = dynamic_cast<const SetCrossfadeCommand*>(other))
             return o->leftId_ == leftId_ && o->rightId_ == rightId_;
         return false;
     }
     void mergeWith(const UndoableCommand* other) override {
-        const const const const auto* o = static_cast<const SetCrossfadeCommand*>(other);
+        const auto* o = static_cast<const SetCrossfadeCommand*>(other);
         startBeat_ = o->startBeat_;
         endBeat_ = o->endBeat_;
         tempo_ = o->tempo_;
@@ -521,7 +521,7 @@ class SetCrossfadeCommand : public UndoableCommand {
  */
 class SetVolumeCommand : public UndoableCommand {
   public:
-    SetVolumeCommand(ClipId clipId, const ClipInfo& beforeState);
+    SetVolumeCommand(ClipId clipId, ClipInfo beforeState);
 
     juce::String getDescription() const override {
         return "Adjust Volume";

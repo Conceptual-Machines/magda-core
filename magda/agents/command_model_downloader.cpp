@@ -174,7 +174,7 @@ class CommandModelDownloader::Worker : public juce::Thread {
         return true;
     }
 
-    void postProgress(Progress p) {
+    void postProgress(const Progress& p) {
         if (!onProgress_)
             return;
         auto cb = onProgress_;

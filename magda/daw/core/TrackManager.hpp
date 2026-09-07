@@ -998,13 +998,13 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Unified macro management — works for Track, Rack, and Device scopes.
     void setMacroValue(const ChainNodePath& path, int macroIndex, float value);
-    void setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target);
-    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, ControlTarget target,
+    void setMacroTarget(const ChainNodePath& path, int macroIndex, const ControlTarget& target);
+    void setMacroLinkAmount(const ChainNodePath& path, int macroIndex, const ControlTarget& target,
                             float amount);
-    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, ControlTarget target,
+    void setMacroLinkBipolar(const ChainNodePath& path, int macroIndex, const ControlTarget& target,
                              bool bipolar);
     void setMacroName(const ChainNodePath& path, int macroIndex, const juce::String& name);
-    void removeMacroLink(const ChainNodePath& path, int macroIndex, ControlTarget target);
+    void removeMacroLink(const ChainNodePath& path, int macroIndex, const ControlTarget& target);
     void clearAllMacroLinks(const ChainNodePath& path, int macroIndex);
     void addMacroPage(const ChainNodePath& path);
     void removeMacroPage(const ChainNodePath& path);
@@ -1013,12 +1013,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void addMod(const ChainNodePath& path, int slotIndex, ModType type,
                 LFOWaveform waveform = LFOWaveform::Sine);
     void removeMod(const ChainNodePath& path, int modIndex);
-    void setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target);
-    void setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModTarget(const ChainNodePath& path, int modIndex, const ControlTarget& target);
+    void setModLinkAmount(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                           float amount);
-    void setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModLinkBipolar(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                            bool bipolar);
-    void setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
+    void setModLinkEnabled(const ChainNodePath& path, int modIndex, const ControlTarget& target,
                            bool enabled);
     void setModName(const ChainNodePath& path, int modIndex, const juce::String& name);
     void setModType(const ChainNodePath& path, int modIndex, ModType type);
@@ -1048,7 +1048,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // Copies the envelope follower fields (gain/attack/hold/release) from `src`
     // into the stored mod and re-syncs the TE modifier.
     void setModFollower(const ChainNodePath& path, int modIndex, const ModInfo& src);
-    void removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target);
+    void removeModLink(const ChainNodePath& path, int modIndex, const ControlTarget& target);
     void clearAllModLinks(const ChainNodePath& path, int modIndex);
     void setModEnabled(const ChainNodePath& path, int modIndex, bool enabled);
     void addModPage(const ChainNodePath& path);

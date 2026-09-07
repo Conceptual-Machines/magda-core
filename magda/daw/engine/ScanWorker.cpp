@@ -1,9 +1,13 @@
 #include "ScanWorker.hpp"
 
+#include <utility>
+
 namespace magda {
 
-ScanWorker::ScanWorker(int index, const juce::File& scannerExe, ResultCallback callback)
-    : workerIndex_(index), scannerExe_(scannerExe), resultCallback_(std::move(callback)) {}
+ScanWorker::ScanWorker(int index, juce::File scannerExe, ResultCallback callback)
+    : workerIndex_(index),
+      scannerExe_(std::move(scannerExe)),
+      resultCallback_(std::move(callback)) {}
 
 ScanWorker::~ScanWorker() {
     busy_ = false;

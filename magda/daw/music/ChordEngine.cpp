@@ -169,6 +169,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) {
             auto intervals = ChordUtils::getChordIntervals(quality);
 
             std::vector<int> chordPitches;
+            chordPitches.reserve(intervals.size());
             for (int interval : intervals)
                 chordPitches.push_back((rootOffset + interval) % 12);
             std::sort(chordPitches.begin(), chordPitches.end());
@@ -391,6 +392,7 @@ Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality
 
     int rootMidiNote = static_cast<int>(root) + ((octave + 1) * 12);
 
+    notes.reserve(intervals.size());
     for (int interval : intervals)
         notes.emplace_back(rootMidiNote + interval, 100);
 
@@ -406,6 +408,7 @@ std::vector<Chord> ChordEngine::buildChordInversions(ChordRoot root, ChordQualit
                                                      int octave) const {
     std::vector<Chord> inversions;
     int maxInv = getMaxInversions(quality);
+    inversions.reserve(maxInv);
     for (int inv = 0; inv < maxInv; ++inv)
         inversions.push_back(buildChordInversion(root, quality, inv, octave));
     return inversions;
@@ -418,6 +421,7 @@ Chord ChordEngine::buildChordInversion(ChordRoot root, ChordQuality quality, int
 
     const int rootMidiNote = static_cast<int>(root) + ((octave + 1) * 12);
 
+    notes.reserve(intervals.size());
     for (int interval : intervals)
         notes.emplace_back(rootMidiNote + interval, 100);
 
@@ -484,6 +488,7 @@ std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
         for (ChordQuality quality : qualities) {
             auto intervals = ChordUtils::getChordIntervals(quality);
             std::vector<int> chordPitches;
+            chordPitches.reserve(intervals.size());
             for (int interval : intervals)
                 chordPitches.push_back((rootOffset + interval) % 12);
             std::sort(chordPitches.begin(), chordPitches.end());

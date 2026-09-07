@@ -673,8 +673,8 @@ int parseAIResponse(const juce::String& responseText, const std::vector<Ambiguou
 void detectWithAI(const juce::String& pluginName, const std::vector<ParameterScanInput>& params,
                   const std::vector<DetectedParameterInfo>& deterministicResults,
                   float confidenceThreshold, std::shared_ptr<std::atomic<bool>> cancelFlag,
-                  std::function<void(int resolved, int total)> onProgress,
-                  std::function<void(std::vector<DetectedParameterInfo>)> onComplete) {
+                  const std::function<void(int resolved, int total)>& onProgress,
+                  const std::function<void(std::vector<DetectedParameterInfo>)>& onComplete) {
     // Collect ambiguous parameters
     std::vector<AmbiguousParam> ambiguous;
     for (size_t i = 0; i < deterministicResults.size(); ++i) {
@@ -692,8 +692,8 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
     auto batches = std::make_shared<std::vector<std::vector<AmbiguousParam>>>();
     for (size_t i = 0; i < ambiguous.size(); i += batchSize) {
         auto end = std::min(i + batchSize, ambiguous.size());
-        batches->push_back({ambiguous.begin() + static_cast<ptrdiff_t>(i),
-                            ambiguous.begin() + static_cast<ptrdiff_t>(end)});
+        batches->emplace_back(ambiguous.begin() + static_cast<ptrdiff_t>(i),
+                              ambiguous.begin() + static_cast<ptrdiff_t>(end));
     }
 
     auto totalAmbiguous = static_cast<int>(ambiguous.size());

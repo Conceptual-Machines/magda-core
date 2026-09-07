@@ -45,8 +45,8 @@ std::vector<DetectedParameterInfo> detect(const std::vector<ParameterScanInput>&
 void detectWithAI(const juce::String& pluginName, const std::vector<ParameterScanInput>& params,
                   const std::vector<DetectedParameterInfo>& deterministicResults,
                   float confidenceThreshold, std::shared_ptr<std::atomic<bool>> cancelFlag,
-                  std::function<void(int resolved, int total)> onProgress,
-                  std::function<void(std::vector<DetectedParameterInfo>)> onComplete);
+                  const std::function<void(int resolved, int total)>& onProgress,
+                  const std::function<void(std::vector<DetectedParameterInfo>)>& onComplete);
 
 }  // namespace ParameterDetector
 

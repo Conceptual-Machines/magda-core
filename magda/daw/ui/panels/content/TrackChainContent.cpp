@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <thread>
+#include <utility>
 
 #include "../../../../agents/gain_staging_agent.hpp"
 #include "../../components/chain/ChainNodePathDrag.hpp"
@@ -1209,12 +1210,12 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModsPanel_->onModTargetChanged = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setModTarget(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
     };
     globalModsPanel_->onModLinkRemoved = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().removeModLink(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
             updateGlobalModsPanel();
         }
     };
@@ -1347,26 +1348,29 @@ void TrackChainContent::initGlobalModsPanel() {
     globalModEditorPanel_->onModLinkDeleted = [this](int modIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().removeModLink(
-                ChainNodePath::trackLevel(selectedTrackId_), modIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target));
     };
-    globalModEditorPanel_->onModLinkBipolarChanged =
-        [this](int modIndex, magda::ControlTarget target, bool bipolar) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkBipolar(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, bipolar);
-        };
-    globalModEditorPanel_->onModLinkEnabledChanged =
-        [this](int modIndex, magda::ControlTarget target, bool enabled) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkEnabled(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, enabled);
-        };
-    globalModEditorPanel_->onModLinkAmountChanged =
-        [this](int modIndex, magda::ControlTarget target, float amount) {
-            if (selectedTrackId_ != magda::INVALID_TRACK_ID)
-                magda::TrackManager::getInstance().setModLinkAmount(
-                    ChainNodePath::trackLevel(selectedTrackId_), modIndex, target, amount);
-        };
+    globalModEditorPanel_->onModLinkBipolarChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool bipolar) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkBipolar(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), bipolar);
+    };
+    globalModEditorPanel_->onModLinkEnabledChanged = [this](int modIndex,
+                                                            magda::ControlTarget target,
+                                                            bool enabled) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkEnabled(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), enabled);
+    };
+    globalModEditorPanel_->onModLinkAmountChanged = [this](int modIndex,
+                                                           magda::ControlTarget target,
+                                                           float amount) {
+        if (selectedTrackId_ != magda::INVALID_TRACK_ID)
+            magda::TrackManager::getInstance().setModLinkAmount(
+                ChainNodePath::trackLevel(selectedTrackId_), modIndex, std::move(target), amount);
+    };
     globalModEditorPanel_->setParamNameResolver(
         [this](magda::DeviceId deviceId, int paramIndex) -> juce::String {
             if (selectedTrackId_ == magda::INVALID_TRACK_ID)
@@ -1419,7 +1423,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacrosPanel_->onMacroTargetChanged = [this](int macroIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
             magda::TrackManager::getInstance().setMacroTarget(
-                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, std::move(target));
     };
     globalMacrosPanel_->onMacroNameChanged = [this](int macroIndex, juce::String name) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID)
@@ -1430,7 +1434,7 @@ void TrackChainContent::initGlobalMacrosPanel() {
     globalMacrosPanel_->onMacroLinkRemoved = [this](int macroIndex, magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID) {
             magda::TrackManager::getInstance().removeMacroLink(
-                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, target);
+                ChainNodePath::trackLevel(selectedTrackId_), macroIndex, std::move(target));
             updateGlobalMacrosPanel();
         }
     };
@@ -1478,13 +1482,14 @@ void TrackChainContent::initGlobalMacrosPanel() {
                                                           float amount) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0)
             magda::TrackManager::getInstance().setMacroLinkAmount(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target,
-                amount);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target), amount);
     };
     globalMacroEditorPanel_->onLinkRemoved = [this](magda::ControlTarget target) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
             magda::TrackManager::getInstance().removeMacroLink(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target));
             updateGlobalMacrosPanel();
         }
     };
@@ -1492,8 +1497,8 @@ void TrackChainContent::initGlobalMacrosPanel() {
                                                            bool bipolar) {
         if (selectedTrackId_ != magda::INVALID_TRACK_ID && selectedGlobalMacroIndex_ >= 0) {
             magda::TrackManager::getInstance().setMacroLinkBipolar(
-                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_, target,
-                bipolar);
+                ChainNodePath::trackLevel(selectedTrackId_), selectedGlobalMacroIndex_,
+                std::move(target), bipolar);
             updateGlobalMacrosPanel();
         }
     };
@@ -1574,7 +1579,7 @@ void TrackChainContent::updateGlobalModsPanel() {
         for (const auto& element : elements) {
             if (magda::isDevice(element)) {
                 const auto& device = magda::getDevice(element);
-                allDevices.push_back({device.id, device.name});
+                allDevices.emplace_back(device.id, device.name);
                 std::vector<juce::String> names;
                 names.reserve(device.parameters.size());
                 for (const auto& p : device.parameters)
@@ -1636,7 +1641,7 @@ void TrackChainContent::updateGlobalMacrosPanel() {
         for (const auto& element : elements) {
             if (magda::isDevice(element)) {
                 const auto& device = magda::getDevice(element);
-                allDevices.push_back({device.id, device.name});
+                allDevices.emplace_back(device.id, device.name);
                 std::vector<juce::String> names;
                 names.reserve(device.parameters.size());
                 for (const auto& p : device.parameters) {
@@ -2278,7 +2283,7 @@ void TrackChainContent::runAiGainStagingPass() {
                 std::vector<std::pair<magda::ChainNodePath, float>> moves;
                 for (const auto& d : result.decisions)
                     if (d.index >= 0 && d.index < static_cast<int>(paths.size()))
-                        moves.push_back({paths[static_cast<size_t>(d.index)], d.newGainDb});
+                        moves.emplace_back(paths[static_cast<size_t>(d.index)], d.newGainDb);
                 m.applyAiMoves(moves);
                 juce::Logger::writeToLog("[GainStaging] AI: " + juce::String(result.summary));
             }

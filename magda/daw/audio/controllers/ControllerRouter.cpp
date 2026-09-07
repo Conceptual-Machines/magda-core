@@ -321,7 +321,7 @@ void ControllerRouter::scheduleWrite(const BindingId& bindingId, int rawValue, i
         return;
 
     auto pwShared = pwIt->second;
-    Binding bindingCopy = binding;
+    const Binding& bindingCopy = binding;
 
     // If we're already on the message thread (or no message manager -- test context),
     // execute synchronously to avoid deadlock and allow tests to run without a

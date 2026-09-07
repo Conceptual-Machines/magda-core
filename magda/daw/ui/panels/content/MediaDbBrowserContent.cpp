@@ -696,7 +696,7 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             }
             const juce::Component::SafePointer<MediaDbBrowserContent> self(&owner_);
             const auto seedId = r.fileId;
-            const auto seedName = fileName;
+            const auto& seedName = fileName;
             menu.showMenuAsync(
                 juce::PopupMenu::Options{},
                 [self, seedId, seedName, selectedIds = std::move(selectedIds)](int choice) mutable {
@@ -1502,7 +1502,7 @@ void MediaDbBrowserContent::showBulkEditRowsDialog(std::vector<std::int64_t> fil
         }));
 }
 
-void MediaDbBrowserContent::resetRowsToDetected(std::vector<std::int64_t> fileIds) {
+void MediaDbBrowserContent::resetRowsToDetected(const std::vector<std::int64_t>& fileIds) {
     if (indexing_ || fileIds.empty()) {
         return;
     }

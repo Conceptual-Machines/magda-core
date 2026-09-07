@@ -211,7 +211,7 @@ class AgentRuntime {
                  Now now = Clock::now, FastInferencePolicy* fastInferencePolicy = nullptr);
 
     RunResult run(const AgentDefinition& definition, AgentRunInput input,
-                  CancellationToken cancellation = {});
+                  const CancellationToken& cancellation = {});
 
   private:
     Model& model_;

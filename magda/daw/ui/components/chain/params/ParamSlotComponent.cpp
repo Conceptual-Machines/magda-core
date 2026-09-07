@@ -158,12 +158,12 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     addAndMakeVisible(valueSlider_);
 
     // Default MIDI Learn wiring: delegate to MidiLearnCoordinator singleton
-    onMidiLearn = [this](magda::ChainNodePath path, int paramIdx, juce::String paramName) {
+    onMidiLearn = [this](const magda::ChainNodePath& path, int paramIdx, juce::String paramName) {
         juce::String displayName = paramName.isNotEmpty() ? paramName : nameLabel_.getText();
         magda::MidiLearnCoordinator::getInstance().beginLearn(
             magda::ControlTarget::pluginParam(path, paramIdx), displayName);
     };
-    onMidiClear = [](magda::ChainNodePath path, int paramIdx) {
+    onMidiClear = [](const magda::ChainNodePath& path, int paramIdx) {
         magda::MidiLearnCoordinator::getInstance().clearMappings(
             magda::ControlTarget::pluginParam(path, paramIdx));
     };

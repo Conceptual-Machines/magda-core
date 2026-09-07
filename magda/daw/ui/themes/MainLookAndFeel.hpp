@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <utility>
+
 #include "DarkTheme.hpp"
 #include "FontManager.hpp"
 
@@ -104,9 +106,11 @@ class MainLookAndFeel : public juce::LookAndFeel_V4 {
   private:
     class GlyphButton : public juce::Button {
       public:
-        GlyphButton(const juce::String& name, juce::Colour c, const juce::Path& normal,
-                    const juce::Path& toggled)
-            : juce::Button(name), colour(c), normalShape(normal), toggledShape(toggled) {}
+        GlyphButton(const juce::String& name, juce::Colour c, juce::Path normal, juce::Path toggled)
+            : juce::Button(name),
+              colour(c),
+              normalShape(std::move(normal)),
+              toggledShape(std::move(toggled)) {}
 
         void paintButton(juce::Graphics& g, bool isHighlighted, bool isDown) override {
             auto background = juce::Colours::grey;

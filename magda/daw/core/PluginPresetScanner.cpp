@@ -50,7 +50,7 @@ std::vector<juce::File> systemRootsFor(PluginFormat format) {
     std::vector<juce::File> roots;
 #if JUCE_MAC
     if (format == PluginFormat::VST3 || format == PluginFormat::AU)
-        roots.push_back(juce::File("/Library/Audio/Presets"));
+        roots.emplace_back("/Library/Audio/Presets");
 #elif JUCE_WINDOWS
     if (format == PluginFormat::VST3) {
         auto common = juce::File::getSpecialLocation(juce::File::commonApplicationDataDirectory);

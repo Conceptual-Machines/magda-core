@@ -286,7 +286,7 @@ ChainInfo chainFromNode(const ds::Node& node) {
 
     for (const auto& child : node.children)
         if (child.type == kPlugin.toString())
-            chain.elements.push_back(deviceFromNode(child));
+            chain.elements.emplace_back(deviceFromNode(child));
 
     return chain;
 }

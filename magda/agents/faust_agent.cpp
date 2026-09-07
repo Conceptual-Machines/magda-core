@@ -471,8 +471,8 @@ FaustAgent::Result FaustAgent::runConversational(const std::string& message,
         if (compileCheck(result.name, result.source, compileErr, verified)) {
             // Success — commit the clean turns (original prompt + working reply)
             // to the persistent conversation and chain off the good response.
-            conversation.messages.push_back({"user", originalPrompt});
-            conversation.messages.push_back({"assistant", response.text.trim()});
+            conversation.messages.emplace_back("user", originalPrompt);
+            conversation.messages.emplace_back("assistant", response.text.trim());
             conversation.lastResponseId = working.lastResponseId;
             result.mcpVerified = verified;
             logFaustAgentResult(result);

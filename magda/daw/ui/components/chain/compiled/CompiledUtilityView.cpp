@@ -203,23 +203,24 @@ void CompiledUtilityView::configureLinkSlots() {
         slot.setParamIndex(slotIndex);
         slot.setParamName(name);
 
-        slot.onModLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+        slot.onModLinkedWithAmount = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, amount);
         };
-        slot.onModAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+        slot.onModAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkAmountChanged)
                 onLinkAmountChanged(target.paramIndex, amount);
         };
-        slot.onMacroLinked = [this](int, magda::ControlTarget target) {
+        slot.onMacroLinked = [this](int, const magda::ControlTarget& target) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, 0.3f);
         };
-        slot.onMacroLinkedWithAmount = [this](int, magda::ControlTarget target, float amount) {
+        slot.onMacroLinkedWithAmount = [this](int, const magda::ControlTarget& target,
+                                              float amount) {
             if (onLinkRequested)
                 onLinkRequested(target.paramIndex, amount);
         };
-        slot.onMacroAmountChanged = [this](int, magda::ControlTarget target, float amount) {
+        slot.onMacroAmountChanged = [this](int, const magda::ControlTarget& target, float amount) {
             if (onLinkAmountChanged)
                 onLinkAmountChanged(target.paramIndex, amount);
         };
