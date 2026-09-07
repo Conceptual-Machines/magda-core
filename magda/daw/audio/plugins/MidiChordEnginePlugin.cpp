@@ -11,7 +11,12 @@ MidiChordEnginePlugin::MidiChordEnginePlugin() {
     // Started here rather than in prepare(), because the UI reads this device
     // whether or not a graph was ever built for it: a chord track sitting in a
     // stopped project still shows what its panel detected.
-    startTimerHz(30);
+    //
+    // A headless host has no message thread for it to fire on, and JUCE tears
+    // a timer thread down after the message manager, waiting on it without a
+    // deadline. Detection is for the panel, so there is nothing to run.
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr)
+        startTimerHz(30);
 }
 
 MidiChordEnginePlugin::~MidiChordEnginePlugin() {

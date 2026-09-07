@@ -254,12 +254,29 @@ ProjectManager::ProjectManager() {
     createTempMediaDirectory();
     ensureMediaSubdirectories(mediaDirectory_);
 
-    // Start auto-save timer
-    startTimer(kDefaultAutoSaveIntervalMs);
+    startAutoSaveTimer(kDefaultAutoSaveIntervalMs);
+}
+
+/**
+ * @brief Start autosaving, if there is a message thread to autosave on.
+ *
+ * A headless host reaches this singleton too, and has no message loop: the
+ * test binary does, through the timeline's tempo sync. Making a timer there
+ * costs the process its exit, because JUCE tears its timer thread down after
+ * the message manager, waiting on it without a deadline.
+ */
+void ProjectManager::startAutoSaveTimer(int intervalMs) {
+    if (juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+        return;
+
+    if (autoSaveTimer_ == nullptr)
+        autoSaveTimer_ = std::make_unique<juce::TimedCallback>([this] { autoSaveTick(); });
+
+    autoSaveTimer_->startTimer(intervalMs);
 }
 
 ProjectManager::~ProjectManager() {
-    stopTimer();
+    autoSaveTimer_.reset();
     joinBackgroundThread();
 }
 
@@ -1020,13 +1037,13 @@ void ProjectManager::cleanupStaleTempDirectories() {
 void ProjectManager::setAutoSaveEnabled(bool enabled, int intervalSeconds) {
     autoSaveEnabled_ = enabled;
     if (enabled) {
-        startTimer(intervalSeconds * 1000);
+        startAutoSaveTimer(intervalSeconds * 1000);
     } else {
-        stopTimer();
+        autoSaveTimer_.reset();
     }
 }
 
-void ProjectManager::timerCallback() {
+void ProjectManager::autoSaveTick() {
     if (autoSaveEnabled_ && isDirty_ && isProjectOpen_) {
         performAutosave();
     }

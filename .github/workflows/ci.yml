@@ -1439,17 +1439,17 @@ jobs:
       shell: powershell
       run: sccache --show-stats
 
-    # A timeout is here to catch a hang, not to enforce a performance budget.
-    # At five minutes it was doing the second job badly: the last green run on
-    # dev finished this step in 4:53, so any test added anywhere in the suite
-    # failed Windows and nowhere else, with a timeout for a message.
+    # Two timeouts doing two jobs. The inner one is per shard: a shard that has
+    # stopped making progress is killed, its output printed and the step fails
+    # naming it, because the outer timeout kills the step before the reporting
+    # loop runs and prints nothing at all.
     #
-    # Fifteen went the same way. The suite reached 11:32 on dev, and the next
-    # test matrix added anywhere took it over, again on Windows and nowhere
-    # else. Debug MSVC runs this suite about ten times slower than a Debug
-    # clang build does, so this is the step that meets every addition first.
-    # Thirty still kills a hang long before the job's own limit, and leaves the
-    # suite room to grow without the gate reading "timed out" for "slower".
+    # The outer one is for a hang, not a performance budget. At five minutes it
+    # was doing the second job badly: the last green run on dev finished this
+    # step in 4:53, so any test added anywhere failed Windows and nowhere else.
+    # Fifteen went the same way at 11:32. Debug MSVC runs this suite about ten
+    # times slower than a Debug clang build does, so this is the step that meets
+    # every addition first.
     - name: Run tests
       timeout-minutes: 30
       run: |
@@ -1464,6 +1464,10 @@ jobs:
         # to roughly the heaviest shard. Own TMP per shard: concurrent shards
         # must not collide on temp file names.
         $shards = 16
+        # A shard that stopped, not one that is slow: a healthy step is four
+        # minutes on the self-hosted runner and four to six on a hosted one,
+        # the heaviest shard being most of that.
+        $shardTimeoutMinutes = 12
         # On the self-hosted runner the job is a session-0 service child, and
         # Windows gives such work EcoQoS: reduced clocks, roughly half speed
         # measured on the heaviest shard. The parent owns the child handles,
@@ -1491,20 +1495,25 @@ jobs:
           New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
           $env:TMP = $tmpDir
           $env:TEMP = $tmpDir
+          # Durations, so a shard killed mid-run says which case it was in:
+          # Catch2 prints nothing per case otherwise, and a killed shard would
+          # leave an empty file behind.
           $p = Start-Process -FilePath $testExe.FullName `
-            -ArgumentList "--abort", "--shard-count", "$shards", "--shard-index", "$i" `
+            -ArgumentList "--abort", "--durations", "yes", "--shard-count", "$shards", "--shard-index", "$i" `
             -NoNewWindow -PassThru `
             -RedirectStandardOutput (Join-Path $outDir "shard-$i.out") `
             -RedirectStandardError (Join-Path $outDir "shard-$i.err")
           # Without this, ExitCode can read null after WaitForExit.
           $null = $p.Handle
           try { [PowerThrottle]::Disable($p.Handle) | Out-Null } catch {}
-          $runs += @{ Index = $i; Proc = $p }
+          $runs += @{ Index = $i; Proc = $p; Started = Get-Date; Seconds = 0; TimedOut = $false }
         }
         $env:TMP = $savedTmp
         $env:TEMP = $savedTmp
+        Write-Host "launched $shards shards, killing any that has not finished in $shardTimeoutMinutes min"
         # Announce completions as they happen; a silent multi-minute wait
         # reads as a hang from the run page.
+        $deadline = (Get-Date).AddMinutes($shardTimeoutMinutes)
         $pending = @($runs)
         $done = 0
         while ($pending.Count -gt 0) {
@@ -1513,21 +1522,52 @@ jobs:
           foreach ($r in $pending) {
             if ($r.Proc.HasExited) {
               $done++
-              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $done/$shards done)"
+              $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
+              Write-Host "shard $($r.Index) finished (exit $($r.Proc.ExitCode), $($r.Seconds)s, $done/$shards done)"
             } else {
               $still += $r
             }
           }
           $pending = $still
+
+          if ($pending.Count -gt 0 -and (Get-Date) -gt $deadline) {
+            foreach ($r in $pending) {
+              $r.Seconds = [int]((Get-Date) - $r.Started).TotalSeconds
+              $r.TimedOut = $true
+              Write-Host "shard $($r.Index) has been running $($r.Seconds)s and is being killed"
+              try { $r.Proc.Kill() } catch {}
+              $null = $r.Proc.WaitForExit(30000)
+            }
+            $pending = @()
+          }
         }
         $failed = 0
         foreach ($r in $runs) {
+          $out = @(Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue)
+          $err = @(Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue)
           $code = $r.Proc.ExitCode
-          Write-Host "===== shard $($r.Index)/$shards exit $code ====="
-          Get-Content (Join-Path $outDir "shard-$($r.Index).out") -ErrorAction SilentlyContinue
-          $err = Get-Content (Join-Path $outDir "shard-$($r.Index).err") -ErrorAction SilentlyContinue
+
+          if ($r.TimedOut) {
+            Write-Host "===== shard $($r.Index)/$shards killed after $($r.Seconds)s ====="
+            # The last case printed is the one before the hang. Output is block
+            # buffered, so the last few lines of it can be lost with the kill.
+            $out
+            $failed++
+          } elseif ($code -ne 0) {
+            Write-Host "===== shard $($r.Index)/$shards exit $code after $($r.Seconds)s ====="
+            $out
+            $failed++
+          } else {
+            # A green shard gets its Catch2 summary rather than 200 timings.
+            Write-Host "===== shard $($r.Index)/$shards exit 0 after $($r.Seconds)s ====="
+            $out | Select-Object -Last 3
+          }
+
           if ($err) { Write-Host "--- stderr ---"; $err }
-          if ($code -ne 0) { $failed++ }
+        }
+        Write-Host "===== shard wall times, slowest first ====="
+        foreach ($r in ($runs | Sort-Object { $_.Seconds } -Descending)) {
+          Write-Host ("shard {0,2}  {1,5}s" -f $r.Index, $r.Seconds)
         }
         if ($failed -gt 0) {
           Write-Error "$failed of $shards test shards failed"
