@@ -149,8 +149,12 @@ bool TranscriptionService::isAvailable() {
 }
 
 void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion onComplete) {
-    auto fail = [onComplete = std::move(onComplete)](const juce::String& msg) mutable {
-        auto cb = std::move(onComplete);
+    // Shared so the failure path and the pool job draw on the same callback:
+    // moving it into `fail` left the success path below with an empty one.
+    auto completion = std::make_shared<Completion>(std::move(onComplete));
+
+    auto fail = [completion](const juce::String& msg) {
+        auto cb = std::move(*completion);
         juce::MessageManager::callAsync([cb = std::move(cb), msg]() mutable {
             if (cb)
                 cb(INVALID_CLIP_ID, msg);
@@ -181,9 +185,6 @@ void TranscriptionService::transcribeAudioClip(ClipId sourceClipId, Completion o
     const double lengthBeats = clip->placement.lengthBeats;
     const double offsetSec = audioEventRef(*clip).anchorSeconds();
     const double bpm = projectBpm();
-
-    // onComplete needs to survive the lambda copy into the pool.
-    auto completion = std::make_shared<Completion>(std::move(onComplete));
 
     pool_->addJob([this, filePath, sourceName, sourceTrackId, view, startBeat, lengthBeats,
                    offsetSec, bpm, completion]() {

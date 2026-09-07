@@ -76,7 +76,7 @@ juce::String MixAnalysisAgent::buildUserMessage(const Input& input) {
             const auto& labels = MixAnalysisData::Track::tonalBandLabels;
             for (size_t i = 0; i < t.tonalDb.size(); ++i)
                 r << " "
-                  << (i < labels.size() ? juce::String(labels[i].data())
+                  << (i < labels.size() ? juce::String(labels[i].data(), labels[i].size())
                                         : juce::String(static_cast<int>(i)))
                   << "=" << juce::String(t.tonalDb[i], 1);
             r << " | centroid=" << juce::String(juce::roundToInt(t.spectralCentroidHz)) << "Hz"

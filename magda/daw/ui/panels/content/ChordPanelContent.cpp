@@ -1033,8 +1033,9 @@ void ChordPanelContent::layoutAIProgressionRows() {
     if (container) {
         container->paintData = std::move(paintData);
 
-        // If loading with no rows, account for prompt + "Generating..." height
-        if (container->loading && paintData.rows.empty()) {
+        // If loading with no rows, account for prompt + "Generating..." height.
+        // Read through the container: `paintData` has just been moved from.
+        if (container->loading && container->paintData.rows.empty()) {
             int promptHeight = 8;  // top padding
             if (container->promptText.isNotEmpty())
                 promptHeight += 24;  // prompt text line

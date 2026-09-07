@@ -158,7 +158,7 @@ double stitchComp(const CompSnapshot& snap) {
         stream.get(), sampleRate, static_cast<unsigned>(numChannels), 24, {}, 0));
     if (!writer)
         return 0.0;
-    stream.release();  // writer owns it now
+    static_cast<void>(stream.release());  // writer owns it now
     writer->writeFromAudioSampleBuffer(out, 0, total);
     writer.reset();
     return total / sampleRate;

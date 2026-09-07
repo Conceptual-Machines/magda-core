@@ -88,6 +88,7 @@ class CompiledParameterValue {
 
     CompiledParameterValue(const CompiledParameterValue& other) : value_(other.getCurrentValue()) {}
 
+    // NOLINTNEXTLINE(cert-oop54-cpp) - self-assignment reloads and stores the same value
     CompiledParameterValue& operator=(const CompiledParameterValue& other) {
         setCurrentValue(other.getCurrentValue());
         return *this;

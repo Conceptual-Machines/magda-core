@@ -133,10 +133,10 @@ void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& rang
         // the user's outranks this one.
         const auto spokenFor = target != nullptr && target->queuedState().has_value();
 
-        entry.handle->stop(*due);
+        entry.handle->stop(due);
 
         if (target != nullptr && !spokenFor)
-            target->play(*due);
+            target->play(due);
     }
 }
 

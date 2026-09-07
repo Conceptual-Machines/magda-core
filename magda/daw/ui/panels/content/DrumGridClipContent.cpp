@@ -1861,7 +1861,7 @@ class DrumGridRowLabels : public juce::Component {
                         const int pillW = juce::jmax(18, shortTag.length() * 8 + 8);
                         juce::Rectangle<float> pill(
                             static_cast<float>(textX),
-                            static_cast<float>(y + (rowHeight_ - pillH) / 2),
+                            static_cast<float>(y) + static_cast<float>(rowHeight_ - pillH) / 2.0f,
                             static_cast<float>(pillW), static_cast<float>(pillH));
                         g.setColour(
                             DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.85f));

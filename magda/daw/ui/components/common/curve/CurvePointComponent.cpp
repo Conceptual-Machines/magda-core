@@ -101,17 +101,10 @@ void CurvePointComponent::mouseDown(const juce::MouseEvent& e) {
     isRightClickPending_ = false;
 
     if (e.mods.isLeftButtonDown()) {
-        // Handle selection
-        if (e.mods.isCommandDown() || e.mods.isShiftDown()) {
-            // Toggle/add to selection
-            if (onPointSelected) {
-                onPointSelected(pointId_);
-            }
-        } else {
-            // Normal click - select this point
-            if (onPointSelected) {
-                onPointSelected(pointId_);
-            }
+        // Cmd/shift-click is meant to extend the selection, but the callback
+        // carries no modifier, so every click selects the one point for now.
+        if (onPointSelected) {
+            onPointSelected(pointId_);
         }
 
         // Start drag

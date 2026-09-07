@@ -908,7 +908,7 @@ juce::var toJson(const Error& error) {
 juce::var successEnvelope(const juce::var& result) {
     auto object = new juce::DynamicObject();
     object->setProperty("ok", true);
-    object->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("result", result);
     return object;
 }
@@ -916,7 +916,7 @@ juce::var successEnvelope(const juce::var& result) {
 juce::var errorEnvelope(const Error& error) {
     auto object = new juce::DynamicObject();
     object->setProperty("ok", false);
-    object->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    object->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     object->setProperty("error", toJson(error));
     return object;
 }
@@ -2216,7 +2216,7 @@ const OperationDescriptor* OperationRegistry::find(const juce::String& name) con
 
 juce::var OperationRegistry::describe() const {
     auto result = new juce::DynamicObject();
-    result->setProperty("apiVersion", juce::String(API_VERSION.data()));
+    result->setProperty("apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
     juce::Array<juce::var> operations;
     for (const auto& operation : operations_) {
         auto object = new juce::DynamicObject();

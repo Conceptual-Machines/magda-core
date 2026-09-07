@@ -97,7 +97,7 @@ juce::File writeStemWav(const juce::File& dir, const juce::String& baseName, con
                             static_cast<unsigned int>(stem.audio.getNumChannels()), 32, {}, 0));
     if (writer == nullptr)
         return {};
-    stream.release();  // writer owns it now
+    static_cast<void>(stream.release());  // writer owns it now
 
     if (!writer->writeFromAudioSampleBuffer(stem.audio, 0, stem.audio.getNumSamples()))
         return {};

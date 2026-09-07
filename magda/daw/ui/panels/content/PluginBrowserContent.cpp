@@ -1202,6 +1202,8 @@ void PluginBrowserContent::showFolderContextMenu(const juce::String& folderName,
                 case 3:
                     deleteFolder(folderName);
                     break;
+                default:  // menu dismissed
+                    break;
             }
         });
 }

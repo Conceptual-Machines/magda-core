@@ -496,7 +496,7 @@ class AIChatConsoleContent::MidiContextPopup : public juce::Component, private j
 
         const int indent = row.kind == Row::Kind::Clip ? 24 : 8;
         auto tick = juce::Rectangle<float>(static_cast<float>(indent),
-                                           static_cast<float>((height - 13) / 2), 13.0f, 13.0f);
+                                           static_cast<float>(height - 13) / 2.0f, 13.0f, 13.0f);
         g.setColour(DarkTheme::getBorderColour());
         g.drawRoundedRectangle(tick, 2.0f, 1.0f);
         if (checked || partial) {
@@ -829,6 +829,10 @@ void AIChatConsoleContent::RequestThread::run() {
             // even while the thread is occupied (a spinner couldn't animate).
             juce::MouseCursor::showWaitCursor();
 
+            // Read before the move below; the caveat check further down used to
+            // test `error` after it had been moved into `output`.
+            const bool hadError = !error.empty();
+
             magda::agent::ConsoleRunOutput output{
                 .dslCode = std::move(dsl),
                 .musicInstructions = std::move(musicIR),
@@ -888,7 +892,7 @@ void AIChatConsoleContent::RequestThread::run() {
             // Append the mixing-agent caveat in a dim secondary colour after the
             // main response. Inserted after setText so it does not enter the plain
             // text that gets stored in conversation history (display-only).
-            if (!mixAnalysis.empty() && error.empty()) {
+            if (!mixAnalysis.empty() && !hadError) {
                 safeThis->chatHistory_.moveCaretToEnd();
                 safeThis->chatHistory_.setColour(
                     juce::TextEditor::textColourId,

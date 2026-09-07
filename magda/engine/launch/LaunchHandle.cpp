@@ -324,7 +324,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
             eventBeat = range.monotonic.start;
             fromPending = true;
         } else if (*position < range.monotonic.end) {
-            eventBeat = *position;
+            eventBeat = position;
             fromPending = true;
         }
 

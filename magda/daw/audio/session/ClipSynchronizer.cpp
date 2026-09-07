@@ -1203,7 +1203,7 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
                 auto otherPlayState = otherLH->getPlayingStatus();
                 auto otherQueuedState = otherLH->getQueuedStatus();
                 if (otherPlayState == te::LaunchHandle::PlayState::playing) {
-                    otherLH->stop(targetBeat ? *targetBeat : std::optional<te::MonotonicBeat>{});
+                    otherLH->stop(targetBeat);
                 } else if (otherQueuedState &&
                            *otherQueuedState == te::LaunchHandle::QueueState::playQueued) {
                     otherLH->stop(std::nullopt);
@@ -1223,7 +1223,7 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
     } else {
         DBG("ClipSync: play(beat " << targetBeat->v.inBeats() << ") - quantized launch for clip "
                                    << clipId << " qType=" << static_cast<int>(qType));
-        launchHandle->play(*targetBeat);
+        launchHandle->play(targetBeat);
     }
 }
 
@@ -1242,7 +1242,7 @@ void ClipSynchronizer::stopSessionClipQueued(ClipId clipId, LaunchQuantize quant
         return;
 
     auto targetBeat = clip_launch::computeQuantizedBeat(edit_, quantize);
-    launchHandle->stop(targetBeat ? *targetBeat : std::optional<te::MonotonicBeat>{});
+    launchHandle->stop(targetBeat);
 
     // Reset synth plugins to prevent stuck MIDI notes
     const auto* clip = ClipManager::getInstance().getClip(clipId);

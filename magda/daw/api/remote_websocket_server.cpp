@@ -185,7 +185,7 @@ std::string replyFor(const juce::var& id, const Response& response) {
 
     auto meta = makeObject();
     setProperty(meta, "revision", static_cast<juce::int64>(response.revision));
-    setProperty(meta, "apiVersion", juce::String(API_VERSION.data()));
+    setProperty(meta, "apiVersion", juce::String(API_VERSION.data(), API_VERSION.size()));
 
     auto reply = makeObject();
     setProperty(reply, "jsonrpc", "2.0");

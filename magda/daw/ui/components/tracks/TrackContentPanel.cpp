@@ -897,8 +897,10 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
                 double visibleEnd = juce::jmin(clipLengthInBeats, displayEnd);
                 double visibleLength = visibleEnd - visibleStart;
 
-                float noteY = noteArea.getY() + (MIDI_MAX - note.noteNumber) *
-                                                    noteArea.getHeight() / (MIDI_RANGE + 1);
+                float noteY =
+                    static_cast<float>(noteArea.getY()) +
+                    static_cast<float>((MIDI_MAX - note.noteNumber) * noteArea.getHeight()) /
+                        static_cast<float>(MIDI_RANGE + 1);
                 float noteHeight =
                     juce::jmax(1.5f, static_cast<float>(noteArea.getHeight()) / (MIDI_RANGE + 1));
                 float noteX = noteArea.getX() +
@@ -2194,6 +2196,8 @@ void TrackContentPanel::showEmptySpaceContextMenu(const juce::MouseEvent& event)
             case 18:  // Paste (Ripple)
                 if (safeThis && safeThis->onPasteRippleRequested)
                     safeThis->onPasteRippleRequested();
+                break;
+            default:  // menu dismissed
                 break;
         }
     });

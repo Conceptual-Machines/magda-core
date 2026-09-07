@@ -1,182 +1,136 @@
 # Clang-Tidy Configuration for MAGDA DAW
 # Static analysis and linting rules for C++ audio development
 
-# Enable checks - comprehensive but practical set
+# Allow-list, not a deny-list. `Checks: *` meant every LLVM upgrade silently
+# added checks and the noise buried the findings: on LLVM 20 the top three by
+# volume were misc-include-cleaner (532), performance-enum-size (466) and
+# special-member-functions (311), none of them defects. Enable a family only
+# when its findings are worth acting on.
 Checks: >-
-  *,
-  -android-*,
-  -fuchsia-*,
-  -llvm-*,
-  -zircon-*,
-  -altera-*,
-  -llvmlibc-*,
-  -abseil-*,
-  -boost-*,
-  -google-build-using-namespace,
-  -google-readability-todo,
-  -hicpp-use-auto,
-  -hicpp-vararg,
-  -modernize-use-trailing-return-type,
-  -modernize-use-ranges,
-  -readability-container-contains,
-  -readability-redundant-casting,
-  -readability-make-member-function-const,
-  -readability-identifier-naming,
-  -readability-else-after-return,
-  -readability-implicit-bool-conversion,
-  -readability-named-parameter,
-  -readability-uppercase-literal-suffix,
-  -hicpp-uppercase-literal-suffix,
-  -cppcoreguidelines-avoid-magic-numbers,
-  -readability-magic-numbers,
-  -cert-err58-cpp,
-  -misc-non-private-member-variables-in-classes,
-  -cppcoreguidelines-non-private-member-variables-in-classes,
-  -modernize-avoid-c-arrays,
-  -cppcoreguidelines-avoid-c-arrays,
-  -hicpp-avoid-c-arrays,
-  -readability-isolate-declaration,
-  -cppcoreguidelines-pro-bounds-constant-array-index,
-  -cppcoreguidelines-pro-type-vararg,
-  -hicpp-vararg,
-  -modernize-use-nodiscard,
+  -*,
+  bugprone-*,
   -bugprone-easily-swappable-parameters,
   -bugprone-narrowing-conversions,
-  -cppcoreguidelines-narrowing-conversions,
-  -misc-const-correctness,
-  -readability-identifier-length,
-  -cppcoreguidelines-avoid-do-while,
-  -clang-analyzer-deadcode.*,
-  -clang-analyzer-core.*,
-  -clang-diagnostic-unreachable-code,
+  -bugprone-chained-comparison,
+  -bugprone-suspicious-include,
+  -bugprone-exception-escape,
+  -bugprone-unchecked-optional-access,
+  -bugprone-swapped-arguments,
+  -bugprone-branch-clone,
+  -bugprone-empty-catch,
+  -bugprone-signed-char-misuse,
+  -bugprone-misplaced-widening-cast,
+  -bugprone-nondeterministic-pointer-iteration-order,
+  -bugprone-macro-parentheses,
+  cert-oop54-cpp,
+  performance-*,
+  -performance-enum-size,
   -performance-avoid-endl,
-  -readability-braces-around-statements,
-  -hicpp-braces-around-statements,
-  -google-readability-braces-around-statements,
-  -readability-function-cognitive-complexity,
-  -performance-noexcept-move-constructor,
-  -cppcoreguidelines-noexcept-move-operations,
-  -hicpp-noexcept-move,
-  -bugprone-pointer-arithmetic-on-polymorphic-object,
-  -cert-ctr56-cpp
+  misc-use-anonymous-namespace,
+  modernize-use-emplace,
+  modernize-use-default-member-init,
+  modernize-loop-convert,
+  modernize-pass-by-value,
+  modernize-concat-nested-namespaces,
+  modernize-type-traits,
+  modernize-raw-string-literal,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-init-variables,
+  readability-qualified-auto,
+  readability-redundant-string-init,
+  readability-redundant-member-init,
+  readability-convert-member-functions-to-static,
+  readability-use-std-min-max,
+  readability-use-anyofallof,
+  readability-simplify-boolean-expr,
+  readability-avoid-nested-conditional-operator,
+  readability-inconsistent-declaration-parameter-name
 
-# The five above are off because they crash rather than report. On Homebrew
-# LLVM 20.1.4, `performance-noexcept-move-constructor` dies with SIGILL and
-# `bugprone-pointer-arithmetic-on-polymorphic-object` with SIGSEGV, on any file
-# in this project, silently and with no backtrace. Their aliases are listed
-# separately because clang-tidy treats an alias as its own check name, so
-# disabling the primary does not disable the alias.
+# The old config disabled performance-noexcept-move-constructor and
+# bugprone-pointer-arithmetic-on-polymorphic-object as crashers, reporting SIGILL
+# and SIGSEGV on any file here. Not reproducible on LLVM 20.1.4: a sweep of all
+# 885 magda/ TUs ran to completion with both enabled, no crash, zero findings.
 #
-# `Checks: *` above is what pulled them in, and a crashing check takes the
-# whole run down — so with these enabled `make lint` and `make lint-changed`
-# exited 132/139 on every file and reported nothing at all. Worth re-testing
-# when the toolchain moves.
+# Thirteen checks are off because they were noise here, not because their findings
+# were inconvenient - 237 sites, with only branch-clone yielding any defects:
+#   suspicious-include (31)      every hit is `#include "magda_*.generated.cpp"`,
+#                                the Faust DSP pipeline, which is deliberate.
+#   cert-err33-c (35)            ignored std::fprintf(stderr, ...) returns.
+#   exception-escape (33)        callback lambdas, as the note below already said.
+#   unchecked-optional-access    guarded by ok()/failed() predicates it cannot see
+#     (10)                       through, and it drops the fact across any
+#                                non-const member call.
+#   swapped-arguments (10)       all drawVerticalLine(int, float, float), which is
+#                                JUCE's actual signature.
+#   branch-clone (55)            5 were real and are fixed; the other 50 are switch
+#                                arms and condition chains whose cases are
+#                                distinct and whose bodies coincide. RenderPlan
+#                                returns 2 for Fader, Crossfade and Subtract, each
+#                                with its own reason - merging them would delete
+#                                the explanation.
+#   use-internal-linkage (58)    its fix does not link. It reads one translation
+#                                unit, so a definition whose declaring header that
+#                                .cpp does not itself include looks file-local;
+#                                marking createInternalPluginProcessor and the
+#                                compiled-device getMagda*Spec() functions static
+#                                left every caller in another TU undefined.
+#   suspicious-call-argument     parameter-name similarity only; the calls match
+#     (10)                       their declarations.
 #
-# bugprone-exception-escape stays enabled — it correctly found 20 real
-# noexcept/destructor/main sites (#2395) — but on LLVM 23 it also flags ~41
-# plain, non-noexcept UI/agent lambdas. The reported trace is a genuine false
-# positive at the diagnostic site itself: the throwing std::string/std::vector
-# copy happens while constructing the closure (a by-value capture), not inside
-# the lambda's non-noexcept call operator, and a lambda handed to a
-# std::function-typed callback setter (juce::Button::onClick,
-# PopupMenu::showMenuAsync, MessageManager::callAsync, ...) is under none of
-# this check's documented scope (noexcept functions, destructors, main) and is
-# free to throw. Don't chase these as a to-do list.
+#   empty-catch (9)              every body already carries a comment saying why
+#                                the exception is ignored.
+#   signed-char-misuse (3)       following it would break two of them: AudioFeatures
+#                                and PlanExecutor need the sign to carry a
+#                                no-pitch-class sentinel and a downward transpose.
+#   misplaced-widening-cast (3)  MIDI domains (channel 1-16, note 0-127) cannot
+#                                overflow int before the widen.
+#   nondeterministic-pointer-    ClipOcclusion sorts by a value comparator, not by
+#     iteration-order (2)        address; the other is listener registration order.
+#   macro-parentheses (2)        the argument is streamed, so parenthesising it
+#                                would evaluate the << chain before the string.
 #
-# That said, "free to throw" doesn't mean the throw is harmless: a handful of
-# these callAsync lambdas (magda/agents/coder_agent.cpp,
-# magda/agents/sound_design_agent.cpp x3) ran an apply step and then
-# unconditionally signalled a WaitableEvent the caller was blocked on. An
-# exception mid-apply skipped the signal (the caller then just timed out) and,
-# uncaught on the message thread, would have propagated into JUCE's dispatch
-# loop instead of failing only that one apply. Those four now catch and report
-# the error through the same `status`/signal path instead of skipping it.
+# modernize-use-integer-sign-comparison is off: its 656 hits were all deliberate
+# `x < static_cast<int>(v.size())` casts, and its fixer deletes the cast text but
+# leaves the closing paren - 572 of 632 rewrites did not compile.
+#
+# bugprone-chained-comparison is off because Catch2's REQUIRE(a == b) expands to
+# `Decomposer() <= a == b`; it fired 311 times, every one of them in tests.
+#
+# bugprone-exception-escape stays enabled - it found 20 real
+# noexcept/destructor/main sites (#2395) and currently reports zero. If it ever
+# flags a plain callback lambda (juce::Button::onClick, callAsync, ...), that is
+# a false positive: the throwing capture-by-value copy happens while
+# constructing the closure, not inside the call operator, and such a lambda is
+# under none of the check's documented scope. Don't chase those.
 
-# Warnings as errors (can be adjusted based on team preference)
+# Warnings as errors - set once the bug-catching tier below is at zero.
 WarningsAsErrors: ''
 
-# Header filter - analyze headers in project
-HeaderFilterRegex: '(daw|agents|tests)/.*\.(h|hpp)$'
+# Header filter. Anchored on a leading slash: the old unanchored `tests` matched
+# third_party/JUCE/.../unit_tests/*.h, and it never covered magda/engine at all.
+# Tests are out of scope entirely - the checks here target shipping code.
+HeaderFilterRegex: '/magda/.*\.(h|hpp)$'
+ExcludeHeaderFilterRegex: '/third_party/'
 
-# Analysis options
-# AnalyzeTemporaryDtors: false  # Not supported in this version
-
-# Check options for fine-tuning specific rules
 CheckOptions:
-  # Naming conventions
-  - key: readability-identifier-naming.NamespaceCase
-    value: lower_case
-  - key: readability-identifier-naming.ClassCase
-    value: CamelCase
-  - key: readability-identifier-naming.StructCase
-    value: CamelCase
-  - key: readability-identifier-naming.FunctionCase
-    value: camelBack
-  - key: readability-identifier-naming.VariableCase
-    value: camelBack
-  - key: readability-identifier-naming.ParameterCase
-    value: camelBack
-  - key: readability-identifier-naming.MemberCase
-    value: camelBack
-  - key: readability-identifier-naming.MemberSuffix
-    value: '_'
-  - key: readability-identifier-naming.ConstantCase
-    value: UPPER_CASE
-  - key: readability-identifier-naming.EnumCase
-    value: CamelCase
-  - key: readability-identifier-naming.EnumConstantCase
-    value: CamelCase
-  - key: readability-identifier-naming.MacroDefinitionCase
-    value: UPPER_CASE
-
-  # Function length limits
-  - key: readability-function-size.LineThreshold
-    value: '80'
-  - key: readability-function-size.StatementThreshold
-    value: '50'
-  - key: readability-function-size.BranchThreshold
-    value: '10'
-  - key: readability-function-size.ParameterThreshold
-    value: '8'
-
-  # Complexity limits
-  - key: readability-function-cognitive-complexity.Threshold
-    value: '15'
-
-  # Include sorting
-  - key: llvm-include-order.Priority
-    value: '1'
-
-  # Performance
+  # 'true' flags every auto copy in a range-for, mutated or not: of six rewrites
+  # it produced, four did not compile - three loops assign to the element and one
+  # passes it to a non-const reference.
   - key: performance-for-range-copy.WarnOnAllAutoCopies
-    value: 'true'
+    value: 'false'
   - key: performance-unnecessary-value-param.AllowedTypes
     value: 'juce::String;juce::var;std::shared_ptr;std::unique_ptr'
-
-  # Modernization
   - key: modernize-loop-convert.MaxCopySize
     value: '16'
   - key: modernize-loop-convert.MinConfidence
     value: 'reasonable'
-  - key: modernize-use-auto.MinTypeNameLength
-    value: '5'
-
-  # Readability
-  - key: readability-braces-around-statements.ShortStatementLines
-    value: '1'
   - key: readability-simplify-boolean-expr.ChainedConditionalReturn
     value: 'true'
   - key: readability-simplify-boolean-expr.ChainedConditionalAssignment
     value: 'true'
-
-  # Bugprone
   - key: bugprone-argument-comment.StrictMode
     value: 'false'
   - key: bugprone-suspicious-string-compare.WarnOnImplicitComparison
     value: 'true'
-
-  # CERT rules
-  - key: cert-dcl16-c.NewSuffixes # gitleaks:allow
-    value: 'L;LL;LU;LLU'
   - key: cert-oop54-cpp.WarnOnlyIfThisHasSuspiciousField
     value: 'false'
