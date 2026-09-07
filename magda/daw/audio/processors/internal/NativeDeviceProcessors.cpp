@@ -147,7 +147,7 @@ void FaustProcessor::populateParametersFromEngine(DeviceInfo& info) const {
         DBG("[FaustProcessor] populateParameters: plugin cast NULL");
         return;
     }
-    info.canSidechain = faust->properties().canSidechain;
+    info.sidechainPort = faust->properties().sidechain;
     // Only push active, non-hidden slots so the standard ParamGridComponent
     // shows populated cells only. Each ParameterInfo carries its real slot
     // index in `paramIndex`, so links / automation / MIDI Learn still

@@ -73,9 +73,10 @@ int countRole(const RenderPlan& plan, OpRole role) {
 
 /// The op an input slot reads, or -1 when the slot is unconnected. The two ops
 /// every slot carries whatever the model says are looked through: a delay
-/// stands for the op behind it, and so does the subtract that would take a
-/// delta on it, which passes its wet side along until something is soloing
-/// that delta. These tests are about what is routed where; both have their own.
+/// stands for the op behind it, so does the subtract that would take a delta on
+/// it, which passes its wet side along until something is soloing that delta,
+/// and so does the trim on a sidechain edge, which is unity until somebody
+/// moves it. These tests are about what is routed where; each has its own.
 magda::engine::OpId inputOp(const RenderPlan& plan, magda::engine::OpId op, std::size_t slot) {
     const auto& inputs = plan.ops[static_cast<std::size_t>(op)].inputs;
     if (slot >= inputs.size())
@@ -84,8 +85,10 @@ magda::engine::OpId inputOp(const RenderPlan& plan, magda::engine::OpId op, std:
     auto source = inputs[slot].op;
     while (source != magda::engine::INVALID_OP_ID) {
         const auto& producer = plan.ops[static_cast<std::size_t>(source)];
-        if (producer.kind != magda::engine::OpKind::Delay &&
-            producer.kind != magda::engine::OpKind::Subtract)
+        const auto passesThrough = producer.kind == magda::engine::OpKind::Delay ||
+                                   producer.kind == magda::engine::OpKind::Subtract ||
+                                   producer.key.role == OpRole::DeviceSidechainGain;
+        if (!passesThrough)
             break;
         source = producer.inputs.front().op;
     }
@@ -680,7 +683,7 @@ TEST_CASE("Group children are summed into the group track", "[engine][plan][comp
 TEST_CASE("An audio sidechain wires the source track's output into the device",
           "[engine][plan][compiler]") {
     auto compressor = makeEffect(7);
-    compressor.canSidechain = true;
+    compressor.sidechainPort = magda::monoAudioSidechain;
     compressor.sidechain.type = SidechainConfig::Type::Audio;
     compressor.sidechain.sourceTrackId = 2;
 
@@ -700,6 +703,60 @@ TEST_CASE("An audio sidechain wires the source track's output into the device",
             sourceMeter = op;
     REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
     CHECK(inputOp(plan, device, 2) == sourceMeter);
+}
+
+TEST_CASE("A pre-FX key reads the source's trigger tap, not its fader",
+          "[engine][plan][compiler]") {
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.tapPoint = ModTapPoint::PreFx;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    // A device on the source, so its two tap points are different ops.
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(9)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+    CHECK(plan.diagnostics.empty());
+
+    magda::engine::OpId sourceChainHead = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            sourceChainHead = op;
+    REQUIRE(sourceChainHead != magda::engine::INVALID_OP_ID);
+
+    magda::engine::OpId device = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::DeviceProcess))
+        if (plan.ops[static_cast<std::size_t>(op)].key.deviceId == 7)
+            device = op;
+    REQUIRE(device != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, device, 2) == sourceChainHead);
+}
+
+TEST_CASE("A key's trim is its own op, so moving it is a value", "[engine][plan][compiler]") {
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+
+    const auto trimmed = [&](float gainDb) {
+        auto copy = tracks;
+        getDevice(copy[0].chain.fxChainElements[0]).sidechain.gainDb = gainDb;
+        return magda::engine::compileRenderPlan(copy, makeMaster());
+    };
+
+    // The trim op is in the plan whatever the trim is, and the two plans are
+    // the same structure: turning the trim up must not recompile anything.
+    const auto flat = trimmed(0.0f);
+    const auto cut = trimmed(-6.0f);
+    CHECK(opsWithRole(flat, OpRole::DeviceSidechainGain).size() == 1);
+    CHECK(magda::engine::planFingerprint(flat) == magda::engine::planFingerprint(cut));
 }
 
 TEST_CASE("Liveness propagates downstream from a live input", "[engine][plan][compiler]") {
@@ -993,7 +1050,7 @@ TEST_CASE("Mute is applied after the meter and the sidechain tap", "[engine][pla
     // the muting node, so a muted track still keys a compressor and still reads
     // on its own meter.
     auto compressor = makeEffect(7);
-    compressor.canSidechain = true;
+    compressor.sidechainPort = magda::monoAudioSidechain;
     compressor.sidechain.type = SidechainConfig::Type::Audio;
     compressor.sidechain.sourceTrackId = 2;
 
@@ -1043,7 +1100,7 @@ TEST_CASE("A sidechain on an inactive device is not an ordering dependency",
     // invent a cycle and cost the send.
     auto bypassed = makeEffect(7);
     bypassed.bypassed = true;
-    bypassed.canSidechain = true;
+    bypassed.sidechainPort = magda::monoAudioSidechain;
     bypassed.sidechain.type = SidechainConfig::Type::Audio;
     bypassed.sidechain.sourceTrackId = 2;
 
@@ -1068,7 +1125,7 @@ TEST_CASE("A sidechain on an inactive device is not an ordering dependency",
 
 TEST_CASE("Chain power gates sidechain dependencies too", "[engine][plan][compiler]") {
     auto compressor = makeEffect(7);
-    compressor.canSidechain = true;
+    compressor.sidechainPort = magda::monoAudioSidechain;
     compressor.sidechain.type = SidechainConfig::Type::Audio;
     compressor.sidechain.sourceTrackId = 2;
 
@@ -1119,7 +1176,7 @@ TEST_CASE("An inactive internal route is not an ordering dependency", "[engine][
     // it reads nothing. Track 1 sidechains from track 2. Counting the dead
     // route as a dependency would close a cycle and cost the live sidechain.
     auto compressor = makeEffect(7);
-    compressor.canSidechain = true;
+    compressor.sidechainPort = magda::monoAudioSidechain;
     compressor.sidechain.type = SidechainConfig::Type::Audio;
     compressor.sidechain.sourceTrackId = 2;
 
@@ -1594,12 +1651,12 @@ TEST_CASE("Only MIDI consumers the compiler emits pull in a MIDI source",
 }
 
 TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][plan][compiler]") {
-    // Mixer-analysis devices are rail-managed and none sets canSidechain today,
+    // Mixer-analysis devices are rail-managed and none declares a sidechain today,
     // but emitDevice resolves a sidechain wherever it finds one, so collection
     // has to walk the same sections or ordering silently depends on luck.
     auto analysisWithSidechain = makeEffect(9);
     analysisWithSidechain.deviceType = DeviceType::Analysis;
-    analysisWithSidechain.canSidechain = true;
+    analysisWithSidechain.sidechainPort = magda::monoAudioSidechain;
     analysisWithSidechain.sidechain.type = SidechainConfig::Type::Audio;
     analysisWithSidechain.sidechain.sourceTrackId = 2;
 

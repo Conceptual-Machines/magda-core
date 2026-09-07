@@ -123,6 +123,8 @@ const char* toString(OpRole role) {
             return "deviceDelta";
         case OpRole::DeviceGain:
             return "deviceGain";
+        case OpRole::DeviceSidechainGain:
+            return "deviceSidechainGain";
         case OpRole::DeviceMeter:
             return "deviceMeter";
         case OpRole::ChainMidiMerge:

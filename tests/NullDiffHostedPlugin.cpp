@@ -524,7 +524,11 @@ magda::DeviceInfo hostedDevice(magda::DeviceId id, HostedRole role) {
         description.isInstrument ? magda::DeviceType::Instrument : magda::DeviceType::Effect;
     device.canReceiveMidi = roleAcceptsMidi(role);
     device.producesMidi = roleProducesMidi(role);
-    device.canSidechain = role == HostedRole::Key;
+    // A stereo key, matching the second input bus busesFor() gives the Key role.
+    device.sidechainPort =
+        role == HostedRole::Key
+            ? magda::SidechainPort{.kind = magda::SidechainPort::Kind::Audio, .channels = 2}
+            : magda::SidechainPort{};
     device.audioInputChannels = roleInputChannels(role);
     device.audioOutputChannels = roleOutputChannels(role);
 

@@ -1561,6 +1561,22 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 device->process(deviceBlock);
             }
 
+            // Monitoring the key: the slot puts out what it was handed instead
+            // of what the device made of it (#2329). After process(), so the
+            // device's own smoothing and metering carry on and switching back
+            // is not a click; an unconnected key monitors silence.
+            if (value.listensToSidechain) {
+                const auto key = deviceBlock.sidechain;
+                for (std::size_t channel = 0; channel < audio.getNumChannels(); ++channel) {
+                    auto side = audio.getSingleChannelBlock(channel);
+                    if (key.getNumChannels() == 0)
+                        side.clear();
+                    else
+                        side.copyFrom(
+                            key.getSingleChannelBlock(std::min(channel, key.getNumChannels() - 1)));
+                }
+            }
+
             // What the device left on its output, for whatever the port feeds.
             // A device that produces MIDI and says nothing drops the panic,
             // which is what the fork does with its fresh output buffer.

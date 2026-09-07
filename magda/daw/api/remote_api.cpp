@@ -253,10 +253,25 @@ const juce::var& deviceSchema() {
                 "format":{"type":"string","enum":["vst3","au","lv2","internal"]},
                 "instrument":{"type":"boolean"},
                 "bypassed":{"type":"boolean"},
-                "gainDb":{"type":"number"}
+                "gainDb":{"type":"number"},
+                "sidechain":{
+                    "type":"object",
+                    "properties":{
+                        "port":{"type":"string","enum":["none","audio","midi"]},
+                        "portChannels":{"type":"integer","minimum":0},
+                        "type":{"type":"string","enum":["none","audio","midi"]},
+                        "sourceTrackId":{"type":["integer","null"]},
+                        "tapPoint":{"type":"string","enum":["preFx","postFader"]},
+                        "gainDb":{"type":"number"},
+                        "listen":{"type":"boolean"}
+                    },
+                    "required":["port","portChannels","type","sourceTrackId","tapPoint","gainDb",
+                                "listen"],
+                    "additionalProperties":false
+                }
             },
             "required":["id","trackId","rackId","chainId","devicePath","name","type","format",
-                        "instrument","bypassed","gainDb"],
+                        "instrument","bypassed","gainDb","sidechain"],
             "additionalProperties":false
         })json");
         schema["properties"].getDynamicObject()->setProperty("devicePath", devicePathSchema());
@@ -1036,6 +1051,18 @@ juce::var toJson(const ClipDto& dto) {
     return object;
 }
 
+juce::var toJson(const DeviceSidechainDto& dto) {
+    auto object = new juce::DynamicObject();
+    object->setProperty("port", dto.port);
+    object->setProperty("portChannels", dto.portChannels);
+    object->setProperty("type", dto.type);
+    object->setProperty("sourceTrackId", nullableId(dto.sourceTrackId));
+    object->setProperty("tapPoint", dto.tapPoint);
+    object->setProperty("gainDb", dto.gainDb);
+    object->setProperty("listen", dto.listen);
+    return object;
+}
+
 juce::var toJson(const DeviceDto& dto) {
     auto object = new juce::DynamicObject();
     object->setProperty("id", dto.id);
@@ -1049,6 +1076,7 @@ juce::var toJson(const DeviceDto& dto) {
     object->setProperty("instrument", dto.instrument);
     object->setProperty("bypassed", dto.bypassed);
     object->setProperty("gainDb", dto.gainDb);
+    object->setProperty("sidechain", toJson(dto.sidechain));
     return object;
 }
 
@@ -1318,6 +1346,15 @@ std::optional<DeviceDto> deviceFromJson(const juce::var& json, Error& error) {
     dto.instrument = static_cast<bool>(json["instrument"]);
     dto.bypassed = static_cast<bool>(json["bypassed"]);
     dto.gainDb = static_cast<double>(json["gainDb"]);
+
+    const auto& sidechain = json["sidechain"];
+    dto.sidechain.port = sidechain["port"].toString();
+    dto.sidechain.portChannels = readInt(sidechain, "portChannels");
+    dto.sidechain.type = sidechain["type"].toString();
+    dto.sidechain.sourceTrackId = readNullableId<TrackId>(sidechain, "sourceTrackId");
+    dto.sidechain.tapPoint = sidechain["tapPoint"].toString();
+    dto.sidechain.gainDb = static_cast<double>(sidechain["gainDb"]);
+    dto.sidechain.listen = static_cast<bool>(sidechain["listen"]);
     return dto;
 }
 

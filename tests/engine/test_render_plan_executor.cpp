@@ -1287,7 +1287,7 @@ TEST_CASE("An audio sidechain reaches the device that asked for it", "[engine][e
     };
 
     auto compressor = makeEffect(7);
-    compressor.canSidechain = true;
+    compressor.sidechainPort = magda::monoAudioSidechain;
     compressor.sidechain.type = SidechainConfig::Type::Audio;
     compressor.sidechain.sourceTrackId = 2;
 
@@ -1307,6 +1307,83 @@ TEST_CASE("An audio sidechain reaches the device that asked for it", "[engine][e
 
     CHECK(probe.sidechainChannels == 2);
     CHECK(probe.sidechainLevel == approx(0.75f));
+}
+
+TEST_CASE("The key's trim is applied on the edge, before the device sees it", "[engine][exec]") {
+    class SidechainProbe final : public EngineDevice {
+      public:
+        void process(DeviceBlock& block) override {
+            sidechainLevel =
+                block.sidechain.getNumChannels() > 0 ? block.sidechain.getSample(0, 0) : 0.0f;
+            block.audio.clear();
+        }
+
+        float sidechainLevel = 0.0f;
+    };
+
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.gainDb = -6.0f;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(compressor));
+
+    Harness harness({makeTrack(2), track}, makeMaster());
+    ConstantSource key(1.0f);
+    ConstantSource main(1.0f);
+    SidechainProbe probe;
+    harness.bindings.clipAudio[2] = &key;
+    harness.bindings.clipAudio[1] = &main;
+    harness.bindings.devices[DeviceKey{7}] = &probe;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // -6 dB is half the amplitude, near enough: the trim is a plain multiply.
+    CHECK(probe.sidechainLevel == approx(0.5011872f));
+}
+
+TEST_CASE("Listening puts the key out in place of the device's own output", "[engine][exec]") {
+    /// Writes a value nothing else in the plan produces, so hearing the key
+    /// rather than this is unambiguous.
+    class Stamp final : public EngineDevice {
+      public:
+        void process(DeviceBlock& block) override {
+            ran = true;
+            for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel)
+                block.audio.getSingleChannelBlock(channel).fill(-1.0f);
+        }
+
+        bool ran = false;
+    };
+
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.listen = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(compressor));
+
+    Harness harness({makeTrack(2), track}, makeMaster());
+    ConstantSource key(0.75f);
+    ConstantSource main(1.0f);
+    Stamp stamp;
+    harness.bindings.clipAudio[2] = &key;
+    harness.bindings.clipAudio[1] = &main;
+    harness.bindings.devices[DeviceKey{7}] = &stamp;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    // The device still ran: listening is what leaves the slot, not whether the
+    // device is processing, so its own state does not stop and start. What the
+    // slot's own meter reads is the key rather than the stamp.
+    CHECK(stamp.ran);
+    CHECK(harness.takeMeterForDevice(7) == approx(0.75f));
 }
 
 TEST_CASE("Unbound ops are reported and render silence", "[engine][exec]") {

@@ -24,6 +24,7 @@ constexpr const char* kSidechainDsp = R"FAUST(
 // Self-contained test DSP. The literal "stdfaust.lib" in this comment is
 // load-bearing: compile() only skips its automatic import when the source
 // already mentions the library, and the test binary has no faustlibraries dir.
+declare magda_sidechain "audio";
 process(mainL, mainR, sideL, sideR) = mainL + sideL, mainR + sideR;
 )FAUST";
 
@@ -42,12 +43,19 @@ process = _, _;
 
 constexpr const char* kMonoSidechainDsp = R"FAUST(
 // Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+declare magda_sidechain "audio";
 process(mainL, mainR, sidechain) = mainL + sidechain, mainR + sidechain;
 )FAUST";
 
 constexpr const char* kNineInputDsp = R"FAUST(
 // Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
 process(a, b, c, d, e, f, g, h, i) = a, b;
+)FAUST";
+
+/// Four inputs and no declaration: extra inputs are not a key on their own.
+constexpr const char* kUndeclaredWideDsp = R"FAUST(
+// Self-contained test DSP; see the load-bearing "stdfaust.lib" note above.
+process(mainL, mainR, extraL, extraR) = mainL + extraL, mainR + extraR;
 )FAUST";
 
 constexpr const char* kInvalidDsp = R"FAUST(
@@ -71,7 +79,7 @@ magda::DeviceInfo makeSavedFaust(magda::TrackId sourceTrackId, const juce::Strin
     device.name = "Faust";
     device.format = magda::PluginFormat::Internal;
     device.pluginId = audio::FaustPlugin::xmlTypeName;
-    device.canSidechain = true;
+    device.sidechainPort = {.kind = magda::SidechainPort::Kind::Audio, .channels = 2};
     device.sidechain.type = magda::SidechainConfig::Type::Audio;
     device.sidechain.sourceTrackId = sourceTrackId;
     if (auto xml = state.createXml())
@@ -118,10 +126,11 @@ class FaustSidechainTest final : public juce::UnitTest {
         expectEquals(inputs[3], juce::String("Sidechain Right"));
 
         magda::DeviceInfo device;
-        device.canSidechain = false;
         magda::FaustProcessor processor(1929, plugin);
         processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
-        expect(device.canSidechain, "DeviceInfo should expose the live DSP capability");
+        expect(device.sidechainPort.takesAudio(), "DeviceInfo should expose the declared port");
+        expectEquals(device.sidechainPort.channels, 2,
+                     "The declared key is as wide as the inputs past the outputs");
 
         constexpr int kBlockSize = 64;
         te::PluginInitialisationInfo initInfo;
@@ -156,6 +165,19 @@ class FaustSidechainTest final : public juce::UnitTest {
         host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 3);
         expectEquals(inputs[2], juce::String("Sidechain"));
+
+        beginTest("Extra inputs without a declaration are not a key");
+
+        error.clear();
+        expect(faust->loadDspSource("Undeclared wide test", kUndeclaredWideDsp, error),
+               "Four-input DSP without a declaration should compile: " + error);
+        expect(!host->canSidechain(),
+               "More inputs than outputs is not by itself a request for a key");
+        inputs.clear();
+        host->getChannelNames(&inputs, nullptr);
+        expectEquals(inputs.size(), 4);
+        expectEquals(inputs[2], juce::String("Right"),
+                     "Undeclared inputs are the device's own, not a named key");
 
         beginTest("A runtime patch wider than scratch capacity fails safely");
 
@@ -195,9 +217,9 @@ class FaustSidechainTest final : public juce::UnitTest {
         host->getChannelNames(&inputs, nullptr);
         expectEquals(inputs.size(), 2);
 
-        device.canSidechain = true;
+        device.sidechainPort = magda::monoAudioSidechain;
         processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
-        expect(!device.canSidechain, "DeviceInfo should remove the stale capability");
+        expect(!device.sidechainPort.declared(), "DeviceInfo should remove the stale declaration");
 
         beginTest("A recompile is visible on the host's own parameters");
 
@@ -264,8 +286,8 @@ class FaustSidechainTest final : public juce::UnitTest {
             auto* loadedDevice = trackManager.getDeviceInChainByPath(path);
             expect(loadedDevice != nullptr, "Loaded Faust DeviceInfo should resolve");
             if (loadedDevice) {
-                expect(!loadedDevice->canSidechain,
-                       "Stereo saved DSP should clear the serialized capability");
+                expect(!loadedDevice->sidechainPort.declared(),
+                       "Stereo saved DSP should clear the serialized declaration");
                 expect(!loadedDevice->sidechain.isActive(),
                        "Stereo saved DSP should clear the serialized sidechain");
             }

@@ -52,6 +52,14 @@ struct OpValue {
     /// delta in the plan, which for a device that passes its input through is
     /// the whole track going quiet.
     bool subtractsDry = false;
+
+    /// Whether a Device op puts out the key it was handed instead of what it
+    /// made of its input (#2329). A value like the delta above, so monitoring a
+    /// sidechain rebuilds nothing; the device still runs, so its own metering
+    /// and smoothing carry on and switching back is not a click. Nothing to
+    /// listen to is silence, which is what a slot monitoring an unconnected key
+    /// should sound like.
+    bool listensToSidechain = false;
 };
 
 /**

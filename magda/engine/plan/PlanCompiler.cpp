@@ -761,13 +761,27 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
 
     PortRef sidechainIn;
     if (device.sidechain.type == SidechainConfig::Type::Audio && device.sidechain.isActive()) {
-        const auto source = trackSidechainTap_.find(device.sidechain.sourceTrackId);
-        if (source != trackSidechainTap_.end())
-            sidechainIn = source->second;
-        else
+        // Two points on the source track, the same two a modifier chooses
+        // between: pre-FX is what the track played, post-fader is what it
+        // sends, and riding the source fader is the whole difference. The
+        // compiler keeps them apart already (#2329).
+        const auto preFx = device.sidechain.tapPoint == ModTapPoint::PreFx;
+        const auto& points = preFx ? trackTriggerTap_ : trackSidechainTap_;
+        const auto source = points.find(device.sidechain.sourceTrackId);
+        if (source != points.end()) {
+            // The key's trim, on the edge rather than inside the device.
+            // Emitted wherever a key is connected, so moving it is a value and
+            // never a recompile.
+            const OpKey gainKey{
+                site.trackId, site.rackId, site.chainId, device.id, OpRole::DeviceSidechainGain, 0,
+                site.segment};
+            sidechainIn =
+                PortRef{addOp(OpKind::Gain, gainKey, {source->second}, {SignalKind::Audio}), 0};
+        } else {
             diagnose("device " + std::to_string(device.id) + " on track " +
                      std::to_string(site.trackId) + ": audio sidechain source track " +
                      std::to_string(device.sidechain.sourceTrackId) + " is not routed");
+        }
     }
 
     const auto producesMidi = node.outputsPluginMidi();

@@ -526,8 +526,9 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Sidechain / MIDI receive capabilities
-    if (device.canSidechain) {
-        obj->setProperty("canSidechain", true);
+    if (device.sidechainPort.declared()) {
+        obj->setProperty("sidechainPortKind", static_cast<int>(device.sidechainPort.kind));
+        obj->setProperty("sidechainPortChannels", device.sidechainPort.channels);
     }
     if (device.canReceiveMidi) {
         obj->setProperty("canReceiveMidi", true);
@@ -579,6 +580,14 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
         auto* scObj = new juce::DynamicObject();
         scObj->setProperty("type", static_cast<int>(device.sidechain.type));
         scObj->setProperty("sourceTrackId", device.sidechain.sourceTrackId);
+        // Only when they are not the defaults a project that predates them
+        // reads back as: post-fader, no trim, not listening (#2329).
+        if (device.sidechain.tapPoint != ModTapPoint::PostFader)
+            scObj->setProperty("tapPoint", static_cast<int>(device.sidechain.tapPoint));
+        if (device.sidechain.gainDb != 0.0f)
+            scObj->setProperty("gainDb", device.sidechain.gainDb);
+        if (device.sidechain.listen)
+            scObj->setProperty("listen", true);
         obj->setProperty("sidechain", juce::var(scObj));
     }
 
@@ -745,9 +754,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     }
 
     // Sidechain / MIDI receive capabilities
-    auto canSidechainVar = obj->getProperty("canSidechain");
-    if (!canSidechainVar.isVoid()) {
-        outDevice.canSidechain = static_cast<bool>(canSidechainVar);
+    if (obj->hasProperty("sidechainPortKind")) {
+        outDevice.sidechainPort.kind = static_cast<SidechainPort::Kind>(
+            static_cast<int>(obj->getProperty("sidechainPortKind")));
+        outDevice.sidechainPort.channels = obj->getProperty("sidechainPortChannels");
+    } else if (static_cast<bool>(obj->getProperty("canSidechain"))) {
+        // Projects that predate the declared port, where the only fact saved
+        // was that the device had one (#2329).
+        outDevice.sidechainPort = monoAudioSidechain;
     }
     auto canReceiveMidiVar = obj->getProperty("canReceiveMidi");
     if (!canReceiveMidiVar.isVoid()) {
@@ -824,6 +838,14 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
         outDevice.sidechain.type =
             static_cast<SidechainConfig::Type>(static_cast<int>(scObj->getProperty("type")));
         outDevice.sidechain.sourceTrackId = scObj->getProperty("sourceTrackId");
+        // Absent in a project that predates them, which is the default each
+        // field carries: post-fader, no trim, not listening.
+        if (scObj->hasProperty("tapPoint"))
+            outDevice.sidechain.tapPoint =
+                static_cast<ModTapPoint>(static_cast<int>(scObj->getProperty("tapPoint")));
+        if (scObj->hasProperty("gainDb"))
+            outDevice.sidechain.gainDb = static_cast<float>(double(scObj->getProperty("gainDb")));
+        outDevice.sidechain.listen = static_cast<bool>(scObj->getProperty("listen"));
     }
 
     applyCachedCapabilitiesToDevice(outDevice);

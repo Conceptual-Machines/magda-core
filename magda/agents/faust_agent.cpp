@@ -107,9 +107,12 @@ SOURCE RULES — VERY IMPORTANT:
 - Up to 64 controls. Keep it musically tasteful; 4–8 is usually plenty.
 - Do NOT use buttons (momentary), bargraphs (display-only), or soundfile()
   (no external sample loading).
-- For a stereo effect with a stereo audio sidechain, declare four inputs:
+- An audio sidechain must be declared, and the key is the inputs past the
+  outputs. For a stereo effect with a stereo key:
+      declare magda_sidechain "audio";
       process(mainL, mainR, sideL, sideR) = ...;
-  MAGDA supplies the source track as the third and fourth channels.
+  Without the declaration the extra inputs are the device's own and MAGDA
+  routes no key to them.
 - Use only functions from stdfaust.lib (the standard library is bundled).
   Common picks: fi.lowpass / fi.highpass / fi.peak_eq, ef.cubicnl,
   re.zita_rev1_stereo, de.delay, os.osc, en.adsr, ba.beat.

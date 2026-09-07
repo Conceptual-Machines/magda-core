@@ -129,8 +129,18 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     const auto snapshot = makePluginCapabilitySnapshot(device, plugin);
     PluginCapabilityCache::getInstance().update(snapshot);
 
-    if (plugin.canSidechain())
-        device.canSidechain = true;
+    // A MagdaDevice declares its key and says how wide it is; everything else
+    // is asked the only question the fork can answer, and a key with no
+    // declared width is one channel (#2329).
+    if (auto* magdaDevice =
+            dynamic_cast<daw::audio::tracktion_adapter::TracktionMagdaDevicePlugin*>(&plugin))
+        device.sidechainPort = magdaDevice->device().properties().sidechain;
+    else if (plugin.canSidechain())
+        device.sidechainPort = {
+            .kind = SidechainPort::Kind::Audio,
+            .channels =
+                std::clamp(snapshot.audioInputChannels - snapshot.audioOutputChannels, 1, 2)};
+
     if (snapshot.hasMidiInput && !device.isInstrument)
         device.canReceiveMidi = true;
     device.producesMidi = snapshot.hasMidiOutput;
@@ -140,14 +150,15 @@ void updateDeviceCapabilityFlags(DeviceInfo& device, te::Plugin& plugin) {
     applyLiveChannelCounts(device, plugin);
 }
 
-// Faust's processor owns a dynamic canSidechain flag, while the generic
-// capability updater only ever promotes flags to true. Keep the type guard so
-// a stale serialized flag on another plugin cannot erase valid routing.
-// Return the id instead of changing TrackManager inline: its notification path
-// must run after callers are finished with their borrowed DeviceInfo pointer.
+// Faust's processor owns a declaration that changes with every recompile, while
+// the generic capability updater only ever promotes a port into existence. Keep
+// the type guard so a stale serialized port on another plugin cannot erase valid
+// routing. Return the id instead of changing TrackManager inline: its
+// notification path must run after callers are finished with their borrowed
+// DeviceInfo pointer.
 DeviceId clearStaleFaustAudioSidechain(const DeviceInfo& device, te::Plugin* plugin) {
     auto* faust = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::FaustPlugin>(plugin);
-    if (faust == nullptr || !faust->activeDspMatchesSource() || device.canSidechain ||
+    if (faust == nullptr || !faust->activeDspMatchesSource() || device.sidechainPort.takesAudio() ||
         !device.sidechain.isActive() || device.sidechain.type != SidechainConfig::Type::Audio)
         return INVALID_DEVICE_ID;
 

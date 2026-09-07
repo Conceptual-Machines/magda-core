@@ -10,6 +10,7 @@
 #include "MacroInfo.hpp"
 #include "ModInfo.hpp"
 #include "ParameterInfo.hpp"
+#include "SidechainPort.hpp"
 #include "TypeIds.hpp"
 
 namespace magda {
@@ -133,15 +134,36 @@ struct MultiOutConfig {
 };
 
 /**
- * @brief Sidechain routing configuration for a plugin
+ * @brief Where a device's sidechain key comes from, and what happens on the way.
  *
- * Allows a plugin (e.g., compressor) to receive audio or MIDI from another track
- * as a sidechain/key input.
+ * A source rather than a track id (#2329). The track is only half of where a
+ * key is taken from: @ref tapPoint says which of the two points on that track
+ * it is taken at, @ref gainDb trims it on the edge before the device sees it,
+ * and @ref listen monitors it in place of the device's own output. Adding a
+ * kind of source later -- a hardware input, a rack chain -- is a field here
+ * rather than a rewrite of everything that carries one.
+ *
+ * RackInfo carries this struct too, for a rack's own trigger and follower
+ * source. Only @ref type and @ref sourceTrackId mean anything there.
  */
 struct SidechainConfig {
     enum class Type { None, Audio, MIDI };
     Type type = Type::None;
     TrackId sourceTrackId = INVALID_TRACK_ID;
+
+    /// Which point on the source track the key is taken at, the same two points
+    /// a modifier chooses between. PostFader is where the current engine's
+    /// sidechain send sits, so a project that predates the field sounds as it
+    /// always did.
+    ModTapPoint tapPoint = ModTapPoint::PostFader;
+
+    /// Trim on the key, applied on the edge feeding the device rather than
+    /// inside it. Filtering the key stays the device's own job.
+    float gainDb = 0.0f;
+
+    /// Monitor the key instead of what the device made of its input. A value
+    /// the plan reads per block, so turning it on rebuilds nothing.
+    bool listen = false;
 
     bool isActive() const {
         return type != Type::None && sourceTrackId != INVALID_TRACK_ID;
@@ -370,7 +392,11 @@ struct DeviceInfo {
     /// compiles a send op and a return op from it rather than a Device op
     /// (#2245).
     InsertConfig insert;
-    bool canSidechain = false;    // true if TE plugin supports audio sidechain input
+    /// What the live device declared it takes on its sidechain slot, projected
+    /// here by its processor (#2329). What the routing menu offers, what the
+    /// plan wires and what the API reports all read this one declaration.
+    SidechainPort sidechainPort;
+
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
 

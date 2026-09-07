@@ -43,6 +43,20 @@ juce::String readCustomViewName(const juce::String& source) {
     return readDeclare(source, "magda_view");
 }
 
+magda::SidechainPort readSidechainPort(const juce::String& source, int inputCount,
+                                       int outputCount) {
+    if (!readDeclare(source, "magda_sidechain").equalsIgnoreCase("audio"))
+        return {};
+
+    // A patch that asks for a key and leaves it nowhere to arrive has declared
+    // nothing the host can route: the dsp reads the key off its own inputs.
+    const int channels = inputCount - outputCount;
+    if (channels <= 0)
+        return {};
+
+    return {.kind = magda::SidechainPort::Kind::Audio, .channels = std::min(channels, 2)};
+}
+
 FaustPatchInfo readPatchInfo(const juce::String& source) {
     FaustPatchInfo info;
     info.author = readDeclare(source, "author");
