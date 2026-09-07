@@ -342,7 +342,7 @@ class DrumGridUI : public juce::Component,
     int padButtonIndexAtPoint(juce::Point<int> point) const;
 
     void setupLabel(juce::Label& label, const juce::String& text, float fontSize);
-    void setupButton(juce::TextButton& button);
+    static void setupButton(juce::TextButton& button);
     void showPadContextMenu(int padIndex, juce::Point<int> screenPos);
     void showChainContextMenu(int padIndex, juce::Point<int> screenPos);
 

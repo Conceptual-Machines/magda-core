@@ -45,7 +45,7 @@ class MusicAgent {
     static const char* getDSLSystemPrompt();
 
     /** Parse DSL note operations into IR instructions. */
-    std::vector<Instruction> parseDSL(const juce::String& text, std::string& outDescription);
+    static std::vector<Instruction> parseDSL(const juce::String& text, std::string& outDescription);
 
     CompactParser parser_;
     std::atomic<bool> shouldStop_{false};

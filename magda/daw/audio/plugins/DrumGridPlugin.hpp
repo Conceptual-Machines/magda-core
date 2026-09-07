@@ -207,7 +207,7 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     // multi-out child track. There is no second switch in front of that: the
     // `multiOutEnabled` flag that used to be here gated `assignBusOutputs()`,
     // which #2207 removed, and nothing ever wrote or read either (#2211).
-    int getNumOutputChannels() const {
+    static int getNumOutputChannels() {
         return maxBusOutputs * 2;
     }
 
@@ -308,7 +308,7 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     // Runs on every pass: neither changes the structure the rebuild keys on.
     // Returns true when a gain moved, which the published snapshot carries and
     // so has to be republished.
-    bool applyPadPluginState(Chain& chain, const magda::ChainInfo& pad);
+    static bool applyPadPluginState(Chain& chain, const magda::ChainInfo& pad);
 
     // What the mirror was last built from, so a sync pass that changes nothing
     // does nothing. Structure only: pad ids, their devices, and the order of
@@ -350,7 +350,7 @@ class DrumGridPlugin : public te::Plugin, private juce::Timer {
     int blockSize_ = 512;
 
     // Internal helper: pad-array index for a chain (lowNote - baseNote), or -1 if out of range
-    int padIndexFor(const Chain& chain) const {
+    static int padIndexFor(const Chain& chain) {
         int p = chain.lowNote - baseNote;
         return (p >= 0 && p < maxPads) ? p : -1;
     }

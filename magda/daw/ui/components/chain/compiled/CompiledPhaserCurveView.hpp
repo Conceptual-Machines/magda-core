@@ -26,7 +26,7 @@ class CompiledPhaserCurveView final : public juce::Component,
   public:
     explicit CompiledPhaserCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 130;
     }
 

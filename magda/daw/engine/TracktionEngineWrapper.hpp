@@ -514,7 +514,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * @brief Get the database path where plugin metadata is stored
      * @return Path to plugin_metadata.db
      */
-    juce::File getPluginListFile() const;
+    static juce::File getPluginListFile();
 
     // =========================================================================
     // PDC (Plugin Delay Compensation) Query
@@ -525,7 +525,7 @@ class TracktionEngineWrapper : public AudioEngine,
      * @param effect_id The effect/plugin ID
      * @return Latency in seconds, or 0 if plugin not found
      */
-    double getPluginLatencySeconds(const std::string& effect_id) const;
+    static double getPluginLatencySeconds(const std::string& effect_id);
 
     /**
      * @brief Get the maximum latency across all tracks in the playback graph

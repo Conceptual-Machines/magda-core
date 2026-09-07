@@ -207,8 +207,8 @@ class TransportPanel : public juce::Component, public MixAnalysisService::Listen
     daw::ui::transport::Layout layout_;
 
     // Button styling
-    void styleTransportButton(SvgButton& button, ColourRole accentRole,
-                              bool activeGlyphUsesAccent = false);
+    static void styleTransportButton(SvgButton& button, ColourRole accentRole,
+                                     bool activeGlyphUsesAccent = false);
     void setupTransportButtons();
     void setupTimeDisplayBoxes();
     void setupTempoAndQuantize();

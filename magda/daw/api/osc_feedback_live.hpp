@@ -260,7 +260,7 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
 
     /// Feed one surface's copy of a bound address, given the position its target
     /// currently implies.
-    void publishBinding(Surface& surface, const juce::String& address, float position);
+    static void publishBinding(Surface& surface, const juce::String& address, float position);
 
     /// The entry for `address` on `surface`, created if this is the first time
     /// it has been seen. Linear: bindings number in the tens, and an OSC address

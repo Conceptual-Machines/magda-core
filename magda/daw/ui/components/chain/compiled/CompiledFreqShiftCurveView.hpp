@@ -28,7 +28,7 @@ class CompiledFreqShiftCurveView final : public juce::Component,
   public:
     explicit CompiledFreqShiftCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 120;
     }
 

@@ -98,7 +98,7 @@ const char* GainStagingAgent::getSystemPrompt() {
 }
 
 juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
-                                                const std::vector<DeviceLevel>& devices) const {
+                                                const std::vector<DeviceLevel>& devices) {
     juce::Array<juce::var> arr;
     for (int i = 0; i < static_cast<int>(devices.size()); ++i) {
         const auto& d = devices[static_cast<size_t>(i)];
@@ -132,8 +132,7 @@ juce::String GainStagingAgent::buildUserMessage(float targetPeakDb,
 }
 
 void GainStagingAgent::parseDecisions(const juce::String& rawText,
-                                      const std::vector<DeviceLevel>& devices,
-                                      Result& result) const {
+                                      const std::vector<DeviceLevel>& devices, Result& result) {
     result.rawOutput = rawText.toStdString();
 
     const int deviceCount = static_cast<int>(devices.size());

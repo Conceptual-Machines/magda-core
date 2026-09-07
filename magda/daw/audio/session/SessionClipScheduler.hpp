@@ -60,7 +60,7 @@ class SessionClipScheduler : public ClipManagerListener {
     void relaunchActiveClips();
 
     /** Returns true if any track has an activeSessionClipId set. */
-    bool hasActiveClips() const;
+    static bool hasActiveClips();
 
     /** Returns the looped session playhead position (seconds), or -1.0 if no session clips active.
         This tracks the most recently launched clip (used by clip editors). */
@@ -96,7 +96,7 @@ class SessionClipScheduler : public ClipManagerListener {
 
     /** Derive and sync TrackPlaybackMode for all tracks from activeSessionClipId.
         Tracks with an active session clip → Session, others → Arrangement. */
-    void syncTrackPlaybackModes();
+    static void syncTrackPlaybackModes();
 
     /** Ensure a LaunchHandle shared_ptr is held for a clip (keeps it alive for audio thread). */
     void retainLaunchHandle(ClipId clipId);

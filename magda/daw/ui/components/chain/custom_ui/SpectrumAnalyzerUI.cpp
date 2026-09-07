@@ -628,12 +628,12 @@ void SpectrumAnalyzerUI::updateTimerState() {
         stopTimer();
 }
 
-float SpectrumAnalyzerUI::freqToX(float hz, juce::Rectangle<float> area) const {
+float SpectrumAnalyzerUI::freqToX(float hz, juce::Rectangle<float> area) {
     const float t = std::log(juce::jmax(kMinHz, hz) / kMinHz) / std::log(kMaxHz / kMinHz);
     return area.getX() + juce::jlimit(0.0f, 1.0f, t) * area.getWidth();
 }
 
-float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) const {
+float SpectrumAnalyzerUI::dbToY(float db, juce::Rectangle<float> area) {
     const float t = (db - kMinDb) / (kMaxDb - kMinDb);
     return area.getBottom() - juce::jlimit(0.0f, 1.0f, t) * area.getHeight();
 }

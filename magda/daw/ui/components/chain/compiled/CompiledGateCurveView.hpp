@@ -19,7 +19,7 @@ class CompiledGateCurveView final : public juce::Component,
   public:
     explicit CompiledGateCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 146;
     }
 

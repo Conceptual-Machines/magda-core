@@ -325,7 +325,7 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * clip's source already points at takes[currentTakeIndex]; the others are
      * preserved as alternates.
      */
-    void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
+    static void applyModelTakesToTeClip(tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
      * @brief Configure autoTempo on a session audio clip in TE

@@ -197,7 +197,7 @@ PresetManager::PresetManager() {
 // Preset Directories
 // ============================================================================
 
-juce::File PresetManager::getPresetsDirectory() const {
+juce::File PresetManager::getPresetsDirectory() {
     return magda::paths::presetsDir();
 }
 
@@ -534,7 +534,7 @@ bool PresetManager::ensureDirectoryExists(const juce::File& directory) {
     return true;
 }
 
-juce::StringArray PresetManager::getPresetList(const juce::File& directory) const {
+juce::StringArray PresetManager::getPresetList(const juce::File& directory) {
     juce::StringArray presets;
 
     if (!directory.exists())

@@ -26,7 +26,7 @@ class CompiledGritCurveView final : public juce::Component,
   public:
     explicit CompiledGritCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 

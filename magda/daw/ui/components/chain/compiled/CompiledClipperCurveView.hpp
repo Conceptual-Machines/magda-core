@@ -27,7 +27,7 @@ class CompiledClipperCurveView final : public juce::Component,
   public:
     explicit CompiledClipperCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 120;
     }
 

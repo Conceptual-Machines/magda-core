@@ -379,7 +379,7 @@ class ProjectManager {
     /**
      * @brief Migrate media files from old directory to new, updating clip paths
      */
-    void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
+    static void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
 
     /**
      * @brief Fold the media roots retired by #2170 into the surviving three.

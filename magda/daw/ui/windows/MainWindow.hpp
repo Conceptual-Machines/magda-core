@@ -83,7 +83,7 @@ class MainWindow : public juce::DocumentWindow,
     // Re-applies the active palette to every shared LookAndFeel and broadcasts
     // a look-and-feel change to all top-level windows. Shared by the config
     // switch and hot-reload.
-    void refreshThemedLookAndFeels();
+    static void refreshThemedLookAndFeels();
     // Hot-reload callback: the active user theme file changed on disk.
     void onActiveThemeFileChanged();
     class MainComponent;
@@ -111,8 +111,8 @@ class MainWindow : public juce::DocumentWindow,
     // The actual chooser + render flow, after performExport's pre-checks pass.
     void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
     void performMidiExport(const ExportMidiDialog::Settings& settings);
-    juce::String getFileExtensionForFormat(const juce::String& format) const;
-    int getBitDepthForFormat(const juce::String& format) const;
+    static juce::String getFileExtensionForFormat(const juce::String& format);
+    static int getBitDepthForFormat(const juce::String& format);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };

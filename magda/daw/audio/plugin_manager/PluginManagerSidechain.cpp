@@ -109,7 +109,7 @@ void PluginManager::syncSidechains(TrackId trackId, te::AudioTrack* teTrack) {
 // Sidechain Monitor Lifecycle
 // =============================================================================
 
-bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) const {
+bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) {
     // The master owns modifiers but has no AudioTrack/plugin list to host a
     // MIDI monitor. It can be a sidechain destination, never a source.
     if (trackId == MASTER_TRACK_ID)

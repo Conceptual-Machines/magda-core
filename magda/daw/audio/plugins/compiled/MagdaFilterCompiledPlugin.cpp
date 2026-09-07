@@ -124,7 +124,7 @@ int MagdaFilterCompiledPlugin::slotForDspIdx(int idx) const {
     }
 }
 
-std::vector<juce::String> MagdaFilterCompiledPlugin::modeChoicesForEngine(int engineIndex) const {
+std::vector<juce::String> MagdaFilterCompiledPlugin::modeChoicesForEngine(int engineIndex) {
     switch (static_cast<FilterFamily>(engineIndex)) {
         case FilterFamily::SVF:
             return {"LP", "BP", "HP", "Notch"};

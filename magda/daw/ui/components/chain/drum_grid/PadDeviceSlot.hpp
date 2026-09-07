@@ -111,7 +111,7 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
         return (i >= 0 && i < PLUGIN_PARAM_SLOTS) ? paramSlots_[static_cast<size_t>(i)].get()
                                                   : nullptr;
     }
-    int getParamSlotCount() const {
+    static int getParamSlotCount() {
         return PLUGIN_PARAM_SLOTS;
     }
     int getVisibleParamCount() const {

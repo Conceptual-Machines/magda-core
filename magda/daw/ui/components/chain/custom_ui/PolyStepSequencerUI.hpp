@@ -218,7 +218,7 @@ class PolyStepSequencerUI : public juce::Component, private juce::Timer {
                      bool isProbability);
 
     // --- Hit testing ---
-    int getStepAtX(int x, int areaX, int areaWidth, int numSteps) const;
+    static int getStepAtX(int x, int areaX, int areaWidth, int numSteps);
     void applyLaneDrag(const juce::MouseEvent& e);
 
     // --- Layout bounds (computed in resized, used in paint/mouse handlers) ---

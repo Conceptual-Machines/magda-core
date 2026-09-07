@@ -31,7 +31,7 @@ class CompiledDelayCurveView final : public juce::Component,
   public:
     explicit CompiledDelayCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 

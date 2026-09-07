@@ -139,7 +139,7 @@ class RemoteApiHost {
     int mcpPort() const;
 
     /// Where the token was published, whether or not it currently exists.
-    juce::File tokenFile() const;
+    static juce::File tokenFile();
 
     /// The dispatcher, shared by both transports so revisions, undo grouping,
     /// and idempotency each exist once per project, not twice.

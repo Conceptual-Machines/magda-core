@@ -77,8 +77,8 @@ class TrackMeasurementManager : private juce::Timer {
     /// spectrum ring) into dest, for a full-resolution overlay FFT (#1400). The
     /// overlay runs the same pipeline as the device's own trace on these samples.
     /// Returns the ring's running sample count (0 if no live tap / no audio yet).
-    size_t readTrackSpectrumSamples(TrackId trackId, float* dest, int numSamples,
-                                    double& sampleRateOut) const;
+    static size_t readTrackSpectrumSamples(TrackId trackId, float* dest, int numSamples,
+                                           double& sampleRateOut);
 
     void addListener(TrackMeasurementListener* l) {
         listeners_.add(l);

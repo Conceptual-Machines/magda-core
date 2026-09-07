@@ -20,7 +20,7 @@ class CompiledMultibandCurveView final : public juce::Component,
   public:
     explicit CompiledMultibandCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 
@@ -182,7 +182,7 @@ class CompiledMultibandCurveView final : public juce::Component,
     static bool isAboveRatioHandle(Handle h);
     static bool isTimingHandle(Handle h);
     static bool isReleaseTimingHandle(Handle h);
-    int slotForHandle(Handle h) const;
+    static int slotForHandle(Handle h);
     Handle pickHandle(float x, float y) const;
 
     magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* compiledPlugin_ = nullptr;

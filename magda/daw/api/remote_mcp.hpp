@@ -362,7 +362,7 @@ class McpEndpoint {
     std::vector<Topic> topicsFor(const ListenFilter& filter) const;
 
     /// `notifications/subscriptions/acknowledged`, carrying the honoured filter.
-    juce::var acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId) const;
+    static juce::var acknowledgment(const ListenFilter& filter, const juce::var& subscriptionId);
 
     /// `notifications/resources/updated` for one URI. `subscriptionId` is void
     /// in the legacy era, which has no such correlation.

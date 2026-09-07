@@ -1006,7 +1006,7 @@ void PluginManager::rebuildSidechainLFOCache() {
 
 // =============================================================================
 std::pair<int, int> PluginManager::computeModLinkFingerprint(TrackId trackId,
-                                                             const TrackInfo* trackInfo) const {
+                                                             const TrackInfo* trackInfo) {
     if (!trackInfo)
         return {0, 0};
 

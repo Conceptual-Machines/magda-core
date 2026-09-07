@@ -276,17 +276,18 @@ class ClipComponent : public juce::Component,
     // Chord-track clips render their chordAnnotations as named blocks instead of
     // a MIDI-note preview.
     void paintChordClip(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
-    bool isChordClip(const ClipInfo& clip) const;
+    static bool isChordClip(const ClipInfo& clip);
     void paintClipHeader(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintResizeHandles(juce::Graphics& g, juce::Rectangle<int> bounds);
-    void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip, const EffectiveFades& fades,
-                           juce::Rectangle<int> waveformArea, double pixelsPerSecond);
+    static void paintFadeOverlays(juce::Graphics& g, const ClipInfo& clip,
+                                  const EffectiveFades& fades, juce::Rectangle<int> waveformArea,
+                                  double pixelsPerSecond);
     void paintFadeHandles(juce::Graphics& g, const ClipInfo& clip, juce::Rectangle<int> bounds);
     void paintVolumeLine(juce::Graphics& g, const ClipInfo& clip,
                          juce::Rectangle<int> waveformArea);
 
     // Interaction helpers
-    bool isOnLeftEdge(int x) const;
+    static bool isOnLeftEdge(int x);
     bool isOnRightEdge(int x) const;
     bool isOnFadeInHandle(int x, int y) const;
     bool isOnFadeOutHandle(int x, int y) const;

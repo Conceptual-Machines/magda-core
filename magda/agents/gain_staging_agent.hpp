@@ -65,10 +65,10 @@ class GainStagingAgent {
     static const char* getSystemPrompt();
 
   private:
-    juce::String buildUserMessage(float targetPeakDb,
-                                  const std::vector<DeviceLevel>& devices) const;
-    void parseDecisions(const juce::String& rawText, const std::vector<DeviceLevel>& devices,
-                        Result& result) const;
+    static juce::String buildUserMessage(float targetPeakDb,
+                                         const std::vector<DeviceLevel>& devices);
+    static void parseDecisions(const juce::String& rawText, const std::vector<DeviceLevel>& devices,
+                               Result& result);
 };
 
 }  // namespace magda

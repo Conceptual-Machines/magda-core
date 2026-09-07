@@ -28,7 +28,7 @@ class CompiledPitchEditorView final : public juce::Component,
   public:
     explicit CompiledPitchEditorView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 56;
     }
 

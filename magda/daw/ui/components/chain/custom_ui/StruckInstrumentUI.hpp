@@ -39,7 +39,7 @@ class StruckInstrumentUI : public juce::Component, private juce::Timer {
 
     void updateFromParameters(const std::vector<magda::ParameterInfo>& params);
     std::vector<LinkableTextSlider*> getLinkableSliders();
-    int preferredContentWidth() const;
+    static int preferredContentWidth();
 
     /// Bind the live plugin so the body can flash on note-on (nullptr unbinds).
     void setLivePlugin(magda::daw::audio::compiled::MagdaCompiledPolyInstrument* plugin);

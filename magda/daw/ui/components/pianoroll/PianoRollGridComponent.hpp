@@ -566,7 +566,7 @@ class PianoRollGridComponent : public juce::Component,
     double clipBeatForDisplayX(ClipId clipId, int mouseX, bool floorToCell = false) const;
     double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);
-    bool isBlackKey(int noteNumber) const;
+    static bool isBlackKey(int noteNumber);
     juce::Colour getClipColour() const;
     juce::Colour getColourForClip(ClipId clipId) const;
     bool isClipSelected(ClipId clipId) const;

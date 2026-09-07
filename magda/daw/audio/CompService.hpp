@@ -31,7 +31,7 @@ class CompService {
     void setSection(ClipId clipId, double startSeconds, double endSeconds, int takeIndex);
 
     /** Drop the comp and revert the clip to its active take. */
-    void clearComp(ClipId clipId);
+    static void clearComp(ClipId clipId);
 
     /** Re-render the clip's existing comp (e.g. after project load). */
     void renderComp(ClipId clipId);

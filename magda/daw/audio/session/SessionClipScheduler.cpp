@@ -190,7 +190,7 @@ SessionClipPlayState SessionClipScheduler::getClipPlayState(ClipId clipId) const
     return SessionClipPlayState::Stopped;
 }
 
-bool SessionClipScheduler::hasActiveClips() const {
+bool SessionClipScheduler::hasActiveClips() {
     auto& tm = TrackManager::getInstance();
     for (const auto& track : tm.getTracks()) {
         if (track.activeSessionClipId != INVALID_CLIP_ID)

@@ -146,7 +146,7 @@ class MidiInputRouter : private juce::AsyncUpdater {
     /// port naming ("monologue KBD/KNOB" vs "monologue MIDI OUT"). Applied to
     /// "All Inputs" routing only — an explicitly selected port is respected,
     /// so the synth's keyboard can still be recorded (Local Control off).
-    bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName) const;
+    static bool isExternalInstrumentSendbackInput(TrackId trackId, const juce::String& inputName);
 
     void handleAsyncUpdate() override;
 

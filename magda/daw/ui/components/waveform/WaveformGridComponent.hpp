@@ -320,7 +320,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     void paintTakeLanes(juce::Graphics& g, const magda::ClipInfo& clip,
                         const WaveformLayout& layout);
     // Returns the take lane index under y (multi-take clip), or -1.
-    int takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) const;
+    static int takeLaneAtY(int y, const WaveformLayout& layout, int takeCount);
     void paintWaveformOverlays(juce::Graphics& g, const magda::ClipInfo& clip,
                                const WaveformLayout& layout);
     void paintBeatGrid(juce::Graphics& g, const magda::ClipInfo& clip);
@@ -348,7 +348,7 @@ class WaveformGridComponent : public juce::Component, public juce::ChangeListene
     double getSampleStartPositionSeconds() const;
     double getDisplayStartTime() const;
     double getDrawableTimelineLength() const;
-    void debugLogGeometry(const char* context) const;
+    static void debugLogGeometry(const char* context);
 
     // Get current clip
     const magda::ClipInfo* getClip() const;

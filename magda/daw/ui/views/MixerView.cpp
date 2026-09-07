@@ -956,7 +956,7 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
 }
 
 std::vector<MixerView::ChannelStrip::MiniChainRowSignatureEntry>
-MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) const {
+MixerView::ChannelStrip::buildMiniChainSignature(const TrackInfo& track) {
     std::vector<MiniChainRowSignatureEntry> signature;
     signature.reserve(track.chain.fxChainElements.size());
     for (const auto& element : track.chain.fxChainElements) {
@@ -2286,7 +2286,7 @@ void MixerView::paint(juce::Graphics& g) {
     }
 }
 
-int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) const {
+int MixerView::getTopLevelStripWidth(const ChannelStrip& strip) {
     int width = strip.preferredChannelWidth();
     for (auto* child : strip.groupChildren_) {
         if (auto* childStrip = dynamic_cast<ChannelStrip*>(child))
@@ -2685,7 +2685,7 @@ bool MixerView::keyPressed(const juce::KeyPress& /*key*/) {
     return false;
 }
 
-bool MixerView::isInChannelResizeZone(const juce::Point<int>& /*pos*/) const {
+bool MixerView::isInChannelResizeZone(const juce::Point<int>& /*pos*/) {
     // Not used anymore - resize handle component handles this
     return false;
 }

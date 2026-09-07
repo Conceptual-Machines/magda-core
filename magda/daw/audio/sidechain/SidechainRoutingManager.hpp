@@ -14,8 +14,8 @@ class SidechainRoutingManager {
 
     void refreshAllSourceMonitors();
     void handleDeviceSidechainChanged(TrackId destinationTrackId, const DeviceInfo& device);
-    void triggerMidiActivity(TrackId trackId);
-    void publishAudioPeak(TrackId trackId, float peak);
+    static void triggerMidiActivity(TrackId trackId);
+    static void publishAudioPeak(TrackId trackId, float peak);
 
   private:
     PluginManager& pluginManager_;

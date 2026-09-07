@@ -1245,7 +1245,7 @@ void PluginBrowserContent::showRenameFolderDialog(const juce::String& folderName
         true);
 }
 
-juce::File PluginBrowserContent::getFoldersFile() const {
+juce::File PluginBrowserContent::getFoldersFile() {
     return magda::paths::pluginFoldersFile();
 }
 

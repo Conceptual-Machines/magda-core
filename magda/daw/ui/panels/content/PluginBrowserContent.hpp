@@ -162,7 +162,7 @@ class PluginBrowserContent : public PanelContent,
     void showRenameFolderDialog(const juce::String& folderName);
     void saveFolders();
     void loadFolders();
-    juce::File getFoldersFile() const;
+    static juce::File getFoldersFile();
 
     juce::StringArray folderNames_;                           // in creation order
     std::map<juce::String, juce::String> pluginFolderByKey_;  // plugin key -> folder name

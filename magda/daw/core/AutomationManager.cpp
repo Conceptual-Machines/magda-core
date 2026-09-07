@@ -569,7 +569,7 @@ void AutomationManager::endTargetGesture(const AutomationTarget& target) {
         dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::EndGesture);
 }
 
-bool AutomationManager::isWriteModeEnabled() const {
+bool AutomationManager::isWriteModeEnabled() {
     auto* audioEngine = TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
         return false;
@@ -577,8 +577,7 @@ bool AutomationManager::isWriteModeEnabled() const {
     return bridge && bridge->isAutomationWriteEnabled();
 }
 
-std::optional<double> AutomationManager::getCurrentTargetValue(
-    const AutomationTarget& target) const {
+std::optional<double> AutomationManager::getCurrentTargetValue(const AutomationTarget& target) {
     return getCurrentTargetValueImpl(target);
 }
 
@@ -1083,7 +1082,7 @@ double AutomationManager::getClipValueAtBeat(AutomationClipId clipId,
 }
 
 double AutomationManager::interpolatePoints(const std::vector<AutomationPoint>& points,
-                                            double beatPosition) const {
+                                            double beatPosition) {
     return automation::valueAtBeat(points, beatPosition);
 }
 
@@ -1259,7 +1258,7 @@ AutomationPoint* AutomationManager::findPoint(std::vector<AutomationPoint>& poin
 }
 
 const AutomationPoint* AutomationManager::findPoint(const std::vector<AutomationPoint>& points,
-                                                    AutomationPointId pointId) const {
+                                                    AutomationPointId pointId) {
     for (const auto& point : points) {
         if (point.id == pointId)
             return &point;

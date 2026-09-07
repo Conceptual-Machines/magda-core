@@ -218,14 +218,14 @@ std::span<const int> ModRuntime::listenersOf(magda::TrackId track) const {
     return std::span<const int>{listeners_}.subspan(first, last - first);
 }
 
-bool ModRuntime::drivenFromElsewhere(int index, const ParamTable& table) const {
+bool ModRuntime::drivenFromElsewhere(int index, const ParamTable& table) {
     if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
         return false;
 
     return isDrivenFromElsewhere(table.modifiers[static_cast<std::size_t>(index)]);
 }
 
-ModListen ModRuntime::listensFor(int index, const ParamTable& table) const {
+ModListen ModRuntime::listensFor(int index, const ParamTable& table) {
     if (index < 0 || index >= static_cast<int>(table.modifiers.size()))
         return ModListen::Nothing;
 
