@@ -388,8 +388,8 @@ void NodeComponent::paint(juce::Graphics& g) {
                                                        center.x, center.y));
         // Swapped width/height due to rotation
         juce::Rectangle<int> textBounds(
-            static_cast<int>(center.x - collapsedTextArea_.getHeight() / 2),
-            static_cast<int>(center.y - collapsedTextArea_.getWidth() / 2),
+            static_cast<int>(center.x - collapsedTextArea_.getHeight() / 2.0f),
+            static_cast<int>(center.y - collapsedTextArea_.getWidth() / 2.0f),
             collapsedTextArea_.getHeight(), collapsedTextArea_.getWidth());
         g.drawText(getCollapsedName(), textBounds, juce::Justification::centred);
         g.restoreState();

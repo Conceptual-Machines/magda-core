@@ -626,7 +626,8 @@ class SessionView::BeatBandContainer : public juce::Component {
 
         const int yCentre = getHeight() / 2;
         // Dot sits in the centre of the column.
-        out.dotCentre = {static_cast<float>(cursor + w / 2), static_cast<float>(yCentre)};
+        out.dotCentre = {static_cast<float>(cursor) + static_cast<float>(w) / 2.0f,
+                         static_cast<float>(yCentre)};
 
         // Icons stacked in the right half, derived from band height.
         constexpr int kGap = 2;

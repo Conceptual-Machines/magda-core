@@ -60,9 +60,10 @@ void MarkerLaneComponent::paint(juce::Graphics& g) {
         auto colour = marker.colour;
 
         juce::Path flag;
-        flag.addTriangle(static_cast<float>(x - kFlagWidth / 2), static_cast<float>(kLaneTopInset),
-                         static_cast<float>(x + kFlagWidth / 2), static_cast<float>(kLaneTopInset),
-                         static_cast<float>(x), static_cast<float>(kLaneTopInset + 12));
+        flag.addTriangle(
+            static_cast<float>(x) - kFlagWidth / 2.0f, static_cast<float>(kLaneTopInset),
+            static_cast<float>(x) + kFlagWidth / 2.0f, static_cast<float>(kLaneTopInset),
+            static_cast<float>(x), static_cast<float>(kLaneTopInset + 12));
         g.setColour(colour.withAlpha(selected || hovered ? 1.0f : 0.82f));
         g.fillPath(flag);
 
