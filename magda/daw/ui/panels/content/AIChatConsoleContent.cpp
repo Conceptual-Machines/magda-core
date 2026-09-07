@@ -2002,7 +2002,7 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
                 if (i > 0)
                     line += " ";
                 line +=
-                    juce::String::charToString(cells[static_cast<size_t>(bar * kCellsPerBar + i)]);
+                    juce::String::charToString(cells[static_cast<size_t>(bar) * kCellsPerBar + i]);
             }
         }
         line += "\n";

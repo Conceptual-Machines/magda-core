@@ -184,7 +184,7 @@ std::vector<Stem> DemucsSeparator::separate(const juce::AudioBuffer<float>& inpu
             }
         }
         for (int i = 0; i < clen; ++i)
-            weight[static_cast<size_t>(start + i)] += window[static_cast<size_t>(i)];
+            weight[static_cast<size_t>(start) + i] += window[static_cast<size_t>(i)];
 
         if (progress != nullptr &&
             !progress(static_cast<float>(c + 1) / static_cast<float>(numChunks)))

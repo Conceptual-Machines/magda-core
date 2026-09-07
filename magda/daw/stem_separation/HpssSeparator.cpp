@@ -74,7 +74,7 @@ std::vector<Stem> HpssSeparator::separate(const juce::AudioBuffer<float>& input,
     for (int t = 0; t < numFrames; ++t) {
         const int start = t * kHop;
         for (int i = 0; i < kFftSize && start + i < paddedLen; ++i)
-            norm[static_cast<size_t>(start + i)] +=
+            norm[static_cast<size_t>(start) + i] +=
                 window[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
     }
 
@@ -99,13 +99,13 @@ std::vector<Stem> HpssSeparator::separate(const juce::AudioBuffer<float>& input,
             std::fill(frame.begin(), frame.end(), 0.0F);
             for (int i = 0; i < kFftSize && start + i < paddedLen; ++i)
                 frame[static_cast<size_t>(i)] =
-                    padded[static_cast<size_t>(start + i)] * window[static_cast<size_t>(i)];
+                    padded[static_cast<size_t>(start) + i] * window[static_cast<size_t>(i)];
 
             fft.performRealOnlyForwardTransform(frame.data(), true);
 
             for (int k = 0; k < kNumBins; ++k) {
-                const float re = frame[static_cast<size_t>(2 * k)];
-                const float im = frame[static_cast<size_t>(2 * k + 1)];
+                const float re = frame[static_cast<size_t>(2) * k];
+                const float im = frame[static_cast<size_t>(2) * k + 1];
                 const size_t idx = static_cast<size_t>(t) * kNumBins + static_cast<size_t>(k);
                 spectra[idx * 2] = re;
                 spectra[idx * 2 + 1] = im;
@@ -169,10 +169,10 @@ std::vector<Stem> HpssSeparator::separate(const juce::AudioBuffer<float>& input,
 
                 const float re = spectra[idx * 2];
                 const float im = spectra[idx * 2 + 1];
-                frameH[static_cast<size_t>(2 * k)] = re * maskH;
-                frameH[static_cast<size_t>(2 * k + 1)] = im * maskH;
-                frameP[static_cast<size_t>(2 * k)] = re * maskP;
-                frameP[static_cast<size_t>(2 * k + 1)] = im * maskP;
+                frameH[static_cast<size_t>(2) * k] = re * maskH;
+                frameH[static_cast<size_t>(2) * k + 1] = im * maskH;
+                frameP[static_cast<size_t>(2) * k] = re * maskP;
+                frameP[static_cast<size_t>(2) * k + 1] = im * maskP;
             }
 
             fft.performRealOnlyInverseTransform(frameH.data());
@@ -181,18 +181,18 @@ std::vector<Stem> HpssSeparator::separate(const juce::AudioBuffer<float>& input,
             const int start = t * kHop;
             for (int i = 0; i < kFftSize && start + i < paddedLen; ++i) {
                 const float w = window[static_cast<size_t>(i)];
-                outHarm[static_cast<size_t>(start + i)] += frameH[static_cast<size_t>(i)] * w;
-                outPerc[static_cast<size_t>(start + i)] += frameP[static_cast<size_t>(i)] * w;
+                outHarm[static_cast<size_t>(start) + i] += frameH[static_cast<size_t>(i)] * w;
+                outPerc[static_cast<size_t>(start) + i] += frameP[static_cast<size_t>(i)] * w;
             }
         }
 
         float* dstH = stems[0].audio.getWritePointer(ch);
         float* dstP = stems[1].audio.getWritePointer(ch);
         for (int i = 0; i < numSamples; ++i) {
-            const float n = norm[static_cast<size_t>(i + pad)];
+            const float n = norm[static_cast<size_t>(i) + pad];
             const float scale = n > 1.0e-8F ? 1.0F / n : 0.0F;
-            dstH[i] = outHarm[static_cast<size_t>(i + pad)] * scale;
-            dstP[i] = outPerc[static_cast<size_t>(i + pad)] * scale;
+            dstH[i] = outHarm[static_cast<size_t>(i) + pad] * scale;
+            dstP[i] = outPerc[static_cast<size_t>(i) + pad] * scale;
         }
         if (!report(1.0F))
             return {};

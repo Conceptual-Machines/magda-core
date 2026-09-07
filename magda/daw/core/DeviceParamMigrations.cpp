@@ -33,7 +33,7 @@ constexpr std::array<int, kEqOldCount> makeEqMapping() {
     std::array<int, kEqOldCount> mapping{};
     for (int band = 0; band < kEqBandCount; ++band)
         for (int slot = 0; slot < kEqSlotsPerBandOld; ++slot)
-            mapping[static_cast<size_t>(band * kEqSlotsPerBandOld + slot)] =
+            mapping[static_cast<size_t>(band) * kEqSlotsPerBandOld + slot] =
                 band * kEqSlotsPerBandNew + 1 + slot;
     mapping[kEqOldCount - 1] = kEqBandCount * kEqSlotsPerBandNew;  // Output
     return mapping;

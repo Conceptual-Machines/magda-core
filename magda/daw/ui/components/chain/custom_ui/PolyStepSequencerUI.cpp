@@ -111,7 +111,7 @@ void toggleStepNote(step_pattern::PolyPattern& pattern, int stepIndex, int note)
         if (step.notes[static_cast<size_t>(i)].noteNumber != note)
             continue;
         for (int j = i; j + 1 < step.noteCount; ++j)
-            step.notes[static_cast<size_t>(j)] = step.notes[static_cast<size_t>(j + 1)];
+            step.notes[static_cast<size_t>(j)] = step.notes[static_cast<size_t>(j) + 1];
         --step.noteCount;
         step.notes[static_cast<size_t>(step.noteCount)] = {};
         return;

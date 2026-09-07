@@ -75,7 +75,7 @@ FMUI::FMUI() {
         populateWaveSelector(sel);
         sel.onChange = [this, op](int wave) { setOpWave(op, wave); };
         addAndMakeVisible(sel);
-        controls_[static_cast<size_t>(kWaveBase + op)].slider->setVisible(false);
+        controls_[static_cast<size_t>(kWaveBase) + op].slider->setVisible(false);
     }
 
     // Draggable amp ADSR. A handle drag writes the plugin value and keeps the
@@ -105,9 +105,9 @@ FMUI::FMUI() {
         btn->onClick = [this, op]() { setOpReset(op, !opReset_[static_cast<size_t>(op)]); };
         addAndMakeVisible(*btn);
         resetButtons_[static_cast<size_t>(op)] = std::move(btn);
-        controls_[static_cast<size_t>(kResetBase + op)].slider->setVisible(false);
-        if (controls_[static_cast<size_t>(kResetBase + op)].label)
-            controls_[static_cast<size_t>(kResetBase + op)].label->setVisible(false);
+        controls_[static_cast<size_t>(kResetBase) + op].slider->setVisible(false);
+        if (controls_[static_cast<size_t>(kResetBase) + op].label)
+            controls_[static_cast<size_t>(kResetBase) + op].label->setVisible(false);
     }
 
     // Per-op enable (mute) toggle, doubling as the operator column header.
@@ -126,9 +126,9 @@ FMUI::FMUI() {
         btn->onClick = [this, op]() { setOpEnable(op, !opEnabled_[static_cast<size_t>(op)]); };
         addAndMakeVisible(*btn);
         enableButtons_[static_cast<size_t>(op)] = std::move(btn);
-        controls_[static_cast<size_t>(kEnableBase + op)].slider->setVisible(false);
-        if (controls_[static_cast<size_t>(kEnableBase + op)].label)
-            controls_[static_cast<size_t>(kEnableBase + op)].label->setVisible(false);
+        controls_[static_cast<size_t>(kEnableBase) + op].slider->setVisible(false);
+        if (controls_[static_cast<size_t>(kEnableBase) + op].label)
+            controls_[static_cast<size_t>(kEnableBase) + op].label->setVisible(false);
     }
     updateEnableButtons();
 }
@@ -223,7 +223,7 @@ void FMUI::updateWaveSelectors() {
         const int wave =
             juce::jlimit(0, kNumWaves - 1,
                          static_cast<int>(std::round(
-                             controls_[static_cast<size_t>(kWaveBase + op)].slider->getValue())));
+                             controls_[static_cast<size_t>(kWaveBase) + op].slider->getValue())));
         waveSelectors_[static_cast<size_t>(op)].setSelectedIndex(wave, juce::dontSendNotification);
     }
 }
@@ -309,7 +309,7 @@ void FMUI::resized() {
         for (int src = 0; src < kNumOps; ++src)
             for (int dst = 0; dst < kNumOps; ++dst) {
                 juce::Rectangle<int> cell(a.getX() + dst * cw, a.getY() + src * chh, cw, chh);
-                controls_[static_cast<size_t>(kMatrixBase + src * kNumOps + dst)].slider->setBounds(
+                controls_[static_cast<size_t>(kMatrixBase) + src * kNumOps + dst].slider->setBounds(
                     cell.reduced(kCellPad));
             }
     }
@@ -336,7 +336,7 @@ void FMUI::resized() {
             col.removeFromTop(2);
             // Wave icon selector (hidden slider tracks beneath it).
             auto waveRow = col.removeFromTop(col.getHeight() * 44 / 100);
-            controls_[static_cast<size_t>(kWaveBase + op)].slider->setBounds(waveRow);
+            controls_[static_cast<size_t>(kWaveBase) + op].slider->setBounds(waveRow);
             waveSelectors_[static_cast<size_t>(op)].setBounds(waveRow.reduced(0, kCellLabelH / 2));
 
             // One row: Ratio | Level | Reset (a small toggle on the right).
@@ -346,7 +346,7 @@ void FMUI::resized() {
             auto ratioCell = row.removeFromLeft(row.getWidth() / 2);
             place(kRatioBase + op, ratioCell);
             place(kLevelBase + op, row);
-            controls_[static_cast<size_t>(kResetBase + op)].slider->setBounds(resetCell);
+            controls_[static_cast<size_t>(kResetBase) + op].slider->setBounds(resetCell);
             resetCell.removeFromTop(kCellLabelH);  // align the toggle with the value boxes
             resetButtons_[static_cast<size_t>(op)]->setBounds(resetCell.reduced(1, 0));
         }

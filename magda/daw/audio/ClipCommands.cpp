@@ -3056,7 +3056,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         double noteStartBeat = noteStartTime * beatsPerSecond;
 
         double nextTimeline =
-            (i + 1 < numSlices) ? slices[static_cast<size_t>(i + 1)].timelinePos : clipEnd;
+            (i + 1 < numSlices) ? slices[static_cast<size_t>(i) + 1].timelinePos : clipEnd;
         double noteDuration = nextTimeline - slice.timelinePos;
         double noteLengthBeats = noteDuration * beatsPerSecond;
 

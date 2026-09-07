@@ -293,7 +293,7 @@ void MagdaConvolutionPlugin::process(DeviceProcessContext& context) {
             updateCoefficients(numThisTime);
 
             auto block = juce::dsp::AudioBlock<float>(buffer).getSubBlock(
-                static_cast<size_t>(start + done), static_cast<size_t>(numThisTime));
+                static_cast<size_t>(start) + done, static_cast<size_t>(numThisTime));
             juce::dsp::ProcessContextReplacing<float> processContext(block);
             chain_.process(processContext);
 

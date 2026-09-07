@@ -427,7 +427,7 @@ void OscilloscopeUI::paint(juce::Graphics& g) {
         for (int i = 0; i < displaySamples_; ++i) {
             const float x =
                 area.getX() + w * (static_cast<float>(i) / static_cast<float>(displaySamples_ - 1));
-            const float y = yOf(window_[static_cast<size_t>(trigger + i)]);
+            const float y = yOf(window_[static_cast<size_t>(trigger) + i]);
             if (i == 0)
                 path.startNewSubPath(x, y);
             else

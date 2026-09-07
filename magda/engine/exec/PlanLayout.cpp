@@ -141,7 +141,7 @@ PlanLatency resolvePlanLatency(const RenderPlan& plan, const std::vector<int>& p
     resolved.portLatency.assign(static_cast<std::size_t>(portOffsets.back()), 0);
 
     const auto flat = [&portOffsets](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
     // What an input carries before its delay compensates anything. A delay op
@@ -212,7 +212,7 @@ BufferLayout assignBuffers(const RenderPlan& plan, const std::vector<int>& portO
     layout.elided.assign(numOps, 0);
 
     const auto flat = [&portOffsets](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
     // A delay holding no samples writes exactly what it read, so its output is

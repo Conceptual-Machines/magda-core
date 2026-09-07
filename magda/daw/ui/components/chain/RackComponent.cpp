@@ -745,7 +745,7 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
                 if (param.paramIndex < 0)
                     continue;
                 if (param.paramIndex >= static_cast<int>(names.size()))
-                    names.resize(static_cast<size_t>(param.paramIndex + 1));
+                    names.resize(static_cast<size_t>(param.paramIndex) + 1);
                 names[static_cast<size_t>(param.paramIndex)] = param.name;
             }
             result[device.id] = std::move(names);

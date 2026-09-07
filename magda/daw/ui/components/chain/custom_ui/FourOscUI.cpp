@@ -485,17 +485,17 @@ void FourOscUI::OscTab::updateFromParameters(const std::vector<magda::ParameterI
         auto& row = rows_[i];
         row.tuneSlider.setValue(params[static_cast<size_t>(base)].currentValue,
                                 juce::dontSendNotification);
-        row.fineSlider.setValue(params[static_cast<size_t>(base + 1)].currentValue,
+        row.fineSlider.setValue(params[static_cast<size_t>(base) + 1].currentValue,
                                 juce::dontSendNotification);
-        row.levelSlider.setValue(params[static_cast<size_t>(base + 2)].currentValue,
+        row.levelSlider.setValue(params[static_cast<size_t>(base) + 2].currentValue,
                                  juce::dontSendNotification);
-        row.pulseWidthSlider.setValue(params[static_cast<size_t>(base + 3)].currentValue,
+        row.pulseWidthSlider.setValue(params[static_cast<size_t>(base) + 3].currentValue,
                                       juce::dontSendNotification);
-        row.detuneSlider.setValue(params[static_cast<size_t>(base + 4)].currentValue,
+        row.detuneSlider.setValue(params[static_cast<size_t>(base) + 4].currentValue,
                                   juce::dontSendNotification);
-        row.spreadSlider.setValue(params[static_cast<size_t>(base + 5)].currentValue,
+        row.spreadSlider.setValue(params[static_cast<size_t>(base) + 5].currentValue,
                                   juce::dontSendNotification);
-        row.panSlider.setValue(params[static_cast<size_t>(base + 6)].currentValue,
+        row.panSlider.setValue(params[static_cast<size_t>(base) + 6].currentValue,
                                juce::dontSendNotification);
     }
     // Global automatable params
@@ -1162,22 +1162,22 @@ void FourOscUI::ModEnvTab::updateFromParameters(const std::vector<magda::Paramet
             break;
         rows_[i].attackSlider.setValue(params[static_cast<size_t>(base)].currentValue,
                                        juce::dontSendNotification);
-        rows_[i].decaySlider.setValue(params[static_cast<size_t>(base + 1)].currentValue,
+        rows_[i].decaySlider.setValue(params[static_cast<size_t>(base) + 1].currentValue,
                                       juce::dontSendNotification);
-        rows_[i].sustainSlider.setValue(params[static_cast<size_t>(base + 2)].currentValue,
+        rows_[i].sustainSlider.setValue(params[static_cast<size_t>(base) + 2].currentValue,
                                         juce::dontSendNotification);
-        rows_[i].releaseSlider.setValue(params[static_cast<size_t>(base + 3)].currentValue,
+        rows_[i].releaseSlider.setValue(params[static_cast<size_t>(base) + 3].currentValue,
                                         juce::dontSendNotification);
 
         // Mirror the ADSR slots into this env's graph (carries each stage's range).
         rows_[i].graph.setStage(AdsrGraph::Attack, base, params[static_cast<size_t>(base)],
                                 params[static_cast<size_t>(base)].currentValue);
-        rows_[i].graph.setStage(AdsrGraph::Decay, base + 1, params[static_cast<size_t>(base + 1)],
-                                params[static_cast<size_t>(base + 1)].currentValue);
-        rows_[i].graph.setStage(AdsrGraph::Sustain, base + 2, params[static_cast<size_t>(base + 2)],
-                                params[static_cast<size_t>(base + 2)].currentValue);
-        rows_[i].graph.setStage(AdsrGraph::Release, base + 3, params[static_cast<size_t>(base + 3)],
-                                params[static_cast<size_t>(base + 3)].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Decay, base + 1, params[static_cast<size_t>(base) + 1],
+                                params[static_cast<size_t>(base) + 1].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Sustain, base + 2, params[static_cast<size_t>(base) + 2],
+                                params[static_cast<size_t>(base) + 2].currentValue);
+        rows_[i].graph.setStage(AdsrGraph::Release, base + 3, params[static_cast<size_t>(base) + 3],
+                                params[static_cast<size_t>(base) + 3].currentValue);
     }
 }
 
@@ -1355,9 +1355,9 @@ void FourOscUI::LFOTab::updateFromParameters(const std::vector<magda::ParameterI
             break;
         rows_[i].rateSlider.setValue(params[static_cast<size_t>(base)].currentValue,
                                      juce::dontSendNotification);
-        rows_[i].depthSlider.setValue(params[static_cast<size_t>(base + 1)].currentValue,
+        rows_[i].depthSlider.setValue(params[static_cast<size_t>(base) + 1].currentValue,
                                       juce::dontSendNotification);
-        rows_[i].depth = static_cast<float>(params[static_cast<size_t>(base + 1)].currentValue);
+        rows_[i].depth = static_cast<float>(params[static_cast<size_t>(base) + 1].currentValue);
     }
     repaint();
 }

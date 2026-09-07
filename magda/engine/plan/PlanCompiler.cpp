@@ -814,7 +814,7 @@ ChainSignal Compiler::emitDevice(const DeviceInfo& device, const ChainSite& site
     // width is what pair p + 1 declares; pair 0 is the main output.
     const auto firstMultiOutPort = static_cast<int>(outputs.size());
     for (int pair = 0; pair < multiOutPairCount; ++pair) {
-        const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair + 1)];
+        const auto& declared = device.multiOut.outputPairs[static_cast<std::size_t>(pair) + 1];
         outputs.push_back(
             {SignalKind::Audio, static_cast<std::uint8_t>(std::clamp(declared.numChannels, 0, 2))});
     }

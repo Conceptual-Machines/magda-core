@@ -68,7 +68,7 @@ void MagdaLimiterDspCore::prepare(double sampleRate, int, int numChannels) {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     delaySamples_ = std::max(1, static_cast<int>(std::ceil(sampleRate_ * 0.005)));
     const auto channels = static_cast<size_t>(std::max(1, numChannels));
-    const auto lineLength = static_cast<size_t>(delaySamples_ + 1);
+    const auto lineLength = static_cast<size_t>(delaySamples_) + 1;
 
     delayLines_.assign(channels, std::vector<float>(lineLength, 0.0f));
     frame_.assign(channels, 0.0f);

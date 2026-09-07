@@ -136,7 +136,7 @@ std::vector<MagdaCompiledPolyInstrument::HostSlotInfo> MagdaCompiledPolyInstrume
     using magda::ParameterScale;
 
     auto infos = voiceSlotInfos_;
-    infos.resize(static_cast<size_t>(voiceSlotCount() + (hasVoiceModes() ? 2 : 1)));
+    infos.resize(static_cast<size_t>(voiceSlotCount()) + (hasVoiceModes() ? 2 : 1));
     infos[static_cast<size_t>(voiceSlotCount())] = {.name = "Gain",
                                                     .unit = "dB",
                                                     .scale = ParameterScale::Linear,
@@ -144,7 +144,7 @@ std::vector<MagdaCompiledPolyInstrument::HostSlotInfo> MagdaCompiledPolyInstrume
                                                     .maxValue = 6.0f,
                                                     .defaultValue = -6.0f};
     if (hasVoiceModes())
-        infos[static_cast<size_t>(voiceSlotCount() + 1)] = {.name = "Voice Mode",
+        infos[static_cast<size_t>(voiceSlotCount()) + 1] = {.name = "Voice Mode",
                                                             .scale = ParameterScale::Discrete,
                                                             .minValue = 0.0f,
                                                             .maxValue = 2.0f,

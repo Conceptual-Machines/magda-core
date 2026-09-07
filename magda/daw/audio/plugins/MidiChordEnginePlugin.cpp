@@ -140,7 +140,7 @@ void MidiChordEnginePlugin::processNoteEvents() {
 
     auto processRange = [this](int start, int count) {
         for (int i = 0; i < count; ++i) {
-            const auto& evt = noteBuffer_[static_cast<size_t>(start + i)];
+            const auto& evt = noteBuffer_[static_cast<size_t>(start) + i];
             keyHistogram_.updateWithMidiNote(evt.noteNumber, evt.timeSeconds);
         }
     };
