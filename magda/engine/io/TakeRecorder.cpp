@@ -36,15 +36,27 @@ bool atLoopStart(const BlockInfo& block, const LoopRange& loop) {
     return loop.valid() && std::abs(block.beats.start - loop.startBeat) <= kLoopStartTolerance;
 }
 
-/// The last full pass, stepping back one if the final pass was cut short. Only
-/// the last one can be, which is what makes the rule this simple.
-std::size_t activeTake(std::span<const RecordedPass> passes) {
-    auto longest = 0.0;
-    for (const auto& pass : passes)
-        longest = std::max(longest, pass.durationSeconds);
+/**
+ * @brief The last full pass, stepping back one if the final pass was cut short.
+ *
+ * Only the last pass can be cut short, and only the first can run long: a
+ * negative adjustment pads its head, and @p headPadding is that padding when
+ * the take's own first pass is still here to carry it. Discounted rather than
+ * measured, so a pass is judged against what was played rather than against a
+ * correction at the top of the file.
+ */
+std::size_t activeTake(std::span<const RecordedPass> passes, std::int64_t headPadding) {
+    const auto played = [&](std::size_t pass) {
+        return passes[pass].samples - (pass == 0 ? headPadding : 0);
+    };
+
+    std::int64_t longest = 0;
+    for (std::size_t pass = 0; pass < passes.size(); ++pass)
+        longest = std::max(longest, played(pass));
 
     const auto last = passes.size() - 1;
-    if (passes.size() > 1 && passes[last].durationSeconds < longest * kFullPassFraction)
+    if (passes.size() > 1 &&
+        static_cast<double>(played(last)) < static_cast<double>(longest) * kFullPassFraction)
         return last - 1;
 
     return last;
@@ -193,13 +205,18 @@ RecordedTake TakeRecorder::finish() {
     // offset of its own it cannot share the clip start the others do, and a
     // wrap having happened at all is what makes it a lead-in rather than the
     // whole recording.
+    auto headPadding = static_cast<std::int64_t>(pad_.getNumSamples());
+
     if (passes.size() > 1 && !startedAtLoopStart_) {
         passes.front().file.deleteFile();
         passes = passes.subspan(1);
+
+        // The padding went with the pass it was at the head of.
+        headPadding = 0;
     }
 
     if (!passes.empty()) {
-        const auto active = activeTake(passes);
+        const auto active = activeTake(passes, headPadding);
         result_.file = passes[active].file;
 
         // One pass is an ordinary clip, and the model keeps `takes` empty for

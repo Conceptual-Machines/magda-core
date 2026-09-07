@@ -324,6 +324,26 @@ TEST_CASE("The active take is the last full pass", "[engine][io][record][2461]")
     }
 }
 
+TEST_CASE("Head padding does not make a whole final pass look short",
+          "[engine][io][record][2461]") {
+    // The first pass carries the padding a negative adjustment put at the head,
+    // so it is longer than the loop. Judged against that, a final pass that ran
+    // its full length would be taken for a stop.
+    Rig rig(emptyDirectory("padded_first_pass"), floatTake({0, 1}, -512));
+    rig.loop(0.0, 2.0);
+    rig.play();
+    rig.run(3 * 2 * kBeatSamples);
+
+    const auto take = rig.recorder().finish();
+    REQUIRE(take.clip.takes.size() == 3);
+    CHECK(readBack(juce::File(take.clip.takes[0].filePath)).getNumSamples() ==
+          (2 * kBeatSamples) + 512);
+    CHECK(readBack(juce::File(take.clip.takes[2].filePath)).getNumSamples() == 2 * kBeatSamples);
+
+    CHECK(take.clip.currentTakeIndex == 2);
+    CHECK(take.file.getFullPathName() == take.clip.takes[2].filePath);
+}
+
 TEST_CASE("A lead-in recorded before the loop is not a take", "[engine][io][record][2461]") {
     const auto directory = emptyDirectory("lead_in");
 
