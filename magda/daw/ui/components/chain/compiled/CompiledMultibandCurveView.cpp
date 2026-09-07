@@ -404,7 +404,7 @@ CompiledMultibandCurveView::Handle CompiledMultibandCurveView::pickHandle(float 
     float nearestDist = kThresholdPickPx + 1.0f;
     for (int band = 0; band < 3; ++band) {
         const float x0 = bandEdges[static_cast<size_t>(band)] - 2.0f;
-        const float x1 = bandEdges[static_cast<size_t>(band + 1)] + 2.0f;
+        const float x1 = bandEdges[static_cast<size_t>(band) + 1] + 2.0f;
         if (x < x0 || x > x1)
             continue;
         auto check = [&](float lineY, Handle h) {

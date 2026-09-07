@@ -3247,7 +3247,7 @@ void PianoRollGridComponent::handleExpressionMouseDrag(const juce::MouseEvent& e
     if (expressionDragPointIndex_ > 0)
         minBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ - 1)].beat;
     if (expressionDragPointIndex_ + 1 < static_cast<int>(expressionWorkingPoints_.size()))
-        maxBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_ + 1)].beat;
+        maxBeat = expressionWorkingPoints_[static_cast<size_t>(expressionDragPointIndex_) + 1].beat;
 
     const double noteStartDisplayBeat = displayBeatForClipBeat(expressionClipId_, note.startBeat);
     point.beat = juce::jlimit(minBeat, maxBeat, pixelToBeat(e.x) - noteStartDisplayBeat);

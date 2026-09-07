@@ -650,7 +650,7 @@ void PasteChainElementsCommand::execute() {
     const int start = requestedIndex;
     for (int i = 0; i < elementCount && start + i < static_cast<int>(destinationElements.size());
          ++i) {
-        const auto& element = destinationElements[static_cast<size_t>(start + i)];
+        const auto& element = destinationElements[static_cast<size_t>(start) + i];
         if (isDevice(element)) {
             const auto deviceId = getDevice(element).id;
             insertedPaths_.push_back(

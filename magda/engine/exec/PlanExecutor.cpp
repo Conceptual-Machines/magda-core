@@ -641,7 +641,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numPorts = static_cast<std::size_t>(portOffsets_.back());
     std::vector<int> portMidiBytes(numPorts, kMaxMidiBytesPerPort);
     const auto flatPort = [this](const PortRef& ref) {
-        return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)] + ref.port);
+        return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
     for (std::size_t i = 0; i < numOps; ++i) {
@@ -1552,7 +1552,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 std::array<juce::dsp::AudioBlock<float>, kMaxMultiOutPairs> pairs;
                 for (int pair = 0; pair < multiOutPairs; ++pair) {
                     const auto& port =
-                        op.outputs[static_cast<std::size_t>(firstMultiOutPort + pair)];
+                        op.outputs[static_cast<std::size_t>(firstMultiOutPort) + pair];
                     pairs[static_cast<std::size_t>(pair)] =
                         audioOut(id, firstMultiOutPort + pair, numSamples)
                             .getSubsetChannelBlock(0, static_cast<std::size_t>(port.channels));

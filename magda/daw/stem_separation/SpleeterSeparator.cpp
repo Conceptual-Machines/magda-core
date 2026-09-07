@@ -180,14 +180,14 @@ std::vector<Stem> SpleeterSeparator::separate(const juce::AudioBuffer<float>& in
                             signal[static_cast<size_t>(ch)][static_cast<size_t>(pos)] *
                             window[static_cast<size_t>(i)];
                     if (ch == 0 && start + i < paddedLen)
-                        norm[static_cast<size_t>(start + i)] +=
+                        norm[static_cast<size_t>(start) + i] +=
                             window[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
                 }
                 fft.performRealOnlyForwardTransform(frame.data(), true);
 
                 for (int b = 0; b < sp::kKeptBins; ++b) {
-                    const float re = frame[static_cast<size_t>(2 * b)];
-                    const float im = frame[static_cast<size_t>(2 * b + 1)];
+                    const float re = frame[static_cast<size_t>(2) * b];
+                    const float im = frame[static_cast<size_t>(2) * b + 1];
                     const size_t xIdx = (static_cast<size_t>(ch) * sp::kFramesPerSplit +
                                          static_cast<size_t>(localFrame)) *
                                             sp::kKeptBins +
@@ -203,9 +203,9 @@ std::vector<Stem> SpleeterSeparator::separate(const juce::AudioBuffer<float>& in
                     const size_t sIdx =
                         (static_cast<size_t>(localFrame) * sp::kNumBins + static_cast<size_t>(b)) *
                         2;
-                    spectra[static_cast<size_t>(ch)][sIdx] = frame[static_cast<size_t>(2 * b)];
+                    spectra[static_cast<size_t>(ch)][sIdx] = frame[static_cast<size_t>(2) * b];
                     spectra[static_cast<size_t>(ch)][sIdx + 1] =
-                        frame[static_cast<size_t>(2 * b + 1)];
+                        frame[static_cast<size_t>(2) * b + 1];
                 }
             }
         }
@@ -237,9 +237,9 @@ std::vector<Stem> SpleeterSeparator::separate(const juce::AudioBuffer<float>& in
                         const size_t sIdx = (static_cast<size_t>(localFrame) * sp::kNumBins +
                                              static_cast<size_t>(b)) *
                                             2;
-                        frame[static_cast<size_t>(2 * b)] =
+                        frame[static_cast<size_t>(2) * b] =
                             spectra[static_cast<size_t>(ch)][sIdx] * mask;
-                        frame[static_cast<size_t>(2 * b + 1)] =
+                        frame[static_cast<size_t>(2) * b + 1] =
                             spectra[static_cast<size_t>(ch)][sIdx + 1] * mask;
                     }
 
@@ -247,7 +247,7 @@ std::vector<Stem> SpleeterSeparator::separate(const juce::AudioBuffer<float>& in
                     const int start = (firstFrame + localFrame) * sp::kHop;
                     auto& output = rendered[static_cast<size_t>(stem)][static_cast<size_t>(ch)];
                     for (int i = 0; i < sp::kFftSize && start + i < paddedLen; ++i)
-                        output[static_cast<size_t>(start + i)] +=
+                        output[static_cast<size_t>(start) + i] +=
                             frame[static_cast<size_t>(i)] * window[static_cast<size_t>(i)];
                 }
             }

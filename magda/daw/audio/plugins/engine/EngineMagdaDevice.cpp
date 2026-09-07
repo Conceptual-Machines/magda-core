@@ -194,7 +194,7 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
 
     // Room for the device's own channels plus a sidechain key of the same
     // width appended after them, which is how the SDK hands one over.
-    channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels) * 2), nullptr);
+    channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels)) * 2, nullptr);
 
     sizeMidiScratch();
 }

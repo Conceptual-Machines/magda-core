@@ -1514,8 +1514,8 @@ bool RemoteMcpServer::start() {
     // its whole lifetime — so with cpp-httplib's default pool, enough
     // subscribers would leave nothing to answer requests with and the endpoint
     // would stall while still accepting connections.
-    const auto poolSize = static_cast<std::size_t>(impl_->options.maxStreams +
-                                                   impl_->options.maxConcurrentRequests + 2);
+    const auto poolSize = static_cast<std::size_t>(impl_->options.maxStreams) +
+                          impl_->options.maxConcurrentRequests + 2;
     impl_->server.new_task_queue = [poolSize] { return new httplib::ThreadPool(poolSize); };
 
     impl_->server.Post(kEndpoint,

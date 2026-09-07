@@ -49,7 +49,7 @@ void buildLut(int shapeIdx, std::array<float, 1024>& lut) {
     int si = 0;
     for (int i = 0; i < 1024; ++i) {
         const float x = static_cast<float>(i) / 1023.0f;
-        while (si + 1 <= K && xs[static_cast<size_t>(si + 1)] < x)
+        while (si + 1 <= K && xs[static_cast<size_t>(si) + 1] < x)
             ++si;
         const int j = std::min(si + 1, K);
         const float span = xs[static_cast<size_t>(j)] - xs[static_cast<size_t>(si)];

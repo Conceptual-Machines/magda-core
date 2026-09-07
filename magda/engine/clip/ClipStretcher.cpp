@@ -178,9 +178,9 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         //
         // Grown here, on the thread that made this, and never again.
         const auto frames = stretchPushSamples();
-        interleaved_.resize(static_cast<std::size_t>(frames * channels_));
-        deinterleaved_.resize(
-            static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples) * channels_));
+        interleaved_.resize(static_cast<std::size_t>(frames) * channels_);
+        deinterleaved_.resize(static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples)) *
+                              channels_);
 
         allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
                                                               kPreRollHeadroom)));
@@ -348,7 +348,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
 
             for (auto sample = 0; sample < ready; ++sample)
                 destination[sample] =
-                    deinterleaved_[static_cast<std::size_t>(sample * channels_ + source)];
+                    deinterleaved_[static_cast<std::size_t>(sample) * channels_ + source];
 
             // A pipe that has not caught up yet is silence rather than whatever
             // the scratch held. It happens on the blocks a locate is still being
@@ -458,7 +458,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
             for (auto channel = 0; channel < channels_; ++channel) {
                 const auto source =
                     std::min(static_cast<std::size_t>(channel), block.getNumChannels() - 1);
-                interleaved_[static_cast<std::size_t>(sample * channels_ + channel)] =
+                interleaved_[static_cast<std::size_t>(sample) * channels_ + channel] =
                     block.getChannelPointer(source)[offset + sample];
             }
 

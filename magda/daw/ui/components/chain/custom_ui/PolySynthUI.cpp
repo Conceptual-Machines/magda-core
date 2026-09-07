@@ -34,10 +34,10 @@ PolySynthUI::PolySynthUI() {
     // the oscillator number, so these are bare control names.
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         const int base = osc * kOscSlotCount;
-        labels_[static_cast<size_t>(base + 0)] = "Wave";
-        labels_[static_cast<size_t>(base + 1)] = "Level";
-        labels_[static_cast<size_t>(base + 2)] = "Coarse";
-        labels_[static_cast<size_t>(base + 3)] = "Fine";
+        labels_[static_cast<size_t>(base) + 0] = "Wave";
+        labels_[static_cast<size_t>(base) + 1] = "Level";
+        labels_[static_cast<size_t>(base) + 2] = "Coarse";
+        labels_[static_cast<size_t>(base) + 3] = "Fine";
     }
     labels_[kFilterTypeSlot] = "Type";
     labels_[kCutoffSlot] = "Cutoff";
@@ -373,7 +373,7 @@ void PolySynthUI::applyOscColumnEnabled(int osc) {
     // enable toggle itself, which stays live so the column can be re-enabled.
     const int base = osc * kOscSlotCount;
     for (int p = 0; p < kOscSlotCount; ++p) {
-        auto& c = controls_[static_cast<size_t>(base + p)];
+        auto& c = controls_[static_cast<size_t>(base) + p];
         c.slider->setEnabled(on);
         c.slider->setAlpha(alpha);
         if (c.label)
@@ -386,7 +386,7 @@ void PolySynthUI::applyOscColumnEnabled(int osc) {
         rst->setEnabled(on);
         rst->setAlpha(alpha);
     }
-    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot + osc)].label)
+    if (auto& rlabel = controls_[static_cast<size_t>(kOscResetBaseSlot) + osc].label)
         rlabel->setAlpha(alpha);
 }
 
@@ -589,7 +589,7 @@ void PolySynthUI::layoutOscSection() {
         const int boxH = col.getHeight() / 3;
         for (int p = 1; p < kOscSlotCount; ++p) {  // Level / Coarse / Fine
             auto cell = col.removeFromTop(boxH).reduced(0, 1);
-            auto& c = controls_[static_cast<size_t>(osc * kOscSlotCount + p)];
+            auto& c = controls_[static_cast<size_t>(osc) * kOscSlotCount + p];
             c.label->setBounds(cell.removeFromTop(kCellLabelH));
             c.slider->setBounds(cell);
         }

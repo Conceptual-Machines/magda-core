@@ -767,7 +767,7 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
 
     CompoundOperationScope undoScope("Move Clips to Track");
     for (const auto& move : moves) {
-        const auto targetIndex = static_cast<size_t>(move.trackIndex + trackDelta);
+        const auto targetIndex = static_cast<size_t>(move.trackIndex) + trackDelta;
         UndoManager::getInstance().executeCommand(
             std::make_unique<MoveClipToTrackCommand>(move.clipId, hostTrackIds[targetIndex]));
     }
