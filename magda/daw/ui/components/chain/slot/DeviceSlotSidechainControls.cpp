@@ -18,6 +18,30 @@ struct TrackEntry {
     juce::String name;
 };
 
+/// One thing the menu can do, looked up by item id rather than decoded out of
+/// an id range. Two unbounded lists of tracks and a handful of fixed actions
+/// cannot share one id space: with enough tracks the source ids run into the
+/// action ids, and picking a track changes the tap point instead.
+struct MenuAction {
+    enum class Kind { Clear, SetSource, SetTapPoint, SetTrim, ToggleListen };
+
+    Kind kind = Kind::Clear;
+    magda::TrackId trackId = magda::INVALID_TRACK_ID;
+    magda::SidechainConfig::Type type = magda::SidechainConfig::Type::None;
+    magda::ModTapPoint tapPoint = magda::ModTapPoint::PostFader;
+    float gainDb = 0.0f;
+    bool listen = false;
+};
+
+using MenuActions = std::vector<MenuAction>;
+
+/// Adds @p action and returns the item id that runs it. Ids are 1-based: a
+/// PopupMenu reports 0 for "nothing was chosen".
+int addAction(MenuActions& actions, MenuAction action) {
+    actions.push_back(action);
+    return static_cast<int>(actions.size());
+}
+
 /// The trim steps the menu offers. A menu cannot drag a value, and a key's trim
 /// is a matching decision rather than a ride, so a handful of steps is what it
 /// is for; anything finer belongs to whoever automates it (#2329).
@@ -43,99 +67,91 @@ void showDeviceSlotSidechainMenu(const magda::DeviceInfo& device,
         canMidi = supportsMidiSidechainSource(*currentDevice);
     }
 
+    auto actions = std::make_shared<MenuActions>();
+
     const bool isNone = !currentSidechain.isActive();
-    menu.addItem(1, "None", true, isNone);
+    menu.addItem(addAction(*actions, {.kind = MenuAction::Kind::Clear}), "None", true, isNone);
     menu.addSeparator();
 
-    auto trackEntries = std::make_shared<std::vector<TrackEntry>>();
-    const auto& tracks = magda::TrackManager::getInstance().getTracks();
-    for (const auto& track : tracks) {
+    std::vector<TrackEntry> trackEntries;
+    for (const auto& track : magda::TrackManager::getInstance().getTracks()) {
         if (track.id == nodePath.trackId)
             continue;
-        trackEntries->push_back({track.id, track.name});
+        trackEntries.push_back({track.id, track.name});
     }
 
-    if (canAudio) {
-        menu.addSectionHeader("Audio Sidechain");
-        int itemId = 100;
-        for (const auto& entry : *trackEntries) {
-            const bool isSelected = currentSidechain.isActive() &&
-                                    currentSidechain.type == magda::SidechainConfig::Type::Audio &&
+    const auto addSources = [&](magda::SidechainConfig::Type type, const char* header) {
+        menu.addSectionHeader(header);
+        for (const auto& entry : trackEntries) {
+            const bool isSelected = currentSidechain.isActive() && currentSidechain.type == type &&
                                     currentSidechain.sourceTrackId == entry.id;
-            menu.addItem(itemId, entry.name, true, isSelected);
-            ++itemId;
+            const auto item = addAction(
+                *actions, {.kind = MenuAction::Kind::SetSource, .trackId = entry.id, .type = type});
+            menu.addItem(item, entry.name, true, isSelected);
         }
-    }
+    };
 
-    if (canMidi) {
-        menu.addSectionHeader("MIDI Source");
-        int itemId = 200;
-        for (const auto& entry : *trackEntries) {
-            const bool isSelected = currentSidechain.isActive() &&
-                                    currentSidechain.type == magda::SidechainConfig::Type::MIDI &&
-                                    currentSidechain.sourceTrackId == entry.id;
-            menu.addItem(itemId, entry.name, true, isSelected);
-            ++itemId;
-        }
-    }
+    if (canAudio)
+        addSources(magda::SidechainConfig::Type::Audio, "Audio Sidechain");
+    if (canMidi)
+        addSources(magda::SidechainConfig::Type::MIDI, "MIDI Source");
 
     // The rest of the source: where on the track the key is taken, what it is
-    // trimmed by, and whether the slot monitors it. Only for an audio key --
-    // a MIDI source has no fader to sit either side of and nothing to hear.
+    // trimmed by, and whether the slot monitors it. Only for an audio key -- a
+    // MIDI source has no fader to sit either side of and nothing to hear.
     if (currentSidechain.isActive() &&
         currentSidechain.type == magda::SidechainConfig::Type::Audio) {
         menu.addSeparator();
         menu.addSectionHeader("Key");
 
-        const bool preFx = currentSidechain.tapPoint == magda::ModTapPoint::PreFx;
-        menu.addItem(300, "Tap: Pre-FX", true, preFx);
-        menu.addItem(301, "Tap: Post-Fader", true, !preFx);
+        const auto addTapPoint = [&](magda::ModTapPoint point, const char* label) {
+            const auto item =
+                addAction(*actions, {.kind = MenuAction::Kind::SetTapPoint, .tapPoint = point});
+            menu.addItem(item, label, true, currentSidechain.tapPoint == point);
+        };
+        addTapPoint(magda::ModTapPoint::PreFx, "Tap: Pre-FX");
+        addTapPoint(magda::ModTapPoint::PostFader, "Tap: Post-Fader");
 
         juce::PopupMenu trim;
-        for (int step = 0; step < static_cast<int>(std::size(kTrimSteps)); ++step)
-            trim.addItem(400 + step, trimLabel(kTrimSteps[step]), true,
-                         juce::approximatelyEqual(currentSidechain.gainDb, kTrimSteps[step]));
+        for (const float step : kTrimSteps) {
+            const auto item =
+                addAction(*actions, {.kind = MenuAction::Kind::SetTrim, .gainDb = step});
+            trim.addItem(item, trimLabel(step), true,
+                         juce::approximatelyEqual(currentSidechain.gainDb, step));
+        }
         menu.addSubMenu("Trim", trim);
 
-        menu.addItem(310, "Listen", true, currentSidechain.listen);
+        const auto listenItem = addAction(
+            *actions, {.kind = MenuAction::Kind::ToggleListen, .listen = !currentSidechain.listen});
+        menu.addItem(listenItem, "Listen", true, currentSidechain.listen);
     }
 
     const auto deviceId = device.id;
-    const bool listening = currentSidechain.listen;
     menu.showMenuAsync(
         juce::PopupMenu::Options().withTargetComponent(targetButton),
-        [deviceId, listening, trackEntries,
-         onSidechainChanged = std::move(onSidechainChanged)](int result) {
-            if (result == 0)
+        [deviceId, actions, onSidechainChanged = std::move(onSidechainChanged)](int result) {
+            if (result <= 0 || result > static_cast<int>(actions->size()))
                 return;
 
             auto& trackManager = magda::TrackManager::getInstance();
+            const auto& action = (*actions)[static_cast<size_t>(result - 1)];
 
-            if (result == 1) {
-                trackManager.clearSidechain(deviceId);
-            } else if (result == 300 || result == 301) {
-                trackManager.setSidechainTapPoint(deviceId, result == 300
-                                                                ? magda::ModTapPoint::PreFx
-                                                                : magda::ModTapPoint::PostFader);
-            } else if (result == 310) {
-                trackManager.setSidechainListen(deviceId, !listening);
-            } else if (result >= 400 && result < 400 + static_cast<int>(std::size(kTrimSteps))) {
-                trackManager.setSidechainGainDb(deviceId,
-                                                kTrimSteps[static_cast<size_t>(result - 400)]);
-            } else if (result >= 100 && result < 200) {
-                const int index = result - 100;
-                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
-                    trackManager.setSidechainSource(deviceId,
-                                                    (*trackEntries)[static_cast<size_t>(index)].id,
-                                                    magda::SidechainConfig::Type::Audio);
-                }
-            } else if (result >= 200) {
-                const int index = result - 200;
-                if (index >= 0 && index < static_cast<int>(trackEntries->size())) {
-                    trackManager.setSidechainSource(deviceId,
-                                                    (*trackEntries)[static_cast<size_t>(index)].id,
-                                                    magda::SidechainConfig::Type::MIDI);
-                }
+            switch (action.kind) {
+                case MenuAction::Kind::Clear:
+                    trackManager.clearSidechain(deviceId);
+                    break;
+                case MenuAction::Kind::SetSource:
+                    trackManager.setSidechainSource(deviceId, action.trackId, action.type);
+                    break;
+                case MenuAction::Kind::SetTapPoint:
+                    trackManager.setSidechainTapPoint(deviceId, action.tapPoint);
+                    break;
+                case MenuAction::Kind::SetTrim:
+                    trackManager.setSidechainGainDb(deviceId, action.gainDb);
+                    break;
+                case MenuAction::Kind::ToggleListen:
+                    trackManager.setSidechainListen(deviceId, action.listen);
+                    break;
             }
 
             if (onSidechainChanged)

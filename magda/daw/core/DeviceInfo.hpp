@@ -168,6 +168,16 @@ struct SidechainConfig {
     bool isActive() const {
         return type != Type::None && sourceTrackId != INVALID_TRACK_ID;
     }
+
+    /// Whether the slot actually monitors its key. Only an audio key can be
+    /// monitored: a MIDI source feeds the device's MIDI slot and leaves the
+    /// sidechain slot empty, so a device "listening" to one would put out the
+    /// silence that slot carries. Asked here rather than at each reader,
+    /// because @ref listen survives a change of source type and the model can
+    /// therefore hold the pair legitimately.
+    bool listensToKey() const {
+        return listen && type == Type::Audio && sourceTrackId != INVALID_TRACK_ID;
+    }
 };
 
 /**

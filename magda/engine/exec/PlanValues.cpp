@@ -412,7 +412,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
                                " in the model, monitoring its own output");
                 break;
             }
-            value.listensToSidechain = device->sidechain.listen && device->sidechain.isActive();
+            value.listensToSidechain = device->sidechain.listensToKey();
             break;
         }
 

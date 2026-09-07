@@ -1386,6 +1386,44 @@ TEST_CASE("Listening puts the key out in place of the device's own output", "[en
     CHECK(harness.takeMeterForDevice(7) == approx(0.75f));
 }
 
+TEST_CASE("A key that is not audio is not listened to", "[engine][exec]") {
+    /// Writes a value nothing else in the plan produces, so a slot silenced by
+    /// monitoring an empty sidechain slot is unmistakable.
+    class Stamp final : public EngineDevice {
+      public:
+        void process(DeviceBlock& block) override {
+            for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel)
+                block.audio.getSingleChannelBlock(channel).fill(0.5f);
+        }
+    };
+
+    // Listen survives a change of source type, and a MIDI source is active, so
+    // the model legitimately holds both. The plan wires no sidechain for a MIDI
+    // source, so a slot that listened anyway would put out that empty slot.
+    auto device = makeEffect(7);
+    device.sidechain.type = SidechainConfig::Type::MIDI;
+    device.sidechain.sourceTrackId = 2;
+    device.sidechain.listen = true;
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    Harness harness({makeTrack(2), track}, makeMaster());
+    ConstantSource main(1.0f);
+    ConstantSource key(0.75f);
+    NoteSource notes(64);
+    Stamp stamp;
+    harness.bindings.clipAudio[1] = &main;
+    harness.bindings.clipAudio[2] = &key;
+    harness.bindings.clipMidi[2] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &stamp;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.takeMeterForDevice(7) == approx(0.5f));
+}
+
 TEST_CASE("Unbound ops are reported and render silence", "[engine][exec]") {
     auto track = makeTrack(1);
     track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
