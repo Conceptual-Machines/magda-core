@@ -1,4 +1,5 @@
 #include <juce_core/juce_core.h>
+#include <juce_events/juce_events.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -58,6 +59,11 @@ TEST_CASE("PluginScanResult stores multiple plugin names", "[scan-report]") {
 // ============================================================================
 
 TEST_CASE("getScanReportFile returns expected path", "[scan-report]") {
+    // The coordinator is a juce::Timer, and a timer built with no message
+    // manager is one JUCE tears down against an event system that was never
+    // there.
+    const juce::ScopedJuceInitialiser_GUI juce;
+
     magda::PluginScanCoordinator coordinator;
     auto reportFile = coordinator.getScanReportFile();
 
