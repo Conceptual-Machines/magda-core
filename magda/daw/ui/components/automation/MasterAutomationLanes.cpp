@@ -110,10 +110,9 @@ void MasterAutomationHeaderPanel::rebuildButtons() {
     auto wanted = visibleMasterAutomationLanes();
 
     // Drop orphans.
-    const auto isOrphanLane = [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+    std::erase_if(buttons_, [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
         return std::find(wanted.begin(), wanted.end(), entry->laneId) == wanted.end();
-    };
-    std::erase_if(buttons_, isOrphanLane);
+    });
 
     auto& manager = AutomationManager::getInstance();
     for (auto laneId : wanted) {

@@ -126,10 +126,9 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
 
 void RemoteClientRegistry::noteDisconnected(const juce::String& connectionId) {
     const std::scoped_lock lock(mutex_);
-    const auto matchesConnection = [&](const ConnectedClient& client) {
+    std::erase_if(connections_, [&](const ConnectedClient& client) {
         return client.connectionId == connectionId;
-    };
-    std::erase_if(connections_, matchesConnection);
+    });
 }
 
 std::vector<ConnectedClient> RemoteClientRegistry::connections() const {

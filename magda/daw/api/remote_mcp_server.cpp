@@ -1002,19 +1002,17 @@ struct RemoteMcpServer::Impl {
         // waiter behind that sweep.
         if (!running.load())
             return false;
-        const auto expired = [](const auto& weak) { return weak.expired(); };
-        std::erase_if(waiters, expired);
+        std::erase_if(waiters, [](const auto& weak) { return weak.expired(); });
         waiters.push_back(waiter);
         return true;
     }
 
     void unregisterWaiter(const std::shared_ptr<Waiter>& waiter) {
         const std::scoped_lock lock(waiterMutex);
-        const auto deadOrThis = [&](const auto& weak) {
+        std::erase_if(waiters, [&](const auto& weak) {
             const auto live = weak.lock();
             return live == nullptr || live == waiter;
-        };
-        std::erase_if(waiters, deadOrThis);
+        });
     }
 
     void cancelWaiters() {

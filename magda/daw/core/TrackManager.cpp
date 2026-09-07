@@ -652,10 +652,8 @@ void TrackManager::deleteTrack(TrackId trackId) {
     }
 
     // Remove sends targeting this track from all other tracks
-    const auto sendsToTrack = [trackId](const SendInfo& s) { return s.destTrackId == trackId; };
-    for (auto& t : tracks_) {
-        std::erase_if(t.sends, sendsToTrack);
-    }
+    for (auto& t : tracks_)
+        std::erase_if(t.sends, [trackId](const SendInfo& s) { return s.destTrackId == trackId; });
 
     // Clear internal track-input routing on tracks listening to this track.
     // Collect ids first: the setters notify listeners, which may mutate tracks_.
@@ -1929,8 +1927,7 @@ void TrackManager::removeSend(TrackId sourceTrackId, int busIndex) {
         return;
     }
 
-    const auto sendOnBus = [busIndex](const SendInfo& s) { return s.busIndex == busIndex; };
-    std::erase_if(source->sends, sendOnBus);
+    std::erase_if(source->sends, [busIndex](const SendInfo& s) { return s.busIndex == busIndex; });
 
     notifyTrackDevicesChanged(sourceTrackId);
 }

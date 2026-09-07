@@ -3559,10 +3559,9 @@ void TrackHeadersPanel::rebuildLaneHeaderButtons() {
     }
 
     // Drop orphans — lanes that no longer exist or are hidden.
-    const auto isOrphanLane = [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+    std::erase_if(laneHeaderButtons_, [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
         return wantedIds.find(entry->laneId) == wantedIds.end();
-    };
-    std::erase_if(laneHeaderButtons_, isOrphanLane);
+    });
 
     auto& manager = AutomationManager::getInstance();
 

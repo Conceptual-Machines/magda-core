@@ -98,8 +98,7 @@ bool carries(const ParamTable& table, const ParamKey& key) {
 
 /// Entries whose key nothing in `named` holds any more.
 template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const Ids& named) {
-    const auto unnamed = [&](const auto& entry) { return !named.contains(entry.first); };
-    return std::erase_if(map, unnamed);
+    return std::erase_if(map, [&](const auto& entry) { return !named.contains(entry.first); });
 }
 
 }  // namespace
@@ -261,8 +260,8 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
         eraseUnnamed(midiInputs_, keep.tracks);
 
-    const auto orphanedMeter = [&](const auto& entry) { return !isNamed(entry.first, keep); };
-    removed += std::erase_if(meters_, orphanedMeter);
+    removed +=
+        std::erase_if(meters_, [&](const auto& entry) { return !isNamed(entry.first, keep); });
 
     // The live table first and unconditionally, on the same reading the plan
     // gets above. A tap the table carries may be one the executor holds a
