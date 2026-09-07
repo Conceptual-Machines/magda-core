@@ -421,6 +421,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # What an armed or monitoring track hears (#2459): the callback's own
     # samples, its own piece of a split callback, and nothing between callbacks.
     list(APPEND TEST_SOURCES engine/test_live_input.cpp)
+    # The write path a take goes to disk through (#2460): what it keeps, what
+    # it refuses to overwrite, and what it says it lost.
+    list(APPEND TEST_SOURCES engine/test_record_stream.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
