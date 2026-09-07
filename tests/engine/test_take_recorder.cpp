@@ -128,6 +128,10 @@ class Rig {
         transport_.loop = LoopRange{true, startBeat, endBeat};
     }
 
+    void unloop() {
+        transport_.loop = {};
+    }
+
     /// Feed @p numSamples of callbacks through the take.
     void run(int numSamples) {
         for (auto left = numSamples; left > 0;) {
@@ -405,15 +409,35 @@ TEST_CASE("A pass holds the same samples however often the disk is drained",
     REQUIRE(late == each);
     REQUIRE_FALSE(late.empty());
 
-    // Three loops delivered, so three passes of the loop, and the padding the
-    // head gained comes out as a short pass of the fourth.
-    REQUIRE(late.size() == 4);
-    for (std::size_t pass = 0; pass < 3; ++pass) {
+    // Three loops delivered, so three passes. The first runs long by the head
+    // padding, because a boundary is never named behind audio already queued
+    // and a negative adjustment queues a pass's tail before the wrap; every
+    // pass after it is the loop.
+    REQUIRE(late.size() == 3);
+    CHECK(late.front() == (2 * kBeatSamples) + 128);
+
+    for (std::size_t pass = 1; pass < late.size(); ++pass) {
         INFO("pass " << pass);
         REQUIRE(late[pass] == 2 * kBeatSamples);
     }
+}
 
-    CHECK(late.back() == 128);
+TEST_CASE("A loop switched off is not a pass boundary", "[engine][io][record][2461]") {
+    // The loop end is close enough that a take reading ahead would have named a
+    // boundary for it. No wrap comes: the loop goes away first, and continuous
+    // audio must not turn into takes of a loop that never came round.
+    Rig rig(emptyDirectory("loop_switched_off"), floatTake({0, 1}, -128));
+    rig.loop(0.0, 2.0);
+    rig.play();
+    rig.run((2 * kBeatSamples) - 64);
+    rig.unloop();
+    rig.run((2 * kBeatSamples) + 64);
+
+    const auto take = rig.recorder().finish();
+    CHECK(take.clip.takes.empty());
+    CHECK(readBack(take.file).getNumSamples() == (4 * kBeatSamples) + 128);
+    CHECK(take.startBeat == Catch::Approx(0.0));
+    CHECK(take.lengthBeats == Catch::Approx(4.032));
 }
 
 TEST_CASE("A take's length is measured where its audio sits, not where it arrived",

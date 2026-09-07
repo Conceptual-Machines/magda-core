@@ -89,12 +89,6 @@ void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRa
         openPass(loop);
     }
 
-    // A negative adjustment queues a pass's last samples before the wrap that
-    // ends it is ever seen, so the loop end is read off the block instead. A
-    // positive one never needs it: there the wrap comes first.
-    if (settings_.latencySamples < 0)
-        markLoopEndAhead(block, loop);
-
     write(block);
 
     // Timeline the take has covered, which is what a pass boundary is counted
@@ -124,40 +118,16 @@ void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
 }
 
 void TakeRecorder::openPass(const LoopRange& loop) {
-    // The wrap is where the pass ended, unless the block ahead of it already
-    // said so: one loop end is one boundary, named once.
-    if (!cycleBoundaryMarked_)
-        markBoundary(arrivals_, loop);
-
-    // The cycle this wrap opens has its own end to find.
-    cycleBoundaryMarked_ = false;
-}
-
-void TakeRecorder::markLoopEndAhead(const BlockInfo& block, const LoopRange& loop) {
-    if (cycleBoundaryMarked_ || !loop.valid())
-        return;
-
-    // Where the loop ends, and when the samples belonging to it are delivered:
-    // a latency earlier, which is what makes this block the last chance to name
-    // the boundary before its audio is queued.
-    const auto untilEnd = std::llround(block.offsetForBeat(loop.endBeat));
-    const auto delivered = untilEnd + settings_.latencySamples;
-
-    if (delivered < 0 || delivered >= block.numSamples)
-        return;
-
-    markBoundary(arrivals_ + untilEnd, loop);
-}
-
-void TakeRecorder::markBoundary(std::int64_t index, const LoopRange& loop) {
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
-    cycleBoundaryMarked_ = true;
 
-    // Never behind what is already queued. A boundary the writer has passed
+    // Never behind what is already queued. A boundary the writer has gone past
     // could only be honoured wherever it happened to have got to, which is a
-    // pass whose length depends on when the disk ran.
-    const auto boundary = std::max(index, written_);
+    // pass whose length depends on when the disk ran. The clamp is what a
+    // negative adjustment costs: it queues a pass's last samples before the
+    // wrap, so its first pass runs that much long and the rest of the grid
+    // sits that much late.
+    const auto boundary = std::max(arrivals_, written_);
 
     if (firstBoundary_ < 0)
         firstBoundary_ = boundary;

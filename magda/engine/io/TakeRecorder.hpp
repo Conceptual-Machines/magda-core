@@ -39,10 +39,18 @@
  * - how much of it reached a file, which is the writer's and nobody else's.
  *
  * The contract with TakeFileSink follows from that. A pass end is named as a
- * take index, and always before the audio past it is queued -- by the wrap that
- * ended the pass, or, where a negative adjustment queues that audio first, by
- * the block that saw the loop end coming. So the writer never reconstructs a
- * boundary and a pass holds the same samples however often the disk is drained.
+ * take index, by the wrap that ended the pass, and never behind what has already
+ * been queued. So the writer splits on a position it cannot have passed, and a
+ * pass holds the same samples however often the disk is drained.
+ *
+ * A boundary is never named for a wrap that has not happened. It could be:
+ * a negative adjustment queues a pass's last samples before the transport
+ * reaches the loop end, so the end is predictable a block or two ahead. But a
+ * prediction can be falsified -- the loop can be switched off in between -- and
+ * a boundary handed over cannot be withdrawn, which would cut continuous audio
+ * into takes of a loop that never came round. The clamp above is what is paid
+ * instead: with a negative adjustment the first pass runs long by it, and the
+ * passes after it sit that much late against the loop.
  *
  * Nothing here makes a model object on the audio thread and no clip exists
  * until the recording ends: @ref TakeRecorder::finish is where a take becomes
@@ -177,16 +185,9 @@ class TakeRecorder {
     /// The first block of the take: where it starts, and the head correction.
     void start(const BlockInfo& block, const LoopRange& loop);
 
-    /// A wrap: where the pass ended, unless the block ahead of it said so.
+    /// A wrap: where the pass ended, handed to the sink. The one place a
+    /// boundary is named, so the rule above it holds everywhere.
     void openPass(const LoopRange& loop);
-
-    /// The loop end read off a block before its audio has been queued, which
-    /// is the only way a negative adjustment can name a boundary in time.
-    void markLoopEndAhead(const BlockInfo& block, const LoopRange& loop);
-
-    /// Hand the sink a pass end. The one place that does, so the rule above it
-    /// holds everywhere: named before the audio past it is queued.
-    void markBoundary(std::int64_t index, const LoopRange& loop);
 
     void stop();
 
@@ -223,10 +224,6 @@ class TakeRecorder {
     /// The first pass end asked for, or -1. What says whether any pass ever
     /// began where the loop does.
     std::int64_t firstBoundary_ = -1;
-
-    /// Whether this cycle's pass end has been named. One loop end is one
-    /// boundary, whether the wrap or the block ahead of it found it.
-    bool cycleBoundaryMarked_ = false;
 
     std::int64_t boundariesLost_ = 0;
 
