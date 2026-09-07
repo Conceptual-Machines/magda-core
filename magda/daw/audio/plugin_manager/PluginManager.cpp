@@ -617,40 +617,40 @@ void PluginManager::purgeStaleEntries() {
     {
         juce::ScopedLock lock(pluginLock_);
 
-        // syncedDevices_ (consolidates all per-device maps). Teardown runs
-        // first, over the still-intact map, so the erase_if predicate below
-        // stays a pure membership test.
-        const auto isOrphanDevice = [&](const auto& entry) {
-            return validDevicePaths.find(entry.first) == validDevicePaths.end();
-        };
+        // Keep teardown and erasure in one pass: deferring snapshots moves ownership
+        // out of each entry before it is destroyed.
+        // syncedDevices_ (consolidates all per-device maps)
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
-        for (auto& entry : syncedDevices_) {
-            if (!isOrphanDevice(entry))
-                continue;
-            auto& sd = entry.second;
-            // Clear LFO callbacks before destroying CurveSnapshotHolders
-            clearLFOCustomWaveCallbacks(sd.modifiers);
-            deferCurveSnapshots(sd.curveSnapshots, deferredHolders_);
-            if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
-                dg->removeListener(this);
-            if (sd.plugin)
-                pluginToDevice_.erase(sd.plugin.get());
-            if (sd.midiReceivePlugin)
-                midiPluginsToDelete.push_back(sd.midiReceivePlugin.get());
-            if (sd.midiRestorePlugin)
-                midiPluginsToDelete.push_back(sd.midiRestorePlugin.get());
+        for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
+            if (validDevicePaths.find(it->first) == validDevicePaths.end()) {
+                // Clear LFO callbacks before destroying CurveSnapshotHolders
+                clearLFOCustomWaveCallbacks(it->second.modifiers);
+                deferCurveSnapshots(it->second.curveSnapshots, deferredHolders_);
+                if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(it->second.plugin.get()))
+                    dg->removeListener(this);
+                if (it->second.plugin)
+                    pluginToDevice_.erase(it->second.plugin.get());
+                if (it->second.midiReceivePlugin)
+                    midiPluginsToDelete.push_back(it->second.midiReceivePlugin.get());
+                if (it->second.midiRestorePlugin)
+                    midiPluginsToDelete.push_back(it->second.midiRestorePlugin.get());
+                it = syncedDevices_.erase(it);
+                ++purged;
+            } else {
+                ++it;
+            }
         }
-        purged += static_cast<int>(std::erase_if(syncedDevices_, isOrphanDevice));
 
         // sidechainMonitors_ (keyed by TrackId) — collect for deletion outside lock
-        const auto isOrphanTrack = [&](const auto& entry) {
-            return validTrackIds.find(entry.first) == validTrackIds.end();
-        };
-        for (const auto& entry : sidechainMonitors_) {
-            if (isOrphanTrack(entry) && entry.second)
-                monitorPluginsToDelete.push_back(entry.second.get());
+        for (auto it = sidechainMonitors_.begin(); it != sidechainMonitors_.end();) {
+            if (validTrackIds.find(it->first) == validTrackIds.end()) {
+                if (it->second)
+                    monitorPluginsToDelete.push_back(it->second.get());
+                it = sidechainMonitors_.erase(it);
+            } else {
+                ++it;
+            }
         }
-        std::erase_if(sidechainMonitors_, isOrphanTrack);
     }
 
     // Delete plugins outside the lock to avoid blocking and re-entrancy
