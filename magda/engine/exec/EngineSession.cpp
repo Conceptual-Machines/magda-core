@@ -6,6 +6,25 @@
 
 namespace magda::engine {
 
+namespace {
+
+/// Closes the feed's callback however process() leaves, so a source reached
+/// between callbacks reads nothing rather than the last one's samples.
+struct ScopedLiveInput {
+    explicit ScopedLiveInput(LiveInputFeed& feed) : feed_(feed) {}
+
+    ~ScopedLiveInput() {
+        feed_.endCallback();
+    }
+
+    ScopedLiveInput(const ScopedLiveInput&) = delete;
+    ScopedLiveInput& operator=(const ScopedLiveInput&) = delete;
+
+    LiveInputFeed& feed_;
+};
+
+}  // namespace
+
 EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> plan,
                                              const RenderContext& context,
                                              const RuntimeStateIds& modelIds, PlanValues values) {
@@ -154,7 +173,22 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     clips_.publish(std::move(clips));
 }
 
-void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
+void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
+                            const LiveInputBlock& input) {
+    // The executor asserts on a block longer than the plan was prepared for.
+    // Here the same number also says how much buffer there is to write into, so
+    // it is held to what the caller actually provided rather than trusted: the
+    // pieces of a split callback are views onto this, and a view past the end
+    // of it is not a wrong answer, it is someone else's memory.
+    jassert(numSamples <= output.getNumSamples());
+    numSamples = std::min(numSamples, output.getNumSamples());
+
+    // Before the clear, and before anything else touches the output: a host may
+    // hand the same memory for input and output, and the feed's copy is what
+    // makes that the caller's business rather than a silent loss of the take.
+    liveInputs_.beginCallback(input, numSamples);
+    const ScopedLiveInput scopedInput(liveInputs_);
+
     output.clear();
 
     PublishedRender::ScopedAccess<farbot::ThreadType::realtime> render(published_);
@@ -171,14 +205,6 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
     // still asked at the next real one.
     if (numSamples <= 0)
         return;
-
-    // The executor asserts on a block longer than the plan was prepared for.
-    // Here the same number also says how much buffer there is to write into, so
-    // it is held to what the caller actually provided rather than trusted: the
-    // pieces of a split callback are views onto this, and a view past the end
-    // of it is not a wrong answer, it is someone else's memory.
-    jassert(numSamples <= output.getNumSamples());
-    numSamples = std::min(numSamples, output.getNumSamples());
 
     // Values and plans travel separately and are swapped one after the other,
     // so for the moment between the two the ones in flight can belong to the
@@ -205,6 +231,8 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output) {
         // to where this piece belongs.
         juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
                                        segment.startSample, segment.block.numSamples);
+
+        liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the

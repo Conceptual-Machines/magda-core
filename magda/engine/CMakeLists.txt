@@ -130,6 +130,8 @@ add_library(magda_engine STATIC
     io/AudioFileReader.cpp
     io/AudioFileSink.cpp
     io/AudioFileSink.hpp
+    io/LiveInput.cpp
+    io/LiveInput.hpp
     io/PcmQuantiser.cpp
     io/PcmQuantiser.hpp
     io/SourceLoopInfo.cpp
