@@ -31,7 +31,7 @@ struct MixerMetrics {
     float tickWidth() const {
         return thumbHeight * tickWidthMultiplier;
     }
-    static static static static static static float tickHeight() {
+    static float tickHeight() {
         return 1.0f;
     }
     float trackPadding() const {

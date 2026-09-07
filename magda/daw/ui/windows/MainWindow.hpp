@@ -83,7 +83,7 @@ class MainWindow : public juce::DocumentWindow,
     // Re-applies the active palette to every shared LookAndFeel and broadcasts
     // a look-and-feel change to all top-level windows. Shared by the config
     // switch and hot-reload.
-    static void refreshThemedLookAndFeels();
+    void refreshThemedLookAndFeels();
     // Hot-reload callback: the active user theme file changed on disk.
     void onActiveThemeFileChanged();
     class MainComponent;

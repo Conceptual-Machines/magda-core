@@ -189,10 +189,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
 
     // Tick heights sourced from LayoutConfig for consistency with TimelineComponent
-    static static static int tickHeightMajor() {
+    static int tickHeightMajor() {
         return LayoutConfig::getInstance().rulerMajorTickHeight;
     }
-    static static static int tickHeightMinor() {
+    static int tickHeightMinor() {
         return LayoutConfig::getInstance().rulerMinorTickHeight;
     }
 

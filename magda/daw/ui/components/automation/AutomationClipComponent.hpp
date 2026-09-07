@@ -112,7 +112,7 @@ class AutomationClipComponent : public juce::Component,
     // Helpers
     void showContextMenu();
     void updateCursor(int x);
-    static static static bool isOnLeftEdge(int x) {
+    static bool isOnLeftEdge(int x) {
         return x < RESIZE_EDGE_WIDTH;
     }
     bool isOnRightEdge(int x) const {
