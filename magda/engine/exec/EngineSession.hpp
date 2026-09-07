@@ -10,6 +10,7 @@
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
+#include "io/TakeRecorder.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
@@ -234,6 +235,19 @@ class EngineSession {
         return liveInputs_;
     }
 
+    /**
+     * @brief The takes the callback writes into (#2461).
+     *
+     * Published like the clips are, and outside every plan for the same
+     * reason: arming a track compiles a plan, but starting a recording is not
+     * a structural edit and must not cost one. A take taken out of the set is
+     * one nothing is writing to by the time publish returns, which is what
+     * makes it safe to close.
+     */
+    RecordingFeed& recordingFeed() {
+        return recording_;
+    }
+
     /// Where the transport is, in beats. Readable from any thread; what a
     /// playhead is drawn from.
     double positionBeats() const {
@@ -371,6 +385,10 @@ class EngineSession {
     /// the same reason the clock is: what the device captured is a property of
     /// the callback, not of the plan rendering it.
     LiveInputFeed liveInputs_;
+
+    /// The takes that input is written to. Outside every epoch beside it, and
+    /// for the same reason.
+    RecordingFeed recording_;
 
     /// What the model held at the last publish. Kept so a values publish
     /// escalated into a structural one has a set to publish with; retention

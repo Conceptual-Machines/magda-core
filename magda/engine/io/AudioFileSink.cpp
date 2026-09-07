@@ -83,6 +83,10 @@ DitherMode defaultDitherFor(int bitDepth) {
     return bitDepth >= 32 ? DitherMode::none : DitherMode::tpdf;
 }
 
+juce::String extensionFor(AudioFileFormat format) {
+    return format == AudioFileFormat::flac ? ".flac" : ".wav";
+}
+
 std::unique_ptr<AudioFileSink> AudioFileSink::create(const juce::File& destination,
                                                      const AudioFileSpec& spec,
                                                      const RenderContext& context) {
@@ -159,25 +163,36 @@ AudioFileSink::~AudioFileSink() {
 }
 
 void AudioFileSink::write(const juce::AudioBuffer<float>& block, int numSamples) {
+    // The const buffer picks AudioBlock's read-pointer constructor, so nothing
+    // here marks the caller's buffer as written to.
+    write(juce::dsp::AudioBlock<const float>(block), numSamples);
+}
+
+void AudioFileSink::write(juce::dsp::AudioBlock<const float> block, int numSamples) {
     if (failed_ || writer_ == nullptr || numSamples <= 0)
         return;
 
     // A block narrower than the file has no samples for the channels past its
     // own, and the writer would store whatever was in that memory. Refused, so
     // the file ends where the render stopped making sense.
-    if (block.getNumChannels() < numChannels_) {
+    if (static_cast<int>(block.getNumChannels()) < numChannels_) {
         failed_ = true;
         return;
     }
 
+    sourceChannels_.resize(static_cast<std::size_t>(numChannels_));
+    for (auto channel = 0; channel < numChannels_; ++channel)
+        sourceChannels_[static_cast<std::size_t>(channel)] =
+            block.getChannelPointer(static_cast<std::size_t>(channel));
+
     if (!quantiser_) {
-        failed_ = !writer_->writeFromFloatArrays(block.getArrayOfReadPointers(), numChannels_,
-                                                 numSamples);
+        failed_ = !writer_->writeFromFloatArrays(sourceChannels_.data(), numChannels_, numSamples);
     } else {
         resizeCodes(numSamples);
 
         for (auto channel = 0; channel < numChannels_; ++channel)
-            scratch_.copyFrom(channel, 0, block, channel, 0, numSamples);
+            scratch_.copyFrom(channel, 0, sourceChannels_[static_cast<std::size_t>(channel)],
+                              numSamples);
 
         quantiser_->processToCodes(scratch_, numSamples, codeChannels_.data());
 

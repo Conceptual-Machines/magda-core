@@ -59,6 +59,9 @@ struct AudioFileSpec {
 /// What a depth is dithered with when the spec does not say.
 DitherMode defaultDitherFor(int bitDepth);
 
+/// The extension a container's files carry, dot included.
+juce::String extensionFor(AudioFileFormat format);
+
 class AudioFileSink final : public OfflineRenderSink {
   public:
     /**
@@ -94,6 +97,10 @@ class AudioFileSink final : public OfflineRenderSink {
     /// on its first block and writes a file on every one.
     void write(const juce::AudioBuffer<float>& block, int numSamples) override;
 
+    /// The same block, as a record path hands one over (#2461): what a take
+    /// drains out of its queue is a window on a ring, never a buffer.
+    void write(juce::dsp::AudioBlock<const float> block, int numSamples);
+
     /**
      * @brief Finish the file, put it at the destination, and say whether it
      *        holds the render.
@@ -111,6 +118,13 @@ class AudioFileSink final : public OfflineRenderSink {
     /// Samples per channel handed to the writer.
     std::int64_t samplesWritten() const {
         return samplesWritten_;
+    }
+
+    /// Whether a block was refused. What close() reports, before the file has
+    /// been closed: a take asks after every write so a broken one is broken
+    /// once rather than for the rest of a pass.
+    bool failed() const {
+        return failed_;
     }
 
   private:
@@ -143,6 +157,10 @@ class AudioFileSink final : public OfflineRenderSink {
 
     std::vector<int> codes_;
     std::vector<int*> codeChannels_;
+
+    /// The block's channels, as the writer wants them. A member because a
+    /// block hands them over one at a time and the writer takes an array.
+    std::vector<const float*> sourceChannels_;
 
     /// Samples per channel the code buffer holds, which is also its stride: a
     /// shorter block writes the front of each channel's room and leaves the
