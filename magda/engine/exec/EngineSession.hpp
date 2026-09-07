@@ -10,7 +10,7 @@
 #include "exec/RenderThreadPool.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
-#include "io/TakeRecorder.hpp"
+#include "io/RecordingFeed.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/ClickGenerator.hpp"
 #include "transport/TransportClock.hpp"
@@ -236,7 +236,7 @@ class EngineSession {
     }
 
     /**
-     * @brief The takes the callback writes into (#2461).
+     * @brief The takes the callback writes into (#2461, #2462).
      *
      * Published like the clips are, and outside every plan for the same
      * reason: arming a track compiles a plan, but starting a recording is not
