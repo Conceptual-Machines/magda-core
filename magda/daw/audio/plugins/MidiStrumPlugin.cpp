@@ -302,8 +302,8 @@ void MidiStrumPlugin::scheduleStrum() {
     // between them, and one hung voice each (#2363).
     scheduleReleaseAll();
 
-    auto* begin = ordered_.begin();
-    auto* end = begin + heldCount_;
+    auto begin = ordered_.begin();
+    auto end = begin + heldCount_;
     std::copy(held_.begin(), held_.begin() + heldCount_, begin);
 
     const int ord = displayIndex(kOrder);
