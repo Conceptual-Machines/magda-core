@@ -22,29 +22,9 @@
  * @file MidiTakeRecorder.hpp
  * @brief A MIDI take, from armed to clip (#2462).
  *
- * The same pass as an audio take and the other kind of material: the live MIDI
- * slice 1 delivers, through the queue slice 2 drains, into the notes a clip is
- * made of. The loop rules are shared with audio (io/TakePasses.hpp) because
- * they are the model's rather than either kind's.
- *
- * What differs is what a position costs. An audio take is committed to a file
- * as it goes, so a pass boundary can never be named behind what is already
- * queued and a negative adjustment lengthens the first pass. Nothing here is
- * committed until @ref MidiTakeRecorder::finish, so a boundary is named where
- * the wrap is and events fall either side of it by their own stamps: a
- * negative adjustment moves an event across a boundary rather than moving the
- * boundary.
- *
- * Every event is stamped in the take's own positions on the way into the queue
- * -- `arrival - latency`, the one head correction, applied once -- so nothing
- * downstream has to know what the input's latency was. An event landing before
- * the take started is one that arrived before the playhead reached it, and is
- * dropped.
- *
- * Beats are the domain, and the conversion is the last step rather than the
- * first: the audio thread stamps samples, and @ref MidiTakeRecorder::finish
- * asks the tempo map where each one falls. A pass recorded across a tempo
- * change therefore lands where it was played.
+ * The MIDI half of io/TakeRecorder.hpp, over the loop rules both share
+ * (io/TakePasses.hpp). Events are stamped in the take's own positions on the
+ * way into the queue and resolved to beats in finish(), where the tempo map is.
  */
 
 namespace magda::engine {
@@ -55,29 +35,26 @@ struct RecordedMidiTake {
     double startBeat = 0.0;
     double lengthBeats = 0.0;
 
-    /// What the clip plays: the active take's events, which the model holds on
-    /// the clip itself rather than reaching into `clip.takes` for.
+    /// What the clip plays. The model holds these on the clip itself rather
+    /// than reaching into `clip.takes` for them.
     MidiTake active;
 
-    /// The passes and the one that plays. `takes` is empty for a single pass,
-    /// which is what an ordinary clip is.
+    /// The passes and the one that plays. `takes` is empty for a single pass.
     MidiClipModel clip;
 
-    /// Whether the take ever rolled. A recording that captured no events is
-    /// still a take, because an empty MIDI clip is a legitimate result.
+    /// Whether the take ever rolled. A take that captured no events is still a
+    /// take: an empty MIDI clip is a legitimate result.
     bool recorded = false;
 
     /// Events the queue had no room for, or that were longer than the three
-    /// bytes it carries. Above zero is a hole in the performance.
+    /// bytes it carries.
     std::int64_t eventsLost = 0;
 
-    /// Events that arrived whole and have no field in the model: program
-    /// change, aftertouch, channel pressure, anything from the system. Dropped
-    /// here, where it can be said, rather than inside a converter.
+    /// Events with no field in the model: program change, aftertouch, channel
+    /// pressure, anything from the system.
     std::int64_t messagesDropped = 0;
 
-    /// Pass ends that did not fit, which is two loop passes run together in
-    /// one take. Above zero and `clip.takes` is not one pass each.
+    /// Pass ends that did not fit, which is two loop passes run together.
     std::int64_t passesLost = 0;
 
     bool empty() const {
@@ -90,17 +67,11 @@ struct MidiTakeRecorderSettings {
     /// Which input the take listens to, or kAnyLiveMidiSource for all of them.
     LiveMidiSourceId source = kAnyLiveMidiSource;
 
-    /**
-     * @brief The input's declared latency, in samples (#2459).
-     *
-     * What arrived has already happened, so an event's place on the timeline is
-     * `arrival - latency`: a positive latency drops what arrived before the
-     * take started, and a negative one moves everything that much later.
-     */
+    /// The input's declared latency, in samples (#2459). An event's place on
+    /// the timeline is `arrival - latency`.
     int latencySamples = 0;
 
-    /// How much the queue holds. Its channel count is always zero: a MIDI take
-    /// has no audio to carry.
+    /// How much the queue holds. Its channel count is always zero.
     RecordStreamSettings stream;
 };
 
@@ -123,12 +94,11 @@ class MidiTakeSink final : public RecordSink {
  *        stops it.
  *
  * It captures from the first block the transport is rolling and not counting
- * in, and stops at the first block it is not: a take is closed by a stop, and a
- * second play is a second take.
+ * in, and stops at the first block it is not.
  */
 class MidiTakeRecorder final : public TakeCapture {
   public:
-    MidiTakeRecorder(const LiveInputFeed& feed, MidiTakeRecorderSettings settings);
+    MidiTakeRecorder(const LiveInputFeed& feed, const MidiTakeRecorderSettings& settings);
 
     ~MidiTakeRecorder() override = default;
 
@@ -146,8 +116,7 @@ class MidiTakeRecorder final : public TakeCapture {
 
     void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
 
-    /// Events offered to the queue so far. Read from any thread; what a running
-    /// take is drawn from (#2463).
+    /// Events offered to the queue so far. Read from any thread (#2463).
     std::int64_t capturedEvents() const {
         return captured_.load(std::memory_order_relaxed);
     }
@@ -158,24 +127,19 @@ class MidiTakeRecorder final : public TakeCapture {
     }
 
     /**
-     * @brief Close the take and say what it became.
+     * @brief Close the take and say what it became. Off the audio thread.
      *
-     * Off the audio thread, after the callback can no longer reach this. @p
-     * tempo is asked for every event's beat, which is why it is a parameter
-     * here where the audio take needs none: an audio take converts one
-     * position as it goes, and this one has nothing to convert until the queue
-     * has given the events back.
-     *
-     * Idempotent, and a take that never rolled comes back empty.
+     * @p tempo resolves every event's beat, which an audio take needs no
+     * parameter for because it converts one position as it goes. Idempotent,
+     * and a take that never rolled comes back empty.
      */
     RecordedMidiTake finish(const TempoMap& tempo);
 
   private:
     enum class State : std::uint8_t { waiting, rolling, stopped };
 
-    /// Pass ends one take can hold. As TakeFileSink's own lane: what will not
-    /// fit is refused rather than dropped, so a take can say its passes ran
-    /// together.
+    /// Pass ends one take can hold, as TakeFileSink's own lane: what will not
+    /// fit is refused rather than dropped.
     static constexpr std::size_t kMaxPasses = 256;
 
     void start(const BlockInfo& block, const LoopRange& loop);
@@ -225,8 +189,7 @@ class MidiTakeRecorder final : public TakeCapture {
     double startSeconds_ = 0.0;
     double sampleRate_ = 0.0;
 
-    /// The block's own beat origin, so a beat is read here exactly as the
-    /// render read it.
+    /// The block's own beat origin, so a beat is read here as the render read it.
     MaterialOrigin origin_;
 
     /// Whether the take ever rolled, which a stop cannot be read back from.

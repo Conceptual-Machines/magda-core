@@ -1,6 +1,8 @@
 #include "io/MidiTakeRecorder.hpp"
 
 #include <algorithm>
+#include <cstddef>
+#include <functional>
 #include <utility>
 
 #include "exec/EngineDevice.hpp"
@@ -9,26 +11,31 @@ namespace magda::engine {
 
 namespace {
 
-constexpr int kMidiChannels = 16;
-constexpr int kNotesPerChannel = 128;
+constexpr std::size_t kMidiChannels = 16;
+constexpr std::size_t kNotesPerChannel = 128;
+constexpr std::size_t kHeldNotes = kMidiChannels * kNotesPerChannel;
+
+constexpr unsigned kTypeMask = 0xf0U;
+constexpr unsigned kChannelMask = 0x0fU;
+constexpr unsigned kDataMask = 0x7fU;
 
 /// What one channel message is, as far as the model has a field for it.
 enum class Kind : std::uint8_t { noteOn, noteOff, controller, pitchBend, unsupported };
 
 Kind kindOf(const RecordedMidiEvent& event) {
-    switch (event.status & 0xf0) {
-        case 0x80:
+    switch (static_cast<unsigned>(event.status) & kTypeMask) {
+        case 0x80U:
             return Kind::noteOff;
 
-        // Running a note on at zero velocity as a note off is the wire rule,
-        // not a courtesy: most controllers never send 0x80 at all.
-        case 0x90:
+        // Note on at zero velocity is a note off: the wire rule, and most
+        // controllers never send 0x80 at all.
+        case 0x90U:
             return event.data2 == 0 ? Kind::noteOff : Kind::noteOn;
 
-        case 0xb0:
+        case 0xb0U:
             return Kind::controller;
 
-        case 0xe0:
+        case 0xe0U:
             return Kind::pitchBend;
 
         default:
@@ -36,8 +43,18 @@ Kind kindOf(const RecordedMidiEvent& event) {
     }
 }
 
-int heldIndex(const RecordedMidiEvent& event) {
-    return ((event.status & 0x0f) * kNotesPerChannel) + (event.data1 & 0x7f);
+/// Where a channel's note sits in the held table.
+std::size_t heldIndex(const RecordedMidiEvent& event) {
+    const auto channel = static_cast<unsigned>(event.status) & kChannelMask;
+    const auto note = static_cast<unsigned>(event.data1) & kDataMask;
+    return (static_cast<std::size_t>(channel) * kNotesPerChannel) + note;
+}
+
+/// The 14 bits a pitch wheel splits across its two data bytes.
+int pitchBendValue(const RecordedMidiEvent& event) {
+    const auto low = static_cast<unsigned>(event.data1) & kDataMask;
+    const auto high = static_cast<unsigned>(event.data2) & kDataMask;
+    return static_cast<int>((high << 7U) | low);
 }
 
 RecordStreamSettings queueFor(const MidiTakeRecorderSettings& settings) {
@@ -52,6 +69,136 @@ struct HeldNote {
     int velocity = 0;
 };
 
+/**
+ * @brief A take's events, split into the passes an edge list names, in beats.
+ *
+ * Fed in arrival order. A pass is closed when an event lands past its end, so a
+ * note held across a wrap belongs to the pass it started in.
+ */
+class PassWalk {
+  public:
+    /// @p beatOf gives the take-relative beat of a take position.
+    PassWalk(std::span<const std::int64_t> edges, std::function<double(std::int64_t)> beatOf)
+        : edges_(edges), beatOf_(std::move(beatOf)), takes_(edges.size() - 1), held_(kHeldNotes) {
+        passStart_.reserve(takes_.size());
+
+        for (std::size_t pass = 0; pass < takes_.size(); ++pass)
+            passStart_.push_back(beatOf_(edges_[pass]));
+    }
+
+    void add(const RecordedMidiEvent& event);
+
+    /// Close every pass still open and hand the takes over.
+    std::vector<MidiTake> close();
+
+    /// Events with no field in the model.
+    std::int64_t dropped() const {
+        return dropped_;
+    }
+
+  private:
+    double beatIn(std::size_t pass, std::int64_t sample) const {
+        return beatOf_(sample) - passStart_[pass];
+    }
+
+    void closeNote(std::size_t pass, std::size_t index, std::int64_t endSample);
+    void closePass(std::size_t pass);
+
+    std::span<const std::int64_t> edges_;
+    std::function<double(std::int64_t)> beatOf_;
+    std::vector<double> passStart_;
+    std::vector<MidiTake> takes_;
+    std::vector<HeldNote> held_;
+
+    std::size_t pass_ = 0;
+    std::int64_t dropped_ = 0;
+};
+
+/// A note the pass owns, positioned against the pass it started in.
+void PassWalk::closeNote(std::size_t pass, std::size_t index, std::int64_t endSample) {
+    auto& note = held_[index];
+    if (note.start < 0)
+        return;
+
+    const auto from = beatIn(pass, note.start);
+    const auto to = beatIn(pass, endSample);
+
+    // A note whose length fell wholly outside the pass never sounded in it.
+    if (to > from) {
+        MidiNote played;
+        played.noteNumber = static_cast<int>(index % kNotesPerChannel);
+        played.velocity = note.velocity;
+        played.startBeat = from;
+        played.lengthBeats = to - from;
+        takes_[pass].notes.push_back(played);
+    }
+
+    note = {};
+}
+
+// A note held across a wrap belongs to the pass it started in, once.
+void PassWalk::closePass(std::size_t pass) {
+    for (std::size_t index = 0; index < kHeldNotes; ++index)
+        closeNote(pass, index, edges_[pass + 1]);
+}
+
+void PassWalk::add(const RecordedMidiEvent& event) {
+    if (event.sample < edges_.front() || event.sample >= edges_.back())
+        return;
+
+    while (pass_ + 1 < takes_.size() && event.sample >= edges_[pass_ + 1]) {
+        closePass(pass_);
+        ++pass_;
+    }
+
+    switch (kindOf(event)) {
+        case Kind::noteOn:
+            held_[heldIndex(event)] = {.start = event.sample, .velocity = event.data2};
+            break;
+
+        case Kind::noteOff:
+            closeNote(pass_, heldIndex(event), event.sample);
+            break;
+
+        case Kind::controller: {
+            MidiCCData cc;
+            cc.controller = event.data1;
+            cc.value = event.data2;
+            cc.beatPosition = beatIn(pass_, event.sample);
+            cc.curveType = MidiCurveType::Step;
+            takes_[pass_].cc.push_back(cc);
+            break;
+        }
+
+        case Kind::pitchBend: {
+            MidiPitchBendData bend;
+            bend.value = pitchBendValue(event);
+            bend.beatPosition = beatIn(pass_, event.sample);
+            bend.curveType = MidiCurveType::Step;
+            takes_[pass_].pitchBend.push_back(bend);
+            break;
+        }
+
+        // Program change, aftertouch, pressure, system: no field to put them
+        // in, counted here rather than dropped inside a converter.
+        case Kind::unsupported:
+            ++dropped_;
+            break;
+    }
+}
+
+std::vector<MidiTake> PassWalk::close() {
+    // A note still down when the take ended lasted until it did.
+    for (; pass_ < takes_.size(); ++pass_)
+        closePass(pass_);
+
+    // Emitted when they close, so a long note lands behind later short ones.
+    for (auto& take : takes_)
+        std::ranges::sort(take.notes, {}, &MidiNote::startBeat);
+
+    return std::move(takes_);
+}
+
 }  // namespace
 
 bool MidiTakeSink::writeMidi(std::span<const RecordedMidiEvent> events) {
@@ -59,8 +206,9 @@ bool MidiTakeSink::writeMidi(std::span<const RecordedMidiEvent> events) {
     return true;
 }
 
-MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, MidiTakeRecorderSettings settings)
-    : settings_(std::move(settings)),
+MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed,
+                                   const MidiTakeRecorderSettings& settings)
+    : settings_(settings),
       input_(feed, settings_.source, settings_.latencySamples),
       stream_(sink_, queueFor(settings_)) {
     // Sized once, so a block's events are copied into it and never allocate.
@@ -111,11 +259,9 @@ void MidiTakeRecorder::openPass(const LoopRange& loop) {
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
 
-    // Where the wrap is: the timeline the transport has rolled, which is the
-    // take's own domain and owes the input's latency nothing. No clamp against
-    // what has been queued either, because nothing is committed until finish()
-    // -- an event queued early under a negative adjustment crosses this
-    // boundary rather than pushing it.
+    // The timeline the transport has rolled, which owes the input's latency
+    // nothing. Unclamped: nothing is committed until finish(), so an event
+    // queued early crosses this boundary rather than pushing it.
     if (numBoundaries_ == kMaxPasses) {
         ++boundariesLost_;
         return;
@@ -138,8 +284,7 @@ void MidiTakeRecorder::write(const BlockInfo& block) {
     if (events_.isEmpty())
         return;
 
-    // The one head correction, applied on the way in: everything downstream
-    // reads take positions and never has to know what the latency was.
+    // The one head correction, applied on the way in.
     stream_.writeMidi(events_, arrivals_ - settings_.latencySamples);
     captured_.fetch_add(events_.getNumEvents(), std::memory_order_relaxed);
 }
@@ -155,110 +300,15 @@ double MidiTakeRecorder::beatAt(const TempoMap& tempo, double moment) const {
     return tempo.timeToBeat(moment + origin_.seconds) - origin_.beat;
 }
 
-/**
- * @brief The events, split into the passes @p edges names and put into beats.
- *
- * One walk in arrival order: a pass is closed when an event lands past its end,
- * which is what makes a note held across a wrap belong to the pass it started
- * in rather than to both.
- */
 std::vector<MidiTake> MidiTakeRecorder::passesFrom(const TempoMap& tempo,
                                                    std::span<const std::int64_t> edges) {
-    const auto numPasses = edges.size() - 1;
-    std::vector<MidiTake> takes(numPasses);
+    PassWalk walk(edges, [&](std::int64_t sample) { return beatAt(tempo, timeAt(sample)); });
 
-    std::vector<double> passStartBeat(numPasses);
-    for (std::size_t pass = 0; pass < numPasses; ++pass)
-        passStartBeat[pass] = beatAt(tempo, timeAt(edges[pass]));
+    for (const auto& event : sink_.events())
+        walk.add(event);
 
-    std::vector<HeldNote> held(kMidiChannels * kNotesPerChannel);
-
-    // A note the pass owns, positioned against the pass it started in.
-    const auto closeNote = [&](std::size_t pass, int index, std::int64_t endSample) {
-        auto& note = held[static_cast<std::size_t>(index)];
-        if (note.start < 0)
-            return;
-
-        const auto from = beatAt(tempo, timeAt(note.start)) - passStartBeat[pass];
-        const auto to = beatAt(tempo, timeAt(endSample)) - passStartBeat[pass];
-
-        // A note whose whole length fell outside the pass never sounded in it.
-        if (to > from)
-            takes[pass].notes.push_back(MidiNote{.noteNumber = index % kNotesPerChannel,
-                                                 .velocity = note.velocity,
-                                                 .startBeat = from,
-                                                 .lengthBeats = to - from});
-
-        note = {};
-    };
-
-    // Every note still down when a pass ends stops there: a note held across a
-    // wrap belongs to the pass it started in, once, and the pass is the clip.
-    const auto closePass = [&](std::size_t pass) {
-        for (auto index = 0; index < kMidiChannels * kNotesPerChannel; ++index)
-            closeNote(pass, index, edges[pass + 1]);
-    };
-
-    std::size_t pass = 0;
-
-    for (const auto& event : sink_.events()) {
-        if (event.sample < edges.front())
-            continue;
-
-        if (event.sample >= edges.back())
-            break;
-
-        while (pass + 1 < numPasses && event.sample >= edges[pass + 1]) {
-            closePass(pass);
-            ++pass;
-        }
-
-        const auto beatOf = [&] {
-            return beatAt(tempo, timeAt(event.sample)) - passStartBeat[pass];
-        };
-
-        switch (kindOf(event)) {
-            case Kind::noteOn:
-                held[static_cast<std::size_t>(heldIndex(event))] = {event.sample, event.data2};
-                break;
-
-            case Kind::noteOff:
-                closeNote(pass, heldIndex(event), event.sample);
-                break;
-
-            case Kind::controller:
-                takes[pass].cc.push_back(MidiCCData{.controller = event.data1,
-                                                    .value = event.data2,
-                                                    .beatPosition = beatOf(),
-                                                    .curveType = MidiCurveType::Step});
-                break;
-
-            case Kind::pitchBend:
-                takes[pass].pitchBend.push_back(
-                    MidiPitchBendData{.value = event.data1 | (event.data2 << 7),
-                                      .beatPosition = beatOf(),
-                                      .curveType = MidiCurveType::Step});
-                break;
-
-            // Program change, aftertouch, channel pressure, anything from the
-            // system: the model has nowhere to put them, and this is where that
-            // is said rather than inside a converter.
-            case Kind::unsupported:
-                ++result_.messagesDropped;
-                break;
-        }
-    }
-
-    // Whatever was still down when the take ended: a note you were still
-    // holding lasted until then.
-    for (; pass < numPasses; ++pass)
-        closePass(pass);
-
-    // Emitted when they close, so a long note would otherwise sit behind the
-    // short ones that started after it.
-    for (auto& take : takes)
-        std::ranges::sort(take.notes, {}, &MidiNote::startBeat);
-
+    auto takes = walk.close();
+    result_.messagesDropped += walk.dropped();
     return takes;
 }
 
@@ -279,8 +329,8 @@ RecordedMidiTake MidiTakeRecorder::finish(const TempoMap& tempo) {
         return result_;
     }
 
-    // The take's passes as edges in its own positions: it opens at zero, every
-    // wrap closes one, and the last block closes the last.
+    // Pass edges in the take's own positions: it opens at zero, every wrap
+    // closes one, and the last block closes the last.
     std::vector<std::int64_t> edges;
     edges.reserve(numBoundaries_ + 2);
     edges.push_back(0);
@@ -290,8 +340,7 @@ RecordedMidiTake MidiTakeRecorder::finish(const TempoMap& tempo) {
 
     edges.push_back(std::max(end_, edges.back()));
 
-    // A pass of no length is not a pass: a wrap landing on the take's last
-    // sample, or a stop between a wrap and the samples it was waiting for.
+    // A pass of no length is not a pass.
     edges.erase(std::unique(edges.begin(), edges.end()), edges.end());
 
     if (edges.size() < 2) {
@@ -299,10 +348,8 @@ RecordedMidiTake MidiTakeRecorder::finish(const TempoMap& tempo) {
         return result_;
     }
 
-    // A first pass that did not begin on the loop start is a lead-in: with no
-    // offset of its own it cannot share the clip start the others do, and a
-    // wrap having happened at all is what makes it a lead-in rather than the
-    // whole recording.
+    // A first pass that did not begin on the loop start is a lead-in: MidiTake
+    // has no offset of its own, so it cannot share the clip start.
     if (edges.size() > 2 && !startedAtLoopStart_)
         edges.erase(edges.begin());
 
@@ -317,8 +364,8 @@ RecordedMidiTake MidiTakeRecorder::finish(const TempoMap& tempo) {
     const auto active = activeTake(lengths);
     result_.active = takes[active];
 
-    // One pass is an ordinary clip, and the model keeps `takes` empty for one
-    // of those: they are loop-record alternatives or nothing.
+    // The model keeps `takes` empty for a single pass: they are loop-record
+    // alternatives or nothing.
     if (numPasses > 1) {
         result_.clip.takes = std::move(takes);
         result_.clip.currentTakeIndex = static_cast<int>(active);
@@ -329,10 +376,8 @@ RecordedMidiTake MidiTakeRecorder::finish(const TempoMap& tempo) {
 }
 
 void MidiTakeRecorder::placeClip(const TempoMap& tempo, RecordedMidiTake& take) const {
-    // Loop-aligned once a pass boundary has actually been reached, rather than
-    // once a wrap has been seen: a take stopped between the two holds only the
-    // stretch it began on, and putting that at the loop start would play it
-    // somewhere it was never recorded.
+    // Loop-aligned once a boundary has been reached, not once a wrap has been
+    // seen: a take stopped between the two holds only the stretch it began on.
     if (numBoundaries_ > 0 && end_ > boundaries_[0]) {
         take.startBeat = loopStartBeat_;
         take.lengthBeats = std::max(0.0, loopEndBeat_ - loopStartBeat_);

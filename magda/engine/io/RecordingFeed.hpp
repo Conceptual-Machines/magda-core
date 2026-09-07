@@ -20,9 +20,8 @@ namespace magda::engine {
 /**
  * @brief One take being fed, block by block, on the audio thread.
  *
- * Audio (io/TakeRecorder.hpp) and MIDI (io/MidiTakeRecorder.hpp) are the same
- * pass over the same transport, so the callback drives them through one call
- * and a track recording both is two takes rather than a special case.
+ * Audio (io/TakeRecorder.hpp) and MIDI (io/MidiTakeRecorder.hpp) are one call,
+ * so a track recording both is two takes rather than a special case.
  */
 class TakeCapture {
   public:
@@ -31,9 +30,8 @@ class TakeCapture {
     /**
      * @brief Take what this block carried. On the audio thread, once a block.
      *
-     * @p loop is the transport's, and is what tells a loop wrap from a locate:
-     * a wrap opens the next pass, and anything else ends the take, since
-     * material after a jump belongs where the cursor went.
+     * @p loop tells a wrap from a locate: a wrap opens the next pass, anything
+     * else ends the take.
      */
     virtual void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) = 0;
 };
@@ -46,8 +44,7 @@ using RecordingTakes = std::vector<TakeCapture*>;
  * @brief What the audio thread records into, replaced on the publishing thread.
  *
  * Publishing waits for the block the callback is in, so a take taken out of the
- * set is one nothing is writing to by the time the call returns, which is what
- * makes it safe to finish.
+ * set is safe to finish once the call returns.
  */
 class RecordingFeed {
     using Published = farbot::RealtimeObject<std::shared_ptr<const RecordingTakes>,

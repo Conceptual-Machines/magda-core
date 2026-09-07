@@ -19,9 +19,8 @@
  * @file test_midi_take_recorder.cpp
  * @brief A MIDI take, from armed to clip (#2462).
  *
- * A scheduled input and a driven transport, with no session and no thread: an
- * event is named by the arrival it was played on, so a case says exactly where
- * the transport was when it happened.
+ * A scheduled input and a driven transport, offline: an event is named by the
+ * arrival it was played on.
  */
 
 using magda::MidiCurveType;
@@ -43,16 +42,15 @@ namespace {
 constexpr double kSampleRate = 8000.0;
 constexpr int kBlockSize = 64;
 
-/// A beat at 120 bpm and this rate, which makes every position in these cases a
-/// whole number of samples.
+/// A beat at 120 bpm and this rate: every position here is a whole number of
+/// samples.
 constexpr int kBeatSamples = 4000;
 
 TempoMap flat() {
     return TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
 }
 
-/// 120 bpm to beat 2, then 60 bpm. Two changes on one beat is a step rather
-/// than a ramp, which is what makes a case's arithmetic exact.
+/// 120 bpm to beat 2, then 60 bpm. Two changes on one beat is a step, not a ramp.
 TempoMap halvedAtBeatTwo() {
     return TempoMap({{0.0, 120.0, 0.0f}, {2.0, 120.0, 0.0f}, {2.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
 }
@@ -79,8 +77,7 @@ Played pitchBend(std::int64_t arrival, int value, int channel = 1) {
     return {arrival, juce::MidiMessage::pitchWheel(channel, value)};
 }
 
-/// What the track's instrument was handed, so a case can say recording did not
-/// change it.
+/// What the track's instrument was handed.
 struct Heard {
     std::int64_t sample = 0;
     int status = 0;
@@ -98,11 +95,9 @@ MidiTakeRecorderSettings takeOf(int latencySamples = 0) {
 }
 
 /**
- * @brief A transport, a scheduled MIDI input and one take, driven a callback at
- *        a time.
+ * @brief A transport, a scheduled MIDI input and one take, a callback at a time.
  *
- * The monitor input is rendered every block whether or not a take is recording,
- * which is what lets a case compare the two.
+ * The monitor input renders every block whether or not a take is recording.
  */
 class Rig {
   public:
@@ -148,7 +143,6 @@ class Rig {
     }
 
     /// Empty the queue after every callback, the way the record thread would.
-    /// What a take holds must not depend on it.
     void drainAsItGoes() {
         drains_ = true;
     }
@@ -211,8 +205,7 @@ class Rig {
     std::vector<Played> schedule_;
     std::vector<Heard> heard_;
 
-    /// Input samples delivered since the rig was made, which is what the
-    /// schedule is numbered by.
+    /// Input samples delivered so far, which the schedule is numbered by.
     std::int64_t arrival_ = 0;
 
     bool drains_ = false;
@@ -237,8 +230,7 @@ TEST_CASE("A note lands on the beat it was played on", "[engine][io][record][mid
     CHECK(take.active.notes[0].startBeat == Catch::Approx(1.0));
     CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.5));
 
-    // A single pass is an ordinary clip: the take list is for loop-record
-    // alternatives and stays empty without them.
+    // A single pass is an ordinary clip, with no take list.
     CHECK(take.clip.takes.empty());
     CHECK(take.startBeat == 0.0);
     CHECK(take.lengthBeats == Catch::Approx(2.0));
@@ -292,8 +284,7 @@ TEST_CASE("A note held across a loop wrap belongs to one pass, once",
     REQUIRE(take.clip.takes[0].notes.size() == 1);
     CHECK(take.clip.takes[0].notes[0].startBeat == Catch::Approx(3.25));
 
-    // Cut off at the pass end rather than running past it: the pass is the
-    // clip, and a note that outlives it has nowhere to go.
+    // Cut off at the pass end rather than running past it.
     CHECK(take.clip.takes[0].notes[0].lengthBeats == Catch::Approx(0.75));
 
     // The note off has no note on in this pass, and starts nothing.
@@ -320,8 +311,7 @@ TEST_CASE("Each loop pass is a take, and the clip is loop-aligned",
     const auto take = rig.finish();
     REQUIRE(take.clip.takes.size() == 3);
 
-    // Every pass positions its own notes against its own start, which is what
-    // makes take 0 at beat 0 true of all of them.
+    // Every pass positions its notes against its own start: take 0 at beat 0.
     for (const auto& pass : take.clip.takes) {
         REQUIRE(pass.notes.size() == 1);
         CHECK(pass.notes[0].startBeat == Catch::Approx(1.0));
@@ -362,8 +352,7 @@ TEST_CASE("The active take is the last full pass", "[engine][io][record][midi][2
         REQUIRE(take.clip.takes.size() == 3);
         CHECK(take.clip.currentTakeIndex == 1);
 
-        // The short pass is still a take: it is not the one that plays, and
-        // comping it is the user's to decide.
+        // The short pass is still a take, just not the one that plays.
         CHECK(take.active.notes.size() == take.clip.takes[1].notes.size());
     }
 }
@@ -386,8 +375,7 @@ TEST_CASE("A first pass that did not start on the loop is a lead-in, not a take"
 
     const auto take = rig.finish();
 
-    // Two passes recorded, one kept: the lead-in and the pass that wrapped
-    // into it are not alternatives of each other.
+    // Three stretches recorded, the lead-in dropped.
     REQUIRE(take.clip.takes.size() == 2);
     CHECK(take.startBeat == Catch::Approx(0.0));
     CHECK(take.lengthBeats == Catch::Approx(4.0));
@@ -407,8 +395,7 @@ TEST_CASE("A take starts where the count-in ends", "[engine][io][record][midi][2
 
     const auto take = rig.finish();
 
-    // The count-in is time before the play position, so what was played during
-    // it is not in the take, and what follows starts at the take's own zero.
+    // A count-in is time before the play position, so it is not in the take.
     REQUIRE(take.active.notes.size() == 1);
     CHECK(take.active.notes[0].noteNumber == 64);
     CHECK(take.active.notes[0].startBeat == Catch::Approx(1.0));
@@ -459,8 +446,7 @@ TEST_CASE("A negative adjustment moves an event across a pass boundary, not the 
     REQUIRE(take.clip.takes[1].notes.size() == 1);
     CHECK(take.clip.takes[1].notes[0].startBeat == Catch::Approx(400.0 / kBeatSamples));
 
-    // Both passes are the loop, rather than the first running long by the
-    // adjustment: nothing is committed until the take is closed.
+    // Both passes are the loop, rather than the first running long by it.
     CHECK(take.lengthBeats == Catch::Approx(4.0));
 }
 
@@ -555,8 +541,7 @@ TEST_CASE("Recording does not change what the track hears", "[engine][io][record
         return rig.heard();
     };
 
-    // An armed track's live MIDI reaches its instrument through the input op,
-    // and a take reads the same feed rather than consuming it.
+    // A take reads the feed rather than consuming it.
     CHECK(listen(true) == listen(false));
     CHECK_FALSE(listen(false).empty());
 }
