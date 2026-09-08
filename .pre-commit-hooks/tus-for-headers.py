@@ -26,9 +26,9 @@ ENGINE = SHIPPING / "engine"
 def leaf(path: str) -> str:
     """Last component, whichever separator ninja wrote.
 
-    A string slice rather than Path(path).name: this runs on every one of a few
-    million dependency lines, and building a Path for each is far slower than
-    rejecting on a substring.
+    A slice rather than Path(path).name because this is the one hot line here:
+    over the 2.64M dependency lines of a full dump, 1.1s against 7.6s, on a run
+    that otherwise takes 12s and that somebody is waiting on to push.
     """
     return path[max(path.rfind("/"), path.rfind("\\")) + 1:]
 

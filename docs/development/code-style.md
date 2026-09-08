@@ -159,19 +159,31 @@ Install pre-commit hooks for automatic quality checks:
 # Install pre-commit (if not already installed)
 pip install pre-commit
 
-# Install hooks
-pre-commit install
+# Install hooks, both stages
+pre-commit install --hook-type pre-commit --hook-type pre-push
 
 # Run hooks on all files
 pre-commit run --all-files
 ```
 
-The pre-commit configuration includes:
+Existing clones need that command again: plain `pre-commit install` writes only
+`.git/hooks/pre-commit`, so the pre-push checks below stay uninstalled until you
+re-run it. A hand-written `pre-push` hook already in the clone is moved to
+`pre-push.legacy` and still runs, so the guard against pushing to main and the
+git-lfs handoff are kept. Do not pass `-f`, which deletes it instead.
+
+On commit:
 - Automatic formatting with clang-format
 - Trailing whitespace removal
 - End-of-file fixes
 - YAML validation
 - Large file checks
+
+On push:
+- A debug build
+- clang-tidy over the changed files, which fails on a finding in the enforced
+  tier (see `.pre-commit-hooks/clang-tidy.sh`)
+- The test suite
 
 ## CI Integration
 

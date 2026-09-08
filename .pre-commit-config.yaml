@@ -101,4 +101,8 @@ repos:
 
 # Configuration
 default_stages: [pre-commit]
+# `pre-commit install` installs only the pre-commit hook unless told otherwise,
+# so the build, clang-tidy and test hooks below, all of them pre-push, were
+# never installed by the documented setup and had never run for anyone.
+default_install_hook_types: [pre-commit, pre-push]
 minimum_pre_commit_version: 2.20.0
