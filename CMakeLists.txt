@@ -5,6 +5,18 @@ if(APPLE AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS version")
 endif()
 
+# Naming the SDK puts -isysroot into compile_commands.json. Apple's /usr/bin/c++
+# finds the SDK through xcrun and so records nothing, which leaves Homebrew's
+# clang-tidy unable to find <vector>. Tools that read the database cannot compute
+# the path themselves, so it has to be written down here.
+# Empty rather than undefined is the normal state here: CMake declares the cache
+# entry and leaves it blank when the compiler resolves the SDK by itself, so a
+# plain NOT DEFINED guard never fires and a non-FORCE set() cannot fill it in.
+# Only fills a blank value, so an explicitly chosen SDK still wins.
+if(APPLE AND NOT CMAKE_OSX_SYSROOT)
+    set(CMAKE_OSX_SYSROOT "macosx" CACHE STRING "macOS SDK for the compile database" FORCE)
+endif()
+
 # Windows has no system libxml2 (see vcpkg.json); it comes from vcpkg, which CI
 # wires in via -DCMAKE_TOOLCHAIN_FILE. For local dev (CLion, plain cmake, the
 # Makefile) auto-detect a vcpkg install from the VCPKG_ROOT environment variable
