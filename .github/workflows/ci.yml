@@ -281,6 +281,13 @@ jobs:
         # link check here, without also building that second test executable.
         cmake --build build --config Debug --target magda_daw_app magda_tests -j"$(nproc)"
 
+    # Static analysis, reusing the compile database the configure step wrote and
+    # the generated sources the build produced. A separate job would have to
+    # rebuild both to learn anything.
+    #
+    # Pinned to 20 to match the pre-push hook: findings move between clang-tidy
+    # releases, and a job on whatever the runner image ships would fail pushes
+    # that were clean locally, which is how a lint gate gets switched off.
     - name: Populate prebuilt Faust/Mutable artifacts (R2)
       if: steps.r2-creds.outcome == 'success'
       continue-on-error: true
@@ -307,6 +314,49 @@ jobs:
           put "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" \
             third_party/eurorack/build/lib
         fi
+
+    - name: Install clang-tidy
+      run: |
+        wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+        chmod +x /tmp/llvm.sh
+        sudo /tmp/llvm.sh 20
+        sudo apt-get install -y clang-tidy-20
+
+    - name: Run clang-tidy on changed files
+      env:
+        CLANG_TIDY: clang-tidy-20
+        BUILD_DIR: build
+      run: |
+        set -euo pipefail
+        base="${{ github.event.pull_request.base.sha || github.event.before }}"
+        # Unset, or all-zeros on a branch's first push: nothing to compare against.
+        if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+          echo "No base commit to diff against; nothing to analyse."
+          exit 0
+        fi
+
+        # The checkout is depth-1, so the base commit is not in this clone yet.
+        git fetch --no-tags --depth=1 origin "$base"
+
+        # Two dots rather than three: a merge base needs history neither side has
+        # here. It can pull in commits that landed on the base branch meanwhile,
+        # which only ever costs a few extra already-clean files.
+        #
+        # magda/engine is excluded while the native engine is still being written,
+        # matching the hook's own exclude.
+        mapfile -t files < <(
+          git diff --name-only --diff-filter=d "$base" HEAD -- magda \
+            | grep '\.cpp$' | grep -v '^magda/engine/' || true
+        )
+
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "No changed .cpp files under magda/ to analyse."
+          exit 0
+        fi
+
+        printf 'Analysing %d file(s):\n' "${#files[@]}"
+        printf '  %s\n' "${files[@]}"
+        ./.pre-commit-hooks/clang-tidy.sh "${files[@]}"
 
     - name: Check build artifacts
       run: |
