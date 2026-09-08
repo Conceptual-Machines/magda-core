@@ -47,10 +47,10 @@ UNBUILT_OK=(
 
 # A header changed on its own still has to be analysed, and clang-tidy only
 # analyses translation units, so headers map to the TUs that compile them via
-# ninja's recorded dependencies. Capped because one widely included header
-# reaches dozens of TUs at ~20s each and a pre-push hook has to finish; the cap
-# is reported rather than applied quietly. 0 means no cap.
-MAX_TUS="${CLANG_TIDY_MAX_TUS:-8}"
+# ninja's recorded dependencies. tus-for-headers.py applies CLANG_TIDY_MAX_TUS
+# itself: the budget has to be spread across the changed headers, and only it
+# knows which TU came from which header.
+export CLANG_TIDY_MAX_TUS="${CLANG_TIDY_MAX_TUS:-8}"
 
 BUILD_DIR="${BUILD_DIR:-cmake-build-debug}"
 
@@ -147,12 +147,6 @@ if [ ${#expanded[@]} -gt 0 ]; then
     else
         mapfile -t expanded < <(printf '%s\n' "${expanded[@]}" | sort -u)
     fi
-fi
-
-if [ "$MAX_TUS" -gt 0 ] && [ ${#expanded[@]} -gt "$MAX_TUS" ]; then
-    echo "note: changed headers reach ${#expanded[@]} further translation units,"
-    echo "      analysing the first $MAX_TUS. Set CLANG_TIDY_MAX_TUS=0 for all."
-    expanded=("${expanded[@]:0:$MAX_TUS}")
 fi
 
 declare -a targets=("${changed[@]}" "${expanded[@]}")

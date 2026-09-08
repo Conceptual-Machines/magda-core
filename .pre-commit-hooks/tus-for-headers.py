@@ -70,8 +70,47 @@ def dependents(build_dir, wanted):
     return found
 
 
+def select(per_header, max_tus):
+    """Pick TUs under a budget without starving any one header.
+
+    Flattening every header's candidates and truncating let one broadly
+    included header spend the whole budget, leaving another changed header with
+    nothing that compiles it. So each header gets a representative first, even
+    if that alone exceeds the budget - analysing every changed header matters
+    more than the ceiling - and only the fan-out beyond that is rationed, round
+    robin so no single header takes it all.
+    """
+    chosen, seen = [], set()
+
+    for tus in per_header.values():
+        for tu in tus:
+            if tu not in seen:
+                seen.add(tu)
+                chosen.append(tu)
+                break
+
+    total = len({tu for tus in per_header.values() for tu in tus})
+
+    remaining = [list(tus) for tus in per_header.values()]
+    while remaining and (max_tus <= 0 or len(chosen) < max_tus):
+        for tus in list(remaining):
+            while tus:
+                tu = tus.pop(0)
+                if tu not in seen:
+                    seen.add(tu)
+                    chosen.append(tu)
+                    break
+            if not tus:
+                remaining.remove(tus)
+            if max_tus > 0 and len(chosen) >= max_tus:
+                break
+
+    return chosen, total
+
+
 def main(argv):
     build_dir = os.environ.get("BUILD_DIR", "cmake-build-debug")
+    max_tus = int(os.environ.get("CLANG_TIDY_MAX_TUS", "8"))
     headers = argv[1:]
     if not headers:
         return 0
@@ -89,7 +128,7 @@ def main(argv):
         # Shipping code, matching .clang-tidy's own scope.
         return source.startswith("magda/") and not source.startswith("magda/engine/")
 
-    tus = set()
+    per_header = {}
     unanalysable = []
     for header in headers:
         sources = {mapping.get(o) for o in found.get(header, ())}
@@ -110,7 +149,7 @@ def main(argv):
         if not eligible:
             unanalysable.append(header)
             continue
-        tus |= eligible
+        per_header[header] = sorted(eligible)
 
     if unanalysable:
         # No translation unit compiles these, so nothing that could be found in
@@ -118,7 +157,13 @@ def main(argv):
         for header in unanalysable:
             print(f"note: nothing compiles {header}; not analysed", file=sys.stderr)
 
-    for tu in sorted(tus):
+    chosen, total = select(per_header, max_tus)
+    if total > len(chosen):
+        print(f"note: changed headers reach {total} translation units, "
+              f"analysing {len(chosen)}. Set CLANG_TIDY_MAX_TUS=0 for all.",
+              file=sys.stderr)
+
+    for tu in chosen:
         print(tu)
     return 0
 
