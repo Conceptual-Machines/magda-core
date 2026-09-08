@@ -126,6 +126,25 @@ MaterialSpec toneFor(double seconds, double frequency) {
     return spec;
 }
 
+/**
+ * @brief The steepest a full-scale copy of @p sources can be, per sample.
+ *
+ * A limiter bounds amplitude and not slope, so a bound read off its ceiling
+ * refuses the tones the project is made of. A full-scale sine steps
+ * 2*sin(pi*f/rate) on its own and a sum of them lands above the steepest one,
+ * which is what @p headroom carries.
+ */
+double fullScaleStepOf(const std::vector<FixtureSource>& sources, double headroom) {
+    auto steepest = 0.0;
+    for (const auto& source : sources)
+        if (source.material.kind == MaterialKind::Tone)
+            steepest = std::max(steepest, 2.0 * std::sin(juce::MathConstants<double>::pi *
+                                                         source.material.frequency /
+                                                         source.material.sampleRate));
+
+    return steepest * headroom;
+}
+
 Case declarationFor(const char* name, const char* covers, double startBeat, double endBeat) {
     Case value;
     value.name = name;
@@ -548,11 +567,6 @@ std::vector<MgdFixture> build() {
         fixture.declaration.tier = AudioTier::Invariants;
         fixture.hostedPlugins = {"Pro-L 2"};
 
-        // A limiter's job is to not step: it is the one device here whose output
-        // is bounded by construction, and a bound this tight is what says the
-        // twenty-three summed stems went through it rather than around it.
-        fixture.declaration.maxStepPerSample = 0.1;
-
         // Eight beats of a five-hundred-and-ninety-seven-beat arrangement. Every
         // one of the twenty-three stems is still playing when the render stops.
         fixture.declaration.rendersPastItsMaterial = false;
@@ -641,6 +655,11 @@ std::vector<MgdFixture> build() {
              .material = toneFor(5.0, 1318.0),
              .covers = "a trumpet stem"},
         };
+
+        // Twenty-three tones into a limiter that puts the sum at full scale, so
+        // the bound is the material's own slope. Set after the sources because
+        // it is read off them.
+        fixture.declaration.maxStepPerSample = fullScaleStepOf(fixture.sources, 1.25);
 
         fixtures.push_back(std::move(fixture));
     }

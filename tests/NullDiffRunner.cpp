@@ -365,7 +365,8 @@ juce::File nullDiffScratchDirectory() {
 SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
                            const std::set<std::string>& unmeasurable,
                            const std::set<std::string>& failing,
-                           const std::set<std::string>& underCalibration) {
+                           const std::set<std::string>& underCalibration,
+                           const std::set<std::string>& notRun) {
     SuiteComplaints complaints;
 
     complaints.asserted.assign(asserted.begin(), asserted.end());
@@ -378,8 +379,11 @@ SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
         if (underCalibration.count(name) == 0)
             complaints.unexpectedFailures.push_back(name);
 
+    // A case that did not run cannot take itself off the list: it is not a pass
+    // and not a failure. Without this a machine that lacks the case's plugin
+    // reports every calibrated entry as holding, which is what CI is.
     for (const auto& name : underCalibration)
-        if (failing.count(name) == 0)
+        if (failing.count(name) == 0 && notRun.count(name) == 0)
             complaints.nowHolding.push_back(name);
 
     return complaints;

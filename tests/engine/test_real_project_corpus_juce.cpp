@@ -226,10 +226,18 @@ class RealProjectCorpusTests : public juce::UnitTest {
             // through every decay.
             "project.fmchain",
             "project.sidechain",
+
+            // Two of its tracks were saved in Session playback mode. The
+            // incumbent honours that in a render and plays their slots, which
+            // nothing here launches, so it renders silence where the native leg
+            // renders the arrangement. The native engine has no concept of
+            // TrackPlaybackMode at all (#2485), and until it does there is no
+            // agreement to measure.
+            "project.retrospect",
         };
 
         const auto complaints =
-            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration);
+            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration, run.notRun);
 
         // What this run did not cover, said out loud. A case that did not run is
         // not a pass and not a failure, and the one way that can go wrong is

@@ -95,7 +95,8 @@ struct SuiteComplaints {
 SuiteComplaints judgeSuite(const std::set<std::string>& asserted,
                            const std::set<std::string>& unmeasurable,
                            const std::set<std::string>& failing,
-                           const std::set<std::string>& underCalibration);
+                           const std::set<std::string>& underCalibration,
+                           const std::set<std::string>& notRun);
 
 /// One walk over a corpus, with everything a suite needs to judge itself.
 struct SuiteRun {
