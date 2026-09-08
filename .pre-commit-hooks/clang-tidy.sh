@@ -37,12 +37,12 @@ UNBUILT_OK=(
     'magda/daw/ui/components/automation/TensionHandleComponent.cpp'
 )
 
-# A header changed on its own still has to be analysed, and clang-tidy can only
-# analyse a translation unit, so each one maps to the TUs that include it. Direct
-# includes only: the real graph lives in .ninja_deps and reading it is not worth
-# the coupling. Capped because a widely included header maps to hundreds of TUs
-# and a pre-push hook has to finish.
-MAX_TUS_PER_HEADER="${CLANG_TIDY_MAX_TUS:-8}"
+# A header changed on its own still has to be analysed, and clang-tidy only
+# analyses translation units, so headers map to the TUs that compile them via
+# ninja's recorded dependencies. Capped because one widely included header
+# reaches dozens of TUs at ~20s each and a pre-push hook has to finish; the cap
+# is reported rather than applied quietly. 0 means no cap.
+MAX_TUS="${CLANG_TIDY_MAX_TUS:-8}"
 
 BUILD_DIR="${BUILD_DIR:-cmake-build-debug}"
 
@@ -82,6 +82,7 @@ is_unbuilt_ok() {
 
 status=0
 declare -a targets=()
+declare -a headers=()
 
 for file in "$@"; do
     case "$file" in
@@ -98,24 +99,38 @@ for file in "$@"; do
         fi
         ;;
     *.h | *.hpp)
-        mapfile -t includers < <(
-            grep -rl --include='*.cpp' "include.*$(basename "$file")" magda 2>/dev/null | head -n "$MAX_TUS_PER_HEADER"
-        )
-        if [ ${#includers[@]} -eq 0 ]; then
-            echo "note: no translation unit includes $(basename "$file"); nothing to analyse."
-            continue
-        fi
-        for tu in "${includers[@]}"; do
-            in_db "$tu" && targets+=("$tu")
-        done
+        headers+=("$file")
         ;;
     esac
 done
+
+if [ ${#headers[@]} -gt 0 ]; then
+    hook_dir=$(cd "$(dirname "$0")" && pwd)
+    # Command substitution, not `mapfile < <(...)`: mapfile reports its own
+    # status, so a process substitution's exit code is lost and a failing
+    # mapping reads as success.
+    if header_tus=$(BUILD_DIR="$BUILD_DIR" python3 "$hook_dir/tus-for-headers.py" "${headers[@]}"); then
+        [ -n "$header_tus" ] && mapfile -t -O "${#targets[@]}" targets <<<"$header_tus"
+    else
+        # Either the dependency data is unreadable or a header compiles into
+        # nothing. Reporting clean off the back of either is the failure this
+        # gate exists to prevent.
+        echo "Could not map changed headers to translation units (see above)." >&2
+        echo "Run 'make debug' so ninja has recorded their dependencies." >&2
+        status=1
+    fi
+fi
 
 # One header can pull in a TU another already did, and so can a .cpp alongside
 # its own header.
 if [ ${#targets[@]} -gt 0 ]; then
     mapfile -t targets < <(printf '%s\n' "${targets[@]}" | sort -u)
+fi
+
+if [ "$MAX_TUS" -gt 0 ] && [ ${#targets[@]} -gt "$MAX_TUS" ]; then
+    echo "note: ${#targets[@]} translation units affected, analysing the first $MAX_TUS."
+    echo "      Set CLANG_TIDY_MAX_TUS=0 to analyse all of them."
+    targets=("${targets[@]:0:$MAX_TUS}")
 fi
 
 for file in "${targets[@]:-}"; do

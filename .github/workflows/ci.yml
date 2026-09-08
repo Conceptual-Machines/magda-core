@@ -326,6 +326,9 @@ jobs:
       env:
         CLANG_TIDY: clang-tidy-20
         BUILD_DIR: build
+        # Higher than the hook's 8: a push waits on the hook, nobody waits on
+        # this, and a change to a widely included header deserves the coverage.
+        CLANG_TIDY_MAX_TUS: '40'
       run: |
         set -euo pipefail
         base="${{ github.event.pull_request.base.sha || github.event.before }}"
