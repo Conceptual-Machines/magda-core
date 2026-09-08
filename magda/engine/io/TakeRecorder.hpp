@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -197,6 +198,10 @@ class TakeRecorder final : public TakeCapture {
     /// sink's to act on, since only the sink knows what reached the disk.
     void write(const BlockInfo& block);
 
+    /// Open the pass the oldest pending boundary named, now the audio has
+    /// reached it, and retire it.
+    void openTapPass(const BlockInfo& block);
+
     /// Where the take is, once there is nothing more to add to it.
     void placeClip(RecordedTake& take) const;
 
@@ -242,15 +247,27 @@ class TakeRecorder final : public TakeCapture {
     std::int64_t passOrigin_ = 0;
     double passOriginBeat_ = 0.0;
 
-    /// The boundary a wrap named and the beat it named it at, until the written
+    /// A boundary a wrap named and the beat it named it at, until the written
     /// audio reaches it. The sink splits there, so a preview that turned over
     /// at the wrap instead would draw the tail of the previous file -- with a
     /// positive latency, a whole latency of it.
-    std::int64_t pendingBoundary_ = -1;
-    double pendingStartBeat_ = 0.0;
+    struct PendingPass {
+        std::int64_t boundary = 0;
+        double startBeat = 0.0;
+    };
 
-    /// The pass the boundary named, once the audio has reached it.
-    void openTapPass(const BlockInfo& block);
+    /// All of them, not the latest: a loop shorter than the latency wraps again
+    /// before the audio reaches the boundary before it, and a preview keeping
+    /// only the newest would never turn over at all.
+    ///
+    /// As deep as the sink's own lane, which it cannot outrun: a boundary is
+    /// dropped here only once the sink has refused it too, and the sink retires
+    /// one no earlier than this does.
+    static constexpr std::size_t kPendingCapacity = 256;
+
+    std::array<PendingPass, kPendingCapacity> pending_{};
+    std::size_t pendingHead_ = 0;
+    std::size_t pendingCount_ = 0;
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.

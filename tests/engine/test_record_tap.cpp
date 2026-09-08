@@ -663,3 +663,82 @@ TEST_CASE("An audio pass turns over where the file does, not where the wrap is",
         CHECK(reading.peaks[0].left == Catch::Approx(material(kFirstArrival + kPerPeak - 1, 0)));
     }
 }
+
+TEST_CASE("A later pass is drawn where the take will hold it too",
+          "[engine][io][record][midi][2463]") {
+    // The pass a wrap opened, where the preview's origin and the clip's are
+    // arrived at differently: the tap counts from the boundary as it goes, the
+    // take splits on it in finish().
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings);
+    rig.loop(0.0, 2.0);
+    rig.schedule({noteOn(kBeatSamples / 2, 60), noteOff(kBeatSamples, 60),
+                  noteOn(2 * kBeatSamples + (kBeatSamples / 2), 72),
+                  noteOff(3 * kBeatSamples, 72)});
+    rig.play();
+    rig.run((2 * kBeatSamples) + (3 * kBeatSamples) / 2);
+
+    const auto preview = rig.reading();
+    const auto take = rig.finish();
+
+    REQUIRE(take.clip.takes.size() == 2);
+    REQUIRE(take.clip.takes[1].notes.size() == 1);
+    REQUIRE(preview.notes.size() == 1);
+
+    CHECK(preview.pass == 2);
+    CHECK(preview.startBeat == beats(take.startBeat));
+    CHECK(preview.notes[0].noteNumber == take.clip.takes[1].notes[0].noteNumber);
+    CHECK(preview.notes[0].startBeat == beats(take.clip.takes[1].notes[0].startBeat));
+    CHECK(preview.notes[0].lengthBeats == beats(take.clip.takes[1].notes[0].lengthBeats));
+}
+
+TEST_CASE("A note held across a wrap is not drawn in the pass it did not start in",
+          "[engine][io][record][midi][2463]") {
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings);
+    rig.loop(0.0, 2.0);
+    rig.schedule(
+        {noteOn(3 * kBeatSamples / 2, 60), noteOff((2 * kBeatSamples) + kBeatSamples, 60)});
+    rig.play();
+    rig.run(3 * kBeatSamples);
+
+    const auto preview = rig.reading();
+    const auto take = rig.finish();
+
+    // The take gives it to the pass it started in, cut off at that pass's end,
+    // and the pass it ran into holds nothing.
+    REQUIRE(take.clip.takes.size() == 2);
+    CHECK(take.clip.takes[0].notes.size() == 1);
+    CHECK(take.clip.takes[1].notes.empty());
+    CHECK(preview.pass == 2);
+    CHECK(preview.notes.empty());
+}
+
+TEST_CASE("A loop shorter than the latency still turns the preview over",
+          "[engine][io][record][2463]") {
+    // Every wrap names a boundary the written audio has not reached yet, so a
+    // preview holding only the newest would sit on its first pass while the
+    // sink cut eight files.
+    constexpr int kLoopSamples = 64;
+    constexpr int kLatency = 128;
+
+    AudioRig rig(emptyDirectory("short_loop"), drawn(0, 64, 16), 64, kLatency);
+    rig.loop(0.0, static_cast<double>(kLoopSamples) / kBeatSamples);
+    rig.play();
+    rig.run(640);
+
+    const auto reading = rig.reading();
+
+    // Seven boundaries the written audio reached, after the pass the take
+    // opened with. The length is one loop rather than the eight the preview
+    // would have run together.
+    CHECK(reading.pass == 8);
+    CHECK(reading.lengthBeats == beats(static_cast<double>(kLoopSamples) / kBeatSamples));
+    CHECK(reading.peaks.size() == kLoopSamples / 16);
+
+    CHECK(rig.recorder().finish().clip.takes.size() > 1);
+}
