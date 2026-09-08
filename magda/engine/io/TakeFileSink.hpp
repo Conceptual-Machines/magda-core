@@ -65,6 +65,15 @@ class TakeFileSink final : public RecordSink {
      */
     bool markPassEnd(std::int64_t takeSample);
 
+    /// Pass ends asked for and not reached yet. The counterpart of the queue's
+    /// own capacity: that bounds how far behind the disk may fall in samples,
+    /// and this bounds it in passes. What will not fit is refused rather than
+    /// dropped, so a take can say its passes ran together (#2461).
+    ///
+    /// Public because the preview follows the same accepted boundaries and is
+    /// sized from this rather than from a number of its own (#2463).
+    static constexpr std::size_t kBoundaryCapacity = 256;
+
     bool writeAudio(juce::dsp::AudioBlock<const float> audio, int numSamples) override;
 
     void finish() override;
@@ -111,12 +120,6 @@ class TakeFileSink final : public RecordSink {
     std::int64_t written_ = 0;
 
     bool failed_ = false;
-
-    /// Pass ends asked for and not reached yet. The counterpart of the queue's
-    /// own capacity: that bounds how far behind the disk may fall in samples,
-    /// and this bounds it in passes. What will not fit is refused rather than
-    /// dropped, so a take can say its passes ran together (#2461).
-    static constexpr std::size_t kBoundaryCapacity = 256;
 
     std::array<std::int64_t, kBoundaryCapacity> boundaries_{};
     std::atomic<std::uint64_t> boundaryWrite_{0};

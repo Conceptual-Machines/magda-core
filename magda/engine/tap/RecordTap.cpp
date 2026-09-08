@@ -1,98 +1,64 @@
 #include "tap/RecordTap.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace magda::engine {
 
 void RecordTap::open(double startBeat) {
-    // Outside the window below: the table is the writer's own, and filling it
-    // there would put two thousand stores between a reader and its retry.
-    held_.fill(kNotHeld);
-    heldSlots_.clear();
-    ++pass_;
+    const Change change(*this);
 
-    seq_.fetch_add(kOpening, std::memory_order_release);
-
+    pass_.fetch_add(1, std::memory_order_relaxed);
     startBeat_.store(startBeat, std::memory_order_relaxed);
     lengthBeats_.store(0.0, std::memory_order_relaxed);
     numNotes_.store(0, std::memory_order_relaxed);
     notesLost_.store(0, std::memory_order_relaxed);
     peaksNeeded_.store(0, std::memory_order_relaxed);
     recording_.store(true, std::memory_order_relaxed);
-
-    seq_.fetch_add(kOpening, std::memory_order_release);
 }
 
-void RecordTap::extend(double lengthBeats) {
-    lengthBeats_.store(lengthBeats, std::memory_order_relaxed);
-
-    for (const auto slot : heldSlots_) {
-        auto& note = notes_[slot];
-        const auto start = note.startBeat.load(std::memory_order_relaxed);
-        note.lengthBeats.store(std::max(0.0, lengthBeats - start), std::memory_order_relaxed);
-    }
+void RecordTap::writeSlot(std::size_t slot, int noteNumber, int velocity, double beat) {
+    auto& note = notes_[slot];
+    note.identity.store(packIdentity(noteNumber, velocity), std::memory_order_relaxed);
+    note.startBeat.store(beat, std::memory_order_relaxed);
+    note.lengthBeats.store(0.0, std::memory_order_relaxed);
 }
 
-void RecordTap::writeSlot(std::uint32_t at, int note, int velocity, double beat) {
-    auto& slot = notes_[at];
+std::size_t RecordTap::addNote(int noteNumber, int velocity, double beat) {
+    const auto at = numNotes_.load(std::memory_order_relaxed);
 
-    // Odd while the slot changes hands, even once it stands. The count is what
-    // a reader compares, because two strikes of one pitch at one velocity are
-    // the same identity and comparing those would accept one strike's beat
-    // beside the next one's length.
-    slot.revision.fetch_add(1, std::memory_order_release);
-
-    slot.identity.store(packIdentity(pass_, note, velocity), std::memory_order_relaxed);
-    slot.startBeat.store(beat, std::memory_order_relaxed);
-    slot.lengthBeats.store(0.0, std::memory_order_relaxed);
-
-    slot.revision.fetch_add(1, std::memory_order_release);
-}
-
-void RecordTap::noteOn(int channel, int note, int velocity, double beat) {
     // A tap nobody draws holds no notes and has lost none: what was never asked
     // for is not a shortfall.
     if (notes_.empty())
-        return;
+        return kNoSlot;
 
-    const auto index = heldIndex(channel, note);
-
-    // A second note on for a pitch already down replaces the first, which is
-    // what PassWalk::add does when it finishes the take. Appending instead
-    // would leave a note nothing can close, growing to the end of the pass.
-    if (const auto held = held_[index]; held != kNotHeld) {
-        writeSlot(held, note, velocity, beat);
-        return;
-    }
-
-    const auto at = numNotes_.load(std::memory_order_relaxed);
     if (at >= notes_.size()) {
         notesLost_.fetch_add(1, std::memory_order_relaxed);
-        return;
+        return kNoSlot;
     }
 
-    writeSlot(static_cast<std::uint32_t>(at), note, velocity, beat);
-
-    // The count is what publishes the slot, so it is stored last.
-    numNotes_.store(at + 1, std::memory_order_release);
-
-    held_[index] = static_cast<std::uint32_t>(at);
-    heldSlots_.push_back(static_cast<std::uint32_t>(at));
+    const Change change(*this);
+    writeSlot(at, noteNumber, velocity, beat);
+    numNotes_.store(at + 1, std::memory_order_relaxed);
+    return at;
 }
 
-void RecordTap::noteOff(int channel, int note, double beat) {
-    const auto index = heldIndex(channel, note);
-    const auto slot = held_[index];
-    if (slot == kNotHeld)
+void RecordTap::replaceNote(std::size_t slot, int noteNumber, int velocity, double beat) {
+    if (slot >= notes_.size())
         return;
 
-    held_[index] = kNotHeld;
-    std::erase(heldSlots_, slot);
+    const Change change(*this);
+    writeSlot(slot, noteNumber, velocity, beat);
+}
 
-    auto& held = notes_[slot];
-    const auto start = held.startBeat.load(std::memory_order_relaxed);
-    held.lengthBeats.store(std::max(0.0, beat - start), std::memory_order_relaxed);
+void RecordTap::noteReaches(std::size_t slot, double endBeat) {
+    if (slot >= notes_.size())
+        return;
+
+    auto& note = notes_[slot];
+    const auto start = note.startBeat.load(std::memory_order_relaxed);
+    note.lengthBeats.store(std::max(0.0, endBeat - start), std::memory_order_relaxed);
 }
 
 void RecordTap::addPeaks(juce::dsp::AudioBlock<const float> audio, int numSamples,
@@ -149,72 +115,59 @@ void RecordTap::writePeak(std::size_t slot, juce::dsp::AudioBlock<const float> a
     peaks_[slot].store(packPeak(peak[0], peak[1]), std::memory_order_relaxed);
 }
 
-void RecordTap::read(Reading& into) const {
-    into.material = material_;
-    into.target = settings_.target;
-    into.scene = settings_.scene;
-
-    std::uint32_t seq = 0;
-    std::size_t numNotes = 0;
-    std::int64_t needed = 0;
-
+bool RecordTap::read(Reading& into) const {
     for (auto attempt = 0; attempt < kReadAttempts; ++attempt) {
-        seq = seq_.load(std::memory_order_acquire);
-
-        into.recording = recording_.load(std::memory_order_relaxed);
-        into.startBeat = startBeat_.load(std::memory_order_relaxed);
-        into.lengthBeats = lengthBeats_.load(std::memory_order_relaxed);
-        into.notesLost = notesLost_.load(std::memory_order_relaxed);
-
-        numNotes = numNotes_.load(std::memory_order_acquire);
-        needed = peaksNeeded_.load(std::memory_order_acquire);
-
-        // An odd sequence is a reset in flight, and the reading above is half
-        // of one pass and half of the next whatever it compares to.
-        if ((seq & kOpening) == 0U && seq_.load(std::memory_order_acquire) == seq)
-            break;
-    }
-
-    into.pass = seq / 2;
-
-    // Only the notes this pass recorded. A wrap partway through leaves the
-    // slots holding the next pass's, which are not this reading's to draw.
-    into.notes.clear();
-    for (std::size_t at = 0; at < numNotes; ++at) {
-        const auto& slot = notes_[at];
-
-        const auto revision = slot.revision.load(std::memory_order_acquire);
-
-        // Mid-replacement. Skipped rather than ending the list, because a
-        // retrigger rewrites a slot the pass has already moved past.
-        if ((revision & 1U) != 0U)
+        const auto revision = revision_.load(std::memory_order_acquire);
+        if ((revision & kChanging) != 0U)
             continue;
 
-        const auto identity = slot.identity.load(std::memory_order_relaxed);
+        const auto recording = recording_.load(std::memory_order_relaxed);
+        const auto pass = pass_.load(std::memory_order_relaxed);
+        const auto startBeat = startBeat_.load(std::memory_order_relaxed);
+        const auto notesLost = notesLost_.load(std::memory_order_relaxed);
+        const auto numNotes = std::min(numNotes_.load(std::memory_order_relaxed), notes_.size());
 
-        // Past this pass's own notes: what follows was written by the next.
-        if (static_cast<std::uint32_t>(identity >> 32U) != into.pass)
-            break;
+        into.staging.clear();
+        for (std::size_t at = 0; at < numNotes; ++at) {
+            const auto identity = notes_[at].identity.load(std::memory_order_relaxed);
+            into.staging.push_back({static_cast<int>(identity & 0x7fU),
+                                    static_cast<int>((identity >> 8U) & 0x7fU),
+                                    notes_[at].startBeat.load(std::memory_order_relaxed),
+                                    notes_[at].lengthBeats.load(std::memory_order_relaxed)});
+        }
 
-        const auto startBeat = slot.startBeat.load(std::memory_order_relaxed);
-        const auto lengthBeats = slot.lengthBeats.load(std::memory_order_relaxed);
-
-        // The slot could have changed hands under the three loads above. A
-        // length that grew is the same note being held and turns nothing.
         std::atomic_thread_fence(std::memory_order_acquire);
-        if (slot.revision.load(std::memory_order_relaxed) != revision)
+        if (revision_.load(std::memory_order_relaxed) != revision)
             continue;
 
-        into.notes.push_back({static_cast<int>(identity & 0x7fU),
-                              static_cast<int>((identity >> 8U) & 0x7fU), startBeat, lengthBeats});
+        into.recording = recording;
+        into.material = material_;
+        into.target = settings_.target;
+        into.scene = settings_.scene;
+        into.pass = pass;
+        into.startBeat = startBeat;
+        into.notesLost = notesLost;
+        into.notes.swap(into.staging);
+
+        // Outside the snapshot on purpose. A length is the pass or a note as of
+        // some block, and neither can be attached to the wrong pass or the
+        // wrong note: the start it is measured from is in the snapshot.
+        into.lengthBeats = lengthBeats_.load(std::memory_order_relaxed);
+
+        const auto needed = peaksNeeded_.load(std::memory_order_acquire);
+        const auto numPeaks =
+            static_cast<std::size_t>(std::min<std::int64_t>(needed, peaks_.size()));
+
+        into.peaks.resize(numPeaks);
+        for (std::size_t at = 0; at < numPeaks; ++at)
+            into.peaks[at] = unpackPeak(peaks_[at].load(std::memory_order_relaxed));
+
+        into.peaksLost =
+            std::max<std::int64_t>(0, needed - static_cast<std::int64_t>(peaks_.size()));
+        return true;
     }
 
-    const auto numPeaks = static_cast<std::size_t>(std::min<std::int64_t>(needed, peaks_.size()));
-    into.peaks.resize(numPeaks);
-    for (std::size_t at = 0; at < numPeaks; ++at)
-        into.peaks[at] = unpackPeak(peaks_[at].load(std::memory_order_relaxed));
-
-    into.peaksLost = std::max<std::int64_t>(0, needed - static_cast<std::int64_t>(peaks_.size()));
+    return false;
 }
 
 }  // namespace magda::engine

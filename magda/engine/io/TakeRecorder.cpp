@@ -124,13 +124,16 @@ void TakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
     if (firstBoundary_ < 0)
         firstBoundary_ = boundary;
 
+    // One acceptance, and the file and the preview both follow it: a boundary
+    // refused here is refused for both, which is what keeps them the same
+    // passes rather than two opinions about where a pass ended.
     if (!sink_.markPassEnd(boundary)) {
         ++boundariesLost_;
         return;
     }
 
-    // The pass the tap draws is the pass the file will be, so it turns over
-    // where the sink does: at the boundary, not at the wrap that named it.
+    // The preview turns over where the sink does: at the boundary, not at the
+    // wrap that named it.
     if (pendingCount_ < kPendingCapacity)
         pending_[(pendingHead_ + pendingCount_++) % kPendingCapacity] = {boundary,
                                                                          block.beats.start};

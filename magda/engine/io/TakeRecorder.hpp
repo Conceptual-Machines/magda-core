@@ -260,10 +260,11 @@ class TakeRecorder final : public TakeCapture {
     /// before the audio reaches the boundary before it, and a preview keeping
     /// only the newest would never turn over at all.
     ///
-    /// As deep as the sink's own lane, which it cannot outrun: a boundary is
-    /// dropped here only once the sink has refused it too, and the sink retires
-    /// one no earlier than this does.
-    static constexpr std::size_t kPendingCapacity = 256;
+    /// The sink's own lane, not a second number. This retires a boundary when
+    /// the audio is offered past it and the sink no earlier, so what the sink
+    /// accepted always has room here and the two cannot end up describing
+    /// different passes.
+    static constexpr std::size_t kPendingCapacity = TakeFileSink::kBoundaryCapacity;
 
     std::array<PendingPass, kPendingCapacity> pending_{};
     std::size_t pendingHead_ = 0;

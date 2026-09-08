@@ -13,6 +13,7 @@
 #include "io/LiveInput.hpp"
 #include "io/RecordStream.hpp"
 #include "io/RecordingFeed.hpp"
+#include "io/TakeNotes.hpp"
 #include "io/TakePasses.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
@@ -192,6 +193,10 @@ class MidiTakeRecorder final : public TakeCapture {
 
     /// This block's events, sized once so a capture cannot allocate.
     juce::MidiBuffer events_;
+
+    /// The pass's notes as the tap holds them, over the table the finished take
+    /// walks as well (io/TakeNotes.hpp).
+    PreviewNotes preview_{tap_};
 
     State state_ = State::waiting;
 

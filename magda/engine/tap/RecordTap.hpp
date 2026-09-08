@@ -3,7 +3,6 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
-#include <array>
 #include <atomic>
 #include <bit>
 #include <cstddef>
@@ -23,11 +22,9 @@
  * stamped it, so what is drawn and what is written cannot disagree. Nothing
  * polls, and no frame timer decides the length.
  *
- * A note is positioned here as io/MidiTakeRecorder.hpp positions it in the
- * finished clip: the same conversion, off the same pass origin, so the preview
- * and the clip do not resolve a beat differently.
- *
- * One writer, the audio thread. Any number of readers, none of them consuming.
+ * It publishes and nothing more. What a note is -- which release closes it,
+ * what a second strike does -- is io/TakeNotes.hpp, driven by the take as well,
+ * so the overlay and the clip are made of the same transitions.
  */
 
 namespace magda::engine {
@@ -77,43 +74,86 @@ struct RecordTapSettings {
 /**
  * @brief The pass in flight, published by the block that recorded it.
  *
- * The slots are atomic, relaxed on both sides, for the reason SampleRing.hpp
- * gives: plain memory read beside a live writer is a data race rather than a
- * ragged frame.
+ * ## What a reading promises
  *
- * Two things make a reading one pass's own rather than two.
+ * Two kinds of thing live here and they are not promised alike, which is the
+ * whole of the contract (#2527 review).
  *
- * Where the pass is and how far it has got are the scalars a wrap resets
- * together, so they are published behind a sequence the reader retries over.
- * That window is those stores and nothing else, which is what makes the retry
- * converge.
+ * **The pass and its notes are recording metadata, and a reading of them is one
+ * moment's.** Which pass it is, where it starts, how many notes it holds and
+ * what each of them is are published behind one revision, turned twice around
+ * every change to any of them. A reader copies them and checks the revision
+ * afterwards; if it moved, the copy is thrown away rather than handed over. So
+ * a reading never pairs one pass's start with another's notes, or a note's
+ * pitch with a different note's beat.
  *
- * The notes are not in it: an array is as long as the pass is, and a reader
- * copying one inside a window would be racing the writer over a growing amount
- * of work. Each slot carries its own revision instead, turned twice around
- * every replacement, and its identity carries the pass that recorded it. A
- * reader takes the slots naming the pass it is reporting whose revision is
- * unchanged either side of the position, so a wrap or a retrigger during a read
- * costs a note off the list, never a note in the wrong place.
+ * A read that cannot settle returns false and leaves the reader's own reading
+ * alone: the last good one is a better answer than a mixed one. The revision
+ * turns once per block rather than once per note (@ref Change), so a reader
+ * retries at most once a block and settles in the gap after it.
  *
- * The peaks carry neither, and are the one thing here that can be ragged: a
- * wrap landing inside a read redraws a few ticks of the previous pass's audio,
- * for the frame it takes to ask again. Peaks are presentation and place
- * nothing.
+ * **Lengths are the exception, deliberately.** A note still down grows every
+ * block and the revision does not turn for it: its start cannot move while it
+ * stands, so a length read a block later still belongs to that note. What a
+ * reading does not promise is that two notes' lengths are from the same block.
+ *
+ * **The peaks are presentation and are not in the snapshot at all.** They place
+ * nothing and drive nothing, and a wrap landing inside a read can redraw a few
+ * ticks of the previous pass's audio for the frame it takes to ask again. This
+ * is the approximation the contract admits to; everything above it is exact.
+ *
+ * ## What it costs the audio thread
+ *
+ * Bounded and allocation-free. A structural change is a handful of stores; a
+ * block's extension is one store per note still down. The arrays are sized at
+ * construction and never grow.
+ *
+ * One writer, the audio thread. Any number of readers, none of them consuming.
  */
 class RecordTap {
     static_assert(std::atomic<double>::is_always_lock_free,
                   "a record tap is written on the audio thread and must not take a lock");
 
   public:
+    /// A pass with no room for another note.
+    static constexpr std::size_t kNoSlot = static_cast<std::size_t>(-1);
+
+    /**
+     * @brief Everything one block does to the pass, published as one change.
+     *
+     * A block's events are one transition, so a reader sees the pass before it
+     * or after it and never inside it, and retries at most once a block rather
+     * than once a note. Nesting is the ordinary case -- the calls below take
+     * one each -- and only the outermost turns the revision.
+     *
+     * Audio thread, for the length of a block and no longer.
+     */
+    class Change {
+      public:
+        explicit Change(RecordTap& tap) : tap_(tap) {
+            if (tap_.changing_++ == 0)
+                tap_.revision_.fetch_add(kChanging, std::memory_order_release);
+        }
+
+        ~Change() {
+            if (--tap_.changing_ == 0)
+                tap_.revision_.fetch_add(kChanging, std::memory_order_release);
+        }
+
+        Change(const Change&) = delete;
+        Change& operator=(const Change&) = delete;
+        Change(Change&&) = delete;
+        Change& operator=(Change&&) = delete;
+
+      private:
+        RecordTap& tap_;
+    };
+
     RecordTap(RecordMaterial material, const RecordTapSettings& settings)
         : material_(material),
           settings_(settings),
           notes_(settings.maxNotes),
-          peaks_(settings.maxPeaks) {
-        held_.fill(kNotHeld);
-        heldSlots_.reserve(settings.maxNotes);
-    }
+          peaks_(settings.maxPeaks) {}
 
     /** @brief The pass as it stands. */
     struct Reading {
@@ -137,16 +177,28 @@ class RecordTap {
         /// Notes and peaks the pass had no room for.
         std::int64_t notesLost = 0;
         std::int64_t peaksLost = 0;
+
+      private:
+        friend class RecordTap;
+
+        /// Where a read is assembled. Swapped in only once it has been checked,
+        /// so a read that does not settle leaves @ref notes as it found them.
+        std::vector<RecordedNote> staging;
     };
 
     /**
      * @brief Read the pass into @p into. Off the audio thread.
      *
+     * True when @p into is one moment's reading. False leaves it exactly as it
+     * was, for a caller to keep drawing.
+     *
      * Reuses @p into's storage, so a repaint reading every frame allocates
      * once.
      */
-    void read(Reading& into) const;
+    bool read(Reading& into) const;
 
+    /// @brief The pass, for a caller with nothing to keep. A read that does not
+    /// settle comes back as a pass that never opened.
     Reading read() const {
         Reading reading;
         read(reading);
@@ -157,6 +209,10 @@ class RecordTap {
         return settings_.samplesPerPeak;
     }
 
+    std::size_t maxNotes() const {
+        return notes_.size();
+    }
+
     /**
      * @brief A pass begins at @p startBeat on the timeline. Audio thread.
      *
@@ -165,20 +221,32 @@ class RecordTap {
      */
     void open(double startBeat);
 
-    /// @brief The pass, and every note still down, reach @p lengthBeats.
-    void extend(double lengthBeats);
-
     /// @brief No pass in flight. What the last one reached stands, so an
     /// overlay holds until the clip it became appears.
     void close() {
         recording_.store(false, std::memory_order_relaxed);
     }
 
-    /// @brief A note went down at @p beat from the pass start. Audio thread.
-    void noteOn(int channel, int note, int velocity, double beat);
+    /// @brief The pass reaches @p lengthBeats. Not a change to what it holds,
+    /// so a reader in the middle of one is not sent round again.
+    void extend(double lengthBeats) {
+        lengthBeats_.store(lengthBeats, std::memory_order_relaxed);
+    }
 
-    /// @brief The note came up at @p beat from the pass start. Audio thread.
-    void noteOff(int channel, int note, double beat);
+    /**
+     * @brief A note begins at @p beat from the pass start. Audio thread.
+     *
+     * The slot it took, for the caller to name it by afterwards, or @ref
+     * kNoSlot when the pass is full.
+     */
+    std::size_t addNote(int noteNumber, int velocity, double beat);
+
+    /// @brief @p slot is struck again: the same slot, a new note. What
+    /// TakeNotes.hpp calls a replacement.
+    void replaceNote(std::size_t slot, int noteNumber, int velocity, double beat);
+
+    /// @brief The note in @p slot now runs to @p endBeat, held or released.
+    void noteReaches(std::size_t slot, double endBeat);
 
     /**
      * @brief Fold a block of the take's own audio into the pass's peaks.
@@ -191,43 +259,22 @@ class RecordTap {
                   std::int64_t passSample);
 
   private:
-    /// Channels the held table spans. A note is published without one, as
-    /// MidiTake holds it, but two channels playing middle C are two notes.
-    static constexpr std::size_t kChannels = 16;
-    static constexpr std::size_t kNotesPerChannel = 128;
+    /// Odd while the pass or its notes are changing, even while they stand.
+    static constexpr std::uint32_t kChanging = 1U;
 
-    static constexpr std::uint32_t kNotHeld = 0xffffffffU;
+    /// A reader retries over a handful of stores, and only while a block's
+    /// events are being taken. Past this it says so rather than spinning.
+    static constexpr int kReadAttempts = 16;
 
-    /// Odd while the pass scalars are being replaced, even while they stand.
-    /// The pass ordinal is what is left once that bit is taken off.
-    static constexpr std::uint32_t kOpening = 1U;
-
-    /// A reader only ever retries over a handful of stores. Past this the audio
-    /// thread was preempted mid-open, and one frame of a start beside the next
-    /// pass's length is cheaper than spinning until it is rescheduled.
-    static constexpr int kReadAttempts = 64;
-
-    /// One note, and the count that says which occupant of the slot it is.
-    ///
-    /// The count rather than the identity, because the identity is not unique:
-    /// a pitch retriggered at the same velocity within one pass packs the same
-    /// word, so a reader comparing identities would accept the strike before
-    /// the replacement paired with the length after it. It rises on every
-    /// replacement and is odd while one is in flight.
-    ///
-    /// A length that grows under a read is not a replacement -- it is the same
-    /// note being held -- and deliberately does not touch it.
     struct NoteSlot {
-        std::atomic<std::uint64_t> revision{0};
-        std::atomic<std::uint64_t> identity{0};
+        std::atomic<std::uint32_t> identity{0};
         std::atomic<double> startBeat{0.0};
         std::atomic<double> lengthBeats{0.0};
     };
 
-    static std::uint64_t packIdentity(std::uint32_t pass, int note, int velocity) {
-        return static_cast<std::uint64_t>(note & 0x7f) |
-               (static_cast<std::uint64_t>(velocity & 0x7f) << 8U) |
-               (static_cast<std::uint64_t>(pass) << 32U);
+    static std::uint32_t packIdentity(int note, int velocity) {
+        return static_cast<std::uint32_t>(note & 0x7f) |
+               (static_cast<std::uint32_t>(velocity & 0x7f) << 8U);
     }
 
     static std::uint64_t packPeak(float left, float right) {
@@ -240,13 +287,8 @@ class RecordTap {
                 std::bit_cast<float>(static_cast<std::uint32_t>(word & 0xffffffffULL))};
     }
 
-    static std::size_t heldIndex(int channel, int note) {
-        return ((static_cast<std::size_t>(channel) % kChannels) * kNotesPerChannel) +
-               (static_cast<std::size_t>(note) & (kNotesPerChannel - 1));
-    }
-
-    /// One note into @p at, published between two turns of its revision.
-    void writeSlot(std::uint32_t at, int note, int velocity, double beat);
+    /// One note into @p slot. Inside a @ref Change, which is what publishes it.
+    void writeSlot(std::size_t slot, int noteNumber, int velocity, double beat);
 
     /// One tick's peak, folded into what the pass already put there. Assigned
     /// on the tick's first touch instead, which is what leaves the last pass's
@@ -260,19 +302,12 @@ class RecordTap {
     std::vector<NoteSlot> notes_;
     std::vector<std::atomic<std::uint64_t>> peaks_;
 
-    /// Which slot holds each channel's note while it is down. Audio thread
-    /// only, like every index below it.
-    std::array<std::uint32_t, kChannels * kNotesPerChannel> held_{};
+    /// Changes open right now. Audio thread only, like everything a change
+    /// touches.
+    int changing_ = 0;
 
-    /// The slots still open, so extending them costs the chord rather than the
-    /// table.
-    std::vector<std::uint32_t> heldSlots_;
-
-    /// The pass the writer is on, so a note can be tagged without reading the
-    /// sequence back.
-    std::uint32_t pass_ = 0;
-
-    std::atomic<std::uint32_t> seq_{0};
+    std::atomic<std::uint32_t> revision_{0};
+    std::atomic<std::uint32_t> pass_{0};
     std::atomic<bool> recording_{false};
     std::atomic<double> startBeat_{0.0};
     std::atomic<double> lengthBeats_{0.0};

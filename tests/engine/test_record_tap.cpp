@@ -15,6 +15,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
+#include "io/TakeNotes.hpp"
 #include "io/TakeRecorder.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
@@ -39,6 +40,7 @@ using magda::engine::LiveMidiStream;
 using magda::engine::LoopRange;
 using magda::engine::MidiTakeRecorder;
 using magda::engine::MidiTakeRecorderSettings;
+using magda::engine::PreviewNotes;
 using magda::engine::RecordedMidiTake;
 using magda::engine::RecordMaterial;
 using magda::engine::RecordTap;
@@ -281,12 +283,13 @@ TEST_CASE("A tap nothing has opened reports no pass", "[engine][tap][record][246
 TEST_CASE("A held note reaches the end of the pass and stops where it came up",
           "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());
-    tap.open(8.0);
-    tap.noteOn(1, 60, 100, 0.5);
-    tap.extend(1.0);
+    PreviewNotes played(tap);
+    played.open(8.0);
+    played.strike(1, 60, 100, 0.5);
+    played.reaches(1.0);
 
     SECTION("still down, it is as long as the pass") {
-        tap.extend(2.5);
+        played.reaches(2.5);
 
         const auto reading = tap.read();
         REQUIRE(reading.notes.size() == 1);
@@ -296,8 +299,8 @@ TEST_CASE("A held note reaches the end of the pass and stops where it came up",
     }
 
     SECTION("once it comes up, the pass grows past it") {
-        tap.noteOff(1, 60, 1.5);
-        tap.extend(2.5);
+        played.release(1, 60, 1.5);
+        played.reaches(2.5);
 
         const auto reading = tap.read();
         REQUIRE(reading.notes.size() == 1);
@@ -307,14 +310,15 @@ TEST_CASE("A held note reaches the end of the pass and stops where it came up",
 
 TEST_CASE("A pass takes the last one's notes with it", "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());
-    tap.open(0.0);
-    tap.noteOn(1, 60, 100, 0.5);
-    tap.noteOff(1, 60, 1.0);
-    tap.extend(4.0);
+    PreviewNotes played(tap);
+    played.open(0.0);
+    played.strike(1, 60, 100, 0.5);
+    played.release(1, 60, 1.0);
+    played.reaches(4.0);
 
-    tap.open(4.0);
-    tap.noteOn(1, 67, 100, 0.25);
-    tap.extend(1.0);
+    played.open(4.0);
+    played.strike(1, 67, 100, 0.25);
+    played.reaches(1.0);
 
     const auto reading = tap.read();
     CHECK(reading.pass == 2);
@@ -325,10 +329,11 @@ TEST_CASE("A pass takes the last one's notes with it", "[engine][tap][record][24
 
 TEST_CASE("A note the pass has no room for is counted", "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn(2));
-    tap.open(0.0);
+    PreviewNotes played(tap);
+    played.open(0.0);
 
     for (auto note = 0; note < 5; ++note)
-        tap.noteOn(1, 60 + note, 100, static_cast<double>(note));
+        played.strike(1, 60 + note, 100, static_cast<double>(note));
 
     const auto reading = tap.read();
     CHECK(reading.notes.size() == 2);
@@ -337,8 +342,9 @@ TEST_CASE("A note the pass has no room for is counted", "[engine][tap][record][2
 
 TEST_CASE("A closed pass keeps what it reached", "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::audio, drawn());
-    tap.open(2.0);
-    tap.extend(1.5);
+    PreviewNotes played(tap);
+    played.open(2.0);
+    played.reaches(1.5);
     tap.close();
 
     const auto reading = tap.read();
@@ -349,6 +355,7 @@ TEST_CASE("A closed pass keeps what it reached", "[engine][tap][record][2463]") 
 
 TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());
+    PreviewNotes played(tap);
     std::atomic<bool> writing{true};
 
     // Every pass is named three times over: by where it starts, by the pitch it
@@ -358,23 +365,33 @@ TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]
     constexpr double kPassSpan = 1000.0;
 
     std::thread writer([&] {
-        for (auto pass = 0; pass < 2000; ++pass) {
+        for (auto pass = 0; pass < 200000; ++pass) {
             const auto origin = static_cast<double>(pass) * kPassSpan;
-            tap.open(origin);
+
+            played.open(origin);
 
             for (auto note = 0; note < 8; ++note) {
                 const auto at = origin + static_cast<double>(note);
-                tap.noteOn(1, 60 + (pass % 12), 100, at);
-                tap.extend(at + 0.75);
-                tap.noteOff(1, 60 + (pass % 12), at + 0.25);
+                played.strike(1, 60 + (pass % 12), 100, at);
+                played.release(1, 60 + (pass % 12), at + 0.25);
             }
+
+            played.reaches(origin + 8.0);
+            std::this_thread::yield();
         }
+
         writing.store(false);
     });
 
-    auto readings = 0;
+    auto settled = 0;
+    auto checked = 0;
+    RecordTap::Reading reading;
+
     while (writing.load()) {
-        const auto reading = tap.read();
+        if (!tap.read(reading))
+            continue;
+
+        ++settled;
         if (reading.pass == 0)
             continue;
 
@@ -386,72 +403,85 @@ TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]
             REQUIRE(note.noteNumber == 60 + (pass % 12));
             REQUIRE(note.startBeat >= origin);
             REQUIRE(note.startBeat < origin + 8.0);
-
-            // Held until the block that closed it, and never longer.
-            REQUIRE(note.lengthBeats <= beats(0.75));
+            REQUIRE(note.lengthBeats <= beats(0.25));
+            ++checked;
         }
-
-        ++readings;
     }
 
     writer.join();
-    CHECK(readings > 0);
+    CHECK(settled > 0);
+    CHECK(checked > 0);
 }
 
 TEST_CASE("A note is read as one note, not two halves of a slot", "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());
-    tap.open(0.0);
+    PreviewNotes played(tap);
+    played.open(0.0);
 
-    // The tightest race the tap has: a pitch struck again rewrites the slot it
-    // is already in, so a reader can take the identity of one strike and the
-    // position of the next. The velocity says which strike a note is and its
-    // beat says the same thing, so the two disagreeing is the tear.
+    // A slot rewritten in place, one strike at a time rather than batched, so
+    // what is under test is the guard on the call itself. The velocity says
+    // which strike a note is and its beat says the same thing, so the two
+    // disagreeing is the tear.
     std::atomic<bool> writing{true};
 
     std::thread writer([&] {
-        for (auto strike = 0; strike < 4000000; ++strike) {
+        for (auto strike = 0; strike < 400000; ++strike) {
             const auto velocity = 1 + (strike % 126);
-            tap.noteOn(1, 60, velocity, static_cast<double>(velocity));
+
+            played.strike(1, 60, velocity, static_cast<double>(velocity));
+            std::this_thread::yield();
         }
+
         writing.store(false);
     });
 
-    auto readings = 0;
-    while (writing.load()) {
-        const auto reading = tap.read();
-        for (const auto& note : reading.notes)
-            REQUIRE(note.startBeat == beats(static_cast<double>(note.velocity)));
+    auto checked = 0;
+    RecordTap::Reading reading;
 
-        ++readings;
+    while (writing.load()) {
+        if (!tap.read(reading))
+            continue;
+
+        for (const auto& note : reading.notes) {
+            REQUIRE(note.startBeat == beats(static_cast<double>(note.velocity)));
+            ++checked;
+        }
     }
 
     writer.join();
-    CHECK(readings > 0);
+    CHECK(checked > 0);
 }
 
 TEST_CASE("A retrigger that restores the same note is still a replacement",
           "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());
-    tap.open(0.0);
+    PreviewNotes played(tap);
+    played.open(0.0);
 
     // One pitch at one velocity, struck over and over without coming up. Every
     // strike packs the identity the last one did, so nothing about the note
-    // itself tells two of them apart and only a count can. The length says
-    // which strike a beat came from.
+    // itself tells two of them apart. The length says which strike a beat came
+    // from.
     std::atomic<bool> writing{true};
 
     std::thread writer([&] {
-        for (auto strike = 0; strike < 4000000; ++strike) {
+        for (auto strike = 0; strike < 400000; ++strike) {
             const auto at = static_cast<double>(strike);
-            tap.noteOn(1, 60, 100, at);
-            tap.extend(at + 1.0 + static_cast<double>(strike % 7));
+
+            played.strike(1, 60, 100, at);
+            played.reaches(at + 1.0 + static_cast<double>(strike % 7));
+            std::this_thread::yield();
         }
+
         writing.store(false);
     });
 
-    auto readings = 0;
+    auto checked = 0;
+    RecordTap::Reading reading;
+
     while (writing.load()) {
-        const auto reading = tap.read();
+        if (!tap.read(reading))
+            continue;
 
         for (const auto& note : reading.notes) {
             // Zero is the strike itself, before the pass has extended it.
@@ -460,13 +490,60 @@ TEST_CASE("A retrigger that restores the same note is still a replacement",
 
             REQUIRE(note.lengthBeats ==
                     beats(1.0 + static_cast<double>(std::llround(note.startBeat) % 7)));
+            ++checked;
         }
-
-        ++readings;
     }
 
     writer.join();
-    CHECK(readings > 0);
+    CHECK(checked > 0);
+}
+
+TEST_CASE("A read that cannot settle leaves the reader what it had",
+          "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    PreviewNotes played(tap);
+
+    played.open(4.0);
+    played.strike(1, 60, 100, 0.5);
+    played.reaches(1.0);
+
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
+    REQUIRE(reading.notes.size() == 1);
+
+    // A block still being taken. Nothing settles while one is open, and what
+    // the reader already had is a better answer than half of two passes.
+    const RecordTap::Change change(tap);
+    played.open(8.0);
+
+    CHECK_FALSE(tap.read(reading));
+    CHECK(reading.startBeat == beats(4.0));
+    REQUIRE(reading.notes.size() == 1);
+    CHECK(reading.notes[0].noteNumber == 60);
+}
+
+TEST_CASE("A block's events reach a reader together", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    PreviewNotes played(tap);
+    played.open(0.0);
+
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
+    REQUIRE(reading.notes.empty());
+
+    {
+        const RecordTap::Change change(tap);
+        played.strike(1, 60, 100, 0.0);
+
+        // Halfway through the block, and not readable as such.
+        CHECK_FALSE(tap.read(reading));
+        CHECK(reading.notes.empty());
+
+        played.strike(1, 64, 100, 0.25);
+    }
+
+    REQUIRE(tap.read(reading));
+    CHECK(reading.notes.size() == 2);
 }
 
 // --- the pass a MIDI take is recording ---
