@@ -515,6 +515,45 @@ TEST_CASE("A retrigger that restores the same note is still a replacement",
     CHECK(checked > 0);
 }
 
+TEST_CASE("A pass's length belongs to the pass that is reported", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    PreviewNotes played(tap);
+    std::atomic<bool> writing{true};
+
+    // Each pass says which it is twice: where it starts, and a length one beat
+    // past that. A wrap taken between the two is a length off the next pass
+    // against the last one's start, which on an overlay is one that collapses.
+    std::thread writer([&] {
+        for (auto pass = 1; pass <= 200000; ++pass) {
+            const auto origin = static_cast<double>(pass) * 1000.0;
+
+            {
+                const RecordTap::Change change(tap);
+                played.open(origin);
+                played.reaches(origin + 1.0);
+            }
+
+            std::this_thread::yield();
+        }
+
+        writing.store(false);
+    });
+
+    auto checked = 0;
+    RecordTap::Reading reading;
+
+    while (writing.load()) {
+        if (!tap.read(reading) || reading.pass == 0)
+            continue;
+
+        REQUIRE(reading.lengthBeats == beats(reading.startBeat + 1.0));
+        ++checked;
+    }
+
+    writer.join();
+    CHECK(checked > 0);
+}
+
 TEST_CASE("A read that cannot settle leaves the reader what it had",
           "[engine][tap][record][2463]") {
     RecordTap tap(RecordMaterial::midi, drawn());

@@ -97,10 +97,16 @@ struct RecordTapSettings {
  * turns once per block rather than once per note (@ref Change), so a reader
  * retries at most once a block and settles in the gap after it.
  *
- * **Lengths are the exception, deliberately.** A note still down grows every
- * block and the revision does not turn for it: its start cannot move while it
- * stands, so a length read a block later still belongs to that note. What a
- * reading does not promise is that two notes' lengths are from the same block.
+ * **Lengths grow without turning the revision, and are still read inside the
+ * check.** A note still down, and the pass itself, reach further every block,
+ * and turning the revision for that would send a reader round on every block it
+ * landed in. What makes it safe is that a length is only ever measured from a
+ * start that cannot move while the pass stands -- so a length taken inside the
+ * check belongs to the start beside it, and a wrap sends the reader round like
+ * any other change. Reading one afterwards would not: the pass that opened has
+ * no length yet, and that is an overlay collapsing to nothing.
+ *
+ * What a reading does not promise is that two lengths are from the same block.
  *
  * **The peaks are presentation and are not in the snapshot at all.** They place
  * nothing and drive nothing, and a wrap landing inside a read can redraw a few

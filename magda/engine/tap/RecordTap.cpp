@@ -127,6 +127,12 @@ bool RecordTap::read(Reading& into) const {
         const auto notesLost = notesLost_.load(std::memory_order_relaxed);
         const auto numNotes = std::min(numNotes_.load(std::memory_order_relaxed), notes_.size());
 
+        // Inside the check, not after it. A length is only measured from a
+        // start while the pass that has both of them stands: a wrap taken
+        // between the two would put the next pass's length -- nothing, at the
+        // moment it opens -- against the last one's start.
+        const auto lengthBeats = lengthBeats_.load(std::memory_order_relaxed);
+
         into.staging.clear();
         for (std::size_t at = 0; at < numNotes; ++at) {
             const auto identity = notes_[at].identity.load(std::memory_order_relaxed);
@@ -147,12 +153,8 @@ bool RecordTap::read(Reading& into) const {
         into.pass = pass;
         into.startBeat = startBeat;
         into.notesLost = notesLost;
+        into.lengthBeats = lengthBeats;
         into.notes.swap(into.staging);
-
-        // Outside the snapshot on purpose. A length is the pass or a note as of
-        // some block, and neither can be attached to the wrong pass or the
-        // wrong note: the start it is measured from is in the snapshot.
-        into.lengthBeats = lengthBeats_.load(std::memory_order_relaxed);
 
         const auto needed = peaksNeeded_.load(std::memory_order_acquire);
         const auto numPeaks =
