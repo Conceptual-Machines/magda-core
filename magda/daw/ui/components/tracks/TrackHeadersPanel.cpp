@@ -2551,7 +2551,7 @@ void TrackHeadersPanel::mouseDown(const juce::MouseEvent& event) {
     }
 
     // Handle vertical track height resizing and track selection
-    int trackIndex;
+    int trackIndex = 0;
     if (isResizeHandleArea(pos, trackIndex)) {
         // Start resizing
         isResizing = true;
@@ -2756,7 +2756,7 @@ void TrackHeadersPanel::mouseMove(const juce::MouseEvent& event) {
     }
 
     // Handle vertical track height resizing
-    int trackIndex;
+    int trackIndex = 0;
     if (isResizeHandleArea(event.getPosition(), trackIndex)) {
         setMouseCursor(juce::MouseCursor::UpDownResizeCursor);
     } else {
@@ -3333,7 +3333,7 @@ void TrackHeadersPanel::executeDrop() {
         }
 
         // Calculate the initial target position in TrackManager order
-        int baseTargetIndex;
+        int baseTargetIndex = 0;
         if (dropTargetIndex_ >= static_cast<int>(visibleTrackIds_.size())) {
             baseTargetIndex = trackManager.getNumTracks();
         } else {
@@ -3452,7 +3452,7 @@ void TrackHeadersPanel::paintDropIndicatorLine(juce::Graphics& g) {
     if (dropTargetIndex_ < 0)
         return;
 
-    int indicatorY;
+    int indicatorY = 0;
     if (dropTargetIndex_ >= static_cast<int>(trackHeaders.size())) {
         // At the end
         indicatorY = getTotalTracksHeight();

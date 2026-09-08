@@ -399,7 +399,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
         // Parse numeric values from display texts
         std::vector<float> parsedValues;
         for (const auto& text : input.displayTexts) {
-            float val;
+            float val = NAN;
             // Try bracketed value first: "50% [-9.0 dB]" → -9.0
             if (parseNumberFromBracketedUnit(text, displayUnit, val)) {
                 parsedValues.push_back(val);
@@ -469,7 +469,7 @@ DetectedParameterInfo detectSingleParameter(const ParameterScanInput& input) {
         if (displayTextsCompatible) {
             std::vector<float> parsedValues;
             for (const auto& text : input.displayTexts) {
-                float val;
+                float val = NAN;
                 // Try bracketed value first: "50% [-9.0 dB]" → -9.0
                 if (parseNumberFromBracketedUnit(text, nameUnit, val)) {
                     parsedValues.push_back(val);

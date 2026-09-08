@@ -40,13 +40,7 @@ struct Chord {
     std::vector<int> missingIntervals;   // intervals present in ideal chord but absent in input
     std::vector<int> extraPitchClasses;  // pitch classes in input but not in ideal chord
 
-    Chord()
-        : root(ChordRoot::C),
-          quality(ChordQuality::Major),
-          inversion(0),
-          notes({}),
-          rootNoteNumber(-1),
-          degree(std::nullopt) {}
+    Chord() : notes({}), degree(std::nullopt) {}
 
     Chord(juce::String chordName) {  // NOLINT(google-explicit-constructor)
         auto parsedSpec = ChordUtils::stringToChordSpec(chordName);

@@ -433,7 +433,6 @@ struct ModInfo {
     explicit ModInfo(int index)
         : id(index),
           name(getDefaultName(index, ModType::LFO)),
-          type(ModType::LFO),
           tapPoint(defaultModTapPoint(ModType::LFO)) {}
 
     /// Become @p t, and take the tap point that goes with it. What

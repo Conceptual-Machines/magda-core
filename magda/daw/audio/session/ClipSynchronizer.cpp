@@ -1490,7 +1490,7 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
                 double t = (beat - beatStart) / span;
 
                 // Apply tension (same formula as CurveSnapshot::evaluate / CurveEditorBase)
-                double curvedT;
+                double curvedT = NAN;
                 if (std::abs(tension) < 0.001) {
                     curvedT = t;
                 } else if (tension > 0) {

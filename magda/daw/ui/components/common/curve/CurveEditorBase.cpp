@@ -1,6 +1,7 @@
 #include "CurveEditorBase.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <map>
 #include <set>
@@ -652,7 +653,7 @@ std::pair<double, double> CurveEditorBase::getSegmentShaperPosition(const CurveP
     double sy = (p1y + p2y) * 0.5;
     if (std::abs(effectiveTension) > 0.001) {
         constexpr double t = 0.5;
-        double curvedT;
+        double curvedT = NAN;
         if (effectiveTension > 0)
             curvedT = std::pow(t, 1.0 + effectiveTension * 2.0);
         else
@@ -696,8 +697,8 @@ void CurveEditorBase::updateSegmentShaperFromPixel(uint32_t pointId, double pixe
         const auto& p2 = points[i + 1];
         const bool isHardCorner = (p1.curveType == CurveType::HardCorner);
 
-        double cx, cy;              // stored control (Linear) or apex (HardCorner)
-        double displayX, displayY;  // where the handle dot sits, always ON the curve
+        double cx = NAN, cy = NAN;              // stored control (Linear) or apex (HardCorner)
+        double displayX = NAN, displayY = NAN;  // where the handle dot sits, always ON the curve
 
         if (isHardCorner) {
             // Hard corner: the apex is a real point on the curve, so clamp it to
@@ -967,7 +968,7 @@ void CurveEditorBase::rebuildPointComponents() {
                     uint32_t pid = ptComp->getPointId();
                     if (!selectedPointIds_.count(pid))
                         continue;
-                    double fx, fy;
+                    double fx = NAN, fy = NAN;
                     if (pid == pointId) {
                         fx = newX;
                         fy = newY;

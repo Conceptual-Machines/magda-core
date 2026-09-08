@@ -34,7 +34,6 @@ Checks: >-
   modernize-concat-nested-namespaces,
   modernize-type-traits,
   modernize-raw-string-literal,
-  cppcoreguidelines-prefer-member-initializer,
   cppcoreguidelines-init-variables,
   readability-qualified-auto,
   readability-redundant-string-init,
@@ -89,6 +88,18 @@ Checks: >-
 #   macro-parentheses (2)        the argument is streamed, so parenthesising it
 #                                would evaluate the << chain before the string.
 #
+# cppcoreguidelines-prefer-member-initializer is off. It hoists an assignment into
+# the init list without seeing what the body did first, and this codebase's
+# dominant constructor idiom is exactly that dependency: every TE plugin calls
+# CachedValue::referTo() and then reads .get(). Hoisting the read leaves it
+# bound to nothing, so the four sidechain/MIDI-source plugins silently lost
+# their persisted track on load. Of 19 files it touched, 7 carried a defect -
+# three no longer compiled (a header fix stacked, once 21 deep), MixerDebugPanel
+# read rows.size() before the body filled rows, and ChordTypes moved chordName
+# into the init list ahead of three body reads of it. The remaining 12 are
+# cosmetic. Rewriting a constructor means checking declaration order and every
+# preceding statement, so it belongs with use-anyofallof as authoring work.
+#
 # modernize-use-integer-sign-comparison is off: its 656 hits were all deliberate
 # `x < static_cast<int>(v.size())` casts, and its fixer deletes the cast text but
 # leaves the closing paren - 572 of 632 rewrites did not compile.
@@ -120,6 +131,10 @@ CheckOptions:
     value: 'false'
   - key: performance-unnecessary-value-param.AllowedTypes
     value: 'juce::String;juce::var;std::shared_ptr;std::unique_ptr'
+  # Defaults to <math.h>, which it then adds next to the <cmath> these files
+  # already include. The inserter matches on spelling, so only <cmath> dedupes.
+  - key: cppcoreguidelines-init-variables.MathHeader
+    value: '<cmath>'
   - key: modernize-loop-convert.MaxCopySize
     value: '16'
   - key: modernize-loop-convert.MinConfidence

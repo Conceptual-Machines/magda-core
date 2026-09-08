@@ -32,7 +32,7 @@ inline double applyRampCurve(double t, float depth, float skew, bool hardAngle =
 
     if (hardAngle) {
         // Piecewise linear: two straight segments through control point (s, cp)
-        double result;
+        double result = NAN;
         if (t <= s)
             result = t * cp / s;
         else
@@ -41,7 +41,7 @@ inline double applyRampCurve(double t, float depth, float skew, bool hardAngle =
     }
 
     // Quadratic bezier with control point (s, cp)
-    double u;
+    double u = NAN;
     double a = 1.0 - 2.0 * s;
     if (std::abs(a) < 1e-10) {
         u = t;

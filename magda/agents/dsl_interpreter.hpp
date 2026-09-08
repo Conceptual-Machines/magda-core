@@ -92,10 +92,10 @@ class Tokenizer {
 
     const char* input_;
     const char* pos_;
-    int line_;
-    int col_;
+    int line_{1};
+    int col_{1};
     Token peeked_;
-    bool hasPeeked_;
+    bool hasPeeked_{false};
 };
 
 // ============================================================================

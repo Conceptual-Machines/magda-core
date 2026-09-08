@@ -1164,7 +1164,7 @@ void ClipInspector::initClipPropertiesSection() {
         // Compute new loop length from loop end - loop start.
         double newLoopEndBeats = clipLoopEndValue_->getValue();
 
-        double newLoopLengthSeconds;
+        double newLoopLengthSeconds = NAN;
         if (clip->isAudio()) {
             const double newLoopEndSeconds =
                 displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);

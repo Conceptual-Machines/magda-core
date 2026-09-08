@@ -725,7 +725,7 @@ void ArpeggiatorPlugin::walkSteps(BlockScope& block, const Stretch& stretch) {
         }
 
         // Determine which note to play
-        int stepIdx;
+        int stepIdx = 0;
         if (block.pattern == Pattern::Random) {
             stepIdx = arpRandom_.nextInt(stretch.seq.length);
         } else {

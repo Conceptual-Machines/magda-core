@@ -1507,7 +1507,7 @@ void PianoRollGridComponent::updateNotePosition(NoteComponent* note, double beat
         note->setVisible(true);
     }
 
-    double displayBeat;
+    double displayBeat = NAN;
     const double visibleStart = clip ? ClipOperations::getMidiVisibleRange(*clip).startBeat : 0.0;
     if (relativeMode_) {
         if (clipIds_.size() > 1 && clip) {
@@ -2502,7 +2502,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
 
         // Relative mode: notes at content-relative beats.
         // Absolute mode: midiTrimOffset compensates for left-resize.
-        double displayBeat;
+        double displayBeat = NAN;
 
         const double visibleStart = ClipOperations::getMidiVisibleRange(*clip).startBeat;
         if (relativeMode_) {
@@ -2520,7 +2520,7 @@ void PianoRollGridComponent::updateNoteComponentBounds() {
             // Absolute mode: use clipStartBeats_ which reflects the drag
             // preview position during clip moves, falling back to the clip's
             // actual timeline position otherwise.
-            double clipOffsetBeats;
+            double clipOffsetBeats = NAN;
             if (clipIds_.size() > 1) {
                 double tempo = 120.0;
                 if (auto* controller = TimelineController::getCurrent()) {

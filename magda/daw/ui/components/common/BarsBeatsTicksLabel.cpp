@@ -132,7 +132,7 @@ void BarsBeatsTicksLabel::onSegmentChanged() {
 }
 
 void BarsBeatsTicksLabel::updateSegmentTexts() {
-    int bars, beats, ticks;
+    int bars = 0, beats = 0, ticks = 0;
     decompose(bars, beats, ticks);
 
     int offset = barsBeatsIsPosition_ ? 1 : 0;

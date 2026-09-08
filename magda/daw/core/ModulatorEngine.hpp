@@ -214,7 +214,7 @@ class ModulatorEngine {
     // Timer instance - using composition instead of inheritance to allow early destruction
     std::unique_ptr<UpdateTimer> timer_;
 
-    std::chrono::steady_clock::time_point lastTickTime_{};
+    std::chrono::steady_clock::time_point lastTickTime_;
     bool lastTickValid_ = false;
 
     std::function<void()> postUpdateHook_;

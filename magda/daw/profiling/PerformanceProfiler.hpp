@@ -228,7 +228,7 @@ class PerformanceMonitor {
  */
 class MonitoredProfiler {
   public:
-    explicit MonitoredProfiler(juce::String category) : category_(std::move(category)), timer_() {}
+    explicit MonitoredProfiler(juce::String category) : category_(std::move(category)) {}
 
     ~MonitoredProfiler() {
         try {

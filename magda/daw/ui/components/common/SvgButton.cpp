@@ -5,7 +5,7 @@
 namespace magda {
 
 SvgButton::SvgButton(const juce::String& buttonName, const char* svgData, size_t svgDataSize)
-    : juce::Button(buttonName), dualIconMode(false) {
+    : juce::Button(buttonName) {
     // Load SVG from binary data using RAII wrapper
     svgIcon = magda::ManagedDrawable::create(svgData, svgDataSize);
 

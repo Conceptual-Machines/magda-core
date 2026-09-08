@@ -1,6 +1,7 @@
 #include "controllers/ControllerRouter.hpp"
 
 #include <algorithm>
+#include <cmath>
 
 #include "../../core/aliases/AliasRegistry.hpp"
 #include "../../core/aliases/ChainContext.hpp"
@@ -347,7 +348,7 @@ void ControllerRouter::executeWrite(const BindingId& bindingId, int rawValue, in
     juce::String key = bindingId.toDashedString();
     auto& state = runtimeState_[key];
 
-    float finalValue;
+    float finalValue = NAN;
 
     if (binding.mode == BindingMode::Toggle) {
         float toggled = applyToggle(rawValue, state.toggleState);

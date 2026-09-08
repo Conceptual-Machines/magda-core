@@ -499,7 +499,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
                 const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
                 const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
                 for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    float teRaw;
+                    float teRaw = NAN;
                     if (infoSpan > 0.0f) {
                         float real =
                             ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
