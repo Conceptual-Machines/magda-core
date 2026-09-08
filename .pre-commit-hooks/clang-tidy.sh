@@ -47,10 +47,10 @@ UNBUILT_OK=(
 
 # A header changed on its own still has to be analysed, and clang-tidy only
 # analyses translation units, so headers map to the TUs that compile them via
-# ninja's recorded dependencies. tus-for-headers.py applies CLANG_TIDY_MAX_TUS
-# itself: the budget has to be spread across the changed headers, and only it
-# knows which TU came from which header.
-export CLANG_TIDY_MAX_TUS="${CLANG_TIDY_MAX_TUS:-8}"
+# ninja's recorded dependencies. tus-for-headers.py applies the ceiling itself:
+# the budget has to be spread across the changed headers, and only it knows
+# which TU came from which header.
+MAX_TUS="${CLANG_TIDY_MAX_TUS:-8}"
 
 BUILD_DIR="${BUILD_DIR:-cmake-build-debug}"
 
@@ -75,10 +75,8 @@ if [ ! -f "$DB" ]; then
     exit 1
 fi
 
-in_db() {
-    # pre-commit passes repo-relative paths, the database records absolute ones.
-    grep -q "/$1\"" "$DB" 2>/dev/null
-}
+hook_dir=$(cd "$(dirname "$0")" && pwd)
+resolver="$hook_dir/tus-for-headers.py"
 
 is_unbuilt_ok() {
     local candidate="$1" known
@@ -94,10 +92,25 @@ declare -a changed=()
 declare -a expanded=()
 declare -a headers=()
 
+declare -a sources=()
 for file in "$@"; do
     case "$file" in
-    *.cpp)
-        if in_db "$file"; then
+    *.cpp) sources+=("$file") ;;
+    *.h | *.hpp) headers+=("$file") ;;
+    esac
+done
+
+# Database membership is resolved by the same code that reads it, rather than a
+# grep here: the file records absolute native paths, so matching a relative one
+# by string has to assume a separator, and on Windows that marks every file
+# missing and passes the lot.
+if [ ${#sources[@]} -gt 0 ]; then
+    if ! absent=$(python3 "$resolver" --missing --build-dir "$BUILD_DIR" "${sources[@]}"); then
+        echo "Could not read $DB." >&2
+        exit 1
+    fi
+    for file in "${sources[@]}"; do
+        if ! printf '%s\n' "$absent" | grep -qxF "$file"; then
             changed+=("$file")
         elif is_unbuilt_ok "$file"; then
             echo "note: $file is in no compile command, which is expected for it."
@@ -107,19 +120,15 @@ for file in "$@"; do
             echo "UNBUILT_OK in $0 rather than leaving it unanalysed." >&2
             status=1
         fi
-        ;;
-    *.h | *.hpp)
-        headers+=("$file")
-        ;;
-    esac
-done
+    done
+fi
 
 if [ ${#headers[@]} -gt 0 ]; then
-    hook_dir=$(cd "$(dirname "$0")" && pwd)
     # Command substitution, not `mapfile < <(...)`: mapfile reports its own
     # status, so a process substitution's exit code is lost and a failing
     # mapping reads as success.
-    if header_tus=$(BUILD_DIR="$BUILD_DIR" python3 "$hook_dir/tus-for-headers.py" "${headers[@]}"); then
+    if header_tus=$(python3 "$resolver" --build-dir "$BUILD_DIR" \
+                      --max-tus "$MAX_TUS" "${headers[@]}"); then
         [ -n "$header_tus" ] && mapfile -t expanded <<<"$header_tus"
     else
         # Either the dependency data is unreadable or a header compiles into
