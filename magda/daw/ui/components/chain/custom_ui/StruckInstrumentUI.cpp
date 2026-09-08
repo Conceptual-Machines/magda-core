@@ -186,9 +186,11 @@ float StruckInstrumentUI::decayNorm() const {
 }
 
 // The body graphic occupies the body panel minus padding and a caption strip.
-static juce::Rectangle<float> graphicRect(juce::Rectangle<int> bodyArea) {
+namespace {
+juce::Rectangle<float> graphicRect(juce::Rectangle<int> bodyArea) {
     return bodyArea.reduced(18).withTrimmedBottom(14).toFloat();
 }
+}  // namespace
 
 juce::Point<float> StruckInstrumentUI::strikePoint() const {
     const auto gr = graphicRect(bodyArea_);

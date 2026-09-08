@@ -14,11 +14,9 @@
 #include "core/TypeIds.hpp"
 #include "drum_grid/PadDeviceSlot.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;

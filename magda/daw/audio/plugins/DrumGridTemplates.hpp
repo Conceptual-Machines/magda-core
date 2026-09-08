@@ -4,14 +4,12 @@
 
 #include <array>
 
-namespace magda::daw::audio {
-
 // Built-in row templates for the Drum Grid. Applying a template stamps
 // (label, role) pairs onto the kit's existing chains in low-note order; chains
 // beyond the template's row count are left untouched, and template rows beyond
 // the chain count are dropped. Chains are not created or deleted — only the
 // label (Chain.name) and role (Chain.role) are rewritten.
-namespace drum_grid_templates {
+namespace magda::daw::audio::drum_grid_templates {
 
 struct Row {
     const char* label;
@@ -66,5 +64,4 @@ inline constexpr std::array<Template, 3> kBuiltIn{{
     {"Classic 9-Pad", kNinePadRows.data(), static_cast<int>(kNinePadRows.size())},
 }};
 
-}  // namespace drum_grid_templates
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::drum_grid_templates

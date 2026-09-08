@@ -60,7 +60,8 @@ bool DSLTokeniser::isNoteName(const juce::String& token) {
 
 // Consumes the digits of a number, plus a fractional part if one follows.
 // Assumes any sign has already been consumed.
-static void readNumberBody(juce::CodeDocument::Iterator& source) {
+namespace {
+void readNumberBody(juce::CodeDocument::Iterator& source) {
     while (juce::CharacterFunctions::isDigit(source.peekNextChar()))
         source.skip();
     if (source.peekNextChar() == '.') {
@@ -69,6 +70,7 @@ static void readNumberBody(juce::CodeDocument::Iterator& source) {
             source.skip();
     }
 }
+}  // namespace
 
 int DSLTokeniser::readNextToken(juce::CodeDocument::Iterator& source) {
     source.skipWhitespace();

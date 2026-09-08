@@ -12,16 +12,19 @@
 namespace magda {
 
 // Convert linear gain to dB (same formula as AutomationManager.cpp)
-static float gainToDb(float gain) {
+namespace {
+float gainToDb(float gain) {
     constexpr float MIN_DB = -60.0f;
     if (gain <= 0.0f)
         return MIN_DB;
     return 20.0f * std::log10(gain);
 }
+}  // namespace
 
 AutomationRecordingEngine::AutomationRecordingEngine(te::Edit& edit) : edit_(edit) {}
 
-static const char* modeName(AutomationMode m) {
+namespace {
+const char* modeName(AutomationMode m) {
     switch (m) {
         case AutomationMode::Off:
             return "OFF";
@@ -34,6 +37,7 @@ static const char* modeName(AutomationMode m) {
     }
     return "?";
 }
+}  // namespace
 
 void AutomationRecordingEngine::setMode(AutomationMode mode) {
     if (mode == mode_)

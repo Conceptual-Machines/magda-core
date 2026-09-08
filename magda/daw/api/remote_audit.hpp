@@ -8,8 +8,7 @@
 #include <mutex>
 #include <vector>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /// How one audited request or connection ended.
 enum class AuditOutcome {
@@ -174,5 +173,4 @@ juce::String redactSecrets(const juce::String& text);
  */
 juce::String redactedFileName(const juce::File& file);
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

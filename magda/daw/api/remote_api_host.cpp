@@ -26,8 +26,7 @@
     #include <csignal>
 #endif
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -557,5 +556,4 @@ RemoteAuditLog& RemoteApiHost::audit() {
     return *audit_;
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

@@ -12,8 +12,7 @@
 
 #include "remote_scopes.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /// The two transport names, spelled once. They key the disconnect handlers, so
 /// a mismatch between what a server registers and what a connection reports is
@@ -186,5 +185,4 @@ class RemoteClientRegistry {
     std::function<void()> onChanged_;
 };
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

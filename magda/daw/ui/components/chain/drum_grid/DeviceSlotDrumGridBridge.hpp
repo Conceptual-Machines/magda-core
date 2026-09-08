@@ -16,11 +16,9 @@
 #include "core/SelectionManager.hpp"
 #include "core/TypeIds.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::ui {
 

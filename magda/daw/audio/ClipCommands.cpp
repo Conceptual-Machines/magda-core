@@ -1489,10 +1489,10 @@ void RenderTimeSelectionCommand::undo() {
 }
 
 // ============================================================================
-static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart,
-                           double selEnd, bool ripple, double duration,
-                           std::vector<ClipId>& clipsToDelete, std::vector<ClipId>& clipsToResync,
-                           double tempo) {
+namespace {
+bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, double selStart, double selEnd,
+                    bool ripple, double duration, std::vector<ClipId>& clipsToDelete,
+                    std::vector<ClipId>& clipsToResync, double tempo) {
     if (!clip.loopEnabled)
         return false;
 
@@ -1547,6 +1547,7 @@ static bool trimLoopedClip(ClipManager& clipManager, const ClipInfo& clip, doubl
 
     return true;
 }
+}  // namespace
 
 // ============================================================================
 // DeleteTimeSelectionCommand (no ripple)

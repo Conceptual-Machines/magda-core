@@ -3357,7 +3357,7 @@ void TrackChainContent::showSaveTrackPresetDialog() {
 
     auto* aw = new juce::AlertWindow(
         "Save MAGDA Track Preset",
-        "Enter a name for this track preset (use \"/\" to nest, e.g. \"Bass/808 Stack\"):",
+        R"(Enter a name for this track preset (use "/" to nest, e.g. "Bass/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));

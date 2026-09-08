@@ -9,8 +9,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -946,5 +945,4 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     return context;
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

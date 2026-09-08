@@ -9,8 +9,7 @@
 #include "remote_api.hpp"
 #include "remote_changes.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 class RemoteApiService;
 class SubscriptionHub;
@@ -396,5 +395,4 @@ class McpEndpoint {
     std::vector<McpResource> resources_;
 };
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

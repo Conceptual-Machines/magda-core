@@ -16,11 +16,9 @@
 #include "ui/components/common/DraggableValueLabel.hpp"
 #include "ui/components/common/SvgButton.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::ui {
 

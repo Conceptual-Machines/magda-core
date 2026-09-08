@@ -8,8 +8,7 @@
 
 #include "ParameterInfo.hpp"
 
-namespace magda {
-namespace ParameterUtils {
+namespace magda::ParameterUtils {
 
 /**
  * @brief The part of a ParameterInfo that decides what a normalized position means.
@@ -289,5 +288,4 @@ juce::String getChoiceString(int index, const ParameterInfo& info);
  */
 double snapNormalizedToGrid(double normalized, const ParameterInfo& info);
 
-}  // namespace ParameterUtils
-}  // namespace magda
+}  // namespace magda::ParameterUtils

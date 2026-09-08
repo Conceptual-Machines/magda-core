@@ -994,7 +994,7 @@ void RackComponent::showSaveRackPresetDialog() {
 
     auto* aw = new juce::AlertWindow(
         "Save MAGDA Rack Preset",
-        "Enter a name for this rack preset (use \"/\" to nest, e.g. \"Drums/808 Stack\"):",
+        R"(Enter a name for this rack preset (use "/" to nest, e.g. "Drums/808 Stack"):)",
         juce::MessageBoxIconType::NoIcon);
     aw->addTextEditor("name", defaultName, "Name:");
     aw->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));

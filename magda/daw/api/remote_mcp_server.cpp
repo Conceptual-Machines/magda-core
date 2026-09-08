@@ -39,8 +39,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -1620,5 +1619,4 @@ void RemoteMcpServer::stop() {
     impl_->port.store(0);
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

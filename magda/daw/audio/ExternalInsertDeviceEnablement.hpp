@@ -4,11 +4,9 @@
 
 #include <set>
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Edit;
 }
-}  // namespace tracktion
 
 namespace magda {
 

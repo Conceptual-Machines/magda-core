@@ -22,11 +22,9 @@
 #include "ui/components/common/TextSlider.hpp"
 #include "ui/components/mixer/LevelMeter.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Plugin;
 }
-}  // namespace tracktion
 
 namespace magda::daw::audio {
 class MagdaSamplerPlugin;

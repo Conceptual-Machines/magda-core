@@ -4,8 +4,7 @@
 #include <cstddef>
 #include <cstring>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 bool secureEquals(const juce::String& a, const juce::String& b) {
     const auto* lhs = a.toRawUTF8();
@@ -35,5 +34,4 @@ bool isOriginAllowed(bool originPresent, const juce::String& origin,
     return std::find(allowedOrigins.begin(), allowedOrigins.end(), origin) != allowedOrigins.end();
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

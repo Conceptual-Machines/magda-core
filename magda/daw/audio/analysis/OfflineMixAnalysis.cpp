@@ -12,8 +12,7 @@
 #include "../../engine/AudioEngine.hpp"
 #include "MixAnalysisInput.hpp"
 
-namespace magda {
-namespace daw::audio {
+namespace magda::daw::audio {
 
 namespace {
 
@@ -454,5 +453,4 @@ OfflineMixAnalysis::CancelToken OfflineMixAnalysis::start(AudioEngine& engine, R
     return cancel;
 }
 
-}  // namespace daw::audio
-}  // namespace magda
+}  // namespace magda::daw::audio

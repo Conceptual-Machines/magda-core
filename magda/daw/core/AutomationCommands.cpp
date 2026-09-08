@@ -14,13 +14,11 @@ bool pointIsInDuplicateRange(double beatPosition, double startBeat, double endBe
     return beatPosition >= startBeat - epsilon && beatPosition <= endBeat + epsilon;
 }
 
-}  // namespace
-
 // ============================================================================
 // Helper: find a point in a lane or clip
 // ============================================================================
 
-static const AutomationPoint* findPointInLane(AutomationLaneId laneId, AutomationPointId pointId) {
+const AutomationPoint* findPointInLane(AutomationLaneId laneId, AutomationPointId pointId) {
     auto* lane = AutomationManager::getInstance().getLane(laneId);
     if (!lane)
         return nullptr;
@@ -29,7 +27,7 @@ static const AutomationPoint* findPointInLane(AutomationLaneId laneId, Automatio
     return found == lane->absolutePoints.end() ? nullptr : &(*found);
 }
 
-static const AutomationPoint* findPointInClip(AutomationClipId clipId, AutomationPointId pointId) {
+const AutomationPoint* findPointInClip(AutomationClipId clipId, AutomationPointId pointId) {
     auto* clip = AutomationManager::getInstance().getClip(clipId);
     if (!clip)
         return nullptr;
@@ -38,10 +36,11 @@ static const AutomationPoint* findPointInClip(AutomationClipId clipId, Automatio
     return found == clip->points.end() ? nullptr : &(*found);
 }
 
-static const AutomationPoint* findPoint(bool isClip, AutomationLaneId laneId,
-                                        AutomationClipId clipId, AutomationPointId pointId) {
+const AutomationPoint* findPoint(bool isClip, AutomationLaneId laneId, AutomationClipId clipId,
+                                 AutomationPointId pointId) {
     return isClip ? findPointInClip(clipId, pointId) : findPointInLane(laneId, pointId);
 }
+}  // namespace
 
 // ============================================================================
 // AddAutomationPointCommand

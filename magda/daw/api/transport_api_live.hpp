@@ -6,11 +6,9 @@
 
 #include "transport_api.hpp"
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Edit;
 }
-}  // namespace tracktion
 
 namespace magda {
 

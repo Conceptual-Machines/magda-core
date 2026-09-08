@@ -1527,7 +1527,7 @@ class Config {
 
     // Browser favorites and default directory
     std::vector<std::string> browserFavorites;
-    std::string browserDefaultDirectory = "";  // empty = user home
+    std::string browserDefaultDirectory;  // empty = user home
 
     // Which view the media explorer should restore on startup.
     // "filesystem" → file browser at browserDefaultDirectory.
@@ -1539,11 +1539,11 @@ class Config {
 
     // Optional override for the Sample Tagger ONNX bundle location.
     // Empty = use the default dataDir/MediaDB/models.
-    std::string sampleTaggerModelsDir = "";
+    std::string sampleTaggerModelsDir;
 
     // Optional override for the command-model ONNX bundle location.
     // Empty = use the default dataDir/CommandModel/models.
-    std::string commandModelModelsDir = "";
+    std::string commandModelModelsDir;
 
     // Eagerly load the Sample Tagger encoders + tokenizer at startup
     // (vs lazy on first query).
@@ -1551,10 +1551,10 @@ class Config {
 
     // Optional override for the media DB directory. Empty = default
     // (dataDir/MediaDB).
-    std::string mediaDbDir = "";
+    std::string mediaDbDir;
 
     // External sample editor executable/application path.
-    std::string externalAudioEditorPath = "";
+    std::string externalAudioEditorPath;
 
     // Auto-update check
     bool autoCheckUpdates = true;          // Check GitHub for newer releases on startup
@@ -1587,11 +1587,11 @@ class Config {
 
     // Configurable user-data path overrides (resolved by magda::paths).
     // Empty = OS default. Persisted in config.json.
-    std::string dataDir = "";     // userApplicationDataDirectory/MAGDA/
-    std::string presetsDir = "";  // userDocumentsDirectory/MAGDA/Presets/
+    std::string dataDir;     // userApplicationDataDirectory/MAGDA/
+    std::string presetsDir;  // userDocumentsDirectory/MAGDA/Presets/
 
     // Render settings
-    std::string renderFolder = "";  // Custom render output folder (empty = renders/ beside source)
+    std::string renderFolder;  // Custom render output folder (empty = renders/ beside source)
     double renderSampleRate = 44100.0;  // 44100, 48000, 96000, 192000
     int renderBitDepth = 24;            // 16, 24, 32
     // File naming pattern tokens: <project-name>, <clip-name>, <track-name>, <date-time>
@@ -1601,11 +1601,11 @@ class Config {
     int bounceBitDepth = 32;  // 16, 24, 32 — default 32-bit for internal bounces
 
     // Audio device settings
-    std::string preferredAudioDevice = "";   // Preferred audio interface (empty = system default)
-    std::string preferredInputDevice = "";   // Preferred input device (empty = system default)
-    std::string preferredOutputDevice = "";  // Preferred output device (empty = system default)
-    int preferredInputChannels = 0;   // Preferred input channel count (0 = use device default)
-    int preferredOutputChannels = 0;  // Preferred output channel count (0 = use device default)
+    std::string preferredAudioDevice;   // Preferred audio interface (empty = system default)
+    std::string preferredInputDevice;   // Preferred input device (empty = system default)
+    std::string preferredOutputDevice;  // Preferred output device (empty = system default)
+    int preferredInputChannels = 0;     // Preferred input channel count (0 = use device default)
+    int preferredOutputChannels = 0;    // Preferred output channel count (0 = use device default)
 
     // Language
     std::string language = "en";  // Language code, matches lang/<code>.json

@@ -34,18 +34,15 @@ bool isPostFxAutomationTarget(const AutomationTarget& target) {
     return false;
 }
 
-}  // namespace
-
 // Convert linear gain to dB
-static float gainToDb(float gain) {
+float gainToDb(float gain) {
     constexpr float MIN_DB = -60.0f;
     if (gain <= 0.0f)
         return MIN_DB;
     return 20.0f * std::log10(gain);
 }
 
-static double deviceCurrentValueToLaneNormalized(float currentValue,
-                                                 const ParameterInfo& paramInfo) {
+double deviceCurrentValueToLaneNormalized(float currentValue, const ParameterInfo& paramInfo) {
     // Symmetric inverse of the playback writeback (normalizedToModelValue), so
     // the seed point matches where the curve will drive the param. Crucially
     // this honours isDisplayMappedInternalValue: compiled/internal params whose
@@ -57,7 +54,7 @@ static double deviceCurrentValueToLaneNormalized(float currentValue,
 }
 
 // Get current normalized value for an automation target
-static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
+std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& target) {
     // Get parameter info for proper conversion
     ParameterInfo paramInfo = getParameterInfoForTarget(target);
 
@@ -200,6 +197,7 @@ static std::optional<double> getCurrentTargetValueImpl(const AutomationTarget& t
             return std::nullopt;
     }
 }
+}  // namespace
 
 AutomationManager& AutomationManager::getInstance() {
     static AutomationManager instance;

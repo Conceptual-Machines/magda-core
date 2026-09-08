@@ -5,11 +5,9 @@
 #include <functional>
 #include <memory>
 
-namespace tracktion {
-inline namespace engine {
+namespace tracktion::inline engine {
 class Edit;
-}  // namespace engine
-}  // namespace tracktion
+}  // namespace tracktion::inline engine
 
 namespace magda {
 

@@ -7,8 +7,7 @@
 #include "TechnicalText.hpp"
 #include "TempoUtils.hpp"
 
-namespace magda {
-namespace ParameterUtils {
+namespace magda::ParameterUtils {
 
 namespace {
 
@@ -824,5 +823,4 @@ juce::String getChoiceString(int index, const ParameterInfo& info) {
     return juce::String(index);
 }
 
-}  // namespace ParameterUtils
-}  // namespace magda
+}  // namespace magda::ParameterUtils
