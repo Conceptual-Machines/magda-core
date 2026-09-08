@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# Run clang-tidy over the .cpp files a push touches and fail on findings.
+# Run clang-tidy over what a push touches and fail on findings.
 #
 # clang-tidy exits 0 for a plain warning, so --warnings-as-errors is what makes
 # a check binding. Exit code is the whole signal here: clang-tidy also writes an
-# unconditional "N warnings generated." tally to stderr, so deciding pass/fail by
-# looking at output rather than status is how pocc/pre-commit-hooks v1.4.0 gets
-# this wrong (its filter matches the singular "warning generated" only).
+# unconditional "N warnings generated." tally to stderr, so deciding pass/fail
+# from output rather than status is how pocc/pre-commit-hooks v1.4.0 gets this
+# wrong (its filter matches the singular "warning generated" only).
 set -uo pipefail
 
 # The bugprone/cert half of .clang-tidy, minus the five checks that still report
@@ -24,6 +24,25 @@ CHECKS+=',-bugprone-implicit-widening-of-multiplication-result,-bugprone-incorre
 CHECKS+=',-bugprone-unused-return-value,-bugprone-return-const-ref-from-parameter'
 CHECKS+=',-bugprone-reserved-identifier'
 CHECKS+=',cert-oop54-cpp'
+
+# Sources that are in the tree but in no compile command, so an absent database
+# entry is expected rather than a stale build. Anything else missing is an error.
+UNBUILT_OK=(
+    # Built only when MAGDA_PRO_DEVICES is OFF, where the real pack replaces them.
+    'magda/daw/device_packs/pro_stub/ProDevicePack.cpp'
+    'magda/daw/device_packs/pro_stub/ProStubPlugin.cpp'
+    # In no CMake target and referenced only by each other.
+    'magda/daw/ui/components/automation/AutomationPointComponent.cpp'
+    'magda/daw/ui/components/automation/BezierHandleComponent.cpp'
+    'magda/daw/ui/components/automation/TensionHandleComponent.cpp'
+)
+
+# A header changed on its own still has to be analysed, and clang-tidy can only
+# analyse a translation unit, so each one maps to the TUs that include it. Direct
+# includes only: the real graph lives in .ninja_deps and reading it is not worth
+# the coupling. Capped because a widely included header maps to hundreds of TUs
+# and a pre-push hook has to finish.
+MAX_TUS_PER_HEADER="${CLANG_TIDY_MAX_TUS:-8}"
 
 BUILD_DIR="${BUILD_DIR:-cmake-build-debug}"
 
@@ -48,26 +67,62 @@ if [ ! -f "$DB" ]; then
     exit 1
 fi
 
+in_db() {
+    # pre-commit passes repo-relative paths, the database records absolute ones.
+    grep -q "/$1\"" "$DB" 2>/dev/null
+}
+
+is_unbuilt_ok() {
+    local candidate="$1" known
+    for known in "${UNBUILT_OK[@]}"; do
+        [ "$candidate" = "$known" ] && return 0
+    done
+    return 1
+}
+
 status=0
-checked=0
+declare -a targets=()
+
 for file in "$@"; do
     case "$file" in
-    *.cpp) ;;
-    *) continue ;;  # headers are analysed through the TUs that include them
+    *.cpp)
+        if in_db "$file"; then
+            targets+=("$file")
+        elif is_unbuilt_ok "$file"; then
+            echo "note: $file is in no compile command, which is expected for it."
+        else
+            echo "$file has no compile_commands.json entry." >&2
+            echo "Run 'make debug'. If it belongs to no target, say so in" >&2
+            echo "UNBUILT_OK in $0 rather than leaving it unanalysed." >&2
+            status=1
+        fi
+        ;;
+    *.h | *.hpp)
+        mapfile -t includers < <(
+            grep -rl --include='*.cpp' "include.*$(basename "$file")" magda 2>/dev/null | head -n "$MAX_TUS_PER_HEADER"
+        )
+        if [ ${#includers[@]} -eq 0 ]; then
+            echo "note: no translation unit includes $(basename "$file"); nothing to analyse."
+            continue
+        fi
+        for tu in "${includers[@]}"; do
+            in_db "$tu" && targets+=("$tu")
+        done
+        ;;
     esac
+done
 
-    # A file added since the last configure has no database entry, and clang-tidy
-    # would guess at the flags rather than say so. pre-commit passes repo-relative
-    # paths while the database records absolute ones, so match on the suffix.
-    if ! grep -q "/$file\"" "$DB" 2>/dev/null; then
-        echo "skipping $file: no compile_commands.json entry, run 'make debug'"
-        continue
-    fi
+# One header can pull in a TU another already did, and so can a .cpp alongside
+# its own header.
+if [ ${#targets[@]} -gt 0 ]; then
+    mapfile -t targets < <(printf '%s\n' "${targets[@]}" | sort -u)
+fi
 
+for file in "${targets[@]:-}"; do
+    [ -n "$file" ] || continue
     # The tally counts compiler warnings in the TU, not findings, and reads as a
     # contradiction next to a passing hook. Dropping it is safe because pass/fail
     # is the exit code here, never the output.
-    checked=$((checked + 1))
     if ! "$CLANG_TIDY" "$file" \
         --checks="$CHECKS" \
         --warnings-as-errors="$CHECKS" \
@@ -80,9 +135,9 @@ done
 
 if [ "$status" -ne 0 ]; then
     echo "" >&2
-    echo "clang-tidy found problems in the enforced tier." >&2
-    echo "Fix them, or add a NOLINT with a reason if it is a false positive." >&2
+    echo "clang-tidy gate failed; see above." >&2
+    echo "For a finding, fix it or add a NOLINT with a reason if it is wrong." >&2
 fi
 
-[ "$checked" -gt 0 ] && echo "clang-tidy: $checked file(s) checked"
+[ ${#targets[@]} -gt 0 ] && echo "clang-tidy: ${#targets[@]} translation unit(s) checked"
 exit "$status"

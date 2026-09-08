@@ -81,7 +81,10 @@ repos:
         name: Clang-Tidy Check
         entry: .pre-commit-hooks/clang-tidy.sh
         language: system
-        files: \.cpp$
+        # Headers too: a push that changes only an inline or template-heavy
+        # header would otherwise go unanalysed. The script maps each one to the
+        # translation units that include it.
+        files: \.(cpp|hpp|h)$
         exclude: ^magda/engine/
         pass_filenames: true
         stages: [pre-push]

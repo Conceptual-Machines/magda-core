@@ -344,13 +344,15 @@ jobs:
         #
         # magda/engine is excluded while the native engine is still being written,
         # matching the hook's own exclude.
+        # Headers included: the hook maps each to the translation units that
+        # include it, so a header-only change is still analysed.
         mapfile -t files < <(
           git diff --name-only --diff-filter=d "$base" HEAD -- magda \
-            | grep '\.cpp$' | grep -v '^magda/engine/' || true
+            | grep -E '\.(cpp|hpp|h)$' | grep -v '^magda/engine/' || true
         )
 
         if [ ${#files[@]} -eq 0 ]; then
-          echo "No changed .cpp files under magda/ to analyse."
+          echo "No changed C++ files under magda/ to analyse."
           exit 0
         fi
 
