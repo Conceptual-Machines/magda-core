@@ -27,7 +27,7 @@ class DrumkitManager {
 
     static DrumkitManager& getInstance();
 
-    juce::File getDrumkitsDirectory() const;
+    static juce::File getDrumkitsDirectory();
 
     /** Save the given rows under `name`. Existing kits with the same name are
      *  overwritten. Returns false on filesystem failure. */

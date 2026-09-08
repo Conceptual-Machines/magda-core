@@ -417,7 +417,7 @@ AutomationLaneComponent* AutomationClipComponent::getLane() const {
     return findParentComponentOfClass<AutomationLaneComponent>();
 }
 
-bool AutomationClipComponent::copyGestureHeld() const {
+bool AutomationClipComponent::copyGestureHeld() {
     return GestureRouter::getInstance().isDuplicateOnDrag(
         GestureContext::Arrangement, juce::ModifierKeys::getCurrentModifiers());
 }

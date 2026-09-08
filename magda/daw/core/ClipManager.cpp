@@ -2434,7 +2434,7 @@ ClipId ClipManager::findCrossfadeNeighbour(ClipId clipId, bool atStart) const {
     return bestId;
 }
 
-double ClipManager::availableLeftExtensionBeats(const ClipInfo& clip, double bpm) const {
+double ClipManager::availableLeftExtensionBeats(const ClipInfo& clip, double bpm) {
     const auto* event = clip.primaryEvent();
     if (event == nullptr)
         return 0.0;
@@ -2448,7 +2448,7 @@ double ClipManager::availableLeftExtensionBeats(const ClipInfo& clip, double bpm
     return (juce::jmax(0.0, event->anchorSeconds()) / speed) * bpm / 60.0;
 }
 
-double ClipManager::availableRightExtensionBeats(const ClipInfo& clip, double bpm) const {
+double ClipManager::availableRightExtensionBeats(const ClipInfo& clip, double bpm) {
     const auto* event = clip.primaryEvent();
     if (event == nullptr)
         return 0.0;

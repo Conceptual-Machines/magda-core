@@ -157,7 +157,7 @@ class StepSequencerUI : public juce::Component, private juce::Timer {
     void drawOctaveArrow(juce::Graphics& g, juce::Rectangle<int> area, bool isLeft);
 
     // --- Hit testing ---
-    int getStepAtX(int x, int areaX, int areaWidth, int numSteps) const;
+    static int getStepAtX(int x, int areaX, int areaWidth, int numSteps);
     int getKeyboardNoteAtPosition(juce::Point<int> pos, juce::Rectangle<int> area) const;
 
     // --- Layout bounds (computed in resized, used in paint/mouseDown) ---

@@ -272,7 +272,7 @@ class GeneralPage : public juce::Component {
         };
     }
 
-    int getPreferredHeight(int width) const {
+    static int getPreferredHeight(int width) {
         const int height =
             shouldUseSingleColumnLayout(width)
                 ? getSingleColumnPreferredHeight()
@@ -765,7 +765,7 @@ class AppearancePage : public juce::Component {
         addAndMakeVisible(clipColourModeCombo);
     }
 
-    int getPreferredHeight(int width) const {
+    static int getPreferredHeight(int width) {
         constexpr int padding = 16;
         if (shouldUseSingleColumnLayout(width))
             return getSingleColumnPreferredHeight();
@@ -1600,7 +1600,7 @@ class RenderingPage : public juce::Component {
         addAndMakeVisible(patternHint);
     }
 
-    int getPreferredHeight(int) const {
+    static int getPreferredHeight(int) {
         constexpr int padding = 16;
         constexpr int rowH = 32;
         constexpr int headerH = 28;
@@ -1874,7 +1874,7 @@ class PathsPage : public juce::Component {
         addAndMakeVisible(indexPresetsButton_);
     }
 
-    int getPreferredHeight(int) const {
+    static int getPreferredHeight(int) {
         constexpr int padding = 20;
         constexpr int rowH = 28;
         constexpr int gap = 6;
@@ -3006,7 +3006,7 @@ class ShortcutsPage : public juce::Component {
             setCapturingRow(nullptr);
         }
 
-        void setRowInput(GestureRow& row, GestureInput input) {
+        static void setRowInput(GestureRow& row, GestureInput input) {
             const auto tuned =
                 tunedBindingForInput(row.context, input, row.action,
                                      {row.action, static_cast<float>(row.sensitivity.getValue()),
@@ -3019,7 +3019,7 @@ class ShortcutsPage : public juce::Component {
             row.learnButton.setButtonText(learnButtonText());
         }
 
-        GestureArea learnedDragAreaFor(const GestureRow& row) const {
+        static GestureArea learnedDragAreaFor(const GestureRow& row) {
             if (row.currentInput.area != GestureArea::Main)
                 return row.currentInput.area;
             if (row.input.area != GestureArea::Main)

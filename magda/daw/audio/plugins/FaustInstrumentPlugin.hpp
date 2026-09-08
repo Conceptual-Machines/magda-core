@@ -208,7 +208,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // Rewrite every sounding poly voice's freq zone for `ratio`. The allocator
     // writes an unbent freq on keyOn, so this also has to run after a note
     // starts, not only when the wheel moves.
-    void applyBendToPolyVoices(const std::shared_ptr<FaustState>& state, float ratio);
+    static void applyBendToPolyVoices(const std::shared_ptr<FaustState>& state, float ratio);
     // Silence everything: poly voices, the mono voice, and the held-note stack.
     void resetAllVoices(const std::shared_ptr<FaustState>& state);
     // Release EVERY poly voice sounding (or legato-targeting) this pitch.
@@ -217,7 +217,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // self-heals orphans. Duplicate on/off streams for one pitch are legitimate
     // - a freshly recorded clip playing back while the live input that fed it
     // is still monitored - so an unbalanced delivery must never strand a voice.
-    void releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state, int pitch);
+    static void releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state, int pitch);
     // Returns true when the caller must render one sample of gate-low before
     // raising the gate again, which is how Mono retriggers an envelope.
     bool handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note, int velocity,

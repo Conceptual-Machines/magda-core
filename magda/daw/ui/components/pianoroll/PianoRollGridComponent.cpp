@@ -2566,7 +2566,7 @@ void PianoRollGridComponent::rebuildSelectedPitchRows() {
     }
 }
 
-bool PianoRollGridComponent::isBlackKey(int noteNumber) const {
+bool PianoRollGridComponent::isBlackKey(int noteNumber) {
     int note = noteNumber % 12;
     return note == 1 || note == 3 || note == 6 || note == 8 || note == 10;
 }

@@ -365,7 +365,7 @@ void WaveformGridComponent::paintWaveformThumbnail(juce::Graphics& g, const magd
     }
 }
 
-int WaveformGridComponent::takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) const {
+int WaveformGridComponent::takeLaneAtY(int y, const WaveformLayout& layout, int takeCount) {
     if (takeCount <= 0)
         return -1;
     const auto& rect = layout.rect;
@@ -1156,7 +1156,7 @@ double WaveformGridComponent::getDrawableTimelineLength() const {
     return clipLength_;
 }
 
-void WaveformGridComponent::debugLogGeometry(const char* context) const {
+void WaveformGridComponent::debugLogGeometry(const char* context) {
     juce::ignoreUnused(context);
 }
 

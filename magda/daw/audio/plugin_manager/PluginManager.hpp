@@ -333,7 +333,7 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
      * @param devicePath The device whose state to restore
      * @param plugin The TE plugin to apply state to
      */
-    void restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
+    static void restorePluginState(const ChainNodePath& devicePath, te::Plugin::Ptr plugin);
 
     // =========================================================================
     // Utilities
@@ -694,11 +694,11 @@ class PluginManager : public daw::audio::DrumGridPlugin::Listener,
     void updateDeviceModifierProperties(TrackId trackId);
 
     // Compute (activeModCount, totalLinkCount) fingerprint across device+track mods.
-    std::pair<int, int> computeModLinkFingerprint(TrackId trackId,
-                                                  const TrackInfo* trackInfo) const;
+    static std::pair<int, int> computeModLinkFingerprint(TrackId trackId,
+                                                         const TrackInfo* trackInfo);
 
     // Check whether a track needs a SidechainMonitorPlugin (MIDI sidechain source).
-    bool trackNeedsSidechainMonitor(TrackId trackId) const;
+    static bool trackNeedsSidechainMonitor(TrackId trackId);
 
     // Check whether a track needs an AudioSidechainMonitorPlugin (audio sidechain source).
     bool trackNeedsAudioSidechainMonitor(TrackId trackId) const;

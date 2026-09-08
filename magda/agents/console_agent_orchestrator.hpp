@@ -95,7 +95,7 @@ class ConsoleAgentOrchestrator {
     static std::string composePrompt(const ConsoleRunRequest& request);
 
   private:
-    ConsoleRunOutput runWorkflow(
+    static ConsoleRunOutput runWorkflow(
         const std::function<ConsoleRunOutput(const ConsoleRunRequest&, const ConsoleRunObserver&,
                                              const CancellationToken&)>& workflow,
         const ConsoleRunRequest& request, const ConsoleRunObserver& observer,

@@ -958,7 +958,7 @@ te::Plugin::Ptr RackSyncManager::createPluginForRack(TrackId trackId, const Devi
     return pluginManager_.createPluginOnly(trackId, device);
 }
 
-bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) const {
+bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo& rackInfo) {
     std::set<juce::String> expectedChains;
     std::set<DeviceId> expectedDevices;
     std::set<juce::String> expectedNestedRacks;

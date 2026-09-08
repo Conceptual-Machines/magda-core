@@ -201,7 +201,7 @@ ChordSuggestionEngine::inferKeyModeFromHistogram() const {
 }
 
 std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromContext(
-    const std::vector<Chord>& recentChords) const {
+    const std::vector<Chord>& recentChords) {
     if (recentChords.empty()) {
         return {"C", "major"};
     }
@@ -256,7 +256,7 @@ std::pair<juce::String, juce::String> ChordSuggestionEngine::inferKeyModeFromCon
 }
 
 double ChordSuggestionEngine::dotProduct(const std::array<double, 12>& a,
-                                         const std::array<double, 12>& b) const {
+                                         const std::array<double, 12>& b) {
     double sum = 0.0;
     for (int i = 0; i < 12; ++i) {
         sum += a[i] * b[i];
@@ -265,7 +265,7 @@ double ChordSuggestionEngine::dotProduct(const std::array<double, 12>& a,
 }
 
 std::array<double, 12> ChordSuggestionEngine::rotateProfile(const std::array<double, 12>& profile,
-                                                            int shift) const {
+                                                            int shift) {
     std::array<double, 12> rotated{};
     shift = shift % 12;
     if (shift < 0)
@@ -945,7 +945,7 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
 
 std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCandidates(
     const std::vector<SuggestionItem>& diatonic, const std::vector<SuggestionItem>& nonDiatonic,
-    float novelty, int topK) const {
+    float novelty, int topK) {
     std::vector<SuggestionItem> result;
 
     if (novelty <= 0.0f) {
@@ -1086,7 +1086,7 @@ juce::String ChordSuggestionEngine::noteAtSemitone(const juce::String& root, int
     return NOTE_NAMES[targetIdx];
 }
 
-int ChordSuggestionEngine::noteToSemitone(const juce::String& note) const {
+int ChordSuggestionEngine::noteToSemitone(const juce::String& note) {
     // Handle enharmonic equivalents
     static const std::map<juce::String, int> noteMap = {
         {"C", 0},  {"C#", 1}, {"Db", 1},  {"D", 2},   {"D#", 3}, {"Eb", 3},
@@ -1228,7 +1228,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
     return chord;
 }
 
-int ChordSuggestionEngine::calculateTargetOctave(const std::vector<Chord>& recentChords) const {
+int ChordSuggestionEngine::calculateTargetOctave(const std::vector<Chord>& recentChords) {
     if (recentChords.empty()) {
         return 4;  // Default to octave 4 (C4 = 60)
     }
@@ -1450,7 +1450,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     return result;
 }
 
-std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord) const {
+std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord) {
     std::vector<Chord> inversions;
 
     if (chord.notes.size() < 2) {
@@ -1669,7 +1669,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
     return inversions;
 }
 
-double ChordSuggestionEngine::calculateCentroid(const Chord& chord) const {
+double ChordSuggestionEngine::calculateCentroid(const Chord& chord) {
     if (chord.notes.empty()) {
         return 60.0;  // Default to C4
     }
@@ -1687,7 +1687,7 @@ double ChordSuggestionEngine::calculateCentroid(const Chord& chord) const {
     return count > 0 ? (total / count) : 60.0;
 }
 
-bool ChordSuggestionEngine::chordsAreEquivalent(const Chord& a, const Chord& b) const {
+bool ChordSuggestionEngine::chordsAreEquivalent(const Chord& a, const Chord& b) {
     // First check if they have the same pitch classes (notes)
     if (!magda::music::chordsAreEquivalent(a, b)) {
         return false;
@@ -1778,7 +1778,7 @@ juce::String ChordSuggestionEngine::getContextTailString(int maxChords) const {
 }
 
 std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::filterRecentChords(
-    const std::vector<SuggestionItem>& candidates, const std::vector<Chord>& recentChords) const {
+    const std::vector<SuggestionItem>& candidates, const std::vector<Chord>& recentChords) {
     std::vector<SuggestionItem> filtered;
 
     // Get last 2 chords to avoid (reduced from 3 to give more variety and prevent stale

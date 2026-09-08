@@ -28,7 +28,7 @@ MediaDbContext& MediaDbContext::getInstance() {
 MediaDbContext::MediaDbContext() = default;
 MediaDbContext::~MediaDbContext() = default;
 
-std::filesystem::path MediaDbContext::dbPath() const {
+std::filesystem::path MediaDbContext::dbPath() {
     // User override: same fall-back semantics as modelsDir(). Lets users
     // park the (potentially large) index on a different drive without
     // symlinking. If the override directory has gone missing (drive
@@ -48,7 +48,7 @@ std::filesystem::path MediaDbContext::dbPath() const {
            "db" / "media.db";
 }
 
-std::filesystem::path MediaDbContext::modelsDir() const {
+std::filesystem::path MediaDbContext::modelsDir() {
     // User override: if Config has a non-empty path AND it points at a
     // real directory, use it. Lets the user keep the ~600 MB Sample
     // Tagger bundle on an external drive. Falls back to the default

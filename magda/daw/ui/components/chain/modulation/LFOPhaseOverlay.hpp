@@ -58,7 +58,7 @@ class LFOPhaseOverlay : public juce::Component, private juce::Timer {
     void paintPhaseIndicator(juce::Graphics& g);
 
     // Apply tension curve interpolation
-    double applyTension(double t, double tension) const;
+    static double applyTension(double t, double tension);
 
     const ModInfo* modInfo_ = nullptr;
     juce::Colour curveColour_{DarkTheme::getColour(DarkTheme::AUTOMATION_BEZIER)};

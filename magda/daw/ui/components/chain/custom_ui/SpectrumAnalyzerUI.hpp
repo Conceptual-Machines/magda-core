@@ -74,8 +74,8 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void releaseMeasurementArming();                  // undo only what this UI armed
     void pollOverlayData();      // fetch overlay band spectrum + pair-filtered findings
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
-    float freqToX(float hz, juce::Rectangle<float> area) const;
-    float dbToY(float db, juce::Rectangle<float> area) const;
+    static float freqToX(float hz, juce::Rectangle<float> area);
+    static float dbToY(float db, juce::Rectangle<float> area);
     juce::Rectangle<float> plotArea() const;  // plot region (excludes the control row)
     void updateControlVisibility();
     void startControlsFade(bool expanding);

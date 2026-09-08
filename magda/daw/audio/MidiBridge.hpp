@@ -119,7 +119,7 @@ class MidiBridge : public juce::MidiInputCallback {
      * @brief Get all available MIDI output devices
      * @return Vector of device info
      */
-    std::vector<MidiDeviceInfo> getAvailableMidiOutputs() const;
+    static std::vector<MidiDeviceInfo> getAvailableMidiOutputs();
 
     // =========================================================================
     // MIDI Output (host → device)

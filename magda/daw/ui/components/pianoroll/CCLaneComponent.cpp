@@ -290,7 +290,7 @@ void CCLaneComponent::updatePointsCache() const {
     pointsCacheDirty_ = false;
 }
 
-size_t CCLaneComponent::pointIdToEventIndex(uint32_t pointId) const {
+size_t CCLaneComponent::pointIdToEventIndex(uint32_t pointId) {
     // The point ID is the original index into the clip's CC/PB data vector
     return static_cast<size_t>(pointId);
 }

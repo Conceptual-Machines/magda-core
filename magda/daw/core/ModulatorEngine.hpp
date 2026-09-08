@@ -209,7 +209,7 @@ class ModulatorEngine {
             postUpdateHook_();
     }
 
-    void updateAllMods(double deltaTime);
+    static void updateAllMods(double deltaTime);
 
     // Timer instance - using composition instead of inheritance to allow early destruction
     std::unique_ptr<UpdateTimer> timer_;

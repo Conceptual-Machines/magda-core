@@ -226,11 +226,11 @@ class AudioThumbnailManager {
     // Draw waveform directly from raw samples (used when zoomed in). When
     // @p peakCache is non-null and the zoom level is coarse enough to use it,
     // peak data short-circuits the per-column reader read.
-    void drawWaveformFromSamples(juce::Graphics& g, const juce::Rectangle<int>& bounds,
-                                 juce::AudioFormatReader* reader,
-                                 const WaveformPeakCache* peakCache, double startTime,
-                                 double endTime, const juce::Colour& colour, float verticalZoom,
-                                 bool thick = false);
+    static void drawWaveformFromSamples(juce::Graphics& g, const juce::Rectangle<int>& bounds,
+                                        juce::AudioFormatReader* reader,
+                                        const WaveformPeakCache* peakCache, double startTime,
+                                        double endTime, const juce::Colour& colour,
+                                        float verticalZoom, bool thick = false);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioThumbnailManager)
 };

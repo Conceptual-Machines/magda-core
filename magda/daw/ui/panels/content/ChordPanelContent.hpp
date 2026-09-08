@@ -94,7 +94,7 @@ class BrowseScaleRowComponent : public juce::Component {
     void mouseEnter(const juce::MouseEvent& e) override;
     void mouseExit(const juce::MouseEvent& e) override;
 
-    int getRowHeight() const;
+    static int getRowHeight();
     const magda::music::ScaleWithChords& getScale() const {
         return scale_;
     }
@@ -235,7 +235,7 @@ class ChordPanelContent : public juce::Component,
 
     // AI chord suggestion
     void requestAISuggestions();
-    std::vector<AIProgression> parseAIResponse(const juce::String& json);
+    static std::vector<AIProgression> parseAIResponse(const juce::String& json);
 
     class AIRequestThread : public juce::Thread {
       public:

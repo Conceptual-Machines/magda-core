@@ -117,7 +117,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     }
 
     // Get preferred height (from LayoutConfig)
-    int getPreferredHeight() const;
+    static int getPreferredHeight();
 
     // Mouse interaction - click to set playhead, drag to zoom, wheel to scroll
     void mouseDown(const juce::MouseEvent& event) override;
@@ -189,10 +189,10 @@ class TimeRuler : public juce::Component, private juce::Timer {
     static constexpr int LOOP_STRIP_HEIGHT = LayoutConfig::loopStripHeight;
 
     // Tick heights sourced from LayoutConfig for consistency with TimelineComponent
-    int tickHeightMajor() const {
+    static int tickHeightMajor() {
         return LayoutConfig::getInstance().rulerMajorTickHeight;
     }
-    int tickHeightMinor() const {
+    static int tickHeightMinor() {
         return LayoutConfig::getInstance().rulerMinorTickHeight;
     }
 
@@ -200,7 +200,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     void drawSecondsMode(juce::Graphics& g);
     void drawBarsBeatsMode(juce::Graphics& g);
     double calculateMarkerInterval() const;
-    juce::String formatTimeLabel(double time, double interval) const;
+    static juce::String formatTimeLabel(double time, double interval);
     juce::String formatBarsBeatsLabel(double time) const;
 
     // Coordinate conversion

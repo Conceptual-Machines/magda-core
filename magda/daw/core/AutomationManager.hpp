@@ -226,12 +226,12 @@ class AutomationManager : public TrackManagerListener {
 
     // Query the real automation-write mode from AudioBridge so controls don't
     // depend on a duplicated UI-side cache that can drift out of sync.
-    bool isWriteModeEnabled() const;
+    static bool isWriteModeEnabled();
 
     // Current live normalized value for a target, independent of whether its
     // automation lane is active. Used by disabled lanes to show where the
     // manual value sits against the stored curve.
-    std::optional<double> getCurrentTargetValue(const AutomationTarget& target) const;
+    static std::optional<double> getCurrentTargetValue(const AutomationTarget& target);
 
     using AuthorityStateListener =
         std::function<void(AutomationLaneId, AutomationAuthorityState, AutomationAuthorityState)>;
@@ -426,7 +426,8 @@ class AutomationManager : public TrackManagerListener {
      *        (linear/tension, bezier, step, hard corner) — the model's exact
      *        curve for renderers working outside lane/clip lookups.
      */
-    double interpolatePoints(const std::vector<AutomationPoint>& points, double beatPosition) const;
+    static double interpolatePoints(const std::vector<AutomationPoint>& points,
+                                    double beatPosition);
 
     // ========================================================================
     // Listener Management
@@ -597,10 +598,11 @@ class AutomationManager : public TrackManagerListener {
     // Interpolation helpers
 
     // Point management helpers
-    AutomationPoint* findPoint(std::vector<AutomationPoint>& points, AutomationPointId pointId);
-    const AutomationPoint* findPoint(const std::vector<AutomationPoint>& points,
-                                     AutomationPointId pointId) const;
-    void sortPoints(std::vector<AutomationPoint>& points);
+    static AutomationPoint* findPoint(std::vector<AutomationPoint>& points,
+                                      AutomationPointId pointId);
+    static const AutomationPoint* findPoint(const std::vector<AutomationPoint>& points,
+                                            AutomationPointId pointId);
+    static void sortPoints(std::vector<AutomationPoint>& points);
 };
 
 }  // namespace magda

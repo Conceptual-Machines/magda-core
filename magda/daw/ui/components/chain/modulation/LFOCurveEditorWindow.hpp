@@ -64,7 +64,7 @@ class LFOCurveEditorContent : public juce::Component {
     void rebuildPresetCombo(const juce::String& selectedUserPreset = {});
     void showSaveCurvePresetDialog();
     void saveCurvePreset(const juce::String& presetName);
-    void showPresetError(const juce::String& title, const juce::String& message);
+    static void showPresetError(const juce::String& title, const juce::String& message);
 
     static constexpr int HEADER_HEIGHT = 24;
     static constexpr int FOOTER_HEIGHT = 28;

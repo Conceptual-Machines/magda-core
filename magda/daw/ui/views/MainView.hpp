@@ -430,7 +430,7 @@ class MainView::MasterHeaderPanel : public juce::Component,
   private:
     // Opens the master automation menu (mirrors the per-track automation
     // button). Shared by the icon button and the header right-click.
-    void showMasterAutomationMenu(juce::Component* anchor);
+    static void showMasterAutomationMenu(juce::Component* anchor);
 
     std::unique_ptr<SvgButton> speakerButton;          // Speaker on/off toggle
     std::unique_ptr<SvgButton> automationButton;       // Show master automation lane
@@ -473,7 +473,7 @@ class MainView::AuxHeadersPanel : public juce::Component, public TrackManagerLis
     void tracksChanged() override;
 
     // Metering
-    void updateMetering(AudioEngine* engine);
+    static void updateMetering(AudioEngine* engine);
 
     // Get number of aux tracks
     int getAuxTrackCount() const {

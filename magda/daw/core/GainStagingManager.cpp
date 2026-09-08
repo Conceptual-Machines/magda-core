@@ -383,7 +383,7 @@ void GainStagingManager::buildStagedDeviceList(TrackId trackId) {
 }
 
 bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
-                                              float& peakLinearOut) const {
+                                              float& peakLinearOut) {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     if (engine == nullptr)
         return false;

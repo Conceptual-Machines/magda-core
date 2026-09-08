@@ -156,7 +156,7 @@ void LFOPhaseOverlay::paintPhaseIndicator(juce::Graphics& g) {
                   dotSize, 1.0f);
 }
 
-double LFOPhaseOverlay::applyTension(double t, double tension) const {
+double LFOPhaseOverlay::applyTension(double t, double tension) {
     if (tension > 0) {
         return std::pow(t, 1.0 + tension * 2.0);
     } else {

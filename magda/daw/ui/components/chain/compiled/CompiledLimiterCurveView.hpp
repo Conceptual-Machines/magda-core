@@ -27,7 +27,7 @@ class CompiledLimiterCurveView final : public juce::Component,
   public:
     explicit CompiledLimiterCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 146;
     }
 

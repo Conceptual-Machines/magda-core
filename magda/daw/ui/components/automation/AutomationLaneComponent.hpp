@@ -187,7 +187,7 @@ class AutomationLaneComponent : public juce::Component,
     // Scale label helpers
     void paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area);
     juce::String formatScaleValue(double normalizedValue) const;
-    int valueToPixel(double value, int areaHeight) const;
+    static int valueToPixel(double value, int areaHeight);
 };
 
 }  // namespace magda

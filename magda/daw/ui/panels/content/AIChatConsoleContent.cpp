@@ -2429,7 +2429,7 @@ void AIChatConsoleContent::updateConfigStatus() {
     resized();
 }
 
-bool AIChatConsoleContent::isLocalPreset() const {
+bool AIChatConsoleContent::isLocalPreset() {
     auto& config = magda::Config::getInstance();
     auto preset = config.getAIPreset();
     auto commandCfg = config.getAgentLLMConfig(magda::role::COMMAND);
@@ -2529,7 +2529,7 @@ void AIChatConsoleContent::hideAutocomplete() {
 }
 
 std::vector<AIChatConsoleContent::ParamAliasEntry> AIChatConsoleContent::collectParamAliases(
-    const juce::String& pluginAlias) const {
+    const juce::String& pluginAlias) {
     std::vector<ParamAliasEntry> out;
     if (pluginAlias.isEmpty())
         return out;

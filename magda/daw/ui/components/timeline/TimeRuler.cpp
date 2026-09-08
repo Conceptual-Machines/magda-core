@@ -191,7 +191,7 @@ void TimeRuler::timerCallback() {
     }
 }
 
-int TimeRuler::getPreferredHeight() const {
+int TimeRuler::getPreferredHeight() {
     return LayoutConfig::getInstance().timeRulerHeight;
 }
 
@@ -899,7 +899,7 @@ double TimeRuler::calculateMarkerInterval() const {
     return 600.0;  // 10 minutes
 }
 
-juce::String TimeRuler::formatTimeLabel(double time, double interval) const {
+juce::String TimeRuler::formatTimeLabel(double time, double interval) {
     int totalSeconds = static_cast<int>(time);
     int minutes = totalSeconds / 60;
     int seconds = totalSeconds % 60;

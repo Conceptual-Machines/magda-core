@@ -150,7 +150,7 @@ class ModRuntime {
     /// note-waiting modifiers and a level reaches level-waiting ones. One
     /// listener list per track plus this to sort them, rather than three
     /// lists that could disagree about who is on which.
-    ModListen listensFor(int index, const ParamTable& table) const;
+    static ModListen listensFor(int index, const ParamTable& table);
 
     /**
      * @brief Whether modifier @p index is driven by a track other than its own.
@@ -163,7 +163,7 @@ class ModRuntime {
      * fires triggerSidechain and ignores note-off). Exposed because the
      * executor holds the tap and cannot otherwise tell the two apart.
      */
-    bool drivenFromElsewhere(int index, const ParamTable& table) const;
+    static bool drivenFromElsewhere(int index, const ParamTable& table);
 
     /// What modifier @p index published this block, or the model's own
     /// value for one nothing has advanced.

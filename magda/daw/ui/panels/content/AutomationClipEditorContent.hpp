@@ -108,7 +108,7 @@ class AutomationClipEditorContent : public PanelContent,
     bool showTrackGhost_ = true;
 
     const magda::AutomationClipInfo* getClip() const;
-    double viewSpanBeats(const magda::AutomationClipInfo& clip) const;
+    static double viewSpanBeats(const magda::AutomationClipInfo& clip);
     double gridResolutionBeats() const;
     void gridSettingsChanged();
     void buildHeaderControls();

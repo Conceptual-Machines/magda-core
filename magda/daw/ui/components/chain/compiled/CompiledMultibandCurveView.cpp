@@ -364,7 +364,7 @@ bool CompiledMultibandCurveView::isReleaseTimingHandle(Handle h) {
     return h == Handle::LowRelease || h == Handle::MidRelease || h == Handle::HighRelease;
 }
 
-int CompiledMultibandCurveView::slotForHandle(Handle h) const {
+int CompiledMultibandCurveView::slotForHandle(Handle h) {
     const int band = bandForHandle(h);
     if (band < 0)
         return -1;

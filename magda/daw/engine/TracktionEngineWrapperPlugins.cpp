@@ -331,7 +331,7 @@ juce::Array<juce::PluginDescription> TracktionEngineWrapper::getPreferredPluginT
         getKnownPluginList().getTypes());
 }
 
-juce::File TracktionEngineWrapper::getPluginListFile() const {
+juce::File TracktionEngineWrapper::getPluginListFile() {
     // Routed via paths::pluginMetadataFile() — respects MAGDA_DATA_DIR /
     // Config::getDataDir() override. Defaults to userApplicationDataDirectory.
     auto file = magda::paths::pluginMetadataFile();

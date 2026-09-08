@@ -1544,7 +1544,7 @@ void PolyStepSequencerUI::drawBarLane(juce::Graphics& g, juce::Rectangle<int> ar
 // Mouse interaction (per-step lanes; the grid handles its own mouse)
 // =============================================================================
 
-int PolyStepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) const {
+int PolyStepSequencerUI::getStepAtX(int x, int areaX, int areaWidth, int numSteps) {
     if (numSteps <= 0 || areaWidth <= 0)
         return -1;
     int relX = x - areaX;

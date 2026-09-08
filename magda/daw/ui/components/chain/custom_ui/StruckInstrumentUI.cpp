@@ -132,7 +132,7 @@ std::vector<LinkableTextSlider*> StruckInstrumentUI::getLinkableSliders() {
     return out;
 }
 
-int StruckInstrumentUI::preferredContentWidth() const {
+int StruckInstrumentUI::preferredContentWidth() {
     return 560;  // body panel + EXCITER | RESONATOR columns
 }
 

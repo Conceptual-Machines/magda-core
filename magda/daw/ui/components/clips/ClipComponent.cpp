@@ -922,7 +922,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     }
 }
 
-bool ClipComponent::isChordClip(const ClipInfo& clip) const {
+bool ClipComponent::isChordClip(const ClipInfo& clip) {
     const auto* track = TrackManager::getInstance().getTrack(clip.trackId);
     return track != nullptr && track->type == TrackType::Chord;
 }
@@ -3220,7 +3220,7 @@ bool ClipComponent::isPartOfMultiSelection() const {
 // Helpers
 // ============================================================================
 
-bool ClipComponent::isOnLeftEdge(int x) const {
+bool ClipComponent::isOnLeftEdge(int x) {
     return x < RESIZE_HANDLE_WIDTH;
 }
 

@@ -2240,7 +2240,7 @@ void TrackHeadersPanel::hideControlAreaComponents(TrackHeader& header) {
         sendLabel->setVisible(false);
 }
 
-track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& header) const {
+track_controls::MixControls TrackHeadersPanel::mixControlsFor(TrackHeader& header) {
     const auto& p = header.policy;
     track_controls::MixControls c;
     if (p.gain)

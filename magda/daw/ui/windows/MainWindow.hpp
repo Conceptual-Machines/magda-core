@@ -111,8 +111,8 @@ class MainWindow : public juce::DocumentWindow,
     // The actual chooser + render flow, after performExport's pre-checks pass.
     void launchAudioExport(const ExportAudioDialog::Settings& settings, AudioEngine* engine);
     void performMidiExport(const ExportMidiDialog::Settings& settings);
-    juce::String getFileExtensionForFormat(const juce::String& format) const;
-    int getBitDepthForFormat(const juce::String& format) const;
+    static juce::String getFileExtensionForFormat(const juce::String& format);
+    static int getBitDepthForFormat(const juce::String& format);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainWindow)
 };

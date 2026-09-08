@@ -54,10 +54,10 @@ class DefaultControllerParamWriter : public ControllerParamWriter {
 
   private:
     void writePluginParam(const ControlTarget& target, float clamped);
-    void writeMacro(const ControlTarget& target, float clamped);
-    void writeModParam(const ControlTarget& target, float clamped);
-    void writeTrackLevel(const ControlTarget& target, float clamped);
-    void writeSendLevel(const ControlTarget& target, float clamped);
+    static void writeMacro(const ControlTarget& target, float clamped);
+    static void writeModParam(const ControlTarget& target, float clamped);
+    static void writeTrackLevel(const ControlTarget& target, float clamped);
+    static void writeSendLevel(const ControlTarget& target, float clamped);
 
     AudioBridge& bridge_;
 };

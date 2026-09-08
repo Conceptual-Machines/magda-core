@@ -142,15 +142,15 @@ PluginPresetScanner& PluginPresetScanner::getInstance() {
     return instance;
 }
 
-juce::String PluginPresetScanner::makeCacheKey(const DeviceInfo& device) const {
+juce::String PluginPresetScanner::makeCacheKey(const DeviceInfo& device) {
     return device.getFormatString() + "|" + device.manufacturer + "|" + device.name;
 }
 
-juce::String PluginPresetScanner::getPresetExtension(const DeviceInfo& device) const {
+juce::String PluginPresetScanner::getPresetExtension(const DeviceInfo& device) {
     return extensionFor(device.format);
 }
 
-std::vector<juce::File> PluginPresetScanner::getScanRoots(const DeviceInfo& device) const {
+std::vector<juce::File> PluginPresetScanner::getScanRoots(const DeviceInfo& device) {
     std::vector<juce::File> out;
     auto vendor = sanitiseFolderName(device.manufacturer);
     auto plugin = sanitiseFolderName(device.name);
@@ -169,7 +169,7 @@ std::vector<juce::File> PluginPresetScanner::getScanRoots(const DeviceInfo& devi
     return out;
 }
 
-juce::File PluginPresetScanner::getUserPresetDirectory(const DeviceInfo& device) const {
+juce::File PluginPresetScanner::getUserPresetDirectory(const DeviceInfo& device) {
     auto vendor = sanitiseFolderName(device.manufacturer);
     auto plugin = sanitiseFolderName(device.name);
     if (vendor.isEmpty() || plugin.isEmpty())

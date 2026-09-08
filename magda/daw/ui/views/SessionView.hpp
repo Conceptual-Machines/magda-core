@@ -245,14 +245,14 @@ class SessionView : public juce::Component,
     void openClipEditor(int trackIndex, int sceneIndex);
     void onCreateMidiClipClicked(int trackIndex, int sceneIndex);
     ClipId duplicateSessionClipToNextEmptyScene(ClipId clipId);
-    bool deleteSelectedSessionClips();
+    static bool deleteSelectedSessionClips();
 
     // View mode state
     ViewMode currentViewMode_ = ViewMode::Live;
     std::vector<TrackId> visibleTrackIds_;
 
     // Selection
-    void selectTrack(TrackId trackId);
+    static void selectTrack(TrackId trackId);
     void updateHeaderSelectionVisuals();
 
     // Clip slot display
@@ -276,7 +276,7 @@ class SessionView : public juce::Component,
     void clearDragHighlight();
     void updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex);
     void clearDragGhost();
-    bool isAudioFile(const juce::String& filename) const;
+    static bool isAudioFile(const juce::String& filename);
 
     // The media browser delivers sample drags as an internal {type:"files"}
     // payload rather than an OS file-drag on Linux, where JUCE has no Wayland

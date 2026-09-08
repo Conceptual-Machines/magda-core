@@ -24,7 +24,7 @@ class CompiledBitcrusherEditorView final : public juce::Component,
   public:
     explicit CompiledBitcrusherEditorView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 56;
     }
 

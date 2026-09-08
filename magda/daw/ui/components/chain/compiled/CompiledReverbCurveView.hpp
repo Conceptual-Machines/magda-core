@@ -28,7 +28,7 @@ class CompiledReverbCurveView final : public juce::Component,
   public:
     explicit CompiledReverbCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 120;
     }
 
@@ -52,7 +52,7 @@ class CompiledReverbCurveView final : public juce::Component,
 
     // Approximate t60 (seconds) for the active engine, derived from the
     // engine-aware mapping that lives in each magda_reverb_*.dsp.
-    float t60SecondsForEngine(int engineIndex, float decayDisplay) const;
+    static float t60SecondsForEngine(int engineIndex, float decayDisplay);
 
     magda::daw::audio::compiled::MagdaReverbCompiledPlugin* compiledPlugin_ = nullptr;
     magda::DeviceInfo deviceSnapshot_;

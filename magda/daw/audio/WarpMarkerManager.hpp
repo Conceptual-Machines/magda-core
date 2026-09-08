@@ -75,8 +75,8 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
      * @param clipId The MAGDA clip ID
      */
-    void enableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                    ClipId clipId);
+    static void enableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
+                           ClipId clipId);
 
     /**
      * @brief Disable warping: remove all warp markers
@@ -84,8 +84,8 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param clipIdToEngineId Mapping from MAGDA clip ID to TE clip ID
      * @param clipId The MAGDA clip ID
      */
-    void disableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                     ClipId clipId);
+    static void disableWarp(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
+                            ClipId clipId);
 
     /**
      * @brief Get current warp marker positions for display
@@ -94,7 +94,7 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param clipId The MAGDA clip ID
      * @return Vector of warp marker info
      */
-    std::vector<WarpMarkerInfo> getWarpMarkers(
+    static std::vector<WarpMarkerInfo> getWarpMarkers(
         te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId, ClipId clipId);
 
     /**
@@ -106,8 +106,8 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param warpTime Warped time position
      * @return Index of inserted marker, or -1 on failure
      */
-    int addWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                      ClipId clipId, double sourceTime, double warpTime);
+    static int addWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
+                             ClipId clipId, double sourceTime, double warpTime);
 
     /**
      * @brief Move a warp marker's warp time
@@ -118,8 +118,9 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param newWarpTime New warped time position
      * @return Actual position (clamped by TE)
      */
-    double moveWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                          ClipId clipId, int index, double newWarpTime);
+    static double moveWarpMarker(te::Edit& edit,
+                                 const std::map<ClipId, std::string>& clipIdToEngineId,
+                                 ClipId clipId, int index, double newWarpTime);
 
     /**
      * @brief Remove a warp marker at index
@@ -128,8 +129,9 @@ class WarpMarkerManager : private te::WarpTimeManager::Listener, private juce::T
      * @param clipId The MAGDA clip ID
      * @param index Marker index
      */
-    void removeWarpMarker(te::Edit& edit, const std::map<ClipId, std::string>& clipIdToEngineId,
-                          ClipId clipId, int index);
+    static void removeWarpMarker(te::Edit& edit,
+                                 const std::map<ClipId, std::string>& clipIdToEngineId,
+                                 ClipId clipId, int index);
 
   private:
     // -------- In-flight guard for transient detection --------

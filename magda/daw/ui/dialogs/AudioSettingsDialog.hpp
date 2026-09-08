@@ -30,7 +30,7 @@ class CustomChannelSelector : public juce::Component {
     AudioEngine* audioEngine_;
     bool isInput_;
 
-    void onPreviewToggled(int startChannel);
+    static void onPreviewToggled(int startChannel);
 
     struct ChannelToggle {
         std::unique_ptr<juce::ToggleButton> button;

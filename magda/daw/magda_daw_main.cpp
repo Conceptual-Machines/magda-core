@@ -134,7 +134,7 @@ class MagdaDAWApplication : public JUCEApplication {
     bool loadLuaScript(const juce::File& file);
     void unloadLuaScript();
     juce::String activeLuaScriptName() const;
-    void revealLuaScriptsFolder();
+    static void revealLuaScriptsFolder();
 
     /// Handles for the OSC section of ControllersDialog (osc_app.hpp), which
     /// only reads through them. Null before deferred init has run, and after

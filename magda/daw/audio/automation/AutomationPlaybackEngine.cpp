@@ -471,7 +471,7 @@ te::AutomatableParameter* AutomationPlaybackEngine::resolveParameter(
 
 double AutomationPlaybackEngine::convertFromTEValue(const AutomationTarget& target,
                                                     te::AutomatableParameter* param,
-                                                    float teValue) const {
+                                                    float teValue) {
     return laneNormalizedFromTEValue(target, param, teValue);
 }
 

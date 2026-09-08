@@ -331,27 +331,27 @@ class TrackHeadersPanel : public juce::Component,
     void rebuildSendLabels(TrackHeader& header, TrackId trackId);
     void paintTrackHeader(juce::Graphics& g, const TrackHeader& header, juce::Rectangle<int> area,
                           bool isSelected);
-    void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
-    void updateCollapseButtonIcon(TrackHeader& header);
+    static void paintResizeHandle(juce::Graphics& g, juce::Rectangle<int> area);
+    static void updateCollapseButtonIcon(TrackHeader& header);
     int getVisibleHeaderIndex(TrackId trackId) const;
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
-    void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
-                           const SideColumn& outer);
+    static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
+                                  const SideColumn& outer);
     void layoutControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
                            const SideColumn& inner, int trackHeight);
     // Master-only compact block: volume + speaker mute, horizontal meter with
     // the back-to-arrangement button, peak readout.
-    void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
-                                 const SideColumn& inner);
+    static void layoutMasterControlArea(TrackHeader& header, juce::Rectangle<int>& tcpArea,
+                                        const SideColumn& inner);
     // Hides every control the control-area layout may place, so each layout
     // pass starts from a clean slate and only shows what fits.
-    void hideControlAreaComponents(TrackHeader& header);
+    static void hideControlAreaComponents(TrackHeader& header);
     // Builds the policy-driven mix cluster (gain/pan/buttons/automation) for
     // the shared track_controls layout.
-    track_controls::MixControls mixControlsFor(TrackHeader& header) const;
+    static track_controls::MixControls mixControlsFor(TrackHeader& header);
 
     // Automation lane height helpers
     int getTrackTotalHeight(int trackIndex) const;

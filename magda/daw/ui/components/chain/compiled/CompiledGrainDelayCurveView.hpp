@@ -25,7 +25,7 @@ class CompiledGrainDelayCurveView final : public juce::Component,
   public:
     explicit CompiledGrainDelayCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 140;
     }
 

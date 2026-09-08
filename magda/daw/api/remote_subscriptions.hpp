@@ -260,7 +260,7 @@ class SubscriptionHub {
                      const std::vector<Topic>& requested, bool topicsGiven);
 
     void publishTopicLocked(Topic topic, Revision revision);
-    void deliverLocked(Client& client, const SubscriptionEvent& event);
+    static void deliverLocked(Client& client, const SubscriptionEvent& event);
     void foldFlushOutcomesLocked();
     void sendSnapshotsLocked(Client& client, const std::vector<Topic>& topics, Revision revision,
                              juce::Array<juce::var>& into);

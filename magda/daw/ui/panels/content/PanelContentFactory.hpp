@@ -54,7 +54,7 @@ class PanelContentFactory {
     /**
      * @brief Get the info for a content type
      */
-    PanelContentInfo getContentInfo(PanelContentType type) const;
+    static PanelContentInfo getContentInfo(PanelContentType type);
 
   private:
     PanelContentFactory();

@@ -107,7 +107,7 @@ ChordEngine::~ChordEngine() = default;
 
 // === CHORD DETECTION ===
 
-Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) const {
+Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) {
     if (heldNotes.empty())
         return {"none"};
 
@@ -379,14 +379,13 @@ Chord ChordEngine::detectPolychord(const std::vector<ChordNote>& notes) const {
     return detect(notes);
 }
 
-bool ChordEngine::isPolychordCandidate(const std::vector<ChordNote>& notes) const {
+bool ChordEngine::isPolychordCandidate(const std::vector<ChordNote>& notes) {
     return notes.size() >= 6;
 }
 
 // === CHORD CREATION ===
 
-Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality,
-                                            int octave) const {
+Chord ChordEngine::buildChordInRootPosition(ChordRoot root, ChordQuality quality, int octave) {
     std::vector<int> intervals = ChordUtils::getChordIntervals(quality);
     std::vector<ChordNote> notes;
 
@@ -413,7 +412,7 @@ std::vector<Chord> ChordEngine::buildChordInversions(ChordRoot root, ChordQualit
 }
 
 Chord ChordEngine::buildChordInversion(ChordRoot root, ChordQuality quality, int inversion,
-                                       int octave) const {
+                                       int octave) {
     std::vector<int> intervals = ChordUtils::getChordIntervals(quality);
     std::vector<ChordNote> notes;
 
@@ -466,7 +465,7 @@ juce::String ChordEngine::chordSpecToString(const ChordSpec& spec, bool includeI
 }
 
 std::vector<std::pair<juce::String, float>> ChordEngine::findChordsFromNotes(
-    const std::vector<int>& pitchClasses) const {
+    const std::vector<int>& pitchClasses) {
     std::vector<std::pair<juce::String, float>> results;
     if (pitchClasses.empty())
         return results;

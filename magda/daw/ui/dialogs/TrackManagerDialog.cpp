@@ -143,7 +143,7 @@ class TrackManagerDialog::ContentComponent : public juce::Component,
         }
     }
 
-    void drawCheckbox(juce::Graphics& g, int width, int height, bool isChecked) {
+    static void drawCheckbox(juce::Graphics& g, int width, int height, bool isChecked) {
         auto checkBounds = juce::Rectangle<int>((width - 16) / 2, (height - 16) / 2, 16, 16);
 
         // Checkbox border

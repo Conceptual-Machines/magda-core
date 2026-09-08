@@ -29,7 +29,7 @@ class CompiledEqCurveView final : public juce::Component,
   public:
     explicit CompiledEqCurveView(juce::String pluginId);
 
-    int getPreferredHeight() const {
+    static int getPreferredHeight() {
         return 90;
     }
 
