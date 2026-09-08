@@ -69,27 +69,24 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
-      # Run basic linting on changed files
+      # Static analysis on changed files, after build-check has written the
+      # compile database it reads. Local rather than pocc/pre-commit-hooks:
+      # that hook decides pass/fail from whether clang-tidy wrote anything to
+      # stderr, and clang-tidy always writes an "N warnings generated." tally,
+      # which its filter fails to strip because the regex matches only the
+      # singular "warning generated". Every file here would fail it.
+      #
+      # magda/engine is excluded while the native engine is still being written.
       - id: clang-tidy-check
         name: Clang-Tidy Check
-        entry: bash
-        args:
-          - -c
-          - |
-            if command -v /opt/homebrew/opt/llvm/bin/clang-tidy >/dev/null 2>&1; then
-              echo "Running clang-tidy on changed files..."
-              # Only run on .cpp files that were changed
-              for file in "$@"; do
-                if [[ "$file" == *.cpp ]]; then
-                  echo "Checking $file..."
-                  /opt/homebrew/opt/llvm/bin/clang-tidy "$file" -p=cmake-build-debug --config-file=.clang-tidy --format-style=file || true
-                fi
-              done
-            else
-              echo "clang-tidy not found, skipping..."
-            fi
+        entry: .pre-commit-hooks/clang-tidy.sh
         language: system
+        # Headers too: a push that changes only an inline or template-heavy
+        # header would otherwise go unanalysed. The script maps each one to the
+        # translation units that include it.
         files: \.(cpp|hpp|h)$
+        exclude: ^magda/engine/
+        pass_filenames: true
         stages: [pre-push]
 
       # Ensure tests still pass
@@ -104,4 +101,8 @@ repos:
 
 # Configuration
 default_stages: [pre-commit]
+# `pre-commit install` installs only the pre-commit hook unless told otherwise,
+# so the build, clang-tidy and test hooks below, all of them pre-push, were
+# never installed by the documented setup and had never run for anyone.
+default_install_hook_types: [pre-commit, pre-push]
 minimum_pre_commit_version: 2.20.0

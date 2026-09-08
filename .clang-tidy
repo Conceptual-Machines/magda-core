@@ -54,7 +54,7 @@ Checks: >-
 #   suspicious-include (31)      every hit is `#include "magda_*.generated.cpp"`,
 #                                the Faust DSP pipeline, which is deliberate.
 #   cert-err33-c (35)            ignored std::fprintf(stderr, ...) returns.
-#   exception-escape (33)        callback lambdas, as the note below already said.
+#   exception-escape (44)        callback lambdas, as the note below already said.
 #   unchecked-optional-access    guarded by ok()/failed() predicates it cannot see
 #     (10)                       through, and it drops the fact across any
 #                                non-const member call.
@@ -115,12 +115,14 @@ Checks: >-
 # bugprone-chained-comparison is off because Catch2's REQUIRE(a == b) expands to
 # `Decomposer() <= a == b`; it fired 311 times, every one of them in tests.
 #
-# bugprone-exception-escape stays enabled - it found 20 real
-# noexcept/destructor/main sites (#2395) and currently reports zero. If it ever
-# flags a plain callback lambda (juce::Button::onClick, callAsync, ...), that is
-# a false positive: the throwing capture-by-value copy happens while
-# constructing the closure, not inside the call operator, and such a lambda is
-# under none of the check's documented scope. Don't chase those.
+# bugprone-exception-escape earned its keep once, finding 20 real
+# noexcept/destructor/main sites (#2395), and this paragraph used to claim it
+# stayed enabled and reported zero. It is disabled above and reports 44, so the
+# claim was measured wrong or went stale. Re-enabling it means triaging those
+# 44 first: the ones to expect are plain callback lambdas
+# (juce::Button::onClick, callAsync, ...), where the throwing capture-by-value
+# copy happens while constructing the closure rather than inside the call
+# operator, which is outside the check's documented scope.
 
 # Warnings as errors - set once the bug-catching tier below is at zero.
 WarningsAsErrors: ''

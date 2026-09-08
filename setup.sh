@@ -117,10 +117,12 @@ if command -v python3 &> /dev/null || command -v python &> /dev/null; then
     fi
 
     if command -v pre-commit &> /dev/null; then
-        pre-commit install 2>/dev/null || true
-        print_success "Pre-commit hooks installed"
+        # Both types: the build, clang-tidy and test hooks are pre-push, and an
+        # older pre-commit without default_install_hook_types would skip them.
+        pre-commit install --hook-type pre-commit --hook-type pre-push 2>/dev/null || true
+        print_success "Pre-commit and pre-push hooks installed"
     else
-        print_warning "pre-commit not found. Run 'pip install pre-commit && pre-commit install' to enable quality checks."
+        print_warning "pre-commit not found. Run 'pip install pre-commit && pre-commit install --hook-type pre-commit --hook-type pre-push' to enable quality checks."
     fi
 else
     print_warning "Python not found. Pre-commit hooks will not be installed."
