@@ -681,7 +681,7 @@ void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangl
     if (!lane)
         return;
 
-    paintScaleLabelsFor(g, area, lane->target, [this, &area](double normalized) {
+    paintScaleLabelsFor(g, area, lane->target, [&area](double normalized) {
         return valueToPixel(normalized, area.getHeight());
     });
 }
