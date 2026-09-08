@@ -151,17 +151,30 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
 
     renderMaterial(block, out);
 
-    // Only a source that shares its track with a session has a section to lose
-    // it to. One built without the feed is the whole track.
-    if (section_ == Section::Arrangement && handles_ != nullptr)
+    // Every Arrangement source has a mode to check now (#2485), handles or not.
+    if (section_ == Section::Arrangement)
         applySectionHold(out);
 }
 
 void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
     const auto numSamples = static_cast<int>(out.getNumSamples());
 
-    const LaunchHandleFeed::Reader handles(*handles_);
-    const auto hold = sectionHold(handles.get(), trackId_, numSamples);
+    // A track missing from the snapshot is Arrangement: nothing to silence.
+    bool session = false;
+    const ClipSnapshotFeed::Reader snapshot(clips_);
+    if (const auto* track = snapshot ? snapshot->find(trackId_) : nullptr)
+        session = track->playbackMode == TrackPlaybackMode::Session;
+
+    const SectionMode mode{session, sessionModeBefore_};
+    sessionModeBefore_ = session;
+
+    SectionHold hold;
+    if (handles_ != nullptr) {
+        const LaunchHandleFeed::Reader handles(*handles_);
+        hold = sectionHold(handles.get(), trackId_, numSamples, mode);
+    } else {
+        hold = sectionHold(nullptr, trackId_, numSamples, mode);
+    }
 
     const auto until = std::clamp(hold.until.value, 0, numSamples);
 

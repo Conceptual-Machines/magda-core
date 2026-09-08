@@ -200,6 +200,10 @@ class ClipAudioSource final : public EngineAudioSource {
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
 
+    /// The mode the last block rendered under (#2485). A mode flip has no
+    /// handle to say what came before, so this is the only place it's kept.
+    bool sessionModeBefore_ = false;
+
     /// The two edges of the arrangement's own playback: the step it carries
     /// down when the session takes the track, and the one it subtracts when it
     /// gets the track back mid-material.

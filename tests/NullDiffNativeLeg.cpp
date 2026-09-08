@@ -445,6 +445,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     for (const auto& track : value.tracks) {
         ClipLane lane;
         lane.trackId = track.id;
+        lane.playbackMode = track.playbackMode;
         for (const auto& clip : value.clips) {
             if (clip.trackId != track.id)
                 continue;

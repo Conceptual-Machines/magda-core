@@ -596,17 +596,26 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         return;
     }
 
-    // A source built without the feed is the whole track and has no section to
-    // lose.
     // The arrangement's share, which is all of it on a track the session never
-    // took (#2302). The same fold the audio source reads.
+    // took, and none of it in Session mode (#2302, #2485). The same fold the
+    // audio source reads.
     auto lane = block;
     auto until = block.numSamples;
     auto lost = false;
 
-    if (handles_ != nullptr) {
-        const LaunchHandleFeed::Reader handles(*handles_);
-        const auto hold = sectionHold(handles.get(), trackId_, block.numSamples);
+    // Every Arrangement source has a mode to check now (#2485), handles or not.
+    const auto session = track->playbackMode == TrackPlaybackMode::Session;
+    const SectionMode mode{session, sessionModeBefore_};
+    sessionModeBefore_ = session;
+
+    {
+        SectionHold hold;
+        if (handles_ != nullptr) {
+            const LaunchHandleFeed::Reader handles(*handles_);
+            hold = sectionHold(handles.get(), trackId_, block.numSamples, mode);
+        } else {
+            hold = sectionHold(nullptr, trackId_, block.numSamples, mode);
+        }
 
         until = std::clamp(hold.until.value, 0, block.numSamples);
         lost = hold.lost;

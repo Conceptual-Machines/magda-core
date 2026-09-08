@@ -78,9 +78,9 @@ ClipSnapshot compile(std::vector<ClipInfo> clips, const TempoMap& tempoMap) {
 /// What the fixture in the golden test has to compile to, line for line. A diff
 /// here is a change in what a track plays.
 const std::string kGoldenDump =
-    "magda-clip-snapshot v1\n"
+    "magda-clip-snapshot v2\n"
     "tempo=a95350905fc122eb tracks=1\n"
-    "track 1 audio=2 midi=1 session=0\n"
+    "track 1 audio=2 midi=1 session=0 mode=arrangement\n"
     "  audio clip=1 span=0.000..8.000b 0.000..4.000s fade=0.000/1.000 curve=lin/lin "
     "behaviour=0/0 gain=0.0 pan=0.00 launch=256\n"
     "    event 1 src=7 file=loop.wav rate=48000 span=0.000..8.000b 0.000..4.000s anchor=0 "
@@ -749,6 +749,28 @@ TEST_CASE("A track carrying both views keeps them apart", "[engine][clip][sessio
     CHECK(snapshot.diagnostics.empty());
 }
 
+TEST_CASE("A lane's playback mode reaches the track, and defaults to Arrangement (#2485)",
+          "[engine][clip]") {
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.clips.push_back(makeAudioClip(1, 0.0, 4.0));
+
+    SECTION("default") {
+        const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+        REQUIRE(snapshot.tracks.size() == 1);
+        CHECK(snapshot.tracks.front().playbackMode == magda::TrackPlaybackMode::Arrangement);
+        CHECK(dumpClipSnapshot(snapshot).find("mode=arrangement") != std::string::npos);
+    }
+
+    SECTION("session") {
+        lane.playbackMode = magda::TrackPlaybackMode::Session;
+        const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+        REQUIRE(snapshot.tracks.size() == 1);
+        CHECK(snapshot.tracks.front().playbackMode == magda::TrackPlaybackMode::Session);
+        CHECK(dumpClipSnapshot(snapshot).find("mode=session") != std::string::npos);
+    }
+}
+
 TEST_CASE("A session slot is in the dump, in the arrangement's own detail",
           "[engine][clip][session]") {
     // The dump is the snapshot's canonical surface, so a session slot has to be
@@ -760,7 +782,7 @@ TEST_CASE("A session slot is in the dump, in the arrangement's own detail",
 
     INFO(text);
 
-    CHECK(text.find("track 1 audio=0 midi=0 session=1") != std::string::npos);
+    CHECK(text.find("track 1 audio=0 midi=0 session=1 mode=arrangement") != std::string::npos);
     CHECK(text.find("slot scene=3 length=8.000b audio=1 midi=0") != std::string::npos);
 
     // The slot's own material, not just its header: the clip, its span at the

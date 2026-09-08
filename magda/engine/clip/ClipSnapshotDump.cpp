@@ -160,7 +160,9 @@ std::string dumpClipSnapshot(const ClipSnapshot& snapshot) {
 
     for (const auto& track : snapshot.tracks) {
         out << "track " << track.trackId << " audio=" << track.audio.size()
-            << " midi=" << track.midi.size() << " session=" << track.session.size() << "\n";
+            << " midi=" << track.midi.size() << " session=" << track.session.size() << " mode="
+            << (track.playbackMode == TrackPlaybackMode::Session ? "session" : "arrangement")
+            << "\n";
         for (const auto& clip : track.audio)
             dumpAudioClip(out, clip);
         for (const auto& clip : track.midi)

@@ -76,6 +76,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
     for (const auto& lane : lanes) {
         TrackClipPlayback track;
         track.trackId = lane.trackId;
+        track.playbackMode = lane.playbackMode;
 
         // Rejected before anything is resolved, not while resolving. Occlusion
         // and the crossfade queries take every clip in the lane they are given

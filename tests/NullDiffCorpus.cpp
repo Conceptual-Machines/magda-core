@@ -2449,6 +2449,38 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
         corpus.push_back(std::move(value));
     }
 
+    {
+        // #2485: Session mode holds the arrangement silent with nothing
+        // launched -- the retrospect fixture's shape. Track 1 alone would
+        // render silent on both legs, which the runner refuses
+        // (NullDiffRunner.cpp:577), so track 2's clip is the audible
+        // neighbour that keeps the case measurable.
+        //
+        // The incumbent derives Session mode from activeSessionClipId rather
+        // than from a settable flag (SessionClipScheduler::
+        // syncTrackPlaybackModes), so the track needs a session clip to point
+        // it at even though nothing launches it; a track with no session
+        // content at all is a mode the incumbent's own writer never holds,
+        // and only the native engine's is asserted for that shape (the
+        // SwitchRig{false} cases in test_session_playback.cpp).
+        auto track = launching(plainTrack());
+        track.activeSessionClipId = 423;
+
+        auto value =
+            newTrackCase("session.mode.holds.slot",
+                         "a Session-mode track's arrangement stays silent with an unlaunched slot",
+                         {std::move(track), mixTrack(2, "Neighbour")});
+        value.endBeat = 8.0;
+
+        const auto source = writeSource(scratchDirectory, "sessionmodeholdsslot", impulses());
+        value.sources.push_back(source);
+        value.clips.push_back(audioClipOn(kTrack, 422, 0.0, 4.0, source));
+        value.clips.push_back(inSlot(audioClip(423, 0.0, 4.0, source), 0));
+        value.clips.push_back(audioClipOn(2, 424, 0.0, 4.0, source));
+
+        corpus.push_back(std::move(value));
+    }
+
     // --- external plugins ------------------------------------------------------
     //
     // The first cases in the corpus that host a plugin rather than run a device

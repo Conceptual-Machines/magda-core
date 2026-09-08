@@ -480,11 +480,10 @@ std::vector<MgdFixture> build() {
              .covers = "its bounce on the fourth track, muted with it"},
             {.fileName = "TAMUZ_TD_90_drum_best_simple_trashy.wav",
              .material = toneFor(2.0, 660.0),
-             .covers = "a session clip in the first scene, which an arrangement render never "
-                       "launches"},
+             .covers = "the session clip the first track launches on play (#2485)"},
             {.fileName = "SLS_O_65_guitar_soul_serenade_Cmin.wav",
              .material = toneFor(2.0, 770.0),
-             .covers = "a session clip on the second track"},
+             .covers = "the session clip the second track launches on play (#2485)"},
             {.fileName = "BS_NCS3_140_bass_growl_leap_Dbmin.wav",
              .material = toneFor(2.0, 880.0),
              .covers = "a session clip in the fourth scene"},

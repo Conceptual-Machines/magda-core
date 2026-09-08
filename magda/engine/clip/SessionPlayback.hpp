@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <tuple>
 
 #include "clip/ClipSnapshot.hpp"
 #include "exec/RenderContext.hpp"
@@ -116,6 +117,8 @@ constexpr int kSectionDeClickSamples = 32;
  *
  * Derived per block from the table both of a track's sources read, so its audio
  * and its MIDI reach the same answer with nothing of their own to keep in step.
+ * The track's own mode is folded in beside the handles (#2485): Session mode
+ * gates the arrangement the way the fork's playSlotClips does, launched or not.
  */
 struct SectionHold {
     /// The edge past which the arrangement is silent. Zero for a block the
@@ -144,21 +147,30 @@ struct SectionHold {
     }
 };
 
+/// The track's mode this block and the block before (#2485). Carried by the
+/// caller, since a mode flip has no handle to remember the block before.
+struct SectionMode {
+    bool session = false;
+    bool sessionBefore = false;
+};
+
 /// @copydoc SectionHold
 /// @p handles is null until the store publishes one, which is legal: nothing
-/// can hold a track then, so the arrangement has all of it.
-inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId, int numSamples) {
-    if (handles == nullptr)
-        return SectionHold::arrangement(numSamples);
-
-    const auto [first, last] = handles->rangeFor(trackId);
+/// can hold a track then, and only @p mode decides. Folded in as if the mode
+/// were a handle that holds the section for the whole block.
+inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId, int numSamples,
+                               SectionMode mode = {}) {
+    const LaunchHandleTable::Entry* first = nullptr;
+    const LaunchHandleTable::Entry* last = nullptr;
+    if (handles != nullptr)
+        std::tie(first, last) = handles->rangeFor(trackId);
 
     // Before anything in this block, at its first sample once releases have
     // applied, and at its last.
-    auto sessionBefore = false;
-    auto sessionAtZero = false;
-    auto sessionAtEnd = false;
-    auto takenAt = std::numeric_limits<int>::max();
+    auto sessionBefore = mode.sessionBefore;
+    auto sessionAtZero = mode.session;
+    auto sessionAtEnd = mode.session;
+    auto takenAt = mode.session ? 0 : std::numeric_limits<int>::max();
 
     for (const auto* entry = first; entry != last; ++entry) {
         if (entry->handle == nullptr)
