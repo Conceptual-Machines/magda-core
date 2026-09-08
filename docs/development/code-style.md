@@ -182,7 +182,7 @@ On commit:
 On push:
 - A debug build
 - clang-tidy over the changed files, which fails on a finding in the enforced
-  tier (see `.pre-commit-hooks/clang-tidy.sh`)
+  tier (see `.pre-commit-hooks/clang_tidy.py`)
 - The test suite
 
 ## CI Integration
