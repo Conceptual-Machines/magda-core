@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 
@@ -868,8 +869,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
                 peak = juce::jmin(peak, 1.0f);
 
                 float lineHalf = peak * halfHeight;
-                if (lineHalf < 0.5f)
-                    lineHalf = 0.5f;
+                lineHalf = std::max(lineHalf, 0.5f);
 
                 g.drawVerticalLine(px, centerY - lineHalf, centerY + lineHalf);
             }
@@ -885,8 +885,7 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
                 if (noteLen < 0.0) {
                     // Open note (being held) — extend to clip end
                     noteLen = clipLengthInBeats - displayStart;
-                    if (noteLen < 0.05)
-                        noteLen = 0.05;
+                    noteLen = std::max(noteLen, 0.05);
                 }
                 double displayEnd = displayStart + noteLen;
 

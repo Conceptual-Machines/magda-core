@@ -1234,8 +1234,7 @@ class Config {
         return previewOutputChannel;
     }
     void setPreviewOutputChannel(int channel) {
-        if (channel < 0)
-            channel = 0;
+        channel = std::max(channel, 0);
         // Snap to even (stereo pair boundary)
         channel &= ~1;
         previewOutputChannel = channel;

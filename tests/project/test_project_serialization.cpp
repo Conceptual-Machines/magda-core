@@ -2565,6 +2565,60 @@ TEST_CASE("A device with no channel counts written loads as stereo",
     CHECK(loaded.audioOutputChannels == 2);
 }
 
+TEST_CASE("A modelled sidechain source survives a roundtrip", "[project][serialization][device]") {
+    DeviceInfo device;
+    device.id = 41;
+    device.name = "Compressor";
+    device.pluginId = "magda_compressor";
+    device.format = PluginFormat::Internal;
+    device.sidechainPort = magda::monoAudioSidechain;
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 7;
+    device.sidechain.tapPoint = ModTapPoint::PreFx;
+    device.sidechain.gainDb = -4.5f;
+    device.sidechain.listen = true;
+
+    const auto json = ProjectSerializer::serializeDeviceInfo(device);
+    REQUIRE(json.isObject());
+
+    DeviceInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    CHECK(loaded.sidechainPort == magda::monoAudioSidechain);
+    CHECK(loaded.sidechain.type == SidechainConfig::Type::Audio);
+    CHECK(loaded.sidechain.sourceTrackId == 7);
+    CHECK(loaded.sidechain.tapPoint == ModTapPoint::PreFx);
+    CHECK(loaded.sidechain.gainDb == Catch::Approx(-4.5f));
+    CHECK(loaded.sidechain.listen);
+}
+
+TEST_CASE("A sidechain saved before the source had a shape reads as it sounded",
+          "[project][serialization][device]") {
+    // What a project written before #2329 carries: a type, a track, and the
+    // capability flag that has since become a declared port. Everything the
+    // source grew has to read back as the behaviour that project had.
+    DeviceInfo device;
+    device.id = 42;
+    device.name = "Compressor";
+    device.pluginId = "magda_compressor";
+    device.format = PluginFormat::Internal;
+    device.sidechain.type = SidechainConfig::Type::Audio;
+    device.sidechain.sourceTrackId = 7;
+
+    auto json = ProjectSerializer::serializeDeviceInfo(device);
+    REQUIRE(json.isObject());
+    auto* object = json.getDynamicObject();
+    object->removeProperty("sidechainPortKind");
+    object->removeProperty("sidechainPortChannels");
+    object->setProperty("canSidechain", true);
+
+    DeviceInfo loaded;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    CHECK(loaded.sidechainPort == magda::monoAudioSidechain);
+    CHECK(loaded.sidechain.tapPoint == ModTapPoint::PostFader);
+    CHECK(loaded.sidechain.gainDb == 0.0f);
+    CHECK_FALSE(loaded.sidechain.listen);
+}
+
 TEST_CASE("Section-scoped device ids survive project roundtrip",
           "[project][serialization][devices]") {
     ProjectTestFixture fixture;

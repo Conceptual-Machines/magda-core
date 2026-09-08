@@ -4,6 +4,7 @@
 
 #include <vector>
 
+#include "core/SidechainPort.hpp"
 #include "plugins/FaustPatchInfo.hpp"
 
 namespace magda::daw::audio {
@@ -27,6 +28,21 @@ struct StarterDsp {
  * same way, and no call site can forget to supply it.
  */
 juce::String readCustomViewName(const juce::String& source);
+
+/**
+ * @brief The sidechain slot a patch asks for via `declare magda_sidechain "audio";`.
+ *
+ * None when the patch declares none, which is the common case. Declared rather
+ * than read off the channel counts: a patch with three inputs and two outputs
+ * may be a widener's dry line as easily as a key, and only the patch knows
+ * (#2329). The key's width is the inputs past the outputs, because that is
+ * where the dsp reads it -- the declaration says the last inputs are a key, not
+ * how many signals the process function takes.
+ *
+ * @param inputCount   the compiled dsp's input count
+ * @param outputCount  its output count
+ */
+magda::SidechainPort readSidechainPort(const juce::String& source, int inputCount, int outputCount);
 
 // Path to the Faust standard libraries directory bundled alongside the app.
 // Returned File may not exist when running outside an installed bundle (e.g.

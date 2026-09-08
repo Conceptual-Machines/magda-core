@@ -214,9 +214,7 @@ bool isFocusedDeviceMacroResolver(const Target& t) {
 bool isExplicitPluginParamTarget(const Target& t) {
     if (const auto* st = std::get_if<ControlTarget>(&t))
         return st->kind == ControlTarget::Kind::PluginParam;
-    if (std::holds_alternative<AliasRef>(t))
-        return true;
-    return false;
+    return std::holds_alternative<AliasRef>(t);
 }
 
 }  // namespace

@@ -183,6 +183,33 @@ struct DevicePathDto {
     bool operator==(const DevicePathDto&) const = default;
 };
 
+/**
+ * @brief A device's sidechain: the slot it declares and the source feeding it.
+ *
+ * The declaration and the routing together, because neither is much use alone:
+ * `port` says what the device will take, the rest says what it is being given
+ * (#2329). A device that declares no port still reports one, as "none".
+ */
+struct DeviceSidechainDto {
+    /// What the device declares on its slot: "none", "audio" or "midi".
+    juce::String port = "none";
+    /// Channels an audio key carries. Zero for every other port.
+    int portChannels = 0;
+
+    /// What is routed to it: "none", "audio" or "midi".
+    juce::String type = "none";
+    /// The track the key is taken from; absent when nothing is routed.
+    std::optional<TrackId> sourceTrackId;
+    /// Where on that track: "preFx" or "postFader".
+    juce::String tapPoint = "postFader";
+    /// Trim on the key, on the edge feeding the device.
+    double gainDb = 0.0;
+    /// Monitor the key in place of the device's own output.
+    bool listen = false;
+
+    bool operator==(const DeviceSidechainDto&) const = default;
+};
+
 struct DeviceDto {
     DeviceId id = INVALID_DEVICE_ID;
     TrackId trackId = INVALID_TRACK_ID;
@@ -199,6 +226,7 @@ struct DeviceDto {
     bool instrument = false;
     bool bypassed = false;
     double gainDb = 0.0;
+    DeviceSidechainDto sidechain;
 
     bool operator==(const DeviceDto&) const = default;
 };

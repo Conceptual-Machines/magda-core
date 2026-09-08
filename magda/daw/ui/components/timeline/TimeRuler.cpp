@@ -1,5 +1,6 @@
 #include "TimeRuler.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "CursorManager.hpp"
@@ -460,8 +461,7 @@ void TimeRuler::drawSecondsMode(juce::Graphics& g) {
     // Find first visible time
     double startTime = pixelToTime(0);
     startTime = std::floor(startTime / interval) * interval;
-    if (startTime < 0)
-        startTime = 0;
+    startTime = std::max<double>(startTime, 0);
 
     // Draw markers
     g.setFont(11.0f);
@@ -511,8 +511,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         (frac > 0.0) ? frac
                      : static_cast<double>(timeSigNumerator) *
                            GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
-    if (gridResolutionBeats > intervalBeats)
-        intervalBeats = gridResolutionBeats;
+    intervalBeats = std::max(intervalBeats, gridResolutionBeats);
 
     double pixelsPerBeat = zoom;
     double pixelsPerBar = zoom * timeSigNumerator;
@@ -552,13 +551,11 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     double barOriginBeats = barOriginSeconds * tempo / 60.0;
 
     double firstVisibleBeat = (currentScrollOffset - leftPadding) / zoom + barOriginBeats;
-    if (firstVisibleBeat < barOriginBeats)
-        firstVisibleBeat = barOriginBeats;
+    firstVisibleBeat = std::max(firstVisibleBeat, barOriginBeats);
 
     auto startStep =
         static_cast<long long>(std::floor((firstVisibleBeat - barOriginBeats) / intervalBeats));
-    if (startStep < 0)
-        startStep = 0;
+    startStep = std::max<long long>(startStep, 0);
 
     double totalTimelineBeats = timelineLength * tempo / 60.0;
     // Determine which musical subdivision level to label (must be power-of-2 division of a beat).
@@ -633,8 +630,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         // Iterate by bar
         auto startBarStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / barLengthBeats));
-        if (startBarStep < 0)
-            startBarStep = 0;
+        startBarStep = std::max<long long>(startBarStep, 0);
 
         for (long long barStep = startBarStep;; ++barStep) {
             double beat = barOriginBeats + barStep * barLengthBeats;
@@ -667,8 +663,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
     // Pass 3: Beat labels (skip beat 1 = bar start, check overlap with bar labels)
     if (pixelsPerBeat >= 20) {
         auto startBeatStep = static_cast<long long>(std::floor(firstVisibleBeat - barOriginBeats));
-        if (startBeatStep < 0)
-            startBeatStep = 0;
+        startBeatStep = std::max<long long>(startBeatStep, 0);
 
         for (long long beatStep = startBeatStep;; ++beatStep) {
             double beat = barOriginBeats + static_cast<double>(beatStep);
@@ -720,8 +715,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         // Iterate at the subdivision label level (not at grid resolution)
         auto startSubdivStep = static_cast<long long>(
             std::floor((firstVisibleBeat - barOriginBeats) / subdivLabelBeats));
-        if (startSubdivStep < 0)
-            startSubdivStep = 0;
+        startSubdivStep = std::max<long long>(startSubdivStep, 0);
 
         for (long long subdivStep = startSubdivStep;; ++subdivStep) {
             double beatsFromOrigin = subdivStep * subdivLabelBeats;

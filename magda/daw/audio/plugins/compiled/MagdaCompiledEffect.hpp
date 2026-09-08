@@ -169,8 +169,11 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     virtual bool wantsMidiInput() const {
         return false;
     }
-    virtual bool wantsSidechain() const {
-        return false;
+    /// The sidechain slot the device's dsp reads, as the inputs after its own
+    /// (#2329). None by default; MagdaCompiledEffect copies the key into those
+    /// inputs, so no dsp has to know where a host keeps it.
+    virtual magda::SidechainPort sidechainPort() const {
+        return {};
     }
     /// Whether the host should keep pumping the device once dry input stops. A
     /// device with a tail in its delay lines says yes, or the trail is cut.
@@ -188,8 +191,9 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
     virtual int outputChannelCount() const {
         return 0;
     }
-    /// Input channels the device reads, sidechain key included, or 0 to let the
-    /// host decide. See DeviceProperties::inputChannelCount.
+    /// Input channels the device reads for its own signal, the key not among
+    /// them, or 0 to let the host decide. See
+    /// DeviceProperties::inputChannelCount.
     virtual int inputChannelCount() const {
         return 0;
     }

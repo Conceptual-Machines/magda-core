@@ -18,6 +18,20 @@ declares `producesMidi` in `DeviceProperties`. The chain's raw MIDI never
 passes through a device: thru is the host's merge behind it
 (`DeviceInfo::midiInThru`, #2347).
 
+A sidechain key is a declared port, not extra channels of the buffer. A device
+says what it takes in `DeviceProperties::sidechain` -- `{None, Audio(channels),
+MIDI}` -- and reads it from `DeviceProcessContext::sidechain`, which carries
+`numSidechainChannels` read-only channels indexed from `startSample` like the
+audio. Zero channels means nothing is routed, which is not the same as a silent
+key. Declaring more inputs than outputs is not a request for one (#2329).
+
+A compiled Faust device declares its key by overriding
+`MagdaCompiledEffect::sidechainPort()`; `MagdaCompiledEffect` copies the key
+into the dsp inputs after the device's own, so no dsp reads the port itself. A
+runtime Faust patch declares it in the source, with `declare magda_sidechain
+"audio";`, and the key is the inputs the process function takes past its
+outputs.
+
 ## Public surface
 
 A pack may use:

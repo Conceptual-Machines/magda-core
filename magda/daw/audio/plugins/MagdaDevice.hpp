@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "core/ParameterInfo.hpp"
+#include "core/SidechainPort.hpp"
 
 namespace magda::daw::audio {
 
@@ -27,7 +28,10 @@ struct DeviceProperties {
     bool takesAudioInput = true;
     bool isSynth = false;
     bool producesAudioWithoutInput = false;
-    bool canSidechain = false;
+    /// The sidechain slot the device asks for, if it wants one (#2329).
+    /// Declared here rather than read off the channel counts below: a device
+    /// with more inputs than outputs is not by itself asking for a key.
+    magda::SidechainPort sidechain;
     double latencySeconds = 0.0;
     double tailLengthSeconds = 0.0;
     /// Output channels the device always produces, whatever it is handed. Zero
@@ -35,9 +39,9 @@ struct DeviceProperties {
     /// this when its DSP has a fixed output width (a mono-in/stereo-out
     /// widener, a stereo-only dynamics stage).
     int outputChannelCount = 0;
-    /// Input channels the device reads, sidechain key included. Zero means the
-    /// host decides. What the model wires from: a device asking for more inputs
-    /// than it outputs is asking for a key.
+    /// Input channels the device reads for its own signal, the sidechain key
+    /// not among them: the key is a port (@ref sidechain), not the tail of this
+    /// count. Zero means the host decides. What the model wires from.
     int inputChannelCount = 0;
 };
 
@@ -109,16 +113,21 @@ class DeviceMidiOutput {
 struct DeviceProcessContext {
     juce::AudioBuffer<float>* audio = nullptr;
     /**
-     * First channel of @ref audio carrying the device's sidechain key, or -1
-     * when the host routed nothing to it.
+     * The sidechain key routed to the slot the device declared, as
+     * @ref numSidechainChannels read-only channel pointers indexed from
+     * @ref startSample, like @ref audio (#2329).
      *
-     * The key arrives as further channels of the same buffer, after the ones
-     * the device reads and writes as its own signal, which is how MAGDA's
-     * compiled dynamics DSPs are written and what both hosts can supply
-     * without a copy. A device with no sidechain never sees anything above its
-     * own width.
+     * Its own port, not further channels of @ref audio: where a host keeps the
+     * key is the host's business, and a device that had to know carried that
+     * convention in its own DSP. Null with a zero count when nothing is routed,
+     * which is "no key" rather than a silent one.
+     *
+     * Fewer channels than the device declared is legal -- a mono source into a
+     * stereo key -- so a device reads what is there rather than what it asked
+     * for.
      */
-    int sidechainInputChannel = -1;
+    const float* const* sidechain = nullptr;
+    int numSidechainChannels = 0;
     /// Both null when the host routed no MIDI to or from the device, otherwise
     /// both set; a device that declares no MIDI output still gets a sink, which
     /// the host discards.

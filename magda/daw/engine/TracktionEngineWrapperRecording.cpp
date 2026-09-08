@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "../audio/AudioBridge.hpp"
@@ -387,8 +388,7 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
                     auto& n = preview.notes[static_cast<size_t>(i)];
                     if (n.noteNumber == evt.noteNumber && n.lengthBeats < 0.0) {
                         n.lengthBeats = eventBeat - n.startBeat;
-                        if (n.lengthBeats < 0.01)
-                            n.lengthBeats = 0.01;
+                        n.lengthBeats = std::max(n.lengthBeats, 0.01);
                         break;
                     }
                 }

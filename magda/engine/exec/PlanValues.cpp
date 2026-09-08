@@ -389,6 +389,33 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        case OpRole::DeviceSidechainGain: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, leaving its sidechain trim at unity");
+                break;
+            }
+            // A plain multiply on the key, like the slot's own gain trim: no
+            // fader curve and no clamp, because this is a trim rather than a
+            // fader position.
+            const auto gain = decibelsToGain(std::clamp(device->sidechain.gainDb, -60.0f, 24.0f));
+            value.gainLeft = gain;
+            value.gainRight = gain;
+            break;
+        }
+
+        case OpRole::DeviceProcess: {
+            const auto* device = findDevice(*track, key);
+            if (device == nullptr) {
+                report(id, "no device " + std::to_string(key.deviceId) +
+                               " in the model, monitoring its own output");
+                break;
+            }
+            value.listensToSidechain = device->sidechain.listensToKey();
+            break;
+        }
+
         // The two ops the model toggles rather than recompiles. The subtract
         // and the delay feeding it are in every plan, so turning delta solo on
         // is a value away and the dry line has been running all along; what
@@ -457,9 +484,9 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
-        // Sources, sums, merges, differences, devices, meters and the output
-        // carry no value of their own: what they render comes from their
-        // bindings, and what they pass on is whatever reached them.
+        // Sources, sums, merges, differences, meters and the output carry no
+        // value of their own: what they render comes from their bindings, and
+        // what they pass on is whatever reached them.
         case OpRole::ClipAudio:
         case OpRole::ClipMidi:
         case OpRole::LiveAudioInput:
@@ -468,7 +495,6 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::SessionMidi:
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:
-        case OpRole::DeviceProcess:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
         // A note gate's range and transposition are topology, compiled into the

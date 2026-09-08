@@ -265,11 +265,7 @@ bool ProjectSerializer::deserializeAutomationPoint(const juce::var& json,
     if (!deserializeBezierHandle(obj->getProperty("inHandle"), outPoint.inHandle)) {
         return false;
     }
-    if (!deserializeBezierHandle(obj->getProperty("outHandle"), outPoint.outHandle)) {
-        return false;
-    }
-
-    return true;
+    return deserializeBezierHandle(obj->getProperty("outHandle"), outPoint.outHandle);
 }
 
 juce::var ProjectSerializer::serializeAutomationTarget(const AutomationTarget& target) {

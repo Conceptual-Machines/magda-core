@@ -123,7 +123,8 @@ TEST_CASE("Remote API input validation returns structured issues",
                                "internal",
                                true,
                                false,
-                               -3.0};
+                               -3.0,
+                               {}};
         auto json = toJson(device);
         // 5 - 2^32 decodes back to rack 5 if the id is truncated to 32 bits.
         json.getDynamicObject()->setProperty(
@@ -303,9 +304,12 @@ TEST_CASE("Remote API DTOs round-trip through JSON", "[remote-api][contract][dto
                        "next",    {{60, 110, 0.0, 0.5}, {64, 100, 1.0, 0.5}}};
     requireRoundTrip(clip, clipFromJson);
 
+    // Every sidechain field carries a non-default value: a decoder that dropped
+    // one would round-trip through the defaults and prove nothing.
+    const DeviceSidechainDto sidechain{"audio", 2, "audio", 4, "preFx", -4.5, true};
     const DeviceGraphDto graph{
         {{10, 3, 20, 30, makeDevicePathDto(ChainNodePath::chainDevice(3, 20, 30, 10)), "Synth",
-          "instrument", "internal", true, false, -3.0}},
+          "instrument", "internal", true, false, -3.0, sidechain}},
         {{20, 3, std::nullopt, std::nullopt, "Parallel", false, 0.0, 0.0, {30}}},
         {{30, 20, "Main", 0, false, false, false, 0.0, 0.0, {10}, {}}}};
     requireRoundTrip(graph, deviceGraphFromJson);
@@ -730,8 +734,18 @@ TEST_CASE("Device paths round-trip through nested racks and chains",
         // address back.
         const auto* get = OperationRegistry::instance().find("devices.list");
         REQUIRE(get != nullptr);
-        const DeviceGraphDto graph{{{6, 2, std::nullopt, std::nullopt, dto, "Kick", "instrument",
-                                     "internal", true, false, 0.0}},
+        const DeviceGraphDto graph{{{6,
+                                     2,
+                                     std::nullopt,
+                                     std::nullopt,
+                                     dto,
+                                     "Kick",
+                                     "instrument",
+                                     "internal",
+                                     true,
+                                     false,
+                                     0.0,
+                                     {}}},
                                    {},
                                    {}};
         REQUIRE(validateJson(toJson(graph), get->outputSchema).empty());

@@ -51,7 +51,7 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
     void setParameterValue(int index, float value) override;
 
     void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& v) override;
 
   private:
     /// Re-cache the conversion domain of every pool slot. Called whenever the
@@ -137,6 +137,9 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
         dsp_factory* factory = nullptr;
         int dspIn = 0;
         int dspOut = 0;
+        /// The key this source declared, frozen with the compile that read it
+        /// so properties() never touches the editable source (#2329).
+        magda::SidechainPort sidechain;
         // Audio-thread view of the active slots: which pool slot →
         // which zone, plus the denormalization metadata frozen at
         // compile time. Built by `compileAndRebind` and never

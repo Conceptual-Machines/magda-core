@@ -589,12 +589,8 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
                                               QueryWeights weights, QuerySort sort) const {
     sqlite3* sql = db_.handle();
     const BuiltWhere where = buildWhere(filters);
-    if (limit < 0) {
-        limit = 0;
-    }
-    if (offset < 0) {
-        offset = 0;
-    }
+    limit = std::max(limit, 0);
+    offset = std::max(offset, 0);
 
     if (!text || text->empty()) {
         return filterOnly(sql, where, limit, offset, sort);
@@ -708,12 +704,8 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
                                                  const QueryFilters& filters, int limit, int offset,
                                                  QuerySort sort) const {
     sqlite3* sql = db_.handle();
-    if (limit < 0) {
-        limit = 0;
-    }
-    if (offset < 0) {
-        offset = 0;
-    }
+    limit = std::max(limit, 0);
+    offset = std::max(offset, 0);
 
     // Pull the seed's embedding. similarTo is a no-op if the seed wasn't
     // indexed with an audio model (no embedding row).

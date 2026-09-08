@@ -1,5 +1,6 @@
 #include "MediaExplorerContent.hpp"
 
+#include <algorithm>
 #include <filesystem>
 #include <system_error>
 
@@ -42,8 +43,7 @@ class MediaExplorerContent::PreviewAudioCallback : public juce::AudioIODeviceCal
         // Read offset from Config so changes in AudioSettingsDialog take effect immediately.
         // Config::getPreviewOutputChannel() is a plain member read — no locks or allocations.
         int offset = magda::Config::getInstance().getPreviewOutputChannel();
-        if (offset < 0)
-            offset = 0;
+        offset = std::max(offset, 0);
 
         // Check that the requested stereo pair fits within the available output channels
         if (offset + 1 < numOutputChannels) {

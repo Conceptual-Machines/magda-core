@@ -1003,10 +1003,7 @@ bool RackSyncManager::structureChanged(const SyncedRack& synced, const RackInfo&
     const auto missingNestedRack = [&synced](const juce::String& key) {
         return !synced.nestedRackInstances.contains(key);
     };
-    if (std::ranges::any_of(expectedNestedRacks, missingNestedRack))
-        return true;
-
-    return false;
+    return std::ranges::any_of(expectedNestedRacks, missingNestedRack);
 }
 
 void RackSyncManager::updateProperties(SyncedRack& synced, const RackInfo& rackInfo) {

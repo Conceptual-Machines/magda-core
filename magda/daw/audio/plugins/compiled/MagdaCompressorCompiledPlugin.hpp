@@ -91,14 +91,14 @@ class MagdaCompressorCompiledPlugin : public MagdaCompiledEffect {
     int engineSlot() const override {
         return kEngineSlot;
     }
-    bool wantsSidechain() const override {
-        return true;
+    magda::SidechainPort sidechainPort() const override {
+        return magda::monoAudioSidechain;
     }
     int outputChannelCount() const override {
         return 2;
     }
     int inputChannelCount() const override {
-        return 3;  // Left, Right, and the key.
+        return 2;  // Left and Right. The key is a port, not a third input.
     }
     void beforeCompute(DeviceProcessContext& context, int engineIndex) override;
     void afterCompute(DeviceProcessContext& context, int engineIndex) override;

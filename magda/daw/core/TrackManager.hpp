@@ -837,6 +837,12 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
 
     // Sidechain configuration (device-level)
     void setSidechainSource(DeviceId targetDevice, TrackId sourceTrack, SidechainConfig::Type type);
+    /// Which point on the source track the key is taken at (#2329).
+    void setSidechainTapPoint(DeviceId targetDevice, ModTapPoint tapPoint);
+    /// Trim on the key, applied on the edge feeding the device.
+    void setSidechainGainDb(DeviceId targetDevice, float gainDb);
+    /// Monitor the key in place of the device's own output.
+    void setSidechainListen(DeviceId targetDevice, bool listen);
     void clearSidechain(DeviceId targetDevice);
 
     // Sidechain configuration (rack-level)
@@ -1250,6 +1256,10 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     // engine is attached or the track takes no external input (Aux, Group).
     // Single place for the create/restore/duplicate/engine-attach wiring.
     void startMidiMonitoring(const TrackInfo& track, const juce::String& deviceId);
+
+    /// Find @p targetDevice anywhere in any track, change its sidechain source,
+    /// then notify. The one walk every sidechain edit shares (#2329).
+    void editSidechain(DeviceId targetDevice, const std::function<void(SidechainConfig&)>& edit);
 
     // Mutable resolver — used only by the unified setters in
     // TrackManagerModulation.cpp. Kept private so external callers can't

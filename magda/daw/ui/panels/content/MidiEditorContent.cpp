@@ -970,8 +970,7 @@ void MidiEditorContent::updateGridResolution() {
         // Notify BottomPanel to update its num/den display
         if (onAutoGridDisplayChanged) {
             int den = static_cast<int>(std::round(4.0 / gridResolutionBeats_));
-            if (den < 1)
-                den = 1;
+            den = std::max(den, 1);
             onAutoGridDisplayChanged(1, den);
         }
     }

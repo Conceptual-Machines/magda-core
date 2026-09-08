@@ -44,11 +44,10 @@
  * so the engine carries it beside the port instead: DeviceBlock::midiInAllNotesOff
  * on the way in, DeviceBlock::midiOutAllNotesOff on the way out (#2418).
  *
- * Sidechain audio used to be a third. DeviceBlock::sidechain now reaches the
- * device as further channels of its own buffer, after the ones it owns, with
- * DeviceProcessContext::sidechainInputChannel saying where they start -- the
- * layout MAGDA's compiled dynamics DSPs already read and the one the fork
- * hands them (#2192).
+ * Sidechain audio is neither: DeviceBlock::sidechain is the plan's own slot and
+ * DeviceProcessContext::sidechain is the SDK's, so the key crosses here as a
+ * port on both sides and no adapter decides where in a buffer it belongs
+ * (#2192, #2329).
  */
 
 namespace magda::daw::audio::engine_adapter {
@@ -119,6 +118,9 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     std::vector<ParameterMapping> parameters_;
     std::vector<float*> channels_;
+    /// The key's channel pointers, sized in prepare() to what the device
+    /// declared. Read-only: a device reads its key and never writes it.
+    std::vector<const float*> sidechainChannels_;
 
     /// What the device reads this block and what it wrote, one vector each,
     /// reserved to its own port's bound and never grown past it (#2347).

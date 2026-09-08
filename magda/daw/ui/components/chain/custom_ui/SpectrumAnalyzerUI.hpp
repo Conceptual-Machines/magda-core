@@ -69,9 +69,9 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
   private:
     void timerCallback() override;
     void updateTimerState();
-    void refreshOverlayList();                        // rebuild combo items from the track list
-    void selectOverlayTrack(magda::TrackId trackId);  // change selection + arm/disarm analysis
-    void releaseMeasurementArming();                  // undo only what this UI armed
+    void refreshOverlayList();                       // rebuild combo items from the track list
+    void selectOverlayTrack(magda::TrackId target);  // change selection + arm/disarm analysis
+    void releaseMeasurementArming();                 // undo only what this UI armed
     void pollOverlayData();      // fetch overlay band spectrum + pair-filtered findings
     void rebuildFft(int order);  // (re)allocate FFT + buffers for a 2^order transform
     static float freqToX(float hz, juce::Rectangle<float> area);

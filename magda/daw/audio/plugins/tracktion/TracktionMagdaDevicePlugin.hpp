@@ -63,6 +63,11 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     void buildParameters();
     void syncParametersToDevice();
     void refreshLiveSourceIds();
+    /// Re-read the two widths the render path splits its buffer on. Message
+    /// thread, from wherever the fork asks this plugin about its shape: most
+    /// devices' properties never change, but the runtime Faust device
+    /// recompiles into a different one and the split has to follow it (#2329).
+    void refreshChannelLayout();
 
     std::unique_ptr<MagdaDevice> device_;
     /// Handed to the parameter conversion lambdas, which an automation curve can
@@ -71,6 +76,10 @@ class TracktionMagdaDevicePlugin final : public te::Plugin {
     /// calling into a device that is gone.
     std::shared_ptr<MagdaDevice*> deviceHandle_;
     const DeviceProperties properties_;
+    /// The live channel split, published for the audio thread: the device's own
+    /// input width, and the key channels the fork appends after them.
+    std::atomic<int> ownInputChannels_{0};
+    std::atomic<int> sidechainChannels_{0};
     std::vector<std::unique_ptr<juce::CachedValue<float>>> parameterValues_;
     std::vector<te::AutomatableParameter::Ptr> parameters_;
     /// The device's MIDI output for the current block, swapped into the host's

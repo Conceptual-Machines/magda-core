@@ -131,6 +131,7 @@ TracktionMagdaDevicePlugin::TracktionMagdaDevicePlugin(const te::PluginCreationI
       device_(std::move(device)),
       deviceHandle_(std::make_shared<MagdaDevice*>(device_.get())),
       properties_(propertiesForRequiredDevice(device_)) {
+    refreshChannelLayout();
     buildParameters();
     device_->restoreState(state);
 }
@@ -167,12 +168,20 @@ void TracktionMagdaDevicePlugin::initialise(const te::PluginInitialisationInfo& 
     // block.
     syncParametersToDevice();
     refreshLiveSourceIds();
+    refreshChannelLayout();
     // So a normal block's output never allocates on the audio thread.
     midiOut_.reserve(128);
     device_->prepare({
         .sampleRate = info.sampleRate,
         .maximumBlockSize = info.blockSizeSamples,
     });
+}
+
+void TracktionMagdaDevicePlugin::refreshChannelLayout() {
+    const auto live = device_->properties();
+    ownInputChannels_.store(live.inputChannelCount, std::memory_order_relaxed);
+    sidechainChannels_.store(live.sidechain.takesAudio() ? live.sidechain.channels : 0,
+                             std::memory_order_relaxed);
 }
 
 void TracktionMagdaDevicePlugin::refreshLiveSourceIds() {
@@ -227,18 +236,38 @@ void TracktionMagdaDevicePlugin::applyToBuffer(const te::PluginRenderContext& co
 
     TracktionTempoMapView tempoMap{edit.tempoSequence};
 
-    // The fork appends the key to the plugin's own channels, so the device's
-    // declared width is where it starts.
-    const int sidechainChannel =
-        getSidechainSourceID().isValid()
-            ? (properties_.outputChannelCount > 0 ? properties_.outputChannelCount : 2)
-            : -1;
+    // The fork appends the key after the plugin's own inputs, and widens the
+    // buffer only when a source is routed. So the key is whatever this buffer
+    // carries past the device's own width, up to what the device declared.
+    // Split off here, once, rather than told to the device as an offset into
+    // its own buffer (#2329).
+    //
+    // No buffer at all is a parameter-only call, which the fork makes; there is
+    // nothing to split and nothing to hand over.
+    const int totalChannels =
+        context.destBuffer != nullptr ? context.destBuffer->getNumChannels() : 0;
+    const int declaredKey = sidechainChannels_.load(std::memory_order_relaxed);
+    const int declaredOwn = ownInputChannels_.load(std::memory_order_relaxed);
+    const int ownWidth = declaredOwn > 0 ? declaredOwn : std::max(0, totalChannels - declaredKey);
+    const int keyChannels = std::clamp(totalChannels - ownWidth, 0, declaredKey);
+    const int ownChannels = totalChannels - keyChannels;
+
+    // Non-owning views over the same channels: nothing is copied.
+    juce::AudioBuffer<float> ownAudio;
+    const float* const* key = nullptr;
+    if (context.destBuffer != nullptr) {
+        ownAudio.setDataToReferTo(context.destBuffer->getArrayOfWritePointers(), ownChannels,
+                                  context.destBuffer->getNumSamples());
+        if (keyChannels > 0)
+            key = context.destBuffer->getArrayOfReadPointers() + ownChannels;
+    }
 
     const auto* liveSources = liveSources_.load(std::memory_order_acquire);
 
     DeviceProcessContext deviceContext{
-        .audio = context.destBuffer,
-        .sidechainInputChannel = sidechainChannel,
+        .audio = context.destBuffer != nullptr ? &ownAudio : nullptr,
+        .sidechain = key,
+        .numSidechainChannels = keyChannels,
         .midiIn = midiIn ? &*midiIn : nullptr,
         .midiOut = midiOut ? &*midiOut : nullptr,
         .tempoMap = &tempoMap,
@@ -289,13 +318,15 @@ bool TracktionMagdaDevicePlugin::producesAudioWhenNoAudioInput() {
 
 bool TracktionMagdaDevicePlugin::canSidechain() {
     // Live, not cached. Most devices' properties are fixed for their lifetime,
-    // but the runtime Faust device recompiles to a different channel width and
-    // the host has to follow it. Dropping the extra inputs also drops the route
-    // that fed them, which nothing downstream would otherwise clear.
+    // but the runtime Faust device recompiles to a source that declares a
+    // different key, or none, and the host has to follow it. Withdrawing the
+    // declaration also drops the route that fed it, which nothing downstream
+    // would otherwise clear.
+    refreshChannelLayout();
     const auto live = device_->properties();
-    if (!live.canSidechain && getSidechainSourceID().isValid())
+    if (!live.sidechain.takesAudio() && getSidechainSourceID().isValid())
         setSidechainSourceID({});
-    return live.canSidechain;
+    return live.sidechain.takesAudio();
 }
 
 int TracktionMagdaDevicePlugin::getNumOutputChannelsGivenInputs(int numInputChannels) {
@@ -312,31 +343,29 @@ void TracktionMagdaDevicePlugin::getChannelNames(juce::StringArray* inputs,
     // connected to the bus at all.
     te::Plugin::getChannelNames(inputs, outputs);
 
+    refreshChannelLayout();
     const auto live = device_->properties();
 
-    // Inputs past the output width are the key, which is the SDK's sidechain
-    // layout. A stereo key is named per side; a single one is just the key.
-    const int keyChannels = std::max(0, live.inputChannelCount - live.outputChannelCount);
-    const auto name = [&](int index) {
-        if (live.outputChannelCount > 0 && index >= live.outputChannelCount) {
-            if (keyChannels < 2)
-                return juce::String("Sidechain");
-            return juce::String(index == live.outputChannelCount ? "Sidechain Left"
-                                                                 : "Sidechain Right");
-        }
-        return juce::String(index == 0 ? "Left" : "Right");
-    };
+    const auto sideName = [](int index) { return juce::String(index == 0 ? "Left" : "Right"); };
+
+    // The key is named after the device's own inputs, because that is where the
+    // fork appends it: guessSidechainRouting reads exactly this list to decide
+    // which channels the source lands on. A stereo key is named per side; a
+    // single one is just the key. Outputs never carry one.
+    const int keyChannels = live.sidechain.takesAudio() ? live.sidechain.channels : 0;
 
     if (inputs != nullptr && live.inputChannelCount > 0) {
         inputs->clear();
         for (int index = 0; index < live.inputChannelCount; ++index)
-            inputs->add(name(index));
+            inputs->add(sideName(index));
+        for (int key = 0; key < keyChannels; ++key)
+            inputs->add(keyChannels < 2 ? juce::String("Sidechain") : "Sidechain " + sideName(key));
     }
 
     if (outputs != nullptr && live.outputChannelCount > 0) {
         outputs->clear();
         for (int index = 0; index < live.outputChannelCount; ++index)
-            outputs->add(name(index));
+            outputs->add(sideName(index));
     }
 }
 

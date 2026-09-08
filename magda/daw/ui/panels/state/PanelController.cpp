@@ -47,8 +47,7 @@ void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& s
     panel.tabs = std::move(ordered);
 
     panel.activeTabIndex = panel.getTabIndex(activeType);
-    if (panel.activeTabIndex < 0)
-        panel.activeTabIndex = 0;
+    panel.activeTabIndex = std::max(panel.activeTabIndex, 0);
 }
 
 void applyPersistedActiveTab(PanelState& panel, const std::string& savedActiveTab) {
@@ -328,8 +327,7 @@ void PanelController::handleReorderTabs(const ReorderTabsEvent& event) {
 
     // Restore active tab by type
     panel.activeTabIndex = panel.getTabIndex(activeType);
-    if (panel.activeTabIndex < 0)
-        panel.activeTabIndex = 0;
+    panel.activeTabIndex = std::max(panel.activeTabIndex, 0);
 
     notifyPanelChanged(event.panel);
 }

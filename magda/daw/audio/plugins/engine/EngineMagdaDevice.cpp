@@ -192,9 +192,9 @@ void EngineMagdaDevice::prepare(const magda::engine::RenderContext& context) {
     latencySamples_ =
         static_cast<int>(std::llround(properties_.latencySeconds * context.sampleRate));
 
-    // Room for the device's own channels plus a sidechain key of the same
-    // width appended after them, which is how the SDK hands one over.
-    channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels)) * 2, nullptr);
+    channels_.assign(static_cast<std::size_t>(std::max(0, context.numChannels)), nullptr);
+    sidechainChannels_.assign(static_cast<std::size_t>(std::max(0, properties_.sidechain.channels)),
+                              nullptr);
 
     sizeMidiScratch();
 }
@@ -263,21 +263,17 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
     for (std::size_t channel = 0; channel < numChannels; ++channel)
         channels_[channel] = block.audio.getChannelPointer(channel);
 
-    // The key, appended after the device's own channels: the SDK hands a
-    // sidechain over as further channels of the same buffer, and the executor
-    // gives it to us as a separate block. The const_cast is safe because the
-    // contract is that a device reads its key and never writes it, and the
-    // alternative is copying the block every callback to say so in the type.
-    auto sidechainChannels = std::min(channels_.size() - numChannels,
-                                      static_cast<std::size_t>(block.sidechain.getNumChannels()));
+    // The key on its own port, sized to what the device declared: the plan
+    // gives it to us as its own block and the SDK takes it as one, so nothing
+    // in between decides where in a buffer a key belongs (#2329).
+    const auto sidechainChannels = std::min(
+        sidechainChannels_.size(), static_cast<std::size_t>(block.sidechain.getNumChannels()));
     for (std::size_t channel = 0; channel < sidechainChannels; ++channel)
-        channels_[numChannels + channel] =
-            const_cast<float*>(block.sidechain.getChannelPointer(channel));
+        sidechainChannels_[channel] = block.sidechain.getChannelPointer(channel);
 
     // Non-owning: the executor's buffer, seen through the container the SDK
     // takes. Nothing is copied and nothing is allocated.
-    juce::AudioBuffer<float> audio(channels_.data(),
-                                   static_cast<int>(numChannels + sidechainChannels), numSamples);
+    juce::AudioBuffer<float> audio(channels_.data(), static_cast<int>(numChannels), numSamples);
 
     // Both views or neither, which is the SDK's contract: a device with an input
     // and nothing to write to still gets a sink, and its output is discarded.
@@ -315,7 +311,8 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
     DeviceProcessContext context{
         .audio = &audio,
-        .sidechainInputChannel = sidechainChannels > 0 ? static_cast<int>(numChannels) : -1,
+        .sidechain = sidechainChannels > 0 ? sidechainChannels_.data() : nullptr,
+        .numSidechainChannels = static_cast<int>(sidechainChannels),
         .midiIn = midiIn ? &*midiIn : nullptr,
         .midiOut = midiOut ? &*midiOut : nullptr,
         .tempoMap = tempo ? &*tempo : nullptr,

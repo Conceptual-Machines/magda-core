@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
@@ -1125,7 +1126,7 @@ void ClipInspector::initClipPropertiesSection() {
                               magda::audioEventRef(*clip).loopStartSeconds();
         double newLoopStartSeconds =
             displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm);
-        newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
+        newLoopStartSeconds = std::max(newLoopStartSeconds, 0.0);
         double newOffset = newLoopStartSeconds + currentPhase;
         // Atomic: change loopStart, then place offset to preserve phase. Undo
         // collapses both in a single step.
@@ -1172,8 +1173,7 @@ void ClipInspector::initClipPropertiesSection() {
         } else {
             double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
-            if (newLoopLengthBeats < 0.25)
-                newLoopLengthBeats = 0.25;
+            newLoopLengthBeats = std::max(newLoopLengthBeats, 0.25);
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMidiClipLoopLengthBeatsCommand>(
                     primaryClipId(), newLoopLengthBeats, bpm));

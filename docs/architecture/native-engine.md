@@ -311,6 +311,15 @@ The op vocabulary is deliberately small: `ClipAudio`, `ClipMidi`, `AudioInput`, 
 `Device`, `MixAudio`, `MergeMidi`, `Subtract`, `Delay`, `Crossfade`, `Gain`, `Fader`, `SendTap`,
 `Meter`, `ModSource`, `Output`.
 
+**A device's sidechain is a slot fed from a modelled source** (#2329). The `Device` op's three
+inputs are `[audio, MIDI, sidechain]`, and `SidechainConfig` says more than which track the key
+comes from: `tapPoint` picks between the two points a modifier also chooses between, so a key
+taken pre-FX reads the source's trigger tap and one taken post-fader reads its sidechain tap;
+`gainDb` is a `Gain` op on the edge, emitted wherever a key is connected so moving the trim is a
+value rather than a recompile; `listen` is a value on the process op, like a delta solo, and
+replaces the slot's output with the key it was handed. Which slot a device wants is the device's
+own declaration (`DeviceProperties::sidechain`), not something inferred from its channel counts.
+
 ---
 
 ## 4. The life of an edit

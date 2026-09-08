@@ -235,6 +235,30 @@ Fixture sidechain() {
     return value;
 }
 
+/// The other tap point, which is the only part of a modelled sidechain source
+/// that is structure (#2329): a key taken pre-FX reads the source's trigger tap
+/// rather than its post-fader one. The trim is in both plans, because moving it
+/// is a value, and so is the listen switch.
+Fixture sidechainPreFx() {
+    Fixture value;
+    value.name = "sidechain-prefx";
+    value.covers = "a key taken before the source track's effects";
+
+    auto compressor = effect(7);
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+    compressor.sidechain.tapPoint = ModTapPoint::PreFx;
+
+    // A device on the source, so its pre-FX point and its post-fader one are
+    // different ops rather than the same one twice.
+    value.tracks = {track(1), track(2)};
+    value.tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    value.tracks[1].chain.fxChainElements.push_back(makeDeviceElement(effect(9)));
+    value.master = master();
+    value.options = withoutMeters();
+    return value;
+}
+
 /// Delta solo at both scopes at once (#2136): a device measured against what it
 /// was handed, inside a rack measured against what reached the rack. The device
 /// reports latency, so the dry edges have something to wait for and the golden
@@ -563,6 +587,7 @@ std::vector<Fixture> planFixtures() {
     fixtures.push_back(cascadedLatency());
     fixtures.push_back(rackChains());
     fixtures.push_back(sidechain());
+    fixtures.push_back(sidechainPreFx());
     fixtures.push_back(deltaSolo());
     fixtures.push_back(sectionLocalDeviceIds());
     fixtures.push_back(groupRouting());
