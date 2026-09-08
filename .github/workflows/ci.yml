@@ -281,13 +281,6 @@ jobs:
         # link check here, without also building that second test executable.
         cmake --build build --config Debug --target magda_daw_app magda_tests -j"$(nproc)"
 
-    # Static analysis, reusing the compile database the configure step wrote and
-    # the generated sources the build produced. A separate job would have to
-    # rebuild both to learn anything.
-    #
-    # Pinned to 20 to match the pre-push hook: findings move between clang-tidy
-    # releases, and a job on whatever the runner image ships would fail pushes
-    # that were clean locally, which is how a lint gate gets switched off.
     - name: Populate prebuilt Faust/Mutable artifacts (R2)
       if: steps.r2-creds.outcome == 'success'
       continue-on-error: true
@@ -314,114 +307,6 @@ jobs:
           put "${{ runner.os }}-mutable-artifact-${{ steps.dsp-cache-keys.outputs.eurorack_sha }}-${{ steps.dsp-cache-keys.outputs.compiler }}-debug" \
             third_party/eurorack/build/lib
         fi
-
-    - name: Install clang-tidy
-      run: |
-        wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-        chmod +x /tmp/llvm.sh
-        sudo /tmp/llvm.sh 20
-        sudo apt-get install -y clang-tidy-20
-
-    - name: Run clang-tidy on changed files
-      env:
-        CLANG_TIDY: clang-tidy-20
-        BUILD_DIR: build
-        # Higher than the hook's 8: a push waits on the hook, nobody waits on
-        # this, and a change to a widely included header deserves the coverage.
-        CLANG_TIDY_MAX_TUS: '40'
-      run: |
-        set -euo pipefail
-        base="${{ github.event.pull_request.base.sha }}"
-
-        case "${{ github.ref_name }}" in
-          main | dev/*) shared=true ;;
-          *)            shared=false ;;
-        esac
-
-        if [ -n "$base" ]; then
-          # The checkout is depth-1, so the base commit is not in this clone yet.
-          git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
-        elif [ "$shared" = true ]; then
-          # A shared branch. Its commits arrived through PRs that were analysed
-          # on their own branches, and diffing back to where dev left main would
-          # re-analyse an entire release. Range over what this push added.
-          base="${{ github.event.before }}"
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            git fetch --no-tags --no-recurse-submodules --depth=2 origin "${{ github.ref_name }}"
-            base="HEAD~1"
-          else
-            git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
-          fi
-        else
-          # A feature branch, where github.event.before cannot be trusted.
-          # The first push reports the all-zero SHA, and concurrency cancels
-          # in-flight runs: a push touching no C++ can cancel the only run that
-          # would have analysed the C++ still sitting at HEAD, then find nothing
-          # in its own narrow range. So diff the whole branch, every push.
-          # --no-recurse-submodules throughout: the checkout configures submodule
-          # recursion, so a plain fetch here went off to fetch faust's and
-          # tracktion's, some of which fail on refs their remotes no longer
-          # serve, and took the step down with them before clang-tidy ever ran.
-          #
-          # HEAD first, and in its own fetch. checkout leaves it a shallow root,
-          # and merge-base cannot walk a history that stops at the first commit,
-          # so deepening only main/dev leaves every merge-base below failing and
-          # the branch point unfindable. Adding this branch as another refspec to
-          # the fetch below does not deepen HEAD either; it has to be its own
-          # invocation.
-          git fetch --no-tags --no-recurse-submodules --deepen=200 origin \
-            "${{ github.ref_name }}"
-
-          git fetch --no-tags --no-recurse-submodules --depth=200 origin \
-            '+refs/heads/main:refs/remotes/origin/main' \
-            '+refs/heads/dev/*:refs/remotes/origin/dev/*'
-
-          # Only the shared branches above. Ranging over every remote ref would
-          # let this branch's own ref win the merge-base, and diffing a branch
-          # against itself reports nothing to do.
-          best="" best_count=""
-          head_sha=$(git rev-parse HEAD)
-          for ref in $(git for-each-ref --format='%(refname)' \
-                         refs/remotes/origin/main refs/remotes/origin/dev); do
-            mb=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
-            # A ref that already contains HEAD gives no useful range.
-            [ "$mb" = "$head_sha" ] && continue
-            n=$(git rev-list --count "$mb..HEAD" 2>/dev/null) || continue
-            if [ -z "$best_count" ] || [ "$n" -lt "$best_count" ]; then
-              best_count="$n" best="$mb"
-            fi
-          done
-
-          if [ -z "$best" ]; then
-            echo "Could not find a branch point to diff against." >&2
-            echo "Refusing to report clean without having analysed anything." >&2
-            exit 1
-          fi
-          echo "Branch point $best ($best_count commit(s) ahead)."
-          base="$best"
-        fi
-
-        # Two dots rather than three: a merge base needs history neither side has
-        # here. It can pull in commits that landed on the base branch meanwhile,
-        # which only ever costs a few extra already-clean files.
-        #
-        # magda/engine is excluded while the native engine is still being written,
-        # matching the hook's own exclude.
-        # Headers included: the hook maps each to the translation units that
-        # include it, so a header-only change is still analysed.
-        mapfile -t files < <(
-          git diff --name-only --diff-filter=d "$base" HEAD -- magda \
-            | grep -E '\.(cpp|hpp|h)$' | grep -v '^magda/engine/' || true
-        )
-
-        if [ ${#files[@]} -eq 0 ]; then
-          echo "No changed C++ files under magda/ to analyse."
-          exit 0
-        fi
-
-        printf 'Analysing %d file(s):\n' "${#files[@]}"
-        printf '  %s\n' "${files[@]}"
-        ./.pre-commit-hooks/clang_tidy.py "${files[@]}"
 
     - name: Check build artifacts
       run: |
@@ -809,6 +694,124 @@ jobs:
 
     - name: Build (Debug)
       run: cmake --build build-debug --config Debug
+
+    # Static analysis, reusing the compile database the configure step wrote and
+    # the generated sources the build produced. A separate job would have to
+    # rebuild both to learn anything.
+    #
+    # On this runner rather than Linux: it is the fastest of the three, it
+    # already has the LLVM that ships clang-tidy, and it is the machine the
+    # pre-push hook runs on. So CI and the hook are the same binary rather than
+    # two releases that disagree about what a finding is -- which is what the
+    # Linux job pinned a version to approximate, at the cost of installing a
+    # second toolchain on every run.
+    - name: Run clang-tidy on changed files
+      env:
+        # No CLANG_TIDY: this runner has the LLVM that ships it, which is
+        # keg-only and so on nobody's PATH, and the hook globs the usual install
+        # locations for exactly that case.
+        BUILD_DIR: build-debug
+        # Higher than the hook's 8: a push waits on the hook, nobody waits on
+        # this, and a change to a widely included header deserves the coverage.
+        CLANG_TIDY_MAX_TUS: '40'
+      run: |
+        set -euo pipefail
+        base="${{ github.event.pull_request.base.sha }}"
+
+        case "${{ github.ref_name }}" in
+          main | dev/*) shared=true ;;
+          *)            shared=false ;;
+        esac
+
+        if [ -n "$base" ]; then
+          # The checkout is depth-1, so the base commit is not in this clone yet.
+          git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
+        elif [ "$shared" = true ]; then
+          # A shared branch. Its commits arrived through PRs that were analysed
+          # on their own branches, and diffing back to where dev left main would
+          # re-analyse an entire release. Range over what this push added.
+          base="${{ github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --no-recurse-submodules --depth=2 origin "${{ github.ref_name }}"
+            base="HEAD~1"
+          else
+            git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
+          fi
+        else
+          # A feature branch, where github.event.before cannot be trusted.
+          # The first push reports the all-zero SHA, and concurrency cancels
+          # in-flight runs: a push touching no C++ can cancel the only run that
+          # would have analysed the C++ still sitting at HEAD, then find nothing
+          # in its own narrow range. So diff the whole branch, every push.
+          # --no-recurse-submodules throughout: the checkout configures submodule
+          # recursion, so a plain fetch here went off to fetch faust's and
+          # tracktion's, some of which fail on refs their remotes no longer
+          # serve, and took the step down with them before clang-tidy ever ran.
+          #
+          # HEAD first, and in its own fetch. checkout leaves it a shallow root,
+          # and merge-base cannot walk a history that stops at the first commit,
+          # so deepening only main/dev leaves every merge-base below failing and
+          # the branch point unfindable. Adding this branch as another refspec to
+          # the fetch below does not deepen HEAD either; it has to be its own
+          # invocation.
+          git fetch --no-tags --no-recurse-submodules --deepen=200 origin \
+            "${{ github.ref_name }}"
+
+          git fetch --no-tags --no-recurse-submodules --depth=200 origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/dev/*:refs/remotes/origin/dev/*'
+
+          # Only the shared branches above. Ranging over every remote ref would
+          # let this branch's own ref win the merge-base, and diffing a branch
+          # against itself reports nothing to do.
+          best="" best_count=""
+          head_sha=$(git rev-parse HEAD)
+          for ref in $(git for-each-ref --format='%(refname)' \
+                         refs/remotes/origin/main refs/remotes/origin/dev); do
+            mb=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
+            # A ref that already contains HEAD gives no useful range.
+            [ "$mb" = "$head_sha" ] && continue
+            n=$(git rev-list --count "$mb..HEAD" 2>/dev/null) || continue
+            if [ -z "$best_count" ] || [ "$n" -lt "$best_count" ]; then
+              best_count="$n" best="$mb"
+            fi
+          done
+
+          if [ -z "$best" ]; then
+            echo "Could not find a branch point to diff against." >&2
+            echo "Refusing to report clean without having analysed anything." >&2
+            exit 1
+          fi
+          echo "Branch point $best ($best_count commit(s) ahead)."
+          base="$best"
+        fi
+
+        # Two dots rather than three: a merge base needs history neither side has
+        # here. It can pull in commits that landed on the base branch meanwhile,
+        # which only ever costs a few extra already-clean files.
+        #
+        # magda/engine is excluded while the native engine is still being written,
+        # matching the hook's own exclude.
+        # Headers included: the hook maps each to the translation units that
+        # include it, so a header-only change is still analysed.
+        # A read loop, not mapfile: this runs on macOS now, where the bash a
+        # `run:` step gets is /bin/bash 3.2 and mapfile does not exist.
+        files=()
+        while IFS= read -r changed; do
+          [ -n "$changed" ] && files+=("$changed")
+        done < <(
+          git diff --name-only --diff-filter=d "$base" HEAD -- magda \
+            | grep -E '\.(cpp|hpp|h)$' | grep -v '^magda/engine/' || true
+        )
+
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "No changed C++ files under magda/ to analyse."
+          exit 0
+        fi
+
+        printf 'Analysing %d file(s):\n' "${#files[@]}"
+        printf '  %s\n' "${files[@]}"
+        ./.pre-commit-hooks/clang_tidy.py "${files[@]}"
 
     # Populate the persistent artifact cache from this run's source build so
     # the next run on this runner can skip it. No-op on a cache hit (nothing
