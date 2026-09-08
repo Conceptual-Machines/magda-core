@@ -31,10 +31,10 @@ def leaf(path: str) -> str:
     return path[max(path.rfind("/"), path.rfind("\\")) + 1:]
 
 
-def output_to_source(build_dir: Path) -> dict[str, str]:
+def output_to_source(build_dir: Path) -> dict[str, Path]:
     """Ninja target name -> repo-relative source, from the compile database."""
     db = json.loads((build_dir / "compile_commands.json").read_text())
-    mapping: dict[str, str] = {}
+    mapping: dict[str, Path] = {}
     for entry in db:
         if not entry.get("output"):
             continue
@@ -42,9 +42,7 @@ def output_to_source(build_dir: Path) -> dict[str, str]:
         # syscall per entry costs more than the whole ninja dump.
         source = Path(entry["file"])
         if source.is_relative_to(ROOT):
-            # Posix throughout: matched against "magda/" and handed to
-            # clang-tidy, which takes forward slashes on Windows too.
-            mapping[entry["output"]] = source.relative_to(ROOT).as_posix()
+            mapping[entry["output"]] = source.relative_to(ROOT)
     return mapping
 
 
@@ -85,79 +83,98 @@ def dependents(build_dir: Path, wanted: dict[Path, str]) -> dict[str, set[str]] 
     return found
 
 
-def select(per_header: dict[str, list[str]], max_tus: int) -> tuple[list[str], int]:
-    """Pick TUs under a budget without starving any one header.
-
-    Flattening every header's candidates and truncating let one broadly included
-    header spend the whole budget, leaving another changed header with nothing
-    that compiles it. So each header gets a representative first, even if that
-    alone exceeds the budget - analysing every changed header matters more than
-    the ceiling - and only the fan-out beyond that is rationed, round robin.
-    """
-    chosen: list[str] = []
-    seen: set[str] = set()
+def one_per_header(per_header: dict[str, list[Path]]) -> list[Path]:
+    """One TU for each header, distinct where the candidates allow it."""
+    chosen: list[Path] = []
+    seen: set[Path] = set()
     for tus in per_header.values():
         for tu in tus:
             if tu not in seen:
                 seen.add(tu)
                 chosen.append(tu)
                 break
+    return chosen
 
-    total = len({tu for tus in per_header.values() for tu in tus})
 
-    remaining = [list(tus) for tus in per_header.values()]
-    while remaining and (max_tus <= 0 or len(chosen) < max_tus):
+def fan_out(per_header: dict[str, list[Path]], already: list[Path],
+            budget: int) -> list[Path]:
+    """Further TUs, round robin so no one header spends the whole budget.
+
+    A negative budget means no ceiling.
+    """
+    seen = set(already)
+    extra: list[Path] = []
+    remaining = [[tu for tu in tus if tu not in seen] for tus in per_header.values()]
+    remaining = [tus for tus in remaining if tus]
+
+    while remaining and (budget < 0 or len(extra) < budget):
         for tus in list(remaining):
             while tus:
                 tu = tus.pop(0)
                 if tu not in seen:
                     seen.add(tu)
-                    chosen.append(tu)
+                    extra.append(tu)
                     break
             if not tus:
                 remaining.remove(tus)
-            if max_tus > 0 and len(chosen) >= max_tus:
+            if 0 <= budget <= len(extra):
                 break
-    return chosen, total
+    return extra
 
 
-def in_scope(source: str) -> bool:
+def select(per_header: dict[str, list[Path]], max_tus: int) -> tuple[list[Path], int]:
+    """Pick TUs under a budget without starving any one header.
+
+    Flattening every header's candidates and truncating let one broadly included
+    header spend the whole budget, leaving another changed header with nothing
+    that compiles it. So the representatives are taken first and never capped -
+    analysing every changed header matters more than the ceiling - and only the
+    fan-out beyond them is rationed.
+    """
+    chosen = one_per_header(per_header)
+    total = len({tu for tus in per_header.values() for tu in tus})
+    budget = -1 if max_tus <= 0 else max(0, max_tus - len(chosen))
+    return chosen + fan_out(per_header, chosen, budget), total
+
+
+def in_scope(source: Path) -> bool:
     """Shipping code, matching .clang-tidy's own scope."""
-    return source.startswith("magda/") and not source.startswith("magda/engine/")
+    return (source.is_relative_to("magda")
+            and not source.is_relative_to("magda/engine"))
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", metavar="FILE")
     parser.add_argument("--missing", action="store_true")
     parser.add_argument("--build-dir", type=Path, default=Path("cmake-build-debug"))
     parser.add_argument("--max-tus", type=int, default=8)
-    args = parser.parse_args()
+    return parser
 
-    if not args.paths:
-        return 0
 
-    if args.missing:
-        # Resolved by the code that reads the database, not by a grep in the
-        # hook: it records absolute native paths, so matching a relative one by
-        # string has to assume a separator.
-        known = set(output_to_source(args.build_dir).values())
-        for path in args.paths:
-            if Path(path).as_posix() not in known:
-                print(path)
-        return 0
+def report_missing(build_dir: Path, paths: list[str]) -> int:
+    """Print the given paths that no compile command mentions.
 
-    wanted = {Path(h).resolve(): h for h in args.paths}
-    found = dependents(args.build_dir, wanted)
-    if found is None:
-        print("could not read ninja dependency data", file=sys.stderr)
-        return 1
+    Answered here rather than by a grep in the hook: the database records
+    absolute native paths, so matching a relative one by string has to assume a
+    separator, and on Windows guessing wrong marks every file missing.
+    """
+    known = set(output_to_source(build_dir).values())
+    for path in paths:
+        if Path(path) not in known:
+            print(path)
+    return 0
 
-    mapping = output_to_source(args.build_dir)
 
-    per_header: dict[str, list[str]] = {}
+def group_by_header(
+    headers: list[str],
+    found: dict[str, set[str]],
+    mapping: dict[str, Path],
+) -> tuple[dict[str, list[Path]], list[str]]:
+    """Candidate TUs per header, and the headers nothing compiles."""
+    per_header: dict[str, list[Path]] = {}
     unanalysable: list[str] = []
-    for header in args.paths:
+    for header in headers:
         sources = {tu for o in found.get(header, ()) if (tu := mapping.get(o))}
         # Scoping has to be judged per header, after mapping. Deciding it from
         # the raw dependency set counted a header reached only through a test TU
@@ -169,6 +186,24 @@ def main() -> int:
             per_header[header] = sorted(eligible)
         else:
             unanalysable.append(header)
+    return per_header, unanalysable
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if not args.paths:
+        return 0
+    if args.missing:
+        return report_missing(args.build_dir, args.paths)
+
+    wanted = {Path(h).resolve(): h for h in args.paths}
+    found = dependents(args.build_dir, wanted)
+    if found is None:
+        print("could not read ninja dependency data", file=sys.stderr)
+        return 1
+
+    per_header, unanalysable = group_by_header(
+        args.paths, found, output_to_source(args.build_dir))
 
     for header in unanalysable:
         # Nothing compiles it, so nothing found in it reaches a binary. Worth
@@ -181,7 +216,9 @@ def main() -> int:
               f"analysing {len(chosen)}. Set CLANG_TIDY_MAX_TUS=0 for all.",
               file=sys.stderr)
 
-    print("\n".join(chosen))
+    # Posix at the boundary: these go to clang-tidy and are matched against
+    # "magda/" in the hook, and str(Path) would give backslashes on Windows.
+    print("\n".join(tu.as_posix() for tu in chosen))
     return 0
 
 
