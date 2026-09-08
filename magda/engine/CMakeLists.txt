@@ -102,6 +102,8 @@ add_library(magda_engine STATIC
     param/ModSources.hpp
     param/ModRuntime.hpp
     tap/LevelTap.hpp
+    tap/RecordTap.cpp
+    tap/RecordTap.hpp
     tap/SampleRing.hpp
     tap/ValueTap.hpp
     launch/FollowActions.cpp
@@ -155,6 +157,7 @@ add_library(magda_engine STATIC
     io/RecordThread.hpp
     io/RecordingFeed.hpp
     io/TakeFileSink.hpp
+    io/TakeNotes.hpp
     io/TakePasses.hpp
     io/TakeRecorder.hpp
     io/SourceReaders.hpp

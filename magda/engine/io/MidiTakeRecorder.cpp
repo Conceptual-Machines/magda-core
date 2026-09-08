@@ -11,43 +11,13 @@ namespace magda::engine {
 
 namespace {
 
-constexpr std::size_t kMidiChannels = 16;
-constexpr std::size_t kNotesPerChannel = 128;
-constexpr std::size_t kHeldNotes = kMidiChannels * kNotesPerChannel;
-
-constexpr unsigned kTypeMask = 0xf0U;
 constexpr unsigned kChannelMask = 0x0fU;
 constexpr unsigned kDataMask = 0x7fU;
 
-/// What one channel message is, as far as the model has a field for it.
-enum class Kind : std::uint8_t { noteOn, noteOff, controller, pitchBend, unsupported };
-
-Kind kindOf(const RecordedMidiEvent& event) {
-    switch (static_cast<unsigned>(event.status) & kTypeMask) {
-        case 0x80U:
-            return Kind::noteOff;
-
-        // Note on at zero velocity is a note off: the wire rule, and most
-        // controllers never send 0x80 at all.
-        case 0x90U:
-            return event.data2 == 0 ? Kind::noteOff : Kind::noteOn;
-
-        case 0xb0U:
-            return Kind::controller;
-
-        case 0xe0U:
-            return Kind::pitchBend;
-
-        default:
-            return Kind::unsupported;
-    }
-}
-
-/// Where a channel's note sits in the held table.
-std::size_t heldIndex(const RecordedMidiEvent& event) {
-    const auto channel = static_cast<unsigned>(event.status) & kChannelMask;
-    const auto note = static_cast<unsigned>(event.data1) & kDataMask;
-    return (static_cast<std::size_t>(channel) * kNotesPerChannel) + note;
+/// Where a channel's note sits in the held table (io/TakeNotes.hpp).
+std::uint32_t entryOf(const RecordedMidiEvent& event) {
+    return HeldNotes::entryFor(static_cast<int>(static_cast<unsigned>(event.status) & kChannelMask),
+                               static_cast<int>(static_cast<unsigned>(event.data1) & kDataMask));
 }
 
 /// The 14 bits a pitch wheel splits across its two data bytes.
@@ -79,7 +49,10 @@ class PassWalk {
   public:
     /// @p beatOf gives the take-relative beat of a take position.
     PassWalk(std::span<const std::int64_t> edges, std::function<double(std::int64_t)> beatOf)
-        : edges_(edges), beatOf_(std::move(beatOf)), takes_(edges.size() - 1), held_(kHeldNotes) {
+        : edges_(edges),
+          beatOf_(std::move(beatOf)),
+          takes_(edges.size() - 1),
+          pending_(HeldNotes::kEntries) {
         passStart_.reserve(takes_.size());
 
         for (std::size_t pass = 0; pass < takes_.size(); ++pass)
@@ -101,45 +74,49 @@ class PassWalk {
         return beatOf_(sample) - passStart_[pass];
     }
 
-    void closeNote(std::size_t pass, std::size_t index, std::int64_t endSample);
+    void closeNote(std::size_t pass, std::uint32_t entry, std::int64_t endSample);
     void closePass(std::size_t pass);
 
     std::span<const std::int64_t> edges_;
     std::function<double(std::int64_t)> beatOf_;
     std::vector<double> passStart_;
     std::vector<MidiTake> takes_;
-    std::vector<HeldNote> held_;
+
+    /// Which pitches are down, and what a second strike does, shared with the
+    /// preview (io/TakeNotes.hpp). What each of them is stays here.
+    HeldNotes down_;
+    std::vector<HeldNote> pending_;
 
     std::size_t pass_ = 0;
     std::int64_t dropped_ = 0;
 };
 
 /// A note the pass owns, positioned against the pass it started in.
-void PassWalk::closeNote(std::size_t pass, std::size_t index, std::int64_t endSample) {
-    auto& note = held_[index];
-    if (note.start < 0)
-        return;
+void PassWalk::closeNote(std::size_t pass, std::uint32_t entry, std::int64_t endSample) {
+    const auto& note = pending_[entry];
 
     const auto from = beatIn(pass, note.start);
     const auto to = beatIn(pass, endSample);
 
     // A note whose length fell wholly outside the pass never sounded in it.
-    if (to > from) {
-        MidiNote played;
-        played.noteNumber = static_cast<int>(index % kNotesPerChannel);
-        played.velocity = note.velocity;
-        played.startBeat = from;
-        played.lengthBeats = to - from;
-        takes_[pass].notes.push_back(played);
-    }
+    if (to <= from)
+        return;
 
-    note = {};
+    MidiNote played;
+    played.noteNumber = HeldNotes::noteOf(entry);
+    played.velocity = note.velocity;
+    played.startBeat = from;
+    played.lengthBeats = to - from;
+    takes_[pass].notes.push_back(played);
 }
 
 // A note held across a wrap belongs to the pass it started in, once.
 void PassWalk::closePass(std::size_t pass) {
-    for (std::size_t index = 0; index < kHeldNotes; ++index)
-        closeNote(pass, index, edges_[pass + 1]);
+    while (!down_.down().empty()) {
+        const auto entry = down_.down().back();
+        down_.release(entry);
+        closeNote(pass, entry, edges_[pass + 1]);
+    }
 }
 
 void PassWalk::add(const RecordedMidiEvent& event) {
@@ -152,15 +129,22 @@ void PassWalk::add(const RecordedMidiEvent& event) {
     }
 
     switch (kindOf(event)) {
-        case Kind::noteOn:
-            held_[heldIndex(event)] = {.start = event.sample, .velocity = event.data2};
+        case MidiKind::noteOn: {
+            // A pitch already down is replaced rather than joined: nothing can
+            // close two of one pitch (io/TakeNotes.hpp).
+            const auto entry = entryOf(event);
+            down_.hold(entry);
+            pending_[entry] = {.start = event.sample, .velocity = event.data2};
             break;
+        }
 
-        case Kind::noteOff:
-            closeNote(pass_, heldIndex(event), event.sample);
+        case MidiKind::noteOff: {
+            if (const auto entry = entryOf(event); down_.release(entry))
+                closeNote(pass_, entry, event.sample);
             break;
+        }
 
-        case Kind::controller: {
+        case MidiKind::controller: {
             MidiCCData cc;
             cc.controller = event.data1;
             cc.value = event.data2;
@@ -170,7 +154,7 @@ void PassWalk::add(const RecordedMidiEvent& event) {
             break;
         }
 
-        case Kind::pitchBend: {
+        case MidiKind::pitchBend: {
             MidiPitchBendData bend;
             bend.value = pitchBendValue(event);
             bend.beatPosition = beatIn(pass_, event.sample);
@@ -181,7 +165,7 @@ void PassWalk::add(const RecordedMidiEvent& event) {
 
         // Program change, aftertouch, pressure, system: no field to put them
         // in, counted here rather than dropped inside a converter.
-        case Kind::unsupported:
+        case MidiKind::unsupported:
             ++dropped_;
             break;
     }
@@ -206,11 +190,12 @@ bool MidiTakeSink::writeMidi(std::span<const RecordedMidiEvent> events) {
     return true;
 }
 
-MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed,
+MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
                                    const MidiTakeRecorderSettings& settings)
     : settings_(settings),
       input_(feed, settings_.source, settings_.latencySamples),
-      stream_(sink_, queueFor(settings_)) {
+      stream_(sink_, queueFor(settings_)),
+      tap_(tap) {
     // Sized once, so a block's events are copied into it and never allocate.
     events_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
 }
@@ -236,10 +221,11 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
             return;
         }
 
-        openPass(loop);
+        openPass(block, loop);
     }
 
     write(block);
+    publish(block);
     arrivals_ += block.numSamples;
 }
 
@@ -253,9 +239,13 @@ void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
     sampleRate_ = block.rate();
     origin_ = block.materialOrigin;
     startedAtLoopStart_ = atLoopStart(block, loop);
+
+    passOrigin_ = 0;
+    passOriginBeat_ = startBeat_;
+    preview_.open(startBeat_);
 }
 
-void MidiTakeRecorder::openPass(const LoopRange& loop) {
+void MidiTakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
 
@@ -268,11 +258,20 @@ void MidiTakeRecorder::openPass(const LoopRange& loop) {
     }
 
     boundaries_[numBoundaries_++] = arrivals_;
+
+    // The pass the tap draws is the pass the clip will be, so it opens on the
+    // boundary that was taken: a pass end the take could not hold is two passes
+    // run together for the preview as well.
+    passOrigin_ = arrivals_;
+    passOriginBeat_ = liveBeatAt(block, arrivals_);
+
+    preview_.open(block.beats.start);
 }
 
 void MidiTakeRecorder::stop() {
     state_ = State::stopped;
     rolling_.store(false, std::memory_order_relaxed);
+    tap_.close();
 }
 
 void MidiTakeRecorder::write(const BlockInfo& block) {
@@ -287,6 +286,48 @@ void MidiTakeRecorder::write(const BlockInfo& block) {
     // The one head correction, applied on the way in.
     stream_.writeMidi(events_, arrivals_ - settings_.latencySamples);
     captured_.fetch_add(events_.getNumEvents(), std::memory_order_relaxed);
+}
+
+void MidiTakeRecorder::publish(const BlockInfo& block) {
+    const auto head = arrivals_ - settings_.latencySamples;
+
+    // One block is one transition, so a reader takes the pass before this block
+    // or after it and never partway through its events.
+    const RecordTap::Change change(tap_);
+
+    for (const auto metadata : events_) {
+        const auto sample = head + metadata.samplePosition;
+
+        // A latency can stamp an event before the pass it arrived in began,
+        // and the pass that owns it has already been drawn. finish() still
+        // places it, in the pass it belongs to.
+        if (sample < passOrigin_)
+            continue;
+
+        const auto message = metadata.getMessage();
+        const auto* bytes = message.getRawData();
+        const auto data2 = message.getRawDataSize() > 2 ? bytes[2] : 0;
+        const auto beat = liveBeatAt(block, sample) - passOriginBeat_;
+
+        // The take's own reading of the message and of what a strike does to a
+        // pitch already down, so the overlay and the clip are the same notes
+        // rather than two answers about them (io/TakeNotes.hpp).
+        switch (kindOf(bytes[0], data2)) {
+            case MidiKind::noteOn:
+                preview_.strike(message.getChannel(), message.getNoteNumber(),
+                                message.getVelocity(), beat);
+                break;
+
+            case MidiKind::noteOff:
+                preview_.release(message.getChannel(), message.getNoteNumber(), beat);
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    preview_.reaches(std::max(0.0, liveBeatAt(block, end_) - passOriginBeat_));
 }
 
 double MidiTakeRecorder::timeAt(std::int64_t sample) const {

@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <array>
 #include <atomic>
 #include <cstdint>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "io/RecordingFeed.hpp"
 #include "io/TakeFileSink.hpp"
 #include "io/TakePasses.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
 
 /**
@@ -133,7 +135,10 @@ struct TakeRecorderSettings {
  */
 class TakeRecorder final : public TakeCapture {
   public:
-    TakeRecorder(const LiveInputFeed& feed, const RenderContext& context,
+    /// @p tap is not owned and outlives the take: it is what the pass in
+    /// flight is published to, and what still holds it once the take is a clip
+    /// (#2463).
+    TakeRecorder(const LiveInputFeed& feed, const RenderContext& context, RecordTap& tap,
                  TakeRecorderSettings settings);
 
     ~TakeRecorder() override = default;
@@ -151,6 +156,11 @@ class TakeRecorder final : public TakeCapture {
     }
 
     void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
+
+    /// Where the pass in flight is published (#2463).
+    const RecordTap& tap() const override {
+        return tap_;
+    }
 
     /// Samples offered to the queue so far. Read from any thread; what a
     /// running take is drawn from (#2463).
@@ -180,13 +190,17 @@ class TakeRecorder final : public TakeCapture {
 
     /// A wrap: where the pass ended, handed to the sink. The one place a
     /// boundary is named, so the rule above it holds everywhere.
-    void openPass(const LoopRange& loop);
+    void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
 
     /// This block's input, into the queue. Where a pass ends inside it is the
     /// sink's to act on, since only the sink knows what reached the disk.
     void write(const BlockInfo& block);
+
+    /// Open the pass the oldest pending boundary named, now the audio has
+    /// reached it, and retire it.
+    void openTapPass(const BlockInfo& block);
 
     /// Where the take is, once there is nothing more to add to it.
     void placeClip(RecordedTake& take) const;
@@ -196,6 +210,7 @@ class TakeRecorder final : public TakeCapture {
     LiveAudioInput input_;
     TakeFileSink sink_;
     RecordStream stream_;
+    RecordTap& tap_;
 
     /// The block, narrowed to the channels the take holds.
     juce::AudioBuffer<float> scratch_;
@@ -226,6 +241,34 @@ class TakeRecorder final : public TakeCapture {
     double startBeat_ = 0.0;
     double startSeconds_ = 0.0;
     double endBeat_ = 0.0;
+
+    /// Where the pass the tap draws began, in samples written and in the beat
+    /// they reach.
+    std::int64_t passOrigin_ = 0;
+    double passOriginBeat_ = 0.0;
+
+    /// A boundary a wrap named and the beat it named it at, until the written
+    /// audio reaches it. The sink splits there, so a preview that turned over
+    /// at the wrap instead would draw the tail of the previous file -- with a
+    /// positive latency, a whole latency of it.
+    struct PendingPass {
+        std::int64_t boundary = 0;
+        double startBeat = 0.0;
+    };
+
+    /// All of them, not the latest: a loop shorter than the latency wraps again
+    /// before the audio reaches the boundary before it, and a preview keeping
+    /// only the newest would never turn over at all.
+    ///
+    /// The sink's own lane, not a second number. This retires a boundary when
+    /// the audio is offered past it and the sink no earlier, so what the sink
+    /// accepted always has room here and the two cannot end up describing
+    /// different passes.
+    static constexpr std::size_t kPendingCapacity = TakeFileSink::kBoundaryCapacity;
+
+    std::array<PendingPass, kPendingCapacity> pending_{};
+    std::size_t pendingHead_ = 0;
+    std::size_t pendingCount_ = 0;
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.

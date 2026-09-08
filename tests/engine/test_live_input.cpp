@@ -12,6 +12,7 @@
 #include "io/LiveInput.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/RenderPlan.hpp"
+#include "tap/LevelTap.hpp"
 
 /**
  * @file test_live_input.cpp
@@ -33,7 +34,9 @@ using magda::engine::LiveAudioInput;
 using magda::engine::LiveInputFeed;
 using magda::engine::LiveMidiInput;
 using magda::engine::LiveMidiStream;
+using magda::engine::OpKey;
 using magda::engine::OpKind;
+using magda::engine::OpRole;
 using magda::engine::PlanValues;
 using magda::engine::RenderContext;
 using magda::engine::RenderPlan;
@@ -63,6 +66,26 @@ TrackInfo monitoringTrack(InputMonitorMode monitor, bool armed) {
     track.inputMonitor = monitor;
     track.recordArmed = armed;
     return track;
+}
+
+/// The op filling @p role on @p track, or -1. The master carries roles of the
+/// same name, so a search that ignored the track could answer about it.
+int findRole(const RenderPlan& plan, TrackId track, OpRole role) {
+    for (std::size_t at = 0; at < plan.ops.size(); ++at)
+        if (plan.ops[at].key.role == role && plan.ops[at].key.trackId == track)
+            return static_cast<int>(at);
+    return -1;
+}
+
+/// The ops reading @p producer, which is what tells a meter in the signal from
+/// one hanging beside it.
+std::vector<int> consumersOf(const RenderPlan& plan, int producer) {
+    std::vector<int> found;
+    for (std::size_t at = 0; at < plan.ops.size(); ++at)
+        for (const auto& input : plan.ops[at].inputs)
+            if (input.op == producer)
+                found.push_back(static_cast<int>(at));
+    return found;
 }
 
 int countKind(const RenderPlan& plan, OpKind kind) {
@@ -142,8 +165,21 @@ class LiveInputFactory final : public RuntimeStateFactory {
         return source;
     }
 
+    /// One meter, on the live input alone: a factory that took every Meter op
+    /// would report the track's output as well and prove nothing about where
+    /// this one sits.
+    std::unique_ptr<magda::engine::LevelTap> createMeter(const OpKey& key) override {
+        if (key.role != OpRole::LiveInputMeter)
+            return nullptr;
+
+        auto tap = std::make_unique<magda::engine::LevelTap>();
+        inputMeter = tap.get();
+        return tap;
+    }
+
     LiveInputFeed* feed = nullptr;
     TappedAudioInput* lastAudioInput = nullptr;
+    magda::engine::LevelTap* inputMeter = nullptr;
 };
 
 RenderContext context() {
@@ -404,6 +440,56 @@ TEST_CASE("A monitoring track hears its live input through the plan", "[engine][
     juce::AudioBuffer<float> afterwards(2, kBlockSize);
     tapped.render(blockInfo(kBlockSize), juce::dsp::AudioBlock<float>(afterwards));
     CHECK(afterwards.getMagnitude(0, kBlockSize) == 0.0f);
+}
+
+TEST_CASE("An input meter reads the input a monitoring track is hearing",
+          "[engine][live-input][2463]") {
+    // The incumbent reads this off the input device (WaveInputDevice's level
+    // measurer); here it is a meter on the input op, so it exists exactly while
+    // the op does and sits in the signal rather than beside it.
+    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::Meter) ==
+          inputOpsFor(InputMonitorMode::In, false, OpKind::Meter) - 1);
+
+    {
+        const std::vector<TrackInfo> monitoring{monitoringTrack(InputMonitorMode::In, false)};
+        const auto plan = compile(monitoring);
+        const auto& compiled = *plan;
+        const auto meter = findRole(compiled, monitoring.front().id, OpRole::LiveInputMeter);
+        const auto input = findRole(compiled, monitoring.front().id, OpRole::LiveAudioInput);
+        REQUIRE(meter >= 0);
+        REQUIRE(input >= 0);
+
+        REQUIRE(compiled.ops[static_cast<std::size_t>(meter)].inputs.size() == 1);
+        CHECK(compiled.ops[static_cast<std::size_t>(meter)].inputs[0].op == input);
+
+        // The input reaches the track through the meter and nowhere else, so
+        // what the meter reads is what the track hears.
+        CHECK(consumersOf(compiled, input) == std::vector<int>{meter});
+        CHECK_FALSE(consumersOf(compiled, meter).empty());
+    }
+
+    LiveInputFactory factory;
+    EngineSession session(factory);
+    factory.feed = &session.liveInputs();
+    session.liveInputs().prepare(2, kBlockSize);
+
+    const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::In, false)};
+    const auto plan = compile(tracks);
+    REQUIRE(publish(session, plan, tracks).published);
+    REQUIRE(factory.inputMeter != nullptr);
+
+    juce::AudioBuffer<float> captured(2, kBlockSize);
+    captured.clear();
+    captured.setSample(0, 7, 0.5f);
+    captured.setSample(1, 9, -0.25f);
+
+    juce::AudioBuffer<float> output(2, kBlockSize);
+    output.clear();
+    session.process(kBlockSize, output, {blockOf(captured), {}});
+
+    const auto levels = factory.inputMeter->read();
+    CHECK(levels.peak[0] == Catch::Approx(0.5f));
+    CHECK(levels.peak[1] == Catch::Approx(0.25f));
 }
 
 TEST_CASE("Each piece of a callback the loop wraps inside reads its own input",

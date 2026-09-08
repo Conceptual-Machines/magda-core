@@ -11,6 +11,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TransportClock.hpp"
 #include "transport/TransportState.hpp"
@@ -107,7 +108,7 @@ class Rig {
         feed_.prepare(0, kBlockSize);
 
         if (records)
-            recorder_ = std::make_unique<MidiTakeRecorder>(feed_, std::move(settings));
+            recorder_ = std::make_unique<MidiTakeRecorder>(feed_, tap_, std::move(settings));
     }
 
     void schedule(std::vector<Played> events) {
@@ -200,6 +201,10 @@ class Rig {
     TransportClock clock_;
     LiveInputFeed feed_;
     LiveMidiInput monitor_;
+
+    /// Nothing here draws the pass; #2463 is where that is covered.
+    magda::engine::RecordTap tap_{magda::engine::RecordMaterial::midi, {}};
+
     std::unique_ptr<MidiTakeRecorder> recorder_;
 
     std::vector<Played> schedule_;

@@ -1314,7 +1314,18 @@ void Compiler::emitTrack(const TrackInfo& track) {
                             INVALID_DEVICE_ID, OpRole::LiveAudioInput, 0};
             const auto op = addOp(OpKind::AudioInput, key, {}, {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-            audioSources.push_back(PortRef{op, 0});
+
+            // What a monitoring track is hearing, which the incumbent reads off
+            // the input device rather than off the signal (#2463). Here it is
+            // the input op's own output, so an armed track that is not
+            // monitoring still meters what it is recording.
+            const OpKey meterKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                                 INVALID_DEVICE_ID, OpRole::LiveInputMeter, 0};
+            const auto meter =
+                addOp(OpKind::Meter, meterKey, {PortRef{op, 0}}, {SignalKind::Audio});
+            plan_.ops[static_cast<std::size_t>(meter)].liveness = LivenessDomain::Live;
+
+            audioSources.push_back(PortRef{meter, 0});
             break;
         }
         case RouteKind::None:

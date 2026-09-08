@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "exec/RenderContext.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
 
 /**
@@ -34,6 +35,10 @@ class TakeCapture {
      * else ends the take.
      */
     virtual void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) = 0;
+
+    /// Where the take publishes the pass in flight (#2463). Read from any
+    /// thread, for as long as whoever owns the take keeps it.
+    virtual const RecordTap& tap() const = 0;
 };
 
 /// The takes a callback feeds. Not owned: whoever publishes them keeps them

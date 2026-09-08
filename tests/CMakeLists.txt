@@ -430,6 +430,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # A MIDI take (#2462): where an event lands, what a held note gets for a
     # length, and which pass owns one that crossed a wrap.
     list(APPEND TEST_SOURCES engine/test_midi_take_recorder.cpp)
+    # The pass in flight, reported without a poll (#2463): its length off the
+    # transport that stamped it, and its notes where the finished clip holds them.
+    list(APPEND TEST_SOURCES engine/test_record_tap.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)

@@ -10,6 +10,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/TakeRecorder.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TransportClock.hpp"
 #include "transport/TransportState.hpp"
@@ -106,7 +107,8 @@ class Rig {
 
         settings.directory = directory;
         recorder_ = std::make_unique<TakeRecorder>(
-            feed_, RenderContext{kSampleRate, kBlockSize, inputChannels}, std::move(settings));
+            feed_, RenderContext{kSampleRate, kBlockSize, inputChannels}, tap_,
+            std::move(settings));
     }
 
     void play(double fromBeat = 0.0, double countInBeats = 0.0) {
@@ -180,6 +182,10 @@ class Rig {
     TransportClock clock_;
     LiveInputFeed feed_;
     juce::AudioBuffer<float> input_;
+
+    /// Nothing here draws the pass; #2463 is where that is covered.
+    magda::engine::RecordTap tap_{magda::engine::RecordMaterial::audio, {}};
+
     std::unique_ptr<TakeRecorder> recorder_;
 
     /// Input samples delivered since the rig was made, which is what the
