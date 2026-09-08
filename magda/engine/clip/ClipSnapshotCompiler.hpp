@@ -6,7 +6,7 @@
 #include "clip/ClipSnapshot.hpp"
 #include "clip/GrooveTemplate.hpp"
 #include "core/ClipInfo.hpp"
-#include "core/TrackInfo.hpp"
+#include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "transport/TempoMap.hpp"
 

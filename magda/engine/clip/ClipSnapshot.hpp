@@ -8,7 +8,7 @@
 #include "clip/MidiEventList.hpp"
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
-#include "core/TrackInfo.hpp"
+#include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "launch/FollowActions.hpp"
 #include "transport/TimeDomains.hpp"

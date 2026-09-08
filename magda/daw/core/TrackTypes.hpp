@@ -268,4 +268,8 @@ inline bool canHaveChildren(TrackType type) {
     return traitsOf(type).canHaveChildren;
 }
 
+/// Which of a track's two bodies of material plays: its arrangement, or its
+/// session slots. Persisted by ordinal; the engine gates on it (#2485).
+enum class TrackPlaybackMode { Arrangement, Session };
+
 }  // namespace magda

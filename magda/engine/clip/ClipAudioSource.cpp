@@ -149,21 +149,25 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     // return before reaching: a stale edge would release a voice twice.
     stoppingCount_ = 0;
 
-    renderMaterial(block, out);
+    // One snapshot for the whole render: the material and the mode that gates
+    // it come from the same publish, or a swap between the two stages could
+    // gate one snapshot's clips with another's mode.
+    const ClipSnapshotFeed::Reader snapshot(clips_);
+    const auto* track = snapshot ? snapshot->find(trackId_) : nullptr;
 
-    // Every Arrangement source has a mode to check now (#2485), handles or not.
+    renderMaterial(block, out, snapshot.get(), track);
+
+    // Every Arrangement source has a mode to check (#2485), handles or not.
     if (section_ == Section::Arrangement)
-        applySectionHold(out);
+        applySectionHold(out, track);
 }
 
-void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
+void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
+                                       const TrackClipPlayback* track) {
     const auto numSamples = static_cast<int>(out.getNumSamples());
 
     // A track missing from the snapshot is Arrangement: nothing to silence.
-    bool session = false;
-    const ClipSnapshotFeed::Reader snapshot(clips_);
-    if (const auto* track = snapshot ? snapshot->find(trackId_) : nullptr)
-        session = track->playbackMode == TrackPlaybackMode::Session;
+    const auto session = track != nullptr && track->playbackMode == TrackPlaybackMode::Session;
 
     const SectionMode mode{session, sessionModeBefore_};
     sessionModeBefore_ = session;
@@ -203,7 +207,8 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out) {
         handOver_.advance(out);
 }
 
-void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out) {
+void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
+                                     const ClipSnapshot* snapshot, const TrackClipPlayback* track) {
     out.clear();
 
     const ClipStreamFeed::Reader streams(streams_);
@@ -231,8 +236,7 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     if (!block.playing || lane.numSamples <= 0)
         return silence();
 
-    const ClipSnapshotFeed::Reader snapshot(clips_);
-    if (!snapshot)
+    if (snapshot == nullptr)
         return silence();
 
     // Compiled against a tempo map that has since changed: every second in it
@@ -260,7 +264,6 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     if (block.tempo != nullptr && snapshot->tempoFingerprint != block.tempo->fingerprint())
         staleSnapshots_.fetch_add(1, std::memory_order_relaxed);
 
-    const auto* track = snapshot->find(trackId_);
     if (track == nullptr)
         return silence();
 

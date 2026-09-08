@@ -190,11 +190,15 @@ class ClipAudioSource final : public EngineAudioSource {
     ClipStreamFeed& streams_;
 
     /// Sum this track's material for @p block, on whichever section this is.
-    void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out);
+    /// @p snapshot and @p track are render()'s one acquisition, shared with
+    /// applySectionHold so both stages read the same publish.
+    void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
+                        const ClipSnapshot* snapshot, const TrackClipPlayback* track);
 
     /// Drop what the arrangement rendered for as long as the session holds the
-    /// track, and de-click both edges of the hand-over (#2302).
-    void applySectionHold(juce::dsp::AudioBlock<float> out);
+    /// track, and de-click both edges of the hand-over (#2302). @p track is
+    /// null for one the snapshot does not carry, which is Arrangement mode.
+    void applySectionHold(juce::dsp::AudioBlock<float> out, const TrackClipPlayback* track);
 
     /// Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
