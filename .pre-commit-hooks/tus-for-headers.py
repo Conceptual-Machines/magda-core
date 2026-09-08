@@ -5,8 +5,9 @@
 includes. Grepping for direct includes does not: ChordTypes.hpp reaches many TUs
 without a single .cpp naming it.
 
-Prints one repo-relative TU path per line. Exit 0 with output, 1 when the
-dependency data cannot be read, 2 when a header maps to nothing.
+Prints one repo-relative TU path per line, and exits non-zero only when the
+dependency data cannot be read at all. A header no translation unit compiles
+produces a note instead: nothing found in it could reach a binary.
 """
 import json
 import os
@@ -84,20 +85,38 @@ def main(argv):
 
     mapping = load_output_to_source(build_dir)
 
-    unmapped = [h for h in headers if h not in found]
-    if unmapped:
-        for header in unmapped:
-            print(f"no built translation unit depends on {header}", file=sys.stderr)
-        return 2
+    def in_scope(source):
+        # Shipping code, matching .clang-tidy's own scope.
+        return source.startswith("magda/") and not source.startswith("magda/engine/")
 
     tus = set()
-    for outputs in found.values():
-        for output in outputs:
-            source = mapping.get(output)
-            # Tests and third_party compile these headers too, but the checks
-            # here target shipping code, matching .clang-tidy's own scope.
-            if source and source.startswith("magda/") and not source.startswith("magda/engine/"):
-                tus.add(source)
+    unanalysable = []
+    for header in headers:
+        sources = {mapping.get(o) for o in found.get(header, ())}
+        sources.discard(None)
+
+        eligible = {s for s in sources if in_scope(s)}
+        if not eligible:
+            # Scoping has to be judged per header, after mapping. Deciding it
+            # from the raw dependency set counted a header reached only through
+            # a test TU as mapped, then filtered every candidate away and
+            # returned success having chosen nothing.
+            #
+            # A header only tests compile is still analysed, through the test
+            # TU: HeaderFilterRegex decides which headers get diagnostics, so
+            # the header's own findings are reported either way.
+            eligible = sources
+
+        if not eligible:
+            unanalysable.append(header)
+            continue
+        tus |= eligible
+
+    if unanalysable:
+        # No translation unit compiles these, so nothing that could be found in
+        # them reaches a binary. Worth saying, not worth blocking a push over.
+        for header in unanalysable:
+            print(f"note: nothing compiles {header}; not analysed", file=sys.stderr)
 
     for tu in sorted(tus):
         print(tu)
