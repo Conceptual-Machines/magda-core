@@ -78,6 +78,22 @@ fi
 hook_dir=$(cd "$(dirname "$0")" && pwd)
 resolver="$hook_dir/tus-for-headers.py"
 
+# python3 then python, the fallback setup.sh accepts when it installs this hook.
+# Hardcoding python3 meant a machine that only has `python`, which is a common
+# Windows shape, installed the hook and then failed every C++ push on a missing
+# interpreter. The resolver is always run through this, never its shebang.
+if [ -n "${PYTHON:-}" ]; then
+    :
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON=python3
+elif command -v python >/dev/null 2>&1; then
+    PYTHON=python
+else
+    echo "Neither python3 nor python found; cannot resolve translation units." >&2
+    echo "Install Python, or set PYTHON=/path/to/python." >&2
+    exit 1
+fi
+
 is_unbuilt_ok() {
     local candidate="$1" known
     for known in "${UNBUILT_OK[@]}"; do
@@ -105,7 +121,7 @@ done
 # by string has to assume a separator, and on Windows that marks every file
 # missing and passes the lot.
 if [ ${#sources[@]} -gt 0 ]; then
-    if ! absent=$(python3 "$resolver" --missing --build-dir "$BUILD_DIR" "${sources[@]}"); then
+    if ! absent=$($PYTHON "$resolver" --missing --build-dir "$BUILD_DIR" "${sources[@]}"); then
         echo "Could not read $DB." >&2
         exit 1
     fi
@@ -127,7 +143,7 @@ if [ ${#headers[@]} -gt 0 ]; then
     # Command substitution, not `mapfile < <(...)`: mapfile reports its own
     # status, so a process substitution's exit code is lost and a failing
     # mapping reads as success.
-    if header_tus=$(python3 "$resolver" --build-dir "$BUILD_DIR" \
+    if header_tus=$($PYTHON "$resolver" --build-dir "$BUILD_DIR" \
                       --max-tus "$MAX_TUS" "${headers[@]}"); then
         [ -n "$header_tus" ] && mapfile -t expanded <<<"$header_tus"
     else
