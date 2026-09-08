@@ -97,6 +97,13 @@ struct RecordTapSettings {
  * turns once per block rather than once per note (@ref Change), so a reader
  * retries at most once a block and settles in the gap after it.
  *
+ * The payload is read and written relaxed and the ordering is carried by a
+ * fence at each end: a release fence after the revision is turned odd, an
+ * acquire fence before the reader looks at it again. Observing any store from
+ * inside a change therefore forces that second look to see the change had
+ * begun. Release on the increment itself would not, since it orders what
+ * precedes it rather than what follows.
+ *
  * **Lengths grow without turning the revision, and are still read inside the
  * check.** A note still down, and the pass itself, reach further every block,
  * and turning the revision for that would send a reader round on every block it
@@ -142,10 +149,26 @@ class RecordTap {
     class Change {
       public:
         explicit Change(RecordTap& tap) : tap_(tap) {
-            if (tap_.changing_++ == 0)
-                tap_.revision_.fetch_add(kChanging, std::memory_order_release);
+            if (tap_.changing_++ != 0)
+                return;
+
+            tap_.revision_.fetch_add(kChanging, std::memory_order_release);
+
+            // The release on that increment orders what came before it, and
+            // nothing about what comes after: the payload stores below are
+            // relaxed and may be reordered ahead of it, and a reader seeing one
+            // of them could still load the old even revision and accept it.
+            //
+            // This fence is what stops that. It pairs with the acquire fence a
+            // reader takes before its second look at the revision
+            // ([atomics.fences]/2), so observing any payload store from inside
+            // the change forces that look to see the increment above.
+            std::atomic_thread_fence(std::memory_order_release);
         }
 
+        /// The closing increment needs no fence of its own: its release orders
+        /// the payload stores before it, which is what a reader's first look
+        /// acquires.
         ~Change() {
             if (--tap_.changing_ == 0)
                 tap_.revision_.fetch_add(kChanging, std::memory_order_release);
