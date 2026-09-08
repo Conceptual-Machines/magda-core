@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "ClipCallback.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "core/TimeStretchModes.hpp"
@@ -316,7 +317,7 @@ TEST_CASE("Clips that follow one another are not clips stacked on one another",
     clips.publish(std::move(live));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    source.render(blockFrom(0.1), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(0.1), juce::dsp::AudioBlock<float>(output));
     CHECK(source.starvedVoices() == 0);
 }
 
@@ -364,7 +365,8 @@ TEST_CASE("Slices too short to fill a callback are concurrent, and say so",
     clips.publish(std::move(live));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    source.render(blockFrom(kSliceSeconds), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(kSliceSeconds),
+                             juce::dsp::AudioBlock<float>(output));
     CHECK(source.starvedVoices() > 0);
 }
 
@@ -599,7 +601,7 @@ TEST_CASE("A clip that is sounding keeps its reader over one that has not starte
     clips.publish(std::move(live));
 
     juce::AudioBuffer<float> output(2, kBlockSize);
-    source.render(blockFrom(5.0), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(5.0), juce::dsp::AudioBlock<float>(output));
     CHECK(source.starvedVoices() == 0);
 }
 
@@ -630,11 +632,14 @@ TEST_CASE("A clip provisioned ahead of the transport plays from its first sample
 
     // A block before the clip starts, which is what carries the cue across to
     // the callback's side, and then as much read-ahead as the pool will hold.
-    source.render(blockFrom(0.0, false), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(0.0, false),
+                             juce::dsp::AudioBlock<float>(output));
     while (reader.fillOnce()) {
     }
 
-    source.render(blockFrom(0.5), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(0.5),
+
+                             juce::dsp::AudioBlock<float>(output));
 
     CHECK(output.getSample(0, 0) == Catch::Approx(static_cast<float>(kAnchor)).margin(1e-4));
     CHECK(output.getSample(0, kBlockSize - 1) ==
@@ -674,11 +679,15 @@ TEST_CASE("A reversed clip is cued where a reversed clip starts", "[engine][clip
 
     juce::AudioBuffer<float> output(2, kBlockSize);
 
-    source.render(blockFrom(0.0, false), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(0.0, false),
+
+                             juce::dsp::AudioBlock<float>(output));
     while (reader.fillOnce()) {
     }
 
-    source.render(blockFrom(0.5), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(0.5),
+
+                             juce::dsp::AudioBlock<float>(output));
 
     const auto last = kAnchor + static_cast<std::int64_t>(std::llround(1.5 * kSampleRate)) - 1;
 
@@ -740,7 +749,9 @@ TEST_CASE("A pool with nothing published provisions nothing", "[engine][clip][po
         for (auto sample = 0; sample < kBlockSize; ++sample)
             output.setSample(channel, sample, 0.25f);
 
-    source.render(blockFrom(1.0), juce::dsp::AudioBlock<float>(output));
+    magda::test::renderBlock(source, clips, blockFrom(1.0),
+
+                             juce::dsp::AudioBlock<float>(output));
 
     for (auto sample = 0; sample < kBlockSize; ++sample)
         REQUIRE(output.getSample(0, sample) == Catch::Approx(0.0f).margin(1e-4));

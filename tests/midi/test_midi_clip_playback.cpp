@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "ClipCallback.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/GrooveTemplate.hpp"
@@ -173,7 +174,8 @@ class Rig {
     void roll(int first, int last, Recorder& into) {
         for (auto index = first; index <= last; ++index) {
             juce::MidiBuffer buffer;
-            source_.render(blockAt(index, index != first || rolling_), buffer);
+            magda::test::renderBlock(source_, feed_, blockAt(index, index != first || rolling_),
+                                     buffer);
             into.add(index, buffer);
             rolling_ = true;
         }
@@ -182,7 +184,7 @@ class Rig {
     /// A jump: the next block is discontinuous wherever it lands.
     void locate(int blockIndex, Recorder& into) {
         juce::MidiBuffer buffer;
-        source_.render(blockAt(blockIndex, false), buffer);
+        magda::test::renderBlock(source_, feed_, blockAt(blockIndex, false), buffer);
         into.add(blockIndex, buffer);
         rolling_ = true;
     }
@@ -194,7 +196,7 @@ class Rig {
         block.seconds.end = block.seconds.start;
 
         juce::MidiBuffer buffer;
-        source_.render(block, buffer);
+        magda::test::renderBlock(source_, feed_, block, buffer);
         into.add(blockIndex, buffer);
         rolling_ = false;
     }
@@ -1426,7 +1428,7 @@ TEST_CASE("A note inside a ramp is placed where the map puts it", "[engine][clip
     block.tempo = &ramp;
 
     juce::MidiBuffer buffer;
-    source.render(block, buffer);
+    magda::test::renderBlock(source, feed, block, buffer);
 
     Recorder recorder;
     recorder.add(0, buffer);

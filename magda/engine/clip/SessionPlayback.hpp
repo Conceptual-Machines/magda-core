@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <optional>
 #include <tuple>
 
 #include "clip/ClipSnapshot.hpp"
@@ -115,10 +116,11 @@ constexpr int kSectionDeClickSamples = 32;
  * the sample its slot launches and gives one up at a block boundary, since a
  * release applies at sample zero.
  *
- * Derived per block from the table both of a track's sources read, so its audio
- * and its MIDI reach the same answer with nothing of their own to keep in step.
- * The track's own mode is folded in beside the handles (#2485): Session mode
- * gates the arrangement the way the fork's playSlotClips does, launched or not.
+ * Resolved once per block and handed to both of a track's sources, so its audio
+ * and its MIDI are gated by one answer with nothing of their own to keep in
+ * step (#2490). The track's own mode is folded in beside the handles (#2485):
+ * Session mode gates the arrangement the way the fork's playSlotClips does,
+ * launched or not.
  */
 struct SectionHold {
     /// The edge past which the arrangement is silent. Zero for a block the
@@ -212,6 +214,81 @@ inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId
     hold.lost = sessionAtEnd && (hold.sounds() || !sessionBefore);
 
     return hold;
+}
+
+/**
+ * @brief One track's share of a block, and the mode the block before had.
+ *
+ * Owned by the clip feed and named by the table it publishes
+ * (ClipSnapshotFeed.hpp), so it outlives a republish the way a launch handle
+ * does. Resolved once per block by @ref advanceTrackSections and read by both
+ * of the track's sources, which is what makes them agree when a publish lands
+ * inside the callback (#2490).
+ */
+struct TrackSectionState {
+    SectionHold hold;
+
+    /// What the block before resolved to. Here rather than in a source because
+    /// a mode flip has no handle to say what came before, and one memory per
+    /// track is what keeps a track's two sources on the same block.
+    bool sessionBefore = false;
+};
+
+/// Every track's state at one moment, sorted by track id. Published with the
+/// snapshot the tracks came from; not owned, the feed keeps them alive.
+struct TrackSectionTable {
+    struct Entry {
+        TrackId trackId = INVALID_TRACK_ID;
+        TrackSectionState* state = nullptr;
+    };
+
+    std::vector<Entry> entries;
+
+    /// @p trackId's state, or null. A binary search, on the audio thread.
+    TrackSectionState* find(TrackId trackId) const {
+        const auto found =
+            std::lower_bound(entries.begin(), entries.end(), trackId,
+                             [](const Entry& entry, TrackId id) { return entry.trackId < id; });
+
+        return found != entries.end() && found->trackId == trackId ? found->state : nullptr;
+    }
+};
+
+/**
+ * @brief Resolve every track's hold for @p block, from @p clips and the handles.
+ *
+ * On the audio thread, once per block, after advanceLaunchHandles and before
+ * anything renders. @p sections and @p clips are the callback's one acquisition
+ * of the feed, so both of a track's sources are gated by the publish their
+ * material came from rather than by whichever one their own read landed on.
+ *
+ * Every track the snapshot carries, not the ones the plan renders: the mode a
+ * block ran under is what the next block's edges are measured against, and a
+ * track nothing rendered still had one.
+ *
+ * @p handles is null for a render with no session at all, where only the mode
+ * decides, exactly as it is before the store has published a table.
+ */
+inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSnapshot* clips,
+                                 LaunchHandleFeed* handles, const BlockInfo& block) {
+    if (sections == nullptr)
+        return;
+
+    const LaunchHandleTable* table = nullptr;
+    std::optional<LaunchHandleFeed::Reader> published;
+    if (handles != nullptr) {
+        published.emplace(*handles);
+        table = published->get();
+    }
+
+    for (const auto& entry : sections->entries) {
+        const auto* track = clips != nullptr ? clips->find(entry.trackId) : nullptr;
+        const auto session = track != nullptr && track->playbackMode == TrackPlaybackMode::Session;
+
+        entry.state->hold = sectionHold(table, entry.trackId, block.numSamples,
+                                        SectionMode{session, entry.state->sessionBefore});
+        entry.state->sessionBefore = session;
+    }
 }
 
 /**

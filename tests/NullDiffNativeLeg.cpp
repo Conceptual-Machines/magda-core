@@ -842,7 +842,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
 
     BufferSink sink(value.channels);
     const auto rendered = renderOffline(
-        executor, values, context, tempo, request, sink, &voices,
+        executor, values, context, tempo, request, sink, &voices, &clips,
         OfflineLauncher{hasSession ? &handles : nullptr, hasSession ? &requests : nullptr});
 
     if (rendered.refused) {

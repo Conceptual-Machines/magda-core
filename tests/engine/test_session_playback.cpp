@@ -1,15 +1,20 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
 #include <algorithm>
+#include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
+#include "ClipCallback.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
@@ -297,7 +302,8 @@ struct AudioRig {
     void renderBlock(const BlockInfo& block) {
         fill();
         magda::engine::advanceLaunchHandles(handles, requests, block);
-        source.render(block, juce::dsp::AudioBlock<float>(output));
+        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(output),
+                                 &handles);
     }
 
     void roll(int first, int last) {
@@ -385,7 +391,7 @@ struct MidiRig {
             magda::engine::advanceLaunchHandles(handles, requests, block);
 
             juce::MidiBuffer buffer;
-            source.render(block, buffer);
+            magda::test::renderBlock(source, clips, block, buffer, &handles);
             panics.push_back(source.raisedAllNotesOff());
 
             for (const auto metadata : buffer)
@@ -499,6 +505,10 @@ struct MidiSwitchRig {
             rolled_ = true;
 
             magda::engine::advanceLaunchHandles(handles, requests, block);
+
+            // One scope over both, the way a callback delivers a block: the
+            // track's two sources play one publish (#2490).
+            const magda::test::ClipBlock pinned(clips, block, &handles);
 
             capture(arrangement, block, index, fromArrangement);
             arrangementPanics.push_back(arrangement.raisedAllNotesOff());
@@ -803,6 +813,9 @@ struct SwitchRig {
 
         fill();
         magda::engine::advanceLaunchHandles(handles, requests, block);
+
+        // One scope over both, the way a callback delivers a block (#2490).
+        const magda::test::ClipBlock pinned(clips, block, &handles);
         arrangement.render(block, juce::dsp::AudioBlock<float>(arrangementOut));
         session.render(block, juce::dsp::AudioBlock<float>(sessionOut));
     }
@@ -816,6 +829,8 @@ struct SwitchRig {
     void renderSession(const BlockInfo& block) {
         fill();
         magda::engine::advanceLaunchHandles(handles, requests, block);
+
+        const magda::test::ClipBlock pinned(clips, block, &handles);
         session.render(block, juce::dsp::AudioBlock<float>(sessionOut)
                                   .getSubBlock(0, static_cast<std::size_t>(block.numSamples)));
     }
@@ -899,7 +914,8 @@ TEST_CASE("The arrangement and the session are different sections of one track",
 
     juce::AudioBuffer<float> out(2, kBlockSize);
     rig.fill();
-    arrangement.render(block, juce::dsp::AudioBlock<float>(out));
+    magda::test::renderBlock(arrangement, rig.clips, block, juce::dsp::AudioBlock<float>(out),
+                             &rig.handles);
 
     CHECK(out.getMagnitude(0, kBlockSize) == 0.0f);  // nothing is in the arrangement
 }
@@ -2096,7 +2112,7 @@ TEST_CASE("A stale snapshot does not cost the notes it started", "[engine][clip]
     block.tempo = &other;
 
     juce::MidiBuffer buffer;
-    rig.source.render(block, buffer);
+    magda::test::renderBlock(rig.source, rig.clips, block, buffer, &rig.handles);
 
     CHECK(rig.source.staleSnapshots() == 1);
 
@@ -2365,6 +2381,8 @@ struct PairRig {
 
         fill();
         magda::engine::advanceLaunchHandles(handles, requests, block);
+
+        const magda::test::ClipBlock pinned(clips, block, &handles);
 
         // A section renders into its own buffer and the track is the sum, which
         // is how a hand-over can be checked for a hole or a doubling.
@@ -2723,4 +2741,129 @@ TEST_CASE("A launched slot's MIDI plays on a Session-mode track, and releasing i
 
     CHECK(MidiSwitchRig::hanging(rig.fromSession).empty());
     CHECK(rig.notesOn(rig.fromArrangement).empty());
+}
+
+// =============================================================================
+// One publish per block, shared by a track's two sources (#2490)
+// =============================================================================
+
+TEST_CASE("A track's audio and its MIDI are gated by the same publish",
+          "[engine][clip][session][section]") {
+    // One track with material in both, and a source for each. What is asserted
+    // is that an edit arriving in the middle of the callback reaches neither of
+    // them rather than one of them.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+
+    const auto compiled = magda::engine::compileClipSnapshot(
+        {ClipLane{kTrack,
+                  {arrangementMidiClip(2, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})}}},
+        {}, tempoMap(), {});
+    rig.lane.midi = compiled.tracks.front().midi;
+    rig.publish();
+
+    ClipMidiSource midi{kTrack, rig.clips, rig.handles, Section::Arrangement};
+    midi.prepare(context());
+
+    const auto renderBoth = [&](int index, juce::MidiBuffer& buffer,
+                                const std::function<void()>& between = {}) {
+        const auto block = blockAt(index, index != 0);
+        rig.fill();
+        magda::engine::advanceLaunchHandles(rig.handles, rig.requests, block);
+
+        const magda::test::ClipBlock pinned(rig.clips, block, &rig.handles);
+
+        rig.arrangement.render(block, juce::dsp::AudioBlock<float>(rig.arrangementOut));
+        if (between)
+            between();
+        midi.render(block, buffer);
+    };
+
+    juce::MidiBuffer opening;
+    renderBoth(0, opening);
+    REQUIRE(rig.arrangementAt(0) == Approx(1.0f));
+
+    std::atomic<bool> landed{false};
+    std::thread flip;
+
+    juce::MidiBuffer buffer;
+    renderBoth(1, buffer, [&] {
+        flip = std::thread([&] {
+            rig.lane.playbackMode = TrackPlaybackMode::Session;
+            rig.publish();
+            landed.store(true);
+        });
+
+        // Long enough to land if the block were not holding it off. It cannot:
+        // the callback holds the clips for the block, so a publish waits for the
+        // end of it (ClipSnapshotFeed.hpp).
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        CHECK_FALSE(landed.load());
+    });
+
+    flip.join();
+
+    SECTION("neither source saw the flip in the block it arrived in") {
+        CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(1.0f));
+
+        auto offs = 0;
+        for (const auto metadata : buffer)
+            offs += metadata.getMessage().isNoteOff() ? 1 : 0;
+        CHECK(offs == 0);
+    }
+
+    SECTION("and both saw it in the block after") {
+        juce::MidiBuffer after;
+        renderBoth(2, after);
+
+        CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(0.0f));
+
+        auto offs = 0;
+        for (const auto metadata : after)
+            offs += metadata.getMessage().isNoteOff() ? 1 : 0;
+        CHECK(offs == 1);
+    }
+}
+
+TEST_CASE("A source made while the session holds the track resumes with it",
+          "[engine][clip][session][section]") {
+    // What a structural edit does mid-session: the track's source is replaced
+    // while its arrangement is silenced. The mode the block before ran under is
+    // the track's, not the source's (#2490), so the new one steps up out of
+    // silence rather than opening at full level.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementAt(0) == Approx(1.0f));
+
+    rig.lane.playbackMode = TrackPlaybackMode::Session;
+    rig.publish();
+    rig.roll(2, 3);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    ClipAudioSource fresh{kTrack, rig.clips, rig.streams, rig.handles, Section::Arrangement};
+    fresh.prepare(context());
+
+    rig.lane.playbackMode = TrackPlaybackMode::Arrangement;
+    rig.publish();
+
+    juce::AudioBuffer<float> out(2, kBlockSize);
+    out.clear();
+
+    const auto block = blockAt(4);
+    rig.fill();
+    magda::engine::advanceLaunchHandles(rig.handles, rig.requests, block);
+    magda::test::renderBlock(fresh, rig.clips, block, juce::dsp::AudioBlock<float>(out),
+                             &rig.handles);
+
+    CHECK(out.getSample(0, 0) == Approx(0.0f).margin(1e-5));
+
+    for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+        INFO("sample " << sample);
+        REQUIRE(out.getSample(0, sample) >= out.getSample(0, sample - 1));
+    }
+
+    CHECK(out.getSample(0, kSectionDeClickSamples) == Approx(1.0f));
 }
