@@ -34,8 +34,6 @@ struct SendInfo {
 
 enum class InputMonitorMode { Off, In, Auto };
 
-enum class TrackPlaybackMode { Arrangement, Session };
-
 /**
  * @brief Track data structure containing all track properties
  */

@@ -242,6 +242,10 @@ class ClipMidiSource final : public EngineMidiSource {
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
 
+    /// The mode the last block rendered under (#2485). A mode flip has no
+    /// handle to say what came before, so this is the only place it's kept.
+    bool sessionModeBefore_ = false;
+
     ActiveNoteList active_;
     int activeCount_ = 0;
 

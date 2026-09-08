@@ -8,6 +8,7 @@
 #include "clip/MidiEventList.hpp"
 #include "clip/WarpMap.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "launch/FollowActions.hpp"
 #include "transport/TimeDomains.hpp"
@@ -298,6 +299,11 @@ struct TrackClipPlayback {
     std::vector<AudioClipPlayback> audio;
     std::vector<MidiClipPlayback> midi;
 
+    /// Whether the arrangement above sounds. Session mode silences it whether
+    /// or not a slot is launched, as the fork's playSlotClips does (#2485).
+    /// Read per block by the track's arrangement sources.
+    TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
+
     /// Sorted by scene index, so two compiles of one model agree.
     std::vector<SessionSlotPlayback> session;
 
@@ -313,7 +319,7 @@ struct TrackClipPlayback {
  * testable and keeps a dump diff meaningful.
  */
 struct ClipSnapshot {
-    static constexpr int kVersion = 1;
+    static constexpr int kVersion = 2;
 
     int version = kVersion;
 

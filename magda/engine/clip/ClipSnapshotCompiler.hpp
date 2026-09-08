@@ -6,6 +6,7 @@
 #include "clip/ClipSnapshot.hpp"
 #include "clip/GrooveTemplate.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "transport/TempoMap.hpp"
 
@@ -56,6 +57,11 @@ struct ClipLane {
     /// can carry an arrangement and a session at once, and which one sounds is
     /// decided at launch rather than at compile (#2301).
     std::vector<ClipInfo> session;
+
+    /// The track's TrackInfo::playbackMode. In Session mode the arrangement
+    /// clips above are silenced at render time (#2485); the compiler copies
+    /// it onto TrackClipPlayback unchanged.
+    TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 };
 
 /**

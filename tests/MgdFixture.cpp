@@ -521,6 +521,31 @@ FixtureLoad loadFixture(const MgdFixture& fixture, const juce::File& scratchDire
     if (staged.masterTrack != nullptr)
         result.value.master = *staged.masterTrack;
     result.value.clips = std::move(staged.clips);
+
+    // The app relaunches a track's active session clip on play
+    // (TracktionEngineWrapper::onTransportPlay ->
+    // SessionClipScheduler::relaunchActiveClips), so a render of the project as
+    // saved launches it too (#2485).
+    for (const auto& track : result.value.tracks) {
+        if (track.activeSessionClipId == INVALID_CLIP_ID)
+            continue;
+
+        const auto found = std::find_if(
+            result.value.clips.begin(), result.value.clips.end(),
+            [&](const ClipInfo& clip) { return clip.id == track.activeSessionClipId; });
+
+        if (found == result.value.clips.end() || found->view != ClipView::Session ||
+            found->sceneIndex < 0) {
+            result.failure = "track " + std::to_string(track.id) + "'s active session clip " +
+                             std::to_string(track.activeSessionClipId) +
+                             " is not a session clip in a scene";
+            return result;
+        }
+
+        result.value.launches.push_back(
+            LaunchInfo{track.id, found->sceneIndex, result.value.startBeat});
+    }
+
     result.value.lanes = std::move(staged.automationLanes);
     result.value.automationClips = std::move(staged.automationClips);
 

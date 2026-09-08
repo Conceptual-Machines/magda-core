@@ -34,6 +34,7 @@
 using Catch::Approx;
 using magda::ClipInfo;
 using magda::MidiNote;
+using magda::TrackPlaybackMode;
 using magda::engine::AudioClipPlayback;
 using magda::engine::AudioEventPlayback;
 using magda::engine::BlockInfo;
@@ -475,11 +476,13 @@ struct MidiSwitchRig {
         session.prepare(context());
     }
 
-    void publish(std::vector<ClipInfo> arrangementClips, std::vector<ClipInfo> sessionClips) {
+    void publish(std::vector<ClipInfo> arrangementClips, std::vector<ClipInfo> sessionClips,
+                 TrackPlaybackMode mode = TrackPlaybackMode::Arrangement) {
         ClipLane lane;
         lane.trackId = kTrack;
         lane.clips = std::move(arrangementClips);
         lane.session = std::move(sessionClips);
+        lane.playbackMode = mode;
 
         auto compiled = std::make_shared<const ClipSnapshot>(
             magda::engine::compileClipSnapshot({lane}, {}, tempoMap(), {}));
@@ -2524,4 +2527,200 @@ TEST_CASE("Handing one track back does not touch the other", "[engine][clip][ses
 
     CHECK(rig.launchedAt(kBlockSize - 1) == Approx(1.0f));
     CHECK(rig.idleAt(kBlockSize - 1) == Approx(0.25f));
+}
+
+// =============================================================================
+// The track's playback mode gates the arrangement (#2485)
+// =============================================================================
+
+TEST_CASE("A Session-mode track with nothing launched sounds neither section",
+          "[engine][clip][session][section]") {
+    SECTION("handles published") {
+        SwitchRig rig;
+        rig.giveArrangement(1, 1.0f);
+        rig.lane.playbackMode = TrackPlaybackMode::Session;
+        rig.publish();
+
+        rig.roll(0, 3);
+
+        CHECK(rig.arrangementPeak() == 0.0f);
+        CHECK(rig.sessionPeak() == 0.0f);
+    }
+
+    SECTION("no handles published yet") {
+        SwitchRig rig{false};
+        rig.giveArrangement(1, 1.0f);
+        rig.lane.playbackMode = TrackPlaybackMode::Session;
+        rig.publish();
+
+        rig.roll(0, 3);
+
+        CHECK(rig.arrangementPeak() == 0.0f);
+        CHECK(rig.sessionPeak() == 0.0f);
+    }
+}
+
+TEST_CASE("A Session-mode track's MIDI sounds neither section with nothing launched",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})}, {},
+                TrackPlaybackMode::Session);
+
+    rig.roll(0, 3);
+
+    CHECK(rig.notesOn(rig.fromArrangement).empty());
+    CHECK(rig.notesOn(rig.fromSession).empty());
+    CHECK(MidiSwitchRig::hanging(rig.fromArrangement).empty());
+}
+
+TEST_CASE("Switching a track to Session mode mid-play carries the arrangement down",
+          "[engine][clip][session][section]") {
+    // No handle on this track at all: the flip has to silence the arrangement
+    // on its own, with no session material to take over from it.
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementAt(0) == Approx(1.0f));
+
+    rig.lane.playbackMode = TrackPlaybackMode::Session;
+    rig.publish();
+    rig.render(2);
+
+    SECTION("the flip block decays from where it was to zero within the ramp") {
+        CHECK(rig.arrangementAt(0) == Approx(1.0f));
+
+        for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.arrangementAt(sample) <= rig.arrangementAt(sample - 1));
+        }
+
+        CHECK(rig.arrangementAt(kSectionDeClickSamples - 1) == Approx(0.0f).margin(1e-5));
+        CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(0.0f));
+    }
+
+    SECTION("the block after is entirely zero, not re-triggering the ramp") {
+        rig.render(3);
+        CHECK(rig.arrangementPeak() == 0.0f);
+    }
+}
+
+TEST_CASE("Switching a track to Session mode mid-play owes a note-off at the flip",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})}, {});
+
+    rig.roll(0, 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).size() == 1);
+
+    rig.publish({arrangementMidiClip(1, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})}, {},
+                TrackPlaybackMode::Session);
+    rig.roll(2, 2);
+
+    const auto offs = rig.notesOff(rig.fromArrangement);
+    REQUIRE(offs.size() == 1);
+    CHECK(offs.front().block == 2);
+    CHECK(offs.front().sample == 0);
+
+    rig.roll(3, 3);
+    CHECK(rig.notesOff(rig.fromArrangement).size() == 1);  // none more in the block after
+}
+
+TEST_CASE("Switching back to Arrangement mode resumes where the timeline is",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.publish();
+
+    rig.roll(0, 1);
+    rig.lane.playbackMode = TrackPlaybackMode::Session;
+    rig.publish();
+    rig.roll(2, 3);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    rig.lane.playbackMode = TrackPlaybackMode::Arrangement;
+    rig.publish();
+    rig.render(4);
+
+    SECTION("it steps up out of silence over the ramp") {
+        CHECK(rig.arrangementAt(0) == Approx(0.0f).margin(1e-5));
+
+        for (auto sample = 1; sample < kSectionDeClickSamples; ++sample) {
+            INFO("sample " << sample);
+            REQUIRE(rig.arrangementAt(sample) >= rig.arrangementAt(sample - 1));
+        }
+    }
+
+    SECTION("and settles at the timeline's own level") {
+        CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(1.0f));
+        CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(1.0f));
+    }
+}
+
+TEST_CASE("Switching back to Arrangement mode re-chases the arrangement's MIDI",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    const auto clip = arrangementMidiClip(1, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}});
+    rig.publish({clip}, {});
+
+    rig.roll(0, 1);
+    rig.publish({clip}, {}, TrackPlaybackMode::Session);
+    rig.roll(2, 3);
+
+    rig.publish({clip}, {});  // back to Arrangement, the default
+    rig.roll(4, 4);
+
+    // Two note-ons in all: the very first block's own chase, from before any
+    // of this, and the re-chase this case is about.
+    const auto ons = rig.notesOn(rig.fromArrangement);
+    REQUIRE(ons.size() == 2);
+    CHECK(ons.back().block == 4);
+    CHECK(ons.back().sample == 0);
+    CHECK(ons.back().message.getNoteNumber() == 60);
+
+    REQUIRE(rig.arrangementPanics.size() == 5);
+    CHECK(rig.arrangementPanics[4]);
+}
+
+TEST_CASE("A launched slot on a Session-mode track plays, and releasing it leaves the track silent",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.lane.playbackMode = TrackPlaybackMode::Session;
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+    CHECK(rig.sessionAt(0) == Approx(0.5f));
+    CHECK(rig.arrangementPeak() == 0.0f);
+
+    // The same release that hands an Arrangement-mode track back (#2302): here
+    // the mode itself goes on silencing the arrangement.
+    rig.handle.releaseSection();
+    rig.render(3);
+    rig.render(4);
+
+    CHECK(rig.sessionPeak() == 0.0f);
+    CHECK(rig.arrangementPeak() == 0.0f);
+}
+
+TEST_CASE("A launched slot's MIDI plays on a Session-mode track, and releasing it leaves it silent",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 1000.0, {MidiNote{60, 100, 0.0, 1000.0, 0, {}}})},
+                {sessionMidiClip(2, 8.0, {MidiNote{67, 100, 0.0, 8.0, 0, {}}})},
+                TrackPlaybackMode::Session);
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 2);
+    CHECK(rig.notesOn(rig.fromArrangement).empty());
+    REQUIRE(rig.notesOn(rig.fromSession).size() == 1);
+
+    rig.handle.releaseSection();
+    rig.roll(3, 5);
+
+    CHECK(MidiSwitchRig::hanging(rig.fromSession).empty());
+    CHECK(rig.notesOn(rig.fromArrangement).empty());
 }

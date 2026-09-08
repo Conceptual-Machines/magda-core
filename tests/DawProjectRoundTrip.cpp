@@ -373,6 +373,29 @@ Loss trackModulation() {
             }};
 }
 
+/// #2485: which of a track's two bodies is live is a MAGDA launcher concept,
+/// not a DAWproject one, so a track comes back in Arrangement mode whatever it
+/// went out in.
+Loss playbackMode() {
+    return {.field = "TrackInfo::playbackMode",
+            .reason = "the format has no attribute for session mode, which is player state "
+                      "rather than project data it was ever asked to carry",
+            .restore = [](Case& imported, const Case& original) {
+                bool restored = false;
+
+                for (auto& track : imported.tracks)
+                    for (const auto& source : original.tracks) {
+                        if (source.name != track.name || track.playbackMode == source.playbackMode)
+                            continue;
+
+                        track.playbackMode = source.playbackMode;
+                        restored = true;
+                    }
+
+                return restored;
+            }};
+}
+
 Loss multiOutRouting() {
     return {.field = "TrackInfo::type, TrackInfo::multiOutLink",
             .reason = "an instrument's further output pairs have no DAWproject representation, "
@@ -611,6 +634,11 @@ const std::map<std::string, std::vector<Loss>>& lossTable() {
         // either of them needs is the one every instrument track in the corpus
         // needs, and the audio one has no chain to lose.
         {"session.launch.midi", {internalDevices()}},
+        // #2485: the first case with an audible arrangement clip on a
+        // Session-mode track, which is what exposes playbackMode as a loss --
+        // session.launch's track has none, so the mode never had anything to
+        // gate.
+        {"session.mode.holds.slot", {playbackMode()}},
     };
 
     return table;
