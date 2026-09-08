@@ -24,7 +24,9 @@ struct CachedPluginParams {
     std::vector<MockParameterInfo> parameters;
     std::vector<magda::ParameterScanInput> scanInputs;
 };
-static std::map<juce::String, CachedPluginParams> parameterCache_;
+namespace {
+std::map<juce::String, CachedPluginParams> parameterCache_;
+}  // namespace
 
 class AIPromptEditorComponent : public juce::Component {
   public:

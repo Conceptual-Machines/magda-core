@@ -111,7 +111,8 @@ CommandAgent::GenerateResult CommandAgent::generateLocal(const std::string& mess
 
 /** Strip markdown code fences and surrounding prose from LLM output.
     Cloud providers (Anthropic, Gemini) often wrap DSL in ```blocks. */
-static std::string extractDSL(const juce::String& raw) {
+namespace {
+std::string extractDSL(const juce::String& raw) {
     auto text = raw.trim();
 
     // Strip ```dsl ... ``` or ``` ... ``` fences
@@ -132,17 +133,17 @@ static std::string extractDSL(const juce::String& raw) {
 }
 
 /** Check if provider supports CFG grammar (OpenAI Responses API, GPT-5+ only). */
-static bool usesCFG(const Config::AgentLLMConfig& config) {
+bool usesCFG(const Config::AgentLLMConfig& config) {
     return supportsOpenAICFG(config);
 }
 
 /** Build an LLM client for the command agent. */
-static std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLLMConfig& config) {
+std::unique_ptr<llm::LLMClient> createCommandClient(const Config::AgentLLMConfig& config) {
     return createLLMClient(config, "command");
 }
 
 /** Build the LLM request, adding CFG grammar when supported. */
-static llm::Request buildRequest(MagdaApi& api, const std::string& message, bool cfg) {
+llm::Request buildRequest(MagdaApi& api, const std::string& message, bool cfg) {
     auto stateJson = dsl::Interpreter::buildStateSnapshot(api);
     auto systemPrompt = juce::String::fromUTF8(CommandAgent::getSystemPrompt());
     systemPrompt += "\n\n" + getInternalPluginCatalogDescription();
@@ -162,6 +163,7 @@ static llm::Request buildRequest(MagdaApi& api, const std::string& message, bool
 
     return request;
 }
+}  // namespace
 
 CommandAgent::GenerateResult CommandAgent::generate(const std::string& message) {
     GenerateResult result;

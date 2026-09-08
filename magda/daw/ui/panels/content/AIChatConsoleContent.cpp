@@ -3552,7 +3552,8 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
 
 // Format a seconds value as a compact human-readable string ("5ms",
 // "150ms", "1.2s", "12s"). Used for ADSR display in the pretty-print.
-static juce::String formatSeconds(float s) {
+namespace {
+juce::String formatSeconds(float s) {
     s = std::max(s, 0.0f);
     if (s < 1.0f)
         return juce::String(static_cast<int>(std::round(s * 1000.0f))) + "ms";
@@ -3562,14 +3563,14 @@ static juce::String formatSeconds(float s) {
 }
 
 // Format a normalized 0..1 value as 2-decimal text.
-static juce::String formatNorm(float v) {
+juce::String formatNorm(float v) {
     return {juce::jlimit(0.0f, 1.0f, v), 2};
 }
 
 // Render a parsed preset as a categorized multi-line summary suitable
 // for the chat. Hides empty/zero categories. Time params (ADSR) are
 // formatted as ms/s; everything else as 2-decimal normalized values.
-static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset) {
+juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset) {
     // Lookup helper: preset.params is keyed on the alias suffix
     // ("amp_attack", "tune_1", …). Returns a sentinel when absent so
     // callers can decide whether to print or skip.
@@ -3730,8 +3731,8 @@ static juce::String prettyPrintPreset(const magda::FourOscAgent::Preset& preset)
 // instance and apply there — wasting the LLM's output to "no device
 // focused" was just bad UX. Returns a one-line status string for the
 // chat. Delegates the actual write to magda::applyFourOscPresetToPath.
-static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
-                                                      const magda::FourOscAgent::Preset& preset) {
+juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
+                                               const magda::FourOscAgent::Preset& preset) {
     auto& sel = magda::SelectionManager::getInstance();
     auto& tm = magda::TrackManager::getInstance();
 
@@ -3778,6 +3779,7 @@ static juce::String applyFourOscPresetToFocusedDevice(magda::MagdaApi& api,
 
     return preamble + magda::applyFourOscPresetToPath(api.plugins(), preset, path);
 }
+}  // namespace
 
 void AIChatConsoleContent::finishPresetGeneration(bool success, const juce::String& errorOrPretty,
                                                   juce::String presetName) {

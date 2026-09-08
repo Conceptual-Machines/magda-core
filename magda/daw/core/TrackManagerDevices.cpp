@@ -652,12 +652,13 @@ void TrackManager::setDeviceInChainBypassed(TrackId trackId, RackId rackId, Chai
  * (`toChainNodePath` builds them from whatever steps arrive). One body means
  * one set of rules for both.
  */
-static ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
+namespace {
+ChainInfo* getChainFromPath(TrackManager& tm, const ChainNodePath& chainPath) {
     return tm.getChainByPath(chainPath);
 }
 
-static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
-                                                                  const ChainNodePath& chainPath) {
+std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& tm,
+                                                           const ChainNodePath& chainPath) {
     if (chainPath.trackId == INVALID_TRACK_ID)
         return nullptr;
 
@@ -673,13 +674,15 @@ static std::vector<ChainElement>* getElementContainerForChainPath(TrackManager& 
     return nullptr;
 }
 
-static ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
+ChainNodePath getParentChainPathForElementPath(const ChainNodePath& elementPath) {
     return elementPath.parentChain();
 }
+}  // namespace
 
 using DevicePathMap = std::map<DeviceId, ChainNodePath>;
 
-static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
+namespace {
+void retargetMovedTarget(ControlTarget& target, const DevicePathMap& movedPaths) {
     const auto deviceId = target.devicePath.getDeviceId();
     if (deviceId == INVALID_DEVICE_ID)
         return;
@@ -689,8 +692,7 @@ static void retargetMovedTarget(ControlTarget& target, const DevicePathMap& move
         target.devicePath = it->second;
 }
 
-static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
-                               const DevicePathMap& movedPaths) {
+void retargetMovedLinks(MacroArray& macros, ModArray& mods, const DevicePathMap& movedPaths) {
     for (auto& macro : macros) {
         for (auto& link : macro.links)
             retargetMovedTarget(link.target, movedPaths);
@@ -710,8 +712,8 @@ static void retargetMovedLinks(MacroArray& macros, ModArray& mods,
 /// holding the path it had on the track it came from -- a device id that
 /// `retargetMovedTarget` never found, so the whole address survived unchanged
 /// (#2204).
-static void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
-                                    DevicePathMap& movedPaths) {
+void collectMovedDevicePaths(const ChainElement& element, const ChainNodePath& elementPath,
+                             DevicePathMap& movedPaths) {
     const std::span<const ChainElement> subtree{&element, 1};
     const auto parentPath =
         magda::isDevice(element) ? elementPath.parentChain() : elementPath.parent();
@@ -728,9 +730,8 @@ static void collectMovedDevicePaths(const ChainElement& element, const ChainNode
 /// modifier on one pointing at its own parameter is the ordinary case. This
 /// descended only through racks, so such a link went on naming the track its
 /// grid came from (#2204).
-static void retargetLinksInElements(std::vector<ChainElement>& elements,
-                                    const ChainNodePath& parentPath,
-                                    const DevicePathMap& movedPaths) {
+void retargetLinksInElements(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+                             const DevicePathMap& movedPaths) {
     // The real parent, not the track: these run over a nested chain's elements
     // as well as a track's own list, and a walk told the wrong parent spells
     // every device in it as top-level. Nothing here reads the address it
@@ -746,20 +747,18 @@ static void retargetLinksInElements(std::vector<ChainElement>& elements,
         });
 }
 
-static void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+void retargetMovedLinksInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     retargetMovedLinks(track.macros, track.mods, movedPaths);
     retargetLinksInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
                             movedPaths);
 }
 
-static bool targetPointsAtMovedDevice(const ControlTarget& target,
-                                      const DevicePathMap& movedPaths) {
+bool targetPointsAtMovedDevice(const ControlTarget& target, const DevicePathMap& movedPaths) {
     const auto deviceId = target.devicePath.getDeviceId();
     return deviceId != INVALID_DEVICE_ID && movedPaths.find(deviceId) != movedPaths.end();
 }
 
-static void removeMovedTargets(MacroArray& macros, ModArray& mods,
-                               const DevicePathMap& movedPaths) {
+void removeMovedTargets(MacroArray& macros, ModArray& mods, const DevicePathMap& movedPaths) {
     for (auto& macro : macros) {
         macro.links.erase(std::remove_if(macro.links.begin(), macro.links.end(),
                                          [&movedPaths](const MacroLink& link) {
@@ -783,9 +782,9 @@ static void removeMovedTargets(MacroArray& macros, ModArray& mods,
 ///
 /// The mirror of the above, and it skipped pads the same way: a pad device
 /// staying put kept a link to something no longer on its track (#2204).
-static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
-                                         const ChainNodePath& parentPath,
-                                         const DevicePathMap& movedPaths) {
+void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
+                                  const ChainNodePath& parentPath,
+                                  const DevicePathMap& movedPaths) {
     chain_walk::forEachNode(
         elements, parentPath, chain_walk::Pads::Enter,
         [&movedPaths](DeviceInfo& device, const ChainNodePath&) {
@@ -797,14 +796,14 @@ static void removeMovedTargetsInElements(std::vector<ChainElement>& elements,
         });
 }
 
-static void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
+void removeMovedTargetsInTrack(TrackInfo& track, const DevicePathMap& movedPaths) {
     removeMovedTargets(track.macros, track.mods, movedPaths);
     removeMovedTargetsInElements(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
                                  movedPaths);
 }
 
-static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
-                                            const ChainElement& element) {
+ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChainPath,
+                                     const ChainElement& element) {
     if (magda::isDevice(element)) {
         const auto deviceId = magda::getDevice(element).id;
         if (destinationChainPath.steps.empty())
@@ -815,8 +814,8 @@ static ChainNodePath getInsertedElementPath(const ChainNodePath& destinationChai
     return destinationChainPath.withRack(magda::getRack(element).id);
 }
 
-static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
-                                     TrackId targetTrackId) {
+void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>& elements,
+                              TrackId targetTrackId) {
     PresetIdRemap remap;
     remap.trackId = targetTrackId;
 
@@ -832,8 +831,8 @@ static void reassignCopiedElementIds(TrackManager& tm, std::vector<ChainElement>
     remapPresetLinksRecursive(elements, remap);
 }
 
-static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
-                                  const ChainNodePath& sourceRackPath) {
+bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
+                           const ChainNodePath& sourceRackPath) {
     if (sourceRackPath.steps.empty() || sourceRackPath.steps.back().type != ChainStepType::Rack ||
         destinationChainPath.steps.size() <= sourceRackPath.steps.size()) {
         return false;
@@ -843,7 +842,7 @@ static bool chainPathContainsRack(const ChainNodePath& destinationChainPath,
                       destinationChainPath.steps.begin());
 }
 
-static bool elementContainsInstrument(const ChainElement& element) {
+bool elementContainsInstrument(const ChainElement& element) {
     if (magda::isDevice(element))
         return magda::getDevice(element).isInstrument;
 
@@ -856,6 +855,7 @@ static bool elementContainsInstrument(const ChainElement& element) {
     }
     return false;
 }
+}  // namespace
 
 /// The chain element @p path addresses, device or rack, or null.
 const ChainElement* findChainElement(TrackManager& tm, const ChainNodePath& path) {

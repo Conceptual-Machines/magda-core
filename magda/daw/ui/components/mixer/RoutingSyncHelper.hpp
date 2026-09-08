@@ -13,15 +13,13 @@
 #include "core/TrackInfo.hpp"
 #include "core/TrackManager.hpp"
 
-namespace magda {
-
 /**
  * @brief Free functions for populating and syncing routing selectors.
  *
  * Shared by TrackHeadersPanel and TrackInspector to avoid duplicating
  * ~200 lines of routing UI logic.
  */
-namespace RoutingSyncHelper {
+namespace magda::RoutingSyncHelper {
 
 inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
                                       TrackId currentTrackId = INVALID_TRACK_ID,
@@ -637,5 +635,4 @@ inline void syncSelectorsFromTrack(
     }
 }
 
-}  // namespace RoutingSyncHelper
-}  // namespace magda
+}  // namespace magda::RoutingSyncHelper

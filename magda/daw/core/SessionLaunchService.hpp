@@ -4,8 +4,6 @@
 
 #include "TypeIds.hpp"
 
-namespace magda {
-
 /// Centralised scene-launch / stop-track / group-scene semantics.
 ///
 /// Both the SessionView (UI scene buttons) and SessionApi (Lua / scripts /
@@ -17,7 +15,7 @@ namespace magda {
 /// All entry points are stateless and read singletons (ClipManager,
 /// TrackManager) directly. Keep them small — this is glue, not a
 /// reimplementation of playback logic.
-namespace SessionLaunchService {
+namespace magda::SessionLaunchService {
 
 /// Apply scene-launch semantics to a specific list of tracks.
 /// For each track: trigger (track, sceneIndex) if a clip exists, else stop
@@ -29,6 +27,4 @@ void launchScene(const std::vector<TrackId>& trackIds, int sceneIndex);
 /// callers usually pass their visible-track subset to launchScene() above.
 void launchSceneAllTracks(int sceneIndex);
 
-}  // namespace SessionLaunchService
-
-}  // namespace magda
+}  // namespace magda::SessionLaunchService

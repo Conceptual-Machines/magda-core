@@ -573,7 +573,8 @@ bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
     return false;
 }
 
-static int countAudioFilesDG(const juce::StringArray& files) {
+namespace {
+int countAudioFilesDG(const juce::StringArray& files) {
     int n = 0;
     for (const auto& f : files) {
         if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
@@ -583,6 +584,7 @@ static int countAudioFilesDG(const juce::StringArray& files) {
     }
     return n;
 }
+}  // namespace
 
 void DrumGridUI::fileDragEnter(const juce::StringArray& files, int x, int y) {
     fileDropCount_ = countAudioFilesDG(files);

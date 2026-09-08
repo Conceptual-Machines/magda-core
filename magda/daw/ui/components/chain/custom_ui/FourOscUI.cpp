@@ -189,8 +189,8 @@ std::vector<LinkableTextSlider*> FourOscUI::getLinkableSliders() {
 // Helper: setup a small label
 // =============================================================================
 
-static void setupLabelStatic(juce::Label& label, const juce::String& text,
-                             juce::Component* parent) {
+namespace {
+void setupLabelStatic(juce::Label& label, const juce::String& text, juce::Component* parent) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
     label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
@@ -206,7 +206,7 @@ static void setupLabelStatic(juce::Label& label, const juce::String& text,
 // Helper: populate waveform icon selector (shared by OscTab + LFOTab)
 // =============================================================================
 
-static void populateWaveSelector(IconSelector& selector) {
+void populateWaveSelector(IconSelector& selector) {
     // Matches Oscillator::Waves enum: none=0, sine=1, square=2, saw=3, triangle=4, noise=5
     selector.addTextOption("Off", "Off");
     selector.addOption(BinaryData::fadmodsine_svg, BinaryData::fadmodsine_svgSize, "Sine");
@@ -215,6 +215,7 @@ static void populateWaveSelector(IconSelector& selector) {
     selector.addOption(BinaryData::fadmodtri_svg, BinaryData::fadmodtri_svgSize, "Triangle");
     selector.addOption(BinaryData::fadmodrandom_svg, BinaryData::fadmodrandom_svgSize, "Noise");
 }
+}  // namespace
 
 // =============================================================================
 // OscTab

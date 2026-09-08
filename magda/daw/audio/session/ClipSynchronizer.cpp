@@ -247,8 +247,8 @@ void ClipSynchronizer::reallocateAndNotify() {
     }
 }
 
-static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip,
-                                                    const ClipInfo& clip) {
+namespace {
+void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip, const ClipInfo& clip) {
     auto waveInfo = audioClip.getWaveInfo();
     auto& li = audioClip.getLoopInfo();
 
@@ -265,7 +265,7 @@ static void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip
 
 /// Seed the interpretation from Tracktion's loopInfo, filling gaps only. The
 /// file duration is a Source fact, so it lands on the pooled source.
-static void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, double bpm) {
+void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, double bpm) {
     auto* event = clip.primaryEvent();
     if (event == nullptr)
         return;
@@ -286,7 +286,7 @@ static void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, doub
 /// A session clip imported before its source beat domain was known carries a
 /// zero-length loop region, meaning "the whole source". Give it a real one now
 /// that the interpretation has arrived.
-static void initialiseSourceLoopRegionFromMetadata(ClipInfo& clip) {
+void initialiseSourceLoopRegionFromMetadata(ClipInfo& clip) {
     auto* event = clip.primaryEvent();
     if (event == nullptr || !event->autoTempo || event->loopLengthSamples > 0)
         return;
@@ -297,6 +297,7 @@ static void initialiseSourceLoopRegionFromMetadata(ClipInfo& clip) {
     event->setLoopStartBeats(startBeats);
     event->setLoopLengthBeats(juce::jmax(0.0, event->interpTotalBeats - startBeats));
 }
+}  // namespace
 
 ClipSynchronizer::ClipSynchronizer(te::Edit& edit, TrackController& trackController,
                                    WarpMarkerManager& warpMarkerManager)
@@ -1411,10 +1412,11 @@ void ClipSynchronizer::removeWarpMarker(ClipId clipId, int index) {
  * @param visibleEnd      End of visible range in beats
  * @param contentLengthBeats  Maximum beat position
  */
+namespace {
 template <typename EventType>
-static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventType>& events,
-                                int controllerType, double effectiveOffset, double visibleStart,
-                                double visibleEnd, double contentLengthBeats) {
+void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventType>& events,
+                         int controllerType, double effectiveOffset, double visibleStart,
+                         double visibleEnd, double contentLengthBeats) {
     if (events.empty())
         return;
 
@@ -1545,8 +1547,8 @@ static void interpolateCCEvents(te::MidiList& sequence, const std::vector<EventT
 // clipShift accounts for the note having been clipped at the visible-range
 // left edge: expression beats are relative to the original note start, the
 // TE note starts at the clipped position.
-static void addPitchExpressionToTeNote(te::MidiNote& teNote, const MidiNote& note, double clipShift,
-                                       double visibleLengthBeats) {
+void addPitchExpressionToTeNote(te::MidiNote& teNote, const MidiNote& note, double clipShift,
+                                double visibleLengthBeats) {
     constexpr double kStepSize = 1.0 / 16.0;
     constexpr float kMaxSemitones = 48.0f;  // TE's fixed MPE pitchbend conversion range
 
@@ -1586,6 +1588,7 @@ static void addPitchExpressionToTeNote(te::MidiNote& teNote, const MidiNote& not
         addExpressionEvent(pointBeat, v2);
     }
 }
+}  // namespace
 
 // =============================================================================
 // Private Sync Helpers

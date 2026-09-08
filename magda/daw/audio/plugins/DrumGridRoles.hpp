@@ -4,13 +4,11 @@
 
 #include <array>
 
-namespace magda::daw::audio {
-
 // Closed vocabulary of drum-row roles used by the drummer agent (#859) and the
 // Drum Grid templates. Role IDs are the canonical strings written to the
 // ValueTree and emitted by the agent as drum tokens. Display labels are for
 // menu UI; short tags are the small badge rendered next to the row label.
-namespace drum_grid_roles {
+namespace magda::daw::audio::drum_grid_roles {
 
 struct RoleInfo {
     const char* id;            // canonical ID, persisted + agent token
@@ -82,5 +80,4 @@ inline juce::String roleIdForToken(const juce::String& token) {
     return {};
 }
 
-}  // namespace drum_grid_roles
-}  // namespace magda::daw::audio
+}  // namespace magda::daw::audio::drum_grid_roles

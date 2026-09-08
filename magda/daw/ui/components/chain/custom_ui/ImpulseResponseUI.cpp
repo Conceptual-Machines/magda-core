@@ -9,14 +9,15 @@
 
 namespace magda::daw::ui {
 
-static void setupLabelStatic(juce::Label& label, const juce::String& text,
-                             juce::Component* parent) {
+namespace {
+void setupLabelStatic(juce::Label& label, const juce::String& text, juce::Component* parent) {
     label.setText(text, juce::dontSendNotification);
     label.setFont(FontManager::getInstance().getUIFont(9.0f));
     label.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     label.setJustificationType(juce::Justification::centred);
     parent->addAndMakeVisible(label);
 }
+}  // namespace
 
 ImpulseResponseUI::ImpulseResponseUI() {
     // IR name label

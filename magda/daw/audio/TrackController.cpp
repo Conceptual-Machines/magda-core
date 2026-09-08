@@ -182,7 +182,8 @@ te::AudioTrack* TrackController::ensureTrackMapping(TrackId trackId, const juce:
 // Find the track's fader VolumeAndPanPlugin (not a Utility instance).
 // The fader is the VolumeAndPanPlugin whose only successors are LevelMeterPlugins.
 // This distinguishes it from Utility plugins which are also VolumeAndPanPlugins.
-static te::VolumeAndPanPlugin* getFaderPlugin(te::AudioTrack* track) {
+namespace {
+te::VolumeAndPanPlugin* getFaderPlugin(te::AudioTrack* track) {
     if (!track)
         return nullptr;
     auto& plugins = track->pluginList;
@@ -201,6 +202,7 @@ static te::VolumeAndPanPlugin* getFaderPlugin(te::AudioTrack* track) {
     // Fallback to TE's default
     return track->getVolumePlugin();
 }
+}  // namespace
 
 void TrackController::setTrackVolume(TrackId trackId, float volume) {
     auto* track = getAudioTrack(trackId);

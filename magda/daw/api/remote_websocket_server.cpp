@@ -39,8 +39,7 @@
 #include "remote_service.hpp"
 #include "remote_subscriptions.hpp"
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 namespace {
 
@@ -1056,5 +1055,4 @@ int RemoteWebSocketServer::connectionCount() const {
     return impl_->connectionCount();
 }
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

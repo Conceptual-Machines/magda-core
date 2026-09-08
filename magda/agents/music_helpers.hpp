@@ -8,12 +8,10 @@
 #include <string>
 #include <vector>
 
-namespace magda {
-
 /**
  * @brief Shared music helpers used by both the DSL interpreter and compact executor.
  */
-namespace music {
+namespace magda::music {
 
 /** Parse note name (e.g. "C4", "C#4", "Bb3") or MIDI number to MIDI note number. Returns -1 on
  * error. */
@@ -160,5 +158,4 @@ inline bool resolveChordNotes(const std::string& root, const std::string& qualit
     return true;
 }
 
-}  // namespace music
-}  // namespace magda
+}  // namespace magda::music

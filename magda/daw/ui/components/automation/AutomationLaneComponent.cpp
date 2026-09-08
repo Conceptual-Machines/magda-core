@@ -659,10 +659,12 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
 }
 
 // Convert real value to normalized position using ParameterInfo
-static double realToNormalizedForTarget(double realValue, const ParameterInfo& info) {
+namespace {
+double realToNormalizedForTarget(double realValue, const ParameterInfo& info) {
     return static_cast<double>(
         ParameterUtils::realToNormalized(static_cast<float>(realValue), info));
 }
+}  // namespace
 
 void AutomationLaneComponent::paintScaleLabels(juce::Graphics& g, juce::Rectangle<int> area) {
     if (area.getHeight() <= 0 || area.getWidth() < 25)

@@ -115,7 +115,7 @@ class ManagedDrawable {
  * @endcode
  */
 template <typename ComponentType> class ManagedChild {
-    static_assert(std::is_base_of<juce::Component, ComponentType>::value,
+    static_assert(std::is_base_of_v<juce::Component, ComponentType>,
                   "ManagedChild only works with JUCE Components");
 
   public:
@@ -208,7 +208,7 @@ template <typename T> class ScopedComponentGuard {
 
     ~ScopedComponentGuard() {
         if (!released_ && component_) {
-            if constexpr (std::is_base_of<juce::Component, T>::value) {
+            if constexpr (std::is_base_of_v<juce::Component, T>) {
                 auto* parent = component_->getParentComponent();
                 if (parent) {
                     parent->removeChildComponent(component_);

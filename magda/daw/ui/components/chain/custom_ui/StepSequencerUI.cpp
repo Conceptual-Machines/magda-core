@@ -9,7 +9,9 @@ using SeqPlugin = daw::audio::StepSequencerPlugin;
 
 std::atomic<int> StepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
 
-static const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+namespace {
+const char* NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+}  // namespace
 
 juce::String StepSequencerUI::noteNameShort(int noteNumber) {
     if (noteNumber < 0 || noteNumber > 127)

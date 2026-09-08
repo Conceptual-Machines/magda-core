@@ -18,18 +18,19 @@ BindingRegistry& BindingRegistry::getInstance() {
 // Internal helpers
 // ============================================================================
 
-static std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& global,
-                                      std::vector<Binding>& project) {
+namespace {
+std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& global,
+                               std::vector<Binding>& project) {
     return scope == BindingScope::Global ? global : project;
 }
 
 // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter) - the only caller
 // passes long-lived members, never a temporary
-static const std::vector<Binding>& scopeVecConst(BindingScope scope,
-                                                 const std::vector<Binding>& global,
-                                                 const std::vector<Binding>& project) {
+const std::vector<Binding>& scopeVecConst(BindingScope scope, const std::vector<Binding>& global,
+                                          const std::vector<Binding>& project) {
     return scope == BindingScope::Global ? global : project;
 }
+}  // namespace
 
 // ============================================================================
 // CRUD

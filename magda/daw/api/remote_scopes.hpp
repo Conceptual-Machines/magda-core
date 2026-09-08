@@ -8,8 +8,7 @@
 #include <optional>
 #include <vector>
 
-namespace magda {
-namespace remote {
+namespace magda::remote {
 
 /**
  * @brief What a remote client is allowed to reach (#1860).
@@ -195,5 +194,4 @@ inline constexpr const char* ANONYMOUS_CLIENT = "unknown";
 /// client chose.
 inline constexpr int MAX_CLIENT_NAME_LENGTH = 64;
 
-}  // namespace remote
-}  // namespace magda
+}  // namespace magda::remote

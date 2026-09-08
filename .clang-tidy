@@ -29,7 +29,6 @@ Checks: >-
   misc-use-anonymous-namespace,
   modernize-use-emplace,
   modernize-use-default-member-init,
-  modernize-loop-convert,
   modernize-pass-by-value,
   modernize-concat-nested-namespaces,
   modernize-type-traits,
@@ -87,6 +86,15 @@ Checks: >-
 #     iteration-order (2)        address; the other is listener registration order.
 #   macro-parentheses (2)        the argument is streamed, so parenthesising it
 #                                would evaluate the << chain before the string.
+#
+# modernize-loop-convert is off. It found 19 sites across 2 files and both files
+# were hand-written that way on purpose. TrackManager's 13 notify methods index
+# because addListener() push_backs unguarded: the index loop re-reads size() and
+# re-indexes, so a listener registering another mid-notification is fine, while a
+# range-for caches end() and walks a freed buffer when that push_back reallocates.
+# removeListener already nullifies rather than erases during notification "to keep
+# iterators valid", so the invariant was deliberate. ClipMidiSource is audio-thread
+# code carrying a comment that opens "By index rather than by iterator".
 #
 # cppcoreguidelines-prefer-member-initializer is off. It hoists an assignment into
 # the init list without seeing what the body did first, and this codebase's

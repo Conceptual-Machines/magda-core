@@ -5,15 +5,13 @@
 #include <cstdio>
 #include <string>
 
-namespace magda {
-
 /**
  * @brief Utility functions for timeline time/pixel conversions
  *
  * These are pure functions that can be used by any component.
  * Each component provides its own zoom and padding values.
  */
-namespace TimelineUtils {
+namespace magda::TimelineUtils {
 
 /**
  * Convert a time value to pixel position
@@ -268,6 +266,4 @@ inline std::string formatBeatsAsBarsBeats(double totalBeats, int beatsPerBar) {
     return {buffer};
 }
 
-}  // namespace TimelineUtils
-
-}  // namespace magda
+}  // namespace magda::TimelineUtils

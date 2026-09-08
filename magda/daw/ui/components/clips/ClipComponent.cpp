@@ -321,9 +321,7 @@ void logArrangeRangeSelect(const juce::String& message) {
     }
 }
 
-}  // namespace
-
-static float computeFadeGain(float alpha, FadeCurve curve) {
+float computeFadeGain(float alpha, FadeCurve curve) {
     const float a = alpha * juce::MathConstants<float>::halfPi;
     switch (curve) {
         case FadeCurve::Convex:
@@ -340,6 +338,7 @@ static float computeFadeGain(float alpha, FadeCurve curve) {
             return alpha;
     }
 }
+}  // namespace
 
 ClipComponent::ClipComponent(ClipId clipId, TrackContentPanel* parent)
     : clipId_(clipId), parentPanel_(parent) {

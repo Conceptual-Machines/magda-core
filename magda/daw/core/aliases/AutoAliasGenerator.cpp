@@ -9,9 +9,11 @@ namespace magda {
 // pluginNameToAlias -- maps a plugin display name to a canonical alias key
 // ============================================================================
 
-static juce::String pluginNameToAlias(const juce::String& pluginName) {
+namespace {
+juce::String pluginNameToAlias(const juce::String& pluginName) {
     return normalizeParamName(pluginName);
 }
+}  // namespace
 
 // ============================================================================
 // computeForDevice
