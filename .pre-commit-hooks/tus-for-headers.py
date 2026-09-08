@@ -19,6 +19,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path.cwd()
+SHIPPING = Path("magda")
+ENGINE = SHIPPING / "engine"
 
 
 def leaf(path: str) -> str:
@@ -139,8 +141,7 @@ def select(per_header: dict[str, list[Path]], max_tus: int) -> tuple[list[Path],
 
 def in_scope(source: Path) -> bool:
     """Shipping code, matching .clang-tidy's own scope."""
-    return (source.is_relative_to("magda")
-            and not source.is_relative_to("magda/engine"))
+    return source.is_relative_to(SHIPPING) and not source.is_relative_to(ENGINE)
 
 
 def build_parser() -> argparse.ArgumentParser:
