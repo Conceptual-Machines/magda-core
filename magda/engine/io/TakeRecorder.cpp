@@ -96,6 +96,7 @@ void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
 
     passOrigin_ = 0;
     passOriginBeat_ = startBeat_;
+    pendingBoundary_ = -1;
     tap_.open(startBeat_);
 
     // A negative latency asks for samples from before the take was armed.
@@ -128,13 +129,18 @@ void TakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
         return;
     }
 
-    // The pass the tap draws is the pass the file will be, so it opens on the
-    // boundary that was taken. It is counted from what has been written rather
-    // than from the boundary itself, so a peak and the length beside it are the
-    // same stretch of audio.
-    passOrigin_ = written_;
-    passOriginBeat_ = endBeat_;
-    tap_.open(block.beats.start);
+    // The pass the tap draws is the pass the file will be, so it turns over
+    // where the sink does: at the boundary, not at the wrap that named it.
+    pendingBoundary_ = boundary;
+    pendingStartBeat_ = block.beats.start;
+}
+
+void TakeRecorder::openTapPass(const BlockInfo& block) {
+    passOrigin_ = pendingBoundary_;
+    passOriginBeat_ =
+        block.beatAtTime(startSeconds_ + (static_cast<double>(pendingBoundary_) / block.rate()));
+    pendingBoundary_ = -1;
+    tap_.open(pendingStartBeat_);
 }
 
 void TakeRecorder::stop() {
@@ -170,8 +176,21 @@ void TakeRecorder::write(const BlockInfo& block) {
     stream_.writeAudio(keptBlock, kept);
 
     // The pass's own audio, at the position it was written at, so a peak and
-    // the samples behind it are the same stretch.
-    tap_.addPeaks(keptBlock, kept, written_ - passOrigin_);
+    // the samples behind it are the same stretch. A block the pass boundary
+    // falls inside is split there, the way the sink splits it.
+    auto from = 0;
+    if (pendingBoundary_ >= 0 && block.rate() > 0.0 && written_ + kept > pendingBoundary_) {
+        from = static_cast<int>(pendingBoundary_ - written_);
+        if (from > 0)
+            tap_.addPeaks(keptBlock.getSubBlock(0, static_cast<std::size_t>(from)), from,
+                          written_ - passOrigin_);
+
+        openTapPass(block);
+    }
+
+    tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(from),
+                                        static_cast<std::size_t>(kept - from)),
+                  kept - from, (written_ + from) - passOrigin_);
 
     written_ += kept;
     captured_.store(written_, std::memory_order_relaxed);

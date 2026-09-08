@@ -187,13 +187,15 @@ juce::File emptyDirectory(const juce::String& name) {
 /** @brief A transport, a synthetic audio input and one take. */
 class AudioRig {
   public:
-    AudioRig(const juce::File& directory, RecordTapSettings tap, int blockSize = 64)
+    AudioRig(const juce::File& directory, RecordTapSettings tap, int blockSize = 64,
+             int latencySamples = 0)
         : input_(2, blockSize), blockSize_(blockSize) {
         transport_.tempo = flat();
         feed_.prepare(2, blockSize_);
 
         TakeRecorderSettings settings;
         settings.channels = {0, 1};
+        settings.latencySamples = latencySamples;
         settings.directory = directory;
         settings.file.format = AudioFileFormat::wav;
         settings.file.bitDepth = 32;
@@ -348,15 +350,22 @@ TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]
     RecordTap tap(RecordMaterial::midi, drawn());
     std::atomic<bool> writing{true};
 
-    // Each pass is named twice over: by where it starts and by the note it
-    // holds. A reading that paired one pass's start with another's notes would
-    // disagree with itself.
+    // Every pass is named three times over: by where it starts, by the pitch it
+    // holds and by the beat every one of its notes sits on. A reading that
+    // paired one pass's identity with another's coordinates would disagree with
+    // itself on at least one of them.
+    constexpr double kPassSpan = 1000.0;
+
     std::thread writer([&] {
         for (auto pass = 0; pass < 2000; ++pass) {
-            tap.open(static_cast<double>(pass) * 4.0);
+            const auto origin = static_cast<double>(pass) * kPassSpan;
+            tap.open(origin);
+
             for (auto note = 0; note < 8; ++note) {
-                tap.noteOn(1, 60 + (pass % 12), 100, static_cast<double>(note) * 0.5);
-                tap.extend(static_cast<double>(note + 1) * 0.5);
+                const auto at = origin + static_cast<double>(note);
+                tap.noteOn(1, 60 + (pass % 12), 100, at);
+                tap.extend(at + 0.75);
+                tap.noteOff(1, 60 + (pass % 12), at + 0.25);
             }
         }
         writing.store(false);
@@ -369,10 +378,48 @@ TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]
             continue;
 
         const auto pass = static_cast<int>(reading.pass) - 1;
-        REQUIRE(reading.startBeat == beats(static_cast<double>(pass) * 4.0));
+        const auto origin = static_cast<double>(pass) * kPassSpan;
+        REQUIRE(reading.startBeat == beats(origin));
 
-        for (const auto& note : reading.notes)
+        for (const auto& note : reading.notes) {
             REQUIRE(note.noteNumber == 60 + (pass % 12));
+            REQUIRE(note.startBeat >= origin);
+            REQUIRE(note.startBeat < origin + 8.0);
+
+            // Held until the block that closed it, and never longer.
+            REQUIRE(note.lengthBeats <= beats(0.75));
+        }
+
+        ++readings;
+    }
+
+    writer.join();
+    CHECK(readings > 0);
+}
+
+TEST_CASE("A note is read as one note, not two halves of a slot", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    tap.open(0.0);
+
+    // The tightest race the tap has: a pitch struck again rewrites the slot it
+    // is already in, so a reader can take the identity of one strike and the
+    // position of the next. The velocity says which strike a note is and its
+    // beat says the same thing, so the two disagreeing is the tear.
+    std::atomic<bool> writing{true};
+
+    std::thread writer([&] {
+        for (auto strike = 0; strike < 4000000; ++strike) {
+            const auto velocity = 1 + (strike % 126);
+            tap.noteOn(1, 60, velocity, static_cast<double>(velocity));
+        }
+        writing.store(false);
+    });
+
+    auto readings = 0;
+    while (writing.load()) {
+        const auto reading = tap.read();
+        for (const auto& note : reading.notes)
+            REQUIRE(note.startBeat == beats(static_cast<double>(note.velocity)));
 
         ++readings;
     }
@@ -560,4 +607,59 @@ TEST_CASE("A wrap starts the audio pass's peaks again", "[engine][io][record][24
     // The second pass's first peak is the material that arrived after the wrap,
     // not the first pass's.
     CHECK(reading.peaks[0].left == Catch::Approx(material(kBeatSamples + 499, 0)));
+}
+
+TEST_CASE("A pitch struck twice replaces the note that was already down",
+          "[engine][io][record][midi][2463]") {
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings);
+    rig.schedule({noteOn(kBeatSamples, 60, 90), noteOn(2 * kBeatSamples, 60, 110),
+                  noteOff(3 * kBeatSamples, 60)});
+    rig.play();
+    rig.run(5 * kBeatSamples);
+
+    const auto preview = rig.reading();
+    const auto take = rig.finish();
+
+    // PassWalk drops the first strike, so the preview holds one note too, and
+    // the pass growing past it does not stretch it.
+    REQUIRE(take.active.notes.size() == 1);
+    REQUIRE(preview.notes.size() == 1);
+    CHECK(preview.notes[0].velocity == 110);
+    CHECK(preview.notes[0].startBeat == beats(take.active.notes[0].startBeat));
+    CHECK(preview.notes[0].lengthBeats == beats(take.active.notes[0].lengthBeats));
+    CHECK(preview.notes[0].lengthBeats == beats(1.0));
+}
+
+TEST_CASE("An audio pass turns over where the file does, not where the wrap is",
+          "[engine][io][record][2463]") {
+    // The boundary the sink took is an arrival, and with a positive latency the
+    // written audio is that far behind it: the samples in between are still the
+    // last pass's file.
+    constexpr int kLatency = 128;
+    constexpr int kPerPeak = 500;
+
+    AudioRig rig(emptyDirectory("latency_wrap"), drawn(0, 64, kPerPeak), 64, kLatency);
+    rig.loop(0.0, 1.0);
+    rig.play();
+
+    SECTION("the pass stands until the audio reaches the boundary") {
+        rig.run(kBeatSamples + 64);
+        CHECK(rig.reading().pass == 1);
+    }
+
+    SECTION("and its first peak is the audio the new file opens with") {
+        rig.run(kBeatSamples + kLatency + 1000);
+
+        const auto reading = rig.reading();
+        CHECK(reading.pass == 2);
+        REQUIRE(reading.peaks.size() == 2);
+
+        // Written sample 4000 is the arrival a latency later, and the peak
+        // covering it runs to the end of its tick.
+        constexpr auto kFirstArrival = kBeatSamples + kLatency;
+        CHECK(reading.peaks[0].left == Catch::Approx(material(kFirstArrival + kPerPeak - 1, 0)));
+    }
 }

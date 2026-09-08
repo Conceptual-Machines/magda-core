@@ -90,9 +90,11 @@ struct RecordTapSettings {
  *
  * The notes are not in it: an array is as long as the pass is, and a reader
  * copying one inside a window would be racing the writer over a growing amount
- * of work. Each note carries the pass that recorded it instead, and a reader
- * takes the ones belonging to the pass it is reporting. A wrap during a read
- * therefore costs notes off the end of the list, never a note in the wrong
+ * of work. Each slot is published by its own identity instead -- cleared before
+ * it is filled and written last -- and the identity carries the pass that
+ * recorded it. A reader takes the slots whose identity names the pass it is
+ * reporting and is unchanged either side of reading the position, so a wrap
+ * during a read costs notes off the end of the list, never a note in the wrong
  * place.
  *
  * The peaks carry neither, and are the one thing here that can be ragged: a
@@ -206,8 +208,9 @@ class RecordTap {
     /// pass's length is cheaper than spinning until it is rescheduled.
     static constexpr int kReadAttempts = 64;
 
-    /// A note's identity and which pass recorded it, written once and never
-    /// revised.
+    /// A note's identity and which pass recorded it. Zero while the slot is
+    /// being filled, which is what makes an overwrite visible to a reader
+    /// partway through one.
     struct NoteSlot {
         std::atomic<std::uint64_t> identity{0};
         std::atomic<double> startBeat{0.0};
@@ -234,6 +237,9 @@ class RecordTap {
         return ((static_cast<std::size_t>(channel) % kChannels) * kNotesPerChannel) +
                (static_cast<std::size_t>(note) & (kNotesPerChannel - 1));
     }
+
+    /// One note into @p at, published by the identity written last.
+    void writeSlot(std::uint32_t at, int note, int velocity, double beat);
 
     /// One tick's peak, folded into what the pass already put there. Assigned
     /// on the tick's first touch instead, which is what leaves the last pass's

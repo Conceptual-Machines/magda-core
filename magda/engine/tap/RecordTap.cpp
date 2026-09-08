@@ -34,11 +34,35 @@ void RecordTap::extend(double lengthBeats) {
     }
 }
 
+void RecordTap::writeSlot(std::uint32_t at, int note, int velocity, double beat) {
+    auto& slot = notes_[at];
+
+    // Nothing, then the position, then who is there: a reader that took the
+    // identity first would otherwise pair it with a position written after it,
+    // which is the last pass's pitch on this pass's beat.
+    slot.identity.store(0, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+
+    slot.startBeat.store(beat, std::memory_order_relaxed);
+    slot.lengthBeats.store(0.0, std::memory_order_relaxed);
+    slot.identity.store(packIdentity(pass_, note, velocity), std::memory_order_release);
+}
+
 void RecordTap::noteOn(int channel, int note, int velocity, double beat) {
     // A tap nobody draws holds no notes and has lost none: what was never asked
     // for is not a shortfall.
     if (notes_.empty())
         return;
+
+    const auto index = heldIndex(channel, note);
+
+    // A second note on for a pitch already down replaces the first, which is
+    // what PassWalk::add does when it finishes the take. Appending instead
+    // would leave a note nothing can close, growing to the end of the pass.
+    if (const auto held = held_[index]; held != kNotHeld) {
+        writeSlot(held, note, velocity, beat);
+        return;
+    }
 
     const auto at = numNotes_.load(std::memory_order_relaxed);
     if (at >= notes_.size()) {
@@ -46,15 +70,12 @@ void RecordTap::noteOn(int channel, int note, int velocity, double beat) {
         return;
     }
 
-    auto& slot = notes_[at];
-    slot.startBeat.store(beat, std::memory_order_relaxed);
-    slot.lengthBeats.store(0.0, std::memory_order_relaxed);
-    slot.identity.store(packIdentity(pass_, note, velocity), std::memory_order_relaxed);
+    writeSlot(static_cast<std::uint32_t>(at), note, velocity, beat);
 
     // The count is what publishes the slot, so it is stored last.
     numNotes_.store(at + 1, std::memory_order_release);
 
-    held_[heldIndex(channel, note)] = static_cast<std::uint32_t>(at);
+    held_[index] = static_cast<std::uint32_t>(at);
     heldSlots_.push_back(static_cast<std::uint32_t>(at));
 }
 
@@ -158,14 +179,24 @@ void RecordTap::read(Reading& into) const {
     // slots holding the next pass's, which are not this reading's to draw.
     into.notes.clear();
     for (std::size_t at = 0; at < numNotes; ++at) {
-        const auto identity = notes_[at].identity.load(std::memory_order_relaxed);
+        const auto& slot = notes_[at];
+
+        const auto identity = slot.identity.load(std::memory_order_acquire);
         if (static_cast<std::uint32_t>(identity >> 32U) != into.pass)
             break;
 
+        const auto startBeat = slot.startBeat.load(std::memory_order_relaxed);
+        const auto lengthBeats = slot.lengthBeats.load(std::memory_order_relaxed);
+
+        // The slot could have been taken over between the identity and the two
+        // loads above. A length that grew under the read is the same note being
+        // held; a slot that changed hands is not this note at all.
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (slot.identity.load(std::memory_order_relaxed) != identity)
+            break;
+
         into.notes.push_back({static_cast<int>(identity & 0x7fU),
-                              static_cast<int>((identity >> 8U) & 0x7fU),
-                              notes_[at].startBeat.load(std::memory_order_relaxed),
-                              notes_[at].lengthBeats.load(std::memory_order_relaxed)});
+                              static_cast<int>((identity >> 8U) & 0x7fU), startBeat, lengthBeats});
     }
 
     const auto numPeaks = static_cast<std::size_t>(std::min<std::int64_t>(needed, peaks_.size()));

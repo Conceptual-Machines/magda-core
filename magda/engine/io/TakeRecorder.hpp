@@ -237,12 +237,20 @@ class TakeRecorder final : public TakeCapture {
     double startSeconds_ = 0.0;
     double endBeat_ = 0.0;
 
-    /// Where the pass in flight began, in samples written and in the beat they
-    /// reach. The tap counts a pass from what was written rather than from the
-    /// boundary the sink was given, so its peaks and its length are the same
-    /// stretch of audio.
+    /// Where the pass the tap draws began, in samples written and in the beat
+    /// they reach.
     std::int64_t passOrigin_ = 0;
     double passOriginBeat_ = 0.0;
+
+    /// The boundary a wrap named and the beat it named it at, until the written
+    /// audio reaches it. The sink splits there, so a preview that turned over
+    /// at the wrap instead would draw the tail of the previous file -- with a
+    /// positive latency, a whole latency of it.
+    std::int64_t pendingBoundary_ = -1;
+    double pendingStartBeat_ = 0.0;
+
+    /// The pass the boundary named, once the audio has reached it.
+    void openTapPass(const BlockInfo& block);
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.
