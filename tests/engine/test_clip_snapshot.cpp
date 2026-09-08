@@ -557,28 +557,69 @@ TEST_CASE("Tracks are found by id, not by position", "[engine][clip]") {
 TEST_CASE("The feed hands the audio thread what was last published", "[engine][clip]") {
     magda::engine::ClipSnapshotFeed feed;
 
+    // Outside a block nothing is pinned, which is what a source reached between
+    // callbacks reads.
+    CHECK(feed.live() == nullptr);
+
     {
-        magda::engine::ClipSnapshotFeed::Reader reader(feed);
-        // Nothing published: a track with nothing to play, not an error.
-        CHECK_FALSE(static_cast<bool>(reader));
-        CHECK(reader.get() == nullptr);
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        // Nothing published: a track with nothing to play, not an error, and
+        // no track to have a state.
+        CHECK(feed.live() == nullptr);
+        CHECK(feed.sections() == nullptr);
+        CHECK(feed.holdFor(kTrack) == nullptr);
     }
 
     feed.publish(std::make_shared<const ClipSnapshot>(
         compile({makeAudioClip(1, 0.0, 4.0)}, makeTempoMap())));
     {
-        magda::engine::ClipSnapshotFeed::Reader reader(feed);
-        REQUIRE(static_cast<bool>(reader));
-        REQUIRE(reader->find(kTrack) != nullptr);
-        CHECK(reader->find(kTrack)->audio.front().clipId == 1);
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        REQUIRE(feed.live() != nullptr);
+        REQUIRE(feed.live()->find(kTrack) != nullptr);
+        CHECK(feed.live()->find(kTrack)->audio.front().clipId == 1);
     }
+
+    CHECK(feed.live() == nullptr);
 
     feed.publish(std::make_shared<const ClipSnapshot>(
         compile({makeAudioClip(2, 0.0, 4.0)}, makeTempoMap())));
     {
-        magda::engine::ClipSnapshotFeed::Reader reader(feed);
-        REQUIRE(static_cast<bool>(reader));
-        CHECK(reader->find(kTrack)->audio.front().clipId == 2);
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        REQUIRE(feed.live() != nullptr);
+        CHECK(feed.live()->find(kTrack)->audio.front().clipId == 2);
+    }
+}
+
+TEST_CASE("A track keeps its playback state across a republish", "[engine][clip][session]") {
+    magda::engine::ClipSnapshotFeed feed;
+
+    feed.publish(std::make_shared<const ClipSnapshot>(
+        compile({makeAudioClip(1, 0.0, 4.0)}, makeTempoMap())));
+
+    const magda::engine::TrackSectionState* first = nullptr;
+    {
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        REQUIRE(feed.sections() != nullptr);
+        first = feed.sections()->find(kTrack);
+        REQUIRE(first != nullptr);
+        CHECK(feed.holdFor(kTrack) == &first->hold);
+        CHECK(feed.holdFor(kTrack + 1) == nullptr);
+    }
+
+    // An edit to what the track plays is not a reason to forget what mode the
+    // block before ran under (#2490).
+    feed.publish(std::make_shared<const ClipSnapshot>(
+        compile({makeAudioClip(2, 0.0, 4.0)}, makeTempoMap())));
+    {
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        CHECK(feed.sections()->find(kTrack) == first);
+    }
+
+    // A track the snapshot stops naming loses its state with it.
+    feed.publish(std::make_shared<const ClipSnapshot>(ClipSnapshot{}));
+    {
+        const magda::engine::ClipSnapshotFeed::BlockScope block(feed);
+        CHECK(feed.sections()->find(kTrack) == nullptr);
     }
 }
 

@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "ClipCallback.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipStretcher.hpp"
 #include "clip/EventPlacement.hpp"
@@ -339,7 +340,7 @@ struct Rig {
 
     void render(const BlockInfo& block) {
         fill();
-        source.render(block, juce::dsp::AudioBlock<float>(output));
+        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(output));
     }
 
     void fill() {

@@ -528,8 +528,9 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     }
     owed_.clear();
 
-    const ClipSnapshotFeed::Reader snapshot(clips_);
-    const auto* live = snapshot.get();
+    // What the callback pinned for this block (#2490), which is what this
+    // track's audio plays over the same one.
+    const auto* live = clips_.live();
 
     if (live == nullptr) {
         endAll(out, EventSample{0});
@@ -597,25 +598,19 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     }
 
     // The arrangement's share, which is all of it on a track the session never
-    // took, and none of it in Session mode (#2302, #2485). The same fold the
-    // audio source reads.
+    // took, and none of it in Session mode (#2302, #2485). The same answer the
+    // track's audio applies.
     auto lane = block;
     auto until = block.numSamples;
     auto lost = false;
 
-    // Every Arrangement source has a mode to check now (#2485), handles or not.
-    const auto session = track->playbackMode == TrackPlaybackMode::Session;
-    const SectionMode mode{session, sessionModeBefore_};
-    sessionModeBefore_ = session;
-
     {
-        SectionHold hold;
-        if (handles_ != nullptr) {
-            const LaunchHandleFeed::Reader handles(*handles_);
-            hold = sectionHold(handles.get(), trackId_, block.numSamples, mode);
-        } else {
-            hold = sectionHold(nullptr, trackId_, block.numSamples, mode);
-        }
+        // The block's own answer, worked out before anything rendered
+        // (SessionPlayback.hpp), so the mode gating this is the one gating the
+        // track's audio.
+        const auto* resolved = clips_.holdFor(trackId_);
+        const auto hold =
+            resolved != nullptr ? *resolved : SectionHold::arrangement(block.numSamples);
 
         until = std::clamp(hold.until.value, 0, block.numSamples);
         lost = hold.lost;

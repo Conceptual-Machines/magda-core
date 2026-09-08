@@ -93,10 +93,10 @@ class ClipAudioSource final : public EngineAudioSource {
      * @brief The @p section's source for @p trackId, reading @p handles.
      *
      * Both sources of a track take the feed, and @p section says which of
-     * them this is (#2302). A session source is positioned by the handles
-     * instead of the timeline; an arrangement source is positioned by the
-     * timeline as ever, reading the handles only to know when the session
-     * has taken the track off it, and where in the block that happened.
+     * them this is (#2302). Only a session source reads it, to be positioned
+     * by the handles rather than by the timeline: what an arrangement source
+     * owes the session reaches it as the block's resolved hold instead
+     * (#2490, SessionPlayback.hpp).
      *
      * @p handles outlives it.
      */
@@ -190,23 +190,19 @@ class ClipAudioSource final : public EngineAudioSource {
     ClipStreamFeed& streams_;
 
     /// Sum this track's material for @p block, on whichever section this is.
-    /// @p snapshot and @p track are render()'s one acquisition, shared with
-    /// applySectionHold so both stages read the same publish.
+    /// @p snapshot and @p track are what the callback pinned for the block.
     void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
                         const ClipSnapshot* snapshot, const TrackClipPlayback* track);
 
     /// Drop what the arrangement rendered for as long as the session holds the
-    /// track, and de-click both edges of the hand-over (#2302). @p track is
-    /// null for one the snapshot does not carry, which is Arrangement mode.
-    void applySectionHold(juce::dsp::AudioBlock<float> out, const TrackClipPlayback* track);
+    /// track, and de-click both edges of the hand-over (#2302). @p resolved is
+    /// the block's own answer, worked out before anything rendered
+    /// (SessionPlayback.hpp), and null for a track the snapshot does not carry.
+    void applySectionHold(juce::dsp::AudioBlock<float> out, const SectionHold* resolved);
 
     /// Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
-
-    /// The mode the last block rendered under (#2485). A mode flip has no
-    /// handle to say what came before, so this is the only place it's kept.
-    bool sessionModeBefore_ = false;
 
     /// The two edges of the arrangement's own playback: the step it carries
     /// down when the session takes the track, and the one it subtracts when it

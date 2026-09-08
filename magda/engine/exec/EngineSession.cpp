@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "clip/ClipVoicePool.hpp"
+#include "clip/SessionPlayback.hpp"
 
 namespace magda::engine {
 
@@ -256,6 +257,15 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // sources reading it. What has been asked since the last block is
         // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
         advanceLaunchHandles(handles_, requests_, segment.block);
+
+        // The block's one acquisition of the clips, held while it renders
+        // (#2490): a track's two sources play one publish rather than each
+        // taking whichever was live when it happened to read.
+        const ClipSnapshotFeed::BlockScope clips(clips_);
+
+        // Beside the handles and for the same reason: what gates a track's
+        // arrangement is resolved once, before either of its sources renders.
+        advanceTrackSections(clips_.sections(), clips_.live(), &handles_, segment.block);
 
         (*render)->executor.process(table, segment.block, piece);
 

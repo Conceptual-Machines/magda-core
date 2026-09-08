@@ -33,6 +33,9 @@ namespace magda::engine {
 /// not take a prefetch thread and a stream pool with it.
 class ClipVoicePool;
 
+/// The clips a render plays, named here for the same reason.
+class ClipSnapshotFeed;
+
 /// The launcher's two halves, named for the same reason.
 class LaunchHandleFeed;
 class LaunchRequestQueue;
@@ -153,6 +156,11 @@ class OfflineRenderSink {
  * it. Two things provisioning one pool is a race over which readers exist,
  * which is what the pool's own threading contract already says.
  *
+ * @p clips is what the sources play, pinned for each block the way playback
+ * pins it (#2490), and null for a render whose sources read no snapshot. A
+ * render that has one and does not pass it hears silence: a source reads what
+ * the block pinned and nothing else.
+ *
  * @p launcher is what makes a session slot sound. Its handles are advanced
  * before the plan on every block, which is where playback advances them
  * (EngineSession.cpp) and the only place they can be: a handle must see each
@@ -169,6 +177,7 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
                                   ClipVoicePool* voices = nullptr,
+                                  ClipSnapshotFeed* clips = nullptr,
                                   const OfflineLauncher& launcher = {},
                                   const std::function<bool()>& shouldContinue = {});
 

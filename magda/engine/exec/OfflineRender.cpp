@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 
+#include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipVoicePool.hpp"
+#include "clip/SessionPlayback.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/TransportState.hpp"
 
@@ -94,7 +97,8 @@ class LatencyTrimmedSink final : public OfflineRenderSink {
 OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& values,
                                   const RenderContext& context, const TempoMap& tempo,
                                   const OfflineRenderRequest& request, OfflineRenderSink& sink,
-                                  ClipVoicePool* voices, const OfflineLauncher& launcher,
+                                  ClipVoicePool* voices, ClipSnapshotFeed* clips,
+                                  const OfflineLauncher& launcher,
                                   const std::function<bool()>& shouldContinue) {
     OfflineRenderResult result;
 
@@ -203,6 +207,17 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 // decided.
                 if (launcher.present())
                     advanceLaunchHandles(*launcher.handles, *launcher.requests, segment.block);
+
+                // The block's one acquisition of the clips, which is where
+                // playback puts it too (#2490): a track's two sources play one
+                // publish, and what gates its arrangement is resolved once,
+                // before either of them renders.
+                std::optional<ClipSnapshotFeed::BlockScope> pinned;
+                if (clips != nullptr) {
+                    pinned.emplace(*clips);
+                    advanceTrackSections(clips->sections(), clips->live(), launcher.handles,
+                                         segment.block);
+                }
 
                 executor.process(values, segment.block, piece);
             }

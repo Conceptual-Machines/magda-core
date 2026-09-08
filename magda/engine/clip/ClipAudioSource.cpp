@@ -149,37 +149,30 @@ void ClipAudioSource::render(const BlockInfo& block, juce::dsp::AudioBlock<float
     // return before reaching: a stale edge would release a voice twice.
     stoppingCount_ = 0;
 
-    // One snapshot for the whole render: the material and the mode that gates
-    // it come from the same publish, or a swap between the two stages could
-    // gate one snapshot's clips with another's mode.
-    const ClipSnapshotFeed::Reader snapshot(clips_);
-    const auto* track = snapshot ? snapshot->find(trackId_) : nullptr;
+    // What the callback pinned for this block (#2490). The material and the
+    // hold that gates it come from one publish, and so does what this track's
+    // MIDI plays over the same block.
+    const auto* snapshot = clips_.live();
+    const auto* track = snapshot != nullptr ? snapshot->find(trackId_) : nullptr;
 
-    renderMaterial(block, out, snapshot.get(), track);
+    renderMaterial(block, out, snapshot, track);
 
-    // Every Arrangement source has a mode to check (#2485), handles or not.
+    // Every Arrangement source has a hold to apply (#2485), handles or not.
     if (section_ == Section::Arrangement)
-        applySectionHold(out, track);
+        applySectionHold(out, clips_.holdFor(trackId_));
 }
 
 void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
-                                       const TrackClipPlayback* track) {
+                                       const SectionHold* resolved) {
     const auto numSamples = static_cast<int>(out.getNumSamples());
 
-    // A track missing from the snapshot is Arrangement: nothing to silence.
-    const auto session = track != nullptr && track->playbackMode == TrackPlaybackMode::Session;
+    // Null for a track the snapshot does not carry, which has no mode to be
+    // gated by and nothing to silence.
+    const auto hold = resolved != nullptr ? *resolved : SectionHold::arrangement(numSamples);
 
-    const SectionMode mode{session, sessionModeBefore_};
-    sessionModeBefore_ = session;
-
-    SectionHold hold;
-    if (handles_ != nullptr) {
-        const LaunchHandleFeed::Reader handles(*handles_);
-        hold = sectionHold(handles.get(), trackId_, numSamples, mode);
-    } else {
-        hold = sectionHold(nullptr, trackId_, numSamples, mode);
-    }
-
+    // Resolved against the block the callback named, which the executor may
+    // have capped to what the plan was prepared for (PlanExecutor::beginBlock),
+    // so the span can outrun the buffer this call was handed.
     const auto until = std::clamp(hold.until.value, 0, numSamples);
 
     // What it rendered and keeps, before anything corrects it (StopDeClick::push).

@@ -83,10 +83,10 @@ class ClipMidiSource final : public EngineMidiSource {
      * @brief The @p section's source for @p trackId, reading @p handles.
      *
      * Both sources of a track take the feed, and @p section says which of them
-     * this is (#2302). A session source is positioned by the handles rather
-     * than by the timeline; an arrangement source reads them only to know when
-     * the session has taken the track off it, and where in the block, which is
-     * where it owes note-offs for whatever it had sounding.
+     * this is (#2302). Only a session source reads it, to be positioned by the
+     * handles rather than by the timeline: where an arrangement source loses
+     * the track, and so where it owes note-offs, reaches it as the block's
+     * resolved hold instead (#2490, SessionPlayback.hpp).
      *
      * @p handles outlives it.
      */
@@ -241,10 +241,6 @@ class ClipMidiSource final : public EngineMidiSource {
     /// The section. Null is the arrangement, which needs no handles.
     LaunchHandleFeed* handles_ = nullptr;
     Section section_ = Section::Arrangement;
-
-    /// The mode the last block rendered under (#2485). A mode flip has no
-    /// handle to say what came before, so this is the only place it's kept.
-    bool sessionModeBefore_ = false;
 
     ActiveNoteList active_;
     int activeCount_ = 0;

@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "ClipCallback.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
@@ -285,7 +286,7 @@ struct Rig {
     void render(const BlockInfo& block) {
         if (autoFill)
             fill();
-        source.render(block, juce::dsp::AudioBlock<float>(output));
+        magda::test::renderBlock(source, clips, block, juce::dsp::AudioBlock<float>(output));
     }
 
     void fill() {
@@ -1019,7 +1020,8 @@ TEST_CASE("A track with nothing published renders silence rather than the buffer
         for (auto sample = 0; sample < kBlockSize; ++sample)
             dirty.setSample(channel, sample, 0.5f);
 
-    rig.source.render(blockFrom(blockTime(100)), juce::dsp::AudioBlock<float>(dirty));
+    magda::test::renderBlock(rig.source, rig.clips, blockFrom(blockTime(100)),
+                             juce::dsp::AudioBlock<float>(dirty));
 
     for (auto sample = 0; sample < kBlockSize; ++sample)
         REQUIRE(dirty.getSample(0, sample) == approx(0.0f));
