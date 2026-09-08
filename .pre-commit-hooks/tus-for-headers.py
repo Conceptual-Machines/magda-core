@@ -21,7 +21,7 @@ from pathlib import Path
 ROOT = Path.cwd()
 
 
-def leaf(path):
+def leaf(path: str) -> str:
     """Last component, whichever separator ninja wrote.
 
     A string slice rather than Path(path).name: this runs on every one of a few
@@ -31,10 +31,10 @@ def leaf(path):
     return path[max(path.rfind("/"), path.rfind("\\")) + 1:]
 
 
-def output_to_source(build_dir):
+def output_to_source(build_dir: Path) -> dict[str, str]:
     """Ninja target name -> repo-relative source, from the compile database."""
     db = json.loads((build_dir / "compile_commands.json").read_text())
-    mapping = {}
+    mapping: dict[str, str] = {}
     for entry in db:
         if not entry.get("output"):
             continue
@@ -48,7 +48,7 @@ def output_to_source(build_dir):
     return mapping
 
 
-def dependents(build_dir, wanted):
+def dependents(build_dir: Path, wanted: dict[Path, str]) -> dict[str, set[str]] | None:
     """Ninja outputs whose recorded dependencies include any of `wanted`."""
     proc = subprocess.run(["ninja", "-C", str(build_dir), "-t", "deps"],
                           capture_output=True, text=True, check=False)
@@ -56,7 +56,9 @@ def dependents(build_dir, wanted):
         return None
 
     names = {leaf(str(path)) for path in wanted}
-    found, current, stale = {}, None, False
+    found: dict[str, set[str]] = {}
+    current: str | None = None
+    stale = False
     for line in proc.stdout.splitlines():
         if not line:
             continue
@@ -83,7 +85,7 @@ def dependents(build_dir, wanted):
     return found
 
 
-def select(per_header, max_tus):
+def select(per_header: dict[str, list[str]], max_tus: int) -> tuple[list[str], int]:
     """Pick TUs under a budget without starving any one header.
 
     Flattening every header's candidates and truncating let one broadly included
@@ -92,7 +94,8 @@ def select(per_header, max_tus):
     alone exceeds the budget - analysing every changed header matters more than
     the ceiling - and only the fan-out beyond that is rationed, round robin.
     """
-    chosen, seen = [], set()
+    chosen: list[str] = []
+    seen: set[str] = set()
     for tus in per_header.values():
         for tu in tus:
             if tu not in seen:
@@ -118,12 +121,12 @@ def select(per_header, max_tus):
     return chosen, total
 
 
-def in_scope(source):
+def in_scope(source: str) -> bool:
     """Shipping code, matching .clang-tidy's own scope."""
     return source.startswith("magda/") and not source.startswith("magda/engine/")
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", metavar="FILE")
     parser.add_argument("--missing", action="store_true")
@@ -152,9 +155,10 @@ def main():
 
     mapping = output_to_source(args.build_dir)
 
-    per_header, unanalysable = {}, []
+    per_header: dict[str, list[str]] = {}
+    unanalysable: list[str] = []
     for header in args.paths:
-        sources = {mapping.get(o) for o in found.get(header, ())} - {None}
+        sources = {tu for o in found.get(header, ()) if (tu := mapping.get(o))}
         # Scoping has to be judged per header, after mapping. Deciding it from
         # the raw dependency set counted a header reached only through a test TU
         # as mapped, then filtered every candidate away and chose nothing.
