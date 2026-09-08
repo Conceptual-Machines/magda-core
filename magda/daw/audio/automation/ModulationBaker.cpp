@@ -62,7 +62,7 @@ double ModulationBaker::beatsPerCycle(SyncDivision division) {
 }
 
 double ModulationBaker::phaseAtBeat(const ModInfo& mod, double beat, const TempoMap& tempoMap) {
-    double cycles;
+    double cycles = NAN;
     if (mod.tempoSync) {
         cycles = beat / beatsPerCycle(mod.syncDivision);
     } else {
@@ -110,7 +110,7 @@ std::vector<AutomationPoint> ModulationBaker::bake(
             continue;
         anyBakeable = true;
 
-        double cycleBeats;
+        double cycleBeats = NAN;
         if (source.mod.tempoSync) {
             cycleBeats = beatsPerCycle(source.mod.syncDivision);
         } else {

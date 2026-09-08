@@ -57,8 +57,7 @@ juce::Colour parseDslColour(const std::string& value) {
 // Tokenizer Implementation
 // ============================================================================
 
-Tokenizer::Tokenizer(const char* input)
-    : input_(input), pos_(input), line_(1), col_(1), hasPeeked_(false) {}
+Tokenizer::Tokenizer(const char* input) : input_(input), pos_(input) {}
 
 void Tokenizer::skipWhitespace() {
     while (*pos_) {
@@ -908,7 +907,7 @@ bool Interpreter::executeNewClip(const Params& params) {
     }
 
     double lengthBars = params.getFloat("length_bars", 4.0);
-    double bar;
+    double bar = NAN;
 
     if (params.has("bar")) {
         bar = params.getFloat("bar", 1.0);
@@ -2829,7 +2828,7 @@ bool Interpreter::executeGrooveExtract(const Params& params) {
     int resolution = params.getInt("resolution", 16);  // 8 or 16
 
     // Get clip — use param or current selection
-    ClipId clipId;
+    ClipId clipId = INVALID_CLIP_ID;
     if (params.has("clip")) {
         int clipIndex = params.getInt("clip", 0);
         // Find clip by index on current track

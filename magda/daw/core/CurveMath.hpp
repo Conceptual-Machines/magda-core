@@ -25,7 +25,7 @@ inline float evalSegment(float y1, float y2, float controlY, float tension, bool
     if (std::abs(dy) < 1.0e-6f)
         return y1;  // flat segment
 
-    float r;  // curve value at t=0.5, normalised within [y1, y2]
+    float r = NAN;  // curve value at t=0.5, normalised within [y1, y2]
     if (hasStoredShaper) {
         // On-curve midpoint of the encoding quadratic: B(0.5) = 0.25 y1 + 0.5 C + 0.25 y2.
         const float midY = 0.25f * y1 + 0.5f * controlY + 0.25f * y2;

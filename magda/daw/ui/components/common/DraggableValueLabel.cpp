@@ -339,7 +339,7 @@ void DraggableValueLabel::mouseDrag(const juce::MouseEvent& e) {
     // Calculate delta (dragging up increases value)
     int deltaY = dragStartY_ - e.y;
 
-    double deltaValue;
+    double deltaValue = NAN;
     if (format_ == Format::BarsBeats) {
         // BarsBeats: 1 beat per ~30px, shift = fine control (0.25 beats)
         double beatsPerPixel = 1.0 / 30.0;

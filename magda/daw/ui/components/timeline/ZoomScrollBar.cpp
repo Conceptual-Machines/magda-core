@@ -290,7 +290,7 @@ ZoomScrollBar::DragMode ZoomScrollBar::getDragModeForPosition(int pos) const {
     auto thumbBounds = getThumbBounds();
 
     // Check if position is within thumb bounds (using the perpendicular center for hit test)
-    bool inThumb;
+    bool inThumb = false;
     if (orientation == Orientation::Horizontal) {
         inThumb = thumbBounds.contains(pos, thumbBounds.getCentreY());
     } else {

@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <cmath>
 #include <set>
 
 #include "audio/plugins/DrumGridPlugin.hpp"
@@ -100,7 +101,7 @@ void DrumGridUI::PadButton::paint(juce::Graphics& g) {
 
     // Background colour
     juce::Colour bg;
-    float borderThickness;
+    float borderThickness = NAN;
     if (triggered_) {
         bg = juce::Colour(0xFF5A5A2A);
         borderThickness = 1.5f;

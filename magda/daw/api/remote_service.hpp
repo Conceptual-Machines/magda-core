@@ -269,7 +269,7 @@ class RemoteApiService {
      * suppresses exactly those re-entrant callbacks and leaves genuine
      * concurrent UI edits alone.
      */
-    std::atomic<std::thread::id> executingThread_{};
+    std::atomic<std::thread::id> executingThread_;
 
     mutable std::mutex cacheMutex_;
     std::vector<CachedResponse> cache_;

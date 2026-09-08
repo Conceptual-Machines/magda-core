@@ -72,7 +72,7 @@ void MidiChordEnginePlugin::process(DeviceProcessContext& context) {
                 heldNoteCount_.store(count + 1, std::memory_order_release);
             }
             // Push to FIFO for message-thread processing
-            int start1, size1, start2, size2;
+            int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
             noteFifo_.prepareToWrite(1, start1, size1, start2, size2);
             if (size1 > 0) {
                 noteBuffer_[static_cast<size_t>(start1)] = {msg.getNoteNumber(), true,
@@ -98,7 +98,7 @@ void MidiChordEnginePlugin::process(DeviceProcessContext& context) {
             }
 
             // Push to FIFO
-            int start1, size1, start2, size2;
+            int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
             noteFifo_.prepareToWrite(1, start1, size1, start2, size2);
             if (size1 > 0) {
                 noteBuffer_[static_cast<size_t>(start1)] = {msg.getNoteNumber(), false,
@@ -135,7 +135,7 @@ void MidiChordEnginePlugin::timerCallback() {
 }
 
 void MidiChordEnginePlugin::processNoteEvents() {
-    int start1, size1, start2, size2;
+    int start1 = 0, size1 = 0, start2 = 0, size2 = 0;
     noteFifo_.prepareToRead(noteFifo_.getNumReady(), start1, size1, start2, size2);
 
     auto processRange = [this](int start, int count) {

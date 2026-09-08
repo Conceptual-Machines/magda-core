@@ -200,7 +200,7 @@ template <typename ComponentType> class ManagedChild {
  */
 template <typename T> class ScopedComponentGuard {
   public:
-    explicit ScopedComponentGuard(T* component) : component_(component), released_(false) {}
+    explicit ScopedComponentGuard(T* component) : component_(component) {}
 
     static ScopedComponentGuard create(T* component) {
         return ScopedComponentGuard(component);
@@ -259,7 +259,7 @@ template <typename T> class ScopedComponentGuard {
 
   private:
     T* component_;
-    bool released_;
+    bool released_{false};
 };
 
 }  // namespace magda

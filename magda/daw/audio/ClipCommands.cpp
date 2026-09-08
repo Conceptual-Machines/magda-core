@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -2773,7 +2774,7 @@ void sliceClipAtWarpMarkers(ClipId clipId, double tempo, AudioBridge* bridge) {
     // the inverse of splitClip's offset formula.
     for (size_t i = 1; i + 1 < markers.size(); ++i) {
         double sourceDelta = markers[i].sourceTime - clipOffset;
-        double splitTime;
+        double splitTime = NAN;
         if (magda::audioEventRef(*clip).autoTempo && magda::audioEventRef(*clip).interpBpm > 0.0) {
             splitTime = clipStart + sourceDelta * magda::audioEventRef(*clip).interpBpm / bpm;
         } else {

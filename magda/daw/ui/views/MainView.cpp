@@ -82,11 +82,7 @@ double timelineEndSeconds(const ClipInfo& clip, double bpm) {
 
 }  // namespace
 
-MainView::MainView(AudioEngine* audioEngine)
-    : horizontalZoom(10.0),
-      playheadPosition(0.0),
-      initialZoomSet(false),
-      audioEngine_(audioEngine) {
+MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine_(audioEngine) {
     // Load configuration
     auto& config = magda::Config::getInstance();
     config.load();

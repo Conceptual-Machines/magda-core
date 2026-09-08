@@ -442,7 +442,7 @@ void TimelineComponent::mouseDown(const juce::MouseEvent& event) {
             selectedSectionIndex = sectionIndex;
 
             // Check if clicking on section edge for resizing
-            bool isStartEdge;
+            bool isStartEdge = false;
             if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
                 isDraggingEdge = true;
                 isDraggingStart = isStartEdge;
@@ -476,7 +476,7 @@ void TimelineComponent::mouseMove(const juce::MouseEvent& event) {
         if (!arrangementLocked) {
             int sectionIndex = findSectionAtPosition(event.x, event.y);
             if (sectionIndex >= 0) {
-                bool isStartEdge;
+                bool isStartEdge = false;
                 if (isOnSectionEdge(event.x, sectionIndex, isStartEdge)) {
                     setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
                     return;

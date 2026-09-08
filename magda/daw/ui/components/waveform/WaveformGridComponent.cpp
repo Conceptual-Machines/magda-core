@@ -749,7 +749,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         // In non-loop/non-beat mode, the right boundary is the active clip end
         // (offset + length), so the unselected source tail is greyed out while
         // the fixed source-file end marker remains visible.
-        int rightBoundaryX;
+        int rightBoundaryX = 0;
         if (isLooped) {
             rightBoundaryX = timeToPixel(baseTime + displayInfo_.loopEndPositionSeconds);
         } else if (canResizeClipEnd && clipLength_ > 0.0) {
@@ -765,7 +765,7 @@ void WaveformGridComponent::paintClipBoundaries(juce::Graphics& g) {
         // In loop mode: grey out before loop start (offset is phase, not trim)
         // In non-loop mode: grey out before clip start (offset)
         {
-            int leftBoundaryX;
+            int leftBoundaryX = 0;
             if (isLooped) {
                 leftBoundaryX = timeToPixel(baseTime + displayInfo_.loopStartPositionSeconds);
             } else if (canResizeClipEnd) {

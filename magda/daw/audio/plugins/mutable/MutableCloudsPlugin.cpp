@@ -321,7 +321,7 @@ struct MutableCloudsPlugin::Impl {
                 hostIn_.push(inL, inR);
             }
 
-            float sL, sR;
+            float sL = NAN, sR = NAN;
             while (inResampler_.pull(hostIn_, sL, sR)) {
                 grainIn_[grainFill_].l = sL;
                 grainIn_[grainFill_].r = sR;

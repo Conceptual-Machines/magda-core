@@ -124,7 +124,7 @@ void MCPClient::stop() {
             stdinWrite_ = -1;
         }
 
-        int status;
+        int status = 0;
         if (waitpid(childPid_, &status, WNOHANG) == 0) {
             kill(childPid_, SIGTERM);
             waitpid(childPid_, &status, 0);
@@ -145,7 +145,7 @@ void MCPClient::stop() {
 bool MCPClient::isRunning() const {
     if (childPid_ <= 0)
         return false;
-    int status;
+    int status = 0;
     return waitpid(childPid_, &status, WNOHANG) == 0;
 }
 

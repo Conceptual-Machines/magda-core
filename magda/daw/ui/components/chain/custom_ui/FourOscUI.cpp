@@ -581,7 +581,7 @@ FourOscUI::FilterTab::FilterTab(FourOscUI& owner) : owner_(owner) {
     });
     freqSlider_.setValueParser([](const juce::String& text) -> double {
         auto t = text.trim().toLowerCase();
-        float freq;
+        float freq = NAN;
         if (t.contains("khz"))
             freq = t.replace("khz", "").trim().getFloatValue() * 1000.0f;
         else

@@ -2,6 +2,7 @@
 
 #include <juce_events/juce_events.h>
 
+#include <cmath>
 #include <functional>
 #include <map>
 #include <unordered_set>
@@ -325,7 +326,7 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
                 continue;
             }
             const ParamSnapshot& p = *it->second;
-            float real;
+            float real = NAN;
             if (p.scale == ParameterScale::Discrete && !p.choices.empty())
                 real = discreteRealValue(p, value);
             else

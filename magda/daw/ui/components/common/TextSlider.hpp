@@ -3,6 +3,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cmath>
 #include <functional>
 #include <optional>
 
@@ -519,14 +520,14 @@ class TextSlider : public juce::Component,
                     effectiveInterval *= 0.01;
                 }
 
-                double pixelDelta;
+                double pixelDelta = NAN;
                 if (orientation_ == Orientation::Horizontal) {
                     pixelDelta = e.x - dragStartX_;
                 } else {
                     pixelDelta = dragStartY_ - e.y;
                 }
 
-                double newValue;
+                double newValue = NAN;
                 if (useLogProjection_) {
                     // Log slider: drag operates in log-normalised space
                     // [0,1] = log(val/min) / log(max/min). Equal pixel

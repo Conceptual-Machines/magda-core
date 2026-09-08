@@ -814,7 +814,7 @@ void ClipComponent::paintMidiNotes(juce::Graphics& g, const ClipInfo& clip,
     // and no source region to consult.
     double loopLengthBeats = clip.loopLengthBeats > 0.0 ? clip.loopLengthBeats : clipLengthInBeats;
 
-    double midiOffset;
+    double midiOffset = NAN;
     if (isDragging_ && dragMode_ == DragMode::ResizeLeft) {
         midiOffset =
             clip.loopEnabled ? resizePreviewClip_.midiOffset : resizePreviewClip_.midiTrimOffset;

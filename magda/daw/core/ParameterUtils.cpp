@@ -522,7 +522,7 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
         const float teSpan = info.teMaxValue - info.teMinValue;
         const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
                                         std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-        float teRaw;
+        float teRaw = NAN;
         if (infoMatchesTeRange || teSpan <= 0.0f) {
             teRaw = realValue;
         } else {

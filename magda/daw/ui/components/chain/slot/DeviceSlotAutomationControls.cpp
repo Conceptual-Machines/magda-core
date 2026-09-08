@@ -72,7 +72,7 @@ void applyDeviceSlotAutomationValueChange(magda::DeviceInfo& device, ParamHostCo
 
         for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
             const int visibleParamIndex = pageOffset + slotIndex;
-            int actualParamIndex;
+            int actualParamIndex = 0;
             if (useVisibilityFilter) {
                 if (visibleParamIndex >= static_cast<int>(device.visibleParameters.size()))
                     continue;

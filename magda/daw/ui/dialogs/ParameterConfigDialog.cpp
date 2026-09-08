@@ -2,6 +2,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include <cmath>
 #include <utility>
 
 #include "../themes/DarkTheme.hpp"
@@ -364,7 +365,7 @@ class ParameterConfigDialog::RangeCell : public juce::Component {
         }
 
         if (minStr.isNotEmpty() && maxStr.isNotEmpty()) {
-            float newMin, newMax;
+            float newMin = NAN, newMax = NAN;
             if (minStr.toLowerCase() == "-inf")
                 newMin = -std::numeric_limits<float>::infinity();
             else

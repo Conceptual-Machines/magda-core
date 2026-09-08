@@ -3153,7 +3153,7 @@ void SessionView::paintHeaderDragFeedback(juce::Graphics& g) {
     g.fillRect(dx, 0, dw, headerContainer->getHeight());
 
     if (headerDropType_ == HeaderDropType::BetweenTracks && headerDropIndex_ >= 0) {
-        int lineX;
+        int lineX = 0;
         if (headerDropIndex_ >= static_cast<int>(visibleTrackIds_.size()))
             lineX = getTotalTracksWidth() - trackHeaderScrollOffset;
         else
@@ -4036,7 +4036,7 @@ void SessionView::updateDragGhost(const juce::StringArray& files, int trackIndex
     // Position ghost at the target slot (in grid coordinates)
     int sceneRowHeight = CLIP_SLOT_HEIGHT + CLIP_SLOT_MARGIN;
 
-    int ghostX, ghostW;
+    int ghostX = 0, ghostW = 0;
     if (trackIndex >= 0) {
         ghostX = getTrackX(trackIndex);
         ghostW = (trackIndex < static_cast<int>(trackColumnWidths_.size()))
