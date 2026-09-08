@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
@@ -100,10 +101,8 @@ class ClipOperations {
         if (noteEnd <= range.startBeat || noteStart >= range.endBeat())
             return false;
 
-        if (noteStart < range.startBeat)
-            noteStart = range.startBeat;
-        if (noteEnd > range.endBeat())
-            noteEnd = range.endBeat();
+        noteStart = std::max(noteStart, range.startBeat);
+        noteEnd = std::min(noteEnd, range.endBeat());
 
         if (noteEnd <= noteStart)
             return false;

@@ -926,8 +926,7 @@ bool Interpreter::executeNewClip(const Params& params) {
             // assuming a four-beat bar through the legacy seconds cache.
             double clipEndBar = clip->placement.endBeat() / beatsPerBar + 1.0;
             double nextBar = std::ceil(clipEndBar - 0.001);  // tolerance for floating point
-            if (nextBar > bar)
-                bar = nextBar;
+            bar = std::max(bar, nextBar);
         }
     }
 

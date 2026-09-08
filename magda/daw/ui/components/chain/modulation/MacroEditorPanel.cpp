@@ -266,9 +266,7 @@ void MacroEditorPanel::resized() {
 }
 
 bool MacroEditorPanel::keyPressed(const juce::KeyPress& key) {
-    if (key == juce::KeyPress::returnKey)
-        return true;
-    return false;
+    return key == juce::KeyPress::returnKey;
 }
 
 void MacroEditorPanel::mouseDown(const juce::MouseEvent& /*e*/) {

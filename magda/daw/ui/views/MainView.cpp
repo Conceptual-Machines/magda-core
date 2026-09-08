@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
 #include <cmath>
 #include <ranges>
 #include <set>
@@ -2740,8 +2741,7 @@ void MainView::calculateSmartGridNumeratorDenominator(int& outNum, int& outDen,
         // beatFraction = 2^p, denominator = 4 / beatFraction
         outNum = 1;
         outDen = static_cast<int>(4.0 / frac);
-        if (outDen < 1)
-            outDen = 1;  // For frac > 4 (shouldn't happen)
+        outDen = std::max(outDen, 1);  // For frac > 4 (shouldn't happen)
         return;
     }
 

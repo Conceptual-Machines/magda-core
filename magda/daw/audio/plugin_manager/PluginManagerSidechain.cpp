@@ -145,10 +145,7 @@ bool PluginManager::trackNeedsSidechainMonitor(TrackId trackId) {
                                          SidechainConfig::Type::MIDI))
             usedAsSource = true;
     });
-    if (usedAsSource)
-        return true;
-
-    return false;
+    return usedAsSource;
 }
 
 void PluginManager::checkSidechainMonitor(TrackId trackId) {

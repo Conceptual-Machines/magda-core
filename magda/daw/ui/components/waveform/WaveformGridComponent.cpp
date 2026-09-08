@@ -2,6 +2,7 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 
@@ -582,8 +583,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
                 ? frac
                 : static_cast<double>(timeSigNum) * magda::GridConstants::findBarMultiple(
                                                         pixelsPerBeat, timeSigNum, kMinGridLinePx);
-        if (adaptiveBeats > gridBeats)
-            gridBeats = adaptiveBeats;
+        gridBeats = std::max(gridBeats, adaptiveBeats);
     }
     double secondsPerGrid = gridBeats * secondsPerBeat;
 
@@ -1408,8 +1408,7 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // Convert timeline delta to source time delta
         double sourceDelta = displayInfo_.displayDeltaToSourceDelta(timelineDelta);
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
-        if (newWarpTime < 0.0)
-            newWarpTime = 0.0;
+        newWarpTime = std::max(newWarpTime, 0.0);
 
         // Snap to grid when snap is enabled and Alt is not held
         if (snapEnabled_ && !event.mods.isAltDown()) {
@@ -1437,10 +1436,8 @@ void WaveformGridComponent::mouseDrag(const juce::MouseEvent& event) {
         // This preserves the stretch relationship at this marker
         double newSourceTime = dragStartSourceTime_ + sourceDelta;
         double newWarpTime = dragStartWarpTime_ + sourceDelta;
-        if (newSourceTime < 0.0)
-            newSourceTime = 0.0;
-        if (newWarpTime < 0.0)
-            newWarpTime = 0.0;
+        newSourceTime = std::max(newSourceTime, 0.0);
+        newWarpTime = std::max(newWarpTime, 0.0);
 
         if (draggingMarkerIndex_ >= 0 && onWarpMarkerReposition) {
             onWarpMarkerReposition(draggingMarkerIndex_, newSourceTime, newWarpTime);

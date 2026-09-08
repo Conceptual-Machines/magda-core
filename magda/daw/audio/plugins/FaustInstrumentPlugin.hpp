@@ -59,7 +59,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     void setParameterValue(int index, float value) override;
 
     void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& v) override;
 
     // Compile `source`, wrap it in a fresh poly voice allocator, swap it in,
     // and persist source+name to plugin state. Returns true on success; on

@@ -4,6 +4,8 @@
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
+
+#include <algorithm>
 // clang-format on
 
 namespace magda {
@@ -424,10 +426,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     const float* samples = buffer.getReadPointer(ch);
                     for (juce::int64 s = colStart; s < colEnd; ++s) {
                         const float v = samples[s];
-                        if (v < minVal)
-                            minVal = v;
-                        if (v > maxVal)
-                            maxVal = v;
+                        minVal = std::min(minVal, v);
+                        maxVal = std::max(maxVal, v);
                     }
                 } else {
                     int count = static_cast<int>(colEnd - colStart);
@@ -436,10 +436,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     const float* samples = chunkBuffer.getReadPointer(ch);
                     for (int s = 0; s < readCount; ++s) {
                         const float v = samples[s];
-                        if (v < minVal)
-                            minVal = v;
-                        if (v > maxVal)
-                            maxVal = v;
+                        minVal = std::min(minVal, v);
+                        maxVal = std::max(maxVal, v);
                     }
                 }
 

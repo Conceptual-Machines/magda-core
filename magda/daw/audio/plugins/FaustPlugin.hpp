@@ -51,7 +51,7 @@ class FaustPlugin : public MagdaDevice, public IFaustEditorModel {
     void setParameterValue(int index, float value) override;
 
     void flushState(juce::ValueTree& state) override;
-    void restoreState(const juce::ValueTree& state) override;
+    void restoreState(const juce::ValueTree& v) override;
 
   private:
     /// Re-cache the conversion domain of every pool slot. Called whenever the

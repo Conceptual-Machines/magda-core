@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
 #include <cmath>
 
 #include "core/GestureRouter.hpp"
@@ -519,8 +520,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
             float absVal = std::abs(data[s]);
-            if (absVal > maxVal)
-                maxVal = absVal;
+            maxVal = std::max(maxVal, absVal);
         }
         maxVal *= waveformGain_;
 
@@ -539,8 +539,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
             float absVal = std::abs(data[s]);
-            if (absVal > maxVal)
-                maxVal = absVal;
+            maxVal = std::max(maxVal, absVal);
         }
         maxVal *= waveformGain_;
 
@@ -820,8 +819,7 @@ void SamplerUI::mouseDrag(const juce::MouseEvent& e) {
 
         // Clamp so region stays within sample bounds
         double newL = loopDragStartL_ + timeDelta;
-        if (newL < 0.0)
-            newL = 0.0;
+        newL = std::max(newL, 0.0);
         if (newL + regionLen > sampleLength_)
             newL = sampleLength_ - regionLen;
 
@@ -1158,8 +1156,7 @@ void SamplerUI::resized() {
         double minPPS = (sampleLength_ > 0.0)
                             ? static_cast<double>(waveBounds.getWidth()) / sampleLength_
                             : 100.0;
-        if (pixelsPerSecond_ < minPPS)
-            pixelsPerSecond_ = minPPS;
+        pixelsPerSecond_ = std::max(pixelsPerSecond_, minPPS);
         buildWaveformPath(waveformBuffer_, waveBounds.getWidth(), waveBounds.getHeight() - 4);
     }
 }

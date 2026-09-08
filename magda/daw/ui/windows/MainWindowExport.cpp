@@ -1,5 +1,6 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <utility>
 
 #include "../dialogs/ExportAudioDialog.hpp"
@@ -491,8 +492,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     for (const auto& clip : clips) {
         if (clip.isMidi()) {
             double endBeats = timelineEndBeats(clip, projectTempo);
-            if (endBeats > rangeEndBeats)
-                rangeEndBeats = endBeats;
+            rangeEndBeats = std::max(rangeEndBeats, endBeats);
         }
     }
 
@@ -623,12 +623,10 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
             for (const auto& note : clip.midiNotes) {
                 double startTick = beatsToTicks(clipStartBeats + note.startBeat);
                 double endTick = beatsToTicks(clipStartBeats + note.startBeat + note.lengthBeats);
-                if (startTick < 0.0)
-                    startTick = 0.0;
+                startTick = std::max(startTick, 0.0);
                 if (startTick >= rangeEndTick)
                     continue;
-                if (endTick > rangeEndTick)
-                    endTick = rangeEndTick;
+                endTick = std::min(endTick, rangeEndTick);
 
                 auto noteOn = juce::MidiMessage::noteOn(channel, note.noteNumber,
                                                         static_cast<juce::uint8>(note.velocity));
@@ -644,8 +642,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
             for (const auto& cc : clip.midiCCData) {
                 double tick = beatsToTicks(clipStartBeats + cc.beatPosition);
-                if (tick < 0.0)
-                    tick = 0.0;
+                tick = std::max(tick, 0.0);
                 if (tick >= rangeEndTick)
                     continue;
                 auto msg = juce::MidiMessage::controllerEvent(channel, cc.controller, cc.value);
@@ -656,8 +653,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
 
             for (const auto& pb : clip.midiPitchBendData) {
                 double tick = beatsToTicks(clipStartBeats + pb.beatPosition);
-                if (tick < 0.0)
-                    tick = 0.0;
+                tick = std::max(tick, 0.0);
                 if (tick >= rangeEndTick)
                     continue;
                 auto msg = juce::MidiMessage::pitchWheel(channel, pb.value);

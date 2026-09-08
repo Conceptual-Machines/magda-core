@@ -151,7 +151,7 @@ class MidiDrawerComponent : public juce::Component {
     // Lane management
     void addCCTab(int ccNumber);
     void addPitchBendTab();
-    void removeTab(int tabIndex);
+    void removeTab(int ccIdx);
     void growDrawerForLanes();
 
     // Resize handle

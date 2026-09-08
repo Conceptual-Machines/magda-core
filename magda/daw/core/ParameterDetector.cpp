@@ -787,9 +787,7 @@ void detectWithAI(const juce::String& pluginName, const std::vector<ParameterSca
                     }
 
                     auto response = client->sendStreamingRequest(request, [&](const juce::String&) {
-                        if (cancelFlag && cancelFlag->load())
-                            return false;
-                        return true;
+                        return !(cancelFlag && cancelFlag->load());
                     });
 
                     if (cancelFlag && cancelFlag->load())

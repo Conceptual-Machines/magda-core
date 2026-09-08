@@ -247,7 +247,7 @@ class AIChatConsoleContent : public PanelContent,
     std::unique_ptr<ControllerRequestThread> controllerThread_;
 
     void startControllerGeneration(const juce::String& description);
-    void finishControllerGeneration(bool success, const juce::String& errorOrRawJson,
+    void finishControllerGeneration(bool success, const juce::String& errorOrJson,
                                     juce::String profileId, juce::String profileName);
 
     // /design <description> — kick the FourOscAgent on a background thread

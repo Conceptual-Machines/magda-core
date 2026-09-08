@@ -2915,8 +2915,7 @@ void PianoRollGridComponent::confirmPendingChord(double endBeat) {
         return;
 
     double length = endBeat - pendingChord_.startBeat;
-    if (length < gridResolutionBeats_)
-        length = gridResolutionBeats_;
+    length = std::max(length, gridResolutionBeats_);
 
     if (onChordDropped) {
         rememberAddedNoteLength(length);

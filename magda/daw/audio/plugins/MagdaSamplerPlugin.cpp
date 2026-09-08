@@ -342,7 +342,7 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         auto frac = static_cast<float>(sourceSamplePosition - pos0);
 
         // Stop at sample end (if set) or end of file — skip when looping
-        if (!(loopEnabled && loopEndSample > loopStartSample)) {
+        if (!loopEnabled || loopEndSample <= loopStartSample) {
             int endLimit =
                 (sampleEndSample > 0.0) ? static_cast<int>(sampleEndSample) : totalSamples - 1;
             if (pos0 >= endLimit) {

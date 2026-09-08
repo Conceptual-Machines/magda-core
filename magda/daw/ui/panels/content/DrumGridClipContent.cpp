@@ -897,8 +897,7 @@ class DrumGridClipGrid : public juce::Component,
         if (row >= 0 && row < static_cast<int>(padRows_->size())) {
             emptyClickRow_ = row;
             double rawBeat = displayBeatToClipBeat(pixelToBeat(e.x));
-            if (rawBeat < 0.0)
-                rawBeat = 0.0;
+            rawBeat = std::max(rawBeat, 0.0);
             emptyClickBeat_ = rawBeat;
             if (e.mods.isShiftDown()) {
                 isRepeatStamping_ = true;
