@@ -123,9 +123,6 @@ struct TakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is the take's.
     RecordStreamSettings stream;
-
-    /// How much of the pass in flight is published (#2463).
-    RecordTapSettings tap;
 };
 
 /**
@@ -138,7 +135,10 @@ struct TakeRecorderSettings {
  */
 class TakeRecorder final : public TakeCapture {
   public:
-    TakeRecorder(const LiveInputFeed& feed, const RenderContext& context,
+    /// @p tap is not owned and outlives the take: it is what the pass in
+    /// flight is published to, and what still holds it once the take is a clip
+    /// (#2463).
+    TakeRecorder(const LiveInputFeed& feed, const RenderContext& context, RecordTap& tap,
                  TakeRecorderSettings settings);
 
     ~TakeRecorder() override = default;
@@ -210,7 +210,7 @@ class TakeRecorder final : public TakeCapture {
     LiveAudioInput input_;
     TakeFileSink sink_;
     RecordStream stream_;
-    RecordTap tap_;
+    RecordTap& tap_;
 
     /// The block, narrowed to the channels the take holds.
     juce::AudioBuffer<float> scratch_;

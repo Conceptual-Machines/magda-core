@@ -100,11 +100,12 @@ Played noteOff(std::int64_t arrival, int note, int channel = 1) {
 /** @brief A transport, a scheduled MIDI input and one take, a callback at a time. */
 class MidiRig {
   public:
-    explicit MidiRig(MidiTakeRecorderSettings settings, TempoMap tempo = flat(), int blockSize = 64)
-        : blockSize_(blockSize) {
+    explicit MidiRig(RecordTapSettings tap, MidiTakeRecorderSettings settings = {},
+                     TempoMap tempo = flat(), int blockSize = 64)
+        : tap_(RecordMaterial::midi, tap), blockSize_(blockSize) {
         transport_.tempo = std::move(tempo);
         feed_.prepare(0, blockSize_);
-        recorder_ = std::make_unique<MidiTakeRecorder>(feed_, std::move(settings));
+        recorder_ = std::make_unique<MidiTakeRecorder>(feed_, tap_, std::move(settings));
     }
 
     void schedule(std::vector<Played> events) {
@@ -136,11 +137,18 @@ class MidiRig {
     }
 
     RecordTap::Reading reading() const {
-        return recorder_->tap().read();
+        RecordTap::Reading into;
+        REQUIRE(tap_.read(into));
+        return into;
     }
 
     RecordedMidiTake finish() {
         return recorder_->finish(transport_.tempo);
+    }
+
+    /// What a host does once a take is a clip. The tap is not the take's.
+    void releaseTake() {
+        recorder_.reset();
     }
 
   private:
@@ -165,6 +173,7 @@ class MidiRig {
     TransportSnapshot transport_;
     TransportClock clock_;
     LiveInputFeed feed_;
+    RecordTap tap_;
     std::unique_ptr<MidiTakeRecorder> recorder_;
 
     std::vector<Played> schedule_;
@@ -192,7 +201,7 @@ class AudioRig {
   public:
     AudioRig(const juce::File& directory, RecordTapSettings tap, int blockSize = 64,
              int latencySamples = 0)
-        : input_(2, blockSize), blockSize_(blockSize) {
+        : input_(2, blockSize), tap_(RecordMaterial::audio, tap), blockSize_(blockSize) {
         transport_.tempo = flat();
         feed_.prepare(2, blockSize_);
 
@@ -202,10 +211,9 @@ class AudioRig {
         settings.directory = directory;
         settings.file.format = AudioFileFormat::wav;
         settings.file.bitDepth = 32;
-        settings.tap = std::move(tap);
 
         recorder_ = std::make_unique<TakeRecorder>(feed_, RenderContext{kSampleRate, blockSize_, 2},
-                                                   std::move(settings));
+                                                   tap_, std::move(settings));
     }
 
     void play(double fromBeat = 0.0) {
@@ -232,7 +240,9 @@ class AudioRig {
     }
 
     RecordTap::Reading reading() const {
-        return recorder_->tap().read();
+        RecordTap::Reading into;
+        REQUIRE(tap_.read(into));
+        return into;
     }
 
   private:
@@ -260,6 +270,7 @@ class AudioRig {
     TransportClock clock_;
     LiveInputFeed feed_;
     juce::AudioBuffer<float> input_;
+    RecordTap tap_;
     std::unique_ptr<TakeRecorder> recorder_;
 
     std::int64_t arrival_ = 0;
@@ -273,7 +284,8 @@ class AudioRig {
 TEST_CASE("A tap nothing has opened reports no pass", "[engine][tap][record][2463]") {
     const RecordTap tap(RecordMaterial::midi, drawn());
 
-    const auto reading = tap.read();
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
     CHECK_FALSE(reading.recording);
     CHECK(reading.pass == 0);
     CHECK(reading.lengthBeats == 0.0);
@@ -291,7 +303,8 @@ TEST_CASE("A held note reaches the end of the pass and stops where it came up",
     SECTION("still down, it is as long as the pass") {
         played.reaches(2.5);
 
-        const auto reading = tap.read();
+        RecordTap::Reading reading;
+        REQUIRE(tap.read(reading));
         REQUIRE(reading.notes.size() == 1);
         CHECK(reading.notes[0].startBeat == beats(0.5));
         CHECK(reading.notes[0].lengthBeats == beats(2.0));
@@ -302,7 +315,8 @@ TEST_CASE("A held note reaches the end of the pass and stops where it came up",
         played.release(1, 60, 1.5);
         played.reaches(2.5);
 
-        const auto reading = tap.read();
+        RecordTap::Reading reading;
+        REQUIRE(tap.read(reading));
         REQUIRE(reading.notes.size() == 1);
         CHECK(reading.notes[0].lengthBeats == beats(1.0));
     }
@@ -320,7 +334,8 @@ TEST_CASE("A pass takes the last one's notes with it", "[engine][tap][record][24
     played.strike(1, 67, 100, 0.25);
     played.reaches(1.0);
 
-    const auto reading = tap.read();
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
     CHECK(reading.pass == 2);
     CHECK(reading.startBeat == beats(4.0));
     REQUIRE(reading.notes.size() == 1);
@@ -335,7 +350,8 @@ TEST_CASE("A note the pass has no room for is counted", "[engine][tap][record][2
     for (auto note = 0; note < 5; ++note)
         played.strike(1, 60 + note, 100, static_cast<double>(note));
 
-    const auto reading = tap.read();
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
     CHECK(reading.notes.size() == 2);
     CHECK(reading.notesLost == 3);
 }
@@ -347,7 +363,8 @@ TEST_CASE("A closed pass keeps what it reached", "[engine][tap][record][2463]") 
     played.reaches(1.5);
     tap.close();
 
-    const auto reading = tap.read();
+    RecordTap::Reading reading;
+    REQUIRE(tap.read(reading));
     CHECK_FALSE(reading.recording);
     CHECK(reading.startBeat == beats(2.0));
     CHECK(reading.lengthBeats == beats(1.5));
@@ -552,10 +569,7 @@ TEST_CASE("A note is drawn at the beat the finished clip holds it at",
           "[engine][io][record][midi][2463]") {
     const auto tempo = GENERATE_COPY(flat(), halvedAtBeatTwo());
 
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings, tempo);
+    MidiRig rig(drawn(), {}, tempo);
     rig.schedule({noteOn(kBeatSamples, 64), noteOff(3 * kBeatSamples, 64)});
     rig.play();
     rig.run(4 * kBeatSamples);
@@ -575,10 +589,7 @@ TEST_CASE("A pass reports the length it captured, whatever the block size",
           "[engine][io][record][midi][2463]") {
     const auto blockSize = GENERATE(16, 64, 100);
 
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings, flat(), blockSize);
+    MidiRig rig(drawn(), {}, flat(), blockSize);
     rig.play();
     rig.run(6 * kBeatSamples);
 
@@ -590,11 +601,8 @@ TEST_CASE("A pass reports the length it captured, whatever the block size",
 
 TEST_CASE("An armed track with a stopped transport reports nothing",
           "[engine][io][record][midi][2463]") {
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
     SECTION("never played") {
-        MidiRig rig(settings);
+        MidiRig rig(drawn());
         rig.run(2 * kBeatSamples);
 
         const auto reading = rig.reading();
@@ -604,7 +612,7 @@ TEST_CASE("An armed track with a stopped transport reports nothing",
     }
 
     SECTION("counting in") {
-        MidiRig rig(settings);
+        MidiRig rig(drawn());
         rig.play(0.0, 2.0);
         rig.run(2 * kBeatSamples);
 
@@ -616,10 +624,7 @@ TEST_CASE("An armed track with a stopped transport reports nothing",
 
 TEST_CASE("A loop wrap draws the pass it opened, not the one it ended",
           "[engine][io][record][midi][2463]") {
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings);
+    MidiRig rig(drawn());
     rig.loop(0.0, 2.0);
     rig.schedule({noteOn(kBeatSamples / 2, 60), noteOff(kBeatSamples, 60),
                   noteOn(2 * kBeatSamples + kBeatSamples / 2, 72), noteOff(3 * kBeatSamples, 72)});
@@ -634,13 +639,33 @@ TEST_CASE("A loop wrap draws the pass it opened, not the one it ended",
     CHECK(reading.notes[0].startBeat == beats(0.5));
 }
 
-TEST_CASE("A take says which target it is recording into", "[engine][io][record][midi][2463]") {
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-    settings.tap.target = RecordTarget::slot;
-    settings.tap.scene = 3;
+TEST_CASE("The pass stands once the take that wrote it is gone",
+          "[engine][io][record][midi][2463]") {
+    MidiRig rig(drawn());
+    rig.schedule({noteOn(kBeatSamples, 60), noteOff(2 * kBeatSamples, 60)});
+    rig.play();
+    rig.run(3 * kBeatSamples);
 
-    MidiRig rig(settings);
+    const auto take = rig.finish();
+    rig.releaseTake();
+
+    // What the overlay holds until the clip appears in its place, which is only
+    // possible because the tap is not the take's to take with it.
+    const auto reading = rig.reading();
+    CHECK_FALSE(reading.recording);
+    CHECK(reading.pass == 1);
+    REQUIRE(reading.notes.size() == 1);
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(reading.notes[0].startBeat == beats(take.active.notes[0].startBeat));
+    CHECK(reading.notes[0].lengthBeats == beats(take.active.notes[0].lengthBeats));
+}
+
+TEST_CASE("A take says which target it is recording into", "[engine][io][record][midi][2463]") {
+    auto tap = drawn();
+    tap.target = RecordTarget::slot;
+    tap.scene = 3;
+
+    MidiRig rig(tap);
     rig.play();
     rig.run(kBeatSamples);
 
@@ -652,7 +677,7 @@ TEST_CASE("A take says which target it is recording into", "[engine][io][record]
 
 TEST_CASE("A take nobody draws publishes the pass and nothing else",
           "[engine][io][record][midi][2463]") {
-    MidiRig rig(MidiTakeRecorderSettings{});
+    MidiRig rig(RecordTapSettings{});
     rig.schedule({noteOn(kBeatSamples, 60)});
     rig.play();
     rig.run(2 * kBeatSamples);
@@ -729,10 +754,7 @@ TEST_CASE("A wrap starts the audio pass's peaks again", "[engine][io][record][24
 
 TEST_CASE("A pitch struck twice replaces the note that was already down",
           "[engine][io][record][midi][2463]") {
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings);
+    MidiRig rig(drawn());
     rig.schedule({noteOn(kBeatSamples, 60, 90), noteOn(2 * kBeatSamples, 60, 110),
                   noteOff(3 * kBeatSamples, 60)});
     rig.play();
@@ -787,10 +809,7 @@ TEST_CASE("A later pass is drawn where the take will hold it too",
     // The pass a wrap opened, where the preview's origin and the clip's are
     // arrived at differently: the tap counts from the boundary as it goes, the
     // take splits on it in finish().
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings);
+    MidiRig rig(drawn());
     rig.loop(0.0, 2.0);
     rig.schedule({noteOn(kBeatSamples / 2, 60), noteOff(kBeatSamples, 60),
                   noteOn(2 * kBeatSamples + (kBeatSamples / 2), 72),
@@ -814,10 +833,7 @@ TEST_CASE("A later pass is drawn where the take will hold it too",
 
 TEST_CASE("A note held across a wrap is not drawn in the pass it did not start in",
           "[engine][io][record][midi][2463]") {
-    MidiTakeRecorderSettings settings;
-    settings.tap = drawn();
-
-    MidiRig rig(settings);
+    MidiRig rig(drawn());
     rig.loop(0.0, 2.0);
     rig.schedule(
         {noteOn(3 * kBeatSamples / 2, 60), noteOff((2 * kBeatSamples) + kBeatSamples, 60)});

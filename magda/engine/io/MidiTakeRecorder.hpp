@@ -75,9 +75,6 @@ struct MidiTakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is always zero.
     RecordStreamSettings stream;
-
-    /// How much of the pass in flight is published (#2463).
-    RecordTapSettings tap;
 };
 
 /** @brief The record thread's end of a MIDI take: the events, in arrival order. */
@@ -103,7 +100,9 @@ class MidiTakeSink final : public RecordSink {
  */
 class MidiTakeRecorder final : public TakeCapture {
   public:
-    MidiTakeRecorder(const LiveInputFeed& feed, const MidiTakeRecorderSettings& settings);
+    /// @p tap is not owned and outlives the take (#2463).
+    MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
+                     const MidiTakeRecorderSettings& settings);
 
     ~MidiTakeRecorder() override = default;
 
@@ -189,7 +188,7 @@ class MidiTakeRecorder final : public TakeCapture {
     LiveMidiInput input_;
     MidiTakeSink sink_;
     RecordStream stream_;
-    RecordTap tap_;
+    RecordTap& tap_;
 
     /// This block's events, sized once so a capture cannot allocate.
     juce::MidiBuffer events_;

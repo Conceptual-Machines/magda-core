@@ -13,6 +13,11 @@
  * @file RecordTap.hpp
  * @brief What the pass in flight has reached, for whoever draws it (#2463).
  *
+ * Owned by whoever set the recording up, not by the take, for the reason a
+ * LevelTap is owned by the host: it outlives what writes it. A take is closed
+ * and destroyed the moment it becomes a clip, and the overlay has to stand
+ * until the clip appears in its place.
+ *
  * The fourth tap, following LaunchTap.hpp. A level tap reports a block, a value
  * tap a number, a launch tap a slot; this reports a recording pass: where it
  * started, how much it covers, the notes it has captured and the peaks its
@@ -197,14 +202,6 @@ class RecordTap {
      */
     bool read(Reading& into) const;
 
-    /// @brief The pass, for a caller with nothing to keep. A read that does not
-    /// settle comes back as a pass that never opened.
-    Reading read() const {
-        Reading reading;
-        read(reading);
-        return reading;
-    }
-
     int samplesPerPeak() const {
         return settings_.samplesPerPeak;
     }
@@ -221,8 +218,9 @@ class RecordTap {
      */
     void open(double startBeat);
 
-    /// @brief No pass in flight. What the last one reached stands, so an
-    /// overlay holds until the clip it became appears.
+    /// @brief No pass in flight. What the last one reached stands, which the
+    /// tap outliving the take is what makes possible: an overlay holds until
+    /// the clip it became appears.
     void close() {
         recording_.store(false, std::memory_order_relaxed);
     }

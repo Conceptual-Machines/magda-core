@@ -38,13 +38,13 @@ std::vector<std::int64_t> passLengths(std::span<const RecordedPass> passes) {
 
 }  // namespace
 
-TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& context,
+TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& context, RecordTap& tap,
                            TakeRecorderSettings settings)
     : settings_(std::move(settings)),
       input_(feed, settings_.channels, settings_.latencySamples),
       sink_(settings_.directory, settings_.name, settings_.file, fileContext(context, settings_)),
       stream_(sink_, queueFor(settings_)),
-      tap_(RecordMaterial::audio, settings_.tap) {
+      tap_(tap) {
     scratch_.setSize(takeChannels(settings_), std::max(1, context.maxBlockSize), false, true,
                      false);
 
