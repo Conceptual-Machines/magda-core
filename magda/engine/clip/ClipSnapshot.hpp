@@ -299,8 +299,9 @@ struct TrackClipPlayback {
     std::vector<AudioClipPlayback> audio;
     std::vector<MidiClipPlayback> midi;
 
-    /// Gates the arrangement (#2485): Session mode silences it whether or not
-    /// anything is launched, the way the fork's playSlotClips does.
+    /// Whether the arrangement above sounds. Session mode silences it whether
+    /// or not a slot is launched, as the fork's playSlotClips does (#2485).
+    /// Read per block by the track's arrangement sources.
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 
     /// Sorted by scene index, so two compiles of one model agree.

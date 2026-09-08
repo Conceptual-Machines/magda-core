@@ -58,7 +58,9 @@ struct ClipLane {
     /// decided at launch rather than at compile (#2301).
     std::vector<ClipInfo> session;
 
-    /// Gates the arrangement (#2485), carried onto TrackClipPlayback as is.
+    /// The track's TrackInfo::playbackMode. In Session mode the arrangement
+    /// clips above are silenced at render time (#2485); the compiler copies
+    /// it onto TrackClipPlayback unchanged.
     TrackPlaybackMode playbackMode = TrackPlaybackMode::Arrangement;
 };
 
