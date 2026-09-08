@@ -126,14 +126,14 @@ MaterialSpec toneFor(double seconds, double frequency) {
     return spec;
 }
 
-/// The steepest a full-scale copy of @p sources can be, per sample.
-///
-/// A limiter bounds amplitude and not slope, so a step bound read off its
-/// ceiling refuses the tones the project is made of. A full-scale sine steps
-/// 2*sin(pi*f/rate) between samples on its own, and a sum of them limited back
-/// to full scale lands above the steepest single one, which is what @p headroom
-/// carries. Derived rather than chosen so it cannot be set below the material
-/// again.
+/**
+ * @brief The steepest a full-scale copy of @p sources can be, per sample.
+ *
+ * A limiter bounds amplitude and not slope, so a bound read off its ceiling
+ * refuses the tones the project is made of. A full-scale sine steps
+ * 2*sin(pi*f/rate) on its own and a sum of them lands above the steepest one,
+ * which is what @p headroom carries.
+ */
 double fullScaleStepOf(const std::vector<FixtureSource>& sources, double headroom) {
     auto steepest = 0.0;
     for (const auto& source : sources)
