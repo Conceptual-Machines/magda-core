@@ -331,14 +331,33 @@ jobs:
         CLANG_TIDY_MAX_TUS: '40'
       run: |
         set -euo pipefail
-        base="${{ github.event.pull_request.base.sha || github.event.before }}"
+        base="${{ github.event.pull_request.base.sha }}"
 
-        # A branch's first push reports the all-zero SHA. Treating that as
-        # "nothing changed" would let a branch created, pushed once and merged
-        # carry findings the whole way: pull_request events only fire for PRs
-        # into main, so a PR into dev/0.X.0 never gets a second chance to lint.
-        # Find where this branch actually left the shared history instead.
-        if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+        case "${{ github.ref_name }}" in
+          main | dev/*) shared=true ;;
+          *)            shared=false ;;
+        esac
+
+        if [ -n "$base" ]; then
+          # The checkout is depth-1, so the base commit is not in this clone yet.
+          git fetch --no-tags --depth=1 origin "$base"
+        elif [ "$shared" = true ]; then
+          # A shared branch. Its commits arrived through PRs that were analysed
+          # on their own branches, and diffing back to where dev left main would
+          # re-analyse an entire release. Range over what this push added.
+          base="${{ github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            git fetch --no-tags --depth=2 origin "${{ github.ref_name }}"
+            base="HEAD~1"
+          else
+            git fetch --no-tags --depth=1 origin "$base"
+          fi
+        else
+          # A feature branch, where github.event.before cannot be trusted.
+          # The first push reports the all-zero SHA, and concurrency cancels
+          # in-flight runs: a push touching no C++ can cancel the only run that
+          # would have analysed the C++ still sitting at HEAD, then find nothing
+          # in its own narrow range. So diff the whole branch, every push.
           git fetch --no-tags --depth=200 origin \
             '+refs/heads/main:refs/remotes/origin/main' \
             '+refs/heads/dev/*:refs/remotes/origin/dev/*'
@@ -364,11 +383,8 @@ jobs:
             echo "Refusing to report clean without having analysed anything." >&2
             exit 1
           fi
-          echo "First push; using branch point $best ($best_count commit(s) ahead)."
+          echo "Branch point $best ($best_count commit(s) ahead)."
           base="$best"
-        else
-          # The checkout is depth-1, so the base commit is not in this clone yet.
-          git fetch --no-tags --depth=1 origin "$base"
         fi
 
         # Two dots rather than three: a merge base needs history neither side has
