@@ -329,14 +329,44 @@ jobs:
       run: |
         set -euo pipefail
         base="${{ github.event.pull_request.base.sha || github.event.before }}"
-        # Unset, or all-zeros on a branch's first push: nothing to compare against.
-        if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-          echo "No base commit to diff against; nothing to analyse."
-          exit 0
-        fi
 
-        # The checkout is depth-1, so the base commit is not in this clone yet.
-        git fetch --no-tags --depth=1 origin "$base"
+        # A branch's first push reports the all-zero SHA. Treating that as
+        # "nothing changed" would let a branch created, pushed once and merged
+        # carry findings the whole way: pull_request events only fire for PRs
+        # into main, so a PR into dev/0.X.0 never gets a second chance to lint.
+        # Find where this branch actually left the shared history instead.
+        if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+          git fetch --no-tags --depth=200 origin \
+            '+refs/heads/main:refs/remotes/origin/main' \
+            '+refs/heads/dev/*:refs/remotes/origin/dev/*'
+
+          # Only the shared branches above. Ranging over every remote ref would
+          # let this branch's own ref win the merge-base, and diffing a branch
+          # against itself reports nothing to do.
+          best="" best_count=""
+          head_sha=$(git rev-parse HEAD)
+          for ref in $(git for-each-ref --format='%(refname)' \
+                         refs/remotes/origin/main refs/remotes/origin/dev); do
+            mb=$(git merge-base HEAD "$ref" 2>/dev/null) || continue
+            # A ref that already contains HEAD gives no useful range.
+            [ "$mb" = "$head_sha" ] && continue
+            n=$(git rev-list --count "$mb..HEAD" 2>/dev/null) || continue
+            if [ -z "$best_count" ] || [ "$n" -lt "$best_count" ]; then
+              best_count="$n" best="$mb"
+            fi
+          done
+
+          if [ -z "$best" ]; then
+            echo "Could not find a branch point to diff against." >&2
+            echo "Refusing to report clean without having analysed anything." >&2
+            exit 1
+          fi
+          echo "First push; using branch point $best ($best_count commit(s) ahead)."
+          base="$best"
+        else
+          # The checkout is depth-1, so the base commit is not in this clone yet.
+          git fetch --no-tags --depth=1 origin "$base"
+        fi
 
         # Two dots rather than three: a merge base needs history neither side has
         # here. It can pull in commits that landed on the base branch meanwhile,
