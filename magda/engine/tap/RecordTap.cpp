@@ -37,15 +37,17 @@ void RecordTap::extend(double lengthBeats) {
 void RecordTap::writeSlot(std::uint32_t at, int note, int velocity, double beat) {
     auto& slot = notes_[at];
 
-    // Nothing, then the position, then who is there: a reader that took the
-    // identity first would otherwise pair it with a position written after it,
-    // which is the last pass's pitch on this pass's beat.
-    slot.identity.store(0, std::memory_order_relaxed);
-    std::atomic_thread_fence(std::memory_order_release);
+    // Odd while the slot changes hands, even once it stands. The count is what
+    // a reader compares, because two strikes of one pitch at one velocity are
+    // the same identity and comparing those would accept one strike's beat
+    // beside the next one's length.
+    slot.revision.fetch_add(1, std::memory_order_release);
 
+    slot.identity.store(packIdentity(pass_, note, velocity), std::memory_order_relaxed);
     slot.startBeat.store(beat, std::memory_order_relaxed);
     slot.lengthBeats.store(0.0, std::memory_order_relaxed);
-    slot.identity.store(packIdentity(pass_, note, velocity), std::memory_order_release);
+
+    slot.revision.fetch_add(1, std::memory_order_release);
 }
 
 void RecordTap::noteOn(int channel, int note, int velocity, double beat) {
@@ -181,19 +183,27 @@ void RecordTap::read(Reading& into) const {
     for (std::size_t at = 0; at < numNotes; ++at) {
         const auto& slot = notes_[at];
 
-        const auto identity = slot.identity.load(std::memory_order_acquire);
+        const auto revision = slot.revision.load(std::memory_order_acquire);
+
+        // Mid-replacement. Skipped rather than ending the list, because a
+        // retrigger rewrites a slot the pass has already moved past.
+        if ((revision & 1U) != 0U)
+            continue;
+
+        const auto identity = slot.identity.load(std::memory_order_relaxed);
+
+        // Past this pass's own notes: what follows was written by the next.
         if (static_cast<std::uint32_t>(identity >> 32U) != into.pass)
             break;
 
         const auto startBeat = slot.startBeat.load(std::memory_order_relaxed);
         const auto lengthBeats = slot.lengthBeats.load(std::memory_order_relaxed);
 
-        // The slot could have been taken over between the identity and the two
-        // loads above. A length that grew under the read is the same note being
-        // held; a slot that changed hands is not this note at all.
+        // The slot could have changed hands under the three loads above. A
+        // length that grew is the same note being held and turns nothing.
         std::atomic_thread_fence(std::memory_order_acquire);
-        if (slot.identity.load(std::memory_order_relaxed) != identity)
-            break;
+        if (slot.revision.load(std::memory_order_relaxed) != revision)
+            continue;
 
         into.notes.push_back({static_cast<int>(identity & 0x7fU),
                               static_cast<int>((identity >> 8U) & 0x7fU), startBeat, lengthBeats});

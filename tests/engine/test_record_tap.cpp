@@ -5,6 +5,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <thread>
@@ -420,6 +421,46 @@ TEST_CASE("A note is read as one note, not two halves of a slot", "[engine][tap]
         const auto reading = tap.read();
         for (const auto& note : reading.notes)
             REQUIRE(note.startBeat == beats(static_cast<double>(note.velocity)));
+
+        ++readings;
+    }
+
+    writer.join();
+    CHECK(readings > 0);
+}
+
+TEST_CASE("A retrigger that restores the same note is still a replacement",
+          "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    tap.open(0.0);
+
+    // One pitch at one velocity, struck over and over without coming up. Every
+    // strike packs the identity the last one did, so nothing about the note
+    // itself tells two of them apart and only a count can. The length says
+    // which strike a beat came from.
+    std::atomic<bool> writing{true};
+
+    std::thread writer([&] {
+        for (auto strike = 0; strike < 4000000; ++strike) {
+            const auto at = static_cast<double>(strike);
+            tap.noteOn(1, 60, 100, at);
+            tap.extend(at + 1.0 + static_cast<double>(strike % 7));
+        }
+        writing.store(false);
+    });
+
+    auto readings = 0;
+    while (writing.load()) {
+        const auto reading = tap.read();
+
+        for (const auto& note : reading.notes) {
+            // Zero is the strike itself, before the pass has extended it.
+            if (note.lengthBeats == 0.0)
+                continue;
+
+            REQUIRE(note.lengthBeats ==
+                    beats(1.0 + static_cast<double>(std::llround(note.startBeat) % 7)));
+        }
 
         ++readings;
     }

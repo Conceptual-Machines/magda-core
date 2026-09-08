@@ -90,12 +90,11 @@ struct RecordTapSettings {
  *
  * The notes are not in it: an array is as long as the pass is, and a reader
  * copying one inside a window would be racing the writer over a growing amount
- * of work. Each slot is published by its own identity instead -- cleared before
- * it is filled and written last -- and the identity carries the pass that
- * recorded it. A reader takes the slots whose identity names the pass it is
- * reporting and is unchanged either side of reading the position, so a wrap
- * during a read costs notes off the end of the list, never a note in the wrong
- * place.
+ * of work. Each slot carries its own revision instead, turned twice around
+ * every replacement, and its identity carries the pass that recorded it. A
+ * reader takes the slots naming the pass it is reporting whose revision is
+ * unchanged either side of the position, so a wrap or a retrigger during a read
+ * costs a note off the list, never a note in the wrong place.
  *
  * The peaks carry neither, and are the one thing here that can be ragged: a
  * wrap landing inside a read redraws a few ticks of the previous pass's audio,
@@ -208,10 +207,18 @@ class RecordTap {
     /// pass's length is cheaper than spinning until it is rescheduled.
     static constexpr int kReadAttempts = 64;
 
-    /// A note's identity and which pass recorded it. Zero while the slot is
-    /// being filled, which is what makes an overwrite visible to a reader
-    /// partway through one.
+    /// One note, and the count that says which occupant of the slot it is.
+    ///
+    /// The count rather than the identity, because the identity is not unique:
+    /// a pitch retriggered at the same velocity within one pass packs the same
+    /// word, so a reader comparing identities would accept the strike before
+    /// the replacement paired with the length after it. It rises on every
+    /// replacement and is odd while one is in flight.
+    ///
+    /// A length that grows under a read is not a replacement -- it is the same
+    /// note being held -- and deliberately does not touch it.
     struct NoteSlot {
+        std::atomic<std::uint64_t> revision{0};
         std::atomic<std::uint64_t> identity{0};
         std::atomic<double> startBeat{0.0};
         std::atomic<double> lengthBeats{0.0};
@@ -238,7 +245,7 @@ class RecordTap {
                (static_cast<std::size_t>(note) & (kNotesPerChannel - 1));
     }
 
-    /// One note into @p at, published by the identity written last.
+    /// One note into @p at, published between two turns of its revision.
     void writeSlot(std::uint32_t at, int note, int velocity, double beat);
 
     /// One tick's peak, folded into what the pass already put there. Assigned
