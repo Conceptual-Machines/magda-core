@@ -9,6 +9,14 @@
 # wrong (its filter matches the singular "warning generated" only).
 set -uo pipefail
 
+# mapfile is bash 4. macOS still ships 3.2 as /bin/bash, where this would fail
+# on a missing builtin rather than on anything to do with the code.
+if [ "${BASH_VERSINFO[0]:-0}" -lt 4 ]; then
+    echo "This hook needs bash 4 or newer; found ${BASH_VERSION:-unknown}." >&2
+    echo "On macOS: brew install bash (Homebrew's comes first on PATH)." >&2
+    exit 1
+fi
+
 # The bugprone/cert half of .clang-tidy, minus the five checks that still report
 # findings. Sweeping those is what unblocks WarningsAsErrors in .clang-tidy;
 # delete them from here as each reaches zero.
@@ -81,14 +89,16 @@ is_unbuilt_ok() {
 }
 
 status=0
-declare -a targets=()
+# Kept apart so the cap can never drop a file the push actually changed.
+declare -a changed=()
+declare -a expanded=()
 declare -a headers=()
 
 for file in "$@"; do
     case "$file" in
     *.cpp)
         if in_db "$file"; then
-            targets+=("$file")
+            changed+=("$file")
         elif is_unbuilt_ok "$file"; then
             echo "note: $file is in no compile command, which is expected for it."
         else
@@ -110,7 +120,7 @@ if [ ${#headers[@]} -gt 0 ]; then
     # status, so a process substitution's exit code is lost and a failing
     # mapping reads as success.
     if header_tus=$(BUILD_DIR="$BUILD_DIR" python3 "$hook_dir/tus-for-headers.py" "${headers[@]}"); then
-        [ -n "$header_tus" ] && mapfile -t -O "${#targets[@]}" targets <<<"$header_tus"
+        [ -n "$header_tus" ] && mapfile -t expanded <<<"$header_tus"
     else
         # Either the dependency data is unreadable or a header compiles into
         # nothing. Reporting clean off the back of either is the failure this
@@ -121,17 +131,31 @@ if [ ${#headers[@]} -gt 0 ]; then
     fi
 fi
 
-# One header can pull in a TU another already did, and so can a .cpp alongside
-# its own header.
-if [ ${#targets[@]} -gt 0 ]; then
-    mapfile -t targets < <(printf '%s\n' "${targets[@]}" | sort -u)
+if [ ${#changed[@]} -gt 0 ]; then
+    mapfile -t changed < <(printf '%s\n' "${changed[@]}" | sort -u)
 fi
 
-if [ "$MAX_TUS" -gt 0 ] && [ ${#targets[@]} -gt "$MAX_TUS" ]; then
-    echo "note: ${#targets[@]} translation units affected, analysing the first $MAX_TUS."
-    echo "      Set CLANG_TIDY_MAX_TUS=0 to analyse all of them."
-    targets=("${targets[@]:0:$MAX_TUS}")
+# Header expansion only. A file the push actually changed is never dropped:
+# capping the merged set meant a ninth changed .cpp went unanalysed and the gate
+# still reported clean.
+if [ ${#expanded[@]} -gt 0 ]; then
+    if [ ${#changed[@]} -gt 0 ]; then
+        mapfile -t expanded < <(
+            printf '%s\n' "${expanded[@]}" | sort -u |
+                grep -vxF -f <(printf '%s\n' "${changed[@]}") || true
+        )
+    else
+        mapfile -t expanded < <(printf '%s\n' "${expanded[@]}" | sort -u)
+    fi
 fi
+
+if [ "$MAX_TUS" -gt 0 ] && [ ${#expanded[@]} -gt "$MAX_TUS" ]; then
+    echo "note: changed headers reach ${#expanded[@]} further translation units,"
+    echo "      analysing the first $MAX_TUS. Set CLANG_TIDY_MAX_TUS=0 for all."
+    expanded=("${expanded[@]:0:$MAX_TUS}")
+fi
+
+declare -a targets=("${changed[@]}" "${expanded[@]}")
 
 for file in "${targets[@]:-}"; do
     [ -n "$file" ] || continue
