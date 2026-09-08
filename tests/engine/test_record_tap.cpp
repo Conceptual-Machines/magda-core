@@ -1,0 +1,563 @@
+#include <juce_audio_basics/juce_audio_basics.h>
+
+#include <array>
+#include <atomic>
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <cstdint>
+#include <memory>
+#include <thread>
+#include <utility>
+#include <vector>
+
+#include "exec/RenderContext.hpp"
+#include "io/LiveInput.hpp"
+#include "io/MidiTakeRecorder.hpp"
+#include "io/TakeRecorder.hpp"
+#include "tap/RecordTap.hpp"
+#include "transport/TempoMap.hpp"
+#include "transport/TransportClock.hpp"
+#include "transport/TransportState.hpp"
+
+/**
+ * @file test_record_tap.cpp
+ * @brief The pass in flight, reported without a poll (#2463).
+ *
+ * Offline throughout: a driven transport, a scheduled input, and the tap read
+ * from the same thread that fed it. What a case asserts is that the reading and
+ * the take agree, which is the whole point of the tap being written by the
+ * block that recorded the material.
+ */
+
+using magda::engine::AudioFileFormat;
+using magda::engine::kAnyLiveMidiSource;
+using magda::engine::LiveInputBlock;
+using magda::engine::LiveInputFeed;
+using magda::engine::LiveMidiStream;
+using magda::engine::LoopRange;
+using magda::engine::MidiTakeRecorder;
+using magda::engine::MidiTakeRecorderSettings;
+using magda::engine::RecordedMidiTake;
+using magda::engine::RecordMaterial;
+using magda::engine::RecordTap;
+using magda::engine::RecordTapSettings;
+using magda::engine::RecordTarget;
+using magda::engine::RenderContext;
+using magda::engine::TakeRecorder;
+using magda::engine::TakeRecorderSettings;
+using magda::engine::TempoMap;
+using magda::engine::TransportClock;
+using magda::engine::TransportSnapshot;
+
+namespace {
+
+constexpr double kSampleRate = 8000.0;
+
+/// A beat at 120 bpm and this rate: every position here is a whole number of
+/// samples.
+constexpr int kBeatSamples = 4000;
+
+Catch::Approx beats(double value) {
+    return Catch::Approx(value).margin(1e-9);
+}
+
+TempoMap flat() {
+    return TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
+}
+
+/// 120 bpm to beat 2, then 60 bpm. Two changes on one beat is a step.
+TempoMap halvedAtBeatTwo() {
+    return TempoMap({{0.0, 120.0, 0.0f}, {2.0, 120.0, 0.0f}, {2.0, 60.0, 0.0f}}, {{0.0, 4, 4}});
+}
+
+RecordTapSettings drawn(std::size_t maxNotes = 64, std::size_t maxPeaks = 0,
+                        int samplesPerPeak = 500) {
+    RecordTapSettings settings;
+    settings.maxNotes = maxNotes;
+    settings.maxPeaks = maxPeaks;
+    settings.samplesPerPeak = samplesPerPeak;
+    return settings;
+}
+
+/// One event, named by the arrival it was played on.
+struct Played {
+    std::int64_t arrival = 0;
+    juce::MidiMessage message;
+};
+
+Played noteOn(std::int64_t arrival, int note, int velocity = 100, int channel = 1) {
+    return {arrival, juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(velocity))};
+}
+
+Played noteOff(std::int64_t arrival, int note, int channel = 1) {
+    return {arrival, juce::MidiMessage::noteOff(channel, note)};
+}
+
+/** @brief A transport, a scheduled MIDI input and one take, a callback at a time. */
+class MidiRig {
+  public:
+    explicit MidiRig(MidiTakeRecorderSettings settings, TempoMap tempo = flat(), int blockSize = 64)
+        : blockSize_(blockSize) {
+        transport_.tempo = std::move(tempo);
+        feed_.prepare(0, blockSize_);
+        recorder_ = std::make_unique<MidiTakeRecorder>(feed_, std::move(settings));
+    }
+
+    void schedule(std::vector<Played> events) {
+        schedule_ = std::move(events);
+    }
+
+    void play(double fromBeat = 0.0, double countInBeats = 0.0) {
+        ++transport_.request.generation;
+        transport_.request.playing = true;
+        transport_.request.locate = true;
+        transport_.request.positionBeat = fromBeat;
+        transport_.request.countInBeats = countInBeats;
+    }
+
+    void loop(double startBeat, double endBeat) {
+        transport_.loop = LoopRange{true, startBeat, endBeat};
+    }
+
+    void run(int numSamples) {
+        for (auto left = numSamples; left > 0;) {
+            const auto callback = std::min(blockSize_, left);
+            deliver(callback);
+            left -= callback;
+        }
+    }
+
+    MidiTakeRecorder& recorder() {
+        return *recorder_;
+    }
+
+    RecordTap::Reading reading() const {
+        return recorder_->tap().read();
+    }
+
+    RecordedMidiTake finish() {
+        return recorder_->finish(transport_.tempo);
+    }
+
+  private:
+    void deliver(int numSamples) {
+        juce::MidiBuffer arriving;
+        for (const auto& event : schedule_)
+            if (event.arrival >= arrival_ && event.arrival < arrival_ + numSamples)
+                arriving.addEvent(event.message, static_cast<int>(event.arrival - arrival_));
+
+        const std::array streams{LiveMidiStream{0, &arriving}};
+        feed_.beginCallback(LiveInputBlock{{}, streams}, numSamples);
+
+        for (const auto& segment : clock_.advance(transport_, kSampleRate, numSamples)) {
+            feed_.beginSegment(segment.startSample, segment.block.numSamples);
+            recorder_->capture(segment.block, segment.countingIn, transport_.loop);
+        }
+
+        feed_.endCallback();
+        arrival_ += numSamples;
+    }
+
+    TransportSnapshot transport_;
+    TransportClock clock_;
+    LiveInputFeed feed_;
+    std::unique_ptr<MidiTakeRecorder> recorder_;
+
+    std::vector<Played> schedule_;
+    std::int64_t arrival_ = 0;
+    int blockSize_ = 64;
+};
+
+/// What arrival @p sample of @p channel carries, as the audio take's own cases
+/// number it: rising, so a window's peak is its last sample.
+float material(std::int64_t sample, int channel) {
+    return static_cast<float>(sample + 1 + (static_cast<std::int64_t>(channel) * 50000)) * 1.0e-5f;
+}
+
+juce::File emptyDirectory(const juce::String& name) {
+    auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                         .getChildFile("magda_record_tap_test")
+                         .getChildFile(name);
+    directory.deleteRecursively();
+    directory.createDirectory();
+    return directory;
+}
+
+/** @brief A transport, a synthetic audio input and one take. */
+class AudioRig {
+  public:
+    AudioRig(const juce::File& directory, RecordTapSettings tap, int blockSize = 64)
+        : input_(2, blockSize), blockSize_(blockSize) {
+        transport_.tempo = flat();
+        feed_.prepare(2, blockSize_);
+
+        TakeRecorderSettings settings;
+        settings.channels = {0, 1};
+        settings.directory = directory;
+        settings.file.format = AudioFileFormat::wav;
+        settings.file.bitDepth = 32;
+        settings.tap = std::move(tap);
+
+        recorder_ = std::make_unique<TakeRecorder>(feed_, RenderContext{kSampleRate, blockSize_, 2},
+                                                   std::move(settings));
+    }
+
+    void play(double fromBeat = 0.0) {
+        ++transport_.request.generation;
+        transport_.request.playing = true;
+        transport_.request.locate = true;
+        transport_.request.positionBeat = fromBeat;
+    }
+
+    void loop(double startBeat, double endBeat) {
+        transport_.loop = LoopRange{true, startBeat, endBeat};
+    }
+
+    void run(int numSamples) {
+        for (auto left = numSamples; left > 0;) {
+            const auto callback = std::min(blockSize_, left);
+            deliver(callback);
+            left -= callback;
+        }
+    }
+
+    TakeRecorder& recorder() {
+        return *recorder_;
+    }
+
+    RecordTap::Reading reading() const {
+        return recorder_->tap().read();
+    }
+
+  private:
+    void deliver(int numSamples) {
+        for (auto channel = 0; channel < input_.getNumChannels(); ++channel)
+            for (auto at = 0; at < numSamples; ++at)
+                input_.setSample(channel, at, material(arrival_ + at, channel));
+
+        const LiveInputBlock block{juce::dsp::AudioBlock<const float>(input_).getSubBlock(
+                                       0, static_cast<std::size_t>(numSamples)),
+                                   {}};
+
+        feed_.beginCallback(block, numSamples);
+
+        for (const auto& segment : clock_.advance(transport_, kSampleRate, numSamples)) {
+            feed_.beginSegment(segment.startSample, segment.block.numSamples);
+            recorder_->capture(segment.block, segment.countingIn, transport_.loop);
+        }
+
+        feed_.endCallback();
+        arrival_ += numSamples;
+    }
+
+    TransportSnapshot transport_;
+    TransportClock clock_;
+    LiveInputFeed feed_;
+    juce::AudioBuffer<float> input_;
+    std::unique_ptr<TakeRecorder> recorder_;
+
+    std::int64_t arrival_ = 0;
+    int blockSize_ = 64;
+};
+
+}  // namespace
+
+// --- the tap on its own ---
+
+TEST_CASE("A tap nothing has opened reports no pass", "[engine][tap][record][2463]") {
+    const RecordTap tap(RecordMaterial::midi, drawn());
+
+    const auto reading = tap.read();
+    CHECK_FALSE(reading.recording);
+    CHECK(reading.pass == 0);
+    CHECK(reading.lengthBeats == 0.0);
+    CHECK(reading.notes.empty());
+}
+
+TEST_CASE("A held note reaches the end of the pass and stops where it came up",
+          "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    tap.open(8.0);
+    tap.noteOn(1, 60, 100, 0.5);
+    tap.extend(1.0);
+
+    SECTION("still down, it is as long as the pass") {
+        tap.extend(2.5);
+
+        const auto reading = tap.read();
+        REQUIRE(reading.notes.size() == 1);
+        CHECK(reading.notes[0].startBeat == beats(0.5));
+        CHECK(reading.notes[0].lengthBeats == beats(2.0));
+        CHECK(reading.lengthBeats == beats(2.5));
+    }
+
+    SECTION("once it comes up, the pass grows past it") {
+        tap.noteOff(1, 60, 1.5);
+        tap.extend(2.5);
+
+        const auto reading = tap.read();
+        REQUIRE(reading.notes.size() == 1);
+        CHECK(reading.notes[0].lengthBeats == beats(1.0));
+    }
+}
+
+TEST_CASE("A pass takes the last one's notes with it", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    tap.open(0.0);
+    tap.noteOn(1, 60, 100, 0.5);
+    tap.noteOff(1, 60, 1.0);
+    tap.extend(4.0);
+
+    tap.open(4.0);
+    tap.noteOn(1, 67, 100, 0.25);
+    tap.extend(1.0);
+
+    const auto reading = tap.read();
+    CHECK(reading.pass == 2);
+    CHECK(reading.startBeat == beats(4.0));
+    REQUIRE(reading.notes.size() == 1);
+    CHECK(reading.notes[0].noteNumber == 67);
+}
+
+TEST_CASE("A note the pass has no room for is counted", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn(2));
+    tap.open(0.0);
+
+    for (auto note = 0; note < 5; ++note)
+        tap.noteOn(1, 60 + note, 100, static_cast<double>(note));
+
+    const auto reading = tap.read();
+    CHECK(reading.notes.size() == 2);
+    CHECK(reading.notesLost == 3);
+}
+
+TEST_CASE("A closed pass keeps what it reached", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::audio, drawn());
+    tap.open(2.0);
+    tap.extend(1.5);
+    tap.close();
+
+    const auto reading = tap.read();
+    CHECK_FALSE(reading.recording);
+    CHECK(reading.startBeat == beats(2.0));
+    CHECK(reading.lengthBeats == beats(1.5));
+}
+
+TEST_CASE("A reading is one pass's own, never two", "[engine][tap][record][2463]") {
+    RecordTap tap(RecordMaterial::midi, drawn());
+    std::atomic<bool> writing{true};
+
+    // Each pass is named twice over: by where it starts and by the note it
+    // holds. A reading that paired one pass's start with another's notes would
+    // disagree with itself.
+    std::thread writer([&] {
+        for (auto pass = 0; pass < 2000; ++pass) {
+            tap.open(static_cast<double>(pass) * 4.0);
+            for (auto note = 0; note < 8; ++note) {
+                tap.noteOn(1, 60 + (pass % 12), 100, static_cast<double>(note) * 0.5);
+                tap.extend(static_cast<double>(note + 1) * 0.5);
+            }
+        }
+        writing.store(false);
+    });
+
+    auto readings = 0;
+    while (writing.load()) {
+        const auto reading = tap.read();
+        if (reading.pass == 0)
+            continue;
+
+        const auto pass = static_cast<int>(reading.pass) - 1;
+        REQUIRE(reading.startBeat == beats(static_cast<double>(pass) * 4.0));
+
+        for (const auto& note : reading.notes)
+            REQUIRE(note.noteNumber == 60 + (pass % 12));
+
+        ++readings;
+    }
+
+    writer.join();
+    CHECK(readings > 0);
+}
+
+// --- the pass a MIDI take is recording ---
+
+TEST_CASE("A note is drawn at the beat the finished clip holds it at",
+          "[engine][io][record][midi][2463]") {
+    const auto tempo = GENERATE_COPY(flat(), halvedAtBeatTwo());
+
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings, tempo);
+    rig.schedule({noteOn(kBeatSamples, 64), noteOff(3 * kBeatSamples, 64)});
+    rig.play();
+    rig.run(4 * kBeatSamples);
+
+    const auto preview = rig.reading();
+    const auto take = rig.finish();
+
+    REQUIRE(preview.notes.size() == 1);
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(preview.notes[0].startBeat == beats(take.active.notes[0].startBeat));
+    CHECK(preview.notes[0].lengthBeats == beats(take.active.notes[0].lengthBeats));
+    CHECK(preview.notes[0].noteNumber == take.active.notes[0].noteNumber);
+    CHECK(preview.startBeat == beats(take.startBeat));
+}
+
+TEST_CASE("A pass reports the length it captured, whatever the block size",
+          "[engine][io][record][midi][2463]") {
+    const auto blockSize = GENERATE(16, 64, 100);
+
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings, flat(), blockSize);
+    rig.play();
+    rig.run(6 * kBeatSamples);
+
+    const auto reading = rig.reading();
+    CHECK(reading.recording);
+    CHECK(reading.pass == 1);
+    CHECK(reading.lengthBeats == beats(6.0));
+}
+
+TEST_CASE("An armed track with a stopped transport reports nothing",
+          "[engine][io][record][midi][2463]") {
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    SECTION("never played") {
+        MidiRig rig(settings);
+        rig.run(2 * kBeatSamples);
+
+        const auto reading = rig.reading();
+        CHECK_FALSE(reading.recording);
+        CHECK(reading.pass == 0);
+        CHECK(reading.lengthBeats == 0.0);
+    }
+
+    SECTION("counting in") {
+        MidiRig rig(settings);
+        rig.play(0.0, 2.0);
+        rig.run(2 * kBeatSamples);
+
+        const auto reading = rig.reading();
+        CHECK_FALSE(reading.recording);
+        CHECK(reading.pass == 0);
+    }
+}
+
+TEST_CASE("A loop wrap draws the pass it opened, not the one it ended",
+          "[engine][io][record][midi][2463]") {
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+
+    MidiRig rig(settings);
+    rig.loop(0.0, 2.0);
+    rig.schedule({noteOn(kBeatSamples / 2, 60), noteOff(kBeatSamples, 60),
+                  noteOn(2 * kBeatSamples + kBeatSamples / 2, 72), noteOff(3 * kBeatSamples, 72)});
+    rig.play();
+    rig.run(3 * kBeatSamples + (kBeatSamples / 2));
+
+    const auto reading = rig.reading();
+    CHECK(reading.pass == 2);
+    CHECK(reading.startBeat == beats(0.0));
+    REQUIRE(reading.notes.size() == 1);
+    CHECK(reading.notes[0].noteNumber == 72);
+    CHECK(reading.notes[0].startBeat == beats(0.5));
+}
+
+TEST_CASE("A take says which target it is recording into", "[engine][io][record][midi][2463]") {
+    MidiTakeRecorderSettings settings;
+    settings.tap = drawn();
+    settings.tap.target = RecordTarget::slot;
+    settings.tap.scene = 3;
+
+    MidiRig rig(settings);
+    rig.play();
+    rig.run(kBeatSamples);
+
+    const auto reading = rig.reading();
+    CHECK(reading.target == RecordTarget::slot);
+    CHECK(reading.scene == 3);
+    CHECK(reading.material == RecordMaterial::midi);
+}
+
+TEST_CASE("A take nobody draws publishes the pass and nothing else",
+          "[engine][io][record][midi][2463]") {
+    MidiRig rig(MidiTakeRecorderSettings{});
+    rig.schedule({noteOn(kBeatSamples, 60)});
+    rig.play();
+    rig.run(2 * kBeatSamples);
+
+    const auto reading = rig.reading();
+    CHECK(reading.recording);
+    CHECK(reading.lengthBeats == beats(2.0));
+    CHECK(reading.notes.empty());
+
+    // Nothing was asked for, so nothing was lost.
+    CHECK(reading.notesLost == 0);
+    CHECK(reading.peaksLost == 0);
+}
+
+// --- the pass an audio take is recording ---
+
+TEST_CASE("A pass's peaks are the samples the take wrote", "[engine][io][record][2463]") {
+    AudioRig rig(emptyDirectory("peaks"), drawn(0, 32, 500));
+    rig.play();
+    rig.run(2000);
+
+    const auto reading = rig.reading();
+    CHECK(reading.material == RecordMaterial::audio);
+    REQUIRE(reading.peaks.size() == 4);
+
+    // Rising material, so a window's peak is its last sample.
+    for (std::size_t at = 0; at < reading.peaks.size(); ++at) {
+        const auto last = static_cast<std::int64_t>((at + 1) * 500) - 1;
+        CHECK(reading.peaks[at].left == Catch::Approx(material(last, 0)));
+        CHECK(reading.peaks[at].right == Catch::Approx(material(last, 1)));
+    }
+}
+
+TEST_CASE("An audio pass reports the length it wrote, whatever the block size",
+          "[engine][io][record][2463]") {
+    const auto blockSize = GENERATE(16, 64, 100);
+
+    AudioRig rig(emptyDirectory("length"), drawn(0, 64, 500), blockSize);
+    rig.play();
+    rig.run(5 * kBeatSamples);
+
+    const auto reading = rig.reading();
+    const auto written = static_cast<double>(rig.recorder().capturedSamples());
+    CHECK(reading.lengthBeats == beats(written / kBeatSamples));
+    CHECK(reading.lengthBeats == beats(5.0));
+}
+
+TEST_CASE("Peaks a pass has no room for are counted", "[engine][io][record][2463]") {
+    AudioRig rig(emptyDirectory("peaks_lost"), drawn(0, 2, 500));
+    rig.play();
+    rig.run(2000);
+
+    const auto reading = rig.reading();
+    CHECK(reading.peaks.size() == 2);
+    CHECK(reading.peaksLost == 2);
+}
+
+TEST_CASE("A wrap starts the audio pass's peaks again", "[engine][io][record][2463]") {
+    AudioRig rig(emptyDirectory("wrap"), drawn(0, 64, 500));
+    rig.loop(0.0, 1.0);
+    rig.play();
+    rig.run(kBeatSamples + 1000);
+
+    const auto reading = rig.reading();
+    CHECK(reading.pass == 2);
+    CHECK(reading.startBeat == beats(0.0));
+    CHECK(reading.lengthBeats == beats(0.25));
+    REQUIRE(reading.peaks.size() == 2);
+
+    // The second pass's first peak is the material that arrived after the wrap,
+    // not the first pass's.
+    CHECK(reading.peaks[0].left == Catch::Approx(material(kBeatSamples + 499, 0)));
+}

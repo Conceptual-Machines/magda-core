@@ -105,6 +105,8 @@ const char* toString(OpRole role) {
             return "clipMidi";
         case OpRole::LiveAudioInput:
             return "liveAudioInput";
+        case OpRole::LiveInputMeter:
+            return "liveInputMeter";
         case OpRole::LiveMidiInput:
             return "liveMidiInput";
         case OpRole::SessionAudio:

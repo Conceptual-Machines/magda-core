@@ -13,6 +13,7 @@
 #include "io/RecordingFeed.hpp"
 #include "io/TakeFileSink.hpp"
 #include "io/TakePasses.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
 
 /**
@@ -121,6 +122,9 @@ struct TakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is the take's.
     RecordStreamSettings stream;
+
+    /// How much of the pass in flight is published (#2463).
+    RecordTapSettings tap;
 };
 
 /**
@@ -152,6 +156,11 @@ class TakeRecorder final : public TakeCapture {
 
     void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
 
+    /// Where the pass in flight is published (#2463).
+    const RecordTap& tap() const override {
+        return tap_;
+    }
+
     /// Samples offered to the queue so far. Read from any thread; what a
     /// running take is drawn from (#2463).
     std::int64_t capturedSamples() const {
@@ -180,7 +189,7 @@ class TakeRecorder final : public TakeCapture {
 
     /// A wrap: where the pass ended, handed to the sink. The one place a
     /// boundary is named, so the rule above it holds everywhere.
-    void openPass(const LoopRange& loop);
+    void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
 
@@ -196,6 +205,7 @@ class TakeRecorder final : public TakeCapture {
     LiveAudioInput input_;
     TakeFileSink sink_;
     RecordStream stream_;
+    RecordTap tap_;
 
     /// The block, narrowed to the channels the take holds.
     juce::AudioBuffer<float> scratch_;
@@ -226,6 +236,13 @@ class TakeRecorder final : public TakeCapture {
     double startBeat_ = 0.0;
     double startSeconds_ = 0.0;
     double endBeat_ = 0.0;
+
+    /// Where the pass in flight began, in samples written and in the beat they
+    /// reach. The tap counts a pass from what was written rather than from the
+    /// boundary the sink was given, so its peaks and its length are the same
+    /// stretch of audio.
+    std::int64_t passOrigin_ = 0;
+    double passOriginBeat_ = 0.0;
 
     /// Whether the take began on the loop start, which is what says its first
     /// pass is a pass rather than a lead-in.

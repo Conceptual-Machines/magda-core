@@ -14,6 +14,7 @@
 #include "io/RecordStream.hpp"
 #include "io/RecordingFeed.hpp"
 #include "io/TakePasses.hpp"
+#include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TimeDomains.hpp"
 #include "transport/TransportState.hpp"
@@ -73,6 +74,9 @@ struct MidiTakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is always zero.
     RecordStreamSettings stream;
+
+    /// How much of the pass in flight is published (#2463).
+    RecordTapSettings tap;
 };
 
 /** @brief The record thread's end of a MIDI take: the events, in arrival order. */
@@ -116,6 +120,11 @@ class MidiTakeRecorder final : public TakeCapture {
 
     void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
 
+    /// Where the pass in flight is published (#2463).
+    const RecordTap& tap() const override {
+        return tap_;
+    }
+
     /// Events offered to the queue so far. Read from any thread (#2463).
     std::int64_t capturedEvents() const {
         return captured_.load(std::memory_order_relaxed);
@@ -145,12 +154,22 @@ class MidiTakeRecorder final : public TakeCapture {
     void start(const BlockInfo& block, const LoopRange& loop);
 
     /// A wrap: where the pass ended, in the take's own positions.
-    void openPass(const LoopRange& loop);
+    void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
 
     /// This block's events, stamped and queued.
     void write(const BlockInfo& block);
+
+    /// This block's notes and the pass's length, as the block leaves them.
+    void publish(const BlockInfo& block);
+
+    /// The beat @p sample falls on, through the block's own map: the same
+    /// conversion finish() makes, so the preview and the clip place a note
+    /// alike unless the tempo is edited mid-take.
+    double liveBeatAt(const BlockInfo& block, std::int64_t sample) const {
+        return block.beatAtTime(timeAt(sample));
+    }
 
     /// The beat @p moment falls on, as BlockInfo::beatAtTime reads it.
     double beatAt(const TempoMap& tempo, double moment) const;
@@ -169,6 +188,7 @@ class MidiTakeRecorder final : public TakeCapture {
     LiveMidiInput input_;
     MidiTakeSink sink_;
     RecordStream stream_;
+    RecordTap tap_;
 
     /// This block's events, sized once so a capture cannot allocate.
     juce::MidiBuffer events_;
@@ -188,6 +208,12 @@ class MidiTakeRecorder final : public TakeCapture {
     double startBeat_ = 0.0;
     double startSeconds_ = 0.0;
     double sampleRate_ = 0.0;
+
+    /// Where the pass in flight began, in the take's own positions and in the
+    /// beats they resolve to. What the tap's notes are relative to, which is
+    /// what MidiTake holds them relative to.
+    std::int64_t passOrigin_ = 0;
+    double passOriginBeat_ = 0.0;
 
     /// The block's own beat origin, so a beat is read here as the render read it.
     MaterialOrigin origin_;

@@ -210,7 +210,8 @@ MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed,
                                    const MidiTakeRecorderSettings& settings)
     : settings_(settings),
       input_(feed, settings_.source, settings_.latencySamples),
-      stream_(sink_, queueFor(settings_)) {
+      stream_(sink_, queueFor(settings_)),
+      tap_(RecordMaterial::midi, settings_.tap) {
     // Sized once, so a block's events are copied into it and never allocate.
     events_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
 }
@@ -236,10 +237,11 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
             return;
         }
 
-        openPass(loop);
+        openPass(block, loop);
     }
 
     write(block);
+    publish(block);
     arrivals_ += block.numSamples;
 }
 
@@ -253,9 +255,13 @@ void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
     sampleRate_ = block.rate();
     origin_ = block.materialOrigin;
     startedAtLoopStart_ = atLoopStart(block, loop);
+
+    passOrigin_ = 0;
+    passOriginBeat_ = startBeat_;
+    tap_.open(startBeat_);
 }
 
-void MidiTakeRecorder::openPass(const LoopRange& loop) {
+void MidiTakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
 
@@ -268,11 +274,19 @@ void MidiTakeRecorder::openPass(const LoopRange& loop) {
     }
 
     boundaries_[numBoundaries_++] = arrivals_;
+
+    // The pass the tap draws is the pass the clip will be, so it opens on the
+    // boundary that was taken: a pass end the take could not hold is two passes
+    // run together for the preview as well.
+    passOrigin_ = arrivals_;
+    passOriginBeat_ = liveBeatAt(block, arrivals_);
+    tap_.open(block.beats.start);
 }
 
 void MidiTakeRecorder::stop() {
     state_ = State::stopped;
     rolling_.store(false, std::memory_order_relaxed);
+    tap_.close();
 }
 
 void MidiTakeRecorder::write(const BlockInfo& block) {
@@ -287,6 +301,32 @@ void MidiTakeRecorder::write(const BlockInfo& block) {
     // The one head correction, applied on the way in.
     stream_.writeMidi(events_, arrivals_ - settings_.latencySamples);
     captured_.fetch_add(events_.getNumEvents(), std::memory_order_relaxed);
+}
+
+void MidiTakeRecorder::publish(const BlockInfo& block) {
+    const auto head = arrivals_ - settings_.latencySamples;
+
+    for (const auto metadata : events_) {
+        const auto sample = head + metadata.samplePosition;
+
+        // A latency can stamp an event before the pass it arrived in began,
+        // and the pass that owns it has already been drawn. finish() still
+        // places it, in the pass it belongs to.
+        if (sample < passOrigin_)
+            continue;
+
+        const auto message = metadata.getMessage();
+        const auto beat = liveBeatAt(block, sample) - passOriginBeat_;
+
+        // JUCE's own reading of a note on at zero velocity, which is the wire
+        // rule kindOf() keeps above.
+        if (message.isNoteOn())
+            tap_.noteOn(message.getChannel(), message.getNoteNumber(), message.getVelocity(), beat);
+        else if (message.isNoteOff())
+            tap_.noteOff(message.getChannel(), message.getNoteNumber(), beat);
+    }
+
+    tap_.extend(std::max(0.0, liveBeatAt(block, end_) - passOriginBeat_));
 }
 
 double MidiTakeRecorder::timeAt(std::int64_t sample) const {

@@ -43,7 +43,8 @@ TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& conte
     : settings_(std::move(settings)),
       input_(feed, settings_.channels, settings_.latencySamples),
       sink_(settings_.directory, settings_.name, settings_.file, fileContext(context, settings_)),
-      stream_(sink_, queueFor(settings_)) {
+      stream_(sink_, queueFor(settings_)),
+      tap_(RecordMaterial::audio, settings_.tap) {
     scratch_.setSize(takeChannels(settings_), std::max(1, context.maxBlockSize), false, true,
                      false);
 
@@ -72,7 +73,7 @@ void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRa
             return;
         }
 
-        openPass(loop);
+        openPass(block, loop);
     }
 
     write(block);
@@ -93,6 +94,10 @@ void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
     startedAtLoopStart_ = atLoopStart(block, loop);
     headDrop_ = std::max(0, settings_.latencySamples);
 
+    passOrigin_ = 0;
+    passOriginBeat_ = startBeat_;
+    tap_.open(startBeat_);
+
     // A negative latency asks for samples from before the take was armed.
     // Silence stands in for them, which is what leaves the first real sample
     // where it happened.
@@ -103,7 +108,7 @@ void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
     }
 }
 
-void TakeRecorder::openPass(const LoopRange& loop) {
+void TakeRecorder::openPass(const BlockInfo& block, const LoopRange& loop) {
     loopStartBeat_ = loop.startBeat;
     loopEndBeat_ = loop.endBeat;
 
@@ -118,13 +123,24 @@ void TakeRecorder::openPass(const LoopRange& loop) {
     if (firstBoundary_ < 0)
         firstBoundary_ = boundary;
 
-    if (!sink_.markPassEnd(boundary))
+    if (!sink_.markPassEnd(boundary)) {
         ++boundariesLost_;
+        return;
+    }
+
+    // The pass the tap draws is the pass the file will be, so it opens on the
+    // boundary that was taken. It is counted from what has been written rather
+    // than from the boundary itself, so a peak and the length beside it are the
+    // same stretch of audio.
+    passOrigin_ = written_;
+    passOriginBeat_ = endBeat_;
+    tap_.open(block.beats.start);
 }
 
 void TakeRecorder::stop() {
     state_ = State::stopped;
     rolling_.store(false, std::memory_order_relaxed);
+    tap_.close();
 }
 
 void TakeRecorder::write(const BlockInfo& block) {
@@ -148,9 +164,15 @@ void TakeRecorder::write(const BlockInfo& block) {
     if (kept <= 0)
         return;
 
-    stream_.writeAudio(
-        captured.getSubBlock(static_cast<std::size_t>(offset), static_cast<std::size_t>(kept)),
-        kept);
+    const auto keptBlock =
+        captured.getSubBlock(static_cast<std::size_t>(offset), static_cast<std::size_t>(kept));
+
+    stream_.writeAudio(keptBlock, kept);
+
+    // The pass's own audio, at the position it was written at, so a peak and
+    // the samples behind it are the same stretch.
+    tap_.addPeaks(keptBlock, kept, written_ - passOrigin_);
+
     written_ += kept;
     captured_.store(written_, std::memory_order_relaxed);
 
@@ -159,6 +181,8 @@ void TakeRecorder::write(const BlockInfo& block) {
     // arrived, and across a tempo change the two are not the same length.
     if (const auto rate = block.rate(); rate > 0.0)
         endBeat_ = block.beatAtTime(startSeconds_ + (static_cast<double>(written_) / rate));
+
+    tap_.extend(std::max(0.0, endBeat_ - passOriginBeat_));
 }
 
 RecordedTake TakeRecorder::finish() {
