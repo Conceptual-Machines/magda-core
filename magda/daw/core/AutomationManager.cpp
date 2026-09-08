@@ -1214,22 +1214,22 @@ void AutomationManager::refreshIdCountersFromLanes() {
     int maxPointId = 0;
 
     for (const auto& lane : lanes_) {
-        maxLaneId = std::max(lane.id, maxLaneId);
+        maxLaneId = std::max(maxLaneId, lane.id);
 
         for (const auto& point : lane.absolutePoints) {
-            maxPointId = std::max(point.id, maxPointId);
+            maxPointId = std::max(maxPointId, point.id);
         }
 
         for (auto clipId : lane.clipIds) {
-            maxClipId = std::max(clipId, maxClipId);
+            maxClipId = std::max(maxClipId, clipId);
         }
     }
 
     for (const auto& clip : clips_) {
-        maxClipId = std::max(clip.id, maxClipId);
+        maxClipId = std::max(maxClipId, clip.id);
 
         for (const auto& point : clip.points) {
-            maxPointId = std::max(point.id, maxPointId);
+            maxPointId = std::max(maxPointId, point.id);
         }
     }
 

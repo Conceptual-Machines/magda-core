@@ -520,7 +520,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
             float absVal = std::abs(data[s]);
-            maxVal = std::max(absVal, maxVal);
+            maxVal = std::max(maxVal, absVal);
         }
         maxVal *= waveformGain_;
 
@@ -539,7 +539,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
         float maxVal = 0.0f;
         for (int s = startSample; s < endSample; ++s) {
             float absVal = std::abs(data[s]);
-            maxVal = std::max(absVal, maxVal);
+            maxVal = std::max(maxVal, absVal);
         }
         maxVal *= waveformGain_;
 

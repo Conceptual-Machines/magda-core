@@ -511,7 +511,7 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         (frac > 0.0) ? frac
                      : static_cast<double>(timeSigNumerator) *
                            GridConstants::findBarMultiple(zoom, timeSigNumerator, minPixelSpacing);
-    intervalBeats = std::max(gridResolutionBeats, intervalBeats);
+    intervalBeats = std::max(intervalBeats, gridResolutionBeats);
 
     double pixelsPerBeat = zoom;
     double pixelsPerBar = zoom * timeSigNumerator;

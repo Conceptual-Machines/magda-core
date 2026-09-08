@@ -492,7 +492,7 @@ void MainWindow::performMidiExport(const ExportMidiDialog::Settings& settings) {
     for (const auto& clip : clips) {
         if (clip.isMidi()) {
             double endBeats = timelineEndBeats(clip, projectTempo);
-            rangeEndBeats = std::max(endBeats, rangeEndBeats);
+            rangeEndBeats = std::max(rangeEndBeats, endBeats);
         }
     }
 

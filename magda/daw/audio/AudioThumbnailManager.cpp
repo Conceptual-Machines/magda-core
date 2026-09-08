@@ -426,8 +426,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     const float* samples = buffer.getReadPointer(ch);
                     for (juce::int64 s = colStart; s < colEnd; ++s) {
                         const float v = samples[s];
-                        minVal = std::min(v, minVal);
-                        maxVal = std::max(v, maxVal);
+                        minVal = std::min(minVal, v);
+                        maxVal = std::max(maxVal, v);
                     }
                 } else {
                     int count = static_cast<int>(colEnd - colStart);
@@ -436,8 +436,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     const float* samples = chunkBuffer.getReadPointer(ch);
                     for (int s = 0; s < readCount; ++s) {
                         const float v = samples[s];
-                        minVal = std::min(v, minVal);
-                        maxVal = std::max(v, maxVal);
+                        minVal = std::min(minVal, v);
+                        maxVal = std::max(maxVal, v);
                     }
                 }
 

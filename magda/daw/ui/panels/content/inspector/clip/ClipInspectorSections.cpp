@@ -1126,7 +1126,7 @@ void ClipInspector::initClipPropertiesSection() {
                               magda::audioEventRef(*clip).loopStartSeconds();
         double newLoopStartSeconds =
             displayBeatsToAudioSourceSeconds(*clip, newLoopStartBeats, bpm);
-        newLoopStartSeconds = std::max(0.0, newLoopStartSeconds);
+        newLoopStartSeconds = std::max(newLoopStartSeconds, 0.0);
         double newOffset = newLoopStartSeconds + currentPhase;
         // Atomic: change loopStart, then place offset to preserve phase. Undo
         // collapses both in a single step.

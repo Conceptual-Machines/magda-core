@@ -583,7 +583,7 @@ void WaveformGridComponent::paintBeatGrid(juce::Graphics& g, const magda::ClipIn
                 ? frac
                 : static_cast<double>(timeSigNum) * magda::GridConstants::findBarMultiple(
                                                         pixelsPerBeat, timeSigNum, kMinGridLinePx);
-        gridBeats = std::max(adaptiveBeats, gridBeats);
+        gridBeats = std::max(gridBeats, adaptiveBeats);
     }
     double secondsPerGrid = gridBeats * secondsPerBeat;
 

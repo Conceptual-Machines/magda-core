@@ -150,8 +150,8 @@ std::unique_ptr<WaveformPeakCache> WaveformPeakCache::computeAndWrite(
                 float maxVal = -1.0f;
                 for (int k = s; k < bucketEnd; ++k) {
                     const float v = samples[k];
-                    minVal = std::min(v, minVal);
-                    maxVal = std::max(v, maxVal);
+                    minVal = std::min(minVal, v);
+                    maxVal = std::max(maxVal, v);
                 }
                 // Empty bucket (only at EOF) collapses to silence.
                 if (minVal > maxVal) {
@@ -239,8 +239,8 @@ WaveformPeakCache::MinMax WaveformPeakCache::getMinMaxForRange(int channel, juce
     for (juce::int64 b = firstBucket; b <= lastBucket; ++b) {
         const auto bMin = chPeaks[static_cast<size_t>(b * 2)];
         const auto bMax = chPeaks[static_cast<size_t>(b * 2 + 1)];
-        minI = std::min(bMin, minI);
-        maxI = std::max(bMax, maxI);
+        minI = std::min(minI, bMin);
+        maxI = std::max(maxI, bMax);
     }
 
     if (minI > maxI) {
