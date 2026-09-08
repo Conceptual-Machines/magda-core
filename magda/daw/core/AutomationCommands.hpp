@@ -404,8 +404,8 @@ class MoveAutomationClipCommand : public UndoableCommand {
  */
 class RenameAutomationClipCommand : public UndoableCommand {
   public:
-    RenameAutomationClipCommand(AutomationClipId clipId, const juce::String& newName)
-        : clipId_(clipId), newName_(newName) {
+    RenameAutomationClipCommand(AutomationClipId clipId, juce::String newName)
+        : clipId_(clipId), newName_(std::move(newName)) {
         captureOldName();
     }
 

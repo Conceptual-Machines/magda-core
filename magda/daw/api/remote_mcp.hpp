@@ -380,8 +380,8 @@ class McpEndpoint {
     }
 
   private:
-    void callTool(const Call& call, Completion onComplete);
-    void readResource(const Call& call, Completion onComplete);
+    void callTool(const Call& call, const Completion& onComplete);
+    void readResource(const Call& call, const Completion& onComplete);
 
     /// Build the dispatcher context from `_meta`. Nullopt when a field is
     /// present but unusable, which is a client error rather than a default to

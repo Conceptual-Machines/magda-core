@@ -1,5 +1,7 @@
 #include "racks/InstrumentRackManager.hpp"
 
+#include <utility>
+
 #include "plugins/InstrumentMeterTapPlugin.hpp"
 
 namespace magda {
@@ -13,7 +15,7 @@ te::Plugin::Ptr createMeterTapPlugin(te::Edit& edit) {
     return edit.getPluginCache().createNewPlugin(pluginState);
 }
 
-te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
+te::Plugin::Ptr findMeterTapPlugin(const te::RackType::Ptr& rackType) {
     if (!rackType)
         return nullptr;
 
@@ -29,7 +31,7 @@ te::Plugin::Ptr findMeterTapPlugin(te::RackType::Ptr rackType) {
 
 InstrumentRackManager::InstrumentRackManager(te::Edit& edit) : edit_(edit) {}
 
-te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument,
+te::Plugin::Ptr InstrumentRackManager::wrapInstrument(const te::Plugin::Ptr& instrument,
                                                       const routing::ChainRoutingNode& routing) {
     if (!instrument) {
         return nullptr;
@@ -125,7 +127,8 @@ te::Plugin::Ptr InstrumentRackManager::wrapInstrument(te::Plugin::Ptr instrument
 }
 
 te::Plugin::Ptr InstrumentRackManager::wrapMultiOutInstrument(
-    te::Plugin::Ptr instrument, int numOutputChannels, const routing::ChainRoutingNode& routing) {
+    const te::Plugin::Ptr& instrument, int numOutputChannels,
+    const routing::ChainRoutingNode& routing) {
     if (!instrument || numOutputChannels <= 2) {
         return wrapInstrument(instrument, routing);  // Fallback to normal wrapping
     }
@@ -311,8 +314,9 @@ void InstrumentRackManager::unwrap(DeviceId deviceId) {
 }
 
 void InstrumentRackManager::recordWrapping(const ChainNodePath& devicePath,
-                                           te::RackType::Ptr rackType, te::Plugin::Ptr innerPlugin,
-                                           te::Plugin::Ptr rackInstance, bool isMultiOut,
+                                           const te::RackType::Ptr& rackType,
+                                           te::Plugin::Ptr innerPlugin,
+                                           const te::Plugin::Ptr& rackInstance, bool isMultiOut,
                                            int numOutputChannels) {
     const auto deviceId = devicePath.getDeviceId();
     te::Plugin::Ptr meterTap;
@@ -335,8 +339,9 @@ void InstrumentRackManager::recordWrapping(const ChainNodePath& devicePath,
             << deviceId);
     }
 
-    wrapped_[deviceId] = {rackType,          innerPlugin, rackInstance, meterTap, isMultiOut,
-                          numOutputChannels, {}};
+    wrapped_[deviceId] = {
+        rackType, std::move(innerPlugin), rackInstance, meterTap, isMultiOut, numOutputChannels,
+        {}};
 }
 
 te::Plugin* InstrumentRackManager::getInnerPlugin(DeviceId deviceId) const {

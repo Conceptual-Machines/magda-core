@@ -54,7 +54,7 @@ bool parseGridLine(const juce::String& line, std::vector<Instruction>& out,
 
         const double step = kBarBeats / static_cast<double>(cells.size());
         for (int i = 0; i < cells.size(); ++i) {
-            const auto cell = cells[i];
+            const auto& cell = cells[i];
             if (cell == ".")
                 continue;
             HitOp h;
@@ -206,7 +206,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 kvStart = 2;
             }
             for (int i = kvStart; i < parts.size(); ++i) {
-                auto kv = parts[i];
+                const auto& kv = parts[i];
                 auto eqIdx = kv.indexOfChar('=');
                 if (eqIdx > 0)
                     payload.props.set(kv.substring(0, eqIdx), kv.substring(eqIdx + 1));

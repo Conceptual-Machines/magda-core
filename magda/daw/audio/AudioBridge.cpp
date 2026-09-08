@@ -851,7 +851,7 @@ DeviceProcessor* AudioBridge::getDeviceProcessor(const ChainNodePath& devicePath
 }
 
 namespace {
-te::ExternalPlugin* asExternalPlugin(te::Plugin::Ptr plugin) {
+te::ExternalPlugin* asExternalPlugin(const te::Plugin::Ptr& plugin) {
     return dynamic_cast<te::ExternalPlugin*>(plugin.get());
 }
 

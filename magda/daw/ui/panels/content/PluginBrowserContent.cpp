@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <utility>
+
 #include "../../../../agents/sound_design_agent.hpp"
 #include "../../dialogs/ParameterConfigDialog.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -169,8 +171,8 @@ juce::String PluginBrowserInfo::generateAlias(const juce::String& pluginName) {
 //==============================================================================
 class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
   public:
-    PluginTreeItem(const PluginBrowserInfo& plugin, PluginBrowserContent& owner)
-        : plugin_(plugin), owner_(owner) {}
+    PluginTreeItem(PluginBrowserInfo plugin, PluginBrowserContent& owner)
+        : plugin_(std::move(plugin)), owner_(owner) {}
 
     bool mightContainSubItems() override {
         return false;
@@ -290,8 +292,8 @@ class PluginBrowserContent::PluginTreeItem : public juce::TreeViewItem {
 //==============================================================================
 class PluginBrowserContent::CategoryTreeItem : public juce::TreeViewItem {
   public:
-    CategoryTreeItem(const juce::String& name, const juce::String& icon = "")
-        : name_(name), icon_(icon) {}
+    CategoryTreeItem(juce::String name, juce::String icon = "")
+        : name_(std::move(name)), icon_(std::move(icon)) {}
 
     bool mightContainSubItems() override {
         return true;
@@ -723,7 +725,7 @@ void PluginBrowserContent::rebuildTree() {
         // For nested categories (e.g., "Effect/EQ")
         if (currentViewMode_ == ViewMode::ByCategory) {
             auto parts = juce::StringArray::fromTokens(groupKey, "/", "");
-            juce::String parentKey = parts[0];
+            const juce::String& parentKey = parts[0];
             juce::String childKey = parts.size() > 1 ? parts[1] : "";
 
             // Create parent category if needed

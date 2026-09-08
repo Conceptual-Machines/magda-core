@@ -26,7 +26,7 @@ std::vector<ExtractedChord> extractChordsFromNotes(const std::vector<MidiNote>& 
         for (size_t i = 0; i < notes.size(); ++i) {
             const auto& note = notes[i];
             if (note.startBeat <= beat && (note.startBeat + note.lengthBeats) > beat) {
-                chordNotes.push_back({note.noteNumber, note.velocity});
+                chordNotes.emplace_back(note.noteNumber, note.velocity);
                 indices.push_back(i);
             }
         }

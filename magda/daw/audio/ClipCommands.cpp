@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <utility>
 
 #include "../engine/AudioEngine.hpp"
 #include "../project/ProjectManager.hpp"
@@ -636,13 +637,13 @@ bool DeleteClipCommand::validateState() const {
 // ============================================================================
 
 CreateClipCommand::CreateClipCommand(ClipType type, TrackId trackId, BeatPosition startBeat,
-                                     BeatDuration lengthBeats, const juce::String& audioFilePath,
+                                     BeatDuration lengthBeats, juce::String audioFilePath,
                                      ClipView view, double tempo, ClipOverlapPolicy overlapPolicy)
     : type_(type),
       trackId_(trackId),
       startBeat_(startBeat.value),
       lengthBeats_(lengthBeats.value),
-      audioFilePath_(audioFilePath),
+      audioFilePath_(std::move(audioFilePath)),
       view_(view),
       tempo_(tempo),
       overlapPolicy_(overlapPolicy) {}
@@ -1081,8 +1082,8 @@ bool JoinClipsCommand::validateState() const {
 // StretchClipCommand
 // ============================================================================
 
-StretchClipCommand::StretchClipCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+StretchClipCommand::StretchClipCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void StretchClipCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1113,8 +1114,8 @@ void StretchClipCommand::undo() {
 // SetFadeCommand
 // ============================================================================
 
-SetFadeCommand::SetFadeCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+SetFadeCommand::SetFadeCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void SetFadeCommand::execute() {
     auto& clipManager = ClipManager::getInstance();
@@ -1180,8 +1181,8 @@ void SetCrossfadeCommand::undo() {
 // SetVolumeCommand
 // ============================================================================
 
-SetVolumeCommand::SetVolumeCommand(ClipId clipId, const ClipInfo& beforeState)
-    : clipId_(clipId), beforeState_(beforeState) {}
+SetVolumeCommand::SetVolumeCommand(ClipId clipId, ClipInfo beforeState)
+    : clipId_(clipId), beforeState_(std::move(beforeState)) {}
 
 void SetVolumeCommand::execute() {
     auto& clipManager = ClipManager::getInstance();

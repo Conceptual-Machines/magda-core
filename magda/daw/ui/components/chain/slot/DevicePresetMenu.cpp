@@ -282,7 +282,7 @@ void showSaveMagdaPresetDialog(const magda::DeviceInfo& device,
 }
 
 void saveCurrentMagdaPreset(const juce::String& currentPresetName,
-                            PresetSnapshotProvider snapshotProvider) {
+                            const PresetSnapshotProvider& snapshotProvider) {
     if (currentPresetName.isEmpty() || !snapshotProvider)
         return;
 
@@ -295,11 +295,10 @@ void saveCurrentMagdaPreset(const juce::String& currentPresetName,
         showPresetErrorAsync("Save Preset Failed", presetManager.getLastError());
 }
 
-void loadMagdaPreset(
-    const juce::String& pluginFolder, const magda::ChainNodePath& nodePath,
-    const juce::String& presetRelativePath,
-    std::function<void(const magda::DeviceInfo& liveDevice, const juce::String& presetName)>
-        onLoaded) {
+void loadMagdaPreset(const juce::String& pluginFolder, const magda::ChainNodePath& nodePath,
+                     const juce::String& presetRelativePath,
+                     const std::function<void(const magda::DeviceInfo& liveDevice,
+                                              const juce::String& presetName)>& onLoaded) {
     magda::DeviceInfo preset;
     auto& presetManager = magda::PresetManager::getInstance();
     if (!presetManager.loadDevicePreset(pluginFolder, presetRelativePath, preset)) {
@@ -389,7 +388,7 @@ void PluginDevicePresetPresenter::showMenu(juce::Component* targetComponent,
                                            const magda::DeviceInfo& device,
                                            const magda::ChainNodePath& devicePath,
                                            bool isInternalDevice,
-                                           std::function<void()> onSelectionChanged) {
+                                           const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     PluginPresetMenuActions actions;
     actions.saveAs = [this, device, devicePath, onSelectionChanged]() {
@@ -412,7 +411,7 @@ void PluginDevicePresetPresenter::showMenu(juce::Component* targetComponent,
 
 void PluginDevicePresetPresenter::loadFile(const magda::ChainNodePath& devicePath,
                                            const juce::File& file,
-                                           std::function<void()> onSelectionChanged) {
+                                           const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     loadPluginPresetFile(devicePath, file,
                          [state, onSelectionChanged](const juce::File& currentFile,
@@ -426,7 +425,7 @@ void PluginDevicePresetPresenter::loadFile(const magda::ChainNodePath& devicePat
 
 void PluginDevicePresetPresenter::showSaveDialog(const magda::DeviceInfo& device,
                                                  const magda::ChainNodePath& devicePath,
-                                                 std::function<void()> onSelectionChanged) {
+                                                 const std::function<void()>& onSelectionChanged) {
     auto state = state_;
     showSavePluginPresetDialog(device, devicePath, state->presetName,
                                [state, onSelectionChanged](const juce::File& currentFile,
@@ -542,9 +541,9 @@ void showPluginPresetMenu(juce::Component* targetComponent, const magda::DeviceI
         });
 }
 
-void loadPluginPresetFile(
-    const magda::ChainNodePath& devicePath, const juce::File& file,
-    std::function<void(const juce::File& currentFile, const juce::String& displayName)> onLoaded) {
+void loadPluginPresetFile(const magda::ChainNodePath& devicePath, const juce::File& file,
+                          const std::function<void(const juce::File& currentFile,
+                                                   const juce::String& displayName)>& onLoaded) {
     auto* bridge = getAudioBridge();
     if (bridge == nullptr)
         return;

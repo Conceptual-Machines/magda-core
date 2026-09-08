@@ -1,6 +1,7 @@
 #include "magda/scripting/LuaScriptStore.hpp"
 
 #include <algorithm>
+#include <utility>
 
 #include "magda/daw/core/AppPaths.hpp"
 
@@ -8,7 +9,7 @@ namespace magda::scripting {
 
 LuaScriptStore::LuaScriptStore() : root_(magda::paths::controllerScriptsDir()) {}
 
-LuaScriptStore::LuaScriptStore(const juce::File& root) : root_(root) {}
+LuaScriptStore::LuaScriptStore(juce::File root) : root_(std::move(root)) {}
 
 bool LuaScriptStore::ensureExists() const {
     if (root_.exists())

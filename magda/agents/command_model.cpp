@@ -535,6 +535,7 @@ int subseq(const std::vector<std::string>& lower, const std::vector<std::string>
 
 std::string renameTargetFromTokens(const std::vector<std::string>& tokens) {
     std::vector<std::string> lower;
+    lower.reserve(tokens.size());
     for (const auto& t : tokens)
         lower.push_back(toLower(t));
     static const std::vector<std::vector<std::string>> phrases = {
@@ -901,6 +902,7 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
             groupName = "Group";
         int anchor = ids.empty() ? 0 : ids[0];
         std::vector<std::string> idStrs;
+        idStrs.reserve(ids.size());
         for (int x : ids)
             idStrs.push_back(std::to_string(x));
         lines.push_back("track(id=" + std::to_string(anchor) + ").track.group(name=" +
@@ -1000,7 +1002,7 @@ std::string CommandModel::renderPrediction(const Prediction& p) {
         lines.push_back("groove.set(template=" + q(tmpl) +
                         ", strength=" + fmtG(valueOrFirstNumber(s, tokens)) + ")");
     } else if (intent == "groove_list") {
-        lines.push_back("groove.list()");
+        lines.emplace_back("groove.list()");
     } else {
         return "";  // unknown intent
     }

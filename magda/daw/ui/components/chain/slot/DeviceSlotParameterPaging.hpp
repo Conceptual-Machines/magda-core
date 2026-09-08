@@ -21,7 +21,7 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
                                     ParamHostComponent& paramGrid,
                                     CompiledDevicePanel* compiledPanel,
                                     const DeviceSlotTraits& traits,
-                                    DeviceSlotParameterPagingCallbacks callbacks);
+                                    const DeviceSlotParameterPagingCallbacks& callbacks);
 
 void updateDeviceSlotParameterValues(const magda::DeviceInfo& device,
                                      ParamHostComponent& paramGrid);

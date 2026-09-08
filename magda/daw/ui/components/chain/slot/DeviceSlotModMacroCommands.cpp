@@ -1,5 +1,7 @@
 #include "slot/DeviceSlotModMacroCommands.hpp"
 
+#include <utility>
+
 #include "core/LinkModeManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -34,7 +36,7 @@ void refreshPanels(const DeviceSlotModMacroCommandCallbacks& callbacks) {
 
 void setDeviceSlotModTarget(const magda::ChainNodePath& nodePath, int modIndex,
                             magda::ControlTarget target) {
-    magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
+    magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, std::move(target));
 }
 
 void renameDeviceSlotMod(const magda::ChainNodePath& nodePath, int modIndex,
@@ -112,7 +114,7 @@ void setDeviceSlotMacroValue(const magda::ChainNodePath& nodePath, int macroInde
 }
 
 void setDeviceSlotMacroTarget(const magda::ChainNodePath& nodePath, int macroIndex,
-                              magda::ControlTarget target,
+                              const magda::ControlTarget& target,
                               const DeviceSlotModMacroCommandCallbacks& callbacks) {
     // Check if the active macro is from this device or a parent rack.
     auto activeMacroSelection = magda::LinkModeManager::getInstance().getMacroInLinkMode();
@@ -143,12 +145,13 @@ void clearAllDeviceSlotMacroLinks(const magda::ChainNodePath& nodePath, int macr
 void setDeviceSlotMacroLinkAmount(const magda::ChainNodePath& nodePath, int macroIndex,
                                   magda::ControlTarget target, float amount,
                                   const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target, amount);
+    magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, std::move(target),
+                                                          amount);
     updateParamModulation(callbacks);
 }
 
 void createDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIndex,
-                               magda::ControlTarget target, float amount,
+                               const magda::ControlTarget& target, float amount,
                                const DeviceSlotModMacroCommandCallbacks& callbacks) {
     magda::TrackManager::getInstance().setMacroTarget(nodePath, macroIndex, target);
     magda::TrackManager::getInstance().setMacroLinkAmount(nodePath, macroIndex, target, amount);
@@ -161,7 +164,7 @@ void createDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIn
 void removeDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIndex,
                                magda::ControlTarget target,
                                const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().removeMacroLink(nodePath, macroIndex, target);
+    magda::TrackManager::getInstance().removeMacroLink(nodePath, macroIndex, std::move(target));
     updateMacroPanel(callbacks);
     updateParamModulation(callbacks);
 }
@@ -169,7 +172,8 @@ void removeDeviceSlotMacroLink(const magda::ChainNodePath& nodePath, int macroIn
 void setDeviceSlotMacroLinkBipolar(const magda::ChainNodePath& nodePath, int macroIndex,
                                    magda::ControlTarget target, bool bipolar,
                                    const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().setMacroLinkBipolar(nodePath, macroIndex, target, bipolar);
+    magda::TrackManager::getInstance().setMacroLinkBipolar(nodePath, macroIndex, std::move(target),
+                                                           bipolar);
     updateParamModulation(callbacks);
 }
 
@@ -184,19 +188,21 @@ void selectDeviceSlotMacro(const magda::ChainNodePath& nodePath, int macroIndex)
 void setDeviceSlotModLinkAmount(const magda::ChainNodePath& nodePath, int modIndex,
                                 magda::ControlTarget target, float amount,
                                 const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
+    magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, std::move(target),
+                                                        amount);
     updateParamModulation(callbacks);
 }
 
 void setDeviceSlotModLinkEnabled(const magda::ChainNodePath& nodePath, int modIndex,
                                  magda::ControlTarget target, bool enabled,
                                  const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().setModLinkEnabled(nodePath, modIndex, target, enabled);
+    magda::TrackManager::getInstance().setModLinkEnabled(nodePath, modIndex, std::move(target),
+                                                         enabled);
     updateParamModulation(callbacks);
 }
 
 void createDeviceSlotModLink(const magda::ChainNodePath& nodePath, int modIndex,
-                             magda::ControlTarget target, float amount,
+                             const magda::ControlTarget& target, float amount,
                              const DeviceSlotModMacroCommandCallbacks& callbacks) {
     magda::TrackManager::getInstance().setModTarget(nodePath, modIndex, target);
     magda::TrackManager::getInstance().setModLinkAmount(nodePath, modIndex, target, amount);
@@ -209,7 +215,7 @@ void createDeviceSlotModLink(const magda::ChainNodePath& nodePath, int modIndex,
 void removeDeviceSlotModLink(const magda::ChainNodePath& nodePath, int modIndex,
                              magda::ControlTarget target,
                              const DeviceSlotModMacroCommandCallbacks& callbacks) {
-    magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, target);
+    magda::TrackManager::getInstance().removeModLink(nodePath, modIndex, std::move(target));
     updateModsPanel(callbacks);
     updateParamModulation(callbacks);
 }

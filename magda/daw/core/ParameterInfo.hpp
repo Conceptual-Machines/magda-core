@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "ChainNodePath.hpp"
@@ -186,11 +187,11 @@ struct ParameterInfo {
     ParameterInfo() = default;
 
     // Constructor with basic info
-    ParameterInfo(int index, const juce::String& n, const juce::String& u, float min, float max,
-                  float def, ParameterScale s = ParameterScale::Linear)
+    ParameterInfo(int index, juce::String n, juce::String u, float min, float max, float def,
+                  ParameterScale s = ParameterScale::Linear)
         : paramIndex(index),
-          name(n),
-          unit(u),
+          name(std::move(n)),
+          unit(std::move(u)),
           minValue(min),
           maxValue(max),
           defaultValue(def),

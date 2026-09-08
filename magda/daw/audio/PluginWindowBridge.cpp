@@ -4,26 +4,26 @@
 
 namespace magda {
 
-void PluginWindowBridge::showPluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin) {
+void PluginWindowBridge::showPluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin) {
     if (windowManager_ && plugin) {
         windowManager_->showPluginWindow(deviceId, plugin);
     }
 }
 
-void PluginWindowBridge::hidePluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin) {
+void PluginWindowBridge::hidePluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin) {
     if (windowManager_ && plugin) {
         windowManager_->hidePluginWindow(deviceId, plugin);
     }
 }
 
-bool PluginWindowBridge::isPluginWindowOpen(te::Plugin::Ptr plugin) const {
+bool PluginWindowBridge::isPluginWindowOpen(const te::Plugin::Ptr& plugin) const {
     if (windowManager_ && plugin) {
         return windowManager_->isPluginWindowOpen(plugin);
     }
     return false;
 }
 
-bool PluginWindowBridge::togglePluginWindow(DeviceId deviceId, te::Plugin::Ptr plugin) {
+bool PluginWindowBridge::togglePluginWindow(DeviceId deviceId, const te::Plugin::Ptr& plugin) {
     if (windowManager_ && plugin) {
         return windowManager_->togglePluginWindow(deviceId, plugin);
     }

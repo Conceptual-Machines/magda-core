@@ -155,7 +155,7 @@ class ExternalEditPoller : private juce::Timer {
             return;
         }
 
-        const auto path = file.getFullPathName();
+        const auto& path = file.getFullPathName();
         const auto mtime = file.getLastModificationTime();
         for (auto& item : watched_) {
             if (item.path == path) {
@@ -892,6 +892,7 @@ void ClipManager::deleteClipTake(ClipId clipId, int takeIndex) {
         const int newCurrent = activeAfterDelete(a.currentTakeIndex, takeIndex, newSize);
 
         std::vector<CompSpan> spans;
+        spans.reserve(a.comp.size());
         for (const auto& s : a.comp)
             spans.push_back({s.startSeconds, s.endSeconds, s.takeIndex});
         remapCompSpansAfterDelete(spans, takeIndex, newCurrent);
@@ -932,6 +933,7 @@ void ClipManager::deleteClipTake(ClipId clipId, int takeIndex) {
         const int newCurrent = activeAfterDelete(m.currentTakeIndex, takeIndex, newSize);
 
         std::vector<CompSpan> spans;
+        spans.reserve(m.comp.size());
         for (const auto& s : m.comp)
             spans.push_back({s.startBeat, s.endBeat, s.takeIndex});
         remapCompSpansAfterDelete(spans, takeIndex, newCurrent);
@@ -2367,6 +2369,7 @@ ClipManager::EffectiveFades ClipManager::getEffectiveFades(ClipId clipId, double
         return {};
 
     std::vector<const ClipInfo*> lane;
+    lane.reserve(clips_.size());
     for (const auto& [cid, other] : clips_)
         lane.push_back(&other);
     return effectiveFadesOf(*clip, lane, bpm);
@@ -2378,6 +2381,7 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipI
         return std::nullopt;
 
     std::vector<const ClipInfo*> lane;
+    lane.reserve(clips_.size());
     for (const auto& [cid, other] : clips_)
         lane.push_back(&other);
     return crossfadeAtStartOf(*clip, lane);
@@ -2389,6 +2393,7 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtEnd(ClipId 
         return std::nullopt;
 
     std::vector<const ClipInfo*> lane;
+    lane.reserve(clips_.size());
     for (const auto& [cid, other] : clips_)
         lane.push_back(&other);
     return crossfadeAtEndOf(*clip, lane);

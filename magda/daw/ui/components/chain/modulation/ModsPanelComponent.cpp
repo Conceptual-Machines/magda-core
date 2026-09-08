@@ -124,13 +124,13 @@ void ModsPanelComponent::ensureKnobCount(int count) {
         auto knob = std::make_unique<ModKnobComponent>(i);
 
         // Wire up callbacks with mod index
-        knob->onTargetChanged = [this, i](magda::ControlTarget target) {
+        knob->onTargetChanged = [this, i](const magda::ControlTarget& target) {
             if (onModTargetChanged) {
                 onModTargetChanged(i, target);
             }
         };
 
-        knob->onLinkRemoved = [this, i](magda::ControlTarget target) {
+        knob->onLinkRemoved = [this, i](const magda::ControlTarget& target) {
             if (onModLinkRemoved) {
                 onModLinkRemoved(i, target);
             }

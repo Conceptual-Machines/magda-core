@@ -57,7 +57,7 @@ bool InternalPluginRegistry::registerPlugin(InternalPluginSpec spec) {
             return false;
     }
 
-    auto owned = std::make_unique<InternalPluginSpec>(std::move(spec));
+    auto owned = std::make_unique<InternalPluginSpec>(spec);
     pointers_.push_back(owned.get());
     specs_.push_back(std::move(owned));
     return true;

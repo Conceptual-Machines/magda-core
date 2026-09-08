@@ -5,6 +5,7 @@
 #include <cmath>
 #include <ranges>
 #include <set>
+#include <utility>
 
 #include "../components/automation/AutomationMenu.hpp"
 #include "../components/automation/MasterAutomationLanes.hpp"
@@ -2148,7 +2149,7 @@ void MainView::setupSelectionCallbacks() {
             timelineController->dispatch(ClearTimeSelectionEvent{});
         } else {
             timelineController->dispatch(
-                SetTimeSelectionBeatsEvent{startBeats, endBeats, trackIndices});
+                SetTimeSelectionBeatsEvent{startBeats, endBeats, std::move(trackIndices)});
             // Move playhead to follow the left side of selection
             timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
         }
@@ -2161,7 +2162,7 @@ void MainView::setupSelectionCallbacks() {
                 timelineController->dispatch(ClearTimeSelectionEvent{});
             } else {
                 timelineController->dispatch(SetTimeSelectionBeatsEvent{
-                    startBeats, endBeats, trackIndices, false, std::move(laneIds)});
+                    startBeats, endBeats, std::move(trackIndices), false, std::move(laneIds)});
                 timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
             }
         };
@@ -2173,7 +2174,7 @@ void MainView::setupSelectionCallbacks() {
                 timelineController->dispatch(ClearTimeSelectionEvent{});
             } else {
                 timelineController->dispatch(SetTimeSelectionBeatsEvent{
-                    startBeats, endBeats, trackIndices, true, std::move(laneIds)});
+                    startBeats, endBeats, std::move(trackIndices), true, std::move(laneIds)});
                 timelineController->dispatch(SetPlayheadPositionBeatsEvent{startBeats});
             }
         };

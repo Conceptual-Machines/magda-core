@@ -57,7 +57,7 @@ class DeviceParameter final : public te::AutomatableParameter {
     DeviceParameter(const juce::String& paramID, const juce::String& name, te::Plugin& plugin,
                     juce::NormalisableRange<float> range,
                     std::shared_ptr<MagdaDevice*> deviceHandle, int index)
-        : te::AutomatableParameter(paramID, name, plugin, range),
+        : te::AutomatableParameter(paramID, name, plugin, std::move(range)),
           deviceHandle_(std::move(deviceHandle)),
           index_(index) {}
 

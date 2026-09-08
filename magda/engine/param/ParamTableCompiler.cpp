@@ -830,7 +830,7 @@ std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>
         if (index[root] >= 0)
             continue;
 
-        work.push_back({root, 0});
+        work.emplace_back(root, 0);
         while (!work.empty()) {
             auto& [node, edge] = work.back();
 
@@ -847,7 +847,7 @@ std::vector<int> stronglyConnectedComponents(const std::vector<std::vector<int>>
                 ++edge;
 
                 if (index[next] < 0) {
-                    work.push_back({next, 0});
+                    work.emplace_back(next, 0);
                 } else if (onStack[next] != 0) {
                     lowlink[node] = std::min(lowlink[node], index[next]);
                 }

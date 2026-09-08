@@ -29,7 +29,7 @@ class ChordBlockComponent;
  */
 class ScaleBlockComponent : public juce::Component {
   public:
-    explicit ScaleBlockComponent(const magda::music::ScaleWithChords& scale);
+    explicit ScaleBlockComponent(magda::music::ScaleWithChords scale);
 
     void paint(juce::Graphics& g) override;
     void mouseDown(const juce::MouseEvent& e) override;
@@ -59,7 +59,7 @@ class ScaleBlockComponent : public juce::Component {
  */
 class ScaleChordsPopup : public juce::Component {
   public:
-    ScaleChordsPopup(const magda::music::ScaleWithChords& scale);
+    ScaleChordsPopup(magda::music::ScaleWithChords scale);
 
     void paint(juce::Graphics& g) override;
     void resized() override;
@@ -86,7 +86,7 @@ using AIProgression = magda::daw::audio::MidiChordEnginePlugin::AIProgression;
  */
 class BrowseScaleRowComponent : public juce::Component {
   public:
-    explicit BrowseScaleRowComponent(const magda::music::ScaleWithChords& scale);
+    explicit BrowseScaleRowComponent(magda::music::ScaleWithChords scale);
 
     void paint(juce::Graphics& g) override;
     void resized() override;

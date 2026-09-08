@@ -38,7 +38,7 @@ te::AutomatableParameter* tracktionParameterForSlot(te::Plugin* plugin, int slot
 
 std::unique_ptr<magda::DeviceProcessor> createTracktionProcessor(const CompiledPluginSpec& spec,
                                                                  DeviceId deviceId,
-                                                                 te::Plugin::Ptr plugin) {
+                                                                 const te::Plugin::Ptr& plugin) {
     juce::ignoreUnused(spec);
 
     if (tracktion_adapter::deviceFromPlugin<ICompiledFaustPlugin>(plugin.get()) == nullptr)

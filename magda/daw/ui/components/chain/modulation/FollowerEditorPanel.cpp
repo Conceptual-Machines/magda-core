@@ -1,5 +1,7 @@
 #include "modulation/FollowerEditorPanel.hpp"
 
+#include <utility>
+
 #include "audio/modifiers/ADSRDebugLog.hpp"
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
@@ -38,7 +40,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     // Time sliders fold their label into the value text (e.g. "A 100 ms").
     auto setupTimeSlider = [this](TextSlider& s, const juce::String& tag, double def,
-                                  std::function<float&()> field) {
+                                  const std::function<float&()>& field) {
         s.setRange(0.0, 5000.0, 1.0);
         s.setSkewForCentre(250.0);
         s.setValue(def, juce::dontSendNotification);
@@ -80,7 +82,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
     // Band-limit detection: a toggle + cutoff slider per band. Filtering the raw
     // source before peak detection lets the follower track just the bass or just
     // the highs of its source.
-    auto setupBandToggle = [this](juce::TextButton& b, std::function<bool&()> field,
+    auto setupBandToggle = [this](juce::TextButton& b, const std::function<bool&()>& field,
                                   TextSlider& freq) {
         b.setClickingTogglesState(true);
         b.setLookAndFeel(&SmallButtonLookAndFeel::getInstance());
@@ -102,7 +104,7 @@ FollowerEditorPanel::FollowerEditorPanel() {
         };
         addAndMakeVisible(b);
     };
-    auto setupFreqSlider = [this](TextSlider& s, double def, std::function<float&()> field) {
+    auto setupFreqSlider = [this](TextSlider& s, double def, const std::function<float&()>& field) {
         s.setRange(20.0, 20000.0, 1.0);
         s.setSkewForCentre(1000.0);
         s.setValue(def, juce::dontSendNotification);
@@ -139,19 +141,19 @@ FollowerEditorPanel::FollowerEditorPanel() {
 
     modMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (selectedModIndex_ >= 0 && onModLinkDeleted)
-            onModLinkDeleted(selectedModIndex_, target);
+            onModLinkDeleted(selectedModIndex_, std::move(target));
     };
     modMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (selectedModIndex_ >= 0 && onModLinkBipolarChanged)
-            onModLinkBipolarChanged(selectedModIndex_, target, bipolar);
+            onModLinkBipolarChanged(selectedModIndex_, std::move(target), bipolar);
     };
     modMatrixContent_.onToggleEnabled = [this](magda::ControlTarget target, bool enabled) {
         if (selectedModIndex_ >= 0 && onModLinkEnabledChanged)
-            onModLinkEnabledChanged(selectedModIndex_, target, enabled);
+            onModLinkEnabledChanged(selectedModIndex_, std::move(target), enabled);
     };
     modMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (selectedModIndex_ >= 0 && onModLinkAmountChanged)
-            onModLinkAmountChanged(selectedModIndex_, target, amount);
+            onModLinkAmountChanged(selectedModIndex_, std::move(target), amount);
     };
 }
 

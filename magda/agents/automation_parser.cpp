@@ -195,7 +195,7 @@ std::vector<AutoInstruction> AutomationParser::parse(const juce::String& text) {
             return {};
         }
 
-        auto shapeStr = tokens[1];
+        const auto& shapeStr = tokens[1];
 
         AutoClipAction clipAction;
         if (parseClipAction(shapeStr, clipAction)) {

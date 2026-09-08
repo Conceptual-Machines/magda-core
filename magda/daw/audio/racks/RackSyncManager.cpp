@@ -35,7 +35,7 @@ std::pair<float, float> outputDbForVolumePan(float volumeDb, float pan) {
                                         static_cast<double>(rightDb)))};
 }
 
-void applyRackInstanceState(te::Plugin::Ptr rackPlugin, const RackInfo& rackInfo) {
+void applyRackInstanceState(const te::Plugin::Ptr& rackPlugin, const RackInfo& rackInfo) {
     auto* rackInstance = dynamic_cast<te::RackInstance*>(rackPlugin.get());
     if (!rackInstance)
         return;

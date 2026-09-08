@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <utility>
 
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"
@@ -487,8 +488,8 @@ class RemoveTrackFromGroupCommand : public UndoableCommand {
  */
 class SetTrackNameCommand : public UndoableCommand {
   public:
-    SetTrackNameCommand(TrackId trackId, const juce::String& newName)
-        : trackId_(trackId), newName_(newName) {
+    SetTrackNameCommand(TrackId trackId, juce::String newName)
+        : trackId_(trackId), newName_(std::move(newName)) {
         auto* track = TrackManager::getInstance().getTrack(trackId);
         if (track)
             oldName_ = track->name;

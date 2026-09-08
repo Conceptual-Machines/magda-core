@@ -34,9 +34,11 @@ PadRack snapshotPads(const ChainNodePath& gridPath) {
 
 }  // namespace
 
-EditPadsCommand::EditPadsCommand(const ChainNodePath& gridPath, juce::String description,
+EditPadsCommand::EditPadsCommand(ChainNodePath gridPath, juce::String description,
                                  std::function<void()> edit)
-    : gridPath_(gridPath), description_(std::move(description)), edit_(std::move(edit)) {}
+    : gridPath_(std::move(gridPath)),
+      description_(std::move(description)),
+      edit_(std::move(edit)) {}
 
 void EditPadsCommand::execute() {
     auto& tm = TrackManager::getInstance();
@@ -81,9 +83,9 @@ void editPads(const ChainNodePath& gridPath, const juce::String& description,
 // SetPadFaderCommand
 // ============================================================================
 
-SetPadFaderCommand::SetPadFaderCommand(const ChainNodePath& gridPath, int padIndex, Target target,
+SetPadFaderCommand::SetPadFaderCommand(ChainNodePath gridPath, int padIndex, Target target,
                                        float value, int gesture)
-    : gridPath_(gridPath),
+    : gridPath_(std::move(gridPath)),
       padIndex_(padIndex),
       target_(target),
       newValue_(value),

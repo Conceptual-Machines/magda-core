@@ -162,7 +162,7 @@ class SetMultipleMidiNoteVelocitiesCommand : public UndoableCommand {
         int newVelocity;
     };
 
-    SetMultipleMidiNoteVelocitiesCommand(ClipId clipId, std::vector<Entry> entries);
+    SetMultipleMidiNoteVelocitiesCommand(ClipId clipId, const std::vector<Entry>& entries);
 
     void execute() override;
     void undo() override;

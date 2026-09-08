@@ -73,27 +73,27 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
 
     DeviceLinkCallbackContext context;
     context.getNodePath = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         return self ? self->nodePath_ : magda::ChainNodePath{};
     };
     context.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
-        if (auto self = safeThis)
-            self->onMacroTargetChangedInternal(macroIndex, target);
+        if (const auto& self = safeThis)
+            self->onMacroTargetChangedInternal(macroIndex, std::move(target));
     };
     context.updateParamModulation = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateParamModulation();
     };
     context.updateModsPanel = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateModsPanel();
     };
     context.updateMacroPanel = [safeThis]() {
-        if (auto self = safeThis)
+        if (const auto& self = safeThis)
             self->updateMacroPanel();
     };
     context.expandModPanelForDirectLink = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         if (!self || self->modPanelVisible_)
             return;
 
@@ -102,7 +102,7 @@ void DeviceSlotComponent::wireSharedModMacroLinkCallbacks(LinkTarget& target,
         self->setModPanelVisible(true);
     };
     context.expandMacroPanelForDirectLink = [safeThis]() {
-        auto self = safeThis;
+        const auto& self = safeThis;
         if (!self || self->paramPanelVisible_)
             return;
 
@@ -509,8 +509,8 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
 
         // Wire up mod/macro linking callbacks
         paramSlot->onModLinked = [safeThis = juce::Component::SafePointer(this)](
-                                     int modIndex, magda::ControlTarget target) {
-            auto self = safeThis;
+                                     int modIndex, const magda::ControlTarget& target) {
+            const auto& self = safeThis;
             if (!self)
                 return;
             self->onModTargetChangedInternal(modIndex, target);
@@ -520,7 +520,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
         wireSharedModMacroLinkCallbacks(*paramSlot, true);
         paramSlot->onMacroValueChanged = [safeThis = juce::Component::SafePointer(this)](
                                              int macroIndex, float value) {
-            auto self = safeThis;
+            const auto& self = safeThis;
             if (!self)
                 return;
             magda::TrackManager::getInstance().setMacroValue(self->nodePath_, macroIndex, value);
@@ -528,7 +528,7 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
                 self->updateParamModulation();
         };
         paramSlot->onShowAutomationLane = [safeThis = juce::Component::SafePointer(this), i]() {
-            if (auto self = safeThis)
+            if (const auto& self = safeThis)
                 if (auto* slot = self->paramGrid_->getSlot(i))
                     self->showAutomationLaneForParam(slot->getParamIndex());
         };
@@ -1798,7 +1798,7 @@ void DeviceSlotComponent::wirePadChainLinkCallbacks() {
     };
     callbacks.onMacroTargetChanged = [safeThis](int macroIndex, magda::ControlTarget target) {
         if (safeThis != nullptr)
-            safeThis->onMacroTargetChangedInternal(macroIndex, target);
+            safeThis->onMacroTargetChangedInternal(macroIndex, std::move(target));
     };
     callbacks.showAutomationLaneForParam = [safeThis](int paramIndex) {
         if (safeThis != nullptr)
@@ -1818,14 +1818,14 @@ void DeviceSlotComponent::setupCustomUILinking() {
     configureDeviceSlotLinkableSliders(
         sliders, device_, nodePath_, context,
         [safeThis = juce::Component::SafePointer(this)](LinkableTextSlider& slider) {
-            auto self = safeThis;
+            const auto& self = safeThis;
             if (!self)
                 return;
 
             self->wireSharedModMacroLinkCallbacks(slider, false);
             auto* sliderPtr = &slider;
             slider.onShowAutomationLane = [safeThis, sliderPtr]() {
-                auto self = safeThis;
+                const auto& self = safeThis;
                 if (!self || sliderPtr == nullptr)
                     return;
                 self->showAutomationLaneForParam(sliderPtr->getParamIndex());

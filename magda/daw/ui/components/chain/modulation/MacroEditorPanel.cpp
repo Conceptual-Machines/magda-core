@@ -1,5 +1,7 @@
 #include "modulation/MacroEditorPanel.hpp"
 
+#include <utility>
+
 #include "core/AutomationInfo.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -148,15 +150,15 @@ MacroEditorPanel::MacroEditorPanel() {
     // Link matrix viewport + content
     linkMatrixContent_.onDeleteLink = [this](magda::ControlTarget target) {
         if (onLinkRemoved)
-            onLinkRemoved(target);
+            onLinkRemoved(std::move(target));
     };
     linkMatrixContent_.onAmountChanged = [this](magda::ControlTarget target, float amount) {
         if (onLinkAmountChanged)
-            onLinkAmountChanged(target, amount);
+            onLinkAmountChanged(std::move(target), amount);
     };
     linkMatrixContent_.onToggleBipolar = [this](magda::ControlTarget target, bool bipolar) {
         if (onLinkBipolarToggled)
-            onLinkBipolarToggled(target, bipolar);
+            onLinkBipolarToggled(std::move(target), bipolar);
     };
     linkMatrixViewport_.setViewedComponent(&linkMatrixContent_, false);
     linkMatrixViewport_.setScrollBarsShown(true, false);

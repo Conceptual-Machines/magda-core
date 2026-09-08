@@ -586,7 +586,7 @@ void TrackController::clearAllMappings() {
 }
 
 void TrackController::withTrackMapping(
-    std::function<void(const std::map<TrackId, te::AudioTrack*>&)> callback) const {
+    const std::function<void(const std::map<TrackId, te::AudioTrack*>&)>& callback) const {
     juce::ScopedLock lock(trackLock_);
     callback(trackMapping_);
 }
@@ -629,7 +629,7 @@ void TrackController::removeMeterClient(TrackId trackId) {
 }
 
 void TrackController::withMeterClients(
-    std::function<void(std::map<TrackId, MeterClientEntry>&)> callback) {
+    const std::function<void(std::map<TrackId, MeterClientEntry>&)>& callback) {
     juce::ScopedLock lock(trackLock_);
     callback(meterClients_);
 }

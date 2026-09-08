@@ -1252,8 +1252,9 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
             if (warpMarkers_.size() >= 2) {
                 // Sort markers by warpTime to find the segment containing our click
                 std::vector<std::pair<double, double>> sorted;  // (warpTime, sourceTime)
+                sorted.reserve(warpMarkers_.size());
                 for (const auto& m : warpMarkers_) {
-                    sorted.push_back({m.warpTime, m.sourceTime});
+                    sorted.emplace_back(m.warpTime, m.sourceTime);
                 }
                 std::sort(sorted.begin(), sorted.end());
 

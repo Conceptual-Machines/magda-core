@@ -267,7 +267,7 @@ class Bridge {
     }
 
     void forward(const juce::var& message) {
-        const auto id = message["id"];
+        const auto& id = message["id"];
         const auto method = message["method"].toString();
         const auto body = juce::JSON::toString(message, true).toStdString();
 

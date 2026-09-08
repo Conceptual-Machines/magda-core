@@ -686,7 +686,7 @@ void MacroKnobComponent::showLinkMenu() {
         // Individual unlink
         int unlinkIdx = result - unlinkBaseId;
         if (unlinkIdx >= 0 && unlinkIdx < static_cast<int>(unlinkTargets.size())) {
-            auto target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
+            const auto& target = unlinkTargets[static_cast<size_t>(unlinkIdx)];
             safeThis->currentMacro_.removeLink(target);
             safeThis->repaint();
             if (safeThis->onLinkRemoved) {

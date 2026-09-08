@@ -2,6 +2,7 @@
 #include <map>
 #include <set>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "../../core/ChainRoutingModel.hpp"
@@ -539,7 +540,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
     // Delete plugins outside lock to avoid blocking other threads
     for (size_t i = 0; i < toRemove.size(); ++i) {
-        const auto devicePath = toRemove[i];
+        const auto& devicePath = toRemove[i];
         const auto deviceId = devicePath.getDeviceId();
         pluginWindowBridge_.closeWindowsForDevice(deviceId);
 
@@ -1243,7 +1244,8 @@ te::Plugin::Ptr PluginManager::addLevelMeterToTrack(TrackId trackId) {
     return plugin;
 }
 
-void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath, te::Plugin::Ptr plugin) {
+void PluginManager::pollAsyncPluginLoad(const ChainNodePath& devicePath,
+                                        const te::Plugin::Ptr& plugin) {
     auto* extPlugin = dynamic_cast<te::ExternalPlugin*>(plugin.get());
     if (!extPlugin)
         return;
@@ -2173,13 +2175,13 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
 
 void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
                                                 te::Plugin::Ptr plugin, const DeviceInfo& device) {
-    registerRackPluginProcessor(devicePath, plugin, device,
+    registerRackPluginProcessor(devicePath, std::move(plugin), device,
                                 TrackManager::getInstance().getDeviceInChainByPath(devicePath));
 }
 
 void PluginManager::registerRackPluginProcessor(const ChainNodePath& devicePath,
-                                                te::Plugin::Ptr plugin, const DeviceInfo& device,
-                                                DeviceInfo* canonical) {
+                                                const te::Plugin::Ptr& plugin,
+                                                const DeviceInfo& device, DeviceInfo* canonical) {
     const auto deviceId = devicePath.getDeviceId();
     if (!plugin)
         return;
@@ -2731,7 +2733,7 @@ std::vector<std::pair<ChainNodePath, daw::audio::DrumGridPlugin*>> PluginManager
         if (sd.trackId != trackId)
             continue;
         if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(sd.plugin.get()))
-            drumGrids.push_back({devicePath, dg});
+            drumGrids.emplace_back(devicePath, dg);
     }
 
     return drumGrids;

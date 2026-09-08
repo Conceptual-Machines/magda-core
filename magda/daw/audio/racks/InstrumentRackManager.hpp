@@ -43,7 +43,7 @@ class InstrumentRackManager {
      *                wired (see the class comment).
      * @return The RackInstance plugin to insert on the track (or nullptr on failure)
      */
-    te::Plugin::Ptr wrapInstrument(te::Plugin::Ptr instrument,
+    te::Plugin::Ptr wrapInstrument(const te::Plugin::Ptr& instrument,
                                    const routing::ChainRoutingNode& routing);
 
     /**
@@ -53,7 +53,7 @@ class InstrumentRackManager {
      * @param routing See wrapInstrument().
      * @return The main RackInstance plugin (outputs 1,2) to insert on the track
      */
-    te::Plugin::Ptr wrapMultiOutInstrument(te::Plugin::Ptr instrument, int numOutputChannels,
+    te::Plugin::Ptr wrapMultiOutInstrument(const te::Plugin::Ptr& instrument, int numOutputChannels,
                                            const routing::ChainRoutingNode& routing);
 
     /**
@@ -85,8 +85,8 @@ class InstrumentRackManager {
      * @param innerPlugin The actual instrument plugin inside the rack
      * @param rackInstance The RackInstance plugin on the track
      */
-    void recordWrapping(const ChainNodePath& devicePath, te::RackType::Ptr rackType,
-                        te::Plugin::Ptr innerPlugin, te::Plugin::Ptr rackInstance,
+    void recordWrapping(const ChainNodePath& devicePath, const te::RackType::Ptr& rackType,
+                        te::Plugin::Ptr innerPlugin, const te::Plugin::Ptr& rackInstance,
                         bool isMultiOut = false, int numOutputChannels = 2);
 
     /**

@@ -25,13 +25,13 @@ void MacroPanelComponent::ensureKnobCount(int count) {
             }
         };
 
-        knob->onTargetChanged = [this, i](magda::ControlTarget target) {
+        knob->onTargetChanged = [this, i](const magda::ControlTarget& target) {
             if (onMacroTargetChanged) {
                 onMacroTargetChanged(i, target);
             }
         };
 
-        knob->onLinkRemoved = [this, i](magda::ControlTarget target) {
+        knob->onLinkRemoved = [this, i](const magda::ControlTarget& target) {
             if (onMacroLinkRemoved) {
                 onMacroLinkRemoved(i, target);
             }

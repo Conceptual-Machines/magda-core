@@ -86,8 +86,8 @@ class ConsoleAgentOrchestrator {
                              DrummerAgent& drummer);
     explicit ConsoleAgentOrchestrator(Workflows workflows);
 
-    ConsoleRunOutput run(const ConsoleRunRequest& request, ConsoleRunObserver observer = {},
-                         CancellationToken cancellation = {});
+    ConsoleRunOutput run(const ConsoleRunRequest& request, const ConsoleRunObserver& observer = {},
+                         const CancellationToken& cancellation = {});
 
     void cancel();
     void resetCancellation();

@@ -494,7 +494,7 @@ bool McpEndpoint::ListenFilter::wantsAnything() const {
 
 McpEndpoint::ListenFilter McpEndpoint::parseListenFilter(const juce::var& params) const {
     ListenFilter filter;
-    const auto notifications = params["notifications"];
+    const auto& notifications = params["notifications"];
     if (notifications.getDynamicObject() == nullptr)
         return filter;
 
@@ -738,7 +738,7 @@ void McpEndpoint::handle(const Call& call, Completion onComplete) {
         McpReply::fail(MCP_METHOD_NOT_FOUND, "Unknown method: " + call.method, modern ? 404 : 200));
 }
 
-void McpEndpoint::callTool(const Call& call, Completion onComplete) {
+void McpEndpoint::callTool(const Call& call, const Completion& onComplete) {
     const auto nameValue = call.params["name"];
     if (!nameValue.isString() || nameValue.toString().isEmpty()) {
         onComplete(McpReply::fail(MCP_INVALID_PARAMS, "tools/call requires a string params.name"));
@@ -776,7 +776,8 @@ void McpEndpoint::callTool(const Call& call, Completion onComplete) {
     const auto wrapResult = hasArrayOutput(*operation);
 
     service_.dispatch(
-        name, arguments, *context, [onComplete, modern, info, wrapResult](Response response) {
+        name, arguments, *context,
+        [onComplete, modern, info, wrapResult](const Response& response) {
             auto result = makeObject();
             if (modern)
                 setProperty(result, "resultType", "complete");
@@ -826,7 +827,7 @@ void McpEndpoint::callTool(const Call& call, Completion onComplete) {
         });
 }
 
-void McpEndpoint::readResource(const Call& call, Completion onComplete) {
+void McpEndpoint::readResource(const Call& call, const Completion& onComplete) {
     const auto uriValue = call.params["uri"];
     if (!uriValue.isString() || uriValue.toString().isEmpty()) {
         onComplete(
@@ -855,7 +856,7 @@ void McpEndpoint::readResource(const Call& call, Completion onComplete) {
 
     service_.dispatch(
         resolved->operation, resolved->input, *context,
-        [onComplete, uri, modern, info](Response response) {
+        [onComplete, uri, modern, info](const Response& response) {
             if (!response.ok) {
                 // A read has no `isError` channel, so a failure is
                 // a JSON-RPC error whatever caused it. The MAGDA
@@ -905,7 +906,7 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     if (meta.getDynamicObject() == nullptr)
         return context;
 
-    if (const auto expected = meta[MAGDA_META_EXPECTED_REVISION]; !expected.isVoid()) {
+    if (const auto& expected = meta[MAGDA_META_EXPECTED_REVISION]; !expected.isVoid()) {
         const auto revision = jsonInteger(expected, 0, std::numeric_limits<juce::int64>::max());
         if (!revision) {
             error = McpError{MCP_INVALID_PARAMS,
@@ -931,7 +932,7 @@ std::optional<RequestContext> McpEndpoint::requestContext(const Call& call, McpE
     // So a client that wants retry safety supplies its own key and is
     // responsible for its uniqueness (a UUID). The `mcp:` prefix keeps this
     // namespace clear of the WebSocket's in the shared cache.
-    if (const auto requestId = meta[MAGDA_META_REQUEST_ID]; !requestId.isVoid()) {
+    if (const auto& requestId = meta[MAGDA_META_REQUEST_ID]; !requestId.isVoid()) {
         if (!requestId.isString() || requestId.toString().isEmpty()) {
             error = McpError{MCP_INVALID_PARAMS,
                              juce::String(MAGDA_META_REQUEST_ID) + " must be a non-empty string",

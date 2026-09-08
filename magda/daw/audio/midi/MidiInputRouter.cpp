@@ -337,7 +337,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
 
     auto* playbackContext = edit_.getCurrentPlaybackContext();
     if (!playbackContext) {
-        pendingMidiRoutes_.push_back({trackId, midiDeviceId});
+        pendingMidiRoutes_.emplace_back(trackId, midiDeviceId);
         return;
     }
 

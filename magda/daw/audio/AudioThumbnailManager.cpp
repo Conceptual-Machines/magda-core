@@ -196,7 +196,7 @@ void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
 }
 
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
-                                                std::function<void(double)> onComplete) {
+                                                const std::function<void(double)>& onComplete) {
     // Caches are message-thread only (no locks).
     JUCE_ASSERT_MESSAGE_THREAD;
 

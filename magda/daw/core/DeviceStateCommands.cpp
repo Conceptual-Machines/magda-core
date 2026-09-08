@@ -1,15 +1,17 @@
 #include "DeviceStateCommands.hpp"
 
+#include <utility>
+
 #include "DeviceState.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"
 
 namespace magda {
 
-LoadImpulseResponseCommand::LoadImpulseResponseCommand(const ChainNodePath& devicePath,
-                                                       const juce::String& irName,
+LoadImpulseResponseCommand::LoadImpulseResponseCommand(ChainNodePath devicePath,
+                                                       juce::String irName,
                                                        juce::MemoryBlock irData)
-    : devicePath_(devicePath), irName_(irName), irData_(std::move(irData)) {}
+    : devicePath_(std::move(devicePath)), irName_(std::move(irName)), irData_(std::move(irData)) {}
 
 juce::String LoadImpulseResponseCommand::getDescription() const {
     return "Load Impulse Response";

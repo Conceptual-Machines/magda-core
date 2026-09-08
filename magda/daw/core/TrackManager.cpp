@@ -211,22 +211,6 @@ void remapDuplicatedElements(std::vector<ChainElement>& elements, const ChainNod
         });
 }
 
-void setChainElementsBypassed(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
-                              bool bypassed, std::vector<ChainNodePath>& affectedDevices) {
-    // Racks and devices are two walks rather than one that visits both, which
-    // costs a second descent and buys the two orders being independent: the
-    // devices come out in signal order for the caller to announce.
-    chain_walk::forEachRack(
-        elements, parentPath, chain_walk::Pads::Skip,
-        [bypassed](RackInfo& rack, const ChainNodePath&) { rack.bypassed = bypassed; });
-    chain_walk::forEachDevice(
-        elements, parentPath, chain_walk::Pads::Skip,
-        [bypassed, &affectedDevices](DeviceInfo& device, const ChainNodePath& path) {
-            device.bypassed = bypassed;
-            affectedDevices.push_back(path);
-        });
-}
-
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     // Keep the analysis devices (oscilloscope, spectrum, levels) in a stable,
     // canonical order among themselves without disturbing any non-analysis
@@ -1320,6 +1304,7 @@ void TrackManager::moveTrackToPosition(TrackId trackId, int oneBasedPosition) {
     auto self = std::ranges::find_if(tracks_, matchesId);
     if (self == tracks_.end())
         return;
+    // Copy, not a reference: the erase below destroys the element it would bind to.
     const TrackInfo info = *self;
     tracks_.erase(self);
 

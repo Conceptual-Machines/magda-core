@@ -834,12 +834,12 @@ void AIChatConsoleContent::RequestThread::run() {
             const bool hadError = !error.empty();
 
             magda::agent::ConsoleRunOutput output{
-                .dslCode = std::move(dsl),
-                .musicInstructions = std::move(musicIR),
-                .musicDescription = std::move(musicDesc),
-                .automationInstructions = std::move(autoIR),
+                .dslCode = dsl,
+                .musicInstructions = musicIR,
+                .musicDescription = musicDesc,
+                .automationInstructions = autoIR,
                 .prose = mixAnalysis,
-                .error = std::move(error),
+                .error = error,
             };
             magda::agent::ConsoleAgentResultExecutor executor(*safeThis->magdaApi_);
             auto execution = executor.execute(std::move(output), reviseTargetClipId);
@@ -3260,9 +3260,9 @@ void AIChatConsoleContent::finishControllerGeneration(bool success, const juce::
         menu.addSeparator();
         menu.addItem(9999, "Cancel");
 
-        auto rawJson = errorOrJson;  // contains the JSON when success == true
-        auto baseId = profileId;
-        auto displayName = profileName;
+        const auto& rawJson = errorOrJson;  // contains the JSON when success == true
+        const auto& baseId = profileId;
+        const auto& displayName = profileName;
 
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(inputBox_.get()),
                            [safeThis, writeAndPromptPort, rawJson, baseId, displayName](int r) {

@@ -59,7 +59,7 @@ inline constexpr int kNoStepPatternGesture = 0;
 /// Replace a monophonic step sequencer's whole pattern.
 class SetMonoStepPatternCommand : public SnapshotCommand<juce::String> {
   public:
-    SetMonoStepPatternCommand(const ChainNodePath& devicePath, step_pattern::MonoPattern pattern,
+    SetMonoStepPatternCommand(ChainNodePath devicePath, step_pattern::MonoPattern pattern,
                               juce::String description,
                               StepPatternGesture gesture = StepPatternGesture::Discrete,
                               int gestureId = kNoStepPatternGesture);
@@ -85,7 +85,7 @@ class SetMonoStepPatternCommand : public SnapshotCommand<juce::String> {
 /// Replace a polyphonic step sequencer's whole pattern.
 class SetPolyStepPatternCommand : public SnapshotCommand<juce::String> {
   public:
-    SetPolyStepPatternCommand(const ChainNodePath& devicePath, step_pattern::PolyPattern pattern,
+    SetPolyStepPatternCommand(ChainNodePath devicePath, step_pattern::PolyPattern pattern,
                               juce::String description,
                               StepPatternGesture gesture = StepPatternGesture::Discrete,
                               int gestureId = kNoStepPatternGesture);

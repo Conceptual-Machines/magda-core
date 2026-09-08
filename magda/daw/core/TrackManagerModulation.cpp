@@ -241,7 +241,8 @@ void TrackManager::setMacroValue(const ChainNodePath& path, int macroIndex, floa
     notifyMacroValueChanged(path.trackId, node.scope, node.notifyId(), macroIndex, clampedValue);
 }
 
-void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, ControlTarget target) {
+void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex,
+                                  const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -261,7 +262,7 @@ void TrackManager::setMacroTarget(const ChainNodePath& path, int macroIndex, Con
 }
 
 void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
-                                      ControlTarget target, float amount) {
+                                      const ControlTarget& target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -289,7 +290,7 @@ void TrackManager::setMacroLinkAmount(const ChainNodePath& path, int macroIndex,
 }
 
 void TrackManager::setMacroLinkBipolar(const ChainNodePath& path, int macroIndex,
-                                       ControlTarget target, bool bipolar) {
+                                       const ControlTarget& target, bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -309,7 +310,7 @@ void TrackManager::setMacroName(const ChainNodePath& path, int macroIndex,
 }
 
 void TrackManager::removeMacroLink(const ChainNodePath& path, int macroIndex,
-                                   ControlTarget target) {
+                                   const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.macros, macroIndex))
         return;
@@ -398,7 +399,8 @@ void TrackManager::removeMod(const ChainNodePath& path, int modIndex) {
     });
 }
 
-void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, ControlTarget target) {
+void TrackManager::setModTarget(const ChainNodePath& path, int modIndex,
+                                const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -411,8 +413,8 @@ void TrackManager::setModTarget(const ChainNodePath& path, int modIndex, Control
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                    float amount) {
+void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex,
+                                    const ControlTarget& target, float amount) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -425,8 +427,8 @@ void TrackManager::setModLinkAmount(const ChainNodePath& path, int modIndex, Con
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                     bool bipolar) {
+void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex,
+                                     const ControlTarget& target, bool bipolar) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -436,8 +438,8 @@ void TrackManager::setModLinkBipolar(const ChainNodePath& path, int modIndex, Co
     }
 }
 
-void TrackManager::setModLinkEnabled(const ChainNodePath& path, int modIndex, ControlTarget target,
-                                     bool enabled) {
+void TrackManager::setModLinkEnabled(const ChainNodePath& path, int modIndex,
+                                     const ControlTarget& target, bool enabled) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;
@@ -635,7 +637,8 @@ void TrackManager::setModFollower(const ChainNodePath& path, int modIndex, const
     notifyDeviceModifiersChanged(path.trackId);
 }
 
-void TrackManager::removeModLink(const ChainNodePath& path, int modIndex, ControlTarget target) {
+void TrackManager::removeModLink(const ChainNodePath& path, int modIndex,
+                                 const ControlTarget& target) {
     auto node = resolveChainNode(path);
     if (!indexInRange(node.mods, modIndex))
         return;

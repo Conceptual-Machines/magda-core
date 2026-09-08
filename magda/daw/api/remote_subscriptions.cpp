@@ -937,7 +937,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             // continuity would need a second, per-topic cursor on the wire, and
             // being wrong about it leaves a client silently stale, which is the
             // failure this whole design is meant to make impossible.
-            const auto wanted = params["snapshot"];
+            const auto& wanted = params["snapshot"];
             const bool asked = wanted.isVoid() || static_cast<bool>(wanted);
 
             if (asked)

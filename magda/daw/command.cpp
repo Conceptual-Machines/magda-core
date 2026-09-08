@@ -1,9 +1,10 @@
 #include "command.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 // Command implementation
-Command::Command(const std::string& command_type) : type_(command_type) {}
+Command::Command(std::string command_type) : type_(std::move(command_type)) {}
 
 Command::Command(const juce::var& json) {
     if (!json.hasProperty("command")) {
@@ -114,8 +115,8 @@ std::string Command::toJsonString() const {
 }
 
 // CommandResponse implementation
-CommandResponse::CommandResponse(Status status, const std::string& message)
-    : status_(status), message_(message) {}
+CommandResponse::CommandResponse(Status status, std::string message)
+    : status_(status), message_(std::move(message)) {}
 
 juce::var CommandResponse::toJson() const {
     juce::DynamicObject::Ptr obj = new juce::DynamicObject();

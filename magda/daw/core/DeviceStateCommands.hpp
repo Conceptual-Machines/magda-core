@@ -28,7 +28,7 @@ namespace magda {
  */
 class LoadImpulseResponseCommand : public SnapshotCommand<juce::String> {
   public:
-    LoadImpulseResponseCommand(const ChainNodePath& devicePath, const juce::String& irName,
+    LoadImpulseResponseCommand(ChainNodePath devicePath, juce::String irName,
                                juce::MemoryBlock irData);
 
     juce::String getDescription() const override;

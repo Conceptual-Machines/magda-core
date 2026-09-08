@@ -713,7 +713,7 @@ struct RemoteMcpServer::Impl {
         setProperty(params, "snapshot", false);
 
         subscriptions->handle(stream->subscriber, "subscriptions.subscribe", params,
-                              [](Response) {});
+                              [](const Response&) {});
     }
 
     /// Replace what a stream watches. The legacy era needs this because
@@ -726,7 +726,7 @@ struct RemoteMcpServer::Impl {
         // topic, so this converges on the new set whether the change added or
         // removed a resource — no diff to compute and none to get wrong.
         subscriptions->handle(stream->subscriber, "subscriptions.unsubscribe", makeObject(),
-                              [](Response) {});
+                              [](const Response&) {});
         subscribeStream(stream);
     }
 
@@ -826,7 +826,7 @@ struct RemoteMcpServer::Impl {
      * Refusing would break every conforming host that simply does not send it.
      */
     static juce::String modernClientName(const juce::var& params) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         if (meta.getDynamicObject() == nullptr)
             return normaliseClientName({});
         return normaliseClientName(meta[MCP_META_CLIENT_INFO]["name"].toString());
@@ -843,7 +843,7 @@ struct RemoteMcpServer::Impl {
      */
     std::optional<McpError> resolveEra(const httplib::Request& request, const juce::String& method,
                                        const juce::var& params, Resolution& resolution) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         const auto declared = meta.getDynamicObject() != nullptr
                                   ? meta[MCP_META_PROTOCOL_VERSION].toString()
                                   : juce::String();
@@ -971,7 +971,7 @@ struct RemoteMcpServer::Impl {
     /// The `_meta` fields a modern request must carry. `clientInfo` is optional
     /// and, being self-reported, is never read for anything but logging.
     static std::optional<McpError> validateModernMeta(const juce::var& params) {
-        const auto meta = params["_meta"];
+        const auto& meta = params["_meta"];
         if (meta[MCP_META_CLIENT_CAPABILITIES].getDynamicObject() == nullptr) {
             return McpError{MCP_INVALID_PARAMS,
                             juce::String(MCP_META_CLIENT_CAPABILITIES) +

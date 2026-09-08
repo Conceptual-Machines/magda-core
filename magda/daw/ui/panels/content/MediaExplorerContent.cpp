@@ -1229,7 +1229,7 @@ juce::File MediaExplorerContent::pickStartupFilesystemRoot() {
     return juce::File::getSpecialLocation(juce::File::userHomeDirectory);
 }
 
-void MediaExplorerContent::applyView(ViewState target) {
+void MediaExplorerContent::applyView(const ViewState& target) {
     // The ONE writer of view state. Touches everything that depends on the
     // mode/sidebar/root so nothing can drift out of sync:
     //   1. Sidebar visual selection

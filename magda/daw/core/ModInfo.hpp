@@ -522,7 +522,7 @@ inline ModArray createDefaultMods(int numMods = NUM_MODS) {
     ModArray mods;
     mods.reserve(numMods);
     for (int i = 0; i < numMods; ++i) {
-        mods.push_back(ModInfo(i));
+        mods.emplace_back(i);
     }
     return mods;
 }
@@ -533,7 +533,7 @@ inline ModArray createDefaultMods(int numMods = NUM_MODS) {
 inline void addModPage(ModArray& mods) {
     int startIndex = static_cast<int>(mods.size());
     for (int i = 0; i < MODS_PER_PAGE; ++i) {
-        mods.push_back(ModInfo(startIndex + i));
+        mods.emplace_back(startIndex + i);
     }
 }
 

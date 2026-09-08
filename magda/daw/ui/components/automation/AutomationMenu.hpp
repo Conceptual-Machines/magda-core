@@ -23,7 +23,8 @@ namespace magda {
  *        the host can scroll it into view. The master band updates via its own
  *        AutomationManager listener, so it can pass an empty callback.
  */
-void showAutomationMenu(TrackId trackId, juce::Component* relativeTo,
-                        std::function<void(TrackId, AutomationLaneId)> onShowAutomationLane = {});
+void showAutomationMenu(
+    TrackId trackId, juce::Component* relativeTo,
+    const std::function<void(TrackId, AutomationLaneId)>& onShowAutomationLane = {});
 
 }  // namespace magda
