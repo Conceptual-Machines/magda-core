@@ -1185,8 +1185,7 @@ void AutomationManager::restoreLane(AutomationLaneInfo& lane) {
 }
 
 void AutomationManager::insertLaneAt(AutomationLaneInfo& lane, size_t index) {
-    if (index > lanes_.size())
-        index = lanes_.size();
+    index = std::min(index, lanes_.size());
     lane.authorityState = automationAuthorityForPersistence(lane.authorityState);
     lanes_.insert(lanes_.begin() + static_cast<std::ptrdiff_t>(index), std::move(lane));
     notifyLanesChanged();
@@ -1215,27 +1214,22 @@ void AutomationManager::refreshIdCountersFromLanes() {
     int maxPointId = 0;
 
     for (const auto& lane : lanes_) {
-        if (lane.id > maxLaneId)
-            maxLaneId = lane.id;
+        maxLaneId = std::max(lane.id, maxLaneId);
 
         for (const auto& point : lane.absolutePoints) {
-            if (point.id > maxPointId)
-                maxPointId = point.id;
+            maxPointId = std::max(point.id, maxPointId);
         }
 
         for (auto clipId : lane.clipIds) {
-            if (clipId > maxClipId)
-                maxClipId = clipId;
+            maxClipId = std::max(clipId, maxClipId);
         }
     }
 
     for (const auto& clip : clips_) {
-        if (clip.id > maxClipId)
-            maxClipId = clip.id;
+        maxClipId = std::max(clip.id, maxClipId);
 
         for (const auto& point : clip.points) {
-            if (point.id > maxPointId)
-                maxPointId = point.id;
+            maxPointId = std::max(point.id, maxPointId);
         }
     }
 

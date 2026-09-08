@@ -119,13 +119,13 @@ class BindingRegistry {
      *
      * @return All matching bindings from both Global and Project scopes.
      */
-    std::vector<Binding> findFor(const ControlTarget& target) const;
+    std::vector<Binding> findFor(const ControlTarget& query) const;
 
     /**
      * @brief Remove all bindings whose target resolves to the given ControlTarget.
      * @return Number of bindings removed.
      */
-    int removeFor(const ControlTarget& target);
+    int removeFor(const ControlTarget& query);
 
     /**
      * @brief True if any binding (Global + Project) resolves to a target on
@@ -180,7 +180,7 @@ class BindingRegistry {
      * `!findFor(...).empty()`, so the indicator drops when the binding's
      * controller is disabled.
      */
-    bool hasActiveBindingFor(const ControlTarget& target) const;
+    bool hasActiveBindingFor(const ControlTarget& query) const;
 
     /**
      * @brief True if any active binding for this macro is an explicit static

@@ -1,5 +1,6 @@
 #include "MixerView.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 #include <unordered_map>
@@ -2268,8 +2269,7 @@ void MixerView::paint(juce::Graphics& g) {
             int indicatorWidth = DEFAULT_CHANNEL_WIDTH;
             int indicatorX = vpBounds.getRight() - indicatorWidth;
             // Clamp to viewport area
-            if (indicatorX < vpBounds.getX())
-                indicatorX = vpBounds.getX();
+            indicatorX = std::max(indicatorX, vpBounds.getX());
             auto indicatorBounds = juce::Rectangle<int>(indicatorX, vpBounds.getY(), indicatorWidth,
                                                         vpBounds.getHeight());
             g.setColour(DarkTheme::getColour(DarkTheme::ACCENT_PRIMARY).withAlpha(0.15f));

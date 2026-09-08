@@ -1440,17 +1440,15 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
     if (clip->isMidi()) {
         if (clip->loopEnabled) {
             // Truncate each half's loop to its own portion.
-            if (clip->loopLengthBeats > leftLengthBeats)
-                clip->loopLengthBeats = leftLengthBeats;
-            if (rightClip.loopLengthBeats > rightLengthBeats)
-                rightClip.loopLengthBeats = rightLengthBeats;
+            clip->loopLengthBeats = std::min(clip->loopLengthBeats, leftLengthBeats);
+            rightClip.loopLengthBeats = std::min(rightClip.loopLengthBeats, rightLengthBeats);
         }
     } else if (leftEvent != nullptr && rightEvent != nullptr) {
         if (clip->loopEnabled) {
             // Beat-mode events keep the ORIGINAL source loop region: the right
             // half's anchor carries the playback phase, and truncating the
             // region to the split point makes the right side render silence.
-            if (!(leftEvent->autoTempo && leftEvent->interpBpm > 0.0)) {
+            if (!leftEvent->autoTempo || leftEvent->interpBpm <= 0.0) {
                 if (leftEvent->loopLengthBeats() > leftLengthBeats)
                     leftEvent->setLoopLengthBeats(leftLengthBeats);
                 if (rightEvent->loopLengthBeats() > rightLengthBeats) {

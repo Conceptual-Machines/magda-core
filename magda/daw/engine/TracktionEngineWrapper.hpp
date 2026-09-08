@@ -457,7 +457,7 @@ class TracktionEngineWrapper : public AudioEngine,
     std::vector<std::string> getSystemPluginSearchPaths() const override;
     std::vector<ScannedPluginParameter> scanPluginParameters(const juce::String& pluginId,
                                                              bool internalPlugin) override;
-    bool upsertGrooveTemplate(const GrooveTemplateData& groove) override;
+    bool upsertGrooveTemplate(const GrooveTemplateData& data) override;
     juce::StringArray getGrooveTemplateNames() const override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;

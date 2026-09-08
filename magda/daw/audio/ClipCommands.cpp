@@ -961,10 +961,7 @@ bool JoinClipsCommand::canExecute() const {
 
     // Must be adjacent (left ends where right starts)
     const double bpm = resolveTimelineBpm(tempo_);
-    if (std::abs(left->getTimelineEnd(bpm) - right->getTimelineStart(bpm)) > 0.001)
-        return false;
-
-    return true;
+    return std::abs(left->getTimelineEnd(bpm) - right->getTimelineStart(bpm)) <= 0.001;
 }
 
 JoinClipsState JoinClipsCommand::captureState() {
@@ -1072,10 +1069,7 @@ bool JoinClipsCommand::validateState() const {
     if (!left)
         return false;
 
-    if (left->trackId == INVALID_TRACK_ID)
-        return false;
-
-    return true;
+    return left->trackId != INVALID_TRACK_ID;
 }
 
 // ============================================================================
@@ -2955,8 +2949,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         return;
 
     int numSlices = static_cast<int>(slices.size());
-    if (numSlices > daw::audio::DrumGridPlugin::maxPads)
-        numSlices = daw::audio::DrumGridPlugin::maxPads;
+    numSlices = std::min(numSlices, daw::audio::DrumGridPlugin::maxPads);
 
     // Create Instrument track with DrumGridPlugin
     auto& trackManager = TrackManager::getInstance();
@@ -3061,8 +3054,7 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
         double noteDuration = nextTimeline - slice.timelinePos;
         double noteLengthBeats = noteDuration * beatsPerSecond;
 
-        if (noteStartBeat < 0.0)
-            noteStartBeat = 0.0;
+        noteStartBeat = std::max(noteStartBeat, 0.0);
         if (noteLengthBeats <= 0.0)
             noteLengthBeats = 0.01;
 

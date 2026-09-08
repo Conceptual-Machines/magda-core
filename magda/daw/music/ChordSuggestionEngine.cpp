@@ -422,9 +422,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
         if (!params.add13ths && is13thQuality(c.chord.quality))
             return false;
         // addSlashChords=false => exclude slash names
-        if (!params.addSlashChords && isSlashName(c.chord.getName()))
-            return false;
-        return true;
+        return !(!params.addSlashChords && isSlashName(c.chord.getName()));
     };
 
     std::vector<SuggestionItem> filtered;

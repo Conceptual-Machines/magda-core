@@ -87,8 +87,8 @@ std::optional<CrossfadeInfo> crossfadeAtEndOf(const ClipInfo& clip,
         const double oStart = other->placement.startBeat;
         const double oEnd = other->placement.endBeat();
         if (!(oStart < endB) ||
-            !(oStart > startB + kBeatTol ||
-              (std::abs(oStart - startB) <= kBeatTol && clipSitsBelow(clip, *other))))
+            (oStart <= startB + kBeatTol &&
+             (std::abs(oStart - startB) > kBeatTol || !clipSitsBelow(clip, *other))))
             continue;
         // Runs past this clip's end, or ends on the very same beat.
         if (oEnd > endB - kBeatTol) {

@@ -80,9 +80,7 @@ std::vector<float> getInferredOnsets(const std::vector<float>& onsets,
 
     // Clamp negatives to 0 and zero the first nDiff rows.
     for (float& v : frameDiff) {
-        if (v < 0.0F) {
-            v = 0.0F;
-        }
+        v = std::max(v, 0.0F);
     }
     for (int t = 0; t < std::min(nDiff, nFrames); ++t) {
         for (int f = 0; f < kNoteFreqBins; ++f) {

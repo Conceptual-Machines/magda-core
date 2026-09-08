@@ -23,7 +23,7 @@ juce::String normalizeVersion(const juce::String& raw) {
     // "0.4.8-10-g83eb35e0" becomes "0.4.8" and "0.5.0-rc2" becomes "0.5.0".
     for (int i = 0; i < s.length(); ++i) {
         auto c = s[i];
-        if (!(juce::CharacterFunctions::isDigit(c) || c == '.')) {
+        if (!juce::CharacterFunctions::isDigit(c) && c != '.') {
             s = s.substring(0, i);
             break;
         }

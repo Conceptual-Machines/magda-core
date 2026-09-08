@@ -826,16 +826,12 @@ int decideThreadCount(int requested, size_t fileCount, const std::filesystem::pa
     if (n <= 0) {
         const unsigned hw = std::thread::hardware_concurrency();
         n = hw == 0 ? 2 : static_cast<int>(hw) - 1;
-        if (n < 1) {
-            n = 1;
-        }
+        n = std::max(n, 1);
     }
     // Never spawn more workers than there is work for, accounting for the
     // batch size (one worker per batch slot, capped).
     const int maxUseful = static_cast<int>((fileCount + kBatchSize - 1) / kBatchSize);
-    if (n > maxUseful) {
-        n = maxUseful;
-    }
+    n = std::min(n, maxUseful);
     return std::max(n, 1);
 }
 

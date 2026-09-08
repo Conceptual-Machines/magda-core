@@ -1,5 +1,6 @@
 #include "BarsBeatsTicksLabel.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -94,13 +95,11 @@ void BarsBeatsTicksLabel::setBarsBeatsIsPosition(bool isPosition) {
 
 void BarsBeatsTicksLabel::decompose(int& bars, int& beats, int& ticks) const {
     double v = value_;
-    if (v < 0.0)
-        v = 0.0;
+    v = std::max(v, 0.0);
 
     bars = static_cast<int>(v / beatsPerBar_);
     double remaining = std::fmod(v, static_cast<double>(beatsPerBar_));
-    if (remaining < 0.0)
-        remaining = 0.0;
+    remaining = std::max(remaining, 0.0);
 
     beats = static_cast<int>(remaining);
     ticks = static_cast<int>(std::round((remaining - beats) * TICKS_PER_BEAT));
@@ -124,12 +123,9 @@ void BarsBeatsTicksLabel::onSegmentChanged() {
     int beats = beatsSegment_->getDisplayValue() - offset;
     int ticks = ticksSegment_->getDisplayValue();
 
-    if (bars < 0)
-        bars = 0;
-    if (beats < 0)
-        beats = 0;
-    if (ticks < 0)
-        ticks = 0;
+    bars = std::max(bars, 0);
+    beats = std::max(beats, 0);
+    ticks = std::max(ticks, 0);
 
     double newValue = recompose(bars, beats, ticks);
     setValue(newValue);

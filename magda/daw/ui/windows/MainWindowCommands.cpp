@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
 #include "../../core/ClipManager.hpp"
@@ -715,8 +717,7 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                             double editCursorBeats = state.editCursorBeats;
                             double clipStartBeats = targetClip->getStartBeats(bpm);
                             pasteOffset = editCursorBeats - clipStartBeats;
-                            if (pasteOffset < 0)
-                                pasteOffset = 0;
+                            pasteOffset = std::max<double>(pasteOffset, 0);
                         }
                     }
                     const auto& clipboard = clipManager.getNoteClipboard();

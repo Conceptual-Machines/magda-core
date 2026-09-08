@@ -676,8 +676,7 @@ void ArpeggiatorPlugin::applyInputEvent(BlockScope& block, int index, double tim
             restartAt(block, timeInBlock);
     } else if (msg.isNoteOff()) {
         --physicallyHeldCount_;
-        if (physicallyHeldCount_ < 0)
-            physicallyHeldCount_ = 0;
+        physicallyHeldCount_ = std::max(physicallyHeldCount_, 0);
 
         // Latch keeps the note in the pattern and only marks the set stale once
         // every key is up.

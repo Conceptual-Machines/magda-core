@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 
 #include "../../../../../audio/AudioThumbnailManager.hpp"
@@ -1172,8 +1173,7 @@ void ClipInspector::initClipPropertiesSection() {
         } else {
             double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
-            if (newLoopLengthBeats < 0.25)
-                newLoopLengthBeats = 0.25;
+            newLoopLengthBeats = std::max(newLoopLengthBeats, 0.25);
             magda::UndoManager::getInstance().executeCommand(
                 std::make_unique<magda::SetMidiClipLoopLengthBeatsCommand>(
                     primaryClipId(), newLoopLengthBeats, bpm));

@@ -187,7 +187,7 @@ bool splitGluedUnit(const std::string& tok, std::string& num, std::string& unit)
 // ---------------------------------------------------------------------------
 bool splitGluedTrack(const std::string& tok, std::string& word, std::string& digits) {
     size_t i = 0;
-    while (i < tok.size() && !(tok[i] >= '0' && tok[i] <= '9'))
+    while (i < tok.size() && (tok[i] < '0' || tok[i] > '9'))
         ++i;
     if (i == 0 || i == tok.size())
         return false;
@@ -195,7 +195,7 @@ bool splitGluedTrack(const std::string& tok, std::string& word, std::string& dig
     if (head != "track" && head != "tracks")
         return false;
     for (size_t j = i; j < tok.size(); ++j)
-        if (!(tok[j] >= '0' && tok[j] <= '9'))
+        if (tok[j] < '0' || tok[j] > '9')
             return false;
     word = tok.substr(0, i);
     digits = tok.substr(i);

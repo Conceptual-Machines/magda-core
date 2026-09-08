@@ -1,5 +1,6 @@
 #include "DraggableValueLabel.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 
@@ -130,8 +131,7 @@ juce::String DraggableValueLabel::formatValue(double val) const {
             constexpr int TICKS_PER_BEAT = 480;
             int wholeBars = static_cast<int>(val / beatsPerBar_);
             double remaining = std::fmod(val, static_cast<double>(beatsPerBar_));
-            if (remaining < 0.0)
-                remaining = 0.0;
+            remaining = std::max(remaining, 0.0);
             int wholeBeats = static_cast<int>(remaining);
             int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
             int offset = barsBeatsIsPosition_ ? 1 : 0;
@@ -253,12 +253,9 @@ double DraggableValueLabel::parseValue(const juce::String& text) const {
                 beat = parts[1].getIntValue() - offset;
             if (parts.size() >= 3)
                 ticks = parts[2].getIntValue();
-            if (bar < 0)
-                bar = 0;
-            if (beat < 0)
-                beat = 0;
-            if (ticks < 0)
-                ticks = 0;
+            bar = std::max(bar, 0);
+            beat = std::max(beat, 0);
+            ticks = std::max(ticks, 0);
             return bar * beatsPerBar_ + beat + ticks / static_cast<double>(TICKS_PER_BEAT);
         }
 

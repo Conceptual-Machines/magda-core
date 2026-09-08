@@ -1,5 +1,7 @@
 #include "NoteInspector.hpp"
 
+#include <algorithm>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "core/ClipManager.hpp"
@@ -375,8 +377,7 @@ void NoteInspector::refreshMultiRangeDisplay() {
         constexpr int BEATS_PER_BAR = 4;
         int wholeBars = static_cast<int>(val / BEATS_PER_BAR);
         double remaining = std::fmod(val, static_cast<double>(BEATS_PER_BAR));
-        if (remaining < 0.0)
-            remaining = 0.0;
+        remaining = std::max(remaining, 0.0);
         int wholeBeats = static_cast<int>(remaining);
         int ticks = static_cast<int>((remaining - wholeBeats) * TICKS_PER_BEAT);
         int offset = isPosition ? 1 : 0;

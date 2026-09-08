@@ -1,5 +1,6 @@
 #include "slot/DeviceSlotParameterPaging.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -112,8 +113,7 @@ void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,
     int currentPage = device.currentParameterPage;
     if (currentPage >= totalPages)
         currentPage = totalPages - 1;
-    if (currentPage < 0)
-        currentPage = 0;
+    currentPage = std::max(currentPage, 0);
     paramGrid->updatePageControls(device, currentPage, totalPages);
 }
 

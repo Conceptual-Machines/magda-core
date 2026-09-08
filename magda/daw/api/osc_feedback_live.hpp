@@ -221,7 +221,7 @@ class OscFeedbackProjector : private ConfigListener, private BindingRegistryList
      */
     void bindingRegistryChanged(BindingScope scope) override;
 
-    void onChanges(const std::vector<remote::ChangeSource::Change>& changes);
+    void onChanges(const std::vector<remote::ChangeSource::Change>& changed);
 
     /**
      * @brief Bring the surfaces into line with the peers the router has heard.

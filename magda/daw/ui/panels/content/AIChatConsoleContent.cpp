@@ -3553,8 +3553,7 @@ void AIChatConsoleContent::finishThemeGeneration(bool success, const juce::Strin
 // Format a seconds value as a compact human-readable string ("5ms",
 // "150ms", "1.2s", "12s"). Used for ADSR display in the pretty-print.
 static juce::String formatSeconds(float s) {
-    if (s < 0.0f)
-        s = 0.0f;
+    s = std::max(s, 0.0f);
     if (s < 1.0f)
         return juce::String(static_cast<int>(std::round(s * 1000.0f))) + "ms";
     if (s < 10.0f)

@@ -119,8 +119,7 @@ Chord ChordEngine::detect(const std::vector<ChordNote>& heldNotes) {
 
     int actualBassNote = heldNotes[0].noteNumber;
     for (const auto& note : heldNotes)
-        if (note.noteNumber < actualBassNote)
-            actualBassNote = note.noteNumber;
+        actualBassNote = std::min(note.noteNumber, actualBassNote);
 
     std::vector<int> pitchClasses;
     for (const auto& note : heldNotes) {

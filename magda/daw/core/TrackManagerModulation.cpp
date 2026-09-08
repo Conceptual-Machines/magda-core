@@ -106,9 +106,7 @@ bool shouldStopRunning(const ModInfo& mod, const ModTickInputs& in) {
         return false;
     if (mod.triggerMode == LFOTriggerMode::MIDI && in.midiNoteOff)
         return true;
-    if (mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen)
-        return true;
-    return false;
+    return mod.triggerMode == LFOTriggerMode::Audio && !mod.audioGateOpen;
 }
 
 }  // namespace
