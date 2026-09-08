@@ -340,17 +340,17 @@ jobs:
 
         if [ -n "$base" ]; then
           # The checkout is depth-1, so the base commit is not in this clone yet.
-          git fetch --no-tags --depth=1 origin "$base"
+          git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
         elif [ "$shared" = true ]; then
           # A shared branch. Its commits arrived through PRs that were analysed
           # on their own branches, and diffing back to where dev left main would
           # re-analyse an entire release. Range over what this push added.
           base="${{ github.event.before }}"
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            git fetch --no-tags --depth=2 origin "${{ github.ref_name }}"
+            git fetch --no-tags --no-recurse-submodules --depth=2 origin "${{ github.ref_name }}"
             base="HEAD~1"
           else
-            git fetch --no-tags --depth=1 origin "$base"
+            git fetch --no-tags --no-recurse-submodules --depth=1 origin "$base"
           fi
         else
           # A feature branch, where github.event.before cannot be trusted.
@@ -358,15 +358,21 @@ jobs:
           # in-flight runs: a push touching no C++ can cancel the only run that
           # would have analysed the C++ still sitting at HEAD, then find nothing
           # in its own narrow range. So diff the whole branch, every push.
+          # --no-recurse-submodules throughout: the checkout configures submodule
+          # recursion, so a plain fetch here went off to fetch faust's and
+          # tracktion's, some of which fail on refs their remotes no longer
+          # serve, and took the step down with them before clang-tidy ever ran.
+          #
           # HEAD first, and in its own fetch. checkout leaves it a shallow root,
           # and merge-base cannot walk a history that stops at the first commit,
           # so deepening only main/dev leaves every merge-base below failing and
           # the branch point unfindable. Adding this branch as another refspec to
           # the fetch below does not deepen HEAD either; it has to be its own
           # invocation.
-          git fetch --no-tags --deepen=200 origin
+          git fetch --no-tags --no-recurse-submodules --deepen=200 origin \
+            "${{ github.ref_name }}"
 
-          git fetch --no-tags --depth=200 origin \
+          git fetch --no-tags --no-recurse-submodules --depth=200 origin \
             '+refs/heads/main:refs/remotes/origin/main' \
             '+refs/heads/dev/*:refs/remotes/origin/dev/*'
 
