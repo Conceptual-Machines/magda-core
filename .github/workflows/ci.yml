@@ -421,7 +421,7 @@ jobs:
 
         printf 'Analysing %d file(s):\n' "${#files[@]}"
         printf '  %s\n' "${files[@]}"
-        ./.pre-commit-hooks/clang-tidy.sh "${files[@]}"
+        ./.pre-commit-hooks/clang_tidy.py "${files[@]}"
 
     - name: Check build artifacts
       run: |
