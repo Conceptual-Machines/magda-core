@@ -90,7 +90,8 @@ DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
     DeviceMidiCapabilities capabilities;
     capabilities.hasMidiInput = device.consumesMidi();
     capabilities.hasMidiOutput = device.emitsMidi();
-    capabilities.hasAudioInput = device.deviceType == DeviceType::Effect || device.canSidechain;
+    capabilities.hasAudioInput =
+        device.deviceType == DeviceType::Effect || device.sidechainPort.takesAudio();
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
     capabilities.supportsMidiInputThruToggle =
         capabilities.hasMidiInput && capabilities.hasMidiOutput;
@@ -263,7 +264,7 @@ bool supportsMidiSidechainSource(const DeviceInfo& device) {
 }
 
 bool supportsSidechainRoutingMenu(const DeviceInfo& device) {
-    return device.canSidechain || supportsMidiSidechainSource(device);
+    return device.sidechainPort.takesAudio() || supportsMidiSidechainSource(device);
 }
 
 void applyCachedCapabilitiesToDevice(DeviceInfo& device) {

@@ -146,34 +146,35 @@ enum class OpKind : std::uint8_t {
  * second half of the differ's identity key.
  */
 enum class OpRole : std::uint8_t {
-    ClipAudio,        ///< the track's audio clip source
-    ClipMidi,         ///< the track's MIDI clip source
-    LiveAudioInput,   ///< the track's live audio input
-    LiveMidiInput,    ///< the track's live MIDI input
-    SessionAudio,     ///< the track's session audio, whichever slot is playing
-    SessionMidi,      ///< the track's session MIDI
-    TrackAudioInput,  ///< sum of everything feeding the track's chain head
-    TrackMidiInput,   ///< merge of everything feeding the track's chain head
-    DeviceProcess,    ///< the device itself
-    DeviceInject,     ///< an instrument's output summing into the bus flowing past it
-    DeviceDelta,      ///< the device's output minus the dry input it was handed
-    DeviceGain,       ///< the device slot's gain trim
-    DeviceMeter,      ///< the device slot's level tap
-    ChainMidiMerge,   ///< raw chain MIDI merged with a device's MIDI output
-    PadNoteGate,      ///< one pad chain's note range and transposition
-    RackChainFader,   ///< one rack chain's volume + pan
-    RackMix,          ///< sum of a rack's chains
-    RackMidiMix,      ///< merge of a rack's chain MIDI outputs
-    RackFader,        ///< the rack's output volume + pan
-    RackDelta,        ///< the rack's output minus the dry input it was handed
-    TrackFader,       ///< the track fader
-    TrackMeter,       ///< the track's post-fader, pre-mute level tap
-    TrackMute,        ///< mute and solo, applied after the meter and sidechain tap
-    SendTap,          ///< one send slot
-    ModulationTap,    ///< one track's signal, read by the modifiers listening to it
-    HardwareOutput,   ///< the master's hardware output
-    InsertSend,       ///< one insert's send
-    InsertReturn,     ///< one insert's return
+    ClipAudio,            ///< the track's audio clip source
+    ClipMidi,             ///< the track's MIDI clip source
+    LiveAudioInput,       ///< the track's live audio input
+    LiveMidiInput,        ///< the track's live MIDI input
+    SessionAudio,         ///< the track's session audio, whichever slot is playing
+    SessionMidi,          ///< the track's session MIDI
+    TrackAudioInput,      ///< sum of everything feeding the track's chain head
+    TrackMidiInput,       ///< merge of everything feeding the track's chain head
+    DeviceProcess,        ///< the device itself
+    DeviceInject,         ///< an instrument's output summing into the bus flowing past it
+    DeviceDelta,          ///< the device's output minus the dry input it was handed
+    DeviceGain,           ///< the device slot's gain trim
+    DeviceSidechainGain,  ///< the trim on the key feeding the device's sidechain slot
+    DeviceMeter,          ///< the device slot's level tap
+    ChainMidiMerge,       ///< raw chain MIDI merged with a device's MIDI output
+    PadNoteGate,          ///< one pad chain's note range and transposition
+    RackChainFader,       ///< one rack chain's volume + pan
+    RackMix,              ///< sum of a rack's chains
+    RackMidiMix,          ///< merge of a rack's chain MIDI outputs
+    RackFader,            ///< the rack's output volume + pan
+    RackDelta,            ///< the rack's output minus the dry input it was handed
+    TrackFader,           ///< the track fader
+    TrackMeter,           ///< the track's post-fader, pre-mute level tap
+    TrackMute,            ///< mute and solo, applied after the meter and sidechain tap
+    SendTap,              ///< one send slot
+    ModulationTap,        ///< one track's signal, read by the modifiers listening to it
+    HardwareOutput,       ///< the master's hardware output
+    InsertSend,           ///< one insert's send
+    InsertReturn,         ///< one insert's return
 
     // Latency compensation. A delay sits on one edge, so its identity is the
     // op it feeds plus the input slot it fills: the role says which op that is,

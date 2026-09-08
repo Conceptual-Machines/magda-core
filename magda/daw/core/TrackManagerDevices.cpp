@@ -2567,15 +2567,18 @@ void TrackManager::removeRackFromChainByPath(const ChainNodePath& rackPath) {
 // Sidechain Configuration
 // ============================================================================
 
-void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
-                                      SidechainConfig::Type type) {
+// Every sidechain edit is the same walk with a different write, so the walk is
+// written once: find the device, change its source, notify. Callers that only
+// move the tap point, the trim or the listen switch go through here too, which
+// is what keeps a sidechain edit one shape for undo and for the API (#2329).
+void TrackManager::editSidechain(DeviceId targetDevice,
+                                 const std::function<void(SidechainConfig&)>& edit) {
     auto updateElements = [&](auto&& self, std::vector<ChainElement>& elements) -> bool {
         for (auto& element : elements) {
             if (magda::isDevice(element)) {
                 auto& device = magda::getDevice(element);
                 if (device.id == targetDevice) {
-                    device.sidechain.type = type;
-                    device.sidechain.sourceTrackId = sourceTrack;
+                    edit(device.sidechain);
                     notifyDevicePropertyChanged(findDevicePath(targetDevice));
                     return true;
                 }
@@ -2606,8 +2609,30 @@ void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack
     }
 }
 
+void TrackManager::setSidechainSource(DeviceId targetDevice, TrackId sourceTrack,
+                                      SidechainConfig::Type type) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) {
+        sidechain.type = type;
+        sidechain.sourceTrackId = sourceTrack;
+    });
+}
+
+void TrackManager::setSidechainTapPoint(DeviceId targetDevice, ModTapPoint tapPoint) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.tapPoint = tapPoint; });
+}
+
+void TrackManager::setSidechainGainDb(DeviceId targetDevice, float gainDb) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.gainDb = gainDb; });
+}
+
+void TrackManager::setSidechainListen(DeviceId targetDevice, bool listen) {
+    editSidechain(targetDevice, [&](SidechainConfig& sidechain) { sidechain.listen = listen; });
+}
+
 void TrackManager::clearSidechain(DeviceId targetDevice) {
-    setSidechainSource(targetDevice, INVALID_TRACK_ID, SidechainConfig::Type::None);
+    // The whole source, the fields that shape it included: a slot that is not
+    // keyed off anything is not still trimming and monitoring a key.
+    editSidechain(targetDevice, [](SidechainConfig& sidechain) { sidechain = {}; });
 }
 
 void TrackManager::setRackSidechainSource(const ChainNodePath& rackPath, TrackId sourceTrack,

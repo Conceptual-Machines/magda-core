@@ -49,8 +49,14 @@ class MagdaRingModCompiledPlugin : public MagdaCompiledEffect {
     const char* slotIdPrefix() const override {
         return "magda_ring_mod_";
     }
-    bool wantsSidechain() const override {
-        return true;  // Source=Sidechain takes the carrier from input 3.
+    magda::SidechainPort sidechainPort() const override {
+        return magda::monoAudioSidechain;  // Source=Sidechain takes the carrier from it.
+    }
+    int outputChannelCount() const override {
+        return 2;
+    }
+    int inputChannelCount() const override {
+        return 2;
     }
     bool resetsOnPlayStart() const override {
         return true;

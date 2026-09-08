@@ -110,6 +110,10 @@ static_assert(static_cast<int>(SidechainConfig::Type::None) == 0);
 static_assert(static_cast<int>(SidechainConfig::Type::Audio) == 1);
 static_assert(static_cast<int>(SidechainConfig::Type::MIDI) == 2);
 
+static_assert(static_cast<int>(SidechainPort::Kind::None) == 0);
+static_assert(static_cast<int>(SidechainPort::Kind::Audio) == 1);
+static_assert(static_cast<int>(SidechainPort::Kind::MIDI) == 2);
+
 static_assert(static_cast<int>(ParameterScale::Linear) == 0);
 static_assert(static_cast<int>(ParameterScale::Logarithmic) == 1);
 static_assert(static_cast<int>(ParameterScale::Exponential) == 2);
@@ -308,6 +312,9 @@ std::vector<Pin> allPins() {
         PIN(SidechainConfig::Type, None, 0),
         PIN(SidechainConfig::Type, Audio, 1),
         PIN(SidechainConfig::Type, MIDI, 2),
+        PIN(SidechainPort::Kind, None, 0),
+        PIN(SidechainPort::Kind, Audio, 1),
+        PIN(SidechainPort::Kind, MIDI, 2),
         PIN(ParameterScale, Linear, 0),
         PIN(ParameterScale, Logarithmic, 1),
         PIN(ParameterScale, Exponential, 2),

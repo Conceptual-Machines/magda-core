@@ -48,16 +48,31 @@ float gainReductionForLevel(float levelDb, float thresholdDb, float ratio, float
     return std::max(0.0f, over - compressedOver);
 }
 
+/// Peak magnitude over @p numSamples of one channel.
+float peakOfChannel(const float* samples, int numSamples) {
+    float peak = 0.0f;
+    for (int i = 0; i < numSamples; ++i)
+        peak = std::max(peak, std::fabs(samples[i]));
+    return peak;
+}
+
 /// Peak magnitude over one channel range of @p buffer.
 float peakOfChannels(const juce::AudioBuffer<float>& buffer, int firstChannel, int lastChannel,
                      int startSample, int numSamples) {
     float peak = 0.0f;
     for (int channel = firstChannel; channel < std::min(lastChannel, buffer.getNumChannels());
-         ++channel) {
-        const float* samples = buffer.getReadPointer(channel, startSample);
-        for (int i = 0; i < numSamples; ++i)
-            peak = std::max(peak, std::fabs(samples[i]));
-    }
+         ++channel)
+        peak =
+            std::max(peak, peakOfChannel(buffer.getReadPointer(channel, startSample), numSamples));
+    return peak;
+}
+
+/// Peak magnitude over every channel of the key the host routed.
+float peakOfSidechain(const DeviceProcessContext& context) {
+    float peak = 0.0f;
+    for (int channel = 0; channel < context.numSidechainChannels; ++channel)
+        peak = std::max(peak, peakOfChannel(context.sidechain[channel] + context.startSample,
+                                            context.numSamples));
     return peak;
 }
 
@@ -178,7 +193,7 @@ std::vector<MagdaCompressorCompiledPlugin::HostSlotInfo> MagdaCompressorCompiled
 }
 
 void MagdaCompressorCompiledPlugin::beforeCompute(DeviceProcessContext& context, int engineIndex) {
-    const bool external = context.sidechainInputChannel >= 0;
+    const bool external = context.numSidechainChannels > 0;
 
     // The hidden zone that tells the dsp to detect off the key rather than off
     // its own input. Only the Clean engine has one; Glue has no external
@@ -188,10 +203,7 @@ void MagdaCompressorCompiledPlugin::beforeCompute(DeviceProcessContext& context,
 
     const float inputPeak =
         peakOfChannels(*context.audio, 0, 2, context.startSample, context.numSamples);
-    const float keyPeak = external ? peakOfChannels(*context.audio, context.sidechainInputChannel,
-                                                    context.sidechainInputChannel + 1,
-                                                    context.startSample, context.numSamples)
-                                   : inputPeak;
+    const float keyPeak = external ? peakOfSidechain(context) : inputPeak;
 
     inputPeakDb_.store(ampToDb(inputPeak), std::memory_order_relaxed);
     keyPeakDb_.store(ampToDb(keyPeak), std::memory_order_relaxed);

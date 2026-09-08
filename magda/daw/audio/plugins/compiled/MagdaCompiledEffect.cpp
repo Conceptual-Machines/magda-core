@@ -346,7 +346,7 @@ DeviceProperties MagdaCompiledEffect::properties() const {
         .takesAudioInput = true,
         .isSynth = false,
         .producesAudioWithoutInput = producesAudioWithoutInput(),
-        .canSidechain = wantsSidechain(),
+        .sidechain = sidechainPort(),
         .latencySeconds = latencySeconds(),
         .tailLengthSeconds = tailSeconds(),
         .outputChannelCount = outputChannelCount(),
@@ -460,16 +460,33 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
     if (static_cast<int>(outPtrs_.size()) < numOutputs)
         outPtrs_.resize(static_cast<size_t>(numOutputs), nullptr);
 
+    // The key occupies the dsp inputs after the device's own, which is where
+    // every compiled dynamics dsp reads it. Copied in here, once, so no dsp
+    // has to know where a host keeps the key (#2329).
+    const auto port = sidechainPort();
+    const int keyInputs = port.takesAudio() ? std::min(port.channels, numInputs) : 0;
+    const int ownInputs = numInputs - keyInputs;
+
     // Faust does not allow input and output to alias, so the input is copied
     // out first. Channels the host does not have read as silence.
     for (int channel = 0; channel < numInputs; ++channel) {
         float* destination = scratchIn_.getWritePointer(channel);
-        if (channel < hostChannels) {
-            const float* source = context.audio->getReadPointer(channel, startSample);
-            std::copy(source, source + numSamples, destination);
-        } else {
-            std::fill(destination, destination + numSamples, 0.0f);
+        const float* source = nullptr;
+        if (channel >= ownInputs) {
+            // A source narrower than the key the dsp asked for feeds its last
+            // channel to the rest: a mono send into a stereo key is the key on
+            // both sides, not the key and silence.
+            const int key = std::min(channel - ownInputs, context.numSidechainChannels - 1);
+            if (key >= 0)
+                source = context.sidechain[key] + startSample;
+        } else if (channel < hostChannels) {
+            source = context.audio->getReadPointer(channel, startSample);
         }
+
+        if (source != nullptr)
+            std::copy(source, source + numSamples, destination);
+        else
+            std::fill(destination, destination + numSamples, 0.0f);
         inPtrs_[static_cast<size_t>(channel)] = destination;
     }
 
@@ -489,19 +506,11 @@ void MagdaCompiledEffect::computeEngine(int engineIndex, DeviceProcessContext& c
     // A device that declares a fixed output width owns exactly that many
     // channels, so anything above them is not its output -- it is the input it
     // was handed, and passing that through would leak the dry signal around a
-    // widener that was asked to replace it.
-    //
-    // The key is not the device's to clear, though. It arrives as channels of
-    // this buffer but it belongs to whatever produced it, the engine hands it
-    // over read-only, and the same source may be fanned out to other ops: zeroing
-    // it here would empty their input from under them. Stop at the first key
-    // channel when there is one.
-    if (outputChannelCount() > 0) {
-        const int firstForeignChannel =
-            context.sidechainInputChannel >= 0 ? context.sidechainInputChannel : hostChannels;
-        for (int channel = numOutputs; channel < firstForeignChannel; ++channel)
+    // widener that was asked to replace it. The key is not in this buffer to be
+    // cleared: it is a port now, and it belongs to whatever produced it.
+    if (outputChannelCount() > 0)
+        for (int channel = numOutputs; channel < hostChannels; ++channel)
             context.audio->clear(channel, startSample, numSamples);
-    }
 }
 
 void MagdaCompiledEffect::processAudio(DeviceProcessContext& context) {

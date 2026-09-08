@@ -215,6 +215,7 @@ std::shared_ptr<FaustPlugin::FaustState> FaustPlugin::compile(const juce::String
         state->dsp->init(sampleRate);
         state->dspIn = state->dsp->getNumInputs();
         state->dspOut = state->dsp->getNumOutputs();
+        state->sidechain = readSidechainPort(s, state->dspIn, state->dspOut);
         return state;
     };
 
@@ -375,10 +376,10 @@ bool FaustPlugin::loadDspSource(const juce::String& name, const juce::String& so
     std::atomic_store(&active_, compiled);
     activeDspMatchesSource_ = true;
 
-    // A stereo-only replacement can no longer consume the host's appended key
-    // channels. The device says so through properties().canSidechain, which the
-    // host re-reads when refreshDeviceParameters() runs after a compile; there
-    // is nothing for the device itself to unroute.
+    // A stereo-only replacement can no longer consume a key. The device says so
+    // through properties().sidechain, which the host re-reads when
+    // refreshDeviceParameters() runs after a compile; there is nothing for the
+    // device itself to unroute.
 
     if (previous) {
         const juce::ScopedLock lk(retiredLock_);
@@ -421,19 +422,20 @@ void FaustPlugin::prepare(const DevicePrepareContext& context) {
 }
 
 DeviceProperties FaustPlugin::properties() const {
-    // The channel counts are the compiled dsp's own, and more inputs than
-    // outputs is how this device says it takes a sidechain key.
+    // The channel counts are the compiled dsp's own; the key is what the source
+    // declares, and the inputs it occupies are not the device's own (#2329).
     const auto active = std::atomic_load(&active_);
     const int inputCount = active ? active->dspIn : 2;
     const int outputCount = active ? active->dspOut : 2;
+    const auto sidechain = active ? active->sidechain : magda::SidechainPort{};
 
     return {
         .pluginId = xmlTypeName,
         .name = getPluginName(),
         .shortName = "Faust",
-        .canSidechain = inputCount > 2,
+        .sidechain = sidechain,
         .outputChannelCount = outputCount,
-        .inputChannelCount = inputCount,
+        .inputChannelCount = inputCount - sidechain.channels,
     };
 }
 
@@ -511,14 +513,26 @@ void FaustPlugin::process(DeviceProcessContext& context) {
     inPtrs_.resize(static_cast<size_t>(active->dspIn));
     outPtrs_.resize(static_cast<size_t>(active->dspOut));
 
+    // The declared key occupies the dsp inputs after the device's own, which is
+    // where the source that declared it reads the key from (#2329). A source
+    // narrower than the key feeds its last channel to the rest.
+    const int ownIn = active->dspIn - active->sidechain.channels;
+
     for (int ch = 0; ch < active->dspIn; ++ch) {
         float* dst = scratchIn_.getWritePointer(ch);
-        if (ch < hostChannels) {
-            const float* src = context.audio->getReadPointer(ch, start);
-            std::copy(src, src + n, dst);
-        } else {
-            std::fill(dst, dst + n, 0.0f);
+        const float* src = nullptr;
+        if (ch >= ownIn) {
+            const int key = std::min(ch - ownIn, context.numSidechainChannels - 1);
+            if (key >= 0)
+                src = context.sidechain[key] + start;
+        } else if (ch < hostChannels) {
+            src = context.audio->getReadPointer(ch, start);
         }
+
+        if (src != nullptr)
+            std::copy(src, src + n, dst);
+        else
+            std::fill(dst, dst + n, 0.0f);
         inPtrs_[static_cast<size_t>(ch)] = dst;
     }
 

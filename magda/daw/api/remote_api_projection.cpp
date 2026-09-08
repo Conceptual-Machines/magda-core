@@ -157,6 +157,43 @@ juce::String safeRoutingId(const juce::String& id) {
     return {};
 }
 
+const char* sidechainKindName(SidechainConfig::Type type) {
+    switch (type) {
+        case SidechainConfig::Type::Audio:
+            return "audio";
+        case SidechainConfig::Type::MIDI:
+            return "midi";
+        case SidechainConfig::Type::None:
+            break;
+    }
+    return "none";
+}
+
+const char* sidechainPortName(SidechainPort::Kind kind) {
+    switch (kind) {
+        case SidechainPort::Kind::Audio:
+            return "audio";
+        case SidechainPort::Kind::MIDI:
+            return "midi";
+        case SidechainPort::Kind::None:
+            break;
+    }
+    return "none";
+}
+
+DeviceSidechainDto makeSidechainDto(const DeviceInfo& device) {
+    DeviceSidechainDto dto;
+    dto.port = sidechainPortName(device.sidechainPort.kind);
+    dto.portChannels = device.sidechainPort.channels;
+    dto.type = sidechainKindName(device.sidechain.type);
+    if (device.sidechain.isActive())
+        dto.sourceTrackId = device.sidechain.sourceTrackId;
+    dto.tapPoint = device.sidechain.tapPoint == ModTapPoint::PreFx ? "preFx" : "postFader";
+    dto.gainDb = device.sidechain.gainDb;
+    dto.listen = device.sidechain.listen;
+    return dto;
+}
+
 DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional<RackId> rackId,
                         std::optional<ChainId> chainId, const ChainNodePath& devicePath) {
     DeviceDto dto;
@@ -171,6 +208,7 @@ DeviceDto makeDeviceDto(const DeviceInfo& device, TrackId trackId, std::optional
     dto.instrument = device.isInstrument;
     dto.bypassed = device.bypassed;
     dto.gainDb = device.gainDb;
+    dto.sidechain = makeSidechainDto(device);
     return dto;
 }
 
