@@ -15,6 +15,16 @@ import subprocess
 import sys
 
 
+def basename(path):
+    """Last component, whichever separator ninja used.
+
+    os.path.basename only knows the host's separator, and ninja on Windows
+    writes backslashes, so a dependency would be compared whole against a bare
+    file name, match nothing, and take the "nothing compiles this" path.
+    """
+    return path[max(path.rfind("/"), path.rfind("\\")) + 1:]
+
+
 def load_output_to_source(build_dir):
     """Ninja target name -> repo-relative source, via the compile database."""
     with open(os.path.join(build_dir, "compile_commands.json")) as handle:
@@ -27,7 +37,9 @@ def load_output_to_source(build_dir):
             continue
         source = os.path.normpath(os.path.abspath(entry["file"]))
         if source.startswith(root + os.sep):
-            mapping[output] = os.path.relpath(source, root)
+            # Forward slashes throughout: these are matched against "magda/" and
+            # handed to clang-tidy, which takes them on Windows too.
+            mapping[output] = os.path.relpath(source, root).replace(os.sep, "/")
     return mapping
 
 
@@ -45,7 +57,7 @@ def dependents(build_dir, wanted):
     if proc.returncode != 0 or not proc.stdout:
         return None
 
-    names = {os.path.basename(path) for path in wanted}
+    names = {basename(path) for path in wanted}
     found = {}
     current = None
     stale = False
@@ -53,16 +65,21 @@ def dependents(build_dir, wanted):
         if not line:
             continue
         if line[0] != " ":
-            # "target: #deps N, deps mtime M (VALID|STALE)"
-            current = line.split(":", 1)[0]
+            # "target: #deps N, deps mtime M (VALID|STALE)". Split on the marker,
+            # not the first colon, which on Windows is the drive letter's.
+            marker = line.find(": #deps ")
+            if marker == -1:
+                current = None
+                continue
+            current = line[:marker]
             stale = line.endswith("(STALE)")
             continue
         if current is None or stale:
             continue
         dep = line.strip()
-        if dep[dep.rfind("/") + 1:] not in names:
+        if basename(dep) not in names:
             continue
-        if dep[0] != "/":
+        if not os.path.isabs(dep):
             dep = os.path.join(build_dir, dep)
         dep = os.path.normpath(dep)
         if dep in wanted:
