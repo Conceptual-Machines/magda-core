@@ -237,7 +237,7 @@ class RealProjectCorpusTests : public juce::UnitTest {
         };
 
         const auto complaints =
-            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration);
+            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration, run.notRun);
 
         // What this run did not cover, said out loud. A case that did not run is
         // not a pass and not a failure, and the one way that can go wrong is

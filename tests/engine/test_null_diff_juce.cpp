@@ -274,7 +274,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
         };
 
         const auto complaints =
-            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration);
+            judgeSuite(run.asserted, run.unmeasurable, run.failing, underCalibration, run.notRun);
 
         const auto join = [](const std::vector<std::string>& names) {
             juce::StringArray parts;
@@ -345,7 +345,7 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
             // membership check is satisfied and says nothing. The assertion has
             // to be what fails the suite, on its own.
             const auto complaints = judgeSuite({"tempo.auto"}, {"tempo.auto"},
-                                               {"tempo.auto", "warp.audio"}, calibrating);
+                                               {"tempo.auto", "warp.audio"}, calibrating, {});
 
             expect(complaints.asserted == std::vector<std::string>{"tempo.auto"});
             expect(complaints.unmeasurable.empty(),
@@ -364,7 +364,7 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
             // swallow. The list forgives a comparison without a bound, never the
             // absence of a comparison.
             const auto complaints =
-                judgeSuite({}, {"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating);
+                judgeSuite({}, {"tempo.auto"}, {"tempo.auto", "warp.audio"}, calibrating, {});
 
             expect(complaints.unmeasurable == std::vector<std::string>{"tempo.auto"});
             expect(complaints.unexpectedFailures.empty(), "it is on the list, so not unexpected");
@@ -374,14 +374,15 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
 
         beginTest("A calibrating case that merely fails says nothing");
         {
-            const auto complaints = judgeSuite({}, {}, {"tempo.auto", "warp.audio"}, calibrating);
+            const auto complaints =
+                judgeSuite({}, {}, {"tempo.auto", "warp.audio"}, calibrating, {});
             expect(complaints.empty(), "the run everybody expects");
         }
 
         beginTest("A case that asserts outside the list fails too");
         {
             const auto complaints = judgeSuite(
-                {"mix.pan"}, {"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating);
+                {"mix.pan"}, {"mix.pan"}, {"mix.pan", "tempo.auto", "warp.audio"}, calibrating, {});
 
             expect(complaints.asserted == std::vector<std::string>{"mix.pan"});
             expect(complaints.unexpectedFailures == std::vector<std::string>{"mix.pan"});
@@ -389,8 +390,18 @@ class NullDiffSuiteRuleTests : public juce::UnitTest {
 
         beginTest("A calibrating case that starts holding has to come off the list");
         {
-            const auto complaints = judgeSuite({}, {}, {"warp.audio"}, calibrating);
+            const auto complaints = judgeSuite({}, {}, {"warp.audio"}, calibrating, {});
             expect(complaints.nowHolding == std::vector<std::string>{"tempo.auto"});
+        }
+
+        beginTest("A calibrating case that did not run stays on the list");
+        {
+            // What a machine without the case's plugin sees, CI included. Not
+            // running is not holding, and reading it as holding would take the
+            // entry off wherever the corpus is thinnest.
+            const auto complaints = judgeSuite({}, {}, {"warp.audio"}, calibrating, {"tempo.auto"});
+            expect(complaints.nowHolding.empty(), "it did not run, so it did not hold");
+            expect(complaints.empty(), "and nothing else is wrong with that run");
         }
     }
 };
