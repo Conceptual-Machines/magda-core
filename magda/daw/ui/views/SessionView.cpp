@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <iterator>
 #include <set>
 #include <unordered_map>
 
@@ -41,6 +42,7 @@
 #include "core/TrackPropertyCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "core/ViewModeController.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
@@ -1726,14 +1728,7 @@ void SessionView::trackPropertyChanged(int trackId) {
     if (!track)
         return;
 
-    // Find index in visible track IDs
-    int index = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == trackId) {
-            index = static_cast<int>(i);
-            break;
-        }
-    }
+    const int index = trackIndexOf(trackId);
 
     if (index >= 0 && index < static_cast<int>(trackHeaders.size())) {
         // Update header text with collapse indicator for groups
@@ -2866,15 +2861,9 @@ void SessionView::rangeSelectSlots(int trackIndex, int sceneIndex, ClipId clicke
     // Anchor = last single-clicked clip; the range is the rectangle of slots
     // between the anchor's (track, scene) cell and the clicked cell
     const auto* anchorClip = clipManager.getClip(sel.getAnchorClip());
-    int anchorTrackIndex = -1;
-    if (anchorClip != nullptr && anchorClip->sceneIndex >= 0) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == anchorClip->trackId) {
-                anchorTrackIndex = static_cast<int>(i);
-                break;
-            }
-        }
-    }
+    const int anchorTrackIndex = (anchorClip != nullptr && anchorClip->sceneIndex >= 0)
+                                     ? trackIndexOf(anchorClip->trackId)
+                                     : -1;
 
     if (anchorTrackIndex < 0) {
         sel.selectClip(clickedClipId);
@@ -2939,17 +2928,14 @@ void SessionView::triggerGroupScene(TrackId groupId, int sceneIndex) {
 
     // Check if any descendant clip in this scene is playing — if so, stop all; else trigger all
     auto& cm = ClipManager::getInstance();
-    bool anyPlaying = false;
-    for (auto tid : descendants) {
-        ClipId cid = cm.getClipInSlot(tid, sceneIndex);
-        if (cid != INVALID_CLIP_ID && audioEngine_) {
-            auto state = audioEngine_->getSessionClipPlayState(cid);
-            if (state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued) {
-                anyPlaying = true;
-                break;
-            }
-        }
-    }
+    const auto isSoundingInThisScene = [&](TrackId tid) {
+        const ClipId cid = cm.getClipInSlot(tid, sceneIndex);
+        if (cid == INVALID_CLIP_ID || audioEngine_ == nullptr)
+            return false;
+        const auto state = audioEngine_->getSessionClipPlayState(cid);
+        return state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued;
+    };
+    const bool anyPlaying = std::ranges::any_of(descendants, isSoundingInThisScene);
 
     for (auto tid : descendants) {
         ClipId cid = cm.getClipInSlot(tid, sceneIndex);
@@ -3274,14 +3260,7 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     if (!clip || clip->sceneIndex < 0)
         return;
 
-    // Find track index
-    int trackIndex = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == clip->trackId) {
-            trackIndex = static_cast<int>(i);
-            break;
-        }
-    }
+    const int trackIndex = trackIndexOf(clip->trackId);
 
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
@@ -3290,12 +3269,8 @@ void SessionView::clipPropertyChanged(ClipId clipId) {
     // Also update parent group slot
     const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
     if (track && track->hasParent()) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == track->parentId) {
-                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
-                break;
-            }
-        }
+        if (const int parentIndex = trackIndexOf(track->parentId); parentIndex >= 0)
+            updateClipSlotAppearance(parentIndex, clip->sceneIndex);
     }
 
     updateSceneButtonIcon(clip->sceneIndex);
@@ -3325,14 +3300,7 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
         << clipId << " playState=" << (int)playState
         << " sessionPlayheadPos=" << clip->sessionPlayheadPos);
 
-    // Find track index
-    int trackIndex = -1;
-    for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-        if (visibleTrackIds_[i] == clip->trackId) {
-            trackIndex = static_cast<int>(i);
-            break;
-        }
-    }
+    const int trackIndex = trackIndexOf(clip->trackId);
 
     if (trackIndex >= 0) {
         updateClipSlotAppearance(trackIndex, clip->sceneIndex);
@@ -3341,12 +3309,8 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
     // Also update parent group slot if this track has a parent
     const auto* track = TrackManager::getInstance().getTrack(clip->trackId);
     if (track && track->hasParent()) {
-        for (size_t i = 0; i < visibleTrackIds_.size(); ++i) {
-            if (visibleTrackIds_[i] == track->parentId) {
-                updateClipSlotAppearance(static_cast<int>(i), clip->sceneIndex);
-                break;
-            }
-        }
+        if (const int parentIndex = trackIndexOf(track->parentId); parentIndex >= 0)
+            updateClipSlotAppearance(parentIndex, clip->sceneIndex);
     }
 
     updateSceneButtonIcon(clip->sceneIndex);
@@ -3791,14 +3755,15 @@ void SessionView::timerCallback() {
 // File Drag & Drop
 // ============================================================================
 
+int SessionView::trackIndexOf(TrackId trackId) const {
+    const auto it = std::ranges::find(visibleTrackIds_, trackId);
+    return it == visibleTrackIds_.end()
+               ? -1
+               : static_cast<int>(std::ranges::distance(visibleTrackIds_.begin(), it));
+}
+
 bool SessionView::isInterestedInFileDrag(const juce::StringArray& files) {
-    // Accept if at least one file is an audio file
-    for (const auto& file : files) {
-        if (isAudioFile(file)) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
 void SessionView::fileDragEnter(const juce::StringArray& files, int x, int y) {
@@ -4060,18 +4025,6 @@ void SessionView::clearDragGhost() {
     if (dragGhostLabel_) {
         dragGhostLabel_->setVisible(false);
     }
-}
-
-bool SessionView::isAudioFile(const juce::String& filename) {
-    static const juce::StringArray audioExtensions = {".wav",  ".aiff", ".aif", ".mp3", ".ogg",
-                                                      ".flac", ".m4a",  ".wma", ".opus"};
-
-    for (const auto& ext : audioExtensions) {
-        if (filename.endsWithIgnoreCase(ext)) {
-            return true;
-        }
-    }
-    return false;
 }
 
 // ============================================================================

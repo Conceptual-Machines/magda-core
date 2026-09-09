@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <set>
@@ -19,6 +20,13 @@ CurveEditorBase::CurveEditorBase() {
 }
 
 CurveEditorBase::~CurveEditorBase() = default;
+
+void CurveEditorBase::setPointComponentSelected(uint32_t pointId, bool selected) {
+    const auto ownsPoint = [pointId](const auto& c) { return c->getPointId() == pointId; };
+    const auto it = std::ranges::find_if(pointComponents_, ownsPoint);
+    if (it != pointComponents_.end())
+        (*it)->setSelected(selected);
+}
 
 void CurveEditorBase::clearSelection() {
     selectedPointIds_.clear();
@@ -117,29 +125,13 @@ void CurveEditorBase::paintCurve(juce::Graphics& g) {
         return;
 
     // Clear stale preview state if the preview point no longer exists
-    if (previewPointId_ != INVALID_CURVE_POINT_ID) {
-        bool found = false;
-        for (const auto& p : points) {
-            if (p.id == previewPointId_) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            previewPointId_ = INVALID_CURVE_POINT_ID;
-        }
+    if (previewPointId_ != INVALID_CURVE_POINT_ID &&
+        !std::ranges::contains(points, previewPointId_, &CurvePoint::id)) {
+        previewPointId_ = INVALID_CURVE_POINT_ID;
     }
-    if (tensionPreviewPointId_ != INVALID_CURVE_POINT_ID) {
-        bool found = false;
-        for (const auto& p : points) {
-            if (p.id == tensionPreviewPointId_) {
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
-        }
+    if (tensionPreviewPointId_ != INVALID_CURVE_POINT_ID &&
+        !std::ranges::contains(points, tensionPreviewPointId_, &CurvePoint::id)) {
+        tensionPreviewPointId_ = INVALID_CURVE_POINT_ID;
     }
 
     const auto renderPoints = getRenderOrderedPoints();
@@ -859,16 +851,10 @@ void CurveEditorBase::rebuildPointComponents() {
                 // Toggle this point in the selection
                 if (selectedPointIds_.count(pointId)) {
                     selectedPointIds_.erase(pointId);
-                    for (auto& p : pointComponents_) {
-                        if (p->getPointId() == pointId)
-                            p->setSelected(false);
-                    }
+                    setPointComponentSelected(pointId, false);
                 } else {
                     selectedPointIds_.insert(pointId);
-                    for (auto& p : pointComponents_) {
-                        if (p->getPointId() == pointId)
-                            p->setSelected(true);
-                    }
+                    setPointComponentSelected(pointId, true);
                 }
             } else {
                 // If clicking a point that's already part of a multi-selection,
@@ -879,10 +865,7 @@ void CurveEditorBase::rebuildPointComponents() {
                         p->setSelected(false);
                     }
                     selectedPointIds_.insert(pointId);
-                    for (auto& p : pointComponents_) {
-                        if (p->getPointId() == pointId)
-                            p->setSelected(true);
-                    }
+                    setPointComponentSelected(pointId, true);
                 }
             }
 

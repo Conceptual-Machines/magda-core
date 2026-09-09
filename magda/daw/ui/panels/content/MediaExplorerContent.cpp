@@ -16,6 +16,7 @@
 #include "MediaDbBrowserContent.hpp"
 #include "MediaExplorerPreviewState.hpp"
 #include "media_db/MediaDbMetadata.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -1699,17 +1700,6 @@ juce::String MediaExplorerContent::getMediaFilterPattern() const {
     }
 
     return patterns.joinIntoString(";");
-}
-
-bool MediaExplorerContent::isAudioFile(const juce::File& file) {
-    auto ext = file.getFileExtension().toLowerCase();
-    return ext == ".wav" || ext == ".aiff" || ext == ".aif" || ext == ".mp3" || ext == ".ogg" ||
-           ext == ".flac";
-}
-
-bool MediaExplorerContent::isMidiFile(const juce::File& file) {
-    auto ext = file.getFileExtension().toLowerCase();
-    return ext == ".mid" || ext == ".midi";
 }
 
 bool MediaExplorerContent::isMagdaClip(const juce::File& file) {

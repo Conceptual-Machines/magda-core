@@ -1,5 +1,6 @@
 #pragma once
-
+#include <algorithm>
+#include <iterator>
 #include <vector>
 
 #include "../content/PanelContent.hpp"
@@ -35,22 +36,15 @@ struct PanelState {
      * @brief Check if this panel has a specific content type
      */
     bool hasContentType(PanelContentType type) const {
-        for (const auto& tab : tabs) {
-            if (tab == type)
-                return true;
-        }
-        return false;
+        return std::ranges::contains(tabs, type);
     }
 
     /**
      * @brief Get index of a content type, or -1 if not found
      */
     int getTabIndex(PanelContentType type) const {
-        for (size_t i = 0; i < tabs.size(); ++i) {
-            if (tabs[i] == type)
-                return static_cast<int>(i);
-        }
-        return -1;
+        const auto it = std::ranges::find(tabs, type);
+        return it == tabs.end() ? -1 : static_cast<int>(std::ranges::distance(tabs.begin(), it));
     }
 };
 

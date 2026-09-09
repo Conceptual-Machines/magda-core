@@ -1,5 +1,6 @@
 #include "custom_ui/StruckInstrumentUI.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompiledPolyInstrument.hpp"
@@ -46,19 +47,22 @@ juce::String displayLabel(const juce::String& hostName) {
 }  // namespace
 
 bool StruckInstrumentUI::handles(const juce::String& pluginId) {
-    for (const auto& d : kDevices)
-        if (pluginId.equalsIgnoreCase(d.pluginId))
-            return true;
-    return false;
+    const auto matchesPluginId = [&pluginId](const auto& d) {
+        return pluginId.equalsIgnoreCase(d.pluginId);
+    };
+    return std::ranges::any_of(kDevices, matchesPluginId);
 }
 
 StruckInstrumentUI::StruckInstrumentUI(const juce::String& pluginId)
     : kind_(pluginId.equalsIgnoreCase("magda_djembe") ? Kind::Djembe
             : pluginId.equalsIgnoreCase("magda_bell") ? Kind::Bell
                                                       : Kind::Marimba) {
-    for (const auto& d : kDevices)
-        if (pluginId.equalsIgnoreCase(d.pluginId))
-            title_ = d.title;
+    const auto matchesPluginId = [&pluginId](const auto& d) {
+        return pluginId.equalsIgnoreCase(d.pluginId);
+    };
+    const auto device = std::ranges::find_if(kDevices, matchesPluginId);
+    if (device != std::ranges::end(kDevices))
+        title_ = device->title;
 
     // Slot membership matches each device's voiceSlotInfos() order, with Gain
     // appended by MagdaCompiledPolyInstrument.

@@ -11,6 +11,7 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -551,13 +552,7 @@ void SamplerUI::buildWaveformPath(const juce::AudioBuffer<float>* buffer, int wi
 }
 
 bool SamplerUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
-            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
 void SamplerUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) {

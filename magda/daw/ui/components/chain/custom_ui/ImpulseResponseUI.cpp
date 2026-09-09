@@ -1,9 +1,12 @@
 #include "custom_ui/ImpulseResponseUI.hpp"
 
+#include <algorithm>
+
 #include "BinaryData.h"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -175,13 +178,7 @@ void ImpulseResponseUI::resized() {
 }
 
 bool ImpulseResponseUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        juce::File file(f);
-        auto ext = file.getFileExtension().toLowerCase();
-        if (ext == ".wav" || ext == ".aif" || ext == ".aiff" || ext == ".flac" || ext == ".ogg")
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
 void ImpulseResponseUI::filesDropped(const juce::StringArray& files, int /*x*/, int /*y*/) {

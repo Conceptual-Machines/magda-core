@@ -1,5 +1,6 @@
 #include "PianoRollContent.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -2358,17 +2359,9 @@ void PianoRollContent::centerOnNotes() {
         return;
     }
 
-    // Find note range
-    int minNote = 127;
-    int maxNote = 0;
-    for (const auto& note : clip->midiNotes) {
-        minNote = juce::jmin(minNote, note.noteNumber);
-        maxNote = juce::jmax(maxNote, note.noteNumber);
-    }
-
-    // Center on the midpoint of the note range
-    int midNote = (minNote + maxNote) / 2;
-    centerOnNote(midNote);
+    const auto [lowest, highest] =
+        std::ranges::minmax(clip->midiNotes, {}, &magda::MidiNote::noteNumber);
+    centerOnNote((lowest.noteNumber + highest.noteNumber) / 2);
 }
 
 }  // namespace magda::daw::ui

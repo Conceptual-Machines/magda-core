@@ -1382,11 +1382,10 @@ class DrumGridClipGrid : public juce::Component,
         if (!clip)
             return false;
 
-        for (const auto& note : clip->midiNotes) {
-            if (note.noteNumber == noteNumber && std::abs(note.startBeat - beat) < 0.000001)
-                return true;
-        }
-        return false;
+        const auto isNoteAtBeat = [&](const auto& note) {
+            return note.noteNumber == noteNumber && std::abs(note.startBeat - beat) < 0.000001;
+        };
+        return std::ranges::any_of(clip->midiNotes, isNoteAtBeat);
     }
 
     void stampRepeatedNotes() {
@@ -2768,14 +2767,10 @@ void DrumGridClipContent::centerOnNotes() {
 
     int targetRow = -1;
     if (clip && !clip->midiNotes.empty()) {
-        // Find note range and center on midpoint
-        int minNote = 127;
-        int maxNote = 0;
-        for (const auto& note : clip->midiNotes) {
-            minNote = juce::jmin(minNote, note.noteNumber);
-            maxNote = juce::jmax(maxNote, note.noteNumber);
-        }
-        int midNote = (minNote + maxNote) / 2;
+        // Centre on the midpoint of the note range.
+        const auto [lowest, highest] =
+            std::ranges::minmax(clip->midiNotes, {}, &magda::MidiNote::noteNumber);
+        const int midNote = (lowest.noteNumber + highest.noteNumber) / 2;
 
         // Find the row index for this note (rows are reversed: high notes at top)
         for (int i = 0; i < static_cast<int>(padRows_.size()); ++i) {

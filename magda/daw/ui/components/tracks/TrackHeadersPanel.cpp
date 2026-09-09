@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <ranges>
 #include <utility>
 
 #include "../../../audio/AudioBridge.hpp"
@@ -1113,10 +1114,8 @@ void TrackHeadersPanel::trackPropertyChanged(int trackId) {
         // Update send labels from track data
         if (track->sends.size() == header.sendLabels.size()) {
             // Same count — update levels in-place (avoids destroying labels mid-drag)
-            for (size_t i = 0; i < header.sendLabels.size(); ++i) {
-                float levelDb = gainToDb(track->sends[i].level);
-                header.sendLabels[i]->setValue(levelDb, juce::dontSendNotification);
-            }
+            for (const auto& [label, send] : std::views::zip(header.sendLabels, track->sends))
+                label->setValue(gainToDb(send.level), juce::dontSendNotification);
         } else {
             // Send count changed — full rebuild
             rebuildSendLabels(header, trackId);
@@ -2005,9 +2004,9 @@ void TrackHeadersPanel::rebuildSendLabels(TrackHeader& header, TrackId trackId) 
             const auto* track = TrackManager::getInstance().getTrack(trackId);
             if (!track)
                 return;
-            for (size_t i = 0; i < header.sendLabels.size() && i < track->sends.size(); ++i) {
-                if (track->sends[i].busIndex == busIndex) {
-                    float newLevel = dbToGain(static_cast<float>(header.sendLabels[i]->getValue()));
+            for (const auto& [label, send] : std::views::zip(header.sendLabels, track->sends)) {
+                if (send.busIndex == busIndex) {
+                    const float newLevel = dbToGain(static_cast<float>(label->getValue()));
                     UndoManager::getInstance().executeCommand(
                         std::make_unique<SetSendLevelCommand>(trackId, busIndex, newLevel));
                     break;
@@ -2157,13 +2156,15 @@ juce::Rectangle<int> TrackHeadersPanel::getResizeHandleArea(int trackIndex) cons
 }
 
 bool TrackHeadersPanel::isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const {
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (getResizeHandleArea(i).contains(point)) {
-            trackIndex = i;
-            return true;
-        }
-    }
-    return false;
+    const auto handleContainsPoint = [this, point](int i) {
+        return getResizeHandleArea(i).contains(point);
+    };
+    const auto indices = std::views::iota(0, static_cast<int>(trackHeaders.size()));
+    const auto match = std::ranges::find_if(indices, handleContainsPoint);
+    if (match == indices.end())
+        return false;
+    trackIndex = *match;
+    return true;
 }
 
 void TrackHeadersPanel::layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,
@@ -3637,17 +3638,20 @@ bool TrackHeadersPanel::isInterestedInDragSource(const SourceDetails& details) {
     return false;
 }
 
+int TrackHeadersPanel::droppableHeaderIndexAt(juce::Point<int> point) const {
+    // Master is skipped: a drop there creates a new track, like empty space.
+    const auto acceptsDropAt = [this, point](int i) {
+        return !trackHeaders[static_cast<size_t>(i)]->isMaster &&
+               getTrackHeaderArea(i).contains(point);
+    };
+    const auto indices = std::views::iota(0, static_cast<int>(trackHeaders.size()));
+    const auto match = std::ranges::find_if(indices, acceptsDropAt);
+    return match == indices.end() ? -1 : *match;
+}
+
 void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
     pluginDragActive_ = true;
-    pluginDropTrackIndex_ = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            pluginDropTrackIndex_ = i;
-            break;
-        }
-    }
+    pluginDropTrackIndex_ = droppableHeaderIndexAt(details.localPosition);
 
     // Ghost header for the new track that a drop on empty area would create.
     if (pluginDropTrackIndex_ < 0) {
@@ -3666,15 +3670,7 @@ void TrackHeadersPanel::itemDragEnter(const SourceDetails& details) {
 
 void TrackHeadersPanel::itemDragMove(const SourceDetails& details) {
     int prev = pluginDropTrackIndex_;
-    pluginDropTrackIndex_ = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            pluginDropTrackIndex_ = i;
-            break;
-        }
-    }
+    pluginDropTrackIndex_ = droppableHeaderIndexAt(details.localPosition);
 
     if (pluginDropTrackIndex_ < 0) {
         if (auto* obj = details.description.getDynamicObject()) {
@@ -3710,15 +3706,7 @@ void TrackHeadersPanel::itemDropped(const SourceDetails& details) {
 
     // Determine which track header was dropped on (skip master — dropping
     // on master area creates a new track, same as empty space)
-    int targetIndex = -1;
-    for (int i = 0; i < static_cast<int>(trackHeaders.size()); ++i) {
-        if (trackHeaders[i]->isMaster)
-            continue;
-        if (getTrackHeaderArea(i).contains(details.localPosition)) {
-            targetIndex = i;
-            break;
-        }
-    }
+    const int targetIndex = droppableHeaderIndexAt(details.localPosition);
 
     const auto type = obj->getProperty("type").toString();
     if (type == "chainElement" || type == "chainElements") {
@@ -3799,16 +3787,10 @@ bool TrackHeadersPanel::isIORoutingVisible() const {
 
 void TrackHeadersPanel::toggleIORouting() {
     // If any track has I/O visible, hide all; otherwise show all
-    bool anyVisible = false;
-    for (auto& h : trackHeaders) {
-        if (h->showIORouting) {
-            anyVisible = true;
-            break;
-        }
-    }
-    for (auto& h : trackHeaders) {
+    const auto showsIORouting = [](const auto& h) { return h->showIORouting; };
+    const bool anyVisible = std::ranges::any_of(trackHeaders, showsIORouting);
+    for (auto& h : trackHeaders)
         h->showIORouting = !anyVisible;
-    }
     showIORouting_ = !anyVisible;
     resized();
 }

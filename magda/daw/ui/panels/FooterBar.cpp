@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <ranges>
+
 #include "../../../agents/llama_model_manager.hpp"
 #include "../../scripting_app.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -170,13 +172,13 @@ void FooterBar::paint(juce::Graphics& g) {
     }
 
     // Local model buttons use icons for identity and a small dot for state.
-    for (size_t i = 0; i < localModelButtons_.size(); ++i) {
-        const auto* button = localModelButtons_[i].get();
+    for (const auto& [buttonPtr, state] : std::views::zip(localModelButtons_, localModelStates_)) {
+        const auto* button = buttonPtr.get();
         if (button == nullptr || !button->isVisible())
             continue;
 
         juce::Colour dotColour;
-        switch (localModelStates_[i]) {
+        switch (state) {
             case LocalModelState::Loaded:
                 dotColour = DarkTheme::getColour(DarkTheme::ACCENT_POSITIVE).withAlpha(0.95f);
                 break;

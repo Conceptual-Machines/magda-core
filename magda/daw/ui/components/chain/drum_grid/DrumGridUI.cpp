@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
 #include <cmath>
 #include <set>
 
@@ -14,6 +15,7 @@
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace te = tracktion::engine;
 
@@ -564,25 +566,12 @@ void DrumGridUI::setSelectedPad(int padIndex) {
 // =============================================================================
 
 bool DrumGridUI::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
-            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
-            return true;
-    }
-    return false;
+    return std::ranges::any_of(files, isAudioFile);
 }
 
 namespace {
 int countAudioFilesDG(const juce::StringArray& files) {
-    int n = 0;
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".wav") || f.endsWithIgnoreCase(".aif") ||
-            f.endsWithIgnoreCase(".aiff") || f.endsWithIgnoreCase(".flac") ||
-            f.endsWithIgnoreCase(".ogg") || f.endsWithIgnoreCase(".mp3"))
-            ++n;
-    }
-    return n;
+    return static_cast<int>(std::ranges::count_if(files, isAudioFile));
 }
 }  // namespace
 

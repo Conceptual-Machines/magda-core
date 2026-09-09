@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <utility>
 
 #include "core/TrackManager.hpp"
@@ -182,23 +183,21 @@ void LFOCurveEditor::syncFromModInfo() {
 
     // Update local points from modInfo->curvePoints without rebuilding components
     // This is used for syncing with external editor during drag
-    for (size_t i = 0; i < points_.size() && i < modInfo_->curvePoints.size(); ++i) {
-        points_[i].x = static_cast<double>(modInfo_->curvePoints[i].phase);
-        points_[i].y = static_cast<double>(modInfo_->curvePoints[i].value);
-        points_[i].tension = static_cast<double>(modInfo_->curvePoints[i].tension);
-        points_[i].curveType = intToCurveType(modInfo_->curvePoints[i].curveType);
-        points_[i].inHandle.x = static_cast<double>(modInfo_->curvePoints[i].inHandleX);
-        points_[i].inHandle.y = static_cast<double>(modInfo_->curvePoints[i].inHandleY);
-        points_[i].outHandle.x = static_cast<double>(modInfo_->curvePoints[i].outHandleX);
-        points_[i].outHandle.y = static_cast<double>(modInfo_->curvePoints[i].outHandleY);
+    for (auto&& [point, source] : std::views::zip(points_, modInfo_->curvePoints)) {
+        point.x = static_cast<double>(source.phase);
+        point.y = static_cast<double>(source.value);
+        point.tension = static_cast<double>(source.tension);
+        point.curveType = intToCurveType(source.curveType);
+        point.inHandle.x = static_cast<double>(source.inHandleX);
+        point.inHandle.y = static_cast<double>(source.inHandleY);
+        point.outHandle.x = static_cast<double>(source.outHandleX);
+        point.outHandle.y = static_cast<double>(source.outHandleY);
     }
 
     // Update point component positions
-    for (size_t i = 0; i < pointComponents_.size() && i < points_.size(); ++i) {
-        pointComponents_[i]->updateFromPoint(points_[i]);
-        int px = xToPixel(points_[i].x);
-        int py = yToPixel(points_[i].y);
-        pointComponents_[i]->setCentrePosition(px, py);
+    for (auto&& [component, point] : std::views::zip(pointComponents_, points_)) {
+        component->updateFromPoint(point);
+        component->setCentrePosition(xToPixel(point.x), yToPixel(point.y));
     }
 
     updateTensionHandlePositions();
@@ -256,8 +255,7 @@ void LFOCurveEditor::setModInfo(ModInfo* mod) {
             points_.push_back(point);
         }
         // Sort by x position
-        std::sort(points_.begin(), points_.end(),
-                  [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+        std::ranges::sort(points_, {}, &CurvePoint::x);
         // Ensure first and last points are pinned to edges
         if (!points_.empty()) {
             points_.front().x = 0.0;
@@ -433,8 +431,7 @@ void LFOCurveEditor::onPointMoved(uint32_t pointId, double newX, double newY) {
     }
 
     // Re-sort points by x position
-    std::sort(points_.begin(), points_.end(),
-              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+    std::ranges::sort(points_, {}, &CurvePoint::x);
 
     rebuildPointComponents();
     repaint();  // Force full repaint after structural change
@@ -1123,8 +1120,7 @@ void LFOCurveEditor::loadCurvePoints(const std::vector<CurvePointData>& points) 
         points_.push_back(point);
     }
 
-    std::sort(points_.begin(), points_.end(),
-              [](const CurvePoint& a, const CurvePoint& b) { return a.x < b.x; });
+    std::ranges::sort(points_, {}, &CurvePoint::x);
 
     if (points_.size() < 2) {
         loadPreset(CurvePreset::Triangle);

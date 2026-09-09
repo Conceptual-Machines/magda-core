@@ -1,5 +1,8 @@
 #include "DarkTheme.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 namespace magda {
 
 namespace {
@@ -688,11 +691,11 @@ const DarkTheme::SyntaxPalette& ThemeManager::builtInSyntaxPalette(const std::st
 std::optional<ColourRole> DarkTheme::findDarkPaletteRole(juce::Colour colour) {
     const auto rgb = colour.getARGB() & 0x00FFFFFFu;
     const auto findRole = [rgb](const Palette& palette) -> std::optional<ColourRole> {
-        for (std::size_t index = 0; index < palette.size(); ++index)
-            if ((palette[index] & 0x00FFFFFFu) == rgb)
-                return static_cast<ColourRole>(index);
-
-        return std::nullopt;
+        const auto hasThisRgb = [rgb](auto entry) { return (entry & 0x00FFFFFFu) == rgb; };
+        const auto match = std::ranges::find_if(palette, hasThisRgb);
+        if (match == palette.end())
+            return std::nullopt;
+        return static_cast<ColourRole>(std::ranges::distance(palette.begin(), match));
     };
 
     if (const auto activeRole = findRole(activePalette_))

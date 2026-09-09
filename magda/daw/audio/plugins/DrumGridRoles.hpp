@@ -1,7 +1,7 @@
 #pragma once
-
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <array>
 
 // Closed vocabulary of drum-row roles used by the drummer agent (#859) and the
@@ -39,19 +39,14 @@ inline constexpr std::array<RoleInfo, 17> kRoles{{
 inline bool isValidRoleId(const juce::String& id) {
     if (id.isEmpty())
         return false;
-    for (const auto& r : kRoles) {
-        if (id == juce::String(r.id))
-            return true;
-    }
-    return false;
+    const auto hasThisId = [&id](const auto& role) { return id == juce::String(role.id); };
+    return std::ranges::any_of(kRoles, hasThisId);
 }
 
 inline juce::String displayLabelForRole(const juce::String& id) {
-    for (const auto& r : kRoles) {
-        if (id == juce::String(r.id))
-            return r.displayLabel;
-    }
-    return {};
+    const auto hasThisId = [&id](const auto& r) { return id == juce::String(r.id); };
+    const auto role = std::ranges::find_if(kRoles, hasThisId);
+    return role != std::ranges::end(kRoles) ? juce::String(role->displayLabel) : juce::String{};
 }
 
 inline juce::String shortTagForRole(const juce::String& id) {

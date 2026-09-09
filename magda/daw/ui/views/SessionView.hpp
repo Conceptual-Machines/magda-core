@@ -272,11 +272,13 @@ class SessionView : public juce::Component,
     int pluginDropTrackIndex_ = -1;
     bool showPluginDropOverlay_ = false;
     std::unique_ptr<juce::Label> dragGhostLabel_;
+    /** @brief Row of a track in the visible order, or -1 when it is not shown. */
+    int trackIndexOf(TrackId trackId) const;
+
     void updateDragHighlight(int x, int y);
     void clearDragHighlight();
     void updateDragGhost(const juce::StringArray& files, int trackIndex, int sceneIndex);
     void clearDragGhost();
-    static bool isAudioFile(const juce::String& filename);
 
     // The media browser delivers sample drags as an internal {type:"files"}
     // payload rather than an OS file-drag on Linux, where JUCE has no Wayland

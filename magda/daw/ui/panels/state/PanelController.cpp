@@ -307,17 +307,11 @@ void PanelController::handleReorderTabs(const ReorderTabsEvent& event) {
     if (event.newOrder.size() != panel.tabs.size())
         return;
 
-    for (const auto& type : panel.tabs) {
-        bool found = false;
-        for (const auto& newType : event.newOrder) {
-            if (type == newType) {
-                found = true;
-                break;
-            }
-        }
-        if (!found)
-            return;
-    }
+    const auto inNewOrder = [&event](const auto& type) {
+        return std::ranges::contains(event.newOrder, type);
+    };
+    if (!std::ranges::all_of(panel.tabs, inNewOrder))
+        return;
 
     // Remember current active type
     auto activeType = panel.getActiveContentType();

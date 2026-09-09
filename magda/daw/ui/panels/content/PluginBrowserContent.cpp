@@ -2,6 +2,8 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <ranges>
 #include <utility>
 
 #include "../../../../agents/sound_design_agent.hpp"
@@ -35,7 +37,7 @@ namespace magda::daw::ui {
 namespace {
 
 juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
-    return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+    return preferenceIdentifierForPlugin(plugin);
 }
 
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {
@@ -967,10 +969,11 @@ void PluginBrowserContent::showPluginContextMenu(const PluginBrowserInfo& plugin
                     prefs.setBrowserCategoryOverride(
                         pluginIdentifier,
                         currentOverride == "MIDI FX" ? juce::String() : juce::String("MIDI FX"));
-                    for (auto& p : plugins_) {
-                        if (preferenceIdentifierForPlugin(p) == pluginIdentifier)
-                            p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
-                    }
+                    const auto sameIdentifier = [&pluginIdentifier](const auto& p) {
+                        return preferenceIdentifierForPlugin(p) == pluginIdentifier;
+                    };
+                    for (auto& p : plugins_ | std::views::filter(sameIdentifier))
+                        p.categoryOverride = prefs.browserCategoryOverride(pluginIdentifier);
                     rebuildTree();
                     break;
                 }
@@ -1007,16 +1010,11 @@ void PluginBrowserContent::showParameterConfigDialog(const PluginBrowserInfo& pl
 }
 
 void PluginBrowserContent::toggleFavorite(const PluginBrowserInfo& plugin) {
-    // Find matching plugin in our list and toggle
-    juce::String key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
-
-    for (auto& p : plugins_) {
-        juce::String pKey = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-        if (pKey == key) {
-            p.isFavorite = !p.isFavorite;
-            DBG("Toggled favorite: " + p.name + " -> " + (p.isFavorite ? "true" : "false"));
-            break;
-        }
+    const auto match = std::ranges::find(plugins_, preferenceIdentifierForPlugin(plugin),
+                                         preferenceIdentifierForPlugin);
+    if (match != plugins_.end()) {
+        match->isFavorite = !match->isFavorite;
+        DBG("Toggled favorite: " + match->name + " -> " + (match->isFavorite ? "true" : "false"));
     }
 
     saveFavorites();
@@ -1033,7 +1031,7 @@ void PluginBrowserContent::saveFavorites() {
         std::vector<magda::PluginFavoriteUpdate> updates;
         updates.reserve(plugins_.size());
         for (const auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             updates.push_back({key, plugin.name, plugin.isFavorite});
         }
         store.saveFavorites(updates);
@@ -1048,7 +1046,7 @@ void PluginBrowserContent::loadFavorites() {
         const auto favoriteKeys =
             magda::PluginMetadataStore::defaultForCurrentThread().favoriteKeys();
         for (auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             plugin.isFavorite = favoriteKeys.contains(key);
         }
         favoritesLoaded_ = true;
@@ -1066,7 +1064,7 @@ void PluginBrowserContent::saveAliases() {
         auto& store = magda::PluginMetadataStore::defaultForCurrentThread();
         std::map<juce::String, juce::String> aliases;
         for (const auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             const auto defaultAlias = PluginBrowserInfo::generateAlias(plugin.name);
             aliases[key] = plugin.alias == defaultAlias ? juce::String() : plugin.alias;
         }
@@ -1081,7 +1079,7 @@ void PluginBrowserContent::loadAliases() {
     try {
         const auto aliasMap = magda::PluginMetadataStore::defaultForCurrentThread().aliases();
         for (auto& plugin : plugins_) {
-            const auto key = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+            const auto key = preferenceIdentifierForPlugin(plugin);
             if (const auto it = aliasMap.find(key); it != aliasMap.end())
                 plugin.alias = it->second;
         }
@@ -1100,7 +1098,7 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
     alertWindow->addButton("Cancel", 0);
     alertWindow->addButton("Reset", 2);
 
-    juce::String pluginKey = plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
+    juce::String pluginKey = preferenceIdentifierForPlugin(plugin);
     juce::String pluginName = plugin.name;
 
     alertWindow->enterModalState(
@@ -1110,25 +1108,19 @@ void PluginBrowserContent::showEditAliasDialog(const PluginBrowserInfo& plugin) 
                 // OK — apply custom alias
                 auto newAlias = alertWindow->getTextEditorContents("alias").trim();
                 if (newAlias.isNotEmpty()) {
-                    for (auto& p : plugins_) {
-                        juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-                        if (key == pluginKey) {
-                            p.alias = std::move(newAlias);
-                            break;
-                        }
-                    }
+                    const auto match =
+                        std::ranges::find(plugins_, pluginKey, preferenceIdentifierForPlugin);
+                    if (match != plugins_.end())
+                        match->alias = std::move(newAlias);
                     saveAliases();
                     rebuildTree();
                 }
             } else if (result == 2) {
                 // Reset to auto-generated
-                for (auto& p : plugins_) {
-                    juce::String key = p.uniqueId.isNotEmpty() ? p.uniqueId : p.name;
-                    if (key == pluginKey) {
-                        p.alias = PluginBrowserInfo::generateAlias(pluginName);
-                        break;
-                    }
-                }
+                const auto match =
+                    std::ranges::find(plugins_, pluginKey, preferenceIdentifierForPlugin);
+                if (match != plugins_.end())
+                    match->alias = PluginBrowserInfo::generateAlias(pluginName);
                 saveAliases();
                 rebuildTree();
             }

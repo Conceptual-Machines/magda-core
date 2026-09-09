@@ -11,6 +11,12 @@ namespace magda {
 
 namespace {
 
+// Theme lists are presented alphabetically, case-insensitively, by display name.
+constexpr auto byNameIgnoringCase = [](const juce::String& a, const juce::String& b) {
+    return a.compareIgnoreCase(b) < 0;
+};
+constexpr auto themeName = [](const auto& entry) { return juce::String(entry.name); };
+
 std::string resolveBaseId(const juce::var& baseVar, std::vector<std::string>& warnings) {
     if (!baseVar.isString())
         return ThemeManager::kDarkThemeId;
@@ -128,10 +134,7 @@ const std::vector<FactoryThemeEntry>& factoryThemes() {
                 entry.name = loaded->name;
             list.push_back(std::move(entry));
         }
-        std::sort(list.begin(), list.end(),
-                  [](const FactoryThemeEntry& a, const FactoryThemeEntry& b) {
-                      return juce::String(a.name).compareIgnoreCase(juce::String(b.name)) < 0;
-                  });
+        std::ranges::sort(list, byNameIgnoringCase, themeName);
         return list;
     }();
     return entries;
@@ -170,9 +173,7 @@ std::vector<ThemeFileEntry> scanUserThemes() {
         entries.push_back(std::move(entry));
     }
 
-    std::sort(entries.begin(), entries.end(), [](const ThemeFileEntry& a, const ThemeFileEntry& b) {
-        return juce::String(a.name).compareIgnoreCase(juce::String(b.name)) < 0;
-    });
+    std::ranges::sort(entries, byNameIgnoringCase, themeName);
     return entries;
 }
 

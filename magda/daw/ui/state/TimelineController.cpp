@@ -1145,10 +1145,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMark
     it->setFromBeats(juce::jlimit(0.0, state.timelineLengthBeats, e.positionBeats),
                      state.tempo.bpm);
 
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
     ProjectManager::getInstance().markDirty();
     return ChangeFlags::Markers;
 }
@@ -1167,10 +1164,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const RemoveMark
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkersEvent& e) {
     state.markers = e.markers;
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
     // Keep nextMarkerId ahead of every restored id so later adds don't collide.
     state.nextMarkerId = 1;
     for (const auto& marker : state.markers)
@@ -1379,10 +1373,7 @@ void TimelineController::restoreProjectState(double tempo, int timeSigNum, int t
         state.markers.push_back(marker);
         state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
     }
-    std::sort(state.markers.begin(), state.markers.end(),
-              [](const TimelineMarker& a, const TimelineMarker& b) {
-                  return a.positionBeats < b.positionBeats;
-              });
+    std::ranges::sort(state.markers, {}, &TimelineMarker::positionBeats);
 
     // Notify audio engine unconditionally
     for (auto* listener : audioEngineListeners) {
