@@ -11,10 +11,9 @@
  * the block after one renders through objects that were built a moment ago on
  * another thread. A case that only checked the audio would not notice.
  *
- * Counts `operator new` and `operator delete`, which is every C++ allocation in
- * the binary and not a raw `std::malloc` underneath one. So a zero is not proof
- * that nothing was allocated at all; it is proof that nothing the language
- * allocated was, which is what the code under it is written in.
+ * Counts `operator new` and `operator delete`. That is every C++ allocation in
+ * the binary, but not a bare `std::malloc` underneath one, so a zero says the
+ * code allocated nothing rather than that no byte was taken from the heap.
  *
  * Per thread, so a background thread doing its own work while a case runs is
  * not counted against the block.

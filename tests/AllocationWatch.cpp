@@ -14,9 +14,9 @@
  * the default operators do, so no other test behaves differently for this being
  * linked in.
  *
- * The counters are `thread_local` scalars and are therefore constant
- * initialised: reaching one cannot allocate, which it would have to not do
- * anyway, since it is reached from inside the allocator.
+ * The counters are `thread_local` scalars, so they are constant initialised.
+ * That matters because they are read from inside the allocator, where an
+ * initialisation that allocated would recurse.
  */
 
 namespace {

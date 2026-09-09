@@ -280,14 +280,12 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                  isNamed(entry.first, keep));
     });
 
-    // A tap made for a take that never started, once its track is gone. One
-    // that did start left with it, so what is left here is a recording asked
-    // for and abandoned.
+    // Taps whose track is gone and whose take never started. A take that did
+    // start took its tap with it.
     //
-    // No take is touched here, and none can be. Everything else in this
-    // function is unreachable from the audio thread by the time it runs; a
-    // take is reachable until a publish of the callback's set says otherwise,
-    // and that publish is the caller's (@ref unnamedTakes).
+    // No take is erased here. Everything else this function frees is already
+    // unreachable from the audio thread; a take stays reachable until the
+    // caller publishes a set without it (@ref unnamedTakes).
     removed += std::erase_if(takeTaps_, [&](const auto& entry) {
         return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
     });
@@ -302,10 +300,10 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
     const auto collectTrack = [&ids](const TrackInfo& track) {
         ids.tracks.insert(track.id);
 
-        // A take may run while the track is armed and still has an input of
-        // that material. Arm rather than monitorsInput(), which is also true of
-        // a track only listening: disarming ends a take and stops nothing else,
-        // so the plan cannot answer this and the model has to (#2465).
+        // A take may run while the track is armed and has an input of that
+        // material. Arm, not monitorsInput(): a track that is only listening
+        // compiles the same input op, so the plan cannot say when a take ends
+        // (#2465).
         if (track.takesExternalInput() && track.recordArmed) {
             if (!track.audioInputDevice.isEmpty())
                 ids.takes.insert(TakeKey{track.id, RecordMaterial::audio});

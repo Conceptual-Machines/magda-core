@@ -32,10 +32,10 @@ struct TrackInfo;
  * section-aware model identity the way OpKey is, so the same edit that
  * recompiles the plan leaves the objects it names untouched.
  *
- * A take is here for the same reason with more at stake (#2465). An instrument
- * rebuilt mid-note clicks; a take rebuilt mid-pass is a split file or a hole,
- * and it is not recomputable from anything -- it is a file handle, a write
- * position and a queue holding samples nobody has written yet.
+ * A take is here for the same reason, with more at stake (#2465). An instrument
+ * rebuilt mid-note clicks; a take rebuilt mid-pass is a split file or a hole.
+ * Nothing can recompute one either: it is a file handle, a write position, and
+ * a queue holding samples nobody has written yet.
  *
  * Everything here runs off the audio thread.
  */
@@ -145,9 +145,9 @@ struct RuntimeStateIds {
     std::set<TrackId> tracks;
 
     /// Takes the model still says may run: a track armed, with an input of
-    /// that material (#2465). The one entry here that names a thing allowed to
-    /// continue rather than a thing that exists, because a plan cannot answer
-    /// it -- disarming ends a take and changes no topology at all.
+    /// that material (#2465). Alone here in naming what is allowed to continue
+    /// rather than what exists, because disarming ends a take without changing
+    /// any topology the plan could be asked about.
     std::set<TakeKey> takes;
 };
 
@@ -287,20 +287,20 @@ class RuntimeStateStore {
     /**
      * @brief The tap take @p key publishes its pass to, made if there is none.
      *
-     * On the publishing thread, and before the take, since a recorder is built
-     * against it. @p settings is ignored for a tap that already exists:
-     * resizing its arrays would be an allocation beneath a reader.
+     * On the publishing thread, and before the take, since the recorder is
+     * built against it. @p settings is ignored for a tap that already exists:
+     * resizing its arrays would allocate underneath a reader.
      */
     RecordTap& realiseTakeTap(const TakeKey& key, const RecordTapSettings& settings);
 
     /// @brief The tap for @p key, or null. On the publishing thread.
     const RecordTap* takeTap(const TakeKey& key) const;
 
-    /// @brief Own @p take as @p key's, from now until something ends it.
+    /// @brief Own @p take as @p key's, until something ends it.
     ///
     /// On the publishing thread, and only for a key nothing is recording: a
-    /// take the callback can still reach has to leave the published set through
-    /// @ref releaseTake before anything may destroy it.
+    /// take the callback can still reach has to go through @ref releaseTake
+    /// before anything may destroy it.
     void holdTake(const TakeKey& key, std::unique_ptr<TakeCapture> take);
 
     /// @brief Every take being fed, in key order. What the callback's set is
@@ -308,9 +308,10 @@ class RuntimeStateStore {
     RecordingTakes liveTakes() const;
 
     /// @brief Takes @p modelIds has stopped naming: the arm switched off, the
-    ///        input taken away, the track deleted (#2465). Named here and
-    ///        released separately, because a take has to leave the callback's
-    ///        set before anything may close it.
+    ///        input taken away, the track deleted (#2465).
+    ///
+    /// Named here and released separately, because a take has to leave the
+    /// callback's set before anything may close it.
     std::vector<TakeKey> unnamedTakes(const RuntimeStateIds& modelIds) const;
 
     /// A take on its way out, with the tap it writes to.
@@ -323,9 +324,8 @@ class RuntimeStateStore {
      * @brief Hand @p key's take over, empty if there is none.
      *
      * On the publishing thread, and only once the callback can no longer reach
-     * it. The tap goes with it: finish() closes the pass through it, so it has
-     * to outlive the take, and an overlay drawn from it has to stand until the
-     * clip appears in its place.
+     * it. The tap goes with it: finish() writes to it, and an overlay drawn
+     * from it has to stand until the clip appears.
      */
     ReleasedTake releaseTake(const TakeKey& key);
 

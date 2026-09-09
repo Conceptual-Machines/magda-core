@@ -202,8 +202,7 @@ class Rig {
         return magda::test::publishProject(session_, tracks_, master_, context_).published;
     }
 
-    /// The edits the cases perform, named for what they are rather than for
-    /// what they touch.
+    /// The edits the cases perform.
     void addDeviceTo(TrackId id) {
         auto& track = trackFor(id);
 
@@ -290,8 +289,8 @@ class Rig {
     int takes_ = 0;
 };
 
-/// Every sample of @p stored follows the one before it, from wherever it began.
-/// The whole of what "the file is continuous across the swap" means.
+/// Every sample of @p stored follows the one before it, from wherever it
+/// began. A rebuilt writer shows up here as a repeat or a gap.
 void requireUnbroken(const juce::AudioBuffer<float>& stored) {
     REQUIRE(stored.getNumSamples() > 0);
 

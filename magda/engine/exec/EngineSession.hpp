@@ -47,10 +47,11 @@ class ClipVoicePool;
 /**
  * @brief A take that has stopped, on its way to being a clip (#2465).
  *
- * The recorder rather than what it recorded, since what a finished take becomes
- * is typed by its material and the key says which to ask for. The tap comes
- * with it: finish() closes the pass through it, and an overlay drawn from it
- * has to stand until the clip appears in its place.
+ * The recorder, not what it recorded: an audio take and a MIDI take finish into
+ * different types, and the key says which one this is.
+ *
+ * The tap comes with it, because finish() writes to it and an overlay drawn
+ * from it has to stand until the clip appears.
  */
 struct ClosedTake {
     TakeKey key;
@@ -254,9 +255,8 @@ class EngineSession {
     /**
      * @brief Where take @p key publishes its pass, or null (#2463).
      *
-     * On the publishing thread, both to look up and to read: a tap leaves with
-     * the take that writes it, so a pointer cached across a publish may be to
-     * something the caller has already been handed. Ask again after every one.
+     * On the publishing thread. A tap leaves with the take that writes it, so
+     * ask again after each publish rather than holding on to the pointer.
      */
     const RecordTap* takeTap(const TakeKey& key) const {
         return store_.takeTap(key);
@@ -270,11 +270,11 @@ class EngineSession {
      * plan: arming a track compiles a plan, but a recording in flight is
      * history rather than topology, and no recompile moves it.
      *
-     * @p make is handed the tap rather than the caller building the recorder
-     * and passing it in, because nothing else orders the two: whatever @p key
-     * was already recording is closed first -- it leaves through
-     * @ref takeClosedTakes, since the callback can still reach it -- and that
-     * takes its tap with it.
+     * @p make builds the recorder against the tap it is handed, rather than
+     * the caller building one and passing it in. Anything @p key was already
+     * recording is closed first and takes that key's tap with it, so the tap
+     * to build against does not exist until then. The displaced take leaves
+     * through @ref takeClosedTakes.
      *
      * Registering the take's @ref TakeCapture::stream with a RecordThread is
      * the caller's, and so is unregistering it after @ref stopTake.
@@ -294,12 +294,12 @@ class EngineSession {
      * @brief Takes an edit closed, and forget them (#2465).
      *
      * A publish whose model IDs stopped naming a take: the arm switched off,
-     * the input taken away, the track deleted. Each is out of the callback's
-     * set already and is finished by whoever collects it, so what was recorded
-     * up to the edit becomes a clip rather than being dropped.
+     * the input taken away, the track deleted. Each is already out of the
+     * callback's set, so whoever collects it can finish it, and what was
+     * recorded up to the edit becomes a clip instead of being dropped.
      *
-     * Kept until asked for rather than dropped like a full lane, as
-     * @ref takeRetiredRuns is: one per edit that ended a recording.
+     * Kept until asked for rather than dropped, like @ref takeRetiredRuns:
+     * one per edit that ended a recording.
      */
     std::vector<ClosedTake> takeClosedTakes() {
         return std::exchange(closed_, {});
@@ -395,14 +395,12 @@ class EngineSession {
     }
 
   private:
-    /// The callback's set, rebuilt from the store. Blocks until the audio
-    /// thread is out of its block, which is what makes a take this drops safe
-    /// to close.
+    /// The callback's set, rebuilt from the store. Waits for the block the
+    /// callback is in, so a take this drops is safe to close afterwards.
     void publishTakes();
 
-    /// Takes @p modelIds has stopped naming, out of the callback's set and
-    /// into @ref takeClosedTakes. After the plan swap, since until then the
-    /// edit that ended them was not the one playing.
+    /// Close the takes @p modelIds has stopped naming, into
+    /// @ref takeClosedTakes.
     void closeUnnamedTakes(const RuntimeStateIds& modelIds);
 
     /**

@@ -111,10 +111,9 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // it would be counting from one again by its next block (#2122).
     live_->executor.clearUnboundValueTaps();
 
-    // After the swap, because until it the plan playing was the one the edit
-    // has not happened to yet, and before the release below, because that is
-    // what frees a tap a take still writes to. A take the edit did not reach is
-    // not touched at all -- no publish, no wait, nothing moved (#2465).
+    // The takes this edit ended (#2465). After the swap, since the edit only
+    // counts once its plan is playing. Before releaseDeleted, since that frees
+    // the tap a take writes to as it closes.
     closeUnnamedTakes(modelIds);
 
     // Safe only now: before the swap, everything about to be destroyed was
@@ -134,9 +133,8 @@ void EngineSession::publishTakes() {
 
 void EngineSession::startTake(const TakeKey& key, const RecordTapSettings& settings,
                               const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make) {
-    // First, and before the tap: what this key was recording leaves with its
-    // own tap, so the take about to be built gets a fresh one rather than the
-    // one somebody is about to be handed.
+    // Whatever this key was already recording, closed first. Its tap leaves
+    // with it, so the take built below gets a fresh one.
     if (auto displaced = stopTake(key); displaced.take != nullptr)
         closed_.push_back(std::move(displaced));
 
@@ -153,8 +151,8 @@ ClosedTake EngineSession::stopTake(const TakeKey& key) {
     if (released.take == nullptr)
         return {};
 
-    // After the release and before the caller has it: the set published here is
-    // the one without it, so when this returns the callback is out of it.
+    // The set without it, published before the caller has it. Once this
+    // returns the callback is out of the take, so finishing it is safe.
     publishTakes();
     return ClosedTake{key, std::move(released.take), std::move(released.tap)};
 }
@@ -164,8 +162,8 @@ void EngineSession::closeUnnamedTakes(const RuntimeStateIds& modelIds) {
     if (unnamed.empty())
         return;
 
-    // Every one of them out of the store first, then one publish for the lot:
-    // a scene of armed tracks deleted together is one wait, not one each.
+    // All of them out of the store, then one publish: a scene of armed tracks
+    // deleted together costs one wait rather than one each.
     std::vector<ClosedTake> closed;
     closed.reserve(unnamed.size());
     for (const auto& key : unnamed) {

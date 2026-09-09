@@ -25,10 +25,9 @@ class RecordStream;
 /**
  * @brief Which take: whose input it records, and what kind (#2465).
  *
- * The identity the differ matches an input op on, minus the op: a track has
- * one live audio input and one live MIDI input, so a track recording both is
- * two takes and never more. What the store keys a take on, so a recompile
- * naming the same track carries the take it was already feeding.
+ * A track has one live audio input and one live MIDI input, so it has at most
+ * two takes. That makes this the same identity the differ matches an input op
+ * on, which is what lets a recompile carry the take it was already feeding.
  */
 struct TakeKey {
     TrackId trackId = INVALID_TRACK_ID;
@@ -63,9 +62,9 @@ class TakeCapture {
     /// thread, for as long as whoever owns the take keeps it.
     virtual const RecordTap& tap() const = 0;
 
-    /// The queue the record thread drains. Here rather than on each kind of
-    /// take so that whoever registered one can unregister it again knowing
-    /// only that it is a take (#2465).
+    /// The queue the record thread drains. On the base rather than on each
+    /// kind of take, so whoever registered one can unregister it without
+    /// knowing which kind it is (#2465).
     virtual RecordStream& stream() = 0;
 };
 
