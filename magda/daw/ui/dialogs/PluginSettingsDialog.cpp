@@ -420,7 +420,7 @@ PluginSettingsDialog::PluginSettingsDialog(AudioEngine* engine)
             if (idx >= 0 && idx < static_cast<int>(excludedPlugins_.size()))
                 indices.push_back(idx);
         }
-        std::sort(indices.rbegin(), indices.rend());
+        std::ranges::sort(indices, std::ranges::greater{});
         for (int idx : indices) {
             excludedPlugins_.erase(excludedPlugins_.begin() + idx);
         }

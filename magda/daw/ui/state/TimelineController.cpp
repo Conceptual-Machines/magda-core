@@ -1,6 +1,7 @@
 #include "TimelineController.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/GridDivision.hpp"
@@ -52,7 +53,7 @@ void TimelineController::dispatch(const TimelineEvent& event) {
 }
 
 void TimelineController::addListener(TimelineStateListener* listener) {
-    if (listener && std::find(listeners.begin(), listeners.end(), listener) == listeners.end()) {
+    if (listener && !std::ranges::contains(listeners, listener)) {
         listeners.push_back(listener);
     }
 }
@@ -62,8 +63,7 @@ void TimelineController::removeListener(TimelineStateListener* listener) {
 }
 
 void TimelineController::addAudioEngineListener(AudioEngineListener* listener) {
-    if (listener && std::find(audioEngineListeners.begin(), audioEngineListeners.end(), listener) ==
-                        audioEngineListeners.end()) {
+    if (listener && !std::ranges::contains(audioEngineListeners, listener)) {
         audioEngineListeners.push_back(listener);
     }
 }
@@ -1135,8 +1135,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const AddMarkerE
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const UpdateMarkerEvent& e) {
-    auto it = std::find_if(state.markers.begin(), state.markers.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
     if (it == state.markers.end())
         return ChangeFlags::None;
 
@@ -1171,8 +1170,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkers
         state.nextMarkerId = juce::jmax(state.nextMarkerId, marker.id + 1);
     // Drop a stale selection that no longer points at a live marker.
     if (state.selectedMarkerId != 0 &&
-        std::none_of(state.markers.begin(), state.markers.end(),
-                     [&](const TimelineMarker& m) { return m.id == state.selectedMarkerId; }))
+        !std::ranges::contains(state.markers, state.selectedMarkerId, &TimelineMarker::id))
         state.selectedMarkerId = 0;
     ProjectManager::getInstance().markDirty();
     return ChangeFlags::Markers;
@@ -1180,9 +1178,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetMarkers
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMarkerEvent& e) {
     if (e.markerId != 0) {
-        auto it =
-            std::find_if(state.markers.begin(), state.markers.end(),
-                         [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+        auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
         if (it == state.markers.end())
             return ChangeFlags::None;
     }
@@ -1195,8 +1191,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SelectMark
 }
 
 TimelineController::ChangeFlags TimelineController::handleEvent(const GoToMarkerEvent& e) {
-    auto it = std::find_if(state.markers.begin(), state.markers.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == e.markerId; });
+    auto it = std::ranges::find(state.markers, e.markerId, &TimelineMarker::id);
     if (it == state.markers.end())
         return ChangeFlags::None;
 
@@ -1213,10 +1208,10 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const GoToNextMa
         return ChangeFlags::None;
 
     const double current = state.playhead.getCurrentPositionBeats();
-    auto it =
-        std::find_if(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& marker) {
-            return marker.positionBeats > current + 0.000001;
-        });
+    const auto isAfterPlayhead = [current](const TimelineMarker& marker) {
+        return marker.positionBeats > current + 0.000001;
+    };
+    auto it = std::ranges::find_if(state.markers, isAfterPlayhead);
     if (it == state.markers.end())
         it = state.markers.begin();
 
@@ -1229,10 +1224,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
 
     const double current = state.playhead.getCurrentPositionBeats();
-    auto it = std::find_if(
-        state.markers.rbegin(), state.markers.rend(),
-        [&](const TimelineMarker& marker) { return marker.positionBeats < current - 0.000001; });
-    const int markerId = it != state.markers.rend() ? it->id : state.markers.back().id;
+    const auto isBeforePlayhead = [current](const TimelineMarker& marker) {
+        return marker.positionBeats < current - 0.000001;
+    };
+    auto earlierMarkers = state.markers | std::views::reverse;
+    const auto it = std::ranges::find_if(earlierMarkers, isBeforePlayhead);
+    const int markerId = it != earlierMarkers.end() ? it->id : state.markers.back().id;
     return handleEvent(GoToMarkerEvent{markerId});
 }
 

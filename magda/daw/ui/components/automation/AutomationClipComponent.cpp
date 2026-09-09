@@ -131,17 +131,12 @@ void AutomationClipComponent::paintMiniCurve(juce::Graphics& g, juce::Rectangle<
     // mouse-up commit.
     std::vector<AutomationPoint> points = clip->points;
     if (previewPointId_ != INVALID_AUTOMATION_POINT_ID) {
-        for (auto& point : points) {
-            if (point.id == previewPointId_) {
-                point.beatPosition = previewPointBeat_;
-                point.value = previewPointValue_;
-                break;
-            }
+        const auto dragged = std::ranges::find(points, previewPointId_, &AutomationPoint::id);
+        if (dragged != points.end()) {
+            dragged->beatPosition = previewPointBeat_;
+            dragged->value = previewPointValue_;
         }
-        std::sort(points.begin(), points.end(),
-                  [](const AutomationPoint& a, const AutomationPoint& b) {
-                      return a.beatPosition < b.beatPosition;
-                  });
+        std::ranges::sort(points, {}, &AutomationPoint::beatPosition);
     }
 
     // Sample the model's interpolation (bezier / step / tension aware) at
@@ -514,8 +509,7 @@ void AutomationClipComponent::automationPointDragPreview(AutomationLaneId laneId
     const auto* clip = getClipInfo();
     if (!clip || clip->laneId != laneId)
         return;
-    const bool ours = std::any_of(clip->points.begin(), clip->points.end(),
-                                  [pointId](const AutomationPoint& p) { return p.id == pointId; });
+    const bool ours = std::ranges::contains(clip->points, pointId, &AutomationPoint::id);
     if (!ours)
         return;
     previewPointId_ = pointId;

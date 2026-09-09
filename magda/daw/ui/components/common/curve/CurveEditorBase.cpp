@@ -1077,9 +1077,10 @@ void CurveEditorBase::updateTensionHandlePositions() {
         const auto& p2 = *points[i + 1];
 
         if (p1.curveType == CurveType::Linear || p1.curveType == CurveType::HardCorner) {
-            auto handleIt =
-                std::find_if(tensionHandles_.begin(), tensionHandles_.end(),
-                             [&p1](const auto& handle) { return handle->getPointId() == p1.id; });
+            const auto isHandleForPoint = [&p1](const auto& handle) {
+                return handle->getPointId() == p1.id;
+            };
+            const auto handleIt = std::ranges::find_if(tensionHandles_, isHandleForPoint);
             if (handleIt == tensionHandles_.end())
                 continue;
             auto& handle = **handleIt;

@@ -85,10 +85,11 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
             placeLeft(headerArea, spec.component, buttonSize);
     }
 
-    for (auto& spec : std::views::reverse(specs)) {
-        if (spec.side == HeaderControlSide::Right && spec.expandedVisible)
-            placeRight(headerArea, spec.component, buttonSize);
-    }
+    const auto placedRight = [](const auto& spec) {
+        return spec.side == HeaderControlSide::Right && spec.expandedVisible;
+    };
+    for (auto& spec : specs | std::views::reverse | std::views::filter(placedRight))
+        placeRight(headerArea, spec.component, buttonSize);
 }
 
 void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,

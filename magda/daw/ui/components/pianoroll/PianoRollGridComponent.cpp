@@ -153,9 +153,7 @@ void PianoRollGridComponent::paint(juce::Graphics& g) {
         if (!selectedRegions.empty()) {
             g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DARK).withAlpha(0x20 / 255.0f));
             int prevEnd = bounds.getX();
-            // Sort by startX
-            std::sort(selectedRegions.begin(), selectedRegions.end(),
-                      [](const ClipRegion& a, const ClipRegion& b) { return a.startX < b.startX; });
+            std::ranges::sort(selectedRegions, {}, &ClipRegion::startX);
             for (const auto& region : selectedRegions) {
                 if (region.startX > prevEnd) {
                     g.fillRect(prevEnd, 0, region.startX - prevEnd, getHeight());
@@ -1023,7 +1021,7 @@ void PianoRollGridComponent::adjustVelocityForNote(ClipId clipId, size_t noteInd
     // A note that is part of the current selection scales the whole selection;
     // an unselected note is edited on its own without disturbing the selection.
     std::vector<size_t> targets = selectedNoteIndicesForClip(clipId);
-    if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+    if (!std::ranges::contains(targets, noteIndex))
         targets = {noteIndex};
     adjustMidiNoteVelocities(clipId, targets, velocityDelta);
     flashVelocityReadout(clipId, noteIndex);
@@ -1853,8 +1851,7 @@ void PianoRollGridComponent::clipPropertyChanged(ClipId clipId) {
     // track's clip changes
     if (!overlayTrackIds_.empty()) {
         const auto* clip = ClipManager::getInstance().getClip(clipId);
-        if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), clip->trackId) !=
-                        overlayTrackIds_.end()) {
+        if (clip && std::ranges::contains(overlayTrackIds_, clip->trackId)) {
             repaint();
         }
     }
@@ -2599,8 +2596,7 @@ juce::Colour PianoRollGridComponent::getColourForClip(ClipId clipId) const {
 }
 
 bool PianoRollGridComponent::isClipSelected(ClipId clipId) const {
-    return std::find(selectedClipIds_.begin(), selectedClipIds_.end(), clipId) !=
-           selectedClipIds_.end();
+    return std::ranges::contains(selectedClipIds_, clipId);
 }
 
 void PianoRollGridComponent::setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
@@ -3320,8 +3316,8 @@ void PianoRollGridComponent::commitExpressionEdit() {
         return;
 
     auto points = expressionWorkingPoints_;
-    std::sort(points.begin(), points.end(),
-              [](const auto& a, const auto& b) { return a.beat < b.beat; });
+    const auto beatOf = [](const auto& point) { return point.beat; };
+    std::ranges::sort(points, {}, beatOf);
 
     onPitchExpressionChanged(expressionClipId_, expressionNoteIndex_, std::move(points));
 }

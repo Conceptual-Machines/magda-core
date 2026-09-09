@@ -204,7 +204,7 @@ void TrackContentPanel::endClipDragTargets() {
 }
 
 int TrackContentPanel::clipDragSlotOfTrack(TrackId trackId) const {
-    const auto it = std::find(clipDragHostTrackIds_.begin(), clipDragHostTrackIds_.end(), trackId);
+    const auto it = std::ranges::find(clipDragHostTrackIds_, trackId);
     if (it == clipDragHostTrackIds_.end())
         return -1;
     return static_cast<int>(std::distance(clipDragHostTrackIds_.begin(), it));
@@ -327,7 +327,7 @@ void TrackContentPanel::startMultiClipDrag(ClipId anchorClipId, const juce::Poin
             info.originalTrackId = clip->trackId;
 
             // Find track index
-            auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip->trackId);
+            auto it = std::ranges::find(visibleTrackIds_, clip->trackId);
             if (it != visibleTrackIds_.end()) {
                 info.originalTrackIndex =
                     static_cast<int>(std::distance(visibleTrackIds_.begin(), it));
@@ -603,7 +603,7 @@ bool isOnFrozenTrack(ClipId clipId) {
 }
 
 bool anyClipOnFrozenTrack(const std::vector<ClipId>& clips) {
-    return std::any_of(clips.begin(), clips.end(), isOnFrozenTrack);
+    return std::ranges::any_of(clips, isOnFrozenTrack);
 }
 
 }  // namespace
@@ -664,14 +664,14 @@ bool TrackContentPanel::nudgeSelectedClipsHorizontally(int direction) {
     // it, with the surviving clip decided by unordered_set iteration order.
     // Moving the far clip first keeps the path clear.
     std::vector<ClipId> ordered = clips;
-    std::sort(ordered.begin(), ordered.end(), [&](ClipId lhs, ClipId rhs) {
-        const auto* a = clipManager.getClip(lhs);
-        const auto* b = clipManager.getClip(rhs);
-        if (a == nullptr || b == nullptr)
-            return false;
-        return direction > 0 ? a->placement.startBeat > b->placement.startBeat
-                             : a->placement.startBeat < b->placement.startBeat;
-    });
+    const auto startBeatOf = [&clipManager](ClipId id) {
+        const auto* clip = clipManager.getClip(id);
+        return clip != nullptr ? clip->placement.startBeat : 0.0;
+    };
+    if (direction > 0)
+        std::ranges::sort(ordered, std::ranges::greater{}, startBeatOf);
+    else
+        std::ranges::sort(ordered, {}, startBeatOf);
 
     // Always compound, even for one clip: consecutive MoveClipCommands on the
     // same clip merge into a single history entry, which would fold a run of
@@ -736,7 +736,7 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
         const auto* clip = clipManager.getClip(clipId);
         if (clip == nullptr)
             continue;
-        auto it = std::find(hostTrackIds.begin(), hostTrackIds.end(), clip->trackId);
+        auto it = std::ranges::find(hostTrackIds, clip->trackId);
         if (it == hostTrackIds.end())
             return false;  // e.g. a chord clip: the selection moves whole or not at all
 
@@ -761,9 +761,11 @@ bool TrackContentPanel::nudgeSelectedClipsToAdjacentTrack(int direction) {
     // Same back-to-front rule as the horizontal path: landing on a track a
     // still-unmoved selected clip occupies would let overlap resolution trim
     // or delete that clip. Vacate the far track first.
-    std::sort(moves.begin(), moves.end(), [direction](const auto& lhs, const auto& rhs) {
-        return direction > 0 ? lhs.trackIndex > rhs.trackIndex : lhs.trackIndex < rhs.trackIndex;
-    });
+    const auto trackIndexOf = [](const auto& move) { return move.trackIndex; };
+    if (direction > 0)
+        std::ranges::sort(moves, std::ranges::greater{}, trackIndexOf);
+    else
+        std::ranges::sort(moves, {}, trackIndexOf);
 
     CompoundOperationScope undoScope("Move Clips to Track");
     for (const auto& move : moves) {
@@ -801,7 +803,7 @@ void TrackContentPanel::splitClipsAtSelectionBoundaries() {
     std::vector<SplitInfo> clipsToSplit;
 
     for (const auto& clip : clips) {
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end())
             continue;
 
@@ -877,7 +879,7 @@ void TrackContentPanel::captureClipsInTimeSelection() {
 
     for (const auto& clip : clips) {
         // Check if clip's track is in the selection
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end()) {
             continue;  // Track not visible
         }
