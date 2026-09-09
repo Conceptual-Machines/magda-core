@@ -6,9 +6,12 @@
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -74,6 +77,13 @@ constexpr TrackId kOther = 2;
 
 constexpr TakeKey kTakeKey{kArmed, RecordMaterial::audio};
 
+/// The device a case parks the callback in, on the armed track from the start
+/// so that every plan carries it.
+constexpr DeviceId kParkingDeviceId = 99;
+
+/// The device an edit adds to say which blocks are the new plan's.
+constexpr DeviceId kWitnessDeviceId = 98;
+
 /// What arrival @p sample of @p channel carries, as test_take_recorder numbers
 /// it: inside full scale and far enough apart that two arrivals cannot round
 /// onto one float.
@@ -117,6 +127,126 @@ TrackInfo armedTrack(TrackId id) {
     return track;
 }
 
+/// A device an edit adds, which does nothing to the signal. What the carry
+/// cases recompile the plan with.
+class InertDevice final : public magda::engine::EngineDevice {
+  public:
+    void process(magda::engine::DeviceBlock&) override {}
+};
+
+/**
+ * @brief Says whether the block being rendered is one of the new plan's.
+ *
+ * A device only the edit's plan contains, so its first block is that plan's
+ * first block. Placed ahead of the parking device in the chain, so a callback
+ * stopped there has already said which plan it belongs to.
+ */
+class WitnessDevice final : public magda::engine::EngineDevice {
+  public:
+    explicit WitnessDevice(WitnessDevice** slot) : slot_(slot) {}
+
+    ~WitnessDevice() override {
+        if (slot_ != nullptr && *slot_ == this)
+            *slot_ = nullptr;
+    }
+
+    WitnessDevice(const WitnessDevice&) = delete;
+    WitnessDevice& operator=(const WitnessDevice&) = delete;
+    WitnessDevice(WitnessDevice&&) = delete;
+    WitnessDevice& operator=(WitnessDevice&&) = delete;
+
+    void process(magda::engine::DeviceBlock&) override {
+        rendered_.store(true, std::memory_order_release);
+    }
+
+    bool hasRendered() const {
+        return rendered_.load(std::memory_order_acquire);
+    }
+
+  private:
+    WitnessDevice** slot_ = nullptr;
+    std::atomic<bool> rendered_{false};
+};
+
+/**
+ * @brief A device that stops the callback inside its block until let through.
+ *
+ * What makes the gap between the plan going live and the recording set catching
+ * up reachable on purpose rather than by luck. A callback holds the recording
+ * feed for the whole of process(), so a callback parked in here is one the
+ * publishing thread has to wait for, parked exactly where a real one would be.
+ *
+ * Blocks are let through one at a time, which is what lets a case say "the
+ * block after the swap" and mean it.
+ */
+class ParkingDevice final : public magda::engine::EngineDevice {
+  public:
+    /// @p slot is where the factory keeps its pointer to this, cleared here so
+    /// that deleting the track this sits on does not leave one behind.
+    explicit ParkingDevice(ParkingDevice** slot) : slot_(slot) {}
+
+    ~ParkingDevice() override {
+        if (slot_ != nullptr && *slot_ == this)
+            *slot_ = nullptr;
+    }
+
+    ParkingDevice(const ParkingDevice&) = delete;
+    ParkingDevice& operator=(const ParkingDevice&) = delete;
+    ParkingDevice(ParkingDevice&&) = delete;
+    ParkingDevice& operator=(ParkingDevice&&) = delete;
+
+    void process(magda::engine::DeviceBlock&) override {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!parking_)
+            return;
+
+        ++parked_;
+        arrived_.notify_all();
+        released_.wait(lock, [this] { return permits_ > 0 || !parking_; });
+
+        if (permits_ > 0)
+            --permits_;
+    }
+
+    void park() {
+        const std::lock_guard<std::mutex> lock(mutex_);
+        parking_ = true;
+    }
+
+    /// Wait until @p count blocks have entered and stopped here.
+    void waitForBlocks(int count) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        arrived_.wait(lock, [this, count] { return parked_ >= count; });
+    }
+
+    void letOneThrough() {
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            ++permits_;
+        }
+        released_.notify_all();
+    }
+
+    void stopParking() {
+        {
+            const std::lock_guard<std::mutex> lock(mutex_);
+            parking_ = false;
+        }
+        released_.notify_all();
+    }
+
+  private:
+    ParkingDevice** slot_ = nullptr;
+
+    std::mutex mutex_;
+    std::condition_variable arrived_;
+    std::condition_variable released_;
+
+    bool parking_ = false;
+    int parked_ = 0;
+    int permits_ = 0;
+};
+
 /// Binds the live input ops so the armed track's chain is a chain the plan can
 /// render. The take reads the feed itself and not this, which is the point: an
 /// input op is topology and a take is not.
@@ -130,8 +260,31 @@ class InputFactory final : public RuntimeStateFactory {
         return std::make_unique<LiveAudioInput>(*feed, kChannels);
     }
 
+    /// One device is the parking one, for the case that needs the callback
+    /// held; the rest are the plain instances an edit adds.
+    std::unique_ptr<magda::engine::EngineDevice> createDevice(
+        magda::engine::DeviceKey key) override {
+        if (key.deviceId == kParkingDeviceId) {
+            auto device = std::make_unique<ParkingDevice>(&parking);
+            parking = device.get();
+            return device;
+        }
+
+        if (key.deviceId == kWitnessDeviceId) {
+            auto device = std::make_unique<WitnessDevice>(&witness);
+            witness = device.get();
+            return device;
+        }
+
+        return std::make_unique<InertDevice>();
+    }
+
     /// Set once the session exists, since the feed is the session's.
     const LiveInputFeed* feed = nullptr;
+
+    /// Owned by the store; kept here so a case can drive them.
+    ParkingDevice* parking = nullptr;
+    WitnessDevice* witness = nullptr;
 };
 
 /**
@@ -150,6 +303,7 @@ class Rig {
           output_(kNumChannels, kBlockSize) {
         tracks_.push_back(armedTrack(kArmed));
         tracks_.push_back(magda::test::makeTrack(kOther));
+        addDeviceTo(kArmed, kParkingDeviceId);
 
         factory_.feed = &session_.liveInputs();
         session_.liveInputs().prepare(kNumChannels, kBlockSize);
@@ -204,12 +358,18 @@ class Rig {
      * does, which is the only way a case sees the gap between the plan going
      * live and the recording set following it.
      */
-    void runInBackground() {
+    void runInBackground(bool backToBack = false) {
+        backToBack_ = backToBack;
         running_ = true;
         callbacks_ = std::thread([this] {
             while (running_.load(std::memory_order_relaxed)) {
                 deliver(kBlockSize);
-                std::this_thread::sleep_for(std::chrono::microseconds(200));
+
+                // Back to back when a case is forcing an interleaving: the gap
+                // between two callbacks is the one place the publishing thread
+                // could slip past without the window ever opening.
+                if (!backToBack_)
+                    std::this_thread::sleep_for(std::chrono::microseconds(200));
             }
         });
     }
@@ -220,6 +380,12 @@ class Rig {
     }
 
     void stopCallbacks() {
+        // Parking first, always: a callback stopped inside the device is a
+        // callback that never returns to see the flag, and a case that failed
+        // an assertion would hang here rather than report it.
+        if (factory_.parking != nullptr)
+            factory_.parking->stopParking();
+
         running_ = false;
         if (callbacks_.joinable())
             callbacks_.join();
@@ -247,15 +413,39 @@ class Rig {
     }
 
     /// The edits the cases perform.
-    void addDeviceTo(TrackId id) {
+    void addDeviceTo(TrackId id, DeviceId use = INVALID_DEVICE_ID) {
         auto& track = trackFor(id);
 
         DeviceInfo device;
-        device.id = nextDeviceId_++;
-        device.name = "Gain " + juce::String(device.id);
+        device.id = use == INVALID_DEVICE_ID ? nextDeviceId_++ : use;
+        device.name = "Device " + juce::String(device.id);
         device.format = PluginFormat::Internal;
 
         track.chain.fxChainElements.emplace_back(std::move(device));
+    }
+
+    /// The device a case parks the callback in. Null until a plan naming it has
+    /// been realised, which the constructor's publish does.
+    ParkingDevice& parking() {
+        REQUIRE(factory_.parking != nullptr);
+        return *factory_.parking;
+    }
+
+    /// Put the witness at the head of the armed track's chain, so it renders
+    /// before the parking device stops the block.
+    void witnessNextPlan() {
+        DeviceInfo device;
+        device.id = kWitnessDeviceId;
+        device.name = "Witness";
+        device.format = PluginFormat::Internal;
+
+        auto& chain = trackFor(kArmed).chain.fxChainElements;
+        chain.insert(chain.begin(), ChainElement{std::move(device)});
+    }
+
+    /// Whether the plan the witness belongs to has rendered a block yet.
+    bool witnessHasRendered() const {
+        return factory_.witness != nullptr && factory_.witness->hasRendered();
     }
 
     void rename(TrackId id) {
@@ -333,6 +523,7 @@ class Rig {
 
     std::thread callbacks_;
     std::atomic<bool> running_{false};
+    bool backToBack_ = false;
 
     DeviceId nextDeviceId_ = 100;
     int takes_ = 0;
@@ -351,6 +542,17 @@ void requireUnbroken(const juce::AudioBuffer<float>& stored) {
             FAIL();
         }
 }
+
+/// Lets a parked callback go however the case ends. Declared after the publish
+/// it is racing, so an assertion that fails between the two unwinds through
+/// this before the publish's own destructor waits on it.
+struct ReleaseParking {
+    ParkingDevice& device;
+
+    ~ReleaseParking() {
+        device.stopParking();
+    }
+};
 
 /// A take that records nothing, for the store-level case: what matters there
 /// is that one is held, not what it holds.
@@ -633,6 +835,61 @@ TEST_CASE("A take carried and then stopped against a running callback",
     // and none of this depends on it.
     REQUIRE_FALSE(take.failed);
     REQUIRE(take.samplesLost == 0);
+    requireUnbroken(readBack(take.file));
+}
+
+TEST_CASE("The block that first renders an edit does not feed the take it ended",
+          "[engine][exec][session][record][2465]") {
+    Rig rig(emptyDirectory("forced-window"));
+    rig.play();
+    rig.runInBackground(true);
+
+    // A callback stopped inside its block, holding the recording set for as
+    // long as it stands there. Its own capture() has already run.
+    rig.parking().park();
+    rig.parking().waitForBlocks(1);
+
+    auto* recorder = &rig.recorder();
+    const auto captured = recorder->capturedSamples();
+    REQUIRE(captured > 0);
+
+    // The publish cannot get past its swap while that callback is parked, so
+    // this thread is now stopped in exactly the place the race lives.
+    rig.disarm(kArmed);
+    rig.witnessNextPlan();
+    auto publishing = std::async(std::launch::async, [&rig] { return rig.publish(); });
+    const ReleaseParking release{rig.parking()};
+    Rig::keepRunning(std::chrono::milliseconds(20));
+
+    // Blocks through one at a time until one of them is the edit's. Which
+    // block that is depends on how far the publishing thread got, so the case
+    // finds it rather than assuming it: the witness renders ahead of the
+    // parking device, so a callback stopped there has already said.
+    auto before = captured;
+    for (auto parked = 2; !rig.witnessHasRendered(); ++parked) {
+        before = recorder->capturedSamples();
+        rig.parking().letOneThrough();
+        rig.parking().waitForBlocks(parked);
+    }
+
+    // That block rendered the edit's plan, and the publishing thread is still
+    // stopped at its own wait for it, so the recording set it was holding is
+    // the one from before the edit. It fed the take nothing: eligibility came
+    // off the epoch, not off the set.
+    REQUIRE(recorder->capturedSamples() == before);
+
+    // The publish is still stopped at its own wait for this callback, so let
+    // everything through before asking it for an answer. The guard above is for
+    // the path where the line before this one failed.
+    rig.parking().stopParking();
+    REQUIRE(publishing.get());
+    rig.stopCallbacks();
+
+    auto closed = rig.session().takeClosedTakes();
+    REQUIRE(closed.size() == 1);
+
+    const auto take = finish(closed.front());
+    REQUIRE_FALSE(take.failed);
     requireUnbroken(readBack(take.file));
 }
 
