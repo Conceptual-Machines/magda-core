@@ -448,7 +448,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     add_library(magda_engine_devices STATIC ${_magda_engine_device_adapter_sources})
     add_library(magda::engine_devices ALIAS magda_engine_devices)
 
-    target_compile_features(magda_engine_devices PRIVATE cxx_std_20)
+    target_compile_features(magda_engine_devices PRIVATE cxx_std_23)
     target_include_directories(magda_engine_devices PRIVATE ${CMAKE_SOURCE_DIR})
     # magda_engine is added after magda/daw (it links the model layer this
     # directory defines), so this names it before it exists. A plain target name

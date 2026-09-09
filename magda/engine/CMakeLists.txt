@@ -166,7 +166,7 @@ add_library(magda_engine STATIC
 )
 add_library(magda::engine ALIAS magda_engine)
 
-target_compile_features(magda_engine PUBLIC cxx_std_20)
+target_compile_features(magda_engine PUBLIC cxx_std_23)
 
 # magda_types carries the model-layer headers and publishes magda/daw as its
 # include root, so engine sources resolve "core/<model>.hpp".

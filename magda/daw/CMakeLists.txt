@@ -296,7 +296,7 @@ add_library(magda_types STATIC
     core/ModInfo.hpp
     core/TempoUtils.hpp
 )
-target_compile_features(magda_types PUBLIC cxx_std_20)
+target_compile_features(magda_types PUBLIC cxx_std_23)
 # juce_graphics as well as juce_core: ClipInfo names juce::Colour. Headers and
 # defines only, on the same terms as juce_core above.
 target_include_directories(magda_types
@@ -562,7 +562,7 @@ target_link_libraries(magda_daw
 # The frozen SDK target carries only compile usage and link requirements. It
 # deliberately does not own concrete device sources, so in-tree and private
 # packs build under the same contract.
-target_compile_features(magda_device_sdk INTERFACE cxx_std_20)
+target_compile_features(magda_device_sdk INTERFACE cxx_std_23)
 target_include_directories(magda_device_sdk
     INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -584,7 +584,7 @@ target_link_libraries(magda_device_sdk
 # magda_devices owns the SDK runtime. The base pack is a separate static
 # library compiled against magda::device_sdk, exactly like an out-of-tree pack.
 # WHOLE_ARCHIVE above retains its public-hook registration anchor.
-target_compile_features(magda_devices PUBLIC cxx_std_20)
+target_compile_features(magda_devices PUBLIC cxx_std_23)
 target_include_directories(magda_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
@@ -597,7 +597,7 @@ target_link_libraries(magda_devices
     magda::mutable
     faust::libfaust
 )
-target_compile_features(magda_base_devices PRIVATE cxx_std_20)
+target_compile_features(magda_base_devices PRIVATE cxx_std_23)
 target_include_directories(magda_base_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture
@@ -609,7 +609,7 @@ target_link_libraries(magda_base_devices
     magda::mutable
     faust::libfaust
 )
-target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_20)
+target_compile_features(magda_tracktion_compat_devices PRIVATE cxx_std_23)
 target_include_directories(magda_tracktion_compat_devices PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/third_party/faust/architecture

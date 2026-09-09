@@ -23,6 +23,7 @@ set(TEST_SOURCES
     agents/test_unigram_tokenizer.cpp
     agents/test_command_model_onnx.cpp
     utilities/test_interfaces.cpp
+    utilities/test_ranges_helpers.cpp
     midi/test_midi_clip_sync.cpp
     midi/test_midi_clip_split.cpp
     midi/test_midi_legato.cpp
