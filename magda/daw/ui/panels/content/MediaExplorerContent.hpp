@@ -222,8 +222,6 @@ class MediaExplorerContent : public PanelContent,
     void navigateToDirectory(const juce::File& directory);
     void updateMediaFilter();
     juce::String getMediaFilterPattern() const;
-    static bool isAudioFile(const juce::File& file);
-    static bool isMidiFile(const juce::File& file);
     static bool isMagdaClip(const juce::File& file);
     static bool isPresetFile(const juce::File& file);
     static juce::String formatFileSize(int64_t bytes);

@@ -1,5 +1,8 @@
 #include "ChainPanel.hpp"
 
+#include <algorithm>
+#include <iterator>
+
 #include "ChainNodePathDrag.hpp"
 #include "DeviceSlotComponent.hpp"
 #include "NodeComponent.hpp"
@@ -593,25 +596,19 @@ void ChainPanel::rebuildElementSlots() {
         if (magda::isDevice(element)) {
             const auto& device = magda::getDevice(element);
 
-            // Check if we already have a slot for this device
-            DeviceSlotComponent* existingDeviceSlot = nullptr;
-            size_t existingIndex = 0;
-            for (size_t i = 0; i < elementSlots_.size(); ++i) {
-                if (auto* deviceSlot = dynamic_cast<DeviceSlotComponent*>(elementSlots_[i].get())) {
-                    if (deviceSlot->getDeviceId() == device.id) {
-                        existingDeviceSlot = deviceSlot;
-                        existingIndex = i;
-                        break;
-                    }
-                }
-            }
+            // Reuse the existing slot for this device rather than rebuilding it.
+            const auto showsThisDevice = [&device](const auto& slot) {
+                const auto* deviceSlot = dynamic_cast<const DeviceSlotComponent*>(slot.get());
+                return deviceSlot != nullptr && deviceSlot->getDeviceId() == device.id;
+            };
+            const auto existing = std::ranges::find_if(elementSlots_, showsThisDevice);
 
-            if (existingDeviceSlot) {
-                // Found existing slot - preserve it and update its data
+            if (existing != elementSlots_.end()) {
+                auto* existingDeviceSlot = static_cast<DeviceSlotComponent*>(existing->get());
                 existingDeviceSlot->updateFromDevice(device);
                 existingDeviceSlot->setNodePath(chainPath_.withDevice(device.id));
-                newSlots.push_back(std::move(elementSlots_[existingIndex]));
-                elementSlots_.erase(elementSlots_.begin() + static_cast<long>(existingIndex));
+                newSlots.push_back(std::move(*existing));
+                elementSlots_.erase(existing);
             } else {
                 // Create new slot for new device
                 auto slot = std::make_unique<DeviceSlotComponent>(device);
@@ -633,25 +630,19 @@ void ChainPanel::rebuildElementSlots() {
                                     << " steps, trackId=" << chainPath_.trackId);
             DBG("  nestedRackPath has " << nestedRackPath.steps.size() << " steps");
 
-            // Check if we already have a RackComponent for this rack
-            RackComponent* existingRackComp = nullptr;
-            size_t existingIndex = 0;
-            for (size_t i = 0; i < elementSlots_.size(); ++i) {
-                if (auto* rackComp = dynamic_cast<RackComponent*>(elementSlots_[i].get())) {
-                    if (rackComp->getRackId() == rack.id) {
-                        existingRackComp = rackComp;
-                        existingIndex = i;
-                        break;
-                    }
-                }
-            }
+            // Reuse the existing component for this rack rather than rebuilding it.
+            const auto showsThisRack = [&rack](const auto& slot) {
+                const auto* rackComp = dynamic_cast<const RackComponent*>(slot.get());
+                return rackComp != nullptr && rackComp->getRackId() == rack.id;
+            };
+            const auto existing = std::ranges::find_if(elementSlots_, showsThisRack);
 
-            if (existingRackComp) {
-                // Found existing RackComponent - preserve it and update its data
+            if (existing != elementSlots_.end()) {
+                auto* existingRackComp = static_cast<RackComponent*>(existing->get());
                 existingRackComp->updateFromRack(rack);
                 existingRackComp->setNodePath(nestedRackPath);
-                newSlots.push_back(std::move(elementSlots_[existingIndex]));
-                elementSlots_.erase(elementSlots_.begin() + static_cast<long>(existingIndex));
+                newSlots.push_back(std::move(*existing));
+                elementSlots_.erase(existing);
             } else {
                 // Create new RackComponent for nested rack (with path context)
                 auto rackComp = std::make_unique<RackComponent>(nestedRackPath, rack);
@@ -876,24 +867,20 @@ void ChainPanel::onDeviceSlotSelected(magda::DeviceId deviceId) {
 }
 
 int ChainPanel::findElementIndex(NodeComponent* element) const {
-    for (size_t i = 0; i < elementSlots_.size(); ++i) {
-        if (elementSlots_[i].get() == element) {
-            return static_cast<int>(i);
-        }
-    }
-    return -1;
+    const auto isElement = [element](const auto& slot) { return slot.get() == element; };
+    const auto match = std::ranges::find_if(elementSlots_, isElement);
+    return match == elementSlots_.end()
+               ? -1
+               : static_cast<int>(std::ranges::distance(elementSlots_.begin(), match));
 }
 
 int ChainPanel::calculateInsertIndex(int mouseX) const {
-    // Find insert position based on mouse X and element midpoints
-    for (size_t i = 0; i < elementSlots_.size(); ++i) {
-        int midX = elementSlots_[i]->getX() + elementSlots_[i]->getWidth() / 2;
-        if (mouseX < midX) {
-            return static_cast<int>(i);
-        }
-    }
-    // After last element
-    return static_cast<int>(elementSlots_.size());
+    // The first slot whose midpoint the mouse has not passed; else after the last.
+    const auto isPastMouse = [mouseX](const auto& slot) {
+        return mouseX < slot->getX() + slot->getWidth() / 2;
+    };
+    const auto match = std::ranges::find_if(elementSlots_, isPastMouse);
+    return static_cast<int>(std::ranges::distance(elementSlots_.begin(), match));
 }
 
 int ChainPanel::calculateIndicatorX(int index) const {

@@ -336,6 +336,9 @@ class TrackHeadersPanel : public juce::Component,
     int getVisibleHeaderIndex(TrackId trackId) const;
     juce::Rectangle<int> getTrackHeaderArea(int trackIndex) const;
     juce::Rectangle<int> getResizeHandleArea(int trackIndex) const;
+    /** @brief Non-master header under @p point, or -1; master drops make a new track. */
+    int droppableHeaderIndexAt(juce::Point<int> point) const;
+
     bool isResizeHandleArea(const juce::Point<int>& point, int& trackIndex) const;
     void updateTrackHeaderLayout();
     static void layoutMeterColumn(TrackHeader& header, juce::Rectangle<int>& workArea,

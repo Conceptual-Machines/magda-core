@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
 #include <cmath>
 #include <thread>
 #include <utility>
@@ -632,12 +633,8 @@ class TrackChainContent::ChainContainer : public juce::Component,
     }
 
     static bool anyDroppablePreset(const juce::StringArray& files) {
-        for (const auto& f : files) {
-            if (isDroppablePreset(f)) {
-                return true;
-            }
-        }
-        return false;
+        const auto isPreset = [](const auto& f) { return isDroppablePreset(f); };
+        return std::ranges::any_of(files, isPreset);
     }
 
     // Load each dropped preset onto the selected track: chain presets replace

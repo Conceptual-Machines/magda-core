@@ -18,6 +18,7 @@
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/InspectorComboBoxLookAndFeel.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda::daw::ui {
 
@@ -743,10 +744,7 @@ bool ChordClipContent::onChordRowClicked(double clipRelativeBeat) {
 }
 
 bool ChordClipContent::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files)
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
-            return true;
-    return false;
+    return std::ranges::any_of(files, isMidiFile);
 }
 
 void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y) {
@@ -755,7 +753,7 @@ void ChordClipContent::filesDropped(const juce::StringArray& files, int x, int y
         return;
 
     for (const auto& f : files) {
-        if (!f.endsWithIgnoreCase(".mid") && !f.endsWithIgnoreCase(".midi"))
+        if (!isMidiFile(f))
             continue;
 
         juce::FileInputStream stream{juce::File(f)};

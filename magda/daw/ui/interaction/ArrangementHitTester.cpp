@@ -1,5 +1,6 @@
 #include "ArrangementHitTester.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace magda::interaction {
@@ -30,10 +31,8 @@ bool selectionIncludesLane(int laneIndex, const PanelSnapshot& s) {
 
 // TrackContentPanel::isInSelectableArea — inside any lane rectangle.
 bool inSelectableArea(int x, int y, const PanelSnapshot& s) {
-    for (const auto& lane : s.lanes)
-        if (lane.area.contains(x, y))
-            return true;
-    return false;
+    const auto containsPoint = [x, y](const auto& lane) { return lane.area.contains(x, y); };
+    return std::ranges::any_of(s.lanes, containsPoint);
 }
 
 // TrackContentPanel::isOnSelectionEdge — near a selection boundary on a

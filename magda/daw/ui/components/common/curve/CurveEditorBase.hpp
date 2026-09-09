@@ -150,6 +150,9 @@ class CurveEditorBase : public juce::Component {
     std::optional<ColourRole> curveColourRole_{DarkTheme::AUTOMATION_BEZIER};
     int padding_ = 5;  // Content area padding (>= half of point size)
 
+    /** @brief Flag the component owning @p pointId; ids are unique per editor. */
+    void setPointComponentSelected(uint32_t pointId, bool selected);
+
     // Components
     std::vector<std::unique_ptr<CurvePointComponent>> pointComponents_;
     std::vector<std::unique_ptr<CurveBezierHandle>> handleComponents_;

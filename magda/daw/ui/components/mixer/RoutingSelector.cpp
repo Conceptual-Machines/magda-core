@@ -1,5 +1,8 @@
 #include "RoutingSelector.hpp"
 
+#include <algorithm>
+#include <functional>
+
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 
@@ -117,24 +120,17 @@ void RoutingSelector::setSelectedId(int id) {
 }
 
 juce::String RoutingSelector::getSelectedName() const {
-    for (const auto& opt : options_) {
-        if (opt.id == selectedId_) {
-            return opt.name;
-        }
-    }
-    return "None";
+    const auto opt = std::ranges::find(options_, selectedId_, &RoutingOption::id);
+    return opt != options_.end() ? opt->name : juce::String("None");
 }
 
 void RoutingSelector::setOptions(const std::vector<RoutingOption>& options) {
     options_ = options;
     // Auto-select first non-separator option if nothing selected
-    if (selectedId_ < 0 && !options_.empty()) {
-        for (const auto& opt : options_) {
-            if (!opt.isSeparator) {
-                selectedId_ = opt.id;
-                break;
-            }
-        }
+    if (selectedId_ < 0) {
+        const auto opt = std::ranges::find_if(options_, std::not_fn(&RoutingOption::isSeparator));
+        if (opt != options_.end())
+            selectedId_ = opt->id;
     }
 }
 
@@ -144,12 +140,9 @@ void RoutingSelector::clearOptions() {
 }
 
 int RoutingSelector::getFirstChannelOptionId() const {
-    for (const auto& opt : options_) {
-        if (!opt.isSeparator && opt.id >= 10) {
-            return opt.id;
-        }
-    }
-    return -1;
+    constexpr auto isChannelOption = [](const auto& o) { return !o.isSeparator && o.id >= 10; };
+    const auto opt = std::ranges::find_if(options_, isChannelOption);
+    return opt != options_.end() ? opt->id : -1;
 }
 
 juce::Rectangle<int> RoutingSelector::getMainButtonArea() const {

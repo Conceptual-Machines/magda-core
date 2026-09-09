@@ -31,20 +31,11 @@
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
 #include "project/ProjectManager.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
 namespace {
-
-bool isDraggedAudioFile(const juce::String& path) {
-    return path.endsWithIgnoreCase(".wav") || path.endsWithIgnoreCase(".aiff") ||
-           path.endsWithIgnoreCase(".aif") || path.endsWithIgnoreCase(".mp3") ||
-           path.endsWithIgnoreCase(".ogg") || path.endsWithIgnoreCase(".flac");
-}
-
-bool isDraggedMidiFile(const juce::String& path) {
-    return path.endsWithIgnoreCase(".mid") || path.endsWithIgnoreCase(".midi");
-}
 
 // Point the bottom panel at the right editor for a newly selected clip. It
 // deliberately never touches the panel's collapsed state: selecting a clip is
@@ -3297,12 +3288,10 @@ void TrackContentPanel::updateAutomationLanePositions() {
 // =============================================================================
 
 bool TrackContentPanel::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& file : files) {
-        if (isDraggedAudioFile(file) || isDraggedMidiFile(file)) {
-            return true;
-        }
-    }
-    return false;
+    const auto isImportable = [](const auto& file) {
+        return isAudioFile(file) || isMidiFile(file);
+    };
+    return std::ranges::any_of(files, isImportable);
 }
 
 void TrackContentPanel::fileDragEnter(const juce::StringArray& files, int x, int y) {
@@ -3333,7 +3322,7 @@ void TrackContentPanel::beginFilesDropFeedback(const juce::StringArray& files, i
     juce::AudioFormatManager formatMgr;
     formatMgr.registerBasicFormats();
     for (const auto& f : files) {
-        if (isDraggedAudioFile(f)) {
+        if (isAudioFile(f)) {
             double duration = 4.0;
             juce::File audioFile(f);
             if (auto reader = std::unique_ptr<juce::AudioFormatReader>(
@@ -3342,7 +3331,7 @@ void TrackContentPanel::beginFilesDropFeedback(const juce::StringArray& files, i
                     duration = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
             }
             fileDropGhosts_.push_back({audioFile.getFileNameWithoutExtension(), duration});
-        } else if (isDraggedMidiFile(f)) {
+        } else if (isMidiFile(f)) {
             auto midiGhosts = makeMidiDropGhosts(juce::File(f), tempoBPM);
             fileDropGhosts_.insert(fileDropGhosts_.end(), midiGhosts.begin(), midiGhosts.end());
         }
@@ -3410,11 +3399,9 @@ void TrackContentPanel::importFilesAtPosition(const juce::StringArray& files, in
     // track accepts is per kind, so the check below needs to know what it has.
     juce::StringArray audioFiles, midiFiles;
     for (const auto& filePath : files) {
-        if (filePath.endsWithIgnoreCase(".mid") || filePath.endsWithIgnoreCase(".midi"))
+        if (isMidiFile(filePath))
             midiFiles.add(filePath);
-        else if (filePath.endsWithIgnoreCase(".wav") || filePath.endsWithIgnoreCase(".aiff") ||
-                 filePath.endsWithIgnoreCase(".aif") || filePath.endsWithIgnoreCase(".mp3") ||
-                 filePath.endsWithIgnoreCase(".ogg") || filePath.endsWithIgnoreCase(".flac"))
+        else if (isAudioFile(filePath))
             audioFiles.add(filePath);
     }
 

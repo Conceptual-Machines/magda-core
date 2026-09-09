@@ -1932,11 +1932,8 @@ bool isDrummerTrack(magda::TrackId trackId) {
     const auto* device = magda::TrackManager::getInstance().getPrimaryInstrument(trackId);
     if (device == nullptr)
         return false;
-    for (const auto& row : device->kitRows) {
-        if (row.role.isNotEmpty())
-            return true;
-    }
-    return false;
+    constexpr auto hasRole = [](const auto& row) { return row.role.isNotEmpty(); };
+    return std::ranges::any_of(device->kitRows, hasRole);
 }
 
 // Format an existing drum clip's notes back into the grid grammar the agent

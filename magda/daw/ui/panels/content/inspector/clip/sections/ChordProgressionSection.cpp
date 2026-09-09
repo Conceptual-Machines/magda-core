@@ -77,8 +77,8 @@ void ChordProgressionSection::paint(juce::Graphics& g) {
     // Display in time order.
     std::vector<ClipInfo::ChordAnnotation> chords(clip->chordAnnotations.begin(),
                                                   clip->chordAnnotations.end());
-    std::sort(chords.begin(), chords.end(),
-              [](const auto& a, const auto& b) { return a.beatPosition < b.beatPosition; });
+    constexpr auto beatPosition = [](const auto& chord) { return chord.beatPosition; };
+    std::ranges::sort(chords, {}, beatPosition);
 
     auto& notation = magda::music::NotationSettings::getInstance();
     for (const auto& c : chords) {

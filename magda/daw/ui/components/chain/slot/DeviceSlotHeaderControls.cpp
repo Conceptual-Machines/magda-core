@@ -72,9 +72,8 @@ void layoutExpandedDeviceSlotHeader(juce::Rectangle<int>& headerArea,
     const auto visibility = getHeaderControlVisibility(traits, device, isInternalDevice);
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
                                          getHeaderControlComponents(controls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.expandedOrder < rhs.expandedOrder;
-    });
+    constexpr auto expandedOrder = [](const auto& spec) { return spec.expandedOrder; };
+    std::ranges::sort(specs, {}, expandedOrder);
 
     setVisibleIfPresent(controls.powerButton, visibility.power);
     setVisibleIfPresent(controls.presetButton, visibility.preset);
@@ -113,9 +112,8 @@ void layoutCollapsedDeviceSlotControls(juce::Rectangle<int>& area,
 
     auto specs = buildHeaderControlSpecs(traits, device, isInternalDevice,
                                          getHeaderControlComponents(controls.headerControls));
-    std::sort(specs.begin(), specs.end(), [](const auto& lhs, const auto& rhs) {
-        return lhs.collapsedOrder < rhs.collapsedOrder;
-    });
+    constexpr auto collapsedOrder = [](const auto& spec) { return spec.collapsedOrder; };
+    std::ranges::sort(specs, {}, collapsedOrder);
 
     for (auto& spec : specs) {
         placeCollapsedButtonIfVisible(area, spec.component, spec.collapsedVisible, buttonSize);

@@ -25,6 +25,7 @@
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
+#include "ui/utils/AudioFileTypes.hpp"
 
 namespace magda {
 
@@ -2757,24 +2758,18 @@ void PianoRollGridComponent::itemDropped(const SourceDetails& details) {
 }
 
 bool PianoRollGridComponent::isInterestedInFileDrag(const juce::StringArray& files) {
-    for (const auto& f : files)
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi"))
-            return true;
-    return false;
+    return std::ranges::any_of(files, isMidiFile);
 }
 
 void PianoRollGridComponent::filesDropped(const juce::StringArray& files, int x, int /*y*/) {
     if (clipId_ == INVALID_CLIP_ID && selectedClipIds_.empty())
         return;
 
-    // Find first .mid file
-    juce::File midiFile;
-    for (const auto& f : files) {
-        if (f.endsWithIgnoreCase(".mid") || f.endsWithIgnoreCase(".midi")) {
-            midiFile = juce::File(f);
-            break;
-        }
-    }
+    const auto first = std::ranges::find_if(files, isMidiFile);
+    if (first == files.end())
+        return;
+
+    const juce::File midiFile(*first);
     if (!midiFile.existsAsFile())
         return;
 

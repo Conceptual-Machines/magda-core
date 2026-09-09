@@ -1,5 +1,7 @@
 #include "params/ParamLinkResolver.hpp"
 
+#include <algorithm>
+
 namespace magda::daw::ui {
 
 std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
@@ -101,66 +103,27 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
         return false;
     }
 
-    magda::ControlTarget modTarget =
-        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    // A mod link counts only when enabled; a macro link counts by existing.
+    const auto target = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
-    // Check device-level mods
-    if (ctx.deviceMods) {
-        for (const auto& mod : *ctx.deviceMods) {
-            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
-                return true;
-            }
-        }
-    }
+    const auto drivesTarget = [&target](const auto& mod) {
+        const auto* link = mod.getLink(target);
+        return link != nullptr && link->enabled;
+    };
+    const auto linksTarget = [&target](const auto& macro) {
+        return macro.getLink(target) != nullptr;
+    };
 
-    // Check rack-level mods
-    if (ctx.rackMods) {
-        for (const auto& mod : *ctx.rackMods) {
-            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
-                return true;
-            }
-        }
-    }
+    const auto anyEnabledMod = [&drivesTarget](const magda::ModArray* mods) {
+        return mods != nullptr && std::ranges::any_of(*mods, drivesTarget);
+    };
+    const auto anyMacro = [&linksTarget](const magda::MacroArray* macros) {
+        return macros != nullptr && std::ranges::any_of(*macros, linksTarget);
+    };
 
-    // Check device-level macros
-    magda::ControlTarget macroTarget =
-        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
-    if (ctx.deviceMacros) {
-        for (const auto& macro : *ctx.deviceMacros) {
-            if (macro.getLink(macroTarget) != nullptr) {
-                return true;
-            }
-        }
-    }
-
-    // Check rack-level macros
-    if (ctx.rackMacros) {
-        for (const auto& macro : *ctx.rackMacros) {
-            if (macro.getLink(macroTarget) != nullptr) {
-                return true;
-            }
-        }
-    }
-
-    // Check track-level mods
-    if (ctx.trackMods) {
-        for (const auto& mod : *ctx.trackMods) {
-            if (const auto* link = mod.getLink(modTarget); link != nullptr && link->enabled) {
-                return true;
-            }
-        }
-    }
-
-    // Check track-level macros
-    if (ctx.trackMacros) {
-        for (const auto& macro : *ctx.trackMacros) {
-            if (macro.getLink(macroTarget) != nullptr) {
-                return true;
-            }
-        }
-    }
-
-    return false;
+    return anyEnabledMod(ctx.deviceMods) || anyEnabledMod(ctx.rackMods) ||
+           anyEnabledMod(ctx.trackMods) || anyMacro(ctx.deviceMacros) || anyMacro(ctx.rackMacros) ||
+           anyMacro(ctx.trackMacros);
 }
 
 float computeTotalModModulation(const ParamLinkContext& ctx) {

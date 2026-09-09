@@ -1,5 +1,7 @@
 #include "custom_ui/PolyStepSequencerUI.hpp"
 
+#include <algorithm>
+
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "core/GestureRouter.hpp"
@@ -809,21 +811,17 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             }
         }
 
-        std::sort(lanes_.begin(), lanes_.end(),
-                  [](const Lane& a, const Lane& b) { return a.note < b.note; });
-        lanes_.erase(std::unique(lanes_.begin(), lanes_.end(),
-                                 [](const Lane& a, const Lane& b) { return a.note == b.note; }),
-                     lanes_.end());
+        std::ranges::sort(lanes_, {}, &Lane::note);
+        const auto duplicates = std::ranges::unique(lanes_, {}, &Lane::note);
+        lanes_.erase(duplicates.begin(), duplicates.end());
 
         clampScrollOffset();
         repaint();
     }
 
     bool hasLaneForNote(int note) const {
-        for (const auto& lane : lanes_)
-            if (lane.note == note)
-                return true;
-        return false;
+        const auto hasNote = [note](const auto& lane) { return lane.note == note; };
+        return std::ranges::any_of(lanes_, hasNote);
     }
 
     /** Coalesced async lane refresh (ValueTree callbacks can fire mid-edit). */

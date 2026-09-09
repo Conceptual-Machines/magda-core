@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <ranges>
 
 #include "../../core/AutomationCommands.hpp"
 #include "../../core/ClipCommands.hpp"
@@ -66,17 +67,23 @@ ViewMode getNextCycledViewMode(ViewMode mode, bool forward) {
 bool canNudgeSelectedClips() {
     auto& clipManager = ClipManager::getInstance();
     auto& trackManager = TrackManager::getInstance();
-    bool found = false;
-    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip == nullptr || clip->view != ClipView::Arrangement)
-            continue;
+
+    const auto toClip = [&clipManager](ClipId id) { return clipManager.getClip(id); };
+    const auto isArrangementClip = [](const ClipInfo* clip) {
+        return clip != nullptr && clip->view == ClipView::Arrangement;
+    };
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    auto arrangementClips =
+        selected | std::views::transform(toClip) | std::views::filter(isArrangementClip);
+
+    const auto onFrozenTrack = [&](const ClipInfo* clip) {
         const auto* track = trackManager.getTrack(clip->trackId);
-        if (track != nullptr && track->frozen)
-            return false;
-        found = true;
-    }
-    return found;
+        return track != nullptr && track->frozen;
+    };
+
+    return !std::ranges::empty(arrangementClips) &&
+           std::ranges::none_of(arrangementClips, onFrozenTrack);
 }
 
 bool containsTimelineTime(const ClipInfo& clip, double timeSeconds, double bpm) {
