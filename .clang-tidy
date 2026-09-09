@@ -146,8 +146,10 @@ Checks: >-
 # --list-checks saying the names were unknown, and the first push to dev failed
 # on them: an unknown check name is silently ignored, so a clean sweep and an
 # absent check look exactly alike. The findings are real where they report -
-# `1 << 11`, a file-scope juce::Identifier, a float loop counter - and want
-# triaging on that version before the exclusions come off.
+# `1 << 11`, a file-scope juce::Identifier, a float loop counter - and they stay
+# excluded: CI pins the gate to LLVM 20, so a check that only exists later is
+# out of scope by construction. Triaging them was considered and dropped
+# (2026-09-09); reviving it means moving the pin in ci.yml first.
 #
 # The bug-catching tier is at zero over all 705 magda/ translation units,
 # magda/engine included, so it is binding from here on.
