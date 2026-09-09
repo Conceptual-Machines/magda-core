@@ -707,23 +707,41 @@ jobs:
     # the generated sources the build produced. A separate job would have to
     # rebuild both to learn anything.
     #
-    # On this runner rather than Linux: it is the fastest of the three, it
-    # already has the LLVM that ships clang-tidy, and it is the machine the
-    # pre-push hook runs on. So CI and the hook are the same binary rather than
-    # two releases that disagree about what a finding is -- which is what the
-    # Linux job pinned a version to approximate, at the cost of installing a
-    # second toolchain on every run.
+    # On a macOS runner rather than Linux: it is the fastest of the three and it
+    # already has the LLVM that ships clang-tidy.
+    #
+    # Pinned, because there is more than one macOS runner and they do not carry
+    # the same LLVM. This step used to take whichever clang-tidy the runner had,
+    # on the reasoning that it was also the machine the pre-push hook ran on.
+    # With two runners that stopped being true, and the divergence is silent:
+    # clang-tidy ignores an unknown check name, so a release missing a check
+    # reports clean and the same push fails once it lands on the other machine.
+    # #2530 read one runner's "no such check" as proof the check did not exist,
+    # deleted five exclusions, and took dev red.
     - name: Run clang-tidy on changed files
       env:
-        # No CLANG_TIDY: this runner has the LLVM that ships it, which is
-        # keg-only and so on nobody's PATH, and the hook globs the usual install
-        # locations for exactly that case.
         BUILD_DIR: build-debug
+        # The version every finding count in .clang-tidy was measured on. Moving
+        # the pin means re-triaging the tier, not just bumping this number.
+        CLANG_TIDY_REQUIRE_MAJOR: '20'
         # Higher than the hook's 8: a push waits on the hook, nobody waits on
         # this, and a change to a widely included header deserves the coverage.
         CLANG_TIDY_MAX_TUS: '40'
       run: |
         set -euo pipefail
+
+        # The pinned keg, if this runner has it. Keg-only, so it is on nobody's
+        # PATH and the hook's own lookup would otherwise take whatever `llvm`
+        # currently points at. The hook checks the version either way and says
+        # what to install when it does not match.
+        for candidate in /opt/homebrew/opt/llvm@"$CLANG_TIDY_REQUIRE_MAJOR"/bin/clang-tidy \
+                         /usr/local/opt/llvm@"$CLANG_TIDY_REQUIRE_MAJOR"/bin/clang-tidy; do
+          if [ -x "$candidate" ]; then
+            export CLANG_TIDY="$candidate"
+            break
+          fi
+        done
+
         base="${{ github.event.pull_request.base.sha }}"
 
         case "${{ github.ref_name }}" in
