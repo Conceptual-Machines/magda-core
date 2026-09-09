@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <array>
+#include <ranges>
 
 #include "TracktionHelpers.hpp"
 #include "core/DeviceState.hpp"
 #include "core/LegacyDeviceAliases.hpp"
+#include "core/RangesHelpers.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledFaustInterface.hpp"
 #include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
@@ -87,12 +89,9 @@ ds::Node captureNode(const juce::ValueTree& tree, bool isRoot,
         node.props.set(name, tree.getProperty(name));
     }
 
-    for (int i = 0; i < tree.getNumChildren(); ++i) {
-        const auto child = tree.getChild(i);
-        if (isEngineOwnedChild(child))
-            continue;
+    const auto isOurs = [](const juce::ValueTree& child) { return !isEngineOwnedChild(child); };
+    for (const auto child : children(tree) | std::views::filter(isOurs))
         node.children.push_back(captureNode(child, false, parameterProperties));
-    }
 
     return node;
 }

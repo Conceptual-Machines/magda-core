@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <ranges>
 
+#include "core/RangesHelpers.hpp"
 #include "plugins/DeviceNoteSink.hpp"
 
 namespace magda::daw::audio {
@@ -189,10 +191,8 @@ void PolyStepSequencerPlugin::flushState(juce::ValueTree& state) {
     const auto live = pattern();
     state.setProperty(SettingIDs::numSteps, live.playingLength(), nullptr);
 
-    for (int i = state.getNumChildren() - 1; i >= 0; --i) {
-        if (state.getChild(i).hasType(kStepTree))
-            state.removeChild(i, nullptr);
-    }
+    while (state.getChildWithName(kStepTree).isValid())
+        state.removeChild(state.getChildWithName(kStepTree), nullptr);
 
     // Only the steps that differ from a default one, which is what the model
     // writes too: absence and a default step read back the same.
@@ -243,11 +243,8 @@ void PolyStepSequencerPlugin::restoreState(const juce::ValueTree& state) {
     if (const auto* value = state.getPropertyPointer(SettingIDs::numSteps))
         parsed.length = std::clamp(static_cast<int>(*value), 1, MAX_STEPS);
 
-    for (int i = 0; i < state.getNumChildren(); ++i) {
-        const auto child = state.getChild(i);
-        if (!child.hasType(kStepTree))
-            continue;
-
+    const auto isStep = [](const juce::ValueTree& child) { return child.hasType(kStepTree); };
+    for (const auto child : children(state) | std::views::filter(isStep)) {
         const int index = child.getProperty(kStepIndex, -1);
         if (index < 0 || index >= MAX_STEPS)
             continue;
@@ -259,11 +256,11 @@ void PolyStepSequencerPlugin::restoreState(const juce::ValueTree& state) {
             std::clamp(static_cast<float>(child.getProperty(kStepProbability, 1.0f)), 0.0f, 1.0f);
         step.velocity = std::clamp(static_cast<int>(child.getProperty(kStepVelocity, 100)), 1, 127);
 
+        const auto isNote = [](const juce::ValueTree& node) { return node.hasType(kNoteTree); };
         step.noteCount = 0;
-        for (int n = 0; n < child.getNumChildren() && step.noteCount < MAX_NOTES_PER_STEP; ++n) {
-            const auto noteNode = child.getChild(n);
-            if (!noteNode.hasType(kNoteTree))
-                continue;
+        for (const auto noteNode : children(child) | std::views::filter(isNote)) {
+            if (step.noteCount >= MAX_NOTES_PER_STEP)
+                break;
 
             auto& note = step.notes[static_cast<size_t>(step.noteCount)];
             note.noteNumber =

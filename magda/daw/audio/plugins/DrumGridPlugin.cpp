@@ -61,9 +61,8 @@ DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info
     // (#2207). A tree that still carries CHAIN children is one a project saved
     // before the pads moved; its pads were read into the model at load, and
     // building them here as well would give the grid each pad twice.
-    for (int i = state.getNumChildren(); --i >= 0;)
-        if (state.getChild(i).hasType(chainTreeId))
-            state.removeChild(i, nullptr);
+    while (state.getChildWithName(chainTreeId).isValid())
+        state.removeChild(state.getChildWithName(chainTreeId), nullptr);
 }
 
 DrumGridPlugin::~DrumGridPlugin() {

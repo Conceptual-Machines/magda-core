@@ -4,6 +4,7 @@
 
 #include "../audio/AudioBridge.hpp"
 #include "../core/ClipManager.hpp"
+#include "../core/RangesHelpers.hpp"
 #include "../core/SelectionManager.hpp"
 #include "../core/TempoUtils.hpp"
 #include "../core/TrackManager.hpp"
@@ -162,8 +163,7 @@ void TracktionEngineWrapper::recordingFinished(
             int activeTakeIndex = 0;
             if (audioClip->hasAnyTakes()) {
                 auto takesTree = audioClip->state.getChildWithName(tracktion::IDs::TAKES);
-                for (int i = 0; i < takesTree.getNumChildren(); ++i) {
-                    auto takeChild = takesTree.getChild(i);
+                for (auto takeChild : children(takesTree)) {
                     tracktion::SourceFileReference sfr(audioClip->edit, takeChild,
                                                        tracktion::IDs::source);
                     juce::File takeFile = sfr.getFile();

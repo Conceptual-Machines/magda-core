@@ -4,6 +4,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "../core/DeviceInfo.hpp"
+#include "../core/RangesHelpers.hpp"
 
 namespace magda {
 
@@ -41,8 +42,8 @@ inline void stripTracktionIdsRecursive(juce::ValueTree state) {
         return;
 
     state.removeProperty(te::IDs::id, nullptr);
-    for (int i = 0; i < state.getNumChildren(); ++i)
-        stripTracktionIdsRecursive(state.getChild(i));
+    for (auto child : children(state))
+        stripTracktionIdsRecursive(child);
 }
 
 /** Recursively remove all MODIFIERASSIGNMENTS child trees from a plugin
@@ -59,13 +60,11 @@ inline void stripModifierAssignmentsRecursive(juce::ValueTree state) {
     if (!state.isValid())
         return;
 
-    for (int i = state.getNumChildren(); --i >= 0;) {
-        auto child = state.getChild(i);
-        if (child.hasType(te::IDs::MODIFIERASSIGNMENTS))
-            state.removeChild(i, nullptr);
-        else
-            stripModifierAssignmentsRecursive(child);
-    }
+    while (state.getChildWithName(te::IDs::MODIFIERASSIGNMENTS).isValid())
+        state.removeChild(state.getChildWithName(te::IDs::MODIFIERASSIGNMENTS), nullptr);
+
+    for (auto child : children(state))
+        stripModifierAssignmentsRecursive(child);
 }
 
 }  // namespace magda
