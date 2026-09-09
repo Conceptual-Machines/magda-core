@@ -118,7 +118,12 @@ else()
 endif()
 
 # Options
-option(MAGDA_BUILD_TESTS "Build tests" ON)
+set(_magda_tests_default ON)
+if(NOT CMAKE_CONFIGURATION_TYPES AND CMAKE_BUILD_TYPE MATCHES "^(Release|RelWithDebInfo|MinSizeRel)$")
+    set(_magda_tests_default OFF)
+endif()
+option(MAGDA_BUILD_TESTS "Build tests" ${_magda_tests_default})
+unset(_magda_tests_default)
 option(MAGDA_BUILD_EXAMPLES "Build developer example tools (e.g. lua_smoke REPL)" OFF)
 option(MAGDA_BUILD_JUCE_ADAPTER "Build JUCE/Tracktion adapter" OFF)
 option(MAGDA_BUILD_FAUST_VEC_BENCH "Build the Faust scalar-vs-vector codegen benchmark" OFF)

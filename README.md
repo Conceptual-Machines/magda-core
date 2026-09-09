@@ -49,7 +49,7 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 ### Prerequisites
 
 - C++20 compiler (GCC 10+, Clang 12+, or Xcode)
-- CMake 3.20+
+- CMake 3.24+
 - [Git LFS](https://git-lfs.com/) — required to fetch bundled binary assets
   (CJK font, etc.). Install with `brew install git-lfs` (macOS),
   `apt install git-lfs` (Debian/Ubuntu), or `choco install git-lfs` (Windows),
@@ -81,6 +81,12 @@ make debug
 # Run
 make run
 ```
+
+For a direct Linux Release build, see [Linux builds and audio crash diagnostics](docs/development/linux-builds.md).
+Fresh single-configuration Release, RelWithDebInfo and MinSizeRel builds default
+to tests off; Debug and multi-configuration builds default to tests on.
+An explicit `-DMAGDA_BUILD_TESTS=ON` or `OFF` overrides the default. Existing build
+directories retain their cached setting when the build type changes.
 
 ### Make Targets
 

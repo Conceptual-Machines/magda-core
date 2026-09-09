@@ -25,6 +25,28 @@
 
 namespace magda {
 
+namespace {
+// Startup/message-thread diagnostics only: never log from the audio callback.
+void logAudioSetup(const juce::String& stage, juce::AudioDeviceManager& manager) {
+    const auto setup = manager.getAudioDeviceSetup();
+    juce::Logger::writeToLog(
+        "[AudioStartup] " + stage + " backend=" + manager.getCurrentAudioDeviceType() +
+        " input=" + setup.inputDeviceName + " output=" + setup.outputDeviceName +
+        " requestedRate=" + juce::String(setup.sampleRate) +
+        " requestedBuffer=" + juce::String(setup.bufferSize));
+    if (auto* device = manager.getCurrentAudioDevice()) {
+        juce::Logger::writeToLog(
+            "[AudioStartup] active device=" + device->getName() + " type=" + device->getTypeName() +
+            " rate=" + juce::String(device->getCurrentSampleRate()) +
+            " buffer=" + juce::String(device->getCurrentBufferSizeSamples()) +
+            " inputs=" + juce::String(device->getActiveInputChannels().countNumberOfSetBits()) +
+            " outputs=" + juce::String(device->getActiveOutputChannels().countNumberOfSetBits()));
+    } else {
+        juce::Logger::writeToLog("[AudioStartup] No active audio device");
+    }
+}
+}  // namespace
+
 TracktionEngineWrapper::TracktionEngineWrapper()
     : tempoMap_(std::make_unique<TracktionTempoMap>([this] { return getEdit(); })) {}
 
@@ -118,9 +140,13 @@ void TracktionEngineWrapper::initializeDeviceManager() {
         DBG("  - " << type->getTypeName());
 
         // Log devices for each type
+        juce::Logger::writeToLog("[AudioStartup] Scanning backend=" + type->getTypeName());
         type->scanForDevices();
         auto inputNames = type->getDeviceNames(true);    // inputs
         auto outputNames = type->getDeviceNames(false);  // outputs
+        juce::Logger::writeToLog("[AudioStartup] Scan complete inputs=[" +
+                                 inputNames.joinIntoString(", ") + "] outputs=[" +
+                                 outputNames.joinIntoString(", ") + "]");
 
         DBG("    Input devices:");
         for (const auto& name : inputNames) {
@@ -138,7 +164,21 @@ void TracktionEngineWrapper::initializeDeviceManager() {
     {
         auto& storage = engine_->getPropertyStorage();
         auto audioXml = storage.getXmlProperty(tracktion::SettingID::audio_device_setup);
+        juce::Logger::writeToLog("[AudioStartup] Saved audio state=" +
+                                 juce::String(audioXml != nullptr ? "present" : "absent"));
         if (audioXml != nullptr) {
+            // JUCE stores DEVICESETUP at the root; also describe wrapped legacy state.
+            const auto* savedSetup = audioXml->hasTagName("DEVICESETUP")
+                                         ? audioXml.get()
+                                         : audioXml->getChildByName("DEVICESETUP");
+            if (savedSetup != nullptr) {
+                juce::Logger::writeToLog(
+                    "[AudioStartup] Saved backend=" + savedSetup->getStringAttribute("deviceType") +
+                    " input=" + savedSetup->getStringAttribute("audioInputDeviceName") +
+                    " output=" + savedSetup->getStringAttribute("audioOutputDeviceName") +
+                    " rate=" + savedSetup->getStringAttribute("audioDeviceRate") +
+                    " buffer=" + savedSetup->getStringAttribute("audioDeviceBufferSize"));
+            }
             auto* deviceSetup = audioXml->getChildByName("DEVICESETUP");
             if (deviceSetup != nullptr) {
                 auto savedInput = deviceSetup->getStringAttribute("audioInputDeviceName");
@@ -147,6 +187,8 @@ void TracktionEngineWrapper::initializeDeviceManager() {
                 // state is incomplete and will cause CoreAudio to hang on init.
                 if ((savedInput.isNotEmpty() && savedOutput.isEmpty()) ||
                     (savedInput.isEmpty() && savedOutput.isNotEmpty())) {
+                    juce::Logger::writeToLog(
+                        "[AudioStartup] Discarding incomplete saved device pair");
                     storage.removeProperty(tracktion::SettingID::audio_device_setup);
                 }
             }
@@ -159,7 +201,11 @@ void TracktionEngineWrapper::initializeDeviceManager() {
     static constexpr int kMaxRequestedChannels = 256;
     int inputChannels = kMaxRequestedChannels;
     int outputChannels = kMaxRequestedChannels;
+    juce::Logger::writeToLog(
+        "[AudioStartup] Opening device: requested inputs=" + juce::String(inputChannels) +
+        " outputs=" + juce::String(outputChannels));
     dm.initialise(inputChannels, outputChannels);
+    logAudioSetup("Initialise returned", juceDeviceManager);
     DBG("DeviceManager initialized with " << inputChannels << " input / " << outputChannels
                                           << " output channels");
 
@@ -214,7 +260,12 @@ void TracktionEngineWrapper::configureAudioDevices() {
     setup.useDefaultInputChannels = true;
     setup.useDefaultOutputChannels = true;
 
+    juce::Logger::writeToLog("[AudioStartup] Applying preferences input=" + setup.inputDeviceName +
+                             " output=" + setup.outputDeviceName);
     auto result = juceDeviceManager.setAudioDeviceSetup(setup, true);
+    juce::Logger::writeToLog("[AudioStartup] Preference result=" +
+                             (result.isEmpty() ? juce::String("OK") : result));
+    logAudioSetup("Preferences applied", juceDeviceManager);
     // Flush pending async updates so the new device is fully active
     juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     if (result.isEmpty()) {
@@ -239,7 +290,14 @@ void TracktionEngineWrapper::configureAudioDevices() {
         newSetup.outputChannels.setRange(0, device->getOutputChannelNames().size(), true);
         newSetup.useDefaultInputChannels = false;
         newSetup.useDefaultOutputChannels = false;
-        juceDeviceManager.setAudioDeviceSetup(newSetup, true);
+        juce::Logger::writeToLog(
+            "[AudioStartup] Enabling hardware channels inputs=" +
+            juce::String(newSetup.inputChannels.countNumberOfSetBits()) +
+            " outputs=" + juce::String(newSetup.outputChannels.countNumberOfSetBits()));
+        const auto channelResult = juceDeviceManager.setAudioDeviceSetup(newSetup, true);
+        juce::Logger::writeToLog("[AudioStartup] Channel setup result=" +
+                                 (channelResult.isEmpty() ? juce::String("OK") : channelResult));
+        logAudioSetup("Channels applied", juceDeviceManager);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
     }
 
