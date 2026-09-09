@@ -283,6 +283,15 @@ def find_clang_tidy() -> str | None:
     return None
 
 
+def clang_tidy_version(binary: str) -> str | None:
+    """The major version of `binary`, or None if it will not say."""
+    proc = subprocess.run([binary, "--version"], capture_output=True, text=True, check=False)
+    if proc.returncode != 0:
+        return None
+    found = re.search(r"LLVM version (\d+)", proc.stdout)
+    return found.group(1) if found else None
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="*", metavar="FILE")
@@ -291,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tus", type=int,
                         default=int(os.environ.get("CLANG_TIDY_MAX_TUS", "8")))
     parser.add_argument("--jobs", type=int, default=min(8, (os.cpu_count() or 2)))
+    parser.add_argument("--advisory", action="store_true",
+                        default=os.environ.get("CLANG_TIDY_ADVISORY") == "1",
+                        help="report findings without failing")
     return parser
 
 
@@ -358,6 +370,7 @@ def analyse(binary: str, build_dir: Path, target: Path) -> tuple[int, str]:
 
 def main() -> int:
     args = build_parser().parse_args()
+    advisory = args.advisory
     if not args.paths:
         return 0
 
@@ -365,6 +378,24 @@ def main() -> int:
     if binary is None:
         print("clang-tidy not found. Install LLVM, put it on PATH, or set "
               "CLANG_TIDY=/path/to/clang-tidy.", file=sys.stderr)
+        return 1
+
+    # Which binary, always. Two self-hosted macOS runners once carried different
+    # LLVMs, and a check that exists on one and not the other is silent: an
+    # unknown name is ignored, so the gate passes and dev goes red on the next
+    # push that lands on the other machine.
+    version = clang_tidy_version(binary)
+    print(f"clang-tidy {version or 'unknown'} ({binary})", flush=True)
+
+    required = os.environ.get("CLANG_TIDY_REQUIRE_MAJOR")
+    if required and version != required:
+        print(f"This gate is pinned to LLVM {required} and found "
+              f"{version or 'a build that will not report its version'}.", file=sys.stderr)
+        print(f"Findings differ between releases, so an unpinned gate reports a "
+              f"different set depending on which runner takes the job. Install "
+              f"LLVM {required} and point CLANG_TIDY at it, or change "
+              f"CLANG_TIDY_REQUIRE_MAJOR if the pin is meant to move.",
+              file=sys.stderr)
         return 1
 
     database = args.build_dir / "compile_commands.json"
@@ -400,6 +431,15 @@ def main() -> int:
     print(f"clang-tidy: {len(targets)} translation unit(s) checked")
 
     if failed:
+        if advisory:
+            # Loud, and never silent about being advisory. The hook this replaced
+            # ended its command with `|| true` and read as a passing gate for six
+            # sweeps; an advisory run has to be obviously advisory or it becomes
+            # the same lie.
+            print("\nclang-tidy findings above. ADVISORY ONLY - not failing.", file=sys.stderr)
+            print("Gating is off until magda/engine is written and swept; see "
+                  "WarningsAsErrors in .clang-tidy.", file=sys.stderr)
+            return 0
         print("\nclang-tidy gate failed; see above.", file=sys.stderr)
         print("For a finding, fix it or add a NOLINT with a reason if it is wrong.",
               file=sys.stderr)
