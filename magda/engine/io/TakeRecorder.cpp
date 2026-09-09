@@ -94,11 +94,6 @@ void TakeRecorder::captureRun(const BlockInfo& block) {
     if (state_ == State::stopped)
         return;
 
-    // A stopped transport passes no timeline, so the run makes no progress and
-    // the take holds nothing. Not a stop: the run has not ended.
-    if (!block.playing)
-        return;
-
     const auto run = slotRun(*settings_.slot);
 
     // The slot was retired or refilled: the take ends where it stood.
@@ -109,6 +104,11 @@ void TakeRecorder::captureRun(const BlockInfo& block) {
         return;
     }
 
+    // A stopped transport passes no timeline, so the take holds none of this
+    // block. Its edges are still read: a request applied in a stopped block is
+    // reported by that block alone (#2464 review).
+    const auto samples = block.playing ? block.numSamples : 0;
+
     auto from = 0;
     auto closing = false;
 
@@ -117,14 +117,14 @@ void TakeRecorder::captureRun(const BlockInfo& block) {
         if (!run.beganAt)
             return;
 
-        from = run.beganAt->value;
+        from = std::min(run.beganAt->value, samples);
         start(block, LoopRange{}, from);
     } else if (run.endedAt) {
         // A launch in this block begins the next take, not this one.
         closing = true;
     }
 
-    const auto to = closing ? run.endedAt->value : block.numSamples;
+    const auto to = closing ? std::min(run.endedAt->value, samples) : samples;
 
     if (to > from) {
         write(block, from, to);

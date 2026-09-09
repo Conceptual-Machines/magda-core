@@ -163,6 +163,8 @@ class MidiTakeRecorder final : public TakeCapture {
     void start(const BlockInfo& block, const LoopRange& loop, int from = 0);
 
     /// One block of a take that follows a slot's run rather than the transport.
+    /// A stopped block holds no events but still reports the run's edges, which
+    /// is the only block a paused request is reported by.
     void captureRun(const BlockInfo& block);
 
     /// A wrap: where the pass ended, in the take's own positions.

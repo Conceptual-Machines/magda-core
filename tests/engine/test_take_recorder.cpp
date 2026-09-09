@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -132,7 +133,8 @@ class SlotLaunch {
         gesture.play(kKey, monotonicBeat);
     }
 
-    void stop(double monotonicBeat) {
+    /// Nothing for the next sample, which is what a stopped block applies.
+    void stop(std::optional<double> monotonicBeat = {}) {
         LaunchRequestQueue::Gesture gesture(requests_);
         gesture.stop(kKey, monotonicBeat);
     }
@@ -695,6 +697,37 @@ TEST_CASE("A slot take ends where its run ended", "[engine][io][record][2464]") 
         CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == kStopArrival - 1);
         CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
     }
+}
+
+TEST_CASE("A slot stop asked for while the transport is stopped ends the take",
+          "[engine][io][record][2464]") {
+    // The block that applies the stop is the only one that reports it, and a
+    // stopped transport is where that block is. A take that skipped stopped
+    // blocks would keep rolling and take up the input again on the resume.
+    SlotLaunch launch;
+
+    Rig rig(emptyDirectory("slot_stop_paused"), slotTake(launch));
+    rig.follows(launch);
+    rig.play();
+
+    launch.launch(1.0);
+    rig.run(3 * kBeatSamples);
+
+    rig.stop();
+    launch.stop();
+    rig.run(4 * kBlockSize);
+
+    CHECK_FALSE(rig.recorder().rolling());
+
+    rig.play(0.0);
+    rig.run(2 * kBeatSamples);
+
+    // Only what played before the pause: the run ended while the transport was
+    // stopped, so nothing after it belongs to this take.
+    const auto stored = readBack(rig.recorder().finish().file);
+    REQUIRE(stored.getNumSamples() == 2 * kBeatSamples);
+    CHECK(arrivalAt(stored, 0) == kBeatSamples);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (3 * kBeatSamples) - 1);
 }
 
 TEST_CASE("A transport wrap inside a run does not split the slot take",

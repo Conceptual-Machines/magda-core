@@ -54,6 +54,8 @@ struct SlotRunEvent {
 class SlotRunQueue {
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
                   "a run lane's cursors are written on the audio thread and must not take a lock");
+    static_assert(std::atomic<double>::is_always_lock_free,
+                  "the lane's watermark is written on the audio thread as well");
 
   public:
     /// Outstanding edges, not lifetime ones: a bound on what a scene launch and
@@ -89,6 +91,24 @@ class SlotRunQueue {
         consumed_.store(read_, std::memory_order_release);
     }
 
+    /**
+     * @brief Say every edge up to @p monotonicBeat has been published.
+     *
+     * Audio thread, once a block, after that block's edges. What a capture ends
+     * a run at when it is disarmed: read after a drain, it cannot be a beat
+     * whose edges the capture has not seen, which is what makes a boundary
+     * ordered against the lane rather than a second clock to disagree with it
+     * (#2464 review).
+     */
+    void reachedBeat(double monotonicBeat) {
+        reached_.store(monotonicBeat, std::memory_order_release);
+    }
+
+    /// The beat @ref reachedBeat last named. Publishing thread, after a drain.
+    double reached() const {
+        return reached_.load(std::memory_order_acquire);
+    }
+
     /// Edges the ring had no room for. Above zero and a capture is missing a
     /// run; counted rather than left silent, like every other overflow here.
     int overflows() const {
@@ -107,6 +127,9 @@ class SlotRunQueue {
 
     /// The reader's own cursor.
     std::uint64_t read_ = 0;
+
+    /// How far the audio thread has reported, in monotonic beats.
+    std::atomic<double> reached_{0.0};
 
     std::atomic<int> overflows_{0};
 };

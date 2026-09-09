@@ -195,7 +195,8 @@ class TakeRecorder final : public TakeCapture {
     enum class State : std::uint8_t { waiting, rolling, stopped };
 
     /// A block of a take that follows a slot's run rather than the transport
-    /// (#2464).
+    /// (#2464). A stopped block holds no samples but still reports the run's
+    /// edges, which is the only block a paused request is reported by.
     void captureRun(const BlockInfo& block);
 
     /// The first block of the take: where it starts, and the head correction.

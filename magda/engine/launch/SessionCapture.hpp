@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <map>
+#include <tuple>
 #include <vector>
 
 #include "launch/SlotRuns.hpp"
@@ -24,6 +26,9 @@
  * Spans and not clips. What the material is, and what a clip made of it is
  * called, is the model's; this says which slot sounded, from where, and for how
  * long.
+ *
+ * Publishing thread throughout, and it must not outlive the queue it was made
+ * with -- the session's, which outlives every plan.
  */
 
 namespace magda::engine {
@@ -31,6 +36,11 @@ namespace magda::engine {
 /** @brief One run of a slot, as the arrangement holds it. */
 struct CapturedRun {
     SlotKey key;
+
+    /// Which handle of @ref key played it. The slot can be refilled before this
+    /// is collected, so this rather than the slot is what says which material
+    /// sounded; the host resolves it against what it published (#2464 review).
+    std::uint64_t incarnation = 0;
 
     /// Where the run began on the timeline: the beat the launch fired on, which
     /// is where the clip goes.
@@ -46,13 +56,26 @@ struct CapturedRun {
 
 class SessionCapture {
   public:
+    /// @p lane is not owned and outlives this: the session's.
+    explicit SessionCapture(SlotRunQueue& lane) : lane_(lane) {}
+
     /**
-     * @brief Take everything the launcher has published. Publishing thread.
+     * @brief Take everything the launcher has published.
      *
-     * As often as a frame, or less: an edge waits in the queue rather than
+     * As often as a frame, or less: an edge waits in the lane rather than
      * expiring, so what a run was is not a function of when this is called.
      */
-    void update(SlotRunQueue& runs);
+    void update();
+
+    /**
+     * @brief Apply one edge that no block stamped.
+     *
+     * A slot retired while it was sounding: its handle is gone before any block
+     * could report the end, so the store says where the run had got to instead
+     * (EngineSession::takeRetiredRuns). Order against @ref update does not
+     * matter, because a run is held under the handle that played it.
+     */
+    void apply(const SlotRunEvent& event);
 
     /**
      * @brief Capture from here.
@@ -63,9 +86,9 @@ class SessionCapture {
      */
     void arm();
 
-    /// Stop, ending everything still being captured at @p monotonicBeat, which
-    /// is where the transport is (TransportClock::monotonicBeat).
-    void disarm(double monotonicBeat);
+    /// Stop, ending everything still being captured where the launcher has
+    /// reported to (SlotRunQueue::reached).
+    void disarm();
 
     bool armed() const {
         return armed_;
@@ -74,15 +97,26 @@ class SessionCapture {
     /// The runs captured since the last call, and forget them.
     std::vector<CapturedRun> collect();
 
-    /// Slots sounding right now, whether or not they are being captured.
+    /// Runs sounding right now, whether or not they are being captured.
     std::size_t sounding() const {
-        return runs_.size();
+        return inFlight_.size();
     }
 
   private:
+    /// Which handle a run belongs to. Not the slot alone: a slot emptied and
+    /// refilled while it sounded has two runs in flight for a moment, and the
+    /// end of the first can arrive after the launch of the second.
+    struct RunKey {
+        SlotKey key;
+        std::uint64_t incarnation = 0;
+
+        bool operator<(const RunKey& other) const {
+            return std::tie(key, incarnation) < std::tie(other.key, other.incarnation);
+        }
+    };
+
     /// A run in flight: where it began, and whether it is being captured.
     struct Run {
-        std::uint64_t incarnation = 0;
         SamplePosition origin;
         double startBeat = 0.0;
         double startMonotonicBeat = 0.0;
@@ -90,10 +124,11 @@ class SessionCapture {
     };
 
     /// End @p run at @p monotonicBeat, keeping it if it was being captured.
-    void finish(const SlotKey& key, const Run& run, double monotonicBeat);
+    void finish(const RunKey& of, const Run& run, double monotonicBeat);
 
-    /// One per slot: a slot has one run at a time, and a re-launch replaces it.
-    std::map<SlotKey, Run> runs_;
+    SlotRunQueue& lane_;
+
+    std::map<RunKey, Run> inFlight_;
 
     std::vector<CapturedRun> captured_;
 

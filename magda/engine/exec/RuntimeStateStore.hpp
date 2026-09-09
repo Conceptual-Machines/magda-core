@@ -258,10 +258,15 @@ class RuntimeStateStore {
      * @p requests is told the incarnations this publish assigns, so a launch
      * asked for against a handle that has gone is dropped rather than applied
      * to the one that replaced it (#2305).
+     *
+     * @p retired takes an end for every run that was sounding on a handle this
+     * publish drops. No block can report one -- the handle is gone before the
+     * next -- and a capture with no end for a run cannot say what played
+     * (#2464). Null for a caller that does not capture.
      */
-    std::shared_ptr<const LaunchHandleTable> publishHandles(const ClipSnapshot& clips,
-                                                            LaunchHandleFeed& feed,
-                                                            LaunchRequestQueue& requests);
+    std::shared_ptr<const LaunchHandleTable> publishHandles(
+        const ClipSnapshot& clips, LaunchHandleFeed& feed, LaunchRequestQueue& requests,
+        std::vector<SlotRunEvent>* retired = nullptr);
 
     /// @brief The handle for @p key, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;

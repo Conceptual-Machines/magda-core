@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -266,8 +267,8 @@ class SlotRig {
         gesture.play(kSlot, beat);
     }
 
-    /// Stop it on monotonic beat @p beat.
-    void stopSlot(double beat) {
+    /// Stop it on monotonic beat @p beat, or nothing for the next sample.
+    void stopSlot(std::optional<double> beat = {}) {
         LaunchRequestQueue::Gesture gesture(requests_);
         gesture.stop(kSlot, beat);
     }
@@ -275,7 +276,14 @@ class SlotRig {
     /// Callbacks until the input has delivered @p sample samples.
     void runTo(std::int64_t sample) {
         while (arrival_ < sample)
-            deliver();
+            deliver(true);
+    }
+
+    /// @p blocks callbacks the transport does not roll: the input keeps
+    /// arriving and the timeline stands still.
+    void runStopped(int blocks) {
+        for (auto at = 0; at < blocks; ++at)
+            deliver(false);
     }
 
     MidiTakeRecorder& recorder() {
@@ -306,7 +314,20 @@ class SlotRig {
         return block;
     }
 
-    void deliver() {
+    /// The same block the transport would pass with nothing rolling: every
+    /// range empty at the cursor, so no face of it advances.
+    BlockInfo stoppedAt(std::int64_t startSample) const {
+        auto block = blockAt(startSample);
+        block.playing = false;
+        block.beats.end = block.beats.start;
+        block.monotonicBeats.end = block.monotonicBeats.start;
+        block.seconds.end = block.seconds.start;
+        block.monotonicSeconds.end = block.monotonicSeconds.start;
+        block.monotonicSamples.end = block.monotonicSamples.start;
+        return block;
+    }
+
+    void deliver(bool playing) {
         juce::MidiBuffer arriving;
         for (const auto& event : schedule_)
             if (event.arrival >= arrival_ && event.arrival < arrival_ + kBlockSize)
@@ -320,12 +341,16 @@ class SlotRig {
 
         // The order the audio thread runs them in: every handle is advanced
         // over the block before anything reads what its run did.
-        const auto block = blockAt(arrival_);
+        const auto block = playing ? blockAt(position_) : stoppedAt(position_);
         advanceLaunchHandles(handles_, requests_, block);
         recorder_->capture(block, false, {});
 
         feed_.endCallback();
         arrival_ += kBlockSize;
+
+        // Only a rolling block moves the timeline the blocks are cut from.
+        if (playing)
+            position_ += kBlockSize;
     }
 
     TempoMap tempo_ = flat();
@@ -342,6 +367,9 @@ class SlotRig {
 
     /// Input samples delivered so far, which the schedule is numbered by.
     std::int64_t arrival_ = 0;
+
+    /// Where the transport has rolled to, which a stopped block leaves alone.
+    std::int64_t position_ = 0;
 };
 
 }  // namespace
@@ -759,6 +787,32 @@ TEST_CASE("A note still down when the run ends is closed where it ended",
     REQUIRE(take.active.notes.size() == 1);
     CHECK(take.active.notes[0].startBeat == Catch::Approx(1.0));
     CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.5));
+}
+
+TEST_CASE("A slot stop asked for while the transport is stopped ends the take",
+          "[engine][io][record][midi][2464]") {
+    // The block that applies the stop is the only one that reports it, and a
+    // stopped transport is where that block is. A take that skipped stopped
+    // blocks would keep rolling and record again on the resume.
+    SlotRig rig;
+    rig.schedule({noteOn(kBeatSamples + 1000, 60), noteOff(kBeatSamples + 1500, 60),
+                  noteOn(kBeatSamples * 3, 64), noteOff((kBeatSamples * 3) + 500, 64)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 2);
+
+    rig.stopSlot();
+    rig.runStopped(4);
+
+    CHECK_FALSE(rig.recorder().rolling());
+
+    rig.runTo(kBeatSamples * 4);
+
+    // The note played after the resume belongs to no run of this slot.
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.startBeat == Catch::Approx(1.0));
+    CHECK(take.lengthBeats == Catch::Approx(1.0));
 }
 
 TEST_CASE("A re-launch after the run ended does not extend the take",

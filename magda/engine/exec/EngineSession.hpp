@@ -3,6 +3,7 @@
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
@@ -254,12 +255,6 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
-    /// The same instant on the count no wrap or locate takes back, which is
-    /// what a capture measures a run's length on (launch/SessionCapture.hpp).
-    double monotonicBeats() const {
-        return clock_.monotonicBeat();
-    }
-
     /**
      * @brief The run edges the launcher publishes, for the capture (#2464).
      *
@@ -269,6 +264,21 @@ class EngineSession {
      */
     SlotRunQueue& slotRuns() {
         return runs_;
+    }
+
+    /**
+     * @brief Ends no block could stamp, and forget them (#2464).
+     *
+     * A slot retired while it was sounding: publishClips() drops the handle,
+     * and the run it was playing ends there rather than at whatever the next
+     * thing to notice happens to be. Hand each to SessionCapture::apply. On the
+     * publishing thread, like the publish that produced them.
+     *
+     * Kept until asked for rather than dropped like a full lane: one per slot
+     * deleted while it played, which is a user's edit and not a rate.
+     */
+    std::vector<SlotRunEvent> takeRetiredRuns() {
+        return std::exchange(retired_, {});
     }
 
     /// Callbacks in which a loop was too short to render as separate blocks.
@@ -395,6 +405,10 @@ class EngineSession {
 
     /// What came of them: where each run began and ended, for the capture.
     SlotRunQueue runs_;
+
+    /// Ends this thread stamped rather than a block: a slot retired while it
+    /// was sounding (@ref takeRetiredRuns).
+    std::vector<SlotRunEvent> retired_;
 
     /// The cursor. Not published and not swapped: it's where the timeline
     /// is, a property of the session rather than of any plan, and a plan

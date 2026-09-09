@@ -169,7 +169,7 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     // A null snapshot publishes an empty table rather than skipping, or the
     // previous one would keep handles for slots the engine no longer knows.
     static const ClipSnapshot kNothing;
-    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_);
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
 
     clips_.publish(std::move(clips));
 }

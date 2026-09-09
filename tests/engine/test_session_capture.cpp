@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 #include "launch/SessionCapture.hpp"
@@ -95,7 +96,9 @@ class Rig {
     }
 
     /// Roll @p beats of transport, collecting what the launcher publishes.
-    void roll(double beats) {
+    /// @p collecting false leaves the edges in the lane, which is a frame that
+    /// has not run yet.
+    void roll(double beats, bool collecting = true) {
         const auto samples = static_cast<int>(beats * kBeatSamples);
 
         for (auto left = samples; left > 0;) {
@@ -104,17 +107,15 @@ class Rig {
             for (const auto& segment : clock_.advance(transport_, kSampleRate, callback))
                 advanceLaunchHandles(feed_, requests_, segment.block, &runs_);
 
-            capture_.update(runs_);
+            if (collecting)
+                capture_.update();
+
             left -= callback;
         }
     }
 
     SessionCapture& capture() {
         return capture_;
-    }
-
-    double monotonicBeat() const {
-        return clock_.monotonicBeat();
     }
 
     SlotRunQueue& runs() {
@@ -129,7 +130,7 @@ class Rig {
     LaunchHandleFeed feed_;
     LaunchRequestQueue requests_;
     SlotRunQueue runs_;
-    SessionCapture capture_;
+    SessionCapture capture_{runs_};
 };
 
 }  // namespace
@@ -253,6 +254,27 @@ TEST_CASE("arming after a launch keeps the beat the run began on", "[engine][cap
     CHECK(captured.front().lengthBeats == Approx(4.0).margin(2.0 / kBeatSamples));
 }
 
+TEST_CASE("disarming takes the edges before it reads the boundary", "[engine][capture]") {
+    // The run stopped on its own two beats before the button was pressed, and
+    // its end was still in the lane. A boundary read first would have stretched
+    // the span to here, which is the drift a poll has (#2464 review).
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(4.0);
+
+    rig.stopSlot(1, 5.0);
+    rig.roll(2.0, false);
+
+    rig.capture().disarm();
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().lengthBeats == Approx(4.0).margin(1.0 / kBeatSamples));
+    CHECK(rig.capture().sounding() == 0);
+}
+
 TEST_CASE("nothing is captured while disarmed", "[engine][capture]") {
     Rig rig;
     rig.play();
@@ -264,6 +286,70 @@ TEST_CASE("nothing is captured while disarmed", "[engine][capture]") {
     CHECK(rig.capture().collect().empty());
 }
 
+TEST_CASE("an end no block stamped closes the run it belongs to", "[engine][capture]") {
+    // A slot deleted while it sounded: its handle goes before any block could
+    // report the end, so the store says where the run had got to instead
+    // (RuntimeStateStore::publishHandles).
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(4.0);
+
+    REQUIRE(rig.capture().sounding() == 1);
+
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 1,
+                                     .monotonicBeat = 4.0});
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured.front().lengthBeats == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(rig.capture().sounding() == 0);
+}
+
+TEST_CASE("a run is held under the handle that played it", "[engine][capture]") {
+    // The refill's launch reaches the capture before the retired run's end, and
+    // the two are different runs of the same slot: keying by slot alone would
+    // drop the first, which is what the fork's play-state poll cannot tell
+    // apart either.
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(4.0);
+
+    // Incarnation two, launched where the first was still in flight.
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::began,
+                                     .incarnation = 2,
+                                     .timelineBeat = 4.0,
+                                     .monotonicBeat = 4.0});
+
+    // And only now the end of the first, out of order.
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 1,
+                                     .monotonicBeat = 4.0});
+
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 2,
+                                     .monotonicBeat = 6.0});
+
+    auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 2);
+    std::ranges::sort(captured, {}, &CapturedRun::incarnation);
+
+    // Both spans survive, and each says which material played it.
+    CHECK(captured[0].incarnation == 1);
+    CHECK(captured[0].lengthBeats == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].incarnation == 2);
+    CHECK(captured[1].lengthBeats == Approx(2.0));
+}
+
 TEST_CASE("disarming ends what is still sounding", "[engine][capture]") {
     Rig rig;
     rig.capture().arm();
@@ -271,12 +357,12 @@ TEST_CASE("disarming ends what is still sounding", "[engine][capture]") {
     rig.launch(1, 1.0);
     rig.roll(4.0);
 
-    rig.capture().disarm(rig.monotonicBeat());
+    rig.capture().disarm();
 
     const auto captured = rig.capture().collect();
     REQUIRE(captured.size() == 1);
     CHECK(captured.front().startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
-    CHECK(captured.front().lengthBeats == Approx(3.0).margin(1.0));
+    CHECK(captured.front().lengthBeats == Approx(3.0).margin(1.0 / kBeatSamples));
 
     // The slot is still playing; what stopped is the capture.
     CHECK(rig.capture().sounding() == 1);

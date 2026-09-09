@@ -4,52 +4,56 @@
 
 namespace magda::engine {
 
-void SessionCapture::update(SlotRunQueue& runs) {
-    runs.drain([this](const SlotRunEvent& event) {
-        // Any edge closes what was in flight. An end closes its own run; a
-        // launch closes one whose end a full queue dropped
-        // (SlotRunQueue::overflows), which ended here at the latest.
-        if (const auto found = runs_.find(event.key); found != runs_.end()) {
-            // Unless the slot was emptied and refilled while it sounded: that
-            // run ended when its handle was retired, which nothing stamped, so
-            // it is dropped rather than placed at a length nobody measured.
-            if (found->second.incarnation == event.incarnation)
-                finish(event.key, found->second, event.monotonicBeat);
+void SessionCapture::update() {
+    lane_.drain([this](const SlotRunEvent& event) { apply(event); });
+}
 
-            runs_.erase(found);
-        }
+void SessionCapture::apply(const SlotRunEvent& event) {
+    const RunKey of{event.key, event.incarnation};
 
-        if (event.kind == SlotRunEvent::Kind::began)
-            runs_[event.key] = Run{.incarnation = event.incarnation,
-                                   .origin = event.at,
-                                   .startBeat = event.timelineBeat,
-                                   .startMonotonicBeat = event.monotonicBeat,
-                                   .capturing = armed_};
-    });
+    // Held under the handle that played it, so a run whose end arrives after
+    // the next incarnation's launch is still the run that ended.
+    if (const auto found = inFlight_.find(of); found != inFlight_.end()) {
+        finish(of, found->second, event.monotonicBeat);
+        inFlight_.erase(found);
+    }
+
+    if (event.kind == SlotRunEvent::Kind::began)
+        inFlight_[of] = Run{.origin = event.at,
+                            .startBeat = event.timelineBeat,
+                            .startMonotonicBeat = event.monotonicBeat,
+                            .capturing = armed_};
 }
 
 void SessionCapture::arm() {
+    update();
     armed_ = true;
 
-    for (auto& [key, run] : runs_)
+    for (auto& [of, run] : inFlight_)
         run.capturing = true;
 }
 
-void SessionCapture::disarm(double monotonicBeat) {
+void SessionCapture::disarm() {
+    // Before the boundary is read, so it cannot be a beat whose edges have not
+    // been folded in: a run that stopped on its own ends where it stopped
+    // rather than where the button was pressed.
+    update();
+
+    const auto until = lane_.reached();
     armed_ = false;
 
-    for (auto& [key, run] : runs_) {
+    for (auto& [of, run] : inFlight_) {
         if (!run.capturing)
             continue;
 
-        finish(key, run, monotonicBeat);
+        finish(of, run, until);
 
         // Still sounding: what stops is the capture, not the slot.
         run.capturing = false;
     }
 }
 
-void SessionCapture::finish(const SlotKey& key, const Run& run, double monotonicBeat) {
+void SessionCapture::finish(const RunKey& of, const Run& run, double monotonicBeat) {
     if (!run.capturing)
         return;
 
@@ -59,8 +63,11 @@ void SessionCapture::finish(const SlotKey& key, const Run& run, double monotonic
     if (length <= 0.0)
         return;
 
-    captured_.push_back(CapturedRun{
-        .key = key, .startBeat = run.startBeat, .lengthBeats = length, .origin = run.origin});
+    captured_.push_back(CapturedRun{.key = of.key,
+                                    .incarnation = of.incarnation,
+                                    .startBeat = run.startBeat,
+                                    .lengthBeats = length,
+                                    .origin = run.origin});
 }
 
 std::vector<CapturedRun> SessionCapture::collect() {

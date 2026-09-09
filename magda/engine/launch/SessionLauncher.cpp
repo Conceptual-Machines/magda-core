@@ -181,6 +181,12 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
     // session appeared.
     if (!table) {
         requests.drain([](const LaunchRequest&) {});
+
+        // Still reported: how far the lane has got is a property of the
+        // transport, not of there being anything to launch.
+        if (runs != nullptr)
+            runs->reachedBeat(block.monotonicBeats.end);
+
         return;
     }
 
@@ -206,6 +212,11 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
             if (runs != nullptr)
                 publishRunEdges(*runs, entry, range, status);
         }
+
+    // After every edge this block reported, which is what lets a capture end a
+    // run here without cutting one whose end it has not seen (SlotRuns.hpp).
+    if (runs != nullptr)
+        runs->reachedBeat(range.monotonic.end);
 }
 
 SlotRun slotRun(const SlotRunTarget& target) {
