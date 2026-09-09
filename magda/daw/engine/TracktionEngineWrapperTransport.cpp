@@ -69,13 +69,18 @@ void TracktionEngineWrapper::play() {
                     ++zeroCount;
             }
             if (zeroCount >= AUDIO_DEVICE_CHECK_THRESHOLD) {
+                // The empty callback is what keeps this asynchronous. Given a null
+                // one, showUnmanaged() takes runSync() wherever modal loops are
+                // permitted, so "Async" runs a modal loop on the message thread --
+                // which in a headless test binary waits forever for an OK nobody
+                // can press.
                 juce::AlertWindow::showMessageBoxAsync(
                     juce::MessageBoxIconType::WarningIcon, "Audio Device Not Responding",
                     "The audio device '" + device->getName() +
                         "' is not processing audio.\n\n"
                         "Try disconnecting and reconnecting your audio interface, "
                         "or restarting the audio driver.",
-                    "OK");
+                    "OK", nullptr, juce::ModalCallbackFunction::create([](int) {}));
             }
         }
 
