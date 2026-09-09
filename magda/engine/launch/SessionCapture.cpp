@@ -5,7 +5,12 @@
 namespace magda::engine {
 
 void SessionCapture::update() {
-    lane_.drain([this](const SlotRunEvent& event) { apply(event); });
+    reached_ = lane_.drain([this](const SlotRunEvent& event) { apply(event); });
+
+    // After the drain, because an end that overtook its own launch is waiting
+    // for it, and because two launches of one handle can arrive together: the
+    // end belongs to whichever run the lane left in flight.
+    reconcile();
 }
 
 void SessionCapture::apply(const SlotRunEvent& event) {
@@ -16,6 +21,11 @@ void SessionCapture::apply(const SlotRunEvent& event) {
     if (const auto found = inFlight_.find(of); found != inFlight_.end()) {
         finish(of, found->second, event.monotonicBeat);
         inFlight_.erase(found);
+    } else if (event.kind == SlotRunEvent::Kind::ended) {
+        // The end of a run whose launch is still in the lane. Kept: dropping it
+        // leaves the run sounding for ever once the launch arrives.
+        unmatchedEnds_[of] = event.monotonicBeat;
+        return;
     }
 
     if (event.kind == SlotRunEvent::Kind::began)
@@ -23,6 +33,20 @@ void SessionCapture::apply(const SlotRunEvent& event) {
                             .startBeat = event.timelineBeat,
                             .startMonotonicBeat = event.monotonicBeat,
                             .capturing = armed_};
+}
+
+void SessionCapture::reconcile() {
+    for (auto end = unmatchedEnds_.begin(); end != unmatchedEnds_.end();) {
+        const auto found = inFlight_.find(end->first);
+        if (found == inFlight_.end()) {
+            ++end;
+            continue;
+        }
+
+        finish(end->first, found->second, end->second);
+        inFlight_.erase(found);
+        end = unmatchedEnds_.erase(end);
+    }
 }
 
 void SessionCapture::arm() {
@@ -34,19 +58,17 @@ void SessionCapture::arm() {
 }
 
 void SessionCapture::disarm() {
-    // Before the boundary is read, so it cannot be a beat whose edges have not
-    // been folded in: a run that stopped on its own ends where it stopped
-    // rather than where the button was pressed.
+    // Which is where the boundary comes from: a drain hands out the beat every
+    // edge it took was reported by, so a run that stopped on its own ends where
+    // it stopped rather than where the button was pressed.
     update();
-
-    const auto until = lane_.reached();
     armed_ = false;
 
     for (auto& [of, run] : inFlight_) {
         if (!run.capturing)
             continue;
 
-        finish(of, run, until);
+        finish(of, run, reached_);
 
         // Still sounding: what stops is the capture, not the slot.
         run.capturing = false;

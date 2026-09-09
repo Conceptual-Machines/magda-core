@@ -72,8 +72,13 @@ class SessionCapture {
      *
      * A slot retired while it was sounding: its handle is gone before any block
      * could report the end, so the store says where the run had got to instead
-     * (EngineSession::takeRetiredRuns). Order against @ref update does not
-     * matter, because a run is held under the handle that played it.
+     * (EngineSession::takeRetiredRuns).
+     *
+     * Order against @ref update does not matter in either direction. A run is
+     * held under the handle that played it, so a replacement's launch cannot
+     * displace it; and an end for a run whose launch is still in the lane is
+     * kept until the next @ref update has caught up with it, rather than
+     * dropped (#2464 review).
      */
     void apply(const SlotRunEvent& event);
 
@@ -86,9 +91,15 @@ class SessionCapture {
      */
     void arm();
 
-    /// Stop, ending everything still being captured where the launcher has
-    /// reported to (SlotRunQueue::reached).
+    /// Stop, ending everything still being captured where the last drain said
+    /// the lane had reached (SlotRunQueue::drain).
     void disarm();
+
+    /// The beat the last @ref update was told the lane had reached. What a
+    /// disarm ends a run at, and what says how far this has been told.
+    double reached() const {
+        return reached_;
+    }
 
     bool armed() const {
         return armed_;
@@ -126,11 +137,28 @@ class SessionCapture {
     /// End @p run at @p monotonicBeat, keeping it if it was being captured.
     void finish(const RunKey& of, const Run& run, double monotonicBeat);
 
+    /// Close the runs an end was waiting for, now the lane has caught up.
+    void reconcile();
+
     SlotRunQueue& lane_;
 
     std::map<RunKey, Run> inFlight_;
 
+    /// Ends that arrived before the launch they belong to. A retirement is
+    /// stamped on this thread while a launch travels down the lane, so an end
+    /// can overtake its own start; it waits here rather than being dropped.
+    ///
+    /// Applied after a drain rather than at the first launch that matches, and
+    /// not cleared by a launch that ends a run of its own: two launches of one
+    /// handle can be queued together, and a retirement's end belongs to the run
+    /// the lane leaves in flight. It can only ever match a launch queued before
+    /// the retirement, since nothing can launch a handle that has gone.
+    std::map<RunKey, double> unmatchedEnds_;
+
     std::vector<CapturedRun> captured_;
+
+    /// The beat the last drain reported reaching.
+    double reached_ = 0.0;
 
     bool armed_ = false;
 };

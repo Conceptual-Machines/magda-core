@@ -77,11 +77,20 @@ class SlotRunQueue {
     }
 
     /**
-     * @brief Read everything published since the last call, in order.
+     * @brief Read everything published since the last call, and say how far the
+     *        lane has been reported.
      *
-     * On the publishing thread. @p fn is called once per edge.
+     * On the publishing thread. @p fn is called once per edge, in order.
+     *
+     * The beat comes back from here rather than being read beside a drain,
+     * because a drain takes its cursor once: a beat read after that cursor can
+     * be a block newer than what was consumed, and a capture ending a run at it
+     * would run past an end still queued. Read before the cursor, every edge up
+     * to it is taken by this same drain, and anything this drain missed happened
+     * after it (#2464 review).
      */
-    template <typename Fn> void drain(const Fn& fn) {
+    template <typename Fn> double drain(const Fn& fn) {
+        const auto until = reached_.load(std::memory_order_acquire);
         const auto end = written_.load(std::memory_order_acquire);
 
         for (auto at = read_; at != end; ++at)
@@ -89,24 +98,19 @@ class SlotRunQueue {
 
         read_ = end;
         consumed_.store(read_, std::memory_order_release);
+        return until;
     }
 
     /**
      * @brief Say every edge up to @p monotonicBeat has been published.
      *
      * Audio thread, once a block, after that block's edges. What a capture ends
-     * a run at when it is disarmed: read after a drain, it cannot be a beat
-     * whose edges the capture has not seen, which is what makes a boundary
-     * ordered against the lane rather than a second clock to disagree with it
-     * (#2464 review).
+     * a run at when it is disarmed, and it is handed out by @ref drain alone:
+     * pairing it with a drain is the whole of the contract, so there is no
+     * accessor for it to be paired with anything else.
      */
     void reachedBeat(double monotonicBeat) {
         reached_.store(monotonicBeat, std::memory_order_release);
-    }
-
-    /// The beat @ref reachedBeat last named. Publishing thread, after a drain.
-    double reached() const {
-        return reached_.load(std::memory_order_acquire);
     }
 
     /// Edges the ring had no room for. Above zero and a capture is missing a

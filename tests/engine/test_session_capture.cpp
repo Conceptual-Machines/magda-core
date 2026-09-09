@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <ranges>
+#include <thread>
 #include <vector>
 
 #include "launch/SessionCapture.hpp"
@@ -254,6 +256,62 @@ TEST_CASE("arming after a launch keeps the beat the run began on", "[engine][cap
     CHECK(captured.front().lengthBeats == Approx(4.0).margin(2.0 / kBeatSamples));
 }
 
+TEST_CASE("an end that overtook its own launch still closes it", "[engine][capture]") {
+    // A slot launched on the audio thread and deleted before the capture drained
+    // the launch: the retirement is stamped on this thread and arrives first.
+    // Dropping it left the run sounding for ever (#2464 review).
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(4.0, false);
+
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 1,
+                                     .monotonicBeat = 4.0});
+
+    // Nothing to close yet: the launch is still in the lane.
+    CHECK(rig.capture().sounding() == 0);
+
+    rig.capture().update();
+
+    CHECK(rig.capture().sounding() == 0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured.front().lengthBeats == Approx(3.0).margin(1.0 / kBeatSamples));
+}
+
+TEST_CASE("a waiting end closes the run the lane left in flight", "[engine][capture]") {
+    // Two launches of one handle queued together, then the end of the second.
+    // Closing the first one instead would place a span over both runs and leave
+    // the second sounding.
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(2.0, false);
+    rig.launch(1, 3.0);
+    rig.roll(2.0, false);
+
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 1,
+                                     .monotonicBeat = 5.0});
+    rig.capture().update();
+
+    CHECK(rig.capture().sounding() == 0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 2);
+    CHECK(captured[0].startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[0].lengthBeats == Approx(2.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].startBeat == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].lengthBeats == Approx(2.0).margin(1.0 / kBeatSamples));
+}
+
 TEST_CASE("disarming takes the edges before it reads the boundary", "[engine][capture]") {
     // The run stopped on its own two beats before the button was pressed, and
     // its end was still in the lane. A boundary read first would have stretched
@@ -370,4 +428,93 @@ TEST_CASE("disarming ends what is still sounding", "[engine][capture]") {
     rig.stopSlot(1, 6.0);
     rig.roll(3.0);
     CHECK(rig.capture().collect().empty());
+}
+
+TEST_CASE("A captured span never runs past the end its run had", "[engine][capture]") {
+    // The boundary a disarm ends a run at is handed out by the drain that took
+    // the edges, so it can never be a beat whose end is still queued. A beat
+    // read beside the drain instead can be a block newer than the cursor the
+    // drain took, and a run finished at it overshoots (#2464 review).
+    //
+    // One writer publishing runs of a known length while a reader disarms and
+    // re-arms, which is the interleaving that argument turns on. Following
+    // test_record_tap.cpp, which pins its own read protocol the same way.
+    constexpr int kRuns = 20000;
+
+    /// What each run sounds for, and how far apart their launches are.
+    constexpr double kSpan = 3.0;
+    constexpr double kApart = 10.0;
+
+    /// How far the writer may run ahead, in beats: well inside the ring, so no
+    /// edge is ever dropped and a missing end cannot be mistaken for a bug.
+    constexpr double kAhead = 100.0;
+
+    const SlotKey slot{1, 0};
+
+    SlotRunQueue lane;
+    SessionCapture capture(lane);
+    capture.arm();
+
+    std::atomic<bool> publishing{true};
+    std::atomic<double> taken{0.0};
+
+    std::thread audio([&] {
+        for (auto run = 0; run < kRuns; ++run) {
+            const auto at = static_cast<double>(run) * kApart;
+
+            while (at - taken.load(std::memory_order_relaxed) > kAhead)
+                std::this_thread::yield();
+
+            // A block's edges, then the beat that block reached: the order the
+            // launcher publishes them in.
+            lane.push(SlotRunEvent{.key = slot,
+                                   .kind = SlotRunEvent::Kind::began,
+                                   .incarnation = 1,
+                                   .timelineBeat = at,
+                                   .monotonicBeat = at});
+            lane.reachedBeat(at);
+            std::this_thread::yield();
+
+            lane.push(SlotRunEvent{.key = slot,
+                                   .kind = SlotRunEvent::Kind::ended,
+                                   .incarnation = 1,
+                                   .monotonicBeat = at + kSpan});
+            lane.reachedBeat(at + kSpan);
+            std::this_thread::yield();
+        }
+
+        publishing.store(false);
+    });
+
+    auto seen = 0;
+
+    // The longest span rather than an assertion per span: a failure while the
+    // writer is still running would take the whole binary down with it.
+    auto longest = 0.0;
+
+    const auto take = [&] {
+        for (const auto& span : capture.collect()) {
+            ++seen;
+            longest = std::max(longest, span.lengthBeats);
+        }
+    };
+
+    while (publishing.load()) {
+        capture.disarm();
+        capture.arm();
+        taken.store(capture.reached(), std::memory_order_relaxed);
+        take();
+    }
+
+    audio.join();
+
+    capture.update();
+    take();
+
+    CHECK(lane.overflows() == 0);
+    CHECK(seen > 0);
+
+    // A run sounded for kSpan and no longer, whether a span is the whole of it
+    // or the part a disarm cut off.
+    CHECK(longest <= kSpan);
 }
