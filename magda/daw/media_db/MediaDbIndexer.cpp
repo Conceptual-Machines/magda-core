@@ -740,8 +740,9 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats&
         const std::string shape = midiFeats
                                       ? deriveMidiShape(midiFeats->durationS)
                                       : (feats ? deriveShape(*feats) : std::string{"unknown"});
-        const int tonal =
-            midiFeats ? (midiFeats->hasNotes ? 1 : 0) : (feats ? deriveTonal(*feats) : 0);
+        const int tonal = midiFeats ? static_cast<int>(midiFeats->hasNotes)
+                          : feats   ? deriveTonal(*feats)
+                                    : 0;
         if (feats && f.kind == "audio") {
             applyPolicies(*feats, shape, family);
         }

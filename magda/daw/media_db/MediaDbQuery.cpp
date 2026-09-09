@@ -300,6 +300,16 @@ std::string lowerForSort(std::string value) {
     return value;
 }
 
+/**
+ * @brief Orders two values the way std::string::compare reports it.
+ */
+template <typename T> int compareForSort(const T& a, const T& b) {
+    if (a < b) {
+        return -1;
+    }
+    return b < a ? 1 : 0;
+}
+
 std::string keyForSort(const QueryResult& r) {
     std::string key = r.keyRoot.value_or("");
     if (r.keyScale && !r.keyScale->empty()) {
@@ -352,13 +362,13 @@ void sortResults(std::vector<QueryResult>& rows, QuerySort sort) {
                 cmp = lowerForSort(a.shape).compare(lowerForSort(b.shape));
                 break;
             case QuerySortField::Bpm:
-                cmp = (*a.bpm < *b.bpm) ? -1 : ((*a.bpm > *b.bpm) ? 1 : 0);
+                cmp = compareForSort(*a.bpm, *b.bpm);
                 break;
             case QuerySortField::Key:
                 cmp = keyForSort(a).compare(keyForSort(b));
                 break;
             case QuerySortField::Duration:
-                cmp = (*a.durationS < *b.durationS) ? -1 : ((*a.durationS > *b.durationS) ? 1 : 0);
+                cmp = compareForSort(*a.durationS, *b.durationS);
                 break;
             case QuerySortField::Tags:
                 cmp = tagsTextForSort(a).compare(tagsTextForSort(b));
