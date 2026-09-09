@@ -5,7 +5,7 @@
 #include "AudioEngine.hpp"
 
 /**
- * @file NativeAudioEngine.hpp
+ * @file MagdaAudioEngine.hpp
  * @brief The app's second AudioEngine, backed by magda::engine (#2551).
  *
  * The engine has seven finished subsystems and a corpus of 74 cases, and until
@@ -18,7 +18,7 @@
  * Selected in createDefaultAudioEngine rather than chosen at build time, so
  * both engines ship in one binary and switching them is a setting.
  *
- * ## Why it holds a fork
+ * ## Why it holds a Tracktion engine
  *
  * AudioEngine is 80 pure virtuals and roughly 25 of them are not engine
  * questions: plugin scanning and exclusion lists, groove templates, MagdaApi,
@@ -33,10 +33,19 @@
  *
  * Written down rather than left implicit, because a delegation nobody declared
  * becomes the architecture.
+
+ * ## What here is temporary
  *
- * ## What the fork is not allowed to do
+ * The delegation and the member behind it go at #2554. The engine-selection
+ * vocabulary -- this class being a choice at all, the environment variable, the
+ * setting -- goes at #2557, when there is nothing left to choose between.
  *
- * Render. The fork's transport is never started and its edit never gets a
+ * Said here because scaffolding that nobody scheduled is how a cutover leaves a
+ * permanent seam behind it.
+ *
+ * ## What the Tracktion engine is not allowed to do
+ *
+ * Render. Its transport is never started and its edit never gets a
  * playback context, so the only thing filling an output buffer is this class.
  * Both engines holding the device at once is the one failure that would sound
  * like an engine bug rather than a wiring mistake.
@@ -44,13 +53,14 @@
 
 namespace magda {
 
-class NativeAudioEngine final : public AudioEngine {
+class MagdaAudioEngine final : public AudioEngine {
   public:
-    NativeAudioEngine();
-    ~NativeAudioEngine() override;
+    MagdaAudioEngine();
+    ~MagdaAudioEngine() override;
 
-    /// Whether the app was asked for this engine. Read from MAGDA_NATIVE_ENGINE
-    /// and from the setting, so a run can be switched without a rebuild.
+    /// Whether the app was asked for this engine. MAGDA_AUDIO_ENGINE takes
+    /// "magda" or "tracktion" and wins over the setting (#2559), so a run can
+    /// be switched without a rebuild and without touching preferences.
     static bool requested(const AudioEngineOptions& options);
 
     bool initialize() override;
@@ -146,7 +156,7 @@ class NativeAudioEngine final : public AudioEngine {
   private:
     /// The half of the interface that is not an engine question. See the file
     /// comment: this goes away with #2554.
-    std::unique_ptr<AudioEngine> fork_;
+    std::unique_ptr<AudioEngine> tracktion_;
 };
 
 }  // namespace magda
