@@ -218,8 +218,9 @@ PolySynthUI::PolySynthUI() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
         // Icon selector / enable + reset toggles replace the value boxes; hide the
         // underlying sliders and the wave/reset labels (the toggles are labelled).
-        controls_[osc * kOscSlotCount].slider->setVisible(false);
-        controls_[osc * kOscSlotCount].label->setVisible(false);
+        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
+        controls_[waveSlot].slider->setVisible(false);
+        controls_[waveSlot].label->setVisible(false);
         controls_[kOscResetBaseSlot + osc].slider->setVisible(false);
         controls_[kOscResetBaseSlot + osc].label->setVisible(false);
         controls_[kOscEnableBaseSlot + osc].slider->setVisible(false);
@@ -403,8 +404,9 @@ void PolySynthUI::setOscWave(int osc, int wave) {
 
 void PolySynthUI::updateWaveSelectors() {
     for (int osc = 0; osc < kNumOscillators; ++osc) {
+        const auto waveSlot = static_cast<std::size_t>(osc) * kOscSlotCount;
         const int wave = juce::jlimit(
-            0, 3, static_cast<int>(std::round(controls_[osc * kOscSlotCount].slider->getValue())));
+            0, 3, static_cast<int>(std::round(controls_[waveSlot].slider->getValue())));
         waveSelectors_[static_cast<size_t>(osc)].setSelectedIndex(wave, juce::dontSendNotification);
     }
 }

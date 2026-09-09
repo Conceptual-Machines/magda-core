@@ -6,6 +6,7 @@
 #include <array>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
@@ -650,16 +651,16 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
     // Embedding → [E][ML] (channel-major, matching the .transpose(1,2)).
     std::vector<float> e(E * ML, 0.0f);
     for (int t = 0; t < ML; ++t) {
-        const float* row = &d::kEmbedWeight[ids[t] * E];
+        const float* row = &d::kEmbedWeight[static_cast<std::size_t>(ids[t]) * E];
         for (int c = 0; c < E; ++c)
             e[c * ML + t] = row[c];
     }
 
     auto conv = [&](const std::vector<float>& in, int ci, int co, const float* W, const float* B,
                     int dilation) {
-        std::vector<float> out(co * ML, 0.0f);
+        std::vector<float> out(static_cast<std::size_t>(co) * ML, 0.0f);
         for (int oc = 0; oc < co; ++oc) {
-            const float* wOc = &W[oc * ci * 3];
+            const float* wOc = &W[static_cast<std::size_t>(oc) * ci * 3];
             for (int t = 0; t < ML; ++t) {
                 float acc = B[oc];
                 for (int k = 0; k < 3; ++k) {
@@ -686,7 +687,7 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
         float bestVal = 0.0f;
         for (int tag = 0; tag < d::kNumTags; ++tag) {
             float acc = d::kSlotBias[tag];
-            const float* w = &d::kSlotWeight[tag * H];
+            const float* w = &d::kSlotWeight[static_cast<std::size_t>(tag) * H];
             for (int c = 0; c < H; ++c)
                 acc += w[c] * h[c * ML + t];
             if (tag == 0 || acc > bestVal) {
@@ -709,7 +710,7 @@ CommandModel::Prediction CommandModel::predict(const std::string& text) const {
     float bestIntentVal = 0.0f;
     for (int i = 0; i < d::kNumIntents; ++i) {
         float acc = d::kIntentBias[i];
-        const float* w = &d::kIntentWeight[i * H];
+        const float* w = &d::kIntentWeight[static_cast<std::size_t>(i) * H];
         for (int c = 0; c < H; ++c)
             acc += w[c] * pooled[c];
         if (i == 0 || acc > bestIntentVal) {

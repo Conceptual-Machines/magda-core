@@ -2,8 +2,8 @@
 // Apple's libc++ does not ship the std::atomic<std::shared_ptr> replacement, so
 // they remain the only portable option. Silence MSVC's STL4029 deprecation
 // warning; must be defined before any standard header is included.
-// NOLINTNEXTLINE(bugprone-reserved-identifier) - MSVC defines this name; it has to be spelled
-// exactly
+// MSVC defines this name, so it has to be spelled exactly.
+// NOLINTNEXTLINE(bugprone-reserved-identifier)
 #define _SILENCE_CXX20_OLD_SHARED_PTR_ATOMIC_SUPPORT_DEPRECATION_WARNING
 
 #include "llama_model_manager.hpp"
