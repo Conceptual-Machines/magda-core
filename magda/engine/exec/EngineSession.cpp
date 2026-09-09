@@ -115,6 +115,9 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // it would be counting from one again by its next block (#2122).
     live_->executor.clearUnboundValueTaps();
 
+    if (betweenPlanAndTakesForTest)
+        betweenPlanAndTakesForTest();
+
     // The takes this edit ended (#2465). After the swap, since the edit only
     // counts once its plan is playing.
     closeUnnamedTakes(modelIds);

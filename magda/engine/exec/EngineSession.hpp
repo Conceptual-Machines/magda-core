@@ -346,6 +346,19 @@ class EngineSession {
         return clock_.loopWrapOverflows();
     }
 
+    /**
+     * @brief The one window in a publish a test can stand a callback in.
+     *
+     * Called on the publishing thread after the plan is live and before the
+     * takes the edit ended leave the callback's set. Everything else about the
+     * two is a wait, and a wait cannot be observed from outside; this is a gap,
+     * and it is the gap the eligibility gate exists to make harmless, so a
+     * regression for it has to be able to hold the publisher here.
+     *
+     * Empty otherwise, at one null check per publish.
+     */
+    std::function<void()> betweenPlanAndTakesForTest;
+
     /// Runtime objects the store owns right now. On the publishing thread.
     std::size_t runtimeObjectCount() const {
         return store_.size();
