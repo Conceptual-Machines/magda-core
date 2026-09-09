@@ -14,8 +14,11 @@
 #include "EngineSessionScaffold.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/EngineSession.hpp"
+#include "exec/RuntimeStateStore.hpp"
 #include "io/LiveInput.hpp"
+#include "io/RecordStream.hpp"
 #include "io/TakeRecorder.hpp"
+#include "plan/RenderPlan.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TransportState.hpp"
@@ -303,6 +306,31 @@ void requireUnbroken(const juce::AudioBuffer<float>& stored) {
         }
 }
 
+/// A take that records nothing, for the store-level case: what matters there
+/// is that one is held, not what it holds.
+class StubTake final : public magda::engine::TakeCapture {
+  public:
+    void capture(const magda::engine::BlockInfo&, bool, const magda::engine::LoopRange&) override {}
+
+    const RecordTap& tap() const override {
+        return tap_;
+    }
+
+    magda::engine::RecordStream& stream() override {
+        return stream_;
+    }
+
+  private:
+    class NullSink final : public magda::engine::RecordSink {};
+
+    RecordTap tap_{RecordMaterial::audio, {}};
+    NullSink sink_;
+    magda::engine::RecordStream stream_{sink_};
+};
+
+/// A factory that builds nothing, for a store driven without a session.
+class NoFactory final : public RuntimeStateFactory {};
+
 /// What a closed take became, for a case that reads it back.
 RecordedTake finish(ClosedTake& closed) {
     REQUIRE(closed.take != nullptr);
@@ -473,6 +501,29 @@ TEST_CASE("A second take on the same key closes the one it displaces",
     const auto stored = readBack(take.file);
     REQUIRE(stored.getNumSamples() == 128);
     REQUIRE(arrivalAt(stored, 0) == 128);
+}
+
+TEST_CASE("The store keeps the tap of a take it is still holding",
+          "[engine][exec][store][record][2465]") {
+    NoFactory factory;
+    magda::engine::RuntimeStateStore store(factory);
+
+    store.realiseTakeTap(kTakeKey, {});
+    store.holdTake(kTakeKey, std::make_unique<StubTake>());
+
+    // The model has lost the track and the plan never named it, which is the
+    // eviction that would free a tap the take is about to write to. The take
+    // is still the callback's, so neither may go.
+    const magda::engine::RenderPlan empty;
+    store.releaseDeleted(empty, {}, nullptr);
+
+    REQUIRE(store.takeTap(kTakeKey) != nullptr);
+    REQUIRE(store.releaseTake(kTakeKey).tap != nullptr);
+
+    // Once it has, the abandoned tap is the store's to drop.
+    store.realiseTakeTap(kTakeKey, {});
+    store.releaseDeleted(empty, {}, nullptr);
+    REQUIRE(store.takeTap(kTakeKey) == nullptr);
 }
 
 TEST_CASE("A swap during a pass neither allocates nor frees on the audio thread",

@@ -280,12 +280,15 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                  isNamed(entry.first, keep));
     });
 
-    // Taps whose track is gone and whose take never started. A take that did
-    // start took its tap with it.
+    // Taps whose track is gone and whose take never started.
     //
-    // No take is erased here. Everything else this function frees is already
-    // unreachable from the audio thread; a take stays reachable until the
-    // caller publishes a set without it (@ref unnamedTakes).
+    // A tap a take is still holding is kept whatever the model says, on the
+    // same reading the live plan gets above: the callback can reach that take
+    // until the caller publishes a set without it, and closing it writes to
+    // the tap. So the rule is the store's rather than an order the caller has
+    // to call in.
+    //
+    // No take is erased here either, for the same reason.
     removed += std::erase_if(takeTaps_, [&](const auto& entry) {
         return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
     });

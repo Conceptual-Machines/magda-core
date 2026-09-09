@@ -112,8 +112,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     live_->executor.clearUnboundValueTaps();
 
     // The takes this edit ended (#2465). After the swap, since the edit only
-    // counts once its plan is playing. Before releaseDeleted, since that frees
-    // the tap a take writes to as it closes.
+    // counts once its plan is playing.
     closeUnnamedTakes(modelIds);
 
     // Safe only now: before the swap, everything about to be destroyed was
