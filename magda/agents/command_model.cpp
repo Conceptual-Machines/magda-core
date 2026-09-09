@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <ranges>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -389,9 +390,8 @@ std::string canonPitch(const std::string& text) {
     size_t b = text.find_last_not_of(" \t\r\n");
     std::string t = (a == std::string::npos) ? "" : text.substr(a, b - a + 1);
     // all digits → MIDI number, unchanged
-    if (!t.empty() && std::all_of(t.begin(), t.end(), [](char c) {
-            return std::isdigit(static_cast<unsigned char>(c));
-        }))
+    const auto isDigit = [](char c) { return std::isdigit(static_cast<unsigned char>(c)) != 0; };
+    if (!t.empty() && std::ranges::all_of(t, isDigit))
         return t;
     // [a-gA-G][b]?[0-9]
     if (t.size() == 2 || t.size() == 3) {
@@ -522,13 +522,10 @@ int subseq(const std::vector<std::string>& lower, const std::vector<std::string>
     if (words.size() > lower.size())
         return -1;
     for (size_t i = 0; i + words.size() <= lower.size(); ++i) {
-        bool ok = true;
-        for (size_t j = 0; j < words.size(); ++j)
-            if (lower[i + j] != words[j]) {
-                ok = false;
-                break;
-            }
-        if (ok)
+        const auto window =
+            std::ranges::subrange(lower.begin() + static_cast<long>(i),
+                                  lower.begin() + static_cast<long>(i + words.size()));
+        if (std::ranges::equal(window, words))
             return static_cast<int>(i);
     }
     return -1;
@@ -557,7 +554,7 @@ std::vector<std::string> pluginsFromTokens(const std::vector<std::string>& token
     for (const auto& t : tokens) {
         if (!t.empty() && t[0] == '@') {
             std::string tok = aliasToken(t);
-            if (std::find(out.begin(), out.end(), tok) == out.end())
+            if (!std::ranges::contains(out, tok))
                 out.push_back(tok);
         }
     }

@@ -1074,7 +1074,7 @@ bool Interpreter::executeGroupTracks(const Params& params) {
                 ctx_.setError("Track " + juce::String(oneBasedIndex) + " not found");
                 return false;
             }
-            if (std::find(trackIds.begin(), trackIds.end(), trackId) == trackIds.end())
+            if (!std::ranges::contains(trackIds, trackId))
                 trackIds.push_back(trackId);
         }
     } else if (ctx_.inFilterContext) {
@@ -1254,13 +1254,14 @@ bool Interpreter::executeRenameClip(const Params& params) {
         if (!selected.empty()) {
             // Sort clips by start time so {i} numbering follows timeline order
             std::vector<ClipId> sorted(selected.begin(), selected.end());
-            std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-                auto* ca = cm.getClip(a);
-                auto* cb = cm.getClip(b);
+            const auto inTimelineOrder = [&cm](ClipId a, ClipId b) {
+                const auto* ca = cm.getClip(a);
+                const auto* cb = cm.getClip(b);
                 if (!ca || !cb)
                     return a < b;
                 return ca->startTime < cb->startTime;
-            });
+            };
+            std::ranges::sort(sorted, inTimelineOrder);
 
             int idx = 1;
             for (auto clipId : sorted) {
@@ -2068,16 +2069,10 @@ juce::String Interpreter::buildStateSnapshot(MagdaApi& api) {
         root->setProperty("scope", "all_tracks");
     } else if (selTrack != INVALID_TRACK_ID) {
         // Find 1-based index for the selected track
-        int selIndex = 1;
-        bool found = false;
-        for (const auto& track : tm.getTracks()) {
-            if (track.id == selTrack) {
-                found = true;
-                break;
-            }
-            selIndex++;
-        }
-        if (found) {
+        const auto& tracks = tm.getTracks();
+        const auto selected = std::ranges::find(tracks, selTrack, &TrackInfo::id);
+        const int selIndex = static_cast<int>(std::ranges::distance(tracks.begin(), selected)) + 1;
+        if (selected != tracks.end()) {
             root->setProperty("selected_track_id", selIndex);
             if (const auto* selectedTrack = tm.getTrack(selTrack)) {
                 auto* selectedTrackObj = new juce::DynamicObject();
@@ -2457,7 +2452,7 @@ bool Interpreter::executeAddArpeggio(const Params& params) {
     }
 
     // Sort pitches ascending for pattern application
-    std::sort(midiNotes.begin(), midiNotes.end());
+    std::ranges::sort(midiNotes);
 
     // Apply pattern ordering
     std::vector<int> ordered;

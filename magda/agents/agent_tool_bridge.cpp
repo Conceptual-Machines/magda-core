@@ -81,8 +81,8 @@ ToolResult RemoteAgentToolExecutor::execute(const ToolExecutionRequest& request,
                 .mutated = false};
     };
 
-    const bool allowed = std::find(surface_.toolAllowlist.begin(), surface_.toolAllowlist.end(),
-                                   request.call.name.toStdString()) != surface_.toolAllowlist.end();
+    const bool allowed =
+        std::ranges::contains(surface_.toolAllowlist, request.call.name.toStdString());
     if (!allowed)
         return failure("tool_not_allowed", "Operation '" + request.call.name + "' is not in the " +
                                                surface_.name + " surface's allowlist");

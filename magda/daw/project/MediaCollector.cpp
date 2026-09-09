@@ -120,13 +120,11 @@ MediaCollector::Plan MediaCollector::scan() {
                 continue;
 
             auto& item = plan.items[static_cast<size_t>(idx)];
-            if (std::find(item.clipRefs.begin(), item.clipRefs.end(), clip.id) ==
-                item.clipRefs.end()) {
+            if (!std::ranges::contains(item.clipRefs, clip.id)) {
                 item.clipRefs.push_back(clip.id);
             }
             if (event.sourceId != INVALID_SOURCE_ID &&
-                std::find(item.sourceRefs.begin(), item.sourceRefs.end(), event.sourceId) ==
-                    item.sourceRefs.end()) {
+                !std::ranges::contains(item.sourceRefs, event.sourceId)) {
                 item.sourceRefs.push_back(event.sourceId);
             }
         }

@@ -19,7 +19,7 @@ RecordThread::~RecordThread() {
 void RecordThread::add(RecordStream& stream) {
     {
         const std::scoped_lock guard(lock_);
-        if (std::find(streams_.begin(), streams_.end(), &stream) == streams_.end())
+        if (!std::ranges::contains(streams_, &stream))
             streams_.push_back(&stream);
     }
 

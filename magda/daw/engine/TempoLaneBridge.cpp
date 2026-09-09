@@ -69,9 +69,7 @@ void TempoLaneBridge::writePointsToSequence(const std::vector<AutomationPoint>& 
         return;  // TE requires >=1 tempo; nothing to reconcile against.
 
     auto points = pointsIn;
-    std::sort(points.begin(), points.end(), [](const AutomationPoint& a, const AutomationPoint& b) {
-        return a.beatPosition < b.beatPosition;
-    });
+    std::ranges::sort(points, {}, &AutomationPoint::beatPosition);
 
     auto& ts = edit.tempoSequence;
 

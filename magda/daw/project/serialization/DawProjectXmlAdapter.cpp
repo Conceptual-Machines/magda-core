@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <tuple>
 
 #include "../../core/Config.hpp"
 #include "../../core/ParameterUtils.hpp"
@@ -957,8 +958,7 @@ juce::String DawProjectXmlAdapter::toProjectXml(const ProjectDocument& document)
     // master track is actually present in the document (it isn't for partial
     // documents built outside a full capture).
     const bool hasMaster =
-        std::any_of(document.tracks.begin(), document.tracks.end(),
-                    [](const TrackInfo& t) { return t.type == TrackType::Master; });
+        std::ranges::contains(document.tracks, TrackType::Master, &TrackInfo::type);
 
     auto* structure = project.createNewChildElement("Structure");
     std::map<TrackId, const TrackInfo*> tracksById;
@@ -1407,7 +1407,10 @@ bool DawProjectXmlAdapter::fromProjectXml(const juce::String& xml, ProjectDocume
                     }
 
                     if (!lane.absolutePoints.empty()) {
-                        std::sort(lane.absolutePoints.begin(), lane.absolutePoints.end());
+                        const auto beatThenId = [](const AutomationPoint& point) {
+                            return std::tuple{point.beatPosition, point.id};
+                        };
+                        std::ranges::sort(lane.absolutePoints, {}, beatThenId);
                         document.automationLanes.push_back(std::move(lane));
                     }
                 }

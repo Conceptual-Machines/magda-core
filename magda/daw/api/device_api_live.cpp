@@ -129,11 +129,7 @@ std::vector<DeviceCatalogEntry> DeviceApiLive::getCatalog() const {
     for (auto& entry : catalog) {
         if (entry.catalogId.isEmpty())
             continue;
-        const auto duplicate =
-            std::any_of(unique.begin(), unique.end(), [&entry](const DeviceCatalogEntry& seen) {
-                return seen.catalogId == entry.catalogId;
-            });
-        if (!duplicate)
+        if (!std::ranges::contains(unique, entry.catalogId, &DeviceCatalogEntry::catalogId))
             unique.push_back(std::move(entry));
     }
 
@@ -237,9 +233,8 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (device == nullptr)
         return false;
 
-    const auto match = std::find_if(
-        device->parameters.begin(), device->parameters.end(),
-        [paramIndex](const ParameterInfo& info) { return info.paramIndex == paramIndex; });
+    const auto match =
+        std::ranges::find(device->parameters, paramIndex, &ParameterInfo::paramIndex);
     if (match == device->parameters.end())
         return false;
 
@@ -256,7 +251,7 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (device->format != PluginFormat::Internal) {
         const auto position = static_cast<int>(match - device->parameters.begin());
         const auto& allowed = device->aiSoundDesignerParameters;
-        if (std::find(allowed.begin(), allowed.end(), position) == allowed.end())
+        if (!std::ranges::contains(allowed, position))
             return false;
     }
 
@@ -279,9 +274,9 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
         return false;
 
     const auto count = static_cast<int>(device->parameters.size());
-    const auto inRange = [count](const std::optional<std::vector<int>>& indices) {
-        return !indices || std::all_of(indices->begin(), indices->end(),
-                                       [count](int index) { return index >= 0 && index < count; });
+    const auto isKnownIndex = [count](int index) { return index >= 0 && index < count; };
+    const auto inRange = [&isKnownIndex](const std::optional<std::vector<int>>& indices) {
+        return !indices || std::ranges::all_of(*indices, isKnownIndex);
     };
     if (!inRange(update.visibleParameters) || !inRange(update.miniMixerParameters) ||
         !inRange(update.aiAgentParameters))
@@ -315,8 +310,7 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
         if (!indices)
             return;
         for (auto& entry : config.entries)
-            entry.*flag =
-                std::find(indices->begin(), indices->end(), entry.index) != indices->end();
+            entry.*flag = std::ranges::contains(*indices, entry.index);
     };
     applySelection(update.visibleParameters, &PluginParameterConfigEntry::visible);
     applySelection(update.miniMixerParameters, &PluginParameterConfigEntry::miniMixer);

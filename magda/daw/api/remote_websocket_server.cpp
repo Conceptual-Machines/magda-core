@@ -545,9 +545,10 @@ struct RemoteWebSocketServer::Impl {
      */
     bool disconnectByHandle(const juce::String& handle) {
         const std::scoped_lock lock(liveMutex);
-        const auto found =
-            std::find_if(live.begin(), live.end(),
-                         [&](const std::shared_ptr<Connection>& c) { return c->handle == handle; });
+        const auto hasHandle = [&handle](const std::shared_ptr<Connection>& connection) {
+            return connection->handle == handle;
+        };
+        const auto found = std::ranges::find_if(live, hasHandle);
         if (found == live.end())
             return false;
         (*found)->shutdown();

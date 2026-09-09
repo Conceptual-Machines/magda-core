@@ -570,9 +570,7 @@ juce::String RemoteApiService::idempotencyKey(const RequestContext& context) {
 
 std::optional<Response> RemoteApiService::cachedResponse(const juce::String& key) const {
     const std::scoped_lock lock(cacheMutex_);
-    const auto found =
-        std::find_if(cache_.begin(), cache_.end(),
-                     [&key](const CachedResponse& entry) { return entry.key == key; });
+    const auto found = std::ranges::find(cache_, key, &CachedResponse::key);
     if (found == cache_.end())
         return std::nullopt;
     return found->response;
@@ -580,9 +578,7 @@ std::optional<Response> RemoteApiService::cachedResponse(const juce::String& key
 
 void RemoteApiService::cacheResponse(const juce::String& key, const Response& response) {
     const std::scoped_lock lock(cacheMutex_);
-    const auto found =
-        std::find_if(cache_.begin(), cache_.end(),
-                     [&key](const CachedResponse& entry) { return entry.key == key; });
+    const auto found = std::ranges::find(cache_, key, &CachedResponse::key);
     if (found != cache_.end()) {
         found->response = response;
         return;

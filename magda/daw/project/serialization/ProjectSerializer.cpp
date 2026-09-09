@@ -1039,8 +1039,7 @@ juce::var ProjectSerializer::serializeClips() {
     // order every time - the file changes with nothing in the project changing,
     // and no diff of two saves means anything.
     auto clips = clipManager.getClips();
-    std::sort(clips.begin(), clips.end(),
-              [](const ClipInfo& a, const ClipInfo& b) { return a.id < b.id; });
+    std::ranges::sort(clips, {}, &ClipInfo::id);
 
     for (const auto& clip : clips) {
         clipsArray.add(serializeClipInfo(clip));

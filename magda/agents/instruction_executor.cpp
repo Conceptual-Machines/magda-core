@@ -130,8 +130,8 @@ double InstructionExecutor::findNonOverlappingClipStartBeats(TrackId trackId,
             ranges.push_back({start, end});
     }
 
-    std::sort(ranges.begin(), ranges.end(),
-              [](const auto& a, const auto& b) { return a.start < b.start; });
+    const auto startOf = [](const auto& range) { return range.start; };
+    std::ranges::sort(ranges, {}, startOf);
 
     for (const auto& range : ranges) {
         if (range.end <= candidate + epsilon)
@@ -858,7 +858,7 @@ bool InstructionExecutor::executeArp(const ArpOp& op) {
     }
 
     // Sort ascending as the canonical starting order
-    std::sort(midiNotes.begin(), midiNotes.end());
+    std::ranges::sort(midiNotes);
 
     // Apply pattern ordering: up (default), down, updown
     auto pattern = op.pattern.trim().toLowerCase();

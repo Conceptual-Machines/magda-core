@@ -22,6 +22,7 @@
 #include "TempoLaneSync.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "TracktionTempoMap.hpp"
+#include "WaveDeviceChannels.hpp"
 
 namespace magda {
 
@@ -247,29 +248,17 @@ void TracktionEngineWrapper::configureAudioDevices() {
 
     // Apply saved channel preferences at the TE wave device level
     if (preferredInputs > 0) {
-        for (auto* dev : dm.getWaveInputDevices()) {
-            bool shouldEnable = false;
-            for (const auto& ch : dev->getChannels()) {
-                if (ch.indexInDevice < preferredInputs) {
-                    shouldEnable = true;
-                    break;
-                }
-            }
-            dev->setEnabled(shouldEnable);
-        }
+        const auto withinPreferredInputs = [preferredInputs](int index) {
+            return index < preferredInputs;
+        };
+        enableDevicesForChannels(dm.getWaveInputDevices(), withinPreferredInputs);
         DBG("Applied preferred input channel count: " << preferredInputs);
     }
     if (preferredOutputs > 0) {
-        for (auto* dev : dm.getWaveOutputDevices()) {
-            bool shouldEnable = false;
-            for (const auto& ch : dev->getChannels()) {
-                if (ch.indexInDevice < preferredOutputs) {
-                    shouldEnable = true;
-                    break;
-                }
-            }
-            dev->setEnabled(shouldEnable);
-        }
+        const auto withinPreferredOutputs = [preferredOutputs](int index) {
+            return index < preferredOutputs;
+        };
+        enableDevicesForChannels(dm.getWaveOutputDevices(), withinPreferredOutputs);
         DBG("Applied preferred output channel count: " << preferredOutputs);
     }
 

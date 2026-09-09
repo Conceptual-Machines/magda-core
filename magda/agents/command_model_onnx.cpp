@@ -144,9 +144,7 @@ std::string expandAliasBrackets(const std::string& text) {
             const size_t close = text.find('>', i + 1);
             if (close != std::string::npos && close > i + 1) {
                 const std::string inner = text.substr(i + 1, close - i - 1);
-                const bool simple =
-                    std::all_of(inner.begin(), inner.end(), [](char c) { return isCore(c); });
-                if (simple) {
+                if (std::ranges::all_of(inner, isCore)) {
                     out += "@" + inner;
                     i = close + 1;
                     continue;
@@ -383,7 +381,7 @@ CommandModelMaps parseCommandModelMaps(const std::string& mapsJson) {
             seen[id] = true;
             out[static_cast<size_t>(id)] = prop.name.toString().toStdString();
         }
-        if (std::find(seen.begin(), seen.end(), false) != seen.end())
+        if (std::ranges::contains(seen, false))
             throw CommandModelOnnxError(std::string("maps.json has a sparse ") + mapName +
                                         " id map");
     };

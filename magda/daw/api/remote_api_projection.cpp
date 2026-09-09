@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <atomic>
+#include <tuple>
 
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
@@ -380,7 +381,7 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
 
 std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device) {
     const auto contains = [](const std::vector<int>& positions, int position) {
-        return std::find(positions.begin(), positions.end(), position) != positions.end();
+        return std::ranges::contains(positions, position);
     };
     // The customization lists key on position in `parameters`, while the wire
     // `index` is `paramIndex` — the address parameter writes take. The two are
@@ -428,7 +429,7 @@ SelectionDto makeSelectionDto(MagdaApi& api) {
     if (selection.getSelectedClip() != INVALID_CLIP_ID)
         dto.clipId = selection.getSelectedClip();
     dto.clipIds.assign(selection.getSelectedClips().begin(), selection.getSelectedClips().end());
-    std::sort(dto.clipIds.begin(), dto.clipIds.end());
+    std::ranges::sort(dto.clipIds);
     if (selection.getSelectedAutomationLaneId() != INVALID_AUTOMATION_LANE_ID)
         dto.automationLaneId = selection.getSelectedAutomationLaneId();
     if (selection.getSelectedAutomationClipId() != INVALID_AUTOMATION_CLIP_ID)
@@ -463,9 +464,10 @@ SessionDto makeSessionDto(MagdaApi& api) {
                                  sessionStateName(api.session().getClipPlayState(clip->id))});
         }
     }
-    std::sort(dto.slots.begin(), dto.slots.end(), [](const auto& a, const auto& b) {
-        return a.sceneIndex != b.sceneIndex ? a.sceneIndex < b.sceneIndex : a.trackId < b.trackId;
-    });
+    const auto sceneThenTrack = [](const auto& slot) {
+        return std::tuple{slot.sceneIndex, slot.trackId};
+    };
+    std::ranges::sort(dto.slots, {}, sceneThenTrack);
     return dto;
 }
 

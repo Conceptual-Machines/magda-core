@@ -603,9 +603,10 @@ struct RemoteMcpServer::Impl {
         std::shared_ptr<EventStream> target;
         {
             const std::scoped_lock lock(streamMutex);
-            const auto found = std::find_if(
-                streams.begin(), streams.end(),
-                [&](const std::shared_ptr<EventStream>& s) { return s->handle == handle; });
+            const auto hasHandle = [&handle](const std::shared_ptr<EventStream>& stream) {
+                return stream->handle == handle;
+            };
+            const auto found = std::ranges::find_if(streams, hasHandle);
             if (found != streams.end())
                 target = *found;
         }
@@ -1178,7 +1179,7 @@ struct RemoteMcpServer::Impl {
             }
 
             auto& uris = it->second.subscribedUris;
-            const auto existing = std::find(uris.begin(), uris.end(), uri);
+            const auto existing = std::ranges::find(uris, uri);
             if (subscribe) {
                 if (existing == uris.end())
                     uris.push_back(uri);

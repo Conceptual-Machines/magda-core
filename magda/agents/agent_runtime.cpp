@@ -30,8 +30,7 @@ juce::String callFingerprint(const ToolCall& call, std::uint64_t revision) {
 }
 
 const ToolDefinition* findTool(const AgentDefinition& definition, const juce::String& name) {
-    const auto it = std::find_if(definition.tools.begin(), definition.tools.end(),
-                                 [&name](const ToolDefinition& tool) { return tool.name == name; });
+    const auto it = std::ranges::find(definition.tools, name, &ToolDefinition::name);
     return it == definition.tools.end() ? nullptr : &*it;
 }
 
@@ -280,13 +279,12 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
             return stop(TerminalReason::Completed);
         }
 
+        const auto mutates = [&effectiveDefinition](const ToolCall& call) {
+            const auto* tool = findTool(effectiveDefinition, call.name);
+            return tool != nullptr && tool->access == ToolAccess::Mutation;
+        };
         if (response.toolCallExecution == ModelResponse::ToolCallExecution::Parallel &&
-            response.toolCalls.size() > 1 &&
-            std::any_of(response.toolCalls.begin(), response.toolCalls.end(),
-                        [&](const ToolCall& call) {
-                            const auto* tool = findTool(effectiveDefinition, call.name);
-                            return tool != nullptr && tool->access == ToolAccess::Mutation;
-                        })) {
+            response.toolCalls.size() > 1 && std::ranges::any_of(response.toolCalls, mutates)) {
             completeUnexecutedCalls(0, "unsafe_parallel_mutation",
                                     "Parallel mutation batch was not executed");
             result.trace.push_back(std::move(trace));
@@ -409,10 +407,8 @@ RunResult AgentRuntime::run(const AgentDefinition& definition, AgentRunInput inp
         }
 
         if (isDirectPlanStep) {
-            const bool succeeded =
-                !trace.toolResults.empty() &&
-                std::all_of(trace.toolResults.begin(), trace.toolResults.end(),
-                            [](const ToolResult& toolResult) { return toolResult.success; });
+            const bool succeeded = !trace.toolResults.empty() &&
+                                   std::ranges::all_of(trace.toolResults, &ToolResult::success);
             result.trace.push_back(std::move(trace));
             if (succeeded) {
                 result.finalText = "OK";

@@ -237,8 +237,8 @@ std::vector<std::pair<std::string, float>> ZeroShotTagger::scoreEmbedding(
             hits.emplace_back(labels_[i], score);
         }
     }
-    std::sort(hits.begin(), hits.end(),
-              [](const auto& a, const auto& b) { return a.second > b.second; });
+    const auto scoreOf = [](const auto& hit) { return hit.second; };
+    std::ranges::sort(hits, std::ranges::greater{}, scoreOf);
     return hits;
 }
 

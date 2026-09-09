@@ -20,9 +20,12 @@ bool schemaDeclaresType(const juce::var& schema, const char* expected) {
     const auto type = object->getProperty("type");
     if (type.isString())
         return type.toString() == expected;
-    if (auto* types = type.getArray())
-        return std::any_of(types->begin(), types->end(),
-                           [&](const auto& candidate) { return candidate.toString() == expected; });
+    if (auto* types = type.getArray()) {
+        const auto namesExpected = [&expected](const juce::var& candidate) {
+            return candidate.toString() == expected;
+        };
+        return std::ranges::any_of(*types, namesExpected);
+    }
     return false;
 }
 
@@ -638,8 +641,10 @@ bool typeMatches(const juce::var& value, const juce::var& declaredType) {
     if (declaredType.isString())
         return matchesType(value, declaredType.toString());
     if (auto* types = declaredType.getArray()) {
-        return std::any_of(types->begin(), types->end(),
-                           [&](const auto& type) { return matchesType(value, type.toString()); });
+        const auto matchesOneType = [&value](const juce::var& type) {
+            return matchesType(value, type.toString());
+        };
+        return std::ranges::any_of(*types, matchesOneType);
     }
     return true;
 }
@@ -729,9 +734,7 @@ void validateValue(const juce::var& value, const juce::var& schema, const juce::
         addIssue(issues, path, "const", "Value does not match the required constant");
 
     if (auto* allowed = schemaObject->getProperty("enum").getArray()) {
-        const auto found = std::any_of(allowed->begin(), allowed->end(),
-                                       [&](const auto& candidate) { return candidate == value; });
-        if (!found)
+        if (!std::ranges::contains(*allowed, value))
             addIssue(issues, path, "enum", "Value is not one of the allowed values");
     }
 
@@ -2196,8 +2199,7 @@ OperationRegistry::OperationRegistry() {
 
     for (const auto& [name, scope] : kWriteScopes) {
         const auto found =
-            std::find_if(operations_.begin(), operations_.end(),
-                         [&](const OperationDescriptor& op) { return op.name == name; });
+            std::ranges::find(operations_, juce::String(name), &OperationDescriptor::name);
         // A policy entry naming an operation that does not exist is a rename
         // that updated one side. Silently ignoring it would leave the renamed
         // operation on the `read` default, which the check below catches — but
@@ -2246,8 +2248,7 @@ const std::vector<OperationDescriptor>& OperationRegistry::operations() const {
 }
 
 const OperationDescriptor* OperationRegistry::find(const juce::String& name) const {
-    const auto found = std::find_if(operations_.begin(), operations_.end(),
-                                    [&](const auto& operation) { return operation.name == name; });
+    const auto found = std::ranges::find(operations_, name, &OperationDescriptor::name);
     return found == operations_.end() ? nullptr : &*found;
 }
 

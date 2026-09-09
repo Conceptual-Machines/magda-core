@@ -1,6 +1,7 @@
 #include "clip/ClipSnapshotCompiler.hpp"
 
 #include <algorithm>
+#include <tuple>
 #include <unordered_map>
 
 #include "clip/ClipStretcher.hpp"
@@ -370,13 +371,11 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
         // Sorted by where they start, ties by id: two compiles of one model
         // have to produce one snapshot, and a lane is held in whatever order
         // the model happens to keep it.
-        const auto byStart = [](const auto& a, const auto& b) {
-            if (a.span.beats.start != b.span.beats.start)
-                return a.span.beats.start < b.span.beats.start;
-            return a.clipId < b.clipId;
+        const auto startThenId = [](const auto& playback) {
+            return std::tuple{playback.span.beats.start, playback.clipId};
         };
-        std::sort(track.audio.begin(), track.audio.end(), byStart);
-        std::sort(track.midi.begin(), track.midi.end(), byStart);
+        std::ranges::sort(track.audio, {}, startThenId);
+        std::ranges::sort(track.midi, {}, startThenId);
 
         // The slots, each compiled as its own single-clip lane at the origin.
         //
@@ -453,9 +452,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
                 continue;
             }
 
-            const auto found = std::find_if(
-                track.session.begin(), track.session.end(),
-                [scene](const SessionSlotPlayback& slot) { return slot.sceneIndex == scene; });
+            const auto found =
+                std::ranges::find(track.session, scene, &SessionSlotPlayback::sceneIndex);
 
             if (found != track.session.end()) {
                 // Already a target means the same scene was armed twice, which
@@ -470,10 +468,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             track.session.push_back(SessionSlotPlayback{.sceneIndex = scene, .recordTarget = true});
         }
 
-        std::sort(track.session.begin(), track.session.end(),
-                  [](const SessionSlotPlayback& a, const SessionSlotPlayback& b) {
-                      return a.sceneIndex < b.sceneIndex;
-                  });
+        std::ranges::sort(track.session, {}, &SessionSlotPlayback::sceneIndex);
 
         // A track earns an entry by having something to play, in either view. A
         // session-only track is a real one: nothing is in its arrangement and
@@ -484,10 +479,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
     }
 
     // ClipSnapshot::find binary searches this.
-    std::sort(snapshot.tracks.begin(), snapshot.tracks.end(),
-              [](const TrackClipPlayback& a, const TrackClipPlayback& b) {
-                  return a.trackId < b.trackId;
-              });
+    std::ranges::sort(snapshot.tracks, {}, &TrackClipPlayback::trackId);
 
     return snapshot;
 }

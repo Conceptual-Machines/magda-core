@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -407,6 +408,17 @@ struct PlanOp {
     int padLevelParam = -1;
     int padPanParam = -1;
 };
+
+/** @brief Producer ops an op waits on, each counted once however many slots it feeds. */
+inline std::vector<OpId> distinctProducers(const PlanOp& op) {
+    std::vector<OpId> producers;
+    producers.reserve(op.inputs.size());
+    for (const auto& input : op.inputs) {
+        if (input.valid() && !std::ranges::contains(producers, input.op))
+            producers.push_back(input.op);
+    }
+    return producers;
+}
 
 /**
  * @brief A compiled, immutable render plan.
