@@ -409,6 +409,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # What ends a slot's run and what starts next (#2304), and that a launch
     # the engine made reads out exactly as a clicked one does.
     list(APPEND TEST_SOURCES engine/test_follow_actions.cpp)
+    # What the session played, placed from the launcher's own edges (#2464):
+    # the beat a run began on, a scene as one event, and a run across a wrap.
+    list(APPEND TEST_SOURCES engine/test_session_capture.cpp)
     list(APPEND TEST_SOURCES audio/test_click_generator.cpp)
     list(APPEND TEST_SOURCES audio/test_prefetch_stream.cpp)
     list(APPEND TEST_SOURCES audio/test_source_readers.cpp)

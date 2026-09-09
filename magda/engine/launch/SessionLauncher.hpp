@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "launch/FollowActions.hpp"
 #include "launch/LaunchHandle.hpp"
 #include "launch/LaunchRequests.hpp"
+#include "launch/SlotRuns.hpp"
 #include "tap/LaunchTap.hpp"
 
 /**
@@ -121,6 +123,41 @@ class LaunchHandleFeed {
     Published published_;
 };
 
+/// Which slot's run a take follows, instead of the transport (#2464).
+struct SlotRunTarget {
+    /// Not owned, and outlives the take: the session's, like the clip feed.
+    LaunchHandleFeed* handles = nullptr;
+
+    SlotKey key;
+
+    /// The handle the take was made for. A slot emptied and refilled is the
+    /// same key on a different clip, and the take does not follow it.
+    std::uint64_t incarnation = 0;
+};
+
+/// What one block of a slot's run gives a take.
+struct SlotRun {
+    /// Where the run sounding when the block opened ended, if it did.
+    std::optional<EdgeSample> endedAt;
+
+    /// Where a new run began, if one did. The take that starts here is not the
+    /// one that ended above: a re-launch is a second take, not a longer one.
+    std::optional<EventSample> beganAt;
+
+    /// Whether the slot is still published under the incarnation the take was
+    /// made for. A retired or refilled slot ends the take where it stood.
+    bool gone = false;
+};
+
+/**
+ * @brief @p target's run over the block the launcher last advanced.
+ *
+ * On the audio thread, after @ref advanceLaunchHandles has run over this block:
+ * a handle's block status is written there, once, and everything that acts on
+ * it reads that one answer.
+ */
+SlotRun slotRun(const SlotRunTarget& target);
+
 /// The block as the launcher names it, from the one place its faces were
 /// derived together (RenderContext.hpp).
 inline SyncRange syncRangeFor(const BlockInfo& block) {
@@ -137,8 +174,11 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
  * One call rather than two: @p requests is drained whole first, so a launch
  * lands in the block it was asked in and a scene reaches every handle before
  * any of them has moved.
+ *
+ * @p runs takes the edges each handle reported, for the capture off the audio
+ * thread (SlotRuns.hpp). Null for a caller that does not capture.
  */
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
-                          const BlockInfo& block);
+                          const BlockInfo& block, SlotRunQueue* runs = nullptr);
 
 }  // namespace magda::engine

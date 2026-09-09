@@ -34,7 +34,7 @@
 
 namespace magda::engine {
 
-/// Where the pass is going. Slice 6 (#2464) is what fills in the slot half.
+/// Where the pass is going: an arrangement take, or a session slot's (#2464).
 enum class RecordTarget : std::uint8_t { arrangement, slot };
 
 /// What the pass is made of, and so what a reader draws.

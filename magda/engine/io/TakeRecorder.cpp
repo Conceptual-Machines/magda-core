@@ -53,6 +53,12 @@ TakeRecorder::TakeRecorder(const LiveInputFeed& feed, const RenderContext& conte
 }
 
 void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
+    // A slot take is on its run's clock, not the transport's (#2464).
+    if (settings_.slot) {
+        captureRun(block);
+        return;
+    }
+
     if (state_ == State::stopped)
         return;
 
@@ -76,7 +82,7 @@ void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRa
         openPass(block, loop);
     }
 
-    write(block);
+    write(block, 0, block.numSamples);
 
     // Timeline the take has covered, which is what a pass boundary is counted
     // in. Not the samples written: those are the same stretch read a latency
@@ -84,12 +90,65 @@ void TakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRa
     arrivals_ += block.numSamples;
 }
 
-void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
+void TakeRecorder::captureRun(const BlockInfo& block) {
+    if (state_ == State::stopped)
+        return;
+
+    // A stopped transport passes no timeline, so the run makes no progress and
+    // the take holds nothing. Not a stop: the run has not ended.
+    if (!block.playing)
+        return;
+
+    const auto run = slotRun(*settings_.slot);
+
+    // The slot was retired or refilled: the take ends where it stood.
+    if (run.gone) {
+        if (state_ == State::rolling)
+            stop();
+
+        return;
+    }
+
+    auto from = 0;
+    auto closing = false;
+
+    if (state_ == State::waiting) {
+        // An end in this block belongs to the run before this one.
+        if (!run.beganAt)
+            return;
+
+        from = run.beganAt->value;
+        start(block, LoopRange{}, from);
+    } else if (run.endedAt) {
+        // A launch in this block begins the next take, not this one.
+        closing = true;
+    }
+
+    const auto to = closing ? run.endedAt->value : block.numSamples;
+
+    if (to > from) {
+        write(block, from, to);
+        arrivals_ += to - from;
+    }
+
+    if (closing)
+        stop();
+}
+
+void TakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int from) {
     state_ = State::rolling;
     rolling_.store(true, std::memory_order_relaxed);
 
     startBeat_ = block.beats.start;
     startSeconds_ = block.seconds.start;
+
+    // A take that begins inside the block begins where the launch fired, not
+    // at the block's own start (#2464).
+    if (from > 0 && block.rate() > 0.0) {
+        startSeconds_ = block.seconds.start + (static_cast<double>(from) / block.rate());
+        startBeat_ = block.beatAtTime(startSeconds_);
+    }
+
     endBeat_ = startBeat_;
     startedAtLoopStart_ = atLoopStart(block, loop);
     headDrop_ = std::max(0, settings_.latencySamples);
@@ -157,7 +216,7 @@ void TakeRecorder::stop() {
     tap_.close();
 }
 
-void TakeRecorder::write(const BlockInfo& block) {
+void TakeRecorder::write(const BlockInfo& block, int from, int to) {
     const auto numSamples = std::min(block.numSamples, scratch_.getNumSamples());
     if (numSamples <= 0)
         return;
@@ -167,14 +226,18 @@ void TakeRecorder::write(const BlockInfo& block) {
 
     const auto captured = juce::dsp::AudioBlock<const float>(std::as_const(scratch_));
 
-    auto offset = 0;
+    // The input is rendered whole; only what the take keeps of it is the
+    // window the caller named.
+    auto offset = std::clamp(from, 0, numSamples);
+    const auto end = std::clamp(to, offset, numSamples);
+
     if (headDrop_ > 0) {
-        const auto dropped = std::min(headDrop_, numSamples);
+        const auto dropped = std::min(headDrop_, end - offset);
         headDrop_ -= dropped;
         offset += dropped;
     }
 
-    const auto kept = numSamples - offset;
+    const auto kept = end - offset;
     if (kept <= 0)
         return;
 
@@ -187,22 +250,22 @@ void TakeRecorder::write(const BlockInfo& block) {
     // the samples behind it are the same stretch. Every boundary this block
     // reaches is taken, the way the sink takes them: a loop shorter than the
     // block puts more than one inside it.
-    auto from = 0;
+    auto drawn = 0;
     while (pendingCount_ > 0 && block.rate() > 0.0 &&
            written_ + kept > pending_[pendingHead_].boundary) {
         const auto at = static_cast<int>(pending_[pendingHead_].boundary - written_);
-        if (at > from)
-            tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(from),
-                                                static_cast<std::size_t>(at - from)),
-                          at - from, (written_ + from) - passOrigin_);
+        if (at > drawn)
+            tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(drawn),
+                                                static_cast<std::size_t>(at - drawn)),
+                          at - drawn, (written_ + drawn) - passOrigin_);
 
         openTapPass(block);
-        from = at;
+        drawn = at;
     }
 
-    tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(from),
-                                        static_cast<std::size_t>(kept - from)),
-                  kept - from, (written_ + from) - passOrigin_);
+    tap_.addPeaks(keptBlock.getSubBlock(static_cast<std::size_t>(drawn),
+                                        static_cast<std::size_t>(kept - drawn)),
+                  kept - drawn, (written_ + drawn) - passOrigin_);
 
     written_ += kept;
     captured_.store(written_, std::memory_order_relaxed);

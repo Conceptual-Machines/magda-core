@@ -254,6 +254,23 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
+    /// The same instant on the count no wrap or locate takes back, which is
+    /// what a capture measures a run's length on (launch/SessionCapture.hpp).
+    double monotonicBeats() const {
+        return clock_.monotonicBeat();
+    }
+
+    /**
+     * @brief The run edges the launcher publishes, for the capture (#2464).
+     *
+     * Drained on the publishing thread by SessionCapture. Outside every epoch
+     * beside the request lane it answers: a launch made while a plan was
+     * compiling still has its edge reported when the new one is live.
+     */
+    SlotRunQueue& slotRuns() {
+        return runs_;
+    }
+
     /// Callbacks in which a loop was too short to render as separate blocks.
     int loopWrapOverflows() const {
         return clock_.loopWrapOverflows();
@@ -375,6 +392,9 @@ class EngineSession {
     /// epoch, like the feed it is read beside: a request made while a plan was
     /// being compiled is still a request when the new one is live.
     LaunchRequestQueue requests_;
+
+    /// What came of them: where each run began and ended, for the capture.
+    SlotRunQueue runs_;
 
     /// The cursor. Not published and not swapped: it's where the timeline
     /// is, a property of the session rather than of any plan, and a plan

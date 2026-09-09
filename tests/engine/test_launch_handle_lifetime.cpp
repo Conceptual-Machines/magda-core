@@ -31,7 +31,7 @@ ClipSnapshot snapshotWithScenes(const std::vector<int>& scenes, TrackId trackId 
     TrackClipPlayback track;
     track.trackId = trackId;
     for (const auto scene : scenes)
-        track.session.push_back(SessionSlotPlayback{scene, {}, {}, 4.0});
+        track.session.push_back(SessionSlotPlayback{.sceneIndex = scene, .lengthBeats = 4.0});
     snapshot.tracks.push_back(std::move(track));
     return snapshot;
 }

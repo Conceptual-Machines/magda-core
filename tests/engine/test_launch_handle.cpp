@@ -693,3 +693,71 @@ TEST_CASE("A synced launch joins the run as the rate left it", "[launch][2336]")
     CHECK(following.afterEvent->origin->beat == Approx(leading.beforeEvent.origin->beat));
     CHECK(following.afterEvent->origin->seconds == Approx(leading.beforeEvent.origin->seconds));
 }
+
+TEST_CASE("A block reports where a run began and where one ended", "[launch]") {
+    // What a take of a slot starts and stops on (#2464). Both edges are on the
+    // sample the block ran into, which is what the split is cut at.
+    LaunchHandle handle;
+
+    SECTION("a launch inside a block begins a run there") {
+        handle.play(0.5);
+        const auto status = handle.advance(block(0.0, 1.0));
+
+        REQUIRE(status.runBeganAt.has_value());
+        CHECK(status.runBeganAt->value == status.event.sample);
+        CHECK(status.runBeganAt->value == samplesFor(0.5));
+        CHECK_FALSE(status.runEndedAt.has_value());
+    }
+
+    SECTION("a stop inside a block ends it there") {
+        handle.play(0.0);
+        handle.advance(block(0.0, 1.0));
+
+        handle.stop(1.5);
+        const auto status = handle.advance(block(1.0, 2.0));
+
+        REQUIRE(status.runEndedAt.has_value());
+        CHECK(status.runEndedAt->value == samplesFor(0.5));
+        CHECK_FALSE(status.runBeganAt.has_value());
+    }
+
+    SECTION("a re-launch ends one run and begins another on the same sample") {
+        handle.play(0.0);
+        handle.advance(block(0.0, 1.0));
+
+        handle.play(1.25);
+        const auto status = handle.advance(block(1.0, 2.0));
+
+        REQUIRE(status.runEndedAt.has_value());
+        REQUIRE(status.runBeganAt.has_value());
+        CHECK(status.runEndedAt->value == samplesFor(0.25));
+        CHECK(status.runBeganAt->value == samplesFor(0.25));
+
+        // Which is a second take rather than a longer one: the run it began is
+        // not the run it ended.
+        REQUIRE(handle.playedSampleRange().has_value());
+        CHECK(handle.playedSampleRange()->start == at(1.25));
+    }
+
+    SECTION("a loop re-trigger is a run ending and another beginning") {
+        handle.play(0.0);
+        handle.setLooping(2.0);
+        handle.advance(block(0.0, 1.0));
+
+        const auto status = handle.advance(block(1.0, 3.0));
+
+        REQUIRE(status.runEndedAt.has_value());
+        REQUIRE(status.runBeganAt.has_value());
+        CHECK(status.runBeganAt->value == samplesFor(1.0));
+    }
+
+    SECTION("a block that ran into nothing reports neither") {
+        handle.play(0.0);
+        handle.advance(block(0.0, 1.0));
+
+        const auto status = handle.advance(block(1.0, 2.0));
+
+        CHECK_FALSE(status.runBeganAt.has_value());
+        CHECK_FALSE(status.runEndedAt.has_value());
+    }
+}

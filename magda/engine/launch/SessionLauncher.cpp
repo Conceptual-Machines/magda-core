@@ -140,10 +140,40 @@ void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& rang
     }
 }
 
+/**
+ * @brief Publish what @p status said about @p entry's run. Audio thread.
+ *
+ * Ended before began, which is the order they happened in: a re-launch ends one
+ * run and begins another on the same sample, and they are two takes.
+ *
+ * Every face is taken from the sample the edge landed on, through the range
+ * that cut the block, so the capture places a run where the audio actually
+ * started rather than where a poll noticed it (#2464).
+ */
+void publishRunEdges(SlotRunQueue& runs, const LaunchHandleTable::Entry& entry,
+                     const SyncRange& range, const SplitStatus& status) {
+    const auto edge = [&](SlotRunEvent::Kind kind, int sample) {
+        const auto at = range.atSample(sample);
+
+        runs.push(SlotRunEvent{.key = entry.key,
+                               .kind = kind,
+                               .incarnation = entry.incarnation,
+                               .at = at.monotonic,
+                               .timelineBeat = range.timelineBeatAt(at),
+                               .monotonicBeat = range.monotonicBeatAt(at)});
+    };
+
+    if (status.runEndedAt)
+        edge(SlotRunEvent::Kind::ended, status.runEndedAt->value);
+
+    if (status.runBeganAt)
+        edge(SlotRunEvent::Kind::began, status.runBeganAt->value);
+}
+
 }  // namespace
 
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
-                          const BlockInfo& block) {
+                          const BlockInfo& block, SlotRunQueue* runs) {
     const LaunchHandleFeed::Reader table(handles);
 
     // Drained whether or not there is a table to apply it to: a queue left
@@ -166,13 +196,32 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
 
     for (const auto& entry : table->entries)
         if (entry.handle != nullptr) {
-            entry.handle->advance(range);
+            const auto status = entry.handle->advance(range);
 
             // Published by the block that decided it, so the UI is never a
             // frame behind the audio and has nothing to poll (#2303).
             if (entry.tap != nullptr)
                 entry.tap->write(*entry.handle);
+
+            if (runs != nullptr)
+                publishRunEdges(*runs, entry, range, status);
         }
+}
+
+SlotRun slotRun(const SlotRunTarget& target) {
+    if (target.handles == nullptr)
+        return {.gone = true};
+
+    const LaunchHandleFeed::Reader table(*target.handles);
+    if (!table)
+        return {.gone = true};
+
+    const auto* entry = table->findEntry(target.key);
+    if (entry == nullptr || entry->handle == nullptr || entry->incarnation != target.incarnation)
+        return {.gone = true};
+
+    const auto& status = entry->handle->blockStatus();
+    return {.endedAt = status.runEndedAt, .beganAt = status.runBeganAt};
 }
 
 }  // namespace magda::engine

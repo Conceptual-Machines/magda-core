@@ -3,6 +3,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -10,6 +11,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/TakeRecorder.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TransportClock.hpp"
@@ -25,14 +27,25 @@
  *
  * Every input sample says which arrival it is, which is what lets a case assert
  * on where a take begins rather than only on how long it is.
+ *
+ * A slot take is driven the same way, with one published handle the launcher
+ * advances over each block before the take sees it (#2464).
  */
 
+using magda::engine::advanceLaunchHandles;
 using magda::engine::AudioFileFormat;
+using magda::engine::BlockInfo;
+using magda::engine::LaunchHandle;
+using magda::engine::LaunchHandleFeed;
+using magda::engine::LaunchHandleTable;
+using magda::engine::LaunchRequestQueue;
 using magda::engine::LiveInputBlock;
 using magda::engine::LiveInputFeed;
 using magda::engine::LoopRange;
 using magda::engine::RecordedTake;
 using magda::engine::RenderContext;
+using magda::engine::SlotKey;
+using magda::engine::SlotRunTarget;
 using magda::engine::TakeRecorder;
 using magda::engine::TakeRecorderSettings;
 using magda::engine::TempoMap;
@@ -95,6 +108,55 @@ TakeRecorderSettings floatTake(std::vector<int> channels, int latencySamples = 0
 }
 
 /**
+ * @brief One slot's handle, published the way the session publishes them.
+ *
+ * What a take follows instead of the transport (#2464): a launch is asked for
+ * on a monotonic beat and fires wherever that beat lands, which is what a case
+ * needs to be inside a block rather than on its edge.
+ */
+class SlotLaunch {
+  public:
+    SlotLaunch() {
+        auto table = std::make_shared<LaunchHandleTable>();
+        table->entries.push_back(
+            LaunchHandleTable::Entry{.key = kKey, .handle = &handle_, .incarnation = kIncarnation});
+        feed_.publish(std::move(table));
+
+        // What the store does beside the publish: a request stamped with
+        // anything else is dropped as a slot that has been refilled.
+        requests_.setIncarnations({{kKey, kIncarnation}});
+    }
+
+    void launch(double monotonicBeat) {
+        LaunchRequestQueue::Gesture gesture(requests_);
+        gesture.play(kKey, monotonicBeat);
+    }
+
+    void stop(double monotonicBeat) {
+        LaunchRequestQueue::Gesture gesture(requests_);
+        gesture.stop(kKey, monotonicBeat);
+    }
+
+    /// What a take made for this slot follows.
+    SlotRunTarget target() {
+        return {.handles = &feed_, .key = kKey, .incarnation = kIncarnation};
+    }
+
+    /// The launcher's own pass over the block, before anything renders it.
+    void advance(const BlockInfo& block) {
+        advanceLaunchHandles(feed_, requests_, block);
+    }
+
+  private:
+    static constexpr SlotKey kKey{1, 0};
+    static constexpr std::uint64_t kIncarnation = 1;
+
+    LaunchHandle handle_;
+    LaunchHandleFeed feed_;
+    LaunchRequestQueue requests_;
+};
+
+/**
  * @brief A transport, an input and one take, driven a callback at a time.
  */
 class Rig {
@@ -149,6 +211,12 @@ class Rig {
         drains_ = true;
     }
 
+    /// Advance @p launch over every block before the take sees it, which is the
+    /// order the audio thread keeps (#2464).
+    void follows(SlotLaunch& launch) {
+        launch_ = &launch;
+    }
+
     TakeRecorder& recorder() {
         return *recorder_;
     }
@@ -167,6 +235,10 @@ class Rig {
 
         for (const auto& segment : clock_.advance(transport_, kSampleRate, numSamples)) {
             feed_.beginSegment(segment.startSample, segment.block.numSamples);
+
+            if (launch_ != nullptr)
+                launch_->advance(segment.block);
+
             recorder_->capture(segment.block, segment.countingIn, transport_.loop);
         }
 
@@ -192,12 +264,28 @@ class Rig {
     /// material is numbered by.
     std::int64_t arrival_ = 0;
 
+    /// The slot the take follows, for a case that has one.
+    SlotLaunch* launch_ = nullptr;
+
     bool drains_ = false;
 };
 
 /// The arrival the take's first sample came from, read out of the file itself.
 std::int64_t firstArrival(const juce::AudioBuffer<float>& stored) {
     return std::llround(static_cast<double>(stored.getSample(0, 0)) * 1.0e5) - 1;
+}
+
+/// The same for any sample of it, which is what says a take holds one
+/// unbroken stretch of the input.
+std::int64_t arrivalAt(const juce::AudioBuffer<float>& stored, int at) {
+    return std::llround(static_cast<double>(stored.getSample(0, at)) * 1.0e5) - 1;
+}
+
+/// A take of @p launch's run rather than of the transport.
+TakeRecorderSettings slotTake(SlotLaunch& launch, int latencySamples = 0) {
+    auto settings = floatTake({0, 1}, latencySamples);
+    settings.slot = launch.target();
+    return settings;
 }
 
 }  // namespace
@@ -541,4 +629,214 @@ TEST_CASE("An overrun reaches the finished take", "[engine][io][record][2461]") 
     const auto take = rig.recorder().finish();
     CHECK(take.samplesLost > 0);
     CHECK(readBack(take.file).getNumSamples() == 1024);
+}
+
+TEST_CASE("A slot take begins on the sample its launch fired on", "[engine][io][record][2464]") {
+    SlotLaunch launch;
+
+    Rig rig(emptyDirectory("slot_launch"), slotTake(launch));
+    rig.follows(launch);
+    rig.play();
+
+    // Beat one is 4000 samples in and a callback is 64, so the launch fires 32
+    // samples inside a block rather than on its edge.
+    launch.launch(1.0);
+    rig.run(3 * kBeatSamples);
+
+    const auto take = rig.recorder().finish();
+    const auto stored = readBack(take.file);
+    REQUIRE(stored.getNumSamples() == 2 * kBeatSamples);
+
+    // The arrival at the beat, not the one the block started on.
+    CHECK(arrivalAt(stored, 0) == kBeatSamples);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (3 * kBeatSamples) - 1);
+
+    CHECK(take.startBeat == Catch::Approx(1.0));
+    CHECK(take.lengthBeats == Catch::Approx(2.0));
+    CHECK(take.clip.takes.empty());
+}
+
+TEST_CASE("A slot take ends where its run ended", "[engine][io][record][2464]") {
+    // Beat two and a half, which lands 16 samples inside a callback.
+    constexpr int kStopArrival = (5 * kBeatSamples) / 2;
+
+    SlotLaunch launch;
+
+    const auto directory = emptyDirectory("slot_stop");
+    Rig rig(directory, slotTake(launch));
+    rig.follows(launch);
+    rig.play();
+
+    launch.launch(1.0);
+    rig.run(2 * kBeatSamples);
+
+    launch.stop(2.5);
+    rig.run(2 * kBeatSamples);
+
+    CHECK_FALSE(rig.recorder().rolling());
+    const auto stopped = rig.recorder().capturedSamples();
+
+    SECTION("the take holds the arrivals between the launch and the stop") {
+        const auto stored = readBack(rig.recorder().finish().file);
+        REQUIRE(stored.getNumSamples() == kStopArrival - kBeatSamples);
+        CHECK(arrivalAt(stored, 0) == kBeatSamples);
+        CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == kStopArrival - 1);
+    }
+
+    SECTION("a re-launch after it is a second take, not a longer one") {
+        launch.launch(4.5);
+        rig.run(2 * kBeatSamples);
+
+        CHECK_FALSE(rig.recorder().rolling());
+        CHECK(rig.recorder().capturedSamples() == stopped);
+
+        const auto stored = readBack(rig.recorder().finish().file);
+        CHECK(stored.getNumSamples() == kStopArrival - kBeatSamples);
+        CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == kStopArrival - 1);
+        CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
+    }
+}
+
+TEST_CASE("A transport wrap inside a run does not split the slot take",
+          "[engine][io][record][2464]") {
+    // A run is on monotonic time, so the loop the transport is playing is none
+    // of its business: three passes of the loop are one take.
+    SlotLaunch launch;
+
+    const auto directory = emptyDirectory("slot_loop_wrap");
+    Rig rig(directory, slotTake(launch));
+    rig.follows(launch);
+    rig.loop(0.0, 2.0);
+    rig.play();
+
+    launch.launch(1.0);
+    rig.run(3 * 2 * kBeatSamples);
+
+    const auto take = rig.recorder().finish();
+    CHECK(take.clip.takes.empty());
+    CHECK(directory.getNumberOfChildFiles(juce::File::findFiles) == 1);
+
+    const auto stored = readBack(take.file);
+    REQUIRE(stored.getNumSamples() == 5 * kBeatSamples);
+
+    // One unbroken stretch of the input across the first wrap, which is take
+    // sample 4000 and arrival 8000.
+    CHECK(arrivalAt(stored, 0) == kBeatSamples);
+    CHECK(arrivalAt(stored, kBeatSamples) == 2 * kBeatSamples);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (6 * kBeatSamples) - 1);
+
+    CHECK(take.startBeat == Catch::Approx(1.0));
+    CHECK(take.lengthBeats == Catch::Approx(5.0));
+}
+
+TEST_CASE("A slot take is corrected for the input's latency too", "[engine][io][record][2464]") {
+    SlotLaunch launch;
+
+    Rig rig(emptyDirectory("slot_latency"), slotTake(launch, 128));
+    rig.follows(launch);
+    rig.play();
+
+    launch.launch(1.0);
+    rig.run(3 * kBeatSamples);
+
+    const auto stored = readBack(rig.recorder().finish().file);
+    REQUIRE(stored.getNumSamples() == (2 * kBeatSamples) - 128);
+
+    // Dropped from the head of the run, not from the head of the block it
+    // fired in.
+    CHECK(arrivalAt(stored, 0) == kBeatSamples + 128);
+    CHECK(arrivalAt(stored, stored.getNumSamples() - 1) == (3 * kBeatSamples) - 1);
+}
+
+TEST_CASE("A scene's takes all begin on the same sample", "[engine][io][record][2464]") {
+    // The launcher cuts one block at one sample for every slot of the scene, so
+    // the takes agree about where they start rather than each rounding to its
+    // own callback (#2464).
+    constexpr int kTracks = 4;
+
+    std::vector<LaunchHandle> handles(kTracks);
+    LaunchHandleFeed feed;
+    LaunchRequestQueue requests;
+
+    auto table = std::make_shared<LaunchHandleTable>();
+    std::map<SlotKey, std::uint64_t> incarnations;
+
+    for (auto track = 0; track < kTracks; ++track) {
+        const SlotKey key{static_cast<magda::TrackId>(track + 1), 0};
+        table->entries.push_back(LaunchHandleTable::Entry{
+            .key = key, .handle = &handles[static_cast<std::size_t>(track)], .incarnation = 1});
+        incarnations[key] = 1;
+    }
+
+    feed.publish(std::move(table));
+    requests.setIncarnations(std::move(incarnations));
+
+    const auto directory = emptyDirectory("slot_scene");
+
+    LiveInputFeed input;
+    input.prepare(2, kBlockSize);
+
+    magda::engine::RecordTap taps[kTracks]{
+        {magda::engine::RecordMaterial::audio, {}},
+        {magda::engine::RecordMaterial::audio, {}},
+        {magda::engine::RecordMaterial::audio, {}},
+        {magda::engine::RecordMaterial::audio, {}},
+    };
+
+    std::vector<std::unique_ptr<TakeRecorder>> takes;
+    for (auto track = 0; track < kTracks; ++track) {
+        auto settings = floatTake({0, 1});
+        settings.directory = directory;
+        settings.name = "scene" + juce::String(track);
+        settings.slot = SlotRunTarget{.handles = &feed,
+                                      .key = SlotKey{static_cast<magda::TrackId>(track + 1), 0},
+                                      .incarnation = 1};
+
+        takes.push_back(std::make_unique<TakeRecorder>(
+            input, RenderContext{kSampleRate, kBlockSize, 2}, taps[track], std::move(settings)));
+    }
+
+    // Every slot in one gesture, which is what makes a scene one event.
+    {
+        LaunchRequestQueue::Gesture gesture(requests);
+        std::vector<SlotKey> slots;
+        for (auto track = 0; track < kTracks; ++track)
+            slots.push_back(SlotKey{static_cast<magda::TrackId>(track + 1), 0});
+
+        gesture.playScene(slots.front(), slots, 1.0);
+    }
+
+    TransportSnapshot transport;
+    transport.tempo = TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
+    transport.request = {.generation = 1, .playing = true, .locate = true, .positionBeat = 0.0};
+
+    TransportClock clock;
+    juce::AudioBuffer<float> block(2, kBlockSize);
+
+    for (std::int64_t arrival = 0; arrival < 3 * kBeatSamples; arrival += kBlockSize) {
+        for (auto channel = 0; channel < block.getNumChannels(); ++channel)
+            for (auto at = 0; at < kBlockSize; ++at)
+                block.setSample(channel, at, material(arrival + at, channel));
+
+        input.beginCallback({juce::dsp::AudioBlock<const float>(block), {}}, kBlockSize);
+
+        for (const auto& segment : clock.advance(transport, kSampleRate, kBlockSize)) {
+            input.beginSegment(segment.startSample, segment.block.numSamples);
+            advanceLaunchHandles(feed, requests, segment.block);
+
+            for (auto& take : takes)
+                take->capture(segment.block, segment.countingIn, transport.loop);
+        }
+
+        input.endCallback();
+    }
+
+    for (auto& take : takes) {
+        const auto recorded = take->finish();
+        REQUIRE_FALSE(recorded.empty());
+
+        const auto stored = readBack(recorded.file);
+        CHECK(arrivalAt(stored, 0) == kBeatSamples);
+        CHECK(recorded.startBeat == Catch::Approx(1.0));
+    }
 }

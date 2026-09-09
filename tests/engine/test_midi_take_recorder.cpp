@@ -4,6 +4,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "exec/RenderContext.hpp"
 #include "io/LiveInput.hpp"
 #include "io/MidiTakeRecorder.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TransportClock.hpp"
@@ -25,7 +27,13 @@
  */
 
 using magda::MidiCurveType;
+using magda::engine::advanceLaunchHandles;
+using magda::engine::BlockInfo;
 using magda::engine::kAnyLiveMidiSource;
+using magda::engine::LaunchHandle;
+using magda::engine::LaunchHandleFeed;
+using magda::engine::LaunchHandleTable;
+using magda::engine::LaunchRequestQueue;
 using magda::engine::LiveInputBlock;
 using magda::engine::LiveInputFeed;
 using magda::engine::LiveMidiInput;
@@ -34,6 +42,9 @@ using magda::engine::LoopRange;
 using magda::engine::MidiTakeRecorder;
 using magda::engine::MidiTakeRecorderSettings;
 using magda::engine::RecordedMidiTake;
+using magda::engine::SamplePosition;
+using magda::engine::SlotKey;
+using magda::engine::SlotRunTarget;
 using magda::engine::TempoMap;
 using magda::engine::TransportClock;
 using magda::engine::TransportSnapshot;
@@ -214,6 +225,123 @@ class Rig {
     std::int64_t arrival_ = 0;
 
     bool drains_ = false;
+};
+
+/// The one slot every case below launches, and the handle it is published on.
+constexpr SlotKey kSlot{1, 0};
+constexpr std::uint64_t kIncarnation = 1;
+
+/**
+ * @brief A launcher over one slot, a scheduled input, and a take of its run.
+ *
+ * Blocks are hand-built and always kBlockSize long, so a launch quantized to a
+ * beat lands where the beat does rather than on a callback boundary (#2464).
+ */
+class SlotRig {
+  public:
+    explicit SlotRig(int latencySamples = 0) {
+        feed_.prepare(0, kBlockSize);
+
+        auto table = std::make_shared<LaunchHandleTable>();
+        table->entries.push_back(LaunchHandleTable::Entry{
+            .key = kSlot, .handle = &handle_, .incarnation = kIncarnation});
+
+        handles_.publish(std::move(table));
+        requests_.setIncarnations({{kSlot, kIncarnation}});
+
+        auto settings = takeOf(latencySamples);
+        settings.slot =
+            SlotRunTarget{.handles = &handles_, .key = kSlot, .incarnation = kIncarnation};
+
+        recorder_ = std::make_unique<MidiTakeRecorder>(feed_, tap_, settings);
+    }
+
+    void schedule(std::vector<Played> events) {
+        schedule_ = std::move(events);
+    }
+
+    /// Start the slot on monotonic beat @p beat.
+    void launch(double beat) {
+        LaunchRequestQueue::Gesture gesture(requests_);
+        gesture.play(kSlot, beat);
+    }
+
+    /// Stop it on monotonic beat @p beat.
+    void stopSlot(double beat) {
+        LaunchRequestQueue::Gesture gesture(requests_);
+        gesture.stop(kSlot, beat);
+    }
+
+    /// Callbacks until the input has delivered @p sample samples.
+    void runTo(std::int64_t sample) {
+        while (arrival_ < sample)
+            deliver();
+    }
+
+    MidiTakeRecorder& recorder() {
+        return *recorder_;
+    }
+
+    RecordedMidiTake finish() {
+        return recorder_->finish(tempo_);
+    }
+
+  private:
+    BlockInfo blockAt(std::int64_t startSample) const {
+        const auto endSample = startSample + kBlockSize;
+
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.sampleRate = kSampleRate;
+        block.playing = true;
+        block.continuous = startSample != 0;
+        block.tempo = &tempo_;
+        block.monotonicSamples = {SamplePosition{startSample}, SamplePosition{endSample}};
+        block.seconds = {static_cast<double>(startSample) / kSampleRate,
+                         static_cast<double>(endSample) / kSampleRate};
+        block.monotonicSeconds = block.seconds;
+        block.beats = {static_cast<double>(startSample) / kBeatSamples,
+                       static_cast<double>(endSample) / kBeatSamples};
+        block.monotonicBeats = block.beats;
+        return block;
+    }
+
+    void deliver() {
+        juce::MidiBuffer arriving;
+        for (const auto& event : schedule_)
+            if (event.arrival >= arrival_ && event.arrival < arrival_ + kBlockSize)
+                arriving.addEvent(event.message, static_cast<int>(event.arrival - arrival_));
+
+        const std::array streams{LiveMidiStream{0, &arriving}};
+        const LiveInputBlock input{{}, streams};
+
+        feed_.beginCallback(input, kBlockSize);
+        feed_.beginSegment(0, kBlockSize);
+
+        // The order the audio thread runs them in: every handle is advanced
+        // over the block before anything reads what its run did.
+        const auto block = blockAt(arrival_);
+        advanceLaunchHandles(handles_, requests_, block);
+        recorder_->capture(block, false, {});
+
+        feed_.endCallback();
+        arrival_ += kBlockSize;
+    }
+
+    TempoMap tempo_ = flat();
+
+    LiveInputFeed feed_;
+    LaunchHandle handle_;
+    LaunchHandleFeed handles_;
+    LaunchRequestQueue requests_;
+
+    magda::engine::RecordTap tap_{magda::engine::RecordMaterial::midi, {}};
+    std::unique_ptr<MidiTakeRecorder> recorder_;
+
+    std::vector<Played> schedule_;
+
+    /// Input samples delivered so far, which the schedule is numbered by.
+    std::int64_t arrival_ = 0;
 };
 
 }  // namespace
@@ -561,4 +689,97 @@ TEST_CASE("A take that never rolled is empty", "[engine][io][record][midi][2462]
     CHECK(take.active.notes.empty());
     CHECK(take.clip.takes.empty());
     CHECK(take.lengthBeats == 0.0);
+}
+
+TEST_CASE("A slot take begins on the beat its launch was quantized to",
+          "[engine][io][record][midi][2464]") {
+    // Beat 1 is 32 samples into the block that holds it, so a take starting on
+    // the block boundary is a different answer from one starting on the beat.
+    SlotRig rig;
+    rig.schedule({noteOn(kBeatSamples + 1000, 60), noteOff(kBeatSamples + 1500, 60)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE_FALSE(take.empty());
+    CHECK(take.startBeat == Catch::Approx(1.0));
+
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.active.notes[0].startBeat == Catch::Approx(0.25));
+    CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.125));
+}
+
+TEST_CASE("A note played before the launch instant is not in the slot take",
+          "[engine][io][record][midi][2464]") {
+    // Both in the block the launch cuts, on the side of it the run had not
+    // started on.
+    SlotRig rig;
+    rig.schedule({noteOn(kBeatSamples - 20, 60), noteOff(kBeatSamples - 10, 60),
+                  noteOn(kBeatSamples + 1000, 62), noteOff(kBeatSamples + 1500, 62)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].noteNumber == 62);
+}
+
+TEST_CASE("A run that ends inside a block ends the take there",
+          "[engine][io][record][midi][2464]") {
+    // Beat 2.5 is 16 samples into its block: one note each side of it.
+    SlotRig rig;
+    rig.schedule({noteOn(9990, 60), noteOff(9995, 60), noteOn(10010, 64), noteOff(10020, 64)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 2);
+    rig.stopSlot(2.5);
+    rig.runTo(kBeatSamples * 3);
+
+    CHECK_FALSE(rig.recorder().rolling());
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].noteNumber == 60);
+
+    // Beat 1 to beat 2.5, rather than to the end of the block the run ended in.
+    CHECK(take.startBeat == Catch::Approx(1.0));
+    CHECK(take.lengthBeats == Catch::Approx(1.5));
+}
+
+TEST_CASE("A note still down when the run ends is closed where it ended",
+          "[engine][io][record][midi][2464]") {
+    SlotRig rig;
+    rig.schedule({noteOn(kBeatSamples * 2, 62)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 2);
+    rig.stopSlot(2.5);
+    rig.runTo(kBeatSamples * 3);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].startBeat == Catch::Approx(1.0));
+    CHECK(take.active.notes[0].lengthBeats == Catch::Approx(0.5));
+}
+
+TEST_CASE("A re-launch after the run ended does not extend the take",
+          "[engine][io][record][midi][2464]") {
+    // Beat 3.5, which is a second run and so a second take.
+    constexpr int kRelaunch = kBeatSamples * 7 / 2;
+
+    SlotRig rig;
+    rig.schedule({noteOn(kBeatSamples + 1000, 60), noteOff(kBeatSamples + 1500, 60),
+                  noteOn(kRelaunch + 1000, 64), noteOff(kRelaunch + 1500, 64)});
+    rig.launch(1.0);
+    rig.runTo(kBeatSamples * 2);
+    rig.stopSlot(2.5);
+    rig.runTo(kBeatSamples * 3);
+    rig.launch(3.5);
+    rig.runTo(kBeatSamples * 5);
+
+    CHECK_FALSE(rig.recorder().rolling());
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.lengthBeats == Catch::Approx(1.5));
 }

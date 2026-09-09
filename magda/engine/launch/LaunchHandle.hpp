@@ -272,6 +272,16 @@ struct SplitStatus {
     /// that was never taken.
     bool releasedSection = false;
 
+    /// Where a run began inside this block, if one did: a launch, a scene
+    /// join, or a loop re-trigger. The sample a take of that run starts on
+    /// (#2464).
+    std::optional<EventSample> runBeganAt;
+
+    /// Where the run sounding when the block opened ended, if it did. A stop
+    /// and a re-launch alike, since a re-launch ends one run before beginning
+    /// the next, and the two are different takes.
+    std::optional<EdgeSample> runEndedAt;
+
     /// Whether the slot is sounding when the block ends, which is what decides
     /// whether a stop owes note-offs.
     bool playingAtEnd() const {
@@ -529,6 +539,13 @@ class LaunchHandle {
         bool releasesSection = false;
     };
 
+    /// What one event did to the run in progress, which is what the two run
+    /// edges of a block are reported from.
+    struct RunEdges {
+        bool ended = false;
+        bool began = false;
+    };
+
     /// Begin a run at @p at, scheduled for @p scheduledBeat.
     void beginRun(const SyncRange& range, const BlockInstant& at, double scheduledBeat);
 
@@ -554,9 +571,12 @@ class LaunchHandle {
     /// playing, and the one a queued synced launch is waiting to join.
     void followRate(const SyncRange& piece);
 
+    /// Record where @p edges happened on @p status.
+    static void noteRunEdges(SplitStatus& status, const RunEdges& edges, const BlockInstant& at);
+
     /// Apply whatever the block ran into, at the instant it ran into it.
-    void applyEvent(const SyncRange& range, bool fromPending, const BlockInstant& at,
-                    double scheduledBeat);
+    RunEdges applyEvent(const SyncRange& range, bool fromPending, const BlockInstant& at,
+                        double scheduledBeat);
 
     /// The advance itself, wrapped so @ref blockStatus is stored in one place.
     SplitStatus advanceOver(const SyncRange& range);
