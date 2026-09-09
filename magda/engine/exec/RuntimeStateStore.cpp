@@ -440,7 +440,7 @@ RecordingTakes RuntimeStateStore::liveTakes() const {
     RecordingTakes live;
     live.reserve(takes_.size());
     for (const auto& [key, take] : takes_)
-        live.push_back(take.get());
+        live.push_back(RecordingTake{key, take.get()});
     return live;
 }
 

@@ -68,9 +68,16 @@ class TakeCapture {
     virtual RecordStream& stream() = 0;
 };
 
+/// One take in the callback's set, beside the key that says whether the epoch
+/// being rendered still allows it to record (#2465).
+struct RecordingTake {
+    TakeKey key;
+    TakeCapture* take = nullptr;
+};
+
 /// The takes a callback feeds. Not owned: whoever publishes them keeps them
 /// alive until it has published something that does not name them.
-using RecordingTakes = std::vector<TakeCapture*>;
+using RecordingTakes = std::vector<RecordingTake>;
 
 /**
  * @brief What the audio thread records into, replaced on the publishing thread.

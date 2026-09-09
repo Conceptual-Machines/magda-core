@@ -278,6 +278,10 @@ class EngineSession {
      *
      * Registering the take's @ref TakeCapture::stream with a RecordThread is
      * the caller's, and so is unregistering it after @ref stopTake.
+     *
+     * A take is fed only while the live plan's model IDs name its key, so
+     * arming is what makes one record: this says what exists, and the epoch
+     * says what may record into it.
      */
     void startTake(const TakeKey& key, const RecordTapSettings& settings,
                    const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make);
@@ -427,6 +431,13 @@ class EngineSession {
         PlanValues values;
         RenderContext context;
         std::shared_ptr<ClickGenerator> click;
+
+        /// The takes the model named when this plan was published, sorted
+        /// (#2465). Here rather than beside the recording feed so that one
+        /// edit is one boundary: the block that first renders this plan is the
+        /// first block that stops feeding a take the edit ended, whatever the
+        /// publishing thread has got round to since the swap.
+        std::vector<TakeKey> takes;
     };
 
     using PublishedRender =

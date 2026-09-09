@@ -37,6 +37,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     prepared->values = std::move(values);
     prepared->context = context;
 
+    // Sorted already: a std::set of them is ordered by the same operator< the
+    // block's lookup uses.
+    prepared->takes.assign(modelIds.takes.begin(), modelIds.takes.end());
+
     // The metronome is prepared against the device, not the plan, so it is
     // shared with the epoch it replaces unless the device changed. Sharing is
     // what keeps a click that is sounding from being cut in half by an edit
@@ -304,9 +308,16 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.
+        //
+        // The set says which takes exist and the epoch says which may record,
+        // and the epoch is the one this block is rendering. So an edit that
+        // ended a take stops feeding it on the block that first renders its
+        // plan, rather than on whichever later block the publishing thread got
+        // the reduced set out by (#2465).
         if (takes)
-            for (auto* recorder : *takes.get())
-                recorder->capture(segment.block, segment.countingIn, transport->loop);
+            for (const auto& entry : *takes.get())
+                if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
+                    entry.take->capture(segment.block, segment.countingIn, transport->loop);
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the

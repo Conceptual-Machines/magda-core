@@ -526,6 +526,29 @@ TEST_CASE("The store keeps the tap of a take it is still holding",
     REQUIRE(store.takeTap(kTakeKey) == nullptr);
 }
 
+TEST_CASE("A take the live plan's model does not name is not fed",
+          "[engine][exec][session][record][2465]") {
+    Rig rig(emptyDirectory("ineligible"));
+    rig.play();
+    rig.run(128);
+
+    // Disarming closes the take the rig started and leaves an epoch whose model
+    // names no take on this key.
+    rig.disarm(kArmed);
+    REQUIRE(rig.publish());
+    REQUIRE(rig.session().takeClosedTakes().size() == 1);
+
+    // A take started afterwards is in the callback's set and is still not fed.
+    // Which is the point: eligibility rides with the epoch, so the block that
+    // first renders an edit's plan is already the block that stops feeding a
+    // take that edit ended -- whatever the publishing thread has reached.
+    rig.startTake();
+    rig.run(256);
+
+    auto closed = rig.session().stopTake(kTakeKey);
+    REQUIRE(finish(closed).empty());
+}
+
 TEST_CASE("A swap during a pass neither allocates nor frees on the audio thread",
           "[engine][exec][session][record][2465]") {
     if (!magda::test::allocationWatchWorks())

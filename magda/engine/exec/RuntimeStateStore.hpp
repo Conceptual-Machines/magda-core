@@ -148,6 +148,11 @@ struct RuntimeStateIds {
     /// that material (#2465). Alone here in naming what is allowed to continue
     /// rather than what exists, because disarming ends a take without changing
     /// any topology the plan could be asked about.
+    ///
+    /// A slot take is retained by the same arm, being the same track's input.
+    /// ClipLane::recordSlots says which slot a take goes into and not whether
+    /// one may run, so a host that arms a slot without arming its track has a
+    /// recording the next edit ends.
     std::set<TakeKey> takes;
 };
 
