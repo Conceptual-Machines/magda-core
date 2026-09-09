@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 #include "core/ClipInfo.hpp"
@@ -14,12 +15,13 @@
 #include "io/RecordingFeed.hpp"
 #include "io/TakeFileSink.hpp"
 #include "io/TakePasses.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
 
 /**
  * @file TakeRecorder.hpp
- * @brief An arrangement audio take, from armed to clip (#2461).
+ * @brief An audio take, from armed to clip: the transport's or a slot's (#2461).
  *
  * One track's recording: the input slice 1 delivers, through the queue slice 2
  * drains, into the files a clip is made of. The rules it keeps are the model's
@@ -123,6 +125,10 @@ struct TakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is the take's.
     RecordStreamSettings stream;
+
+    /// The slot whose run this take follows, instead of the transport (#2464).
+    /// Absent for an arrangement take.
+    std::optional<SlotRunTarget> slot;
 };
 
 /**
@@ -132,6 +138,9 @@ struct TakeRecorderSettings {
  * audio thread. It captures from the first block the transport is rolling and
  * not counting in, and stops at the first block it is not: a take is closed by
  * a stop, and a second play is a second take.
+ *
+ * A take with a slot follows that slot's run instead (#2464): it starts on the
+ * sample the launch fired on and ends where the run ended.
  */
 class TakeRecorder final : public TakeCapture {
   public:
@@ -185,8 +194,15 @@ class TakeRecorder final : public TakeCapture {
   private:
     enum class State : std::uint8_t { waiting, rolling, stopped };
 
+    /// A block of a take that follows a slot's run rather than the transport
+    /// (#2464). A stopped block holds no samples but still reports the run's
+    /// edges, which is the only block a paused request is reported by.
+    void captureRun(const BlockInfo& block);
+
     /// The first block of the take: where it starts, and the head correction.
-    void start(const BlockInfo& block, const LoopRange& loop);
+    /// @p from is where inside the block it starts, which a launch quantized to
+    /// a beat lands on.
+    void start(const BlockInfo& block, const LoopRange& loop, int from = 0);
 
     /// A wrap: where the pass ended, handed to the sink. The one place a
     /// boundary is named, so the rule above it holds everywhere.
@@ -194,9 +210,10 @@ class TakeRecorder final : public TakeCapture {
 
     void stop();
 
-    /// This block's input, into the queue. Where a pass ends inside it is the
-    /// sink's to act on, since only the sink knows what reached the disk.
-    void write(const BlockInfo& block);
+    /// This block's input over `[from, to)`, into the queue. Where a pass ends
+    /// inside it is the sink's to act on, since only the sink knows what
+    /// reached the disk.
+    void write(const BlockInfo& block, int from, int to);
 
     /// Open the pass the oldest pending boundary named, now the audio has
     /// reached it, and retire it.

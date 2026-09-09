@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "io/RecordingFeed.hpp"
 #include "io/TakeNotes.hpp"
 #include "io/TakePasses.hpp"
+#include "launch/SessionLauncher.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TempoMap.hpp"
 #include "transport/TimeDomains.hpp"
@@ -75,6 +77,10 @@ struct MidiTakeRecorderSettings {
 
     /// How much the queue holds. Its channel count is always zero.
     RecordStreamSettings stream;
+
+    /// The slot whose run this take follows, instead of the transport (#2464).
+    /// Absent for an arrangement take.
+    std::optional<SlotRunTarget> slot;
 };
 
 /** @brief The record thread's end of a MIDI take: the events, in arrival order. */
@@ -95,8 +101,9 @@ class MidiTakeSink final : public RecordSink {
  * @brief One MIDI take: fed on the audio thread, closed on the thread that
  *        stops it.
  *
- * It captures from the first block the transport is rolling and not counting
- * in, and stops at the first block it is not.
+ * An arrangement take runs from the first block the transport is rolling and
+ * not counting in to the first block it is not. A slot take follows a session
+ * slot's run instead, beginning and ending on the samples the run did (#2464).
  */
 class MidiTakeRecorder final : public TakeCapture {
   public:
@@ -151,15 +158,25 @@ class MidiTakeRecorder final : public TakeCapture {
     /// fit is refused rather than dropped.
     static constexpr std::size_t kMaxPasses = 256;
 
-    void start(const BlockInfo& block, const LoopRange& loop);
+    /// @p from is where inside the block the take begins, which a quantized
+    /// launch puts off the block boundary.
+    void start(const BlockInfo& block, const LoopRange& loop, int from = 0);
+
+    /// One block of a take that follows a slot's run rather than the transport.
+    /// A stopped block holds no events but still reports the run's edges, which
+    /// is the only block a paused request is reported by.
+    void captureRun(const BlockInfo& block);
 
     /// A wrap: where the pass ended, in the take's own positions.
     void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
 
-    /// This block's events, stamped and queued.
-    void write(const BlockInfo& block);
+    /// This block's events over [@p from, @p to), stamped and queued.
+    void write(const BlockInfo& block, int from, int to);
+
+    /// The block's events, narrowed to [@p from, @p to) and re-based on @p from.
+    void collect(const BlockInfo& block, int from, int to);
 
     /// This block's notes and the pass's length, as the block leaves them.
     void publish(const BlockInfo& block);
@@ -192,6 +209,9 @@ class MidiTakeRecorder final : public TakeCapture {
 
     /// This block's events, sized once so a capture cannot allocate.
     juce::MidiBuffer events_;
+
+    /// What the input rendered, before it is narrowed into @ref events_.
+    juce::MidiBuffer incoming_;
 
     /// The pass's notes as the tap holds them, over the table the finished take
     /// walks as well (io/TakeNotes.hpp).

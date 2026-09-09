@@ -42,6 +42,11 @@ std::string clipLabel(TrackId trackId, ClipId clipId) {
     return "track " + std::to_string(trackId) + " clip " + std::to_string(clipId) + ": ";
 }
 
+/// For what a track says about itself, where there is no clip to name.
+std::string trackLabel(TrackId trackId) {
+    return "track " + std::to_string(trackId) + ": ";
+}
+
 /// A fade curve is a pinned project-file integer, so a value outside the four
 /// that exist came from a file nothing in MAGDA wrote. Linear is what an
 /// unreadable curve plays as, and it is reported rather than assumed.
@@ -437,6 +442,34 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             track.session.push_back(std::move(slot));
         }
 
+        // The empty slots armed to record into (#2464). A slot needs an entry
+        // here to get a launch handle, and recording begins on the beat its
+        // launch fires; there is no clip, so there is nothing to compile.
+        for (const int scene : lane.recordSlots) {
+            const auto label = trackLabel(lane.trackId);
+
+            if (scene < 0) {
+                snapshot.diagnostics.push_back(label + "records into no scene");
+                continue;
+            }
+
+            const auto found = std::find_if(
+                track.session.begin(), track.session.end(),
+                [scene](const SessionSlotPlayback& slot) { return slot.sceneIndex == scene; });
+
+            if (found != track.session.end()) {
+                // Already a target means the same scene was armed twice, which
+                // is one slot. A clip in it means the slot is not empty.
+                if (!found->recordTarget)
+                    snapshot.diagnostics.push_back(label + "records into scene " +
+                                                   std::to_string(scene) +
+                                                   ", which already holds a clip");
+                continue;
+            }
+
+            track.session.push_back(SessionSlotPlayback{.sceneIndex = scene, .recordTarget = true});
+        }
+
         std::sort(track.session.begin(), track.session.end(),
                   [](const SessionSlotPlayback& a, const SessionSlotPlayback& b) {
                       return a.sceneIndex < b.sceneIndex;
@@ -444,7 +477,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
         // A track earns an entry by having something to play, in either view. A
         // session-only track is a real one: nothing is in its arrangement and
-        // its slots are still waiting to be launched.
+        // its slots are still waiting to be launched. A record target counts:
+        // it is a slot the user is about to record into.
         if (!track.audio.empty() || !track.midi.empty() || !track.session.empty())
             snapshot.tracks.push_back(std::move(track));
     }

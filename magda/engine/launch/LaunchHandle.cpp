@@ -5,6 +5,17 @@
 
 namespace magda::engine {
 
+void LaunchHandle::noteRunEdges(SplitStatus& status, const RunEdges& edges,
+                                const BlockInstant& at) {
+    // A run starts on a sample the block plays and ends at the bound after its
+    // last one (TimeDomains.hpp).
+    if (edges.ended)
+        status.runEndedAt = EdgeSample{at.sample};
+
+    if (edges.began)
+        status.runBeganAt = EventSample{at.sample};
+}
+
 double LaunchHandle::virtualStart(const SyncRange& piece) const {
     // Where the run would have begun on the timeline as it stands now, which
     // is not where it did begin once the timeline has wrapped or been located
@@ -249,8 +260,12 @@ void LaunchHandle::extendRun(const SyncRange& piece) {
     run_->through = piece.monotonicSamples.end;
 }
 
-void LaunchHandle::applyEvent(const SyncRange& range, bool fromPending, const BlockInstant& at,
-                              double scheduledBeat) {
+LaunchHandle::RunEdges LaunchHandle::applyEvent(const SyncRange& range, bool fromPending,
+                                                const BlockInstant& at, double scheduledBeat) {
+    // A run in progress ends here whatever the event is: a stop ends it, and a
+    // launch or a re-trigger ends it before beginning the next (#2464).
+    const RunEdges ending{.ended = run_.has_value(), .began = false};
+
     if (!fromPending) {
         // A loop re-trigger, which is a relaunch at the wrap: same handle, new
         // run, so the played range restarts and whatever reads it seeks.
@@ -260,7 +275,7 @@ void LaunchHandle::applyEvent(const SyncRange& range, bool fromPending, const Bl
         // from a rounded beat, and that error accumulates (Run::scheduleBeat).
         const auto schedule = run_ ? run_->scheduleBeat : scheduledBeat;
         beginRun(range, at, schedule);
-        return;
+        return {.ended = ending.ended, .began = true};
     }
 
     const auto pending = *pending_;
@@ -274,15 +289,16 @@ void LaunchHandle::applyEvent(const SyncRange& range, bool fromPending, const Bl
         if (pending.releasesSection)
             holdsSection_ = false;
 
-        return;
+        return ending;
     }
 
     if (!pending.synced) {
         beginRun(range, at, scheduledBeat);
-        return;
+        return {.ended = ending.ended, .began = true};
     }
 
     joinRun(range, at, *pending.synced);
+    return {.ended = ending.ended, .began = true};
 }
 
 SplitStatus LaunchHandle::advance(const SyncRange& range) {
@@ -384,7 +400,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
     // first half would be the same answer in a shape every caller has to
     // defend against.
     if (event.sample <= 0) {
-        applyEvent(range, fromPending, range.start(), *eventBeat);
+        noteRunEdges(status, applyEvent(range, fromPending, range.start(), *eventBeat), event);
 
         if (playState_ == PlayState::playing) {
             status.beforeEvent.origin =
@@ -405,7 +421,7 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
         extendRun(first);
     }
 
-    applyEvent(range, fromPending, event, *eventBeat);
+    noteRunEdges(status, applyEvent(range, fromPending, event, *eventBeat), event);
 
     BlockPiece after;
     after.range = second.timeline;

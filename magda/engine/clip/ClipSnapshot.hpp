@@ -278,6 +278,11 @@ struct MidiClipPlayback {
 struct SessionSlotPlayback {
     int sceneIndex = -1;
 
+    /// Whether this slot is armed to record into (#2464). An armed empty slot
+    /// is in the snapshot so that it gets a handle: its launch is quantized
+    /// like any other, and there is no clip to compile.
+    bool recordTarget = false;
+
     /// The slot's material, at most one of each. Empty means the slot holds
     /// a clip that compiled to nothing playable, a diagnostic rather than a
     /// slot that does nothing.

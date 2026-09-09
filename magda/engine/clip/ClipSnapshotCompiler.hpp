@@ -58,6 +58,10 @@ struct ClipLane {
     /// decided at launch rather than at compile (#2301).
     std::vector<ClipInfo> session;
 
+    /// Scene indices of the empty slots this track records into (#2464). A
+    /// slot that already holds a clip is not a target and is left alone.
+    std::vector<int> recordSlots;
+
     /// The track's TrackInfo::playbackMode. In Session mode the arrangement
     /// clips above are silenced at render time (#2485); the compiler copies
     /// it onto TrackClipPlayback unchanged.

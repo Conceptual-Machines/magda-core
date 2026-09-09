@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <vector>
 
 #include "clip/ClipSnapshot.hpp"
 #include "core/TrackInfo.hpp"
@@ -31,7 +32,7 @@ ClipSnapshot snapshotWithScenes(const std::vector<int>& scenes, TrackId trackId 
     TrackClipPlayback track;
     track.trackId = trackId;
     for (const auto scene : scenes)
-        track.session.push_back(SessionSlotPlayback{scene, {}, {}, 4.0});
+        track.session.push_back(SessionSlotPlayback{.sceneIndex = scene, .lengthBeats = 4.0});
     snapshot.tracks.push_back(std::move(track));
     return snapshot;
 }
@@ -127,4 +128,33 @@ TEST_CASE("A plan publish is not what retires a handle", "[engine][session][laun
     CHECK(store.releaseDeleted(empty, nothing, nullptr) == 0);
     CHECK(store.size() == before);
     CHECK(store.findHandle(SlotKey{kTrack, 0}) != nullptr);
+}
+
+TEST_CASE("A retired handle's run ends where it had got to", "[engine][session][launch]") {
+    // The end no block can report (#2464): the handle goes with the publish, so
+    // a capture reading only the audio thread's edges would have a run that
+    // never ended.
+    NoFactory factory;
+    RuntimeStateStore store(factory);
+    LaunchHandleFeed feed;
+    LaunchRequestQueue requests;
+
+    std::vector<SlotRunEvent> retired;
+    store.publishHandles(snapshotWithScenes({0, 2}), feed, requests, &retired);
+
+    auto* playing = store.findHandle(SlotKey{kTrack, 0});
+    REQUIRE(playing != nullptr);
+    launch(*playing);
+
+    // Scene 0 is emptied, scene 2 is left alone and was never launched.
+    store.publishHandles(snapshotWithScenes({2}), feed, requests, &retired);
+
+    REQUIRE(retired.size() == 1);
+    CHECK(retired.front().key == SlotKey{kTrack, 0});
+    CHECK(retired.front().kind == SlotRunEvent::Kind::ended);
+    CHECK(retired.front().incarnation != 0);
+
+    // Where the run had been advanced to, on both faces.
+    CHECK(retired.front().monotonicBeat == 2.0);
+    CHECK(retired.front().at == SamplePosition{48000});
 }

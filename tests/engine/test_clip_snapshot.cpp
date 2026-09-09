@@ -849,3 +849,101 @@ TEST_CASE("Two session snapshots that differ do not dump alike", "[engine][clip]
     CHECK(inScene0 != inScene4);
     CHECK(inScene0 != shorter);
 }
+
+TEST_CASE("An armed empty slot is a record target of its own (#2464)", "[engine][clip][session]") {
+    // An empty slot is the only kind you can record into, and it needs an entry
+    // in the snapshot to get a launch handle at all.
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.session.push_back(makeSessionClip(1, 0, 0.0, 4.0));
+    lane.session.push_back(makeSessionClip(2, 4, 0.0, 4.0));
+    lane.recordSlots = {2};
+
+    const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto& track = snapshot.tracks.front();
+    REQUIRE(track.session.size() == 3);
+
+    // Sorted in among the slots that hold clips, not appended behind them.
+    CHECK(track.session[0].sceneIndex == 0);
+    CHECK(track.session[1].sceneIndex == 2);
+    CHECK(track.session[2].sceneIndex == 4);
+
+    const auto* slot = track.slot(2);
+    REQUIRE(slot != nullptr);
+    CHECK(slot->recordTarget);
+    CHECK(slot->audio.empty());
+    CHECK(slot->midi.empty());
+
+    CHECK_FALSE(track.slot(0)->recordTarget);
+    CHECK_FALSE(track.slot(4)->recordTarget);
+    CHECK(snapshot.diagnostics.empty());
+}
+
+TEST_CASE("A track whose only content is a record target is still a track (#2464)",
+          "[engine][clip][session]") {
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.recordSlots = {1};
+
+    const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto& track = snapshot.tracks.front();
+    CHECK(track.audio.empty());
+    CHECK(track.midi.empty());
+    REQUIRE(track.session.size() == 1);
+    CHECK(track.session.front().sceneIndex == 1);
+    CHECK(track.session.front().recordTarget);
+}
+
+TEST_CASE("A scene armed twice is one record target (#2464)", "[engine][clip][session]") {
+    ClipLane lane;
+    lane.trackId = kTrack;
+    lane.recordSlots = {2, 2};
+
+    const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+    REQUIRE(snapshot.tracks.size() == 1);
+    REQUIRE(snapshot.tracks.front().session.size() == 1);
+    CHECK(snapshot.tracks.front().session.front().sceneIndex == 2);
+    CHECK(snapshot.tracks.front().session.front().recordTarget);
+    CHECK(snapshot.diagnostics.empty());
+}
+
+TEST_CASE("What a record target cannot be says so (#2464)", "[engine][clip][session]") {
+    SECTION("an armed slot that already holds a clip is left alone") {
+        ClipLane lane;
+        lane.trackId = kTrack;
+        lane.session.push_back(makeSessionClip(1, 3, 0.0, 4.0));
+        lane.recordSlots = {3};
+
+        const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+        REQUIRE(snapshot.tracks.size() == 1);
+        const auto& track = snapshot.tracks.front();
+        REQUIRE(track.session.size() == 1);
+
+        const auto* slot = track.slot(3);
+        REQUIRE(slot != nullptr);
+        CHECK_FALSE(slot->recordTarget);
+        REQUIRE(slot->audio.size() == 1);
+        CHECK(slot->audio.front().clipId == 1);
+
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("already holds a clip") != std::string::npos);
+    }
+
+    SECTION("an armed slot in no scene is reported") {
+        ClipLane lane;
+        lane.trackId = kTrack;
+        lane.recordSlots = {-1};
+
+        const auto snapshot = compileClipSnapshot({lane}, makeSources(), makeTempoMap());
+
+        CHECK(snapshot.tracks.empty());
+        REQUIRE(snapshot.diagnostics.size() == 1);
+        CHECK(snapshot.diagnostics.front().find("no scene") != std::string::npos);
+    }
+}

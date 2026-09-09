@@ -169,7 +169,7 @@ void EngineSession::publishClips(std::shared_ptr<const ClipSnapshot> clips) {
     // A null snapshot publishes an empty table rather than skipping, or the
     // previous one would keep handles for slots the engine no longer knows.
     static const ClipSnapshot kNothing;
-    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_);
+    store_.publishHandles(clips != nullptr ? *clips : kNothing, handles_, requests_, &retired_);
 
     clips_.publish(std::move(clips));
 }
@@ -239,6 +239,15 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
         liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
 
+        // Before the plan, and over every handle rather than the ones this plan
+        // renders: a handle must see each block exactly once and a slot has two
+        // sources reading it. What has been asked since the last block is
+        // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
+        //
+        // Before the takes as well, because a take following a slot starts on
+        // the sample its launch fired on and that is decided here (#2464).
+        advanceLaunchHandles(handles_, requests_, segment.block, &runs_);
+
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.
         if (takes)
@@ -251,12 +260,6 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // round to be given a reader.
         if (voices_ != nullptr)
             voices_->setPosition(segment.block.seconds.start);
-
-        // Before the plan, and over every handle rather than the ones this plan
-        // renders: a handle must see each block exactly once and a slot has two
-        // sources reading it. What has been asked since the last block is
-        // applied in the same pass, ahead of every advance (SessionLauncher.hpp).
-        advanceLaunchHandles(handles_, requests_, segment.block);
 
         // The block's one acquisition of the clips, held while it renders
         // (#2490): a track's two sources play one publish rather than each

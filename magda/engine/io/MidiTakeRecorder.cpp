@@ -198,9 +198,17 @@ MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
       tap_(tap) {
     // Sized once, so a block's events are copied into it and never allocate.
     events_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
+    incoming_.ensureSize(static_cast<std::size_t>(kMaxMidiBytesPerPort));
 }
 
 void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) {
+    // A slot take is on its run's own time: neither the count-in nor the loop
+    // says anything about it (#2464).
+    if (settings_.slot) {
+        captureRun(block);
+        return;
+    }
+
     if (state_ == State::stopped)
         return;
 
@@ -224,18 +232,72 @@ void MidiTakeRecorder::capture(const BlockInfo& block, bool countingIn, const Lo
         openPass(block, loop);
     }
 
-    write(block);
+    write(block, 0, block.numSamples);
     publish(block);
     arrivals_ += block.numSamples;
 }
 
-void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop) {
+void MidiTakeRecorder::captureRun(const BlockInfo& block) {
+    if (state_ == State::stopped)
+        return;
+
+    const auto run = slotRun(*settings_.slot);
+
+    // The slot was retired or refilled: the take ends where it stood.
+    if (run.gone) {
+        if (state_ == State::rolling)
+            stop();
+
+        return;
+    }
+
+    // A stopped transport passes no timeline, so the take holds none of this
+    // block. Its edges are still read: a request applied in a stopped block is
+    // reported by that block alone (#2464 review).
+    const auto samples = block.playing ? block.numSamples : 0;
+
+    auto from = 0;
+    auto closing = false;
+
+    if (state_ == State::waiting) {
+        // An end in this block belongs to the run before this one.
+        if (!run.beganAt)
+            return;
+
+        from = std::min(run.beganAt->value, samples);
+        start(block, LoopRange{}, from);
+    } else if (run.endedAt) {
+        // A launch in this block begins the next take, not this one.
+        closing = true;
+    }
+
+    const auto to = closing ? std::min(run.endedAt->value, samples) : samples;
+
+    if (to > from) {
+        write(block, from, to);
+        publish(block);
+        arrivals_ += to - from;
+    }
+
+    if (closing)
+        stop();
+}
+
+void MidiTakeRecorder::start(const BlockInfo& block, const LoopRange& loop, int from) {
     state_ = State::rolling;
     rolled_ = true;
     rolling_.store(true, std::memory_order_relaxed);
 
-    startBeat_ = block.beats.start;
     startSeconds_ = block.seconds.start;
+    startBeat_ = block.beats.start;
+
+    // A quantized launch begins the take inside the block rather than on its
+    // boundary.
+    if (from > 0 && block.rate() > 0.0) {
+        startSeconds_ = block.seconds.start + (static_cast<double>(from) / block.rate());
+        startBeat_ = block.beatAtTime(startSeconds_);
+    }
+
     sampleRate_ = block.rate();
     origin_ = block.materialOrigin;
     startedAtLoopStart_ = atLoopStart(block, loop);
@@ -274,11 +336,27 @@ void MidiTakeRecorder::stop() {
     tap_.close();
 }
 
-void MidiTakeRecorder::write(const BlockInfo& block) {
-    events_.clear();
-    input_.render(block, events_);
+void MidiTakeRecorder::collect(const BlockInfo& block, int from, int to) {
+    incoming_.clear();
+    input_.render(block, incoming_);
 
-    end_ = arrivals_ + block.numSamples - settings_.latencySamples;
+    // The whole block, which is every arrangement take: a swap rather than a
+    // copy, so the common path costs nothing.
+    if (from <= 0 && to >= block.numSamples) {
+        events_.swapWith(incoming_);
+        return;
+    }
+
+    events_.clear();
+    for (const auto metadata : incoming_)
+        if (metadata.samplePosition >= from && metadata.samplePosition < to)
+            events_.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition - from);
+}
+
+void MidiTakeRecorder::write(const BlockInfo& block, int from, int to) {
+    collect(block, from, to);
+
+    end_ = arrivals_ + (to - from) - settings_.latencySamples;
 
     if (events_.isEmpty())
         return;

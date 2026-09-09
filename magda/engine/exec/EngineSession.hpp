@@ -3,6 +3,7 @@
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "clip/ClipSnapshotFeed.hpp"
@@ -254,6 +255,32 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
+    /**
+     * @brief The run edges the launcher publishes, for the capture (#2464).
+     *
+     * Drained on the publishing thread by SessionCapture. Outside every epoch
+     * beside the request lane it answers: a launch made while a plan was
+     * compiling still has its edge reported when the new one is live.
+     */
+    SlotRunQueue& slotRuns() {
+        return runs_;
+    }
+
+    /**
+     * @brief Ends no block could stamp, and forget them (#2464).
+     *
+     * A slot retired while it was sounding: publishClips() drops the handle,
+     * and the run it was playing ends there rather than at whatever the next
+     * thing to notice happens to be. Hand each to SessionCapture::apply. On the
+     * publishing thread, like the publish that produced them.
+     *
+     * Kept until asked for rather than dropped like a full lane: one per slot
+     * deleted while it played, which is a user's edit and not a rate.
+     */
+    std::vector<SlotRunEvent> takeRetiredRuns() {
+        return std::exchange(retired_, {});
+    }
+
     /// Callbacks in which a loop was too short to render as separate blocks.
     int loopWrapOverflows() const {
         return clock_.loopWrapOverflows();
@@ -375,6 +402,13 @@ class EngineSession {
     /// epoch, like the feed it is read beside: a request made while a plan was
     /// being compiled is still a request when the new one is live.
     LaunchRequestQueue requests_;
+
+    /// What came of them: where each run began and ended, for the capture.
+    SlotRunQueue runs_;
+
+    /// Ends this thread stamped rather than a block: a slot retired while it
+    /// was sounding (@ref takeRetiredRuns).
+    std::vector<SlotRunEvent> retired_;
 
     /// The cursor. Not published and not swapped: it's where the timeline
     /// is, a property of the session rather than of any plan, and a plan

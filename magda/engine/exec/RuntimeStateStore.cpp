@@ -305,7 +305,8 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
 }
 
 std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
-    const ClipSnapshot& clips, LaunchHandleFeed& feed, LaunchRequestQueue& requests) {
+    const ClipSnapshot& clips, LaunchHandleFeed& feed, LaunchRequestQueue& requests,
+    std::vector<SlotRunEvent>* retired) {
     auto table = std::make_shared<LaunchHandleTable>();
 
     for (const auto& track : clips.tracks)
@@ -352,6 +353,26 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
     // The swap waits for the block the callback is in, so afterwards a handle
     // this table does not name is unreachable from the audio thread.
     feed.publish(table);
+
+    // The runs those dropped handles were sounding. Their end is here, on this
+    // thread, because the handle goes before any block could report one; where
+    // it had been advanced to is the end it actually had (#2464).
+    if (retired != nullptr)
+        for (const auto& [key, made] : handles_) {
+            if (table->find(key) != nullptr || made.handle == nullptr)
+                continue;
+
+            const auto played = made.handle->playedMonotonicRange();
+            if (!played)
+                continue;
+
+            retired->push_back(SlotRunEvent{.key = key,
+                                            .kind = SlotRunEvent::Kind::ended,
+                                            .incarnation = made.incarnation,
+                                            .at = made.handle->playedSampleRange()->end,
+                                            .timelineBeat = made.handle->playedRange()->end,
+                                            .monotonicBeat = played->end});
+        }
 
     // So it can go, here, on this thread. The only thing that knows a slot was
     // emptied is the snapshot that stopped naming it; a plan publish would not
