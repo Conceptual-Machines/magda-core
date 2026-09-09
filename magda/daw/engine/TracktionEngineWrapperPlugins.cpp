@@ -1,6 +1,8 @@
+#include <algorithm>
 #include <fstream>
 #include <map>
 #include <optional>
+#include <ranges>
 #include <set>
 #include <sstream>
 #include <thread>
@@ -622,7 +624,7 @@ std::vector<std::string> TracktionEngineWrapper::getSystemPluginSearchPaths() co
         const auto searchPaths = format->getDefaultLocationsToSearch();
         for (int j = 0; j < searchPaths.getNumPaths(); ++j) {
             auto path = searchPaths[j].getFullPathName().toStdString();
-            if (std::find(paths.begin(), paths.end(), path) == paths.end())
+            if (!std::ranges::contains(paths, path))
                 paths.push_back(std::move(path));
         }
     }
@@ -686,17 +688,14 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
         return result;
     }
 
-    juce::PluginDescription description;
-    bool found = false;
-    for (const auto& candidate : getKnownPluginTypes()) {
-        if (candidate.createIdentifierString() == pluginId) {
-            description = candidate;
-            found = true;
-            break;
-        }
-    }
-    if (!found)
+    const auto identifierOf = [](const juce::PluginDescription& candidate) {
+        return candidate.createIdentifierString();
+    };
+    const auto knownTypes = getKnownPluginTypes();
+    const auto match = std::ranges::find(knownTypes, pluginId, identifierOf);
+    if (match == knownTypes.end())
         return result;
+    const juce::PluginDescription description = *match;
 
     juce::String error;
     auto& formatManager = engine_->getPluginManager().pluginFormatManager;
@@ -749,15 +748,11 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
             for (const auto sample : samplePoints)
                 info.scanInput.displayTexts.push_back(parameter->getText(sample, 128));
 
-            bool allLabels = true;
-            for (const auto& text : info.scanInput.displayTexts) {
+            const auto startsWithALetter = [](const juce::String& text) {
                 const auto trimmed = text.trim();
-                if (trimmed.isEmpty() || !juce::CharacterFunctions::isLetter(trimmed[0])) {
-                    allLabels = false;
-                    break;
-                }
-            }
-            if (allLabels) {
+                return trimmed.isNotEmpty() && juce::CharacterFunctions::isLetter(trimmed[0]);
+            };
+            if (std::ranges::all_of(info.scanInput.displayTexts, startsWithALetter)) {
                 info.scanInput.displayTexts.clear();
                 for (int state = 0; state <= 1000; ++state) {
                     const auto text = parameter->getText(static_cast<float>(state) / 1000.0f, 128);

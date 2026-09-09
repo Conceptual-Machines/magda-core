@@ -253,19 +253,6 @@ bool isInputDelayRole(OpRole role) {
     }
 }
 
-/// Producer ops an op waits on, each counted once however many slots it feeds.
-std::vector<OpId> distinctProducers(const PlanOp& op) {
-    std::vector<OpId> producers;
-    producers.reserve(op.inputs.size());
-    for (const auto& input : op.inputs) {
-        if (!input.valid())
-            continue;
-        if (std::ranges::find(producers, input.op) == producers.end())
-            producers.push_back(input.op);
-    }
-    return producers;
-}
-
 }  // namespace
 
 PlanScheduling scheduleOf(const RenderPlan& plan) {

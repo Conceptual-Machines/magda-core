@@ -146,14 +146,10 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
 
             // TRACK FX <alias> — create track named after plugin + add plugin
             if (parts[1].toUpperCase() == "FX" && parts.size() >= 3) {
-                payload.fxAlias = parts[2];
-                for (int i = 3; i < parts.size(); ++i)
-                    payload.fxAlias += " " + parts[i];
+                payload.fxAlias = parts.joinIntoString(" ", 2);
                 // name left empty — executor will resolve from plugin
             } else {
-                payload.name = parts[1];
-                for (int i = 2; i < parts.size(); ++i)
-                    payload.name += " " + parts[i];
+                payload.name = parts.joinIntoString(" ", 1);
             }
             instructions.push_back({OpCode::Track, payload});
         } else if (op == "DEL") {
@@ -172,9 +168,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             } else if (isInteger(parts[1])) {
                 payload.target.id = parts[1].getIntValue();
             } else {
-                payload.target.name = parts[1];
-                for (int i = 2; i < parts.size(); ++i)
-                    payload.target.name += " " + parts[i];
+                payload.target.name = parts.joinIntoString(" ", 1);
             }
             instructions.push_back({OpCode::Mute, payload});
         } else if (op == "SOLO") {
@@ -184,9 +178,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             } else if (isInteger(parts[1])) {
                 payload.target.id = parts[1].getIntValue();
             } else {
-                payload.target.name = parts[1];
-                for (int i = 2; i < parts.size(); ++i)
-                    payload.target.name += " " + parts[i];
+                payload.target.name = parts.joinIntoString(" ", 1);
             }
             instructions.push_back({OpCode::Solo, payload});
         } else if (op == "SET") {
@@ -226,9 +218,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 payload.bar = parts[2].getDoubleValue();
                 payload.lengthBars = parts[3].getDoubleValue();
                 if (parts.size() > 4) {
-                    payload.name = parts[4];
-                    for (int i = 5; i < parts.size(); ++i)
-                        payload.name += " " + parts[i];
+                    payload.name = parts.joinIntoString(" ", 4);
                 }
             } else {
                 // Implicit track: CLIP <bar> <len> [name...]
@@ -236,9 +226,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 payload.bar = parts[1].getDoubleValue();
                 payload.lengthBars = parts[2].getDoubleValue();
                 if (parts.size() > 3) {
-                    payload.name = parts[3];
-                    for (int i = 4; i < parts.size(); ++i)
-                        payload.name += " " + parts[i];
+                    payload.name = parts.joinIntoString(" ", 3);
                 }
             }
             instructions.push_back({OpCode::Clip, payload});
@@ -264,9 +252,7 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
                 payload.field = parts[3].toLowerCase();
                 payload.op = parts[4];
                 if (parts.size() > 5) {
-                    payload.value = parts[5];
-                    for (int i = 6; i < parts.size(); ++i)
-                        payload.value += " " + parts[i];
+                    payload.value = parts.joinIntoString(" ", 5);
                 }
             }
             instructions.push_back({OpCode::Select, payload});
@@ -286,15 +272,11 @@ std::vector<Instruction> CompactParser::parse(const juce::String& compact) {
             } else if (isInteger(parts[1])) {
                 // Numeric first arg -> explicit track by index
                 payload.target = parseRef(parts[1]);
-                payload.fxName = parts[2];
-                for (int i = 3; i < parts.size(); ++i)
-                    payload.fxName += " " + parts[i];
+                payload.fxName = parts.joinIntoString(" ", 2);
             } else {
                 // All args are the fx name (implicit track)
                 payload.target.implicit = true;
-                payload.fxName = parts[1];
-                for (int i = 2; i < parts.size(); ++i)
-                    payload.fxName += " " + parts[i];
+                payload.fxName = parts.joinIntoString(" ", 1);
             }
             instructions.push_back({OpCode::Fx, payload});
         } else if (op == "ARP") {

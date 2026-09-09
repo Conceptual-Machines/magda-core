@@ -234,7 +234,7 @@ std::vector<std::string> tagTokensFromText(const std::string& raw) {
     std::vector<std::string> out;
     std::string token;
     auto flush = [&]() {
-        if (!token.empty() && std::find(out.begin(), out.end(), token) == out.end()) {
+        if (!token.empty() && !std::ranges::contains(out, token)) {
             out.push_back(token);
         }
         token.clear();
@@ -255,9 +255,8 @@ void addTag(std::vector<std::pair<std::string, float>>& tags, const std::string&
     if (tag.empty()) {
         return;
     }
-    const auto exists =
-        std::any_of(tags.begin(), tags.end(), [&](const auto& t) { return t.first == tag; });
-    if (!exists) {
+    const auto tagNameOf = [](const auto& entry) { return entry.first; };
+    if (!std::ranges::contains(tags, tag, tagNameOf)) {
         tags.emplace_back(tag, 1.0F);
     }
 }

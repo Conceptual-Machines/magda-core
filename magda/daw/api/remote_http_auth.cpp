@@ -31,7 +31,7 @@ bool isOriginAllowed(bool originPresent, const juce::String& origin,
                      const std::vector<juce::String>& allowedOrigins) {
     if (!originPresent)
         return true;
-    return std::find(allowedOrigins.begin(), allowedOrigins.end(), origin) != allowedOrigins.end();
+    return std::ranges::contains(allowedOrigins, origin);
 }
 
 }  // namespace magda::remote

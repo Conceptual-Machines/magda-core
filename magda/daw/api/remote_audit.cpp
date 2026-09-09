@@ -159,7 +159,7 @@ void registerRemoteSecret(const juce::String& secret) {
 
     const std::scoped_lock lock(secretsMutex());
     auto& values = secrets();
-    if (std::find(values.begin(), values.end(), secret) == values.end())
+    if (!std::ranges::contains(values, secret))
         values.push_back(secret);
 }
 

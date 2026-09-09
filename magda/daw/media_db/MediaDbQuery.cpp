@@ -682,8 +682,8 @@ std::vector<QueryResult> MediaDbQuery::search(const std::optional<std::string>& 
         }
         combined.emplace_back(weights.audio * a + weights.text * t, id);
     }
-    std::sort(combined.begin(), combined.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
+    const auto scoreOf = [](const auto& entry) { return entry.first; };
+    std::ranges::sort(combined, std::ranges::greater{}, scoreOf);
     if (sort.field != QuerySortField::Default) {
         auto sorted = hydrate(sql, combined);
         sortResults(sorted, sort);
@@ -763,8 +763,8 @@ std::vector<QueryResult> MediaDbQuery::similarTo(std::int64_t seedFileId,
         }
         ranked.emplace_back(s, id);
     }
-    std::sort(ranked.begin(), ranked.end(),
-              [](const auto& a, const auto& b) { return a.first > b.first; });
+    const auto similarityOf = [](const auto& entry) { return entry.first; };
+    std::ranges::sort(ranked, std::ranges::greater{}, similarityOf);
     if (sort.field != QuerySortField::Default) {
         auto sorted = hydrate(sql, ranked);
         sortResults(sorted, sort);

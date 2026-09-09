@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "../audio/AudioBridge.hpp"
 #include "../core/ClipManager.hpp"
@@ -469,12 +470,8 @@ bool TracktionEngineWrapper::isSessionSlotRecording(TrackId trackId, int sceneIn
 }
 
 bool TracktionEngineWrapper::hasActiveSessionSlotRecordings() const {
-    for (const auto& [trackId, target] : sessionSlotRecordingTargets_) {
-        juce::ignoreUnused(trackId);
-        if (target.active)
-            return true;
-    }
-    return false;
+    const auto isActive = [](const auto& target) { return target.active; };
+    return std::ranges::any_of(sessionSlotRecordingTargets_ | std::views::values, isActive);
 }
 
 void TracktionEngineWrapper::beginArmedSessionSlotRecordings() {

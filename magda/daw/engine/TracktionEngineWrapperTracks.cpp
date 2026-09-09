@@ -1,3 +1,7 @@
+#include <algorithm>
+#include <iterator>
+#include <ranges>
+
 #include "../audio/AudioBridge.hpp"
 #include "TracktionEngineWrapper.hpp"
 
@@ -121,14 +125,12 @@ void TracktionEngineWrapper::setTrackColor(const std::string& track_id, int r, i
 std::vector<std::string> TracktionEngineWrapper::getAllTrackIds() const {
     std::vector<std::string> ids;
     ids.reserve(trackMap_.size());
-    for (const auto& pair : trackMap_) {
-        ids.push_back(pair.first);
-    }
+    std::ranges::copy(trackMap_ | std::views::keys, std::back_inserter(ids));
     return ids;
 }
 
 bool TracktionEngineWrapper::trackExists(const std::string& track_id) const {
-    return trackMap_.find(track_id) != trackMap_.end();
+    return trackMap_.contains(track_id);
 }
 
 void TracktionEngineWrapper::previewNoteOnTrack(const std::string& track_id, int noteNumber,

@@ -841,7 +841,7 @@ void ProjectManager::refreshDirtyState() {
 void ProjectManager::addListener(ProjectManagerListener* listener) {
     if (listener != nullptr) {
         // Avoid adding the same listener multiple times
-        auto it = std::find(listeners_.begin(), listeners_.end(), listener);
+        auto it = std::ranges::find(listeners_, listener);
         if (it == listeners_.end()) {
             listeners_.push_back(listener);
         }

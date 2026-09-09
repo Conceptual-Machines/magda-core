@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <tuple>
 
 #include "core/PitchExpressionCurve.hpp"
 
@@ -90,9 +91,7 @@ void densify(std::vector<EventType> sorted, int maxValue, double floorBeats, Emi
     if (sorted.empty())
         return;
 
-    std::stable_sort(sorted.begin(), sorted.end(), [](const EventType& a, const EventType& b) {
-        return a.beatPosition < b.beatPosition;
-    });
+    std::ranges::stable_sort(sorted, {}, &EventType::beatPosition);
 
     auto lastValue = std::numeric_limits<int>::min();
     auto lastBeat = -std::numeric_limits<double>::max();
@@ -239,12 +238,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
     // ---- Notes -------------------------------------------------------------
 
     auto notes = clip.midiNotes;
-    std::stable_sort(notes.begin(), notes.end(), [](const MidiNote& a, const MidiNote& b) {
-        return a.startBeat < b.startBeat;
-    });
+    std::ranges::stable_sort(notes, {}, &MidiNote::startBeat);
 
-    list.mpe = std::any_of(notes.begin(), notes.end(),
-                           [](const MidiNote& note) { return note.hasPitchExpression(); });
+    const auto hasPitchExpression = [](const MidiNote& note) { return note.hasPitchExpression(); };
+    list.mpe = std::ranges::any_of(notes, hasPitchExpression);
 
     std::array<MpeChannel, kMpeLastMemberChannel - kMpeFirstMemberChannel + 1> mpeChannels{};
     std::vector<int> channelOf(notes.size(), 1);
@@ -360,8 +357,8 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
         // which is where a coarse grid is heard most directly.
         if (list.mpe && note.hasPitchExpression()) {
             auto points = note.pitchExpression;
-            std::stable_sort(points.begin(), points.end(),
-                             [](const auto& a, const auto& b) { return a.beat < b.beat; });
+            const auto beatOf = [](const auto& point) { return point.beat; };
+            std::ranges::stable_sort(points, {}, beatOf);
 
             // Shape from core, so what compiles is what the piano roll drew
             // (#2198). The densification below is unchanged: it already walks
@@ -433,11 +430,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
     {
         const auto& bend = clip.midiPitchBendData;
-        const auto allAtRest =
-            !bend.empty() &&
-            std::all_of(bend.begin(), bend.end(), [](const MidiPitchBendData& event) {
-                return event.value == kPitchWheelRest;
-            });
+        const auto atRest = [](const MidiPitchBendData& event) {
+            return event.value == kPitchWheelRest;
+        };
+        const auto allAtRest = !bend.empty() && std::ranges::all_of(bend, atRest);
 
         if (!allAtRest) {
             densify(bend, 16383, curveFloorBeats, [&](double beat, int value) {
@@ -452,12 +448,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
 
     // ---- Sort, then pair the notes up again ---------------------------------
 
-    std::stable_sort(pending.begin(), pending.end(),
-                     [](const PendingEvent& a, const PendingEvent& b) {
-                         if (a.event.beat != b.event.beat)
-                             return a.event.beat < b.event.beat;
-                         return rankOf(a.event.status) < rankOf(b.event.status);
-                     });
+    const auto beatThenRank = [](const PendingEvent& pendingEvent) {
+        return std::tuple{pendingEvent.event.beat, rankOf(pendingEvent.event.status)};
+    };
+    std::ranges::stable_sort(pending, {}, beatThenRank);
 
     list.events.reserve(pending.size());
     for (const auto& entry : pending)
@@ -481,11 +475,10 @@ MidiEventList compileMidiEvents(const ClipInfo& clip, double curveFloorBeats) {
                                 : kind == kChannelPressure ? MidiControllerStream::kChannelPressure
                                                            : static_cast<int>(event.data1);
 
-        auto found = std::find_if(list.controllers.begin(), list.controllers.end(),
-                                  [&](const MidiControllerStream& stream) {
-                                      return stream.channel == event.channel() &&
-                                             stream.controller == controller;
-                                  });
+        const auto isThisStream = [&](const MidiControllerStream& stream) {
+            return stream.channel == event.channel() && stream.controller == controller;
+        };
+        auto found = std::ranges::find_if(list.controllers, isThisStream);
 
         if (found == list.controllers.end()) {
             list.controllers.push_back(MidiControllerStream{event.channel(), controller, {}});

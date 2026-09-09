@@ -1,5 +1,6 @@
 #include "../audio/AudioBridge.hpp"
 #include "TracktionEngineWrapper.hpp"
+#include "WaveDeviceChannels.hpp"
 
 namespace magda {
 
@@ -72,16 +73,10 @@ void TracktionEngineWrapper::handlePlaybackContextReallocation(tracktion::Device
             juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
 
             int numInputChannels = device->getInputChannelNames().size();
-            for (auto* dev : dm.getWaveInputDevices()) {
-                bool shouldEnable = false;
-                for (const auto& ch : dev->getChannels()) {
-                    if (ch.indexInDevice < numInputChannels) {
-                        shouldEnable = true;
-                        break;
-                    }
-                }
-                dev->setEnabled(shouldEnable);
-            }
+            const auto withinDeviceInputs = [numInputChannels](int index) {
+                return index < numInputChannels;
+            };
+            enableDevicesForChannels(dm.getWaveInputDevices(), withinDeviceInputs);
 
             DBG("Reconfigured wave devices for " << currentDeviceName << " (" << numInputChannels
                                                  << " inputs)");
@@ -195,25 +190,12 @@ void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigI
     if (engine_ == nullptr)
         return;
 
-    const auto applyChannels = [&channels](const auto& devices) {
-        for (auto* device : devices) {
-            if (device == nullptr)
-                continue;
-            bool shouldEnable = false;
-            for (const auto& channel : device->getChannels()) {
-                if (channels[channel.indexInDevice]) {
-                    shouldEnable = true;
-                    break;
-                }
-            }
-            if (device->isEnabled() != shouldEnable)
-                device->setEnabled(shouldEnable);
-        }
-    };
+    const auto isSelected = [&channels](int index) { return channels[index]; };
+    auto& deviceManager = engine_->getDeviceManager();
     if (input)
-        applyChannels(engine_->getDeviceManager().getWaveInputDevices());
+        enableDevicesForChannels(deviceManager.getWaveInputDevices(), isSelected);
     else
-        applyChannels(engine_->getDeviceManager().getWaveOutputDevices());
+        enableDevicesForChannels(deviceManager.getWaveOutputDevices(), isSelected);
 }
 
 void TracktionEngineWrapper::rescanWaveDevices(bool enableInputs, bool enableOutputs) {

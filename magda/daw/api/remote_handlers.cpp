@@ -211,9 +211,8 @@ bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
         if (api.devices().getDevice(target.devicePath) == nullptr)
             return false;
         const auto parameters = api.devices().getDeviceParameters(target.devicePath);
-        return std::any_of(parameters.begin(), parameters.end(), [&target](const auto& parameter) {
-            return parameter.index == target.paramIndex;
-        });
+        const auto indexOfParameter = [](const auto& parameter) { return parameter.index; };
+        return std::ranges::contains(parameters, target.paramIndex, indexOfParameter);
     }
 
     if (target.kind == ControlTarget::Kind::TrackVolume ||
@@ -222,9 +221,8 @@ bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
     if (target.kind == ControlTarget::Kind::SendLevel) {
         if (target.devicePath.getType() != ChainNodeType::Track)
             return false;
-        return std::any_of(track->sends.begin(), track->sends.end(), [&target](const auto& send) {
-            return send.busIndex == target.sendBusIndex;
-        });
+        const auto busIndexOf = [](const auto& send) { return send.busIndex; };
+        return std::ranges::contains(track->sends, target.sendBusIndex, busIndexOf);
     }
 
     const MacroArray* macros = nullptr;
@@ -260,10 +258,8 @@ bool targetResolves(MagdaApi& api, const AutomationTarget& target) {
         return target.paramIndex >= 0 &&
                static_cast<std::size_t>(target.paramIndex) < macros->size();
     if (target.kind == ControlTarget::Kind::ModParam) {
-        const auto found = std::find_if(mods->begin(), mods->end(), [&target](const auto& mod) {
-            return mod.id == target.modId;
-        });
-        return found != mods->end() && target.modParamIndex == 0;
+        const auto idOf = [](const auto& mod) { return mod.id; };
+        return std::ranges::contains(*mods, target.modId, idOf) && target.modParamIndex == 0;
     }
 
     return false;
@@ -579,10 +575,7 @@ HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const R
 
     const auto parameterIndex = readInt(input, "parameterIndex", -1);
     const auto parameters = makeDeviceParameterDtos(*device);
-    const auto named = std::find_if(parameters.begin(), parameters.end(),
-                                    [parameterIndex](const DeviceParameterDto& parameter) {
-                                        return parameter.index == parameterIndex;
-                                    });
+    const auto named = std::ranges::find(parameters, parameterIndex, &DeviceParameterDto::index);
     if (named == parameters.end())
         return notFound("parameter", parameterIndex);
 
@@ -782,8 +775,7 @@ HandlerResult racksSetBypassed(MagdaApi& api, const juce::var& input, const Requ
     if (track == nullptr)
         return notFound("track", trackId);
     const auto graph = makeDeviceGraphDto({*track});
-    const auto found = std::find_if(graph.racks.begin(), graph.racks.end(),
-                                    [rackId](const RackDto& rack) { return rack.id == rackId; });
+    const auto found = std::ranges::find(graph.racks, rackId, &RackDto::id);
     if (found == graph.racks.end())
         return notFound("rack", rackId);
     return HandlerResult::ok(toJson(*found));

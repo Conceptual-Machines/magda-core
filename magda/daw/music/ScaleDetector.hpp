@@ -66,8 +66,8 @@ inline std::vector<std::pair<ScaleWithChords, MatchScore>> detectBestMatchingSca
         }
     }
 
-    std::sort(scored.begin(), scored.end(),
-              [](const auto& a, const auto& b) { return b.second.score < a.second.score; });
+    const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+    std::ranges::sort(scored, std::ranges::greater{}, scoreOf);
 
     return scored;
 }
@@ -145,8 +145,8 @@ inline std::vector<std::pair<ScaleWithChords, NoteBasedMatchScore>> detectScales
         scored.emplace_back(scale, matchScore);
     }
 
-    std::sort(scored.begin(), scored.end(),
-              [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+    const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+    std::ranges::sort(scored, std::ranges::greater{}, scoreOf);
 
     // Second pass: if a scale is a strict subset of a same-root scale that ranks
     // lower, promote the superset to sit directly above the subset.

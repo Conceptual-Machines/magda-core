@@ -34,10 +34,11 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
 }
 
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
-    auto findAnalysis = [&elements](int order) {
-        return std::find_if(elements.begin(), elements.end(), [order](const auto& element) {
-            return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId) == order;
-        });
+    const auto analysisOrderOf = [](const PostFxChainElement& element) {
+        return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId);
+    };
+    auto findAnalysis = [&elements, &analysisOrderOf](int order) {
+        return std::ranges::find(elements, order, analysisOrderOf);
     };
 
     auto osc = findAnalysis(0);

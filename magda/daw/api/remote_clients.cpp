@@ -114,10 +114,8 @@ void RemoteClientRegistry::noteConnected(ConnectedClient client) {
     // Replace rather than append on a repeated id. A transport that reuses one
     // would otherwise leave a phantom row that no disconnect could clear,
     // because `noteDisconnected` removes a single entry.
-    const auto found = std::find_if(connections_.begin(), connections_.end(),
-                                    [&](const ConnectedClient& existing) {
-                                        return existing.connectionId == client.connectionId;
-                                    });
+    const auto found =
+        std::ranges::find(connections_, client.connectionId, &ConnectedClient::connectionId);
     if (found != connections_.end())
         *found = std::move(client);
     else
@@ -154,9 +152,8 @@ bool RemoteClientRegistry::disconnect(const juce::String& connectionId) {
     DisconnectHandler handler;
     {
         const std::scoped_lock lock(mutex_);
-        const auto found = std::find_if(
-            connections_.begin(), connections_.end(),
-            [&](const ConnectedClient& client) { return client.connectionId == connectionId; });
+        const auto found =
+            std::ranges::find(connections_, connectionId, &ConnectedClient::connectionId);
         if (found == connections_.end())
             return false;
 

@@ -433,8 +433,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::genera
     }
 
     // Apply priority boost (sort by score descending)
-    std::sort(filtered.begin(), filtered.end(),
-              [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+    std::ranges::sort(filtered, std::ranges::greater{}, &SuggestionItem::score);
     auto boostedCandidates = std::move(filtered);
 
     // Convert to final format with score decay by position and deduplicate by chord name
@@ -910,8 +909,7 @@ ChordSuggestionEngine::generateNonDiatonicCandidates(const juce::String& key,
                 notes.emplace_back(n, 100);
             for (int n : upperNotes)
                 notes.emplace_back(n, 100);
-            std::sort(notes.begin(), notes.end(),
-                      [](auto& a, auto& b) { return a.noteNumber < b.noteNumber; });
+            std::ranges::sort(notes, {}, &ChordNote::noteNumber);
 
             // Build chord object with base lower quality for compatibility; override names
             auto baseQuality = lowerMinor ? ChordQuality::Minor : ChordQuality::Major;
@@ -980,9 +978,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCan
         }
 
         // Sort by priority (highest first)
-        std::sort(
-            prioritizedDiatonic.begin(), prioritizedDiatonic.end(),
-            [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+        std::ranges::sort(prioritizedDiatonic, std::ranges::greater{}, &SuggestionItem::score);
 
         // Take top candidates up to topK
         result.resize(std::min(topK, static_cast<int>(prioritizedDiatonic.size())));
@@ -999,8 +995,7 @@ std::vector<ChordSuggestionEngine::SuggestionItem> ChordSuggestionEngine::mixCan
 
     // Sort non-diatonic candidates by score (highest first) before taking
     std::vector<SuggestionItem> sortedNonDiatonic = nonDiatonic;
-    std::sort(sortedNonDiatonic.begin(), sortedNonDiatonic.end(),
-              [](const SuggestionItem& a, const SuggestionItem& b) { return a.score > b.score; });
+    std::ranges::sort(sortedNonDiatonic, std::ranges::greater{}, &SuggestionItem::score);
 
     // Ensure polychords are visible even at low novelty by reserving a couple of early slots
     std::vector<SuggestionItem> polyList;
@@ -1123,10 +1118,7 @@ Chord ChordSuggestionEngine::buildChordInRootPosition(const juce::String& root,
         if (midi >= 0)
             notes.emplace_back(midi, 100);
     };
-    auto ensureSorted = [&]() {
-        std::sort(notes.begin(), notes.end(),
-                  [](const auto& a, const auto& b) { return a.noteNumber < b.noteNumber; });
-    };
+    auto ensureSorted = [&]() { std::ranges::sort(notes, {}, &ChordNote::noteNumber); };
 
     // Handle slash chords: e.g., "maj/5", "maj/b7"
     if (quality.containsChar('/')) {
@@ -1386,9 +1378,7 @@ Chord ChordSuggestionEngine::optimizeVoicing(const Chord& chord, float inversion
     if (!result.notes.empty()) {
         // Sort notes to find the bass note
         auto sortedNotes = result.notes;
-        std::sort(
-            sortedNotes.begin(), sortedNotes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
         int bassNote = sortedNotes[0].noteNumber;
         int bassPitchClass = bassNote % 12;
@@ -1466,9 +1456,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
 
         // Sort notes to find the bass note
         auto sortedNotes = chord.notes;
-        std::sort(
-            sortedNotes.begin(), sortedNotes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
         int bassNote = sortedNotes[0].noteNumber;
         int bassPitchClass = bassNote % 12;
@@ -1531,8 +1519,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
 
     // Sort notes to find the bass note
     auto sortedNotes = canonicalRootPosition.notes;
-    std::sort(sortedNotes.begin(), sortedNotes.end(),
-              [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+    std::ranges::sort(sortedNotes, {}, &ChordNote::noteNumber);
 
     // Find the root pitch class from the chord name
     juce::String rootStr = chord.name.upToFirstOccurrenceOf(":", false, false);
@@ -1599,9 +1586,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
             }
 
             // Sort by pitch to ensure proper ordering
-            std::sort(
-                rearrangedNotes.begin(), rearrangedNotes.end(),
-                [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+            std::ranges::sort(rearrangedNotes, {}, &ChordNote::noteNumber);
 
             canonicalRootPosition.notes = rearrangedNotes;
             canonicalRootPosition.inversion = 0;
@@ -1614,9 +1599,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         Chord inversion = canonicalRootPosition;
 
         // Sort notes by pitch
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Move the highest 'abs(inv)' notes down an octave
         int notesToMove = std::abs(inv);
@@ -1627,9 +1610,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         }
 
         // Sort again to maintain order
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Now detect the actual inversion based on the bass note
         inversion.inversion = detectInversion(inversion);
@@ -1644,9 +1625,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         Chord inversion = canonicalRootPosition;
 
         // Sort notes by pitch
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Move the lowest 'inv' notes up an octave
         for (int i = 0; i < inv && i < static_cast<int>(inversion.notes.size()); ++i) {
@@ -1654,9 +1633,7 @@ std::vector<Chord> ChordSuggestionEngine::generateInversions(const Chord& chord)
         }
 
         // Sort again to maintain order
-        std::sort(
-            inversion.notes.begin(), inversion.notes.end(),
-            [](const ChordNote& a, const ChordNote& b) { return a.noteNumber < b.noteNumber; });
+        std::ranges::sort(inversion.notes, {}, &ChordNote::noteNumber);
 
         // Now detect the actual inversion based on the bass note
         inversion.inversion = detectInversion(inversion);
@@ -1975,8 +1952,8 @@ juce::String ChordSuggestionEngine::getDetectedScalesString(float /*novelty*/) c
         }
 
         // Re-sort after reweighting
-        std::sort(detectedScales.begin(), detectedScales.end(),
-                  [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+        const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+        std::ranges::sort(detectedScales, std::ranges::greater{}, scoreOf);
 
         if (detectedScales.empty()) {
             return "";
@@ -2103,8 +2080,8 @@ std::vector<std::pair<juce::String, juce::String>> ChordSuggestionEngine::getTop
         }
 
         // Re-sort after reweighting
-        std::sort(detectedScales.begin(), detectedScales.end(),
-                  [](const auto& a, const auto& b) { return a.second.score > b.second.score; });
+        const auto scoreOf = [](const auto& entry) { return entry.second.score; };
+        std::ranges::sort(detectedScales, std::ranges::greater{}, scoreOf);
 
         // Extract top scales with good confidence
         for (int i = 0; i < std::min(maxScales, static_cast<int>(detectedScales.size())); ++i) {

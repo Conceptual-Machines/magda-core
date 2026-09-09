@@ -229,7 +229,7 @@ McpEra eraForVersion(const juce::String& version) {
 
 bool isSupportedVersion(const juce::String& version) {
     const auto& versions = mcpProtocolVersions();
-    return std::find(versions.begin(), versions.end(), version) != versions.end();
+    return std::ranges::contains(versions, version);
 }
 
 const juce::String& latestProtocolVersion() {
@@ -515,8 +515,7 @@ McpEndpoint::ListenFilter McpEndpoint::parseListenFilter(const juce::var& params
             // waiting on a stream for an event with no source.
             if (!topicForResource(uri).has_value())
                 continue;
-            if (std::find(filter.resourceSubscriptions.begin(), filter.resourceSubscriptions.end(),
-                          uri) == filter.resourceSubscriptions.end()) {
+            if (!std::ranges::contains(filter.resourceSubscriptions, uri)) {
                 filter.resourceSubscriptions.push_back(uri);
             }
         }
@@ -528,7 +527,7 @@ std::vector<Topic> McpEndpoint::topicsFor(const ListenFilter& filter) const {
     std::vector<Topic> topics;
     for (const auto& uri : filter.resourceSubscriptions) {
         if (const auto topic = topicForResource(uri)) {
-            if (std::find(topics.begin(), topics.end(), *topic) == topics.end())
+            if (!std::ranges::contains(topics, *topic))
                 topics.push_back(*topic);
         }
     }

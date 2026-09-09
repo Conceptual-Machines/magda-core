@@ -86,16 +86,14 @@ void GrooveTemplateSet::add(Entry entry) {
 }
 
 bool GrooveTemplateSet::contains(const std::string& name) const {
-    return std::any_of(entries_.begin(), entries_.end(),
-                       [&](const Entry& entry) { return entry.name == name; });
+    return std::ranges::contains(entries_, name, &Entry::name);
 }
 
 GrooveTemplate GrooveTemplateSet::compile(const std::string& name, float strength) const {
     if (name.empty())
         return {};
 
-    const auto found = std::find_if(entries_.begin(), entries_.end(),
-                                    [&](const Entry& entry) { return entry.name == name; });
+    const auto found = std::ranges::find(entries_, name, &Entry::name);
 
     if (found == entries_.end())
         return {};

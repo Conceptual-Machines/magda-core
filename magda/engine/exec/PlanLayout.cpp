@@ -8,19 +8,6 @@
 namespace magda::engine {
 namespace {
 
-/// Producer ops an op waits on, each counted once however many slots it feeds.
-std::vector<OpId> distinctProducers(const PlanOp& op) {
-    std::vector<OpId> producers;
-    producers.reserve(op.inputs.size());
-    for (const auto& input : op.inputs) {
-        if (!input.valid())
-            continue;
-        if (std::ranges::find(producers, input.op) == producers.end())
-            producers.push_back(input.op);
-    }
-    return producers;
-}
-
 /// A set of ops, one bit each.
 class OpSet {
   public:

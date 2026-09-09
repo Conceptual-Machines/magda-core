@@ -167,8 +167,8 @@ Diff diffElements(Topic topic, const juce::var& previous, const juce::var& curre
         beforeByKey.reserve(static_cast<std::size_t>(before->size()));
         for (const auto& element : *before)
             beforeByKey.emplace_back(keyOf(element, fields), &element);
-        std::sort(beforeByKey.begin(), beforeByKey.end(),
-                  [](const auto& lhs, const auto& rhs) { return lhs.first < rhs.first; });
+        const auto keyPart = [](const auto& entry) { return entry.first; };
+        std::ranges::sort(beforeByKey, {}, keyPart);
     }
 
     const auto find = [&beforeByKey](const juce::String& key) -> const juce::var* {
@@ -193,9 +193,9 @@ Diff diffElements(Topic topic, const juce::var& previous, const juce::var& curre
         seen.push_back(std::move(key));
     }
 
-    std::sort(seen.begin(), seen.end());
+    std::ranges::sort(seen);
     for (const auto& [key, element] : beforeByKey)
-        if (!std::binary_search(seen.begin(), seen.end(), key))
+        if (!std::ranges::binary_search(seen, key))
             diff.removed.add(identityOf(*element, fields));
 
     return diff;
@@ -403,15 +403,14 @@ bool SubscriptionHub::isSubscriptionMethod(const juce::String& method) {
 }
 
 SubscriptionHub::Client* SubscriptionHub::findLocked(ClientId client) {
-    const auto found = std::find_if(clients_.begin(), clients_.end(),
-                                    [client](const Client& c) { return c.id == client; });
+    const auto found = std::ranges::find(clients_, client, &Client::id);
     return found == clients_.end() ? nullptr : &*found;
 }
 
 bool SubscriptionHub::anySubscriberLocked(Topic topic) const {
     const auto index = indexOf(topic);
-    return std::any_of(clients_.begin(), clients_.end(),
-                       [index](const Client& client) { return client.subscribed[index]; });
+    const auto isSubscribed = [index](const Client& client) { return client.subscribed[index]; };
+    return std::ranges::any_of(clients_, isSubscribed);
 }
 
 void SubscriptionHub::releaseIdleTopicsLocked() {
@@ -629,9 +628,10 @@ void SubscriptionHub::foldFlushOutcomesLocked() {
 
 bool SubscriptionHub::owesSnapshotLocked(Topic topic) const {
     const auto index = indexOf(topic);
-    return std::any_of(clients_.begin(), clients_.end(), [index](const Client& client) {
+    const auto owesSnapshot = [index](const Client& client) {
         return client.subscribed[index] && client.needsSnapshot[index];
-    });
+    };
+    return std::ranges::any_of(clients_, owesSnapshot);
 }
 
 void SubscriptionHub::publishTopicLocked(Topic topic, Revision revision) {
@@ -862,7 +862,7 @@ bool SubscriptionHub::handle(ClientId client, const juce::String& method, const 
                                              "unknown topic: " + entry.toString(), revision));
                 return true;
             }
-            if (std::find(requested.begin(), requested.end(), *topic) == requested.end())
+            if (!std::ranges::contains(requested, *topic))
                 requested.push_back(*topic);
         }
     }
@@ -953,8 +953,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
             // going away rather than narrowing what it watches.
             for (std::size_t index = 0; index < TOPIC_COUNT; ++index) {
                 const auto topic = static_cast<Topic>(index);
-                if (!topicsGiven ||
-                    std::find(requested.begin(), requested.end(), topic) != requested.end())
+                if (!topicsGiven || std::ranges::contains(requested, topic))
                     entry->subscribed[index] = false;
             }
             releaseIdleTopicsLocked();
@@ -964,8 +963,7 @@ Response SubscriptionHub::execute(ClientId client, const juce::String& method,
                 const auto topic = static_cast<Topic>(index);
                 if (!entry->subscribed[index])
                     continue;
-                if (topicsGiven &&
-                    std::find(requested.begin(), requested.end(), topic) == requested.end())
+                if (topicsGiven && !std::ranges::contains(requested, topic))
                     continue;
                 targets.push_back(topic);
             }

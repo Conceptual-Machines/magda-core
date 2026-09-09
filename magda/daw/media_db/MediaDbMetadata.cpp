@@ -1162,8 +1162,9 @@ int removeDuplicateFilePathRows(MediaDatabase& db) {
     if (removeIds.empty()) {
         return 0;
     }
-    std::sort(removeIds.begin(), removeIds.end());
-    removeIds.erase(std::unique(removeIds.begin(), removeIds.end()), removeIds.end());
+    std::ranges::sort(removeIds);
+    const auto duplicates = std::ranges::unique(removeIds);
+    removeIds.erase(duplicates.begin(), duplicates.end());
     return deleteMediaRows(db, removeIds);
 }
 

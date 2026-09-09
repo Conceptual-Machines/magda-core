@@ -72,19 +72,15 @@ std::vector<T> rippleEvents(const std::vector<T>& in, Mode mode, double startBea
         }
     }
 
-    std::sort(out.begin(), out.end(), [](const T& a, const T& b) { return a.beat < b.beat; });
+    std::ranges::sort(out, {}, &T::beat);
     return out;
 }
 
 // Compare two event lists. Ripple never changes an event's payload, only its
 // beat position and set membership, so size + beats settle equality.
 template <typename T> bool sameBeats(const std::vector<T>& a, const std::vector<T>& b) {
-    if (a.size() != b.size())
-        return false;
-    for (std::size_t i = 0; i < a.size(); ++i)
-        if (std::abs(a[i].beat - b[i].beat) > kBeatEps)
-            return false;
-    return true;
+    const auto nearBeat = [](double lhs, double rhs) { return std::abs(lhs - rhs) <= kBeatEps; };
+    return std::ranges::equal(a, b, nearBeat, &T::beat, &T::beat);
 }
 
 }  // namespace magda::temporipple

@@ -1004,12 +1004,8 @@ void PlanExecutor::feedNoteTriggers(std::size_t op, const juce::MidiBuffer& midi
     // A cross-track listener takes one trigger for the block rather than one
     // per note, which is what the fork's monitor does: it scans the buffer,
     // sets a flag, and fires triggerSidechain once.
-    bool anyNoteOn = false;
-    for (const auto metadata : midi)
-        if (metadata.getMessage().isNoteOn()) {
-            anyNoteOn = true;
-            break;
-        }
+    const auto isNoteOn = [](const auto& metadata) { return metadata.getMessage().isNoteOn(); };
+    const bool anyNoteOn = std::ranges::any_of(midi, isNoteOn);
 
     for (const auto index : modSourceForOp_[op]) {
         if (mods_.listensFor(index, *blockTable_) != ModListen::Midi)

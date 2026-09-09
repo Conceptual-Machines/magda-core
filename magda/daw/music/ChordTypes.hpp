@@ -2,6 +2,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <vector>
 
 #include "ChordEnums.hpp"
@@ -89,8 +90,8 @@ struct Chord {
             a.push_back(n.noteNumber);
         for (const auto& n : other.notes)
             b.push_back(n.noteNumber);
-        std::sort(a.begin(), a.end());
-        std::sort(b.begin(), b.end());
+        std::ranges::sort(a);
+        std::ranges::sort(b);
         return a == b;
     }
 

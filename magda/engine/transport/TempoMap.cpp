@@ -111,10 +111,9 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
     // Stable, so two changes at the same beat keep the order they arrived in:
     // that pair is how a step is written, and which of them wins is the whole
     // meaning of it.
-    std::stable_sort(tempos.begin(), tempos.end(),
-                     [](const auto& a, const auto& b) { return a.startBeat < b.startBeat; });
-    std::stable_sort(signatures.begin(), signatures.end(),
-                     [](const auto& a, const auto& b) { return a.startBeat < b.startBeat; });
+    const auto startBeatOf = [](const auto& change) { return change.startBeat; };
+    std::ranges::stable_sort(tempos, {}, startBeatOf);
+    std::ranges::stable_sort(signatures, {}, startBeatOf);
 
     // What precedes the first change is that change's own value, held. For the
     // tempo that means an extra change at the beginning rather than moving the
@@ -220,8 +219,9 @@ TempoMap::TempoMap(std::vector<TempoChange> tempos, std::vector<TimeSignatureCha
     for (const auto& region : regions)
         boundaries.push_back(region.startBeat);
 
-    std::sort(boundaries.begin(), boundaries.end());
-    boundaries.erase(std::unique(boundaries.begin(), boundaries.end()), boundaries.end());
+    std::ranges::sort(boundaries);
+    const auto duplicates = std::ranges::unique(boundaries);
+    boundaries.erase(duplicates.begin(), duplicates.end());
 
     sections_.reserve(boundaries.size());
 
