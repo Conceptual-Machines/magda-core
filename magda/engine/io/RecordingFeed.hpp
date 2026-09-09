@@ -2,8 +2,10 @@
 
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <tuple>
 #include <vector>
 
+#include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
@@ -17,6 +19,27 @@
  */
 
 namespace magda::engine {
+
+class RecordStream;
+
+/**
+ * @brief Which take: whose input it records, and what kind (#2465).
+ *
+ * The identity the differ matches an input op on, minus the op: a track has
+ * one live audio input and one live MIDI input, so a track recording both is
+ * two takes and never more. What the store keys a take on, so a recompile
+ * naming the same track carries the take it was already feeding.
+ */
+struct TakeKey {
+    TrackId trackId = INVALID_TRACK_ID;
+    RecordMaterial material = RecordMaterial::audio;
+
+    bool operator==(const TakeKey&) const = default;
+
+    bool operator<(const TakeKey& other) const {
+        return std::tie(trackId, material) < std::tie(other.trackId, other.material);
+    }
+};
 
 /**
  * @brief One take being fed, block by block, on the audio thread.
@@ -39,6 +62,11 @@ class TakeCapture {
     /// Where the take publishes the pass in flight (#2463). Read from any
     /// thread, for as long as whoever owns the take keeps it.
     virtual const RecordTap& tap() const = 0;
+
+    /// The queue the record thread drains. Here rather than on each kind of
+    /// take so that whoever registered one can unregister it again knowing
+    /// only that it is a take (#2465).
+    virtual RecordStream& stream() = 0;
 };
 
 /// The takes a callback feeds. Not owned: whoever publishes them keeps them

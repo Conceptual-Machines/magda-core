@@ -436,6 +436,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The pass in flight, reported without a poll (#2463): its length off the
     # transport that stamped it, and its notes where the finished clip holds them.
     list(APPEND TEST_SOURCES engine/test_record_tap.cpp)
+    # A take carried across a plan swap (#2465): what an unrelated edit does to
+    # a recording in flight, and what the three that end one leave behind.
+    list(APPEND TEST_SOURCES AllocationWatch.cpp)
+    list(APPEND TEST_SOURCES engine/test_take_across_swap.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)

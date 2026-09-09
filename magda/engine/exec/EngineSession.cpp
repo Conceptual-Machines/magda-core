@@ -111,6 +111,12 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // it would be counting from one again by its next block (#2122).
     live_->executor.clearUnboundValueTaps();
 
+    // After the swap, because until it the plan playing was the one the edit
+    // has not happened to yet, and before the release below, because that is
+    // what frees a tap a take still writes to. A take the edit did not reach is
+    // not touched at all -- no publish, no wait, nothing moved (#2465).
+    closeUnnamedTakes(modelIds);
+
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan
     // that is live goes in as well, so what it names survives however stale
@@ -120,6 +126,57 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     store_.releaseDeleted(*livePlan_, modelIds, live_->values.params.get());
 
     return {true, std::move(messages)};
+}
+
+void EngineSession::publishTakes() {
+    recording_.publish(std::make_shared<const RecordingTakes>(store_.liveTakes()));
+}
+
+void EngineSession::startTake(const TakeKey& key, const RecordTapSettings& settings,
+                              const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make) {
+    // First, and before the tap: what this key was recording leaves with its
+    // own tap, so the take about to be built gets a fresh one rather than the
+    // one somebody is about to be handed.
+    if (auto displaced = stopTake(key); displaced.take != nullptr)
+        closed_.push_back(std::move(displaced));
+
+    auto take = make(store_.realiseTakeTap(key, settings));
+    if (take == nullptr)
+        return;
+
+    store_.holdTake(key, std::move(take));
+    publishTakes();
+}
+
+ClosedTake EngineSession::stopTake(const TakeKey& key) {
+    auto released = store_.releaseTake(key);
+    if (released.take == nullptr)
+        return {};
+
+    // After the release and before the caller has it: the set published here is
+    // the one without it, so when this returns the callback is out of it.
+    publishTakes();
+    return ClosedTake{key, std::move(released.take), std::move(released.tap)};
+}
+
+void EngineSession::closeUnnamedTakes(const RuntimeStateIds& modelIds) {
+    const auto unnamed = store_.unnamedTakes(modelIds);
+    if (unnamed.empty())
+        return;
+
+    // Every one of them out of the store first, then one publish for the lot:
+    // a scene of armed tracks deleted together is one wait, not one each.
+    std::vector<ClosedTake> closed;
+    closed.reserve(unnamed.size());
+    for (const auto& key : unnamed) {
+        auto released = store_.releaseTake(key);
+        closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
+    }
+
+    publishTakes();
+
+    for (auto& take : closed)
+        closed_.push_back(std::move(take));
 }
 
 EngineSession::Result EngineSession::publishValues(PlanValues values) {

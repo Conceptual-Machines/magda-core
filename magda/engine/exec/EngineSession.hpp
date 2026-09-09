@@ -1,6 +1,7 @@
 #pragma once
 
 #include <farbot/RealtimeObject.hpp>
+#include <functional>
 #include <memory>
 #include <string>
 #include <utility>
@@ -42,6 +43,20 @@ namespace magda::engine {
 /// Only ever held as a pointer here, and only ever used from the .cpp, so
 /// the session does not hand its own includers a thread and a stream pool.
 class ClipVoicePool;
+
+/**
+ * @brief A take that has stopped, on its way to being a clip (#2465).
+ *
+ * The recorder rather than what it recorded, since what a finished take becomes
+ * is typed by its material and the key says which to ask for. The tap comes
+ * with it: finish() closes the pass through it, and an overlay drawn from it
+ * has to stand until the clip appears in its place.
+ */
+struct ClosedTake {
+    TakeKey key;
+    std::unique_ptr<TakeCapture> take;
+    std::unique_ptr<RecordTap> tap;
+};
 
 class EngineSession {
   public:
@@ -237,16 +252,57 @@ class EngineSession {
     }
 
     /**
-     * @brief The takes the callback writes into (#2461, #2462).
+     * @brief Where take @p key publishes its pass, or null (#2463).
      *
-     * Published like the clips are, and outside every plan for the same
-     * reason: arming a track compiles a plan, but starting a recording is not
-     * a structural edit and must not cost one. A take taken out of the set is
-     * one nothing is writing to by the time publish returns, which is what
-     * makes it safe to close.
+     * On the publishing thread, both to look up and to read: a tap leaves with
+     * the take that writes it, so a pointer cached across a publish may be to
+     * something the caller has already been handed. Ask again after every one.
      */
-    RecordingFeed& recordingFeed() {
-        return recording_;
+    const RecordTap* takeTap(const TakeKey& key) const {
+        return store_.takeTap(key);
+    }
+
+    /**
+     * @brief Record @p key, through a take built against a tap made here
+     *        (#2465).
+     *
+     * On the publishing thread. The session owns both from here, outside every
+     * plan: arming a track compiles a plan, but a recording in flight is
+     * history rather than topology, and no recompile moves it.
+     *
+     * @p make is handed the tap rather than the caller building the recorder
+     * and passing it in, because nothing else orders the two: whatever @p key
+     * was already recording is closed first -- it leaves through
+     * @ref takeClosedTakes, since the callback can still reach it -- and that
+     * takes its tap with it.
+     *
+     * Registering the take's @ref TakeCapture::stream with a RecordThread is
+     * the caller's, and so is unregistering it after @ref stopTake.
+     */
+    void startTake(const TakeKey& key, const RecordTapSettings& settings,
+                   const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make);
+
+    /**
+     * @brief Take it back out of the callback's set and hand it over.
+     *
+     * On the publishing thread. Returns once nothing can reach it, which is
+     * what makes finishing it safe. Empty for a key nothing is recording.
+     */
+    ClosedTake stopTake(const TakeKey& key);
+
+    /**
+     * @brief Takes an edit closed, and forget them (#2465).
+     *
+     * A publish whose model IDs stopped naming a take: the arm switched off,
+     * the input taken away, the track deleted. Each is out of the callback's
+     * set already and is finished by whoever collects it, so what was recorded
+     * up to the edit becomes a clip rather than being dropped.
+     *
+     * Kept until asked for rather than dropped like a full lane, as
+     * @ref takeRetiredRuns is: one per edit that ended a recording.
+     */
+    std::vector<ClosedTake> takeClosedTakes() {
+        return std::exchange(closed_, {});
     }
 
     /// Where the transport is, in beats. Readable from any thread; what a
@@ -339,6 +395,16 @@ class EngineSession {
     }
 
   private:
+    /// The callback's set, rebuilt from the store. Blocks until the audio
+    /// thread is out of its block, which is what makes a take this drops safe
+    /// to close.
+    void publishTakes();
+
+    /// Takes @p modelIds has stopped naming, out of the callback's set and
+    /// into @ref takeClosedTakes. After the plan swap, since until then the
+    /// edit that ended them was not the one playing.
+    void closeUnnamedTakes(const RuntimeStateIds& modelIds);
+
     /**
      * @brief One epoch: a plan, the executor prepared for it, and the
      * values it was published with.
@@ -423,6 +489,9 @@ class EngineSession {
     /// The takes that input is written to. Outside every epoch beside it, and
     /// for the same reason.
     RecordingFeed recording_;
+
+    /// Takes an edit ended, until someone collects them (@ref takeClosedTakes).
+    std::vector<ClosedTake> closed_;
 
     /// What the model held at the last publish. Kept so a values publish
     /// escalated into a structural one has a set to publish with; retention

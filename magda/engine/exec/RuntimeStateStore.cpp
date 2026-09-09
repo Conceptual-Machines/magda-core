@@ -280,6 +280,18 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
                  isNamed(entry.first, keep));
     });
 
+    // A tap made for a take that never started, once its track is gone. One
+    // that did start left with it, so what is left here is a recording asked
+    // for and abandoned.
+    //
+    // No take is touched here, and none can be. Everything else in this
+    // function is unreachable from the audio thread by the time it runs; a
+    // take is reachable until a publish of the callback's set says otherwise,
+    // and that publish is the caller's (@ref unnamedTakes).
+    removed += std::erase_if(takeTaps_, [&](const auto& entry) {
+        return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
+    });
+
     return removed;
 }
 
@@ -289,6 +301,18 @@ RuntimeStateIds collectRuntimeStateIds(const std::vector<TrackInfo>& tracks,
 
     const auto collectTrack = [&ids](const TrackInfo& track) {
         ids.tracks.insert(track.id);
+
+        // A take may run while the track is armed and still has an input of
+        // that material. Arm rather than monitorsInput(), which is also true of
+        // a track only listening: disarming ends a take and stops nothing else,
+        // so the plan cannot answer this and the model has to (#2465).
+        if (track.takesExternalInput() && track.recordArmed) {
+            if (!track.audioInputDevice.isEmpty())
+                ids.takes.insert(TakeKey{track.id, RecordMaterial::audio});
+            if (!track.midiInputDevice.isEmpty())
+                ids.takes.insert(TakeKey{track.id, RecordMaterial::midi});
+        }
+
         // Every section, and bypass is not consulted anywhere here: a bypassed
         // device is still a device the user owns.
         collectDeviceIds(track.chain.fxChainElements, track.id, ChainSegment::Fx, ids.devices);
@@ -393,6 +417,57 @@ const LaunchTap* RuntimeStateStore::launchTap(const SlotKey& key) const {
     return it == handles_.end() ? nullptr : it->second.tap.get();
 }
 
+RecordTap& RuntimeStateStore::realiseTakeTap(const TakeKey& key,
+                                             const RecordTapSettings& settings) {
+    auto& tap = takeTaps_[key];
+    if (tap == nullptr)
+        tap = std::make_unique<RecordTap>(key.material, settings);
+    return *tap;
+}
+
+const RecordTap* RuntimeStateStore::takeTap(const TakeKey& key) const {
+    const auto found = takeTaps_.find(key);
+    return found == takeTaps_.end() ? nullptr : found->second.get();
+}
+
+void RuntimeStateStore::holdTake(const TakeKey& key, std::unique_ptr<TakeCapture> take) {
+    jassert(!takes_.contains(key));
+    takes_[key] = std::move(take);
+}
+
+RecordingTakes RuntimeStateStore::liveTakes() const {
+    RecordingTakes live;
+    live.reserve(takes_.size());
+    for (const auto& [key, take] : takes_)
+        live.push_back(take.get());
+    return live;
+}
+
+std::vector<TakeKey> RuntimeStateStore::unnamedTakes(const RuntimeStateIds& modelIds) const {
+    std::vector<TakeKey> unnamed;
+    for (const auto& [key, take] : takes_)
+        if (!modelIds.takes.contains(key))
+            unnamed.push_back(key);
+    return unnamed;
+}
+
+RuntimeStateStore::ReleasedTake RuntimeStateStore::releaseTake(const TakeKey& key) {
+    const auto found = takes_.find(key);
+    if (found == takes_.end())
+        return {};
+
+    ReleasedTake released;
+    released.take = std::move(found->second);
+    takes_.erase(found);
+
+    if (const auto tap = takeTaps_.find(key); tap != takeTaps_.end()) {
+        released.tap = std::move(tap->second);
+        takeTaps_.erase(tap);
+    }
+
+    return released;
+}
+
 ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
     const auto found = valueTaps_.find(key);
     return found == valueTaps_.end() ? nullptr : found->second.get();
@@ -401,7 +476,7 @@ ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + clipAudio_.size() + clipMidi_.size() + sessionAudio_.size() +
            sessionMidi_.size() + handles_.size() + audioInputs_.size() + midiInputs_.size() +
-           meters_.size() + valueTaps_.size();
+           meters_.size() + valueTaps_.size() + takes_.size() + takeTaps_.size();
 }
 
 }  // namespace magda::engine

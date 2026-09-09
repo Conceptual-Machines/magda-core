@@ -9,10 +9,12 @@
 
 #include "clip/ClipSnapshot.hpp"
 #include "exec/PlanBindings.hpp"
+#include "io/RecordingFeed.hpp"
 #include "launch/LaunchHandle.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
+#include "tap/RecordTap.hpp"
 #include "tap/ValueTap.hpp"
 
 namespace magda {
@@ -29,6 +31,11 @@ struct TrackInfo;
  * rebuild-click problem in miniature. The store owns them instead, keyed by
  * section-aware model identity the way OpKey is, so the same edit that
  * recompiles the plan leaves the objects it names untouched.
+ *
+ * A take is here for the same reason with more at stake (#2465). An instrument
+ * rebuilt mid-note clicks; a take rebuilt mid-pass is a split file or a hole,
+ * and it is not recomputable from anything -- it is a file handle, a write
+ * position and a queue holding samples nobody has written yet.
  *
  * Everything here runs off the audio thread.
  */
@@ -136,6 +143,12 @@ class RuntimeStateFactory {
 struct RuntimeStateIds {
     std::set<DeviceKey> devices;
     std::set<TrackId> tracks;
+
+    /// Takes the model still says may run: a track armed, with an input of
+    /// that material (#2465). The one entry here that names a thing allowed to
+    /// continue rather than a thing that exists, because a plan cannot answer
+    /// it -- disarming ends a take and changes no topology at all.
+    std::set<TakeKey> takes;
 };
 
 // Launch handles are deliberately not tracked here: a slot is a clip, so
@@ -272,6 +285,51 @@ class RuntimeStateStore {
     LaunchHandle* findHandle(const SlotKey& key) const;
 
     /**
+     * @brief The tap take @p key publishes its pass to, made if there is none.
+     *
+     * On the publishing thread, and before the take, since a recorder is built
+     * against it. @p settings is ignored for a tap that already exists:
+     * resizing its arrays would be an allocation beneath a reader.
+     */
+    RecordTap& realiseTakeTap(const TakeKey& key, const RecordTapSettings& settings);
+
+    /// @brief The tap for @p key, or null. On the publishing thread.
+    const RecordTap* takeTap(const TakeKey& key) const;
+
+    /// @brief Own @p take as @p key's, from now until something ends it.
+    ///
+    /// On the publishing thread, and only for a key nothing is recording: a
+    /// take the callback can still reach has to leave the published set through
+    /// @ref releaseTake before anything may destroy it.
+    void holdTake(const TakeKey& key, std::unique_ptr<TakeCapture> take);
+
+    /// @brief Every take being fed, in key order. What the callback's set is
+    ///        built from, on the publishing thread.
+    RecordingTakes liveTakes() const;
+
+    /// @brief Takes @p modelIds has stopped naming: the arm switched off, the
+    ///        input taken away, the track deleted (#2465). Named here and
+    ///        released separately, because a take has to leave the callback's
+    ///        set before anything may close it.
+    std::vector<TakeKey> unnamedTakes(const RuntimeStateIds& modelIds) const;
+
+    /// A take on its way out, with the tap it writes to.
+    struct ReleasedTake {
+        std::unique_ptr<TakeCapture> take;
+        std::unique_ptr<RecordTap> tap;
+    };
+
+    /**
+     * @brief Hand @p key's take over, empty if there is none.
+     *
+     * On the publishing thread, and only once the callback can no longer reach
+     * it. The tap goes with it: finish() closes the pass through it, so it has
+     * to outlive the take, and an overlay drawn from it has to stand until the
+     * clip appears in its place.
+     */
+    ReleasedTake releaseTake(const TakeKey& key);
+
+    /**
      * @brief Where @p key's state is published, or null (#2303).
      *
      * Made and retired with the handle beside it, and on the publishing thread
@@ -322,6 +380,12 @@ class RuntimeStateStore {
     /// Never reused, so an incarnation names one handle for the life of the
     /// session.
     std::uint64_t nextIncarnation_ = 0;
+
+    /// The takes being fed, and the taps they publish through. Two maps
+    /// because they do not begin together: the tap is made first, since the
+    /// recorder is built against it (#2465).
+    std::map<TakeKey, std::unique_ptr<TakeCapture>> takes_;
+    std::map<TakeKey, std::unique_ptr<RecordTap>> takeTaps_;
 
     /// What was last published, so a publish that changes nothing is skipped.
     std::shared_ptr<const LaunchHandleTable> publishedHandles_;
