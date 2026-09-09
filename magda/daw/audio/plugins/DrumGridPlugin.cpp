@@ -6,6 +6,7 @@
 
 #include "core/DrumGridPads.hpp"
 #include "core/RackInfo.hpp"
+#include "core/RangesHelpers.hpp"
 
 namespace magda::daw::audio {
 
@@ -61,8 +62,7 @@ DrumGridPlugin::DrumGridPlugin(const te::PluginCreationInfo& info) : Plugin(info
     // (#2207). A tree that still carries CHAIN children is one a project saved
     // before the pads moved; its pads were read into the model at load, and
     // building them here as well would give the grid each pad twice.
-    while (state.getChildWithName(chainTreeId).isValid())
-        state.removeChild(state.getChildWithName(chainTreeId), nullptr);
+    removeChildrenWithType(state, chainTreeId);
 }
 
 DrumGridPlugin::~DrumGridPlugin() {

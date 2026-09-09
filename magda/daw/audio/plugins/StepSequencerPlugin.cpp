@@ -205,8 +205,7 @@ void StepSequencerPlugin::flushState(juce::ValueTree& state) {
     const auto live = pattern();
     state.setProperty(SettingIDs::numSteps, live.playingLength(), nullptr);
 
-    while (state.getChildWithName(kStepTree).isValid())
-        state.removeChild(state.getChildWithName(kStepTree), nullptr);
+    removeChildrenWithType(state, kStepTree);
 
     // Only the steps that differ from a default one, which is what the model
     // writes too: absence and a default step read back the same.

@@ -60,8 +60,7 @@ inline void stripModifierAssignmentsRecursive(juce::ValueTree state) {
     if (!state.isValid())
         return;
 
-    while (state.getChildWithName(te::IDs::MODIFIERASSIGNMENTS).isValid())
-        state.removeChild(state.getChildWithName(te::IDs::MODIFIERASSIGNMENTS), nullptr);
+    removeChildrenWithType(state, te::IDs::MODIFIERASSIGNMENTS);
 
     for (auto child : children(state))
         stripModifierAssignmentsRecursive(child);

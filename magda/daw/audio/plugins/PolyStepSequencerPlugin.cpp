@@ -191,8 +191,7 @@ void PolyStepSequencerPlugin::flushState(juce::ValueTree& state) {
     const auto live = pattern();
     state.setProperty(SettingIDs::numSteps, live.playingLength(), nullptr);
 
-    while (state.getChildWithName(kStepTree).isValid())
-        state.removeChild(state.getChildWithName(kStepTree), nullptr);
+    removeChildrenWithType(state, kStepTree);
 
     // Only the steps that differ from a default one, which is what the model
     // writes too: absence and a default step read back the same.
@@ -258,16 +257,13 @@ void PolyStepSequencerPlugin::restoreState(const juce::ValueTree& state) {
 
         const auto isNote = [](const juce::ValueTree& node) { return node.hasType(kNoteTree); };
         step.noteCount = 0;
-        for (const auto noteNode : children(child) | std::views::filter(isNote)) {
-            if (step.noteCount >= MAX_NOTES_PER_STEP)
-                break;
-
-            auto& note = step.notes[static_cast<size_t>(step.noteCount)];
+        for (const auto noteNode :
+             children(child) | std::views::filter(isNote) | std::views::take(MAX_NOTES_PER_STEP)) {
+            auto& note = step.notes[static_cast<size_t>(step.noteCount++)];
             note.noteNumber =
                 std::clamp(static_cast<int>(noteNode.getProperty(kNoteNumber, 60)), 0, 127);
             note.velocity =
                 std::clamp(static_cast<int>(noteNode.getProperty(kNoteVelocity, 0)), 0, 127);
-            ++step.noteCount;
         }
     }
 

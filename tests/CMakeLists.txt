@@ -337,6 +337,7 @@ set(TEST_SOURCES
     audio/test_demucs_separator.cpp
     audio/test_spleeter_separator.cpp
     core/test_device_info_predicates.cpp
+    core/test_ranges_helpers.cpp
 )
 
 # Native audio engine (epic #1882). The engine is a dark target with no TE and
