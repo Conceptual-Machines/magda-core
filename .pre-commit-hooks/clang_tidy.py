@@ -37,9 +37,22 @@ ROOT = Path.cwd()
 SHIPPING = Path("magda")
 ENGINE = SHIPPING / "engine"
 
-# The bugprone/cert half of .clang-tidy. Every check it enables is at zero over
-# magda/, so this list now matches the config's exactly and .clang-tidy carries
-# the same set in WarningsAsErrors.
+# The bugprone/cert half of .clang-tidy, minus five checks that do not exist on
+# every clang-tidy this runs on.
+#
+# #2530 deleted those five having "verified" against LLVM 20.1.4, where
+# `--checks=-*,bugprone-signed-bitwise` answers "no checks enabled" and the
+# check is spelled hicpp-signed-bitwise instead. A newer clang-tidy has them
+# under bugprone-, the CI runner has that newer one, and with WarningsAsErrors
+# now binding the first push to dev failed on findings the local sweep could
+# not see: `channel &= ~1` and `1 << 11` (signed-bitwise), a file-scope
+# juce::Identifier whose constructor can throw (throwing-static-initialization)
+# and `for (float db = ...; db -= 20.0f)` (float-loop-counter).
+#
+# A check name absent from one machine's --list-checks is not an absent check.
+# An unknown name is silently ignored, so a sweep that finds nothing looks
+# identical either way; the exclusions stay until the findings are triaged on
+# the version that actually reports them.
 CHECKS = ",".join([
     "-*",
     "bugprone-*",
@@ -57,6 +70,12 @@ CHECKS = ",".join([
     "-bugprone-misplaced-widening-cast",
     "-bugprone-nondeterministic-pointer-iteration-order",
     "-bugprone-macro-parentheses",
+    # Only on a clang-tidy new enough to carry them; see above.
+    "-bugprone-signed-bitwise",
+    "-bugprone-throwing-static-initialization",
+    "-bugprone-derived-method-shadowing-base-method",
+    "-bugprone-float-loop-counter",
+    "-bugprone-unchecked-string-to-number-conversion",
 ])
 
 # Sources in the tree but in no compile command, so an absent database entry is
