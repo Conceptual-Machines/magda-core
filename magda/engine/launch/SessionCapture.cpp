@@ -5,15 +5,25 @@
 namespace magda::engine {
 
 void SessionCapture::update() {
-    reached_ = lane_.drain([this](const SlotRunEvent& event) { apply(event); });
-
-    // After the drain, because an end that overtook its own launch is waiting
-    // for it, and because two launches of one handle can arrive together: the
-    // end belongs to whichever run the lane left in flight.
-    reconcile();
+    reached_ = lane_.drain([this](const SlotRunEvent& event) { fold(event); });
 }
 
 void SessionCapture::apply(const SlotRunEvent& event) {
+    // The lane first, always. An incarnation names the handle rather than one of
+    // its runs, so an end stamped on this thread can only be matched to a run
+    // once every transition that was queued when it arrived has been folded:
+    // otherwise it closes whichever earlier run the capture happens to hold
+    // (#2464 review).
+    //
+    // One drain is enough, and that is the publish's doing: retiring a handle
+    // waits for the block the callback is in, so by the time an end reaches
+    // here nothing more can ever be published for that handle. What the drain
+    // leaves in flight is the run this ends.
+    update();
+    fold(event);
+}
+
+void SessionCapture::fold(const SlotRunEvent& event) {
     const RunKey of{event.key, event.incarnation};
 
     // Held under the handle that played it, so a run whose end arrives after
@@ -21,11 +31,6 @@ void SessionCapture::apply(const SlotRunEvent& event) {
     if (const auto found = inFlight_.find(of); found != inFlight_.end()) {
         finish(of, found->second, event.monotonicBeat);
         inFlight_.erase(found);
-    } else if (event.kind == SlotRunEvent::Kind::ended) {
-        // The end of a run whose launch is still in the lane. Kept: dropping it
-        // leaves the run sounding for ever once the launch arrives.
-        unmatchedEnds_[of] = event.monotonicBeat;
-        return;
     }
 
     if (event.kind == SlotRunEvent::Kind::began)
@@ -33,20 +38,6 @@ void SessionCapture::apply(const SlotRunEvent& event) {
                             .startBeat = event.timelineBeat,
                             .startMonotonicBeat = event.monotonicBeat,
                             .capturing = armed_};
-}
-
-void SessionCapture::reconcile() {
-    for (auto end = unmatchedEnds_.begin(); end != unmatchedEnds_.end();) {
-        const auto found = inFlight_.find(end->first);
-        if (found == inFlight_.end()) {
-            ++end;
-            continue;
-        }
-
-        finish(end->first, found->second, end->second);
-        inFlight_.erase(found);
-        end = unmatchedEnds_.erase(end);
-    }
 }
 
 void SessionCapture::arm() {

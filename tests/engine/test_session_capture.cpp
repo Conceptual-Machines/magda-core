@@ -271,11 +271,8 @@ TEST_CASE("an end that overtook its own launch still closes it", "[engine][captu
                                      .incarnation = 1,
                                      .monotonicBeat = 4.0});
 
-    // Nothing to close yet: the launch is still in the lane.
-    CHECK(rig.capture().sounding() == 0);
-
-    rig.capture().update();
-
+    // Closed by the drain apply() makes for itself: the launch was still in the
+    // lane when it arrived.
     CHECK(rig.capture().sounding() == 0);
 
     const auto captured = rig.capture().collect();
@@ -300,7 +297,39 @@ TEST_CASE("a waiting end closes the run the lane left in flight", "[engine][capt
                                      .kind = SlotRunEvent::Kind::ended,
                                      .incarnation = 1,
                                      .monotonicBeat = 5.0});
-    rig.capture().update();
+
+    CHECK(rig.capture().sounding() == 0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 2);
+    CHECK(captured[0].startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[0].lengthBeats == Approx(2.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].startBeat == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].lengthBeats == Approx(2.0).margin(1.0 / kBeatSamples));
+}
+
+TEST_CASE("a retirement end closes the run its handle was left on", "[engine][capture]") {
+    // The handle's history is partly consumed when the retirement arrives: the
+    // first run is already tracked, and the relaunch that ended it is still in
+    // the lane. An incarnation names the handle rather than one of its runs, so
+    // closing what the capture happens to hold would place one span over both
+    // runs and discard the second (#2464 review).
+    Rig rig;
+    rig.capture().arm();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(2.0);
+
+    REQUIRE(rig.capture().sounding() == 1);
+
+    // The relaunch: an end and a launch on beat three, neither drained.
+    rig.launch(1, 3.0);
+    rig.roll(2.0, false);
+
+    rig.capture().apply(SlotRunEvent{.key = SlotKey{1, 0},
+                                     .kind = SlotRunEvent::Kind::ended,
+                                     .incarnation = 1,
+                                     .monotonicBeat = 5.0});
 
     CHECK(rig.capture().sounding() == 0);
 

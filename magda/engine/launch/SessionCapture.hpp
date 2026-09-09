@@ -74,11 +74,11 @@ class SessionCapture {
      * could report the end, so the store says where the run had got to instead
      * (EngineSession::takeRetiredRuns).
      *
-     * Order against @ref update does not matter in either direction. A run is
-     * held under the handle that played it, so a replacement's launch cannot
-     * displace it; and an end for a run whose launch is still in the lane is
-     * kept until the next @ref update has caught up with it, rather than
-     * dropped (#2464 review).
+     * It drains the lane before it acts: an incarnation names the handle, not
+     * one of its runs, so an end from this thread can only be matched once
+     * every transition queued when it arrived has been folded. One drain
+     * suffices because retiring a handle waits for the block the callback is
+     * in, so nothing more can be published for it afterwards (#2464 review).
      */
     void apply(const SlotRunEvent& event);
 
@@ -134,26 +134,15 @@ class SessionCapture {
         bool capturing = false;
     };
 
+    /// Apply one edge to the runs in flight, whatever channel it came down.
+    void fold(const SlotRunEvent& event);
+
     /// End @p run at @p monotonicBeat, keeping it if it was being captured.
     void finish(const RunKey& of, const Run& run, double monotonicBeat);
-
-    /// Close the runs an end was waiting for, now the lane has caught up.
-    void reconcile();
 
     SlotRunQueue& lane_;
 
     std::map<RunKey, Run> inFlight_;
-
-    /// Ends that arrived before the launch they belong to. A retirement is
-    /// stamped on this thread while a launch travels down the lane, so an end
-    /// can overtake its own start; it waits here rather than being dropped.
-    ///
-    /// Applied after a drain rather than at the first launch that matches, and
-    /// not cleared by a launch that ends a run of its own: two launches of one
-    /// handle can be queued together, and a retirement's end belongs to the run
-    /// the lane leaves in flight. It can only ever match a launch queued before
-    /// the retirement, since nothing can launch a handle that has gone.
-    std::map<RunKey, double> unmatchedEnds_;
 
     std::vector<CapturedRun> captured_;
 
