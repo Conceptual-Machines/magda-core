@@ -1,9 +1,7 @@
 #include "ChordEngine.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <mutex>
-#include <set>
 
 namespace magda::music {
 

@@ -7,7 +7,6 @@
 #include "plugins/ToneGeneratorPlugin.hpp"
 #include "plugins/compiled/tracktion/CompiledFaustTracktionAdapter.hpp"
 #include "plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
-#include "processors/ParameterInfoBuilder.hpp"
 
 namespace magda {
 

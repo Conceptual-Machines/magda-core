@@ -11,7 +11,6 @@
 #endif
 
 #include "../audio/plugins/InternalPluginRegistry.hpp"
-#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
 #include "PluginMetadataStore.hpp"

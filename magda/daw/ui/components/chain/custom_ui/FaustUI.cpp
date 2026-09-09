@@ -1,7 +1,6 @@
 #include "custom_ui/FaustUI.hpp"
 
 #include <BinaryData.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/AudioBridge.hpp"
 #include "audio/FaustResources.hpp"

@@ -1,7 +1,6 @@
 #include "ParameterDetector.hpp"
 
 #include <juce_events/juce_events.h>
-#include <juce_llm/juce_llm.h>
 
 #include <cmath>
 #include <mutex>

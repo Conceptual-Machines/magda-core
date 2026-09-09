@@ -1,7 +1,5 @@
 #include "compiled/CompiledPluginPresentation.hpp"
 
-#include <algorithm>
-
 namespace magda::daw::ui {
 
 // Per-device presentation specs live next to each curve view (or the

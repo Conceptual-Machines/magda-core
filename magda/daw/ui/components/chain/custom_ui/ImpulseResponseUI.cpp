@@ -1,7 +1,5 @@
 #include "custom_ui/ImpulseResponseUI.hpp"
 
-#include <juce_audio_basics/juce_audio_basics.h>
-
 #include "BinaryData.h"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/themes/DarkTheme.hpp"

@@ -6,7 +6,6 @@
 
 #include "AutomationCurve.hpp"
 #include "ClipLaneFlattener.hpp"
-#include "CurveMath.hpp"
 #include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"

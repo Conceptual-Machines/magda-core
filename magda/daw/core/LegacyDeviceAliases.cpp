@@ -2,7 +2,6 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
-#include <algorithm>
 #include <cmath>
 #include <map>
 #include <optional>

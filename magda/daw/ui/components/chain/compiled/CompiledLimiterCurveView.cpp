@@ -1,6 +1,5 @@
 #include "compiled/CompiledLimiterCurveView.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaLimiterCompiledPlugin.hpp"

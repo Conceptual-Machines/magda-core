@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <cmath>
-#include <map>
 
 #include "DrumGridPads.hpp"
 #include "RackInfo.hpp"

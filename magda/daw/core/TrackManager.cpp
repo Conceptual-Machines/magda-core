@@ -16,7 +16,6 @@
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
 #include "LegacyDeviceAliases.hpp"
-#include "ModulatorEngine.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"

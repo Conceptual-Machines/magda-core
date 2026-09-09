@@ -8,7 +8,6 @@
 #include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
-#include "ClipOcclusion.hpp"
 #include "ClipOperations.hpp"
 #include "CompSectionMath.hpp"
 #include "Config.hpp"
