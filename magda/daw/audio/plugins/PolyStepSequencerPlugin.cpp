@@ -256,9 +256,12 @@ void PolyStepSequencerPlugin::restoreState(const juce::ValueTree& state) {
         step.velocity = std::clamp(static_cast<int>(child.getProperty(kStepVelocity, 100)), 1, 127);
 
         const auto isNote = [](const juce::ValueTree& node) { return node.hasType(kNoteTree); };
+        // Not const: a filter view caches its first element, so begin() is not const.
+        auto stepNotes =
+            children(child) | std::views::filter(isNote) | std::views::take(MAX_NOTES_PER_STEP);
+
         step.noteCount = 0;
-        for (const auto noteNode :
-             children(child) | std::views::filter(isNote) | std::views::take(MAX_NOTES_PER_STEP)) {
+        for (const auto noteNode : stepNotes) {
             auto& note = step.notes[static_cast<size_t>(step.noteCount++)];
             note.noteNumber =
                 std::clamp(static_cast<int>(noteNode.getProperty(kNoteNumber, 60)), 0, 127);
