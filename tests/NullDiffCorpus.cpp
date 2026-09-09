@@ -2420,6 +2420,30 @@ std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     }
 
     {
+        auto value = newCase("session.launch.sustained",
+                             "a launched slot holding a level, where ULP noise has something to "
+                             "ride on",
+                             launching(plainTrack()));
+        value.endBeat = 8.0;
+
+        // Steps rather than the impulses session.launch plays, and that is the
+        // whole case (#2458). Impulses are silence between impulses, so a path
+        // that is a bit-or-two inexact on a sustained level nulls anyway --
+        // there is nothing for the error to ride on. A held level puts every
+        // sample of the render under the comparison.
+        //
+        // The same material on an arrangement clip nulls at -inf, so what this
+        // measures is the launcher's path rather than the material.
+        const auto source = writeSource(scratchDirectory, "session_sustained", steps());
+        value.sources.push_back(source);
+
+        value.clips.push_back(inSlot(audioClip(401, 0.0, 16.0, source), 0));
+        value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+
+        corpus.push_back(std::move(value));
+    }
+
+    {
         auto value = newCase("session.launch.midi", "a MIDI slot playing from the first sample",
                              launching(instrumentTrack()));
         value.endBeat = 8.0;

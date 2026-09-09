@@ -284,8 +284,7 @@ void CCLaneComponent::updatePointsCache() const {
         }
     }
 
-    // Sort by x position
-    std::sort(cachedPoints_.begin(), cachedPoints_.end());
+    std::ranges::sort(cachedPoints_, {}, &CurvePoint::x);
 
     pointsCacheDirty_ = false;
 }

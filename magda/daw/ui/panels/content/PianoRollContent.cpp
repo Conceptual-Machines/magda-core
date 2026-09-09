@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
+#include <iterator>
+#include <optional>
+#include <ranges>
 #include <set>
 
 #include "../../core/SelectionManager.hpp"
@@ -37,6 +39,35 @@
 #include "ui/components/timeline/TimeRuler.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+struct SelectionSpan {
+    double startBeat;
+    double endBeat;
+};
+
+/** @brief The beat span of a multi-clip selection, empty when no clip resolves. */
+std::optional<SelectionSpan> selectionSpanBeats(const std::vector<magda::ClipId>& clipIds) {
+    auto& clipManager = magda::ClipManager::getInstance();
+    const auto clipFor = [&clipManager](magda::ClipId id) { return clipManager.getClip(id); };
+    const auto stillExists = [](const magda::ClipInfo* clip) { return clip != nullptr; };
+    const auto startBeat = [](const magda::ClipInfo* clip) { return clip->placement.startBeat; };
+    const auto endBeat = [](const magda::ClipInfo* clip) { return clip->placement.endBeat(); };
+
+    auto clips = clipIds | std::views::transform(clipFor) | std::views::filter(stillExists);
+    if (std::ranges::empty(clips))
+        return std::nullopt;
+
+    return SelectionSpan{std::ranges::min(clips | std::views::transform(startBeat)),
+                         std::ranges::max(clips | std::views::transform(endBeat))};
+}
+
+double noteEndBeat(const magda::MidiNote& note) {
+    return note.startBeat + note.lengthBeats;
+}
+
+}  // namespace
 
 bool PianoRollContent::showProgressionOverlay_ = false;
 
@@ -751,19 +782,20 @@ void PianoRollContent::setupGridCallbacks() {
         if (!clip || !clip->isMidi())
             return;
 
-        double minStart = std::numeric_limits<double>::max();
-        double maxEnd = 0.0;
+        const auto isInClip = [&clip](size_t idx) { return idx < clip->midiNotes.size(); };
+        const auto noteAt = [&clip](size_t idx) { return clip->midiNotes[idx]; };
+
         std::vector<magda::MidiNote> notesToDuplicate;
-        for (size_t idx : noteIndices) {
-            if (idx < clip->midiNotes.size()) {
-                const auto& note = clip->midiNotes[idx];
-                notesToDuplicate.push_back(note);
-                minStart = std::min(minStart, note.startBeat);
-                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
-            }
-        }
+        std::ranges::copy(noteIndices | std::views::filter(isInClip) |
+                              std::views::transform(noteAt),
+                          std::back_inserter(notesToDuplicate));
+
         if (!notesToDuplicate.empty()) {
-            double offset = maxEnd - minStart;
+            const auto starts =
+                notesToDuplicate | std::views::transform(&magda::MidiNote::startBeat);
+            const double offset =
+                std::ranges::max(notesToDuplicate | std::views::transform(noteEndBeat)) -
+                std::ranges::min(starts);
             for (auto& note : notesToDuplicate) {
                 note.startBeat += offset;
             }
@@ -1306,17 +1338,10 @@ void PianoRollContent::updateGridSize() {
     // When multiple clips are selected, compute the combined range
     const auto& selectedClipIds = gridComponent_->getSelectedClipIds();
     if (selectedClipIds.size() > 1) {
-        double earliestStartBeat = std::numeric_limits<double>::max();
-        double latestEndBeat = 0.0;
-        for (magda::ClipId id : selectedClipIds) {
-            const auto* c = clipManager.getClip(id);
-            if (!c)
-                continue;
-            earliestStartBeat = juce::jmin(earliestStartBeat, c->placement.startBeat);
-            latestEndBeat = juce::jmax(latestEndBeat, c->placement.endBeat());
+        if (const auto span = selectionSpanBeats(selectedClipIds)) {
+            clipStartBeats = span->startBeat;
+            clipLengthBeats = span->endBeat - span->startBeat;
         }
-        clipStartBeats = earliestStartBeat;
-        clipLengthBeats = latestEndBeat - earliestStartBeat;
     } else if (clip) {
         if (clip->loopEnabled || clip->view == magda::ClipView::Session) {
             // Looped clips and session clips: show content from bar 1
@@ -2086,28 +2111,29 @@ void PianoRollContent::syncChordAnnotations(magda::ClipId clipId) {
             continue;  // Skip unlinked annotations
         }
 
-        // Find all notes in this chord group
-        std::vector<magda::music::ChordNote> chordNotes;
-        double minBeat = std::numeric_limits<double>::max();
-        double maxEnd = 0.0;
+        const auto isInThisGroup = [group = it->chordGroup](const magda::MidiNote& note) {
+            return note.chordGroup == group;
+        };
+        const auto asChordNote = [](const magda::MidiNote& note) {
+            return magda::music::ChordNote(note.noteNumber, note.velocity);
+        };
+        auto groupNotes = clip->midiNotes | std::views::filter(isInThisGroup);
 
-        for (const auto& note : clip->midiNotes) {
-            if (note.chordGroup == it->chordGroup) {
-                chordNotes.emplace_back(note.noteNumber, note.velocity);
-                minBeat = std::min(minBeat, note.startBeat);
-                maxEnd = std::max(maxEnd, note.startBeat + note.lengthBeats);
-            }
-        }
-
-        if (chordNotes.empty()) {
+        if (std::ranges::empty(groupNotes)) {
             // All notes in group deleted — remove annotation
             it = clip->chordAnnotations.erase(it);
             continue;
         }
 
-        // Update position and length from note extents
+        std::vector<magda::music::ChordNote> chordNotes;
+        std::ranges::copy(groupNotes | std::views::transform(asChordNote),
+                          std::back_inserter(chordNotes));
+
+        const double minBeat =
+            std::ranges::min(groupNotes | std::views::transform(&magda::MidiNote::startBeat));
         it->beatPosition = minBeat;
-        it->lengthBeats = maxEnd - minBeat;
+        it->lengthBeats =
+            std::ranges::max(groupNotes | std::views::transform(noteEndBeat)) - minBeat;
 
         // Re-detect chord name if pitches changed
         if (chordNotes.size() >= 2) {
@@ -2230,17 +2256,8 @@ void PianoRollContent::updateVelocityLane() {
         const auto& selectedClipIds =
             gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
         if (selectedClipIds.size() > 1) {
-            double earliestStart = std::numeric_limits<double>::max();
-            auto& clipManager = magda::ClipManager::getInstance();
-            for (magda::ClipId id : selectedClipIds) {
-                const auto* c = clipManager.getClip(id);
-                if (c) {
-                    earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
-                }
-            }
-            if (earliestStart < std::numeric_limits<double>::max()) {
-                midiDrawer_->setClipStartBeats(earliestStart);
-            }
+            if (const auto span = selectionSpanBeats(selectedClipIds))
+                midiDrawer_->setClipStartBeats(span->startBeat);
         }
 
         // Sync loop region and clip length
@@ -2268,17 +2285,8 @@ void PianoRollContent::updateVelocityLane() {
     const auto& selectedClipIds =
         gridComponent_ ? gridComponent_->getSelectedClipIds() : std::vector<magda::ClipId>{};
     if (selectedClipIds.size() > 1) {
-        double earliestStart = std::numeric_limits<double>::max();
-        auto& clipManager = magda::ClipManager::getInstance();
-        for (magda::ClipId id : selectedClipIds) {
-            const auto* c = clipManager.getClip(id);
-            if (c) {
-                earliestStart = juce::jmin(earliestStart, c->placement.startBeat);
-            }
-        }
-        if (earliestStart < std::numeric_limits<double>::max()) {
-            velocityLane_->setClipStartBeats(earliestStart);
-        }
+        if (const auto span = selectionSpanBeats(selectedClipIds))
+            velocityLane_->setClipStartBeats(span->startBeat);
     }
 
     if (gridComponent_) {

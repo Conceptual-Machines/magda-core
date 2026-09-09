@@ -1256,7 +1256,7 @@ void WaveformGridComponent::mouseDown(const juce::MouseEvent& event) {
                 for (const auto& m : warpMarkers_) {
                     sorted.emplace_back(m.warpTime, m.sourceTime);
                 }
-                std::sort(sorted.begin(), sorted.end());
+                std::ranges::sort(sorted);
 
                 // Find the two markers that span our warpTime
                 for (size_t i = 0; i + 1 < sorted.size(); ++i) {

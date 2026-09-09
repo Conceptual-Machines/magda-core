@@ -13,9 +13,10 @@ CompileFlags:
   # Pointing at the directory CMake writes means there is only ever one.
   CompilationDatabase: cmake-build-debug
 
-  # Treat all files as C++20
+  # The project moved to C++23 in #2543. Without this the editor compiled every
+  # file as C++20 and reported std::views::zip as missing.
   Add:
-    - -std=c++20
+    - -std=c++23
     - -Wall
     - -Wextra
 

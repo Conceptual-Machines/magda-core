@@ -35,12 +35,12 @@ void applyPersistedTabOrder(PanelState& panel, const std::vector<std::string>& s
         auto type = contentTypeFromId(juce::String(id));
         if (!type.has_value() || !panel.hasContentType(*type))
             continue;
-        if (std::find(ordered.begin(), ordered.end(), *type) == ordered.end())
+        if (!std::ranges::contains(ordered, *type))
             ordered.push_back(*type);
     }
 
     for (auto type : panel.tabs) {
-        if (std::find(ordered.begin(), ordered.end(), type) == ordered.end())
+        if (!std::ranges::contains(ordered, type))
             ordered.push_back(type);
     }
 
@@ -180,7 +180,7 @@ void PanelController::resetToDefaults() {
 }
 
 void PanelController::addListener(PanelStateListener* listener) {
-    if (listener && std::find(listeners_.begin(), listeners_.end(), listener) == listeners_.end()) {
+    if (listener && !std::ranges::contains(listeners_, listener)) {
         listeners_.push_back(listener);
     }
 }

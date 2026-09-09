@@ -7,6 +7,7 @@
 #include <functional>
 #include <iterator>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 
 #include "../../audio/AudioBridge.hpp"
@@ -64,13 +65,10 @@ juce::String formatTrackIds(const std::vector<TrackId>& trackIds) {
 
 juce::String formatSessionClips() {
     auto clips = ClipManager::getInstance().getSessionClips();
-    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        if (a.trackId != b.trackId)
-            return a.trackId < b.trackId;
-        if (a.sceneIndex != b.sceneIndex)
-            return a.sceneIndex < b.sceneIndex;
-        return a.id < b.id;
-    });
+    const auto gridPosition = [](const ClipInfo& clip) {
+        return std::tuple{clip.trackId, clip.sceneIndex, clip.id};
+    };
+    std::ranges::sort(clips, {}, gridPosition);
 
     juce::String text("[");
     for (size_t i = 0; i < clips.size(); ++i) {
@@ -82,6 +80,21 @@ juce::String formatSessionClips() {
     }
     text << "]";
     return text;
+}
+
+/** @brief Whether an id names a clip that lives in the session grid. */
+bool isSessionClip(ClipId clipId) {
+    const auto* clip = ClipManager::getInstance().getClip(clipId);
+    return clip != nullptr && clip->view == ClipView::Session;
+}
+
+/** @brief The current clip selection, narrowed to the session grid. */
+std::vector<ClipId> selectedSessionClipIds() {
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    std::vector<ClipId> sessionClipIds;
+    sessionClipIds.reserve(selected.size());
+    std::ranges::copy_if(selected, std::back_inserter(sessionClipIds), isSessionClip);
+    return sessionClipIds;
 }
 
 float gainToDb(float gain) {
@@ -2754,32 +2767,16 @@ ClipId SessionView::duplicateSessionClipToNextEmptyScene(ClipId clipId) {
 }
 
 bool SessionView::duplicateSelectedSessionClips() {
-    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
-    if (selectedClips.empty())
-        return false;
-
-    std::vector<ClipId> sessionClipIds;
-    sessionClipIds.reserve(selectedClips.size());
-    auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : selectedClips) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip && clip->view == ClipView::Session)
-            sessionClipIds.push_back(clipId);
-    }
+    auto sessionClipIds = selectedSessionClipIds();
     if (sessionClipIds.empty())
         return false;
 
-    std::sort(sessionClipIds.begin(), sessionClipIds.end(), [&clipManager](ClipId a, ClipId b) {
-        const auto* clipA = clipManager.getClip(a);
-        const auto* clipB = clipManager.getClip(b);
-        int sceneA = clipA ? clipA->sceneIndex : 0;
-        int sceneB = clipB ? clipB->sceneIndex : 0;
-        if (sceneA != sceneB)
-            return sceneA < sceneB;
-        TrackId trackA = clipA ? clipA->trackId : INVALID_TRACK_ID;
-        TrackId trackB = clipB ? clipB->trackId : INVALID_TRACK_ID;
-        return trackA < trackB;
-    });
+    auto& clipManager = ClipManager::getInstance();
+    const auto sceneThenTrack = [&clipManager](ClipId clipId) {
+        const auto* clip = clipManager.getClip(clipId);
+        return std::tuple{clip ? clip->sceneIndex : 0, clip ? clip->trackId : INVALID_TRACK_ID};
+    };
+    std::ranges::sort(sessionClipIds, {}, sceneThenTrack);
 
     if (sessionClipIds.size() > 1)
         UndoManager::getInstance().beginCompoundOperation("Duplicate Session Clips");
@@ -2802,18 +2799,7 @@ bool SessionView::duplicateSelectedSessionClips() {
 }
 
 bool SessionView::deleteSelectedSessionClips() {
-    auto selectedClips = SelectionManager::getInstance().getSelectedClips();
-    if (selectedClips.empty())
-        return false;
-
-    std::vector<ClipId> sessionClipIds;
-    sessionClipIds.reserve(selectedClips.size());
-    auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : selectedClips) {
-        const auto* clip = clipManager.getClip(clipId);
-        if (clip && clip->view == ClipView::Session)
-            sessionClipIds.push_back(clipId);
-    }
+    const auto sessionClipIds = selectedSessionClipIds();
     if (sessionClipIds.empty())
         return false;
 
@@ -3080,7 +3066,7 @@ bool SessionView::canDropIntoGroup(int draggedIndex, int targetIndex) const {
     const auto* dragged = tm.getTrack(visibleTrackIds_[draggedIndex]);
     if (dragged && dragged->isGroup()) {
         auto desc = tm.getAllDescendants(dragged->id);
-        if (std::find(desc.begin(), desc.end(), target->id) != desc.end())
+        if (std::ranges::contains(desc, target->id))
             return false;
     }
     return true;

@@ -347,7 +347,7 @@ std::vector<std::string> parseTags(const juce::String& raw) {
         const auto clean = token.trim().toLowerCase();
         if (clean.isNotEmpty()) {
             const auto s = clean.toStdString();
-            if (std::find(out.begin(), out.end(), s) == out.end()) {
+            if (!std::ranges::contains(out, s)) {
                 out.push_back(s);
             }
         }

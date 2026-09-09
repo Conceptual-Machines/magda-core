@@ -608,18 +608,17 @@ void AutomationLaneComponent::simplifyLane(AutomationLaneId laneId, double epsil
     };
 
     std::vector<AutomationPointId> filterSorted(pointIdFilter.begin(), pointIdFilter.end());
-    std::sort(filterSorted.begin(), filterSorted.end());
+    std::ranges::sort(filterSorted);
     const bool hasFilter = !filterSorted.empty();
 
     std::vector<Entry> entries;
     entries.reserve(lane->absolutePoints.size());
     for (const auto& pt : lane->absolutePoints) {
-        bool inScope =
-            !hasFilter || std::binary_search(filterSorted.begin(), filterSorted.end(), pt.id);
+        bool inScope = !hasFilter || std::ranges::binary_search(filterSorted, pt.id);
         entries.push_back({pt.id, {pt.beatPosition, pt.value}, inScope});
     }
-    std::sort(entries.begin(), entries.end(),
-              [](const Entry& a, const Entry& b) { return a.p.beatPosition < b.p.beatPosition; });
+    const auto beatPositionOf = [](const Entry& entry) { return entry.p.beatPosition; };
+    std::ranges::sort(entries, {}, beatPositionOf);
 
     std::vector<AutomationCurveSimplifier::Point> polyline;
     polyline.reserve(entries.size());

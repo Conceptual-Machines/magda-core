@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <ranges>
 #include <set>
 
 #include "audio/MidiBridge.hpp"
@@ -50,8 +52,8 @@ std::vector<int> MidiEditorContent::collectUsedPitches() const {
     std::set<int> used;
     if (editingClipId_ != magda::INVALID_CLIP_ID) {
         if (const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_))
-            for (const auto& note : clip->midiNotes)
-                used.insert(note.noteNumber);
+            std::ranges::copy(clip->midiNotes | std::views::transform(&magda::MidiNote::noteNumber),
+                              std::inserter(used, used.end()));
     }
     return {used.begin(), used.end()};
 }
@@ -792,21 +794,17 @@ void MidiEditorContent::showOverlayTracksMenu(juce::Component* anchor,
         if (track.id == activeTrackId)
             continue;
 
-        bool hasMidi = false;
-        for (magda::ClipId cid : clipManager.getClipsOnTrack(track.id)) {
+        const auto isMidiClip = [&clipManager](magda::ClipId cid) {
             const auto* clip = clipManager.getClip(cid);
-            if (clip && clip->isMidi()) {
-                hasMidi = true;
-                break;
-            }
-        }
-        if (!hasMidi)
+            return clip != nullptr && clip->isMidi();
+        };
+        const auto clipIds = clipManager.getClipsOnTrack(track.id);
+        if (!std::ranges::any_of(clipIds, isMidiClip))
             continue;
 
         juce::PopupMenu::Item item(track.name);
         item.itemID = static_cast<int>(menuTracks.size()) + 1;
-        item.isTicked = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), track.id) !=
-                        overlayTrackIds_.end();
+        item.isTicked = std::ranges::contains(overlayTrackIds_, track.id);
         item.colour = track.colour;
         menu.addItem(item);
         menuTracks.push_back(track.id);
@@ -838,7 +836,7 @@ void MidiEditorContent::showOverlayTracksMenu(juce::Component* anchor,
                 overlayTrackIds_.clear();
             } else if (result >= 1 && result <= static_cast<int>(menuTracks.size())) {
                 const auto trackId = menuTracks[static_cast<size_t>(result - 1)];
-                auto it = std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(), trackId);
+                const auto it = std::ranges::find(overlayTrackIds_, trackId);
                 if (it != overlayTrackIds_.end())
                     overlayTrackIds_.erase(it);
                 else

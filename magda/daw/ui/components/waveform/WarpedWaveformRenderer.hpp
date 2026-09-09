@@ -49,8 +49,7 @@ inline void drawWarpedWaveform(juce::Graphics& g, magda::AudioThumbnailManager& 
     if (markers.size() < 2 || !spec.warpToPixelX || spec.clipArea.isEmpty())
         return;
 
-    std::sort(markers.begin(), markers.end(),
-              [](const auto& a, const auto& b) { return a.warpTime < b.warpTime; });
+    std::ranges::sort(markers, {}, &magda::WarpMarkerInfo::warpTime);
 
     const double leftX = spec.clipArea.getX();
     const double rightX = spec.clipArea.getRight();

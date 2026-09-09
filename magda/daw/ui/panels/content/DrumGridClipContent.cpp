@@ -68,9 +68,7 @@ PrimaryInstance primaryInstanceForClip(magda::ClipId clipId) {
 }
 
 const magda::KitRow* findKitRow(const std::vector<magda::KitRow>& rows, int noteNumber) {
-    auto it = std::find_if(rows.begin(), rows.end(), [noteNumber](const magda::KitRow& r) {
-        return r.noteNumber == noteNumber;
-    });
+    const auto it = std::ranges::find(rows, noteNumber, &magda::KitRow::noteNumber);
     return it == rows.end() ? nullptr : &(*it);
 }
 
@@ -500,8 +498,7 @@ class DrumGridClipGrid : public juce::Component,
         // overlay track's clip changes
         if (!overlayTrackIds_.empty()) {
             const auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-            if (clip && std::find(overlayTrackIds_.begin(), overlayTrackIds_.end(),
-                                  clip->trackId) != overlayTrackIds_.end()) {
+            if (clip && std::ranges::contains(overlayTrackIds_, clip->trackId)) {
                 repaint();
             }
         }
@@ -736,7 +733,7 @@ class DrumGridClipGrid : public juce::Component,
     // an unselected note is edited alone.
     void adjustVelocityForNote(size_t noteIndex, int velocityDelta) {
         std::vector<size_t> targets = selectedNoteIndices();
-        if (std::find(targets.begin(), targets.end(), noteIndex) == targets.end())
+        if (!std::ranges::contains(targets, noteIndex))
             targets = {noteIndex};
         magda::adjustMidiNoteVelocities(clipId_, targets, velocityDelta);
         flashVelocityReadout(noteIndex);
@@ -3026,8 +3023,7 @@ void DrumGridClipContent::buildPadRows() {
 
     for (int i = 0; i < numPads_; ++i) {
         int noteNumber = baseNote_ + i;
-        if (filterToUsed &&
-            std::find(usedNotes.begin(), usedNotes.end(), noteNumber) == usedNotes.end())
+        if (filterToUsed && !std::ranges::contains(usedNotes, noteNumber))
             continue;
         bool hasChain = false;
         if (drumGrid_) {

@@ -3,8 +3,10 @@
 #include <BinaryData.h>
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <ranges>
 #include <unordered_set>
 
 #include "../../dialogs/AISettingsDialog.hpp"
@@ -740,6 +742,20 @@ ClipComponent::EffectiveFades ClipComponent::computeEffectiveFades(const ClipInf
             return ClipManager::effectiveFadesIn(previewLane, clipId_, tempo);
     }
     return ClipManager::getInstance().getEffectiveFades(clipId_, tempo);
+}
+
+std::vector<ClipId> ClipComponent::selectedClipsInTimelineOrder() const {
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    std::vector<ClipId> ordered(selected.begin(), selected.end());
+
+    auto& clipManager = ClipManager::getInstance();
+    const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
+    const auto startSeconds = [&clipManager, tempo](ClipId id) {
+        const auto* clip = clipManager.getClip(id);
+        return clip != nullptr ? timelineStartSeconds(*clip, tempo) : 0.0;
+    };
+    std::ranges::sort(ordered, {}, startSeconds);
+    return ordered;
 }
 
 ClipId ClipComponent::findCrossfadeNeighbour(bool atStart) const {
@@ -3164,16 +3180,13 @@ namespace {
 /// Repaint only when the ranges actually moved: these are pushed on every lane
 /// update, most of which change nothing.
 bool sameRanges(const std::vector<BeatRange>& a, const std::vector<BeatRange>& b) {
-    if (a.size() != b.size())
-        return false;
-    constexpr double tolBeats = 1e-6;
-    for (size_t i = 0; i < a.size(); ++i) {
-        if (std::abs(a[i].start.value - b[i].start.value) >= tolBeats ||
-            std::abs(a[i].end.value - b[i].end.value) >= tolBeats) {
-            return false;
-        }
-    }
-    return true;
+    const auto samePair = [](const auto& pair) {
+        constexpr double tolBeats = 1e-6;
+        const auto& [lhs, rhs] = pair;
+        return std::abs(lhs.start.value - rhs.start.value) < tolBeats &&
+               std::abs(lhs.end.value - rhs.end.value) < tolBeats;
+    };
+    return a.size() == b.size() && std::ranges::all_of(std::views::zip(a, b), samePair);
 }
 
 }  // namespace
@@ -3503,16 +3516,7 @@ void ClipComponent::showContextMenu() {
     // Join Clips (need 2+ adjacent clips on same track)
     bool canJoin = false;
     if (selectionManager.getSelectedClipCount() >= 2) {
-        auto selected = selectionManager.getSelectedClips();
-        std::vector<ClipId> sorted(selected.begin(), selected.end());
-        std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-            auto* ca = clipManager.getClip(a);
-            auto* cb = clipManager.getClip(b);
-            if (!ca || !cb)
-                return false;
-            const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-            return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-        });
+        const auto sorted = selectedClipsInTimelineOrder();
         canJoin = true;
         for (size_t i = 1; i < sorted.size() && canJoin; ++i) {
             JoinClipsCommand testCmd(sorted[i - 1], sorted[i]);
@@ -4149,17 +4153,8 @@ void ClipComponent::showContextMenu() {
             }
 
             case 8: {  // Join Clips
-                auto selectedClips = selectionManager.getSelectedClips();
-                if (selectedClips.size() >= 2) {
-                    std::vector<ClipId> sorted(selectedClips.begin(), selectedClips.end());
-                    std::sort(sorted.begin(), sorted.end(), [&](ClipId a, ClipId b) {
-                        auto* ca = clipManager.getClip(a);
-                        auto* cb = clipManager.getClip(b);
-                        if (!ca || !cb)
-                            return false;
-                        const double tempo = parentPanel_ ? parentPanel_->getTempo() : 120.0;
-                        return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-                    });
+                if (selectionManager.getSelectedClipCount() >= 2) {
+                    const auto sorted = selectedClipsInTimelineOrder();
 
                     if (sorted.size() > 2)
                         UndoManager::getInstance().beginCompoundOperation("Join Clips");
