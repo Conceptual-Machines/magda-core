@@ -37,6 +37,10 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     prepared->values = std::move(values);
     prepared->context = context;
 
+    // Sorted already: a std::set of them is ordered by the same operator< the
+    // block's lookup uses.
+    prepared->takes.assign(modelIds.takes.begin(), modelIds.takes.end());
+
     // The metronome is prepared against the device, not the plan, so it is
     // shared with the epoch it replaces unless the device changed. Sharing is
     // what keeps a click that is sounding from being cut in half by an edit
@@ -111,6 +115,13 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // it would be counting from one again by its next block (#2122).
     live_->executor.clearUnboundValueTaps();
 
+    if (betweenPlanAndTakesForTest)
+        betweenPlanAndTakesForTest();
+
+    // The takes this edit ended (#2465). After the swap, since the edit only
+    // counts once its plan is playing.
+    closeUnnamedTakes(modelIds);
+
     // Safe only now: before the swap, everything about to be destroyed was
     // still reachable from the plan the audio thread was rendering. The plan
     // that is live goes in as well, so what it names survives however stale
@@ -120,6 +131,56 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     store_.releaseDeleted(*livePlan_, modelIds, live_->values.params.get());
 
     return {true, std::move(messages)};
+}
+
+void EngineSession::publishTakes() {
+    recording_.publish(std::make_shared<const RecordingTakes>(store_.liveTakes()));
+}
+
+void EngineSession::startTake(const TakeKey& key, const RecordTapSettings& settings,
+                              const std::function<std::unique_ptr<TakeCapture>(RecordTap&)>& make) {
+    // Whatever this key was already recording, closed first. Its tap leaves
+    // with it, so the take built below gets a fresh one.
+    if (auto displaced = stopTake(key); displaced.take != nullptr)
+        closed_.push_back(std::move(displaced));
+
+    auto take = make(store_.realiseTakeTap(key, settings));
+    if (take == nullptr)
+        return;
+
+    store_.holdTake(key, std::move(take));
+    publishTakes();
+}
+
+ClosedTake EngineSession::stopTake(const TakeKey& key) {
+    auto released = store_.releaseTake(key);
+    if (released.take == nullptr)
+        return {};
+
+    // The set without it, published before the caller has it. Once this
+    // returns the callback is out of the take, so finishing it is safe.
+    publishTakes();
+    return ClosedTake{key, std::move(released.take), std::move(released.tap)};
+}
+
+void EngineSession::closeUnnamedTakes(const RuntimeStateIds& modelIds) {
+    const auto unnamed = store_.unnamedTakes(modelIds);
+    if (unnamed.empty())
+        return;
+
+    // All of them out of the store, then one publish: a scene of armed tracks
+    // deleted together costs one wait rather than one each.
+    std::vector<ClosedTake> closed;
+    closed.reserve(unnamed.size());
+    for (const auto& key : unnamed) {
+        auto released = store_.releaseTake(key);
+        closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
+    }
+
+    publishTakes();
+
+    for (auto& take : closed)
+        closed_.push_back(std::move(take));
 }
 
 EngineSession::Result EngineSession::publishValues(PlanValues values) {
@@ -250,9 +311,16 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
 
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.
+        //
+        // The set says which takes exist and the epoch says which may record,
+        // and the epoch is the one this block is rendering. So an edit that
+        // ended a take stops feeding it on the block that first renders its
+        // plan, rather than on whichever later block the publishing thread got
+        // the reduced set out by (#2465).
         if (takes)
-            for (auto* recorder : *takes.get())
-                recorder->capture(segment.block, segment.countingIn, transport->loop);
+            for (const auto& entry : *takes.get())
+                if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
+                    entry.take->capture(segment.block, segment.countingIn, transport->loop);
 
         // Where the transport is, for the thread that reads ahead of it. A
         // relaxed store of a double, before the block rather than after: the

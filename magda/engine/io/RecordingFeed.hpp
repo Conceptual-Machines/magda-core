@@ -2,8 +2,10 @@
 
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
+#include <tuple>
 #include <vector>
 
+#include "core/TypeIds.hpp"
 #include "exec/RenderContext.hpp"
 #include "tap/RecordTap.hpp"
 #include "transport/TransportState.hpp"
@@ -17,6 +19,26 @@
  */
 
 namespace magda::engine {
+
+class RecordStream;
+
+/**
+ * @brief Which take: whose input it records, and what kind (#2465).
+ *
+ * A track has one live audio input and one live MIDI input, so it has at most
+ * two takes. That makes this the same identity the differ matches an input op
+ * on, which is what lets a recompile carry the take it was already feeding.
+ */
+struct TakeKey {
+    TrackId trackId = INVALID_TRACK_ID;
+    RecordMaterial material = RecordMaterial::audio;
+
+    bool operator==(const TakeKey&) const = default;
+
+    bool operator<(const TakeKey& other) const {
+        return std::tie(trackId, material) < std::tie(other.trackId, other.material);
+    }
+};
 
 /**
  * @brief One take being fed, block by block, on the audio thread.
@@ -39,11 +61,23 @@ class TakeCapture {
     /// Where the take publishes the pass in flight (#2463). Read from any
     /// thread, for as long as whoever owns the take keeps it.
     virtual const RecordTap& tap() const = 0;
+
+    /// The queue the record thread drains. On the base rather than on each
+    /// kind of take, so whoever registered one can unregister it without
+    /// knowing which kind it is (#2465).
+    virtual RecordStream& stream() = 0;
+};
+
+/// One take in the callback's set, beside the key that says whether the epoch
+/// being rendered still allows it to record (#2465).
+struct RecordingTake {
+    TakeKey key;
+    TakeCapture* take = nullptr;
 };
 
 /// The takes a callback feeds. Not owned: whoever publishes them keeps them
 /// alive until it has published something that does not name them.
-using RecordingTakes = std::vector<TakeCapture*>;
+using RecordingTakes = std::vector<RecordingTake>;
 
 /**
  * @brief What the audio thread records into, replaced on the publishing thread.

@@ -160,7 +160,7 @@ class TakeRecorder final : public TakeCapture {
 
     /// The queue the record thread drains. Registered by whoever owns the
     /// thread, and unregistered before @ref finish.
-    RecordStream& stream() {
+    RecordStream& stream() override {
         return stream_;
     }
 
