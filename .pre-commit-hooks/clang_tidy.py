@@ -396,6 +396,15 @@ def main() -> int:
               f"LLVM {required} and point CLANG_TIDY at it, or change "
               f"CLANG_TIDY_REQUIRE_MAJOR if the pin is meant to move.",
               file=sys.stderr)
+        # An advisory run does not block, and least of all on its own toolchain:
+        # a runner without the pinned keg is not a finding about the code under
+        # review. Homebrew moved `llvm` to 23 and the second macOS runner has no
+        # llvm@20, which blocked every PR on a step that cannot fail on findings.
+        # Binding runs still stop here, or the pin would mean nothing.
+        if advisory:
+            print("\nSKIPPED - wrong clang-tidy. ADVISORY ONLY - not failing.",
+                  file=sys.stderr)
+            return 0
         return 1
 
     database = args.build_dir / "compile_commands.json"
