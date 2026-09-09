@@ -16,7 +16,7 @@ add_library(magda_music STATIC
     Scales.hpp
 )
 
-target_compile_features(magda_music PUBLIC cxx_std_20)
+target_compile_features(magda_music PUBLIC cxx_std_23)
 target_include_directories(magda_music
     PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..

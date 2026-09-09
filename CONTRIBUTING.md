@@ -29,7 +29,7 @@ All contributions require signing our [Contributor License Agreement (CLA)](CLA.
 ### Prerequisites
 
 - CMake 3.24+
-- C++20 compiler (Clang 15+ or GCC 13+)
+- C++23 compiler (Clang 15+ or GCC 13+)
 - macOS: Xcode Command Line Tools
 - Linux: ALSA and X11 development headers
 
@@ -64,7 +64,7 @@ make test
 
 ## Code Style
 
-- C++20
+- C++23
 - `clang-format` with the project's `.clang-format` config
 - No raw `new`/`delete` — use smart pointers
 - No blocking operations on the audio thread

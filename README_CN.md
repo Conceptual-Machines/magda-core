@@ -7,7 +7,7 @@
   <a href="https://github.com/Conceptual-Machines/magda-core/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Conceptual-Machines/magda-core/ci.yml?label=macOS&logo=apple" alt="macOS Build"></a>
   <a href="https://github.com/Conceptual-Machines/magda-core/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Conceptual-Machines/magda-core/ci.yml?label=Windows&logo=windows" alt="Windows Build"></a>
   <a href="https://github.com/Conceptual-Machines/magda-core/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/C%2B%2B-20-blue.svg" alt="C++20">
+  <img src="https://img.shields.io/badge/C%2B%2B-23-blue.svg" alt="C++23">
   <a href="https://crowdin.com/project/magda"><img src="https://badges.crowdin.net/magda/localized.svg" alt="Crowdin"></a>
 </p>
 
@@ -17,7 +17,7 @@
 <p align="center"><img src="assets/treaktion-engine-logo.png" alt="Powered by Tracktion Engine" width="250" height="80"></p>
 
 ---
-MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW），基于 C++20、JUCE 框架与 Tracktion 音频引擎开发.
+MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW），基于 C++23、JUCE 框架与 Tracktion 音频引擎开发.
  - [English](README.md) | **简体中文**
 
 ### 特性
@@ -48,8 +48,8 @@ MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW）
 
 ### Prerequisites前置准备
 
-- C++20 标准编译器（GCC 10 及以上、Clang 12 及以上，或 Xcode）
-- CMake 3.20 及以上版本
+- C++23 标准编译器：GCC 11.1 及以上、Clang 12 及以上、AppleClang 13 及以上，或 MSVC 19.29 及以上（CI 使用 GCC 13、AppleClang 16 与 MSVC 19.50 构建）
+- CMake 3.24 及以上版本
 - [Git LFS](https://git-lfs.com/) ：必需，用于拉取项目内置二进制资源，如中日韩字体等
   (CJK font, etc.).
 macos下载 `brew install git-lfs`   ,

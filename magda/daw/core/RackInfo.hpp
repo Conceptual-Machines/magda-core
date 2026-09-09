@@ -104,49 +104,11 @@ struct ChainInfo {
     ChainInfo(ChainInfo&&) = default;
     ChainInfo& operator=(ChainInfo&&) = default;
 
-    // Copy constructor - deep copies elements
-    ChainInfo(const ChainInfo& other)
-        : id(other.id),
-          name(other.name),
-          outputIndex(other.outputIndex),
-          muted(other.muted),
-          solo(other.solo),
-          bypassed(other.bypassed),
-          volume(other.volume),
-          pan(other.pan),
-          lowNote(other.lowNote),
-          highNote(other.highNote),
-          rootNote(other.rootNote),
-          expanded(other.expanded) {
-        elements.reserve(other.elements.size());
-        for (const auto& element : other.elements) {
-            elements.push_back(deepCopyElement(element));
-        }
-    }
-
-    // Copy assignment - deep copies elements
-    ChainInfo& operator=(const ChainInfo& other) {
-        if (this != &other) {
-            id = other.id;
-            name = other.name;
-            outputIndex = other.outputIndex;
-            muted = other.muted;
-            solo = other.solo;
-            bypassed = other.bypassed;
-            volume = other.volume;
-            pan = other.pan;
-            lowNote = other.lowNote;
-            highNote = other.highNote;
-            rootNote = other.rootNote;
-            expanded = other.expanded;
-            elements.clear();
-            elements.reserve(other.elements.size());
-            for (const auto& element : other.elements) {
-                elements.push_back(deepCopyElement(element));
-            }
-        }
-        return *this;
-    }
+    // Copy operations deep-copy the elements. Declared here and defined after
+    // RackInfo: both clear the element vector, and destroying one destroys a
+    // unique_ptr<RackInfo>, which needs the complete type.
+    ChainInfo(const ChainInfo& other);
+    ChainInfo& operator=(const ChainInfo& other);
 
     // Convenience methods for backward compatibility
     std::vector<DeviceInfo*> getDevices() {
@@ -242,6 +204,48 @@ inline ChainElement deepCopyElement(const ChainElement& element) {
         // Deep copy the nested rack
         return std::make_unique<RackInfo>(getRack(element));
     }
+}
+
+inline ChainInfo::ChainInfo(const ChainInfo& other)
+    : id(other.id),
+      name(other.name),
+      outputIndex(other.outputIndex),
+      muted(other.muted),
+      solo(other.solo),
+      bypassed(other.bypassed),
+      volume(other.volume),
+      pan(other.pan),
+      lowNote(other.lowNote),
+      highNote(other.highNote),
+      rootNote(other.rootNote),
+      expanded(other.expanded) {
+    elements.reserve(other.elements.size());
+    for (const auto& element : other.elements) {
+        elements.push_back(deepCopyElement(element));
+    }
+}
+
+inline ChainInfo& ChainInfo::operator=(const ChainInfo& other) {
+    if (this != &other) {
+        id = other.id;
+        name = other.name;
+        outputIndex = other.outputIndex;
+        muted = other.muted;
+        solo = other.solo;
+        bypassed = other.bypassed;
+        volume = other.volume;
+        pan = other.pan;
+        lowNote = other.lowNote;
+        highNote = other.highNote;
+        rootNote = other.rootNote;
+        expanded = other.expanded;
+        elements.clear();
+        elements.reserve(other.elements.size());
+        for (const auto& element : other.elements) {
+            elements.push_back(deepCopyElement(element));
+        }
+    }
+    return *this;
 }
 
 // Factory function to create a ChainElement from a RackInfo

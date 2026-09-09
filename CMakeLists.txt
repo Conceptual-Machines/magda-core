@@ -78,8 +78,8 @@ project(Magda VERSION ${MAGDA_BUNDLE_VERSION} LANGUAGES C CXX)
 #     message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
 # endif()
 
-# Set C++ standard (required for Tracktion Engine)
-set(CMAKE_CXX_STANDARD 20)
+# Set C++ standard (milestone 28: the declarative lane needs ranges::to)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -226,19 +226,22 @@ else()
     set(GGML_F16C   OFF CACHE BOOL "" FORCE)
     set(GGML_BMI2   OFF CACHE BOOL "" FORCE)
 endif()
+# Vendored llama.cpp is a C++17 codebase and pins no standard of its own, so it
+# inherits this project's. It does not compile at ours: C++23 clang rejects its
+# explicit specialisations after instantiation, and MSVC its char8_t use. Build
+# it at the standard it targets.
+set(MAGDA_CXX_STANDARD ${CMAKE_CXX_STANDARD})
+set(CMAKE_CXX_STANDARD 17)
 add_subdirectory(third_party/llama.cpp)
+set(CMAKE_CXX_STANDARD ${MAGDA_CXX_STANDARD})
 
-# llama.cpp doesn't need C++20; building as C++17 avoids MSVC char8_t errors
-if(MSVC)
-    set_target_properties(llama PROPERTIES CXX_STANDARD 17)
+if(MSVC AND TARGET llama)
     # Vendored llama.cpp leans on implicit numeric conversions (size_t->int,
     # double->float, etc.), so MSVC emits ~750 benign C4244/C4267/C4305
     # warnings from src/ and src/models/. Not our code, not actionable, and the
     # diagnostic volume slows the build; silence them on the llama target.
     # C4101 = unreferenced local variable (also upstream, also benign).
-    if(TARGET llama)
-        target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
-    endif()
+    target_compile_options(llama PRIVATE /wd4244 /wd4267 /wd4305 /wd4101)
 endif()
 
 include(magda/daw/audio/DevicesDependencies.cmake)

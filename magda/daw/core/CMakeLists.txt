@@ -85,6 +85,7 @@ target_sources(magda_daw PRIVATE
     controllers/ControllerProfileRegistry.cpp
     controllers/MidiLearnCoordinator.cpp
     # Headers (listed for IDE visibility)
+    RangesHelpers.hpp
     Config.hpp
     GridDivision.hpp
     AppPaths.hpp
