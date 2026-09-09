@@ -616,12 +616,17 @@ void PasteChainElementsCommand::execute() {
     const auto* destinationBefore =
         destinationChainPath_.steps.empty() ? nullptr : tm.getChainByPath(destinationChainPath_);
     const auto* trackBefore = tm.getTrack(destinationChainPath_.trackId);
-    const int destinationSizeBefore =
-        destinationChainPath_.steps.empty()
-            ? (trackBefore != nullptr ? static_cast<int>(trackBefore->chain.fxChainElements.size())
-                                      : 0)
-            : (destinationBefore != nullptr ? static_cast<int>(destinationBefore->elements.size())
-                                            : 0);
+    // A top-level path counts the track's own chain, a nested one counts the
+    // chain it names. Either can be gone, which counts the same as empty.
+    const int destinationSizeBefore = [&]() -> int {
+        if (!destinationChainPath_.steps.empty()) {
+            return destinationBefore != nullptr
+                       ? static_cast<int>(destinationBefore->elements.size())
+                       : 0;
+        }
+        return trackBefore != nullptr ? static_cast<int>(trackBefore->chain.fxChainElements.size())
+                                      : 0;
+    }();
     const int requestedIndex = std::clamp(insertIndex_, 0, destinationSizeBefore);
 
     executed_ = tm.insertChainElementsByPath(destinationChainPath_, std::move(elements),

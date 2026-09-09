@@ -46,7 +46,6 @@ Checks: >-
   readability-use-std-min-max,
   readability-use-anyofallof,
   readability-simplify-boolean-expr,
-  readability-avoid-nested-conditional-operator,
   readability-inconsistent-declaration-parameter-name
 
 # The old config disabled performance-noexcept-move-constructor and
@@ -91,6 +90,18 @@ Checks: >-
 #     iteration-order (2)        address; the other is listener registration order.
 #   macro-parentheses (2)        the argument is streamed, so parenthesising it
 #                                would evaluate the << chain before the string.
+#
+# readability-avoid-nested-conditional-operator is off. It cannot tell a chain
+# from a nesting: `a ? x : b ? y : z` is an else-if ladder, which clang-format
+# aligns here into exactly that shape, and it counts as nested because the
+# second operator sits in the first one's false branch. Of the 91 sites, all
+# but a handful are that ladder or a parenthesised sub-expression like
+# `sync ? "rateType" : "rate"`, and rewriting them as if/else or named
+# intermediates makes them longer and no clearer. The few that were genuinely
+# hard - a three-way compare written twice in MediaDbQuery, a bool folded
+# through `? 1 : 0` inside another ternary in MediaDbIndexer, and a
+# two-branches-each-nested size lookup in TrackCommands - are fixed rather than
+# suppressed.
 #
 # modernize-loop-convert is off. It found 19 sites across 2 files and both files
 # were hand-written that way on purpose. TrackManager's 13 notify methods index
