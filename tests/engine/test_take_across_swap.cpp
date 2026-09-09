@@ -2,11 +2,14 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -193,6 +196,44 @@ class Rig {
         }
     }
 
+    /**
+     * @brief Run callbacks on a thread of their own until @ref stopCallbacks.
+     *
+     * What a publish actually races. Driven blocks put every edit between two
+     * callbacks of the test's choosing; this puts them wherever the scheduler
+     * does, which is the only way a case sees the gap between the plan going
+     * live and the recording set following it.
+     */
+    void runInBackground() {
+        running_ = true;
+        callbacks_ = std::thread([this] {
+            while (running_.load(std::memory_order_relaxed)) {
+                deliver(kBlockSize);
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+            }
+        });
+    }
+
+    /// Let the callbacks run on while the test does something else.
+    static void keepRunning(std::chrono::milliseconds how_long) {
+        std::this_thread::sleep_for(how_long);
+    }
+
+    void stopCallbacks() {
+        running_ = false;
+        if (callbacks_.joinable())
+            callbacks_.join();
+    }
+
+    ~Rig() {
+        stopCallbacks();
+    }
+
+    Rig(const Rig&) = delete;
+    Rig& operator=(const Rig&) = delete;
+    Rig(Rig&&) = delete;
+    Rig& operator=(Rig&&) = delete;
+
     /// One callback, with the heap watched. What the swap claim is measured on.
     std::size_t runWatched(int numSamples) {
         const AllocationWatch watch;
@@ -287,7 +328,12 @@ class Rig {
     /// Owned by the session; kept here to say whether it is the same one.
     TakeRecorder* recorder_ = nullptr;
 
+    /// Touched only by whichever thread is delivering callbacks.
     std::int64_t arrival_ = 0;
+
+    std::thread callbacks_;
+    std::atomic<bool> running_{false};
+
     DeviceId nextDeviceId_ = 100;
     int takes_ = 0;
 };
@@ -547,6 +593,47 @@ TEST_CASE("A take the live plan's model does not name is not fed",
 
     auto closed = rig.session().stopTake(kTakeKey);
     REQUIRE(finish(closed).empty());
+}
+
+TEST_CASE("A take carried and then stopped against a running callback",
+          "[engine][exec][session][record][2465]") {
+    Rig rig(emptyDirectory("threaded"));
+    rig.play();
+    rig.runInBackground();
+
+    for (auto edit = 0; edit < 20; ++edit) {
+        rig.addDeviceTo(kOther);
+        REQUIRE(rig.publish());
+    }
+
+    // Stopped with callbacks still running, and stopped rather than disarmed:
+    // the live epoch still names this take, so blocks are being fed to it right
+    // up to the publish inside stopTake. That publish waiting for the block is
+    // the only thing between finish() closing the file and a callback writing
+    // to it.
+    auto closed = rig.session().stopTake(kTakeKey);
+    auto* recorder = dynamic_cast<TakeRecorder*>(closed.take.get());
+    REQUIRE(recorder != nullptr);
+
+    // The take is out of the set before stopTake returns, so hundreds of
+    // callbacks later it has not taken another sample. This is what makes
+    // finishing it below safe, and it is the assertion that fails if the
+    // publish inside stopTake stops waiting.
+    const auto captured = recorder->capturedSamples();
+    REQUIRE(captured > 0);
+
+    Rig::keepRunning(std::chrono::milliseconds(20));
+    REQUIRE(recorder->capturedSamples() == captured);
+
+    const auto take = finish(closed);
+    rig.stopCallbacks();
+
+    // Whatever the interleaving was, the take holds one unbroken stretch of the
+    // input. Where each publish landed inside a callback is the scheduler's,
+    // and none of this depends on it.
+    REQUIRE_FALSE(take.failed);
+    REQUIRE(take.samplesLost == 0);
+    requireUnbroken(readBack(take.file));
 }
 
 TEST_CASE("A swap during a pass neither allocates nor frees on the audio thread",
