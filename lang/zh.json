@@ -203,12 +203,28 @@
     "label.click_hint": "点击以在链视图中选中对应项"
   },
   "project_settings": {
+    "section.metadata": "",
+    "section.general": "",
+    "metadata": {
+      "title": "",
+      "artist": "",
+      "album": "",
+      "originalArtist": "",
+      "composer": "",
+      "songwriter": "",
+      "producer": "",
+      "arranger": "",
+      "year": "",
+      "genre": "",
+      "copyright": "",
+      "website": "",
+      "comment": ""
+    },
     "total_length": "总长度",
     "bars": "小节",
     "sample_rate": "采样率",
     "render_bit_depth": "渲染位深",
-    "bounce_bit_depth": "并轨位深",
-    "save_as_default": "保存为新工程的默认设置"
+    "bounce_bit_depth": "并轨位深"
   },
   "track_manager": {
     "column.track": "轨道",
@@ -316,6 +332,7 @@
     "capture.cancel": "取消",
     "capture.error_setup": "无法设置外部硬件捕获。导出已中止。",
     "capture.error_failed": "录制外部硬件返回信号失败。导出已中止。",
+    "capture.cleanup_failed": "",
     "error.trim_failed": "渲染成功，但未能裁剪卷前静音。",
     "error.file_not_created": "渲染已完成，但未创建文件。原因：项目可能为空，或不包含音频内容。",
     "error.render_failed": "渲染任务失败",
@@ -325,6 +342,9 @@
     "error.no_midi_notes": "没有包含音符的{0}片段可供导出。",
     "error.midi_write_failed": "写入{0}文件失败。",
     "error.cannot_create_file": "无法创建输出文件："
+  },
+  "mix_analysis": {
+    "cleanup_failed": ""
   },
   "collect": {
     "title": "收集文件",
@@ -344,9 +364,11 @@
     "scale.label": "界面缩放",
     "scale.auto": "自动（根据显示 DPI）",
     "font_scale.label": "字号",
+    "localized_font_scale.label": "",
     "font_family.label": "界面字体",
     "font_family.default": "Inter（默认）",
     "tab.general": "通用",
+    "tab.defaults": "",
     "tab.appearance": "外观",
     "tab.colours": "颜色",
     "tab.rendering": "渲染",
@@ -370,12 +392,18 @@
     "section.clip_colours": "片段颜色",
     "section.output": "输出",
     "section.format": "格式",
+    "section.new_project_defaults": "",
+    "section.credit_defaults": "",
+    "label.default_sample_rate": "",
+    "label.default_render_bit_depth": "",
+    "label.default_bounce_bit_depth": "",
     "section.file_naming": "文件命名",
     "section.keyboard_shortcuts": "快捷键",
     "slider.zoom_in_sensitivity": "放大灵敏度",
     "slider.zoom_out_sensitivity": "缩小灵敏度",
     "slider.zoom_shift_sensitivity": "{0}+缩放灵敏度",
     "slider.default_length": "默认长度",
+    "slider.default_total_length": "",
     "slider.default_view": "默认视图",
     "slider.interval": "间隔",
     "toggle.enable_autosave": "启用自动保存",
@@ -418,6 +446,8 @@
     "option.bit_depth_16": "16位",
     "option.bit_depth_24": "24位",
     "option.bit_depth_32_float": "32位浮点",
+    "dialog.load_theme": "",
+    "dialog.save_theme_template": "",
     "dialog.select_render_output_folder": "选择渲染输出文件夹",
     "paths.section.data": "数据文件夹 (日志、脚本、插件缓存)",
     "paths.section.presets": "预设文件夹 (链、机架、设备)",
