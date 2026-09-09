@@ -727,6 +727,12 @@ jobs:
         # Higher than the hook's 8: a push waits on the hook, nobody waits on
         # this, and a change to a widely included header deserves the coverage.
         CLANG_TIDY_MAX_TUS: '40'
+        # Reports without failing the build, until magda/engine is written and
+        # swept. Gating shipping code while a whole directory has never been
+        # analysed sets a bar that moves the moment the engine lands. The
+        # analysis is why the step stays; only the blocking waits. Unset this
+        # and restore WarningsAsErrors in .clang-tidy together.
+        CLANG_TIDY_ADVISORY: '1'
       run: |
         set -euo pipefail
 

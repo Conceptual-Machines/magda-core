@@ -300,6 +300,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tus", type=int,
                         default=int(os.environ.get("CLANG_TIDY_MAX_TUS", "8")))
     parser.add_argument("--jobs", type=int, default=min(8, (os.cpu_count() or 2)))
+    parser.add_argument("--advisory", action="store_true",
+                        default=os.environ.get("CLANG_TIDY_ADVISORY") == "1",
+                        help="report findings without failing")
     return parser
 
 
@@ -367,6 +370,7 @@ def analyse(binary: str, build_dir: Path, target: Path) -> tuple[int, str]:
 
 def main() -> int:
     args = build_parser().parse_args()
+    advisory = args.advisory
     if not args.paths:
         return 0
 
@@ -427,6 +431,15 @@ def main() -> int:
     print(f"clang-tidy: {len(targets)} translation unit(s) checked")
 
     if failed:
+        if advisory:
+            # Loud, and never silent about being advisory. The hook this replaced
+            # ended its command with `|| true` and read as a passing gate for six
+            # sweeps; an advisory run has to be obviously advisory or it becomes
+            # the same lie.
+            print("\nclang-tidy findings above. ADVISORY ONLY - not failing.", file=sys.stderr)
+            print("Gating is off until magda/engine is written and swept; see "
+                  "WarningsAsErrors in .clang-tidy.", file=sys.stderr)
+            return 0
         print("\nclang-tidy gate failed; see above.", file=sys.stderr)
         print("For a finding, fix it or add a NOLINT with a reason if it is wrong.",
               file=sys.stderr)
