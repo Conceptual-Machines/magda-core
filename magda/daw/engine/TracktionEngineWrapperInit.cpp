@@ -38,7 +38,7 @@ std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options
     // that is not an engine question, so this is a choice between two engines
     // rather than a choice about whether the fork is built (#2551).
     if (MagdaAudioEngine::requested(options))
-        return std::make_unique<MagdaAudioEngine>();
+        return std::make_unique<MagdaAudioEngine>(options);
 
     auto engine = std::make_unique<TracktionEngineWrapper>();
     engine->setForceHeadless(options.headless);

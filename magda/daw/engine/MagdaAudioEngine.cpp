@@ -7,7 +7,14 @@
 
 namespace magda {
 
-MagdaAudioEngine::MagdaAudioEngine() : tracktion_(std::make_unique<TracktionEngineWrapper>()) {}
+MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
+    // The option has to reach the wrapper before initialize(), or a headless
+    // caller that picked this engine opens devices, builds GUI services and
+    // starts a plugin scan. The CLI is such a caller.
+    auto wrapper = std::make_unique<TracktionEngineWrapper>();
+    wrapper->setForceHeadless(options.headless);
+    tracktion_ = std::move(wrapper);
+}
 
 MagdaAudioEngine::~MagdaAudioEngine() = default;
 
@@ -289,6 +296,38 @@ void MagdaAudioEngine::onLoopRegionChanged(double startSeconds, double endSecond
 }
 void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
     tracktion_->onLoopEnabledChanged(enabled);
+}
+
+// --- the bases' defaulted virtuals -------------------------------------------
+
+void MagdaAudioEngine::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
+    tracktion_->armSessionSlotRecording(trackId, sceneIndex);
+}
+
+void MagdaAudioEngine::beginArmedSessionSlotRecordings() {
+    tracktion_->beginArmedSessionSlotRecordings();
+}
+
+bool MagdaAudioEngine::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
+    return tracktion_->isSessionSlotRecordArmed(trackId, sceneIndex);
+}
+
+bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) const {
+    return tracktion_->isSessionSlotRecording(trackId, sceneIndex);
+}
+
+const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()
+    const {
+    return tracktion_->getRecordingPreviews();
+}
+
+void MagdaAudioEngine::onPunchRegionChanged(double startSeconds, double endSeconds,
+                                            bool punchInEnabled, bool punchOutEnabled) {
+    tracktion_->onPunchRegionChanged(startSeconds, endSeconds, punchInEnabled, punchOutEnabled);
+}
+
+void MagdaAudioEngine::onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
+    tracktion_->onPunchEnabledChanged(punchInEnabled, punchOutEnabled);
 }
 
 }  // namespace magda

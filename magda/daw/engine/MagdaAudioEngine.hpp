@@ -55,7 +55,7 @@ namespace magda {
 
 class MagdaAudioEngine final : public AudioEngine {
   public:
-    MagdaAudioEngine();
+    explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
 
     /// Whether the app was asked for this engine. MAGDA_AUDIO_ENGINE takes
@@ -152,6 +152,19 @@ class MagdaAudioEngine final : public AudioEngine {
     void onTimeSignatureChanged(int numerator, int denominator) override;
     void onLoopRegionChanged(double startSeconds, double endSeconds, bool enabled) override;
     void onLoopEnabledChanged(bool enabled) override;
+
+    // Overridden because AudioEngine and AudioEngineListener give these default
+    // bodies rather than leaving them pure. Not forwarding them compiles
+    // perfectly and then answers no-op, false and empty for the rest of the
+    // run, which is the failure a generated surface cannot see.
+    void armSessionSlotRecording(TrackId trackId, int sceneIndex) override;
+    void beginArmedSessionSlotRecordings() override;
+    bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;
+    bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const override;
+    const std::unordered_map<TrackId, RecordingPreview>& getRecordingPreviews() const override;
+    void onPunchRegionChanged(double startSeconds, double endSeconds, bool punchInEnabled,
+                              bool punchOutEnabled) override;
+    void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) override;
 
   private:
     /// The half of the interface that is not an engine question. See the file
