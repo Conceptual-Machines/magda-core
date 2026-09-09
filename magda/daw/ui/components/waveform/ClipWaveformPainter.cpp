@@ -15,6 +15,18 @@
 
 namespace magda::daw::ui {
 
+namespace {
+/**
+ * @brief Converts a time offset to a pixel position, rounding half up.
+ */
+int secondsToPixels(double seconds, double pixelsPerSecond) {
+    // Half up, not juce::roundToInt's half to even. These are non-negative pixel
+    // positions, and the two disagree at tile edges.
+    // NOLINTNEXTLINE(bugprone-incorrect-roundings)
+    return static_cast<int>(seconds * pixelsPerSecond + 0.5);
+}
+}  // namespace
+
 void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
                        juce::Rectangle<int> waveformArea, double clipDisplayLength,
                        const ClipWaveformSpec& spec) {
@@ -117,11 +129,11 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         }
 
         daw::ui::WarpedWaveformSpec wspec;
-        wspec.clipArea = juce::Rectangle<int>(
-            waveformArea.getX(), waveformArea.getY(),
-            juce::jmin(waveformArea.getWidth(),
-                       static_cast<int>(clipDisplayLength * pixelsPerSecond + 0.5)),
-            waveformArea.getHeight());
+        wspec.clipArea =
+            juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(),
+                                 juce::jmin(waveformArea.getWidth(),
+                                            secondsToPixels(clipDisplayLength, pixelsPerSecond)),
+                                 waveformArea.getHeight());
         wspec.warpToPixelX = [&](double warpSeconds) {
             return waveformArea.getX() +
                    di.sourceToTimeline(warpSeconds - displayOffset) * pixelsPerSecond;
@@ -218,10 +230,9 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
 
                 double segmentDuration = juce::jmin(remainingTileDuration, fullSegmentDuration);
                 double segmentEnd = segmentTime + segmentDuration;
-                int segmentX =
-                    waveformArea.getX() + static_cast<int>(segmentTime * pixelsPerSecond + 0.5);
+                int segmentX = waveformArea.getX() + secondsToPixels(segmentTime, pixelsPerSecond);
                 int segmentRight =
-                    waveformArea.getX() + static_cast<int>(segmentEnd * pixelsPerSecond + 0.5);
+                    waveformArea.getX() + secondsToPixels(segmentEnd, pixelsPerSecond);
                 auto segmentRect =
                     juce::Rectangle<int>(segmentX, waveformArea.getY(), segmentRight - segmentX,
                                          waveformArea.getHeight());
@@ -249,7 +260,7 @@ void paintClipWaveform(juce::Graphics& g, const ClipInfo& clip, ClipId clipId,
         if (fileDuration > 0.0 && fileEnd > fileDuration)
             fileEnd = fileDuration;
         double clampedTimelineDuration = di.sourceToTimeline(fileEnd - fileStart);
-        int drawWidth = static_cast<int>(clampedTimelineDuration * pixelsPerSecond + 0.5);
+        int drawWidth = secondsToPixels(clampedTimelineDuration, pixelsPerSecond);
         drawWidth = juce::jmin(drawWidth, waveformArea.getWidth());
         auto drawRect = juce::Rectangle<int>(waveformArea.getX(), waveformArea.getY(), drawWidth,
                                              waveformArea.getHeight());

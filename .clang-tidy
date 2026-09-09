@@ -124,8 +124,9 @@ Checks: >-
 # copy happens while constructing the closure rather than inside the call
 # operator, which is outside the check's documented scope.
 
-# Warnings as errors - set once the bug-catching tier below is at zero.
-WarningsAsErrors: ''
+# The bug-catching tier is at zero over all 705 magda/ translation units,
+# magda/engine included, so it is binding from here on.
+WarningsAsErrors: 'bugprone-*,cert-*'
 
 # Header filter. Anchored on a leading slash: the old unanchored `tests` matched
 # third_party/JUCE/.../unit_tests/*.h, and it never covered magda/engine at all.
@@ -145,6 +146,17 @@ CheckOptions:
   # already include. The inserter matches on spelling, so only <cmath> dedupes.
   - key: cppcoreguidelines-init-variables.MathHeader
     value: '<cmath>'
+  # 7 of the 19 findings were literal products that fit in int and are folded at
+  # compile time - 64 * 1024, 2 * 1024 * 1024, 24 * 60 * 60. Widening those means
+  # writing std::size_t{64} * 1024 for a constant that cannot overflow, so the
+  # check keeps only the cases where a runtime int product is widened.
+  - key: bugprone-implicit-widening-of-multiplication-result.IgnoreConstantIntExpr
+    value: 'true'
+  # static_cast<void>(p.release()) is how this codebase says the discard is
+  # deliberate, and both sites carry a comment saying the writer took ownership.
+  # The check ignores a void cast only with this set.
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: 'true'
   - key: modernize-loop-convert.MaxCopySize
     value: '16'
   - key: modernize-loop-convert.MinConfidence

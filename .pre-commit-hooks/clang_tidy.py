@@ -37,9 +37,9 @@ ROOT = Path.cwd()
 SHIPPING = Path("magda")
 ENGINE = SHIPPING / "engine"
 
-# The bugprone/cert half of .clang-tidy, minus the checks that still report
-# findings. Sweeping those is what unblocks WarningsAsErrors in .clang-tidy;
-# delete one from here as it reaches zero.
+# The bugprone/cert half of .clang-tidy. Every check it enables is at zero over
+# magda/, so this list now matches the config's exactly and .clang-tidy carries
+# the same set in WarningsAsErrors.
 CHECKS = ",".join([
     "-*",
     "bugprone-*",
@@ -57,23 +57,6 @@ CHECKS = ",".join([
     "-bugprone-misplaced-widening-cast",
     "-bugprone-nondeterministic-pointer-iteration-order",
     "-bugprone-macro-parentheses",
-    # Still to sweep: 31, 4 (deliberate pixel roundings), 2, 2 and 1 findings.
-    "-bugprone-implicit-widening-of-multiplication-result",
-    "-bugprone-incorrect-roundings",
-    "-bugprone-unused-return-value",
-    "-bugprone-return-const-ref-from-parameter",
-    "-bugprone-reserved-identifier",
-    # Four the gate had never reached, because the header half joined to nothing
-    # and no C++ push had gone through the hook since it landed. Every masked
-    # index in a lock-free queue is one of the first -- `(at + 1) & (size - 1)`
-    # over ints -- so they fire on ordinary sources too, and left in they would
-    # refuse every push rather than catch anything. Counts are off a 60
-    # translation unit sample rather than a tree sweep: 63, 15, 4, 2 and 1.
-    "-bugprone-signed-bitwise",
-    "-bugprone-throwing-static-initialization",
-    "-bugprone-derived-method-shadowing-base-method",
-    "-bugprone-float-loop-counter",
-    "-bugprone-unchecked-string-to-number-conversion",
 ])
 
 # Sources in the tree but in no compile command, so an absent database entry is

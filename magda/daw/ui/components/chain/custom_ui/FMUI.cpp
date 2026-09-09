@@ -309,8 +309,9 @@ void FMUI::resized() {
         for (int src = 0; src < kNumOps; ++src)
             for (int dst = 0; dst < kNumOps; ++dst) {
                 juce::Rectangle<int> cell(a.getX() + dst * cw, a.getY() + src * chh, cw, chh);
-                controls_[static_cast<size_t>(kMatrixBase) + src * kNumOps + dst].slider->setBounds(
-                    cell.reduced(kCellPad));
+                controls_[static_cast<size_t>(kMatrixBase) + static_cast<size_t>(src) * kNumOps +
+                          dst]
+                    .slider->setBounds(cell.reduced(kCellPad));
             }
     }
 

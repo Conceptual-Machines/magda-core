@@ -24,10 +24,10 @@ std::vector<Binding>& scopeVec(BindingScope scope, std::vector<Binding>& global,
     return scope == BindingScope::Global ? global : project;
 }
 
-// NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter) - the only caller
-// passes long-lived members, never a temporary
 const std::vector<Binding>& scopeVecConst(BindingScope scope, const std::vector<Binding>& global,
                                           const std::vector<Binding>& project) {
+    // Callers pass long-lived members, never a temporary.
+    // NOLINTNEXTLINE(bugprone-return-const-ref-from-parameter)
     return scope == BindingScope::Global ? global : project;
 }
 }  // namespace
