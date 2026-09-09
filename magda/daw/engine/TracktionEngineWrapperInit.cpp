@@ -17,6 +17,7 @@
 #include "../ui/state/TimelineEvents.hpp"
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
+#include "NativeAudioEngine.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "PluginWindowManager.hpp"
 #include "TempoLaneSync.hpp"
@@ -33,6 +34,12 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
 }
 
 std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    // The native engine holds a fork of its own for the half of the interface
+    // that is not an engine question, so this is a choice between two engines
+    // rather than a choice about whether the fork is built (#2551).
+    if (NativeAudioEngine::requested(options))
+        return std::make_unique<NativeAudioEngine>();
+
     auto engine = std::make_unique<TracktionEngineWrapper>();
     engine->setForceHeadless(options.headless);
     return engine;

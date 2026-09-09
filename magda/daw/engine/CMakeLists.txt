@@ -7,6 +7,7 @@ target_sources(magda_daw PRIVATE
     TempoLaneSync.cpp
     TempoSequenceRippleCommand.cpp
     OfflineRenderHelper.cpp
+    NativeAudioEngine.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
