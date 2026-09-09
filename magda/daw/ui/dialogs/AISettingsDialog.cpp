@@ -2,7 +2,9 @@
 
 #include <juce_llm/juce_llm.h>
 
+#include <algorithm>
 #include <array>
+#include <ranges>
 #include <utility>
 
 #include "../../../agents/llama_model_manager.hpp"
@@ -372,6 +374,14 @@ class AISettingsDialog::CloudPage : public juce::Component {
         }
     };
 
+    /** @brief The registered-list row for a provider, or entries_.end(). */
+    auto findListEntry(const std::string& providerId) {
+        const auto isForProvider = [&providerId](const ListEntry& entry) {
+            return entry.providerId == providerId;
+        };
+        return std::ranges::find_if(entries_, isForProvider);
+    }
+
     std::string getSelectedProviderId() const {
         int idx = providerCombo_.getSelectedId() - 1;
         const auto& providers = getKnownProviders();
@@ -393,19 +403,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // Store credential
         credentials_[providerId] = key;
 
-        // Check if already in list, update; otherwise add
-        bool found = false;
-        for (auto& entry : entries_) {
-            if (entry.providerId == providerId) {
-                entry.statusLabel->setText("Updated", juce::dontSendNotification);
-                entry.statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
+        if (auto entry = findListEntry(providerId); entry != entries_.end()) {
+            entry->statusLabel->setText("Updated", juce::dontSendNotification);
+            entry->statusLabel->setColour(juce::Label::textColourId, juce::Colours::yellow);
+        } else {
             addListEntry(providerId);
+        }
 
         keyEditor_.clear();
         statusLabel_.setText("Added", juce::dontSendNotification);
@@ -417,17 +420,13 @@ class AISettingsDialog::CloudPage : public juce::Component {
     void removeProvider(const std::string& providerId) {
         credentials_.erase(providerId);
 
-        // Remove list entry
-        for (auto it = entries_.begin(); it != entries_.end(); ++it) {
-            if (it->providerId == providerId) {
-                listContainer_.removeChildComponent(it->iconComp);
-                listContainer_.removeChildComponent(it->nameLabel);
-                listContainer_.removeChildComponent(it->statusLabel);
-                listContainer_.removeChildComponent(it->removeBtn);
-                entries_.erase(it);
-                updateProviderComboState();
-                break;
-            }
+        if (auto entry = findListEntry(providerId); entry != entries_.end()) {
+            listContainer_.removeChildComponent(entry->iconComp);
+            listContainer_.removeChildComponent(entry->nameLabel);
+            listContainer_.removeChildComponent(entry->statusLabel);
+            listContainer_.removeChildComponent(entry->removeBtn);
+            entries_.erase(entry);
+            updateProviderComboState();
         }
 
         resized();
@@ -490,12 +489,12 @@ class AISettingsDialog::CloudPage : public juce::Component {
         // If current selection is disabled, select the first enabled one
         auto selectedId = providerCombo_.getSelectedId();
         if (selectedId > 0 && !providerCombo_.isItemEnabled(selectedId)) {
-            for (int i = 0; i < static_cast<int>(providers.size()); ++i) {
-                if (providerCombo_.isItemEnabled(i + 1)) {
-                    providerCombo_.setSelectedId(i + 1, juce::dontSendNotification);
-                    break;
-                }
-            }
+            const auto isEnabled = [this](int itemId) {
+                return providerCombo_.isItemEnabled(itemId);
+            };
+            const auto itemIds = std::views::iota(1, static_cast<int>(providers.size()) + 1);
+            if (const auto first = std::ranges::find_if(itemIds, isEnabled); first != itemIds.end())
+                providerCombo_.setSelectedId(*first, juce::dontSendNotification);
         }
     }
 

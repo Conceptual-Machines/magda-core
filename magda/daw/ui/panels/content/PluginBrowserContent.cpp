@@ -3,6 +3,7 @@
 #include <BinaryData.h>
 
 #include <algorithm>
+#include <iterator>
 #include <ranges>
 #include <utility>
 
@@ -559,18 +560,26 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Native + TE internal devices: the registry is the single source of truth.
     // A device appears here by setting showInBrowser on its InternalPluginSpec -
     // no separate hand-maintained list to keep in sync.
-    for (const auto* spec : audio::getAllInternalPluginSpecs()) {
-        if (spec->showInBrowser)
-            list.push_back(PluginBrowserInfo::createInternal(
-                spec->displayName, spec->pluginId, spec->isInstrument, spec->browserCategory,
-                searchKeywordsForInternalSpec(*spec)));
-    }
+    const auto listedInBrowser = [](const audio::InternalPluginSpec* spec) {
+        return spec->showInBrowser;
+    };
+    const auto asBrowserEntry = [](const audio::InternalPluginSpec* spec) {
+        return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
+                                                 spec->isInstrument, spec->browserCategory,
+                                                 searchKeywordsForInternalSpec(*spec));
+    };
+    std::ranges::copy(audio::getAllInternalPluginSpecs() | std::views::filter(listedInBrowser) |
+                          std::views::transform(asBrowserEntry),
+                      std::back_inserter(list));
+
     // Compiled-Faust devices come from their own registry.
-    for (const auto* spec : audio::compiled::getAllCompiledPluginSpecs()) {
-        list.push_back(PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
-                                                         spec->isInstrument, spec->browserCategory,
-                                                         searchKeywordsForCompiledSpec(*spec)));
-    }
+    const auto asCompiledBrowserEntry = [](const audio::compiled::CompiledPluginSpec* spec) {
+        return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
+                                                 spec->isInstrument, spec->browserCategory,
+                                                 searchKeywordsForCompiledSpec(*spec));
+    };
+    std::ranges::transform(audio::compiled::getAllCompiledPluginSpecs(), std::back_inserter(list),
+                           asCompiledBrowserEntry);
     // External hardware insert: one registry kind (te::InsertPlugin), surfaced as
     // two browser entries — External FX (audio send/return) and External
     // Instrument (MIDI send + audio return). The split is carried by isInstrument

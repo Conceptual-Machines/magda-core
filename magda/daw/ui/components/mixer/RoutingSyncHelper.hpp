@@ -112,7 +112,7 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
         for (const auto& t : allTracks) {
             if (t.id == currentTrackId)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            if (std::ranges::contains(descendants, t.id))
                 continue;
             if (trackManager.wouldCreateInputRoutingCycle(currentTrackId, t.id))
                 continue;
@@ -165,7 +165,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         int id = 200;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Group && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 groupOptions.push_back({id++, t.name});
             }
@@ -212,7 +212,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
             // Hide source track from its own multi-out tracks
             if (t.id == multiOutSourceId)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+            if (std::ranges::contains(descendants, t.id))
                 continue;
             trackOptions.push_back({id++, t.name});
         }
@@ -312,7 +312,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         int id = 200;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Group && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 outTrackMapping[id++] = t.id;
             }
@@ -326,7 +326,7 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
         id = 400;
         for (const auto& t : allTracks) {
             if (t.type == TrackType::Media && t.id != currentTrackId) {
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
                 outTrackMapping[id++] = t.id;
             }

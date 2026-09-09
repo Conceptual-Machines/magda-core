@@ -197,8 +197,7 @@ int MarkerLaneComponent::markerAt(juce::Point<int> point) const {
 }
 
 const TimelineMarker* MarkerLaneComponent::findMarker(int markerId) const {
-    auto it = std::find_if(markers_.begin(), markers_.end(),
-                           [&](const TimelineMarker& marker) { return marker.id == markerId; });
+    const auto it = std::ranges::find(markers_, markerId, &TimelineMarker::id);
     return it != markers_.end() ? &*it : nullptr;
 }
 
@@ -292,10 +291,10 @@ void MarkerLaneComponent::showLaneMenu(juce::Point<int> screenPosition) {
     const auto& state = controller->getState();
     const double playheadBeats = state.playhead.getCurrentPositionBeats();
     constexpr double kSamePositionEpsilon = 1e-6;
-    const bool markerAtPlayhead =
-        std::any_of(state.markers.begin(), state.markers.end(), [&](const TimelineMarker& m) {
-            return std::abs(m.positionBeats - playheadBeats) <= kSamePositionEpsilon;
-        });
+    const auto sitsAtPlayhead = [playheadBeats](const TimelineMarker& marker) {
+        return std::abs(marker.positionBeats - playheadBeats) <= kSamePositionEpsilon;
+    };
+    const bool markerAtPlayhead = std::ranges::any_of(state.markers, sitsAtPlayhead);
     if (markerAtPlayhead)
         return;
 

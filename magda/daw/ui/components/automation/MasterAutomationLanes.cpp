@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 
 #include "AutomationLaneComponent.hpp"
 #include "core/AutomationInfo.hpp"
@@ -15,6 +16,11 @@ int laneHeightPx(const AutomationLaneInfo& lane, double verticalZoom) {
                             static_cast<int>(lane.height * verticalZoom) +
                             AutomationLaneComponent::RESIZE_HANDLE_HEIGHT)
                          : AutomationLaneComponent::HEADER_HEIGHT;
+}
+
+/** @brief The lane a header-button row belongs to. */
+AutomationLaneId laneIdOf(const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
+    return entry->laneId;
 }
 
 }  // namespace
@@ -111,14 +117,12 @@ void MasterAutomationHeaderPanel::rebuildButtons() {
 
     // Drop orphans.
     std::erase_if(buttons_, [&](const std::unique_ptr<AutoLaneHeaderButtons>& entry) {
-        return std::find(wanted.begin(), wanted.end(), entry->laneId) == wanted.end();
+        return !std::ranges::contains(wanted, entry->laneId);
     });
 
     auto& manager = AutomationManager::getInstance();
     for (auto laneId : wanted) {
-        auto existing = std::find_if(
-            buttons_.begin(), buttons_.end(),
-            [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
+        const auto existing = std::ranges::find(buttons_, laneId, laneIdOf);
         if (existing == buttons_.end())
             buttons_.push_back(makeAutoLaneHeaderButtons(laneId, *this));
     }
@@ -136,9 +140,7 @@ void MasterAutomationHeaderPanel::layoutButtons() {
         const auto* lane = manager.getLane(laneId);
         if (!lane)
             continue;
-        auto it = std::find_if(
-            buttons_.begin(), buttons_.end(),
-            [&](const std::unique_ptr<AutoLaneHeaderButtons>& e) { return e->laneId == laneId; });
+        const auto it = std::ranges::find(buttons_, laneId, laneIdOf);
         if (it != buttons_.end())
             layoutAutoLaneHeaderButtons(**it, *lane, y, getWidth(),
                                         AutomationLaneComponent::RESIZE_HANDLE_HEIGHT);

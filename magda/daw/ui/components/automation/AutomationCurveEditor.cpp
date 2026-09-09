@@ -803,8 +803,7 @@ void AutomationCurveEditor::syncSelectionState() {
     for (auto& pc : pointComponents_) {
         bool isSelected = false;
         if (isOurSelection) {
-            isSelected = std::find(selection.pointIds.begin(), selection.pointIds.end(),
-                                   pc->getPointId()) != selection.pointIds.end();
+            isSelected = std::ranges::contains(selection.pointIds, pc->getPointId());
         }
         pc->setSelected(isSelected);
         if (isSelected)

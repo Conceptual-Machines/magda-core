@@ -2,6 +2,8 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
+#include <algorithm>
+
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/TrackManager.hpp"
@@ -76,8 +78,7 @@ void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plu
     if (plugins.empty())
         return;
     for (auto& slot : slots_) {
-        if (slot->getPlugin() &&
-            std::find(plugins.begin(), plugins.end(), slot->getPlugin()) != plugins.end()) {
+        if (slot->getPlugin() && std::ranges::contains(plugins, slot->getPlugin())) {
             if (!slot->isCollapsed()) {
                 // Temporarily detach callback to avoid per-slot layout cascade
                 auto saved = std::move(slot->onLayoutChanged);
@@ -253,8 +254,7 @@ void PadChainPanel::rebuildSlots() {
             onSlotSetup(*slot, info);
 
         // Restore collapsed state from before rebuild
-        if (info.plugin && std::find(collapsedPlugins.begin(), collapsedPlugins.end(),
-                                     info.plugin) != collapsedPlugins.end()) {
+        if (info.plugin && std::ranges::contains(collapsedPlugins, info.plugin)) {
             slot->setCollapsed(true);
         }
 

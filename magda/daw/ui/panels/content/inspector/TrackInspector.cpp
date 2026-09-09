@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
+#include <ranges>
 #include <vector>
 
 #include "../../../audio/AudioBridge.hpp"
@@ -1194,23 +1196,21 @@ void TrackInspector::updateFromMultiTrackSelection() {
     trackNameValue_.setEditable(false);
 
     // Check button states: "on" only if ALL selected tracks share that state
-    bool allMuted = true;
-    bool allSoloed = true;
-    bool allRecordArmed = true;
-    bool allEnabled = true;
-    for (auto tid : selectedTrackIds_) {
-        const auto* track = tm.getTrack(tid);
-        if (!track)
-            continue;
-        if (!track->muted)
-            allMuted = false;
-        if (!track->soloed)
-            allSoloed = false;
-        if (!track->recordArmed)
-            allRecordArmed = false;
-        if (!tm.isChainEnabled(tid))
-            allEnabled = false;
-    }
+    const auto trackFor = [&tm](magda::TrackId tid) { return tm.getTrack(tid); };
+    const auto stillExists = [](const magda::TrackInfo* track) { return track != nullptr; };
+    const auto chainEnabled = [&tm](const magda::TrackInfo* track) {
+        return tm.isChainEnabled(track->id);
+    };
+
+    std::vector<const magda::TrackInfo*> tracks;
+    std::ranges::copy(selectedTrackIds_ | std::views::transform(trackFor) |
+                          std::views::filter(stillExists),
+                      std::back_inserter(tracks));
+
+    const bool allMuted = std::ranges::all_of(tracks, &magda::TrackInfo::muted);
+    const bool allSoloed = std::ranges::all_of(tracks, &magda::TrackInfo::soloed);
+    const bool allRecordArmed = std::ranges::all_of(tracks, &magda::TrackInfo::recordArmed);
+    const bool allEnabled = std::ranges::all_of(tracks, chainEnabled);
 
     muteButton_->setToggleState(allMuted, juce::dontSendNotification);
     soloButton_->setToggleState(allSoloed, juce::dontSendNotification);
@@ -1573,7 +1573,7 @@ void TrackInspector::showAddSendMenu() {
                 continue;
             if (track.type == magda::TrackType::Master)
                 continue;
-            if (std::find(descendants.begin(), descendants.end(), track.id) != descendants.end())
+            if (std::ranges::contains(descendants, track.id))
                 continue;
 
             // Filter out tracks that already have a send from this track

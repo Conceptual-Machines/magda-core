@@ -262,6 +262,15 @@ class NullDiffCorpusTests : public juce::UnitTest {
         //    really are the same sound. Their envelope lock is not yet reliable
         //    on all of them, because the search window holds too few swells to
         //    be sure of, and no bound goes in until it is.
+        //  - session.launch.sustained sits at -110 dB, and it is the fork's
+        //    launcher path that is inexact rather than anything moving: the
+        //    engine emits a held 0.5 bit for bit, the fork wobbles by one or
+        //    two ULP per sample, and the same material on an arrangement clip
+        //    nulls at -inf. Its reported shift is not a shift. A held level has
+        //    nothing to correlate, so the aligner returns whatever the noise
+        //    prefers -- which is what -23 samples on the trimmed variant of
+        //    this case was, and #2458 read that as a trim landing in the wrong
+        //    place. No bound until the fork's own arithmetic is named.
         const std::set<std::string> underCalibration{
             "rate.48k",
             "speed.ratio",
@@ -271,6 +280,7 @@ class NullDiffCorpusTests : public juce::UnitTest {
             "stretch.signalsmith",
             "stretch.soundtouch.normal",
             "stretch.soundtouch.better",
+            "session.launch.sustained",
         };
 
         const auto complaints =

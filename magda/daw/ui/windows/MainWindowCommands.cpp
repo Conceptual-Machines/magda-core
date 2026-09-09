@@ -1483,15 +1483,12 @@ bool MainWindow::MainComponent::perform(const InvocationInfo& info) {
                 double tempo =
                     mainView ? mainView->getTimelineController().getState().tempo.bpm : 120.0;
 
-                // Sort clips by start time
                 std::vector<ClipId> sortedClips(selectedClips.begin(), selectedClips.end());
-                std::sort(sortedClips.begin(), sortedClips.end(), [&](ClipId a, ClipId b) {
-                    auto* ca = clipManager.getClip(a);
-                    auto* cb = clipManager.getClip(b);
-                    if (!ca || !cb)
-                        return false;
-                    return timelineStartSeconds(*ca, tempo) < timelineStartSeconds(*cb, tempo);
-                });
+                const auto startSeconds = [&clipManager, tempo](ClipId id) {
+                    const auto* clip = clipManager.getClip(id);
+                    return clip != nullptr ? timelineStartSeconds(*clip, tempo) : 0.0;
+                };
+                std::ranges::sort(sortedClips, {}, startSeconds);
 
                 // Join sequentially: left absorbs right, then result absorbs next, etc.
                 if (sortedClips.size() > 2) {

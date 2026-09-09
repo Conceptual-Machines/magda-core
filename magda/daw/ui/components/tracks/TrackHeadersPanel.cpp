@@ -2914,7 +2914,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             // Don't allow moving a group into its own descendants
             if (track->isGroup()) {
                 auto descendants = trackManager.getAllDescendants(header.trackId);
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
             }
             moveToGroupMenu.addItem(MoveToGroupBase + t.id, t.name);
@@ -2957,7 +2957,7 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
             for (const auto& t : allTracks) {
                 if (t.type != type || t.id == track->id || t.type == TrackType::Master)
                     continue;
-                if (std::find(descendants.begin(), descendants.end(), t.id) != descendants.end())
+                if (std::ranges::contains(descendants, t.id))
                     continue;
 
                 bool alreadyConnected = false;
@@ -3268,7 +3268,7 @@ bool TrackHeadersPanel::canDropIntoGroup(int draggedIndex, int targetGroupIndex)
         auto& trackManager = TrackManager::getInstance();
         auto descendants = trackManager.getAllDescendants(draggedHeader.trackId);
         TrackId targetId = trackHeaders[targetGroupIndex]->trackId;
-        if (std::find(descendants.begin(), descendants.end(), targetId) != descendants.end()) {
+        if (std::ranges::contains(descendants, targetId)) {
             return false;
         }
     }
@@ -3291,7 +3291,7 @@ void TrackHeadersPanel::executeDrop() {
     if (isMultiDrag) {
         // Collect selected track IDs in display order (ascending index)
         std::vector<int> sortedIndices(selectedTrackIndices_.begin(), selectedTrackIndices_.end());
-        std::sort(sortedIndices.begin(), sortedIndices.end());
+        std::ranges::sort(sortedIndices);
         for (int idx : sortedIndices) {
             if (idx >= 0 && idx < static_cast<int>(trackHeaders.size()))
                 tracksToMove.push_back(trackHeaders[idx]->trackId);
@@ -3363,9 +3363,9 @@ void TrackHeadersPanel::executeDrop() {
                 // moving selection, the drop lands inside the block being moved.
                 // Reordering relative to a sibling that is also about to move
                 // scrambles the order, so treat it as a no-op.
-                const bool dropInsideSelection = dropBeforeTrackId != INVALID_TRACK_ID &&
-                                                 std::find(tracksToMove.begin(), tracksToMove.end(),
-                                                           dropBeforeTrackId) != tracksToMove.end();
+                const bool dropInsideSelection =
+                    dropBeforeTrackId != INVALID_TRACK_ID &&
+                    std::ranges::contains(tracksToMove, dropBeforeTrackId);
                 if (dropInsideSelection)
                     continue;
 

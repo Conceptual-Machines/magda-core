@@ -263,6 +263,10 @@ class ClipComponent : public juce::Component,
     // (next) that a crossfade could be created with. INVALID_CLIP_ID if none.
     ClipId findCrossfadeNeighbour(bool atStart) const;
 
+    /// The selected clips ordered by where they start, which is the order Join
+    /// consumes them in.
+    std::vector<ClipId> selectedClipsInTimelineOrder() const;
+
     // Painting helpers
     /// The clip's background, translucent where a clip below it is still heard.
     void paintClipBody(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour bgColour,
