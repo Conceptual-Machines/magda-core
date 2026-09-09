@@ -50,7 +50,7 @@ When contributing to MAGDA, please:
 
 1. **Never commit secrets**: No API keys, passwords, tokens, or credentials
 2. **Validate input**: Always validate and sanitize user input
-3. **Memory safety**: Use modern C++20 features and RAII to prevent memory issues
+3. **Memory safety**: Use modern C++23 features and RAII to prevent memory issues
 4. **Thread safety**: Ensure audio processing code is thread-safe and real-time safe
 5. **Dependencies**: Keep dependencies up to date and review their security status
 6. **Code review**: All PRs require review before merging to main
@@ -82,7 +82,7 @@ MAGDA implements several security measures:
 - **Reproducible Builds**: CI ensures consistent, verifiable builds
 - **Compiler Warnings**: Strict warnings enabled (-Wall -Wextra)
 - **Sanitizers**: Address Sanitizer and Undefined Behavior Sanitizer in debug builds
-- **Modern C++**: Using C++20 features for memory safety
+- **Modern C++**: Using C++23 features for memory safety
 
 ### Branch Protection
 
