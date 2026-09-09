@@ -159,7 +159,15 @@ jobs:
         R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
       run: |
         SCCACHE_VERSION=v0.17.0
-        curl -fsSL "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" | tar xz
+        archive="sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+        # To a file, then extract. Piped straight into tar, a connection reset
+        # mid-stream hands tar a truncated archive and takes the build down
+        # before it compiles anything, and --retry cannot recall what has
+        # already gone down the pipe.
+        curl -fsSL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 180 \
+          -o "$archive" \
+          "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/${archive}"
+        tar xzf "$archive"
         sudo mv sccache-*/sccache /usr/local/bin/sccache
         sccache --version
         # sccache reads R2 through its S3 backend: bucket + custom endpoint,
@@ -1189,7 +1197,7 @@ jobs:
         # Into RUNNER_TEMP, not the checkout: the self-hosted workspace persists.
         $dest = Join-Path $env:RUNNER_TEMP "sccache"
         New-Item -ItemType Directory -Force -Path $dest | Out-Null
-        curl.exe -fsSL "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/$archive" -o (Join-Path $dest $archive)
+        curl.exe -fsSL --retry 3 --retry-all-errors --connect-timeout 30 --max-time 180 "https://github.com/mozilla/sccache/releases/download/$SCCACHE_VERSION/$archive" -o (Join-Path $dest $archive)
         tar.exe xf (Join-Path $dest $archive) -C $dest
         $sccacheDir = (Get-ChildItem -Path $dest -Directory -Filter "sccache-$SCCACHE_VERSION-*").FullName
         Add-Content -Path $env:GITHUB_PATH -Value $sccacheDir
