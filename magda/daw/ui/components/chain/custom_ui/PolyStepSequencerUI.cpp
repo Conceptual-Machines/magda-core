@@ -2,7 +2,6 @@
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/sequencer/StepClock.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"

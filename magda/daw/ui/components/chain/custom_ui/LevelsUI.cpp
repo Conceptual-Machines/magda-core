@@ -1,7 +1,5 @@
 #include "LevelsUI.hpp"
 
-#include <cmath>
-
 #include "audio/analysis/TrackMeasurer.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"

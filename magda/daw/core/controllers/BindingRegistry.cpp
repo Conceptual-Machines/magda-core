@@ -5,7 +5,6 @@
 #include "../aliases/ChainContext.hpp"
 #include "../aliases/ResolverRegistry.hpp"
 #include "../aliases/TargetResolver.hpp"
-#include "ControllerRegistry.hpp"
 
 namespace magda {
 

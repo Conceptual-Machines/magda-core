@@ -1,12 +1,10 @@
 #include "compiled/CompiledClipperCurveView.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaClipperCompiledPlugin.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
-#include "ui/themes/FontManager.hpp"
 
 namespace magda::daw::ui {
 

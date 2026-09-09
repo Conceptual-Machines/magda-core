@@ -1,7 +1,6 @@
 #include "plugins/MidiStrumPlugin.hpp"
 
 #include <algorithm>
-#include <cmath>
 
 namespace magda::daw::audio {
 

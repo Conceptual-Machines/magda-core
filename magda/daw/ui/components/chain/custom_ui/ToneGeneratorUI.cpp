@@ -1,7 +1,6 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 
 #include "ui/themes/DarkTheme.hpp"
-#include "ui/themes/SmallButtonLookAndFeel.hpp"
 
 namespace magda::daw::ui {
 

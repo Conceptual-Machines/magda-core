@@ -11,7 +11,6 @@
 #include "../engine/AudioEngine.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
-#include "RackInfo.hpp"
 #include "TrackInfo.hpp"
 #include "TrackManager.hpp"
 #include "UndoManager.hpp"

@@ -2,11 +2,6 @@
 
 #include <utility>
 
-#include "plugins/ArpeggiatorPlugin.hpp"
-#include "plugins/DrumGridPlugin.hpp"
-#include "plugins/MidiStrumPlugin.hpp"
-#include "plugins/StepSequencerPlugin.hpp"
-
 namespace magda {
 
 // =============================================================================

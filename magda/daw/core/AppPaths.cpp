@@ -1,6 +1,5 @@
 #include "AppPaths.hpp"
 
-#include <atomic>
 #include <cstdlib>
 #include <memory>
 #include <mutex>

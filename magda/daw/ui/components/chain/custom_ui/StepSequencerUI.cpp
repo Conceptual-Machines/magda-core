@@ -1,6 +1,5 @@
 #include "custom_ui/StepSequencerUI.hpp"
 
-#include "audio/sequencer/StepClock.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {

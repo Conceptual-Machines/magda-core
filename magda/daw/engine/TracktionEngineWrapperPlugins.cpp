@@ -1,8 +1,6 @@
-#include <fstream>
 #include <map>
 #include <optional>
 #include <set>
-#include <sstream>
 #include <thread>
 #include <utility>
 
@@ -11,7 +9,6 @@
 #endif
 
 #include "../audio/plugins/InternalPluginRegistry.hpp"
-#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
 #include "PluginMetadataStore.hpp"

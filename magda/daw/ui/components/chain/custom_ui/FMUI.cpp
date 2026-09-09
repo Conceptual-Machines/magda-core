@@ -1,6 +1,5 @@
 #include "custom_ui/FMUI.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 #include "BinaryData.h"

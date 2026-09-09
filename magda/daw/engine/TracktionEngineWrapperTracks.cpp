@@ -1,5 +1,4 @@
 #include "../audio/AudioBridge.hpp"
-#include "../core/TrackManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
