@@ -29,7 +29,7 @@ All contributions require signing our [Contributor License Agreement (CLA)](CLA.
 ### Prerequisites
 
 - CMake 3.24+
-- C++23 compiler (Clang 15+ or GCC 13+)
+- C++23 compiler and standard library (GCC 13+, or Clang 16+ with libc++)
 - macOS: Xcode Command Line Tools
 - Linux: ALSA and X11 development headers
 

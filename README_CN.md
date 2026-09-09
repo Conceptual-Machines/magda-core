@@ -48,7 +48,10 @@ MAGDA是一款免费的, 深度集成 AI 的开源数字音频工作站（DAW）
 
 ### Prerequisites前置准备
 
-- C++23 标准编译器：GCC 11.1 及以上、Clang 12 及以上、AppleClang 13 及以上，或 MSVC 19.29 及以上（CI 使用 GCC 13、AppleClang 16 与 MSVC 19.50 构建）
+- C++23 编译器**及标准库**：GCC 13 及以上、Clang 16 及以上（配合 libc++）、AppleClang 16 及以上，或 MSVC 19.36 及以上（VS 2022 17.6）。
+  决定下限的是标准库而非语言：代码使用了 `std::views::zip` 与 `std::ranges::contains`，
+  而 libstdc++ 自 GCC 13.1 起才提供 `views::zip`，因此即便 CMake 能为 GCC 12 选择 C++23，构建仍会失败。
+  （CI 使用 GCC 13.3、AppleClang 16.0 与 MSVC 19.50 构建。）
 - CMake 3.24 及以上版本
 - [Git LFS](https://git-lfs.com/) ：必需，用于拉取项目内置二进制资源，如中日韩字体等
   (CJK font, etc.).

@@ -37,7 +37,7 @@ namespace magda::daw::ui {
 namespace {
 
 juce::String preferenceIdentifierForPlugin(const PluginBrowserInfo& plugin) {
-    return preferenceIdentifierForPlugin(plugin);
+    return plugin.uniqueId.isNotEmpty() ? plugin.uniqueId : plugin.name;
 }
 
 juce::String effectiveCategoryForPlugin(const PluginBrowserInfo& plugin) {

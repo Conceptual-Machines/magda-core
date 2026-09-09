@@ -48,8 +48,12 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 
 ### Prerequisites
 
-- C++23 compiler: GCC 11.1+, Clang 12+, AppleClang 13+, or MSVC 19.29+
-  (CI builds with GCC 13, AppleClang 16 and MSVC 19.50)
+- C++23 compiler **and standard library**: GCC 13+, Clang 16+ with libc++,
+  AppleClang 16+, or MSVC 19.36+ (VS 2022 17.6). The floor is the library, not
+  the language: `std::views::zip` and `std::ranges::contains` are in use, and
+  libstdc++ only gained `views::zip` in GCC 13.1, so a GCC 12 build fails even
+  though CMake will select C++23 for it.
+  (CI builds with GCC 13.3, AppleClang 16.0 and MSVC 19.50.)
 - CMake 3.24+
 - [Git LFS](https://git-lfs.com/) — required to fetch bundled binary assets
   (CJK font, etc.). Install with `brew install git-lfs` (macOS),
