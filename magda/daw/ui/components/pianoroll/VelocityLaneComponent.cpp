@@ -1,5 +1,7 @@
 #include "VelocityLaneComponent.hpp"
 
+#include <algorithm>
+
 #include "../../state/TimelineController.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -149,8 +151,7 @@ size_t VelocityLaneComponent::findNoteAtX(int x) const {
             bestIndex = i;
         } else if (dist == bestDist && bestIndex != SIZE_MAX) {
             // Prefer selected notes when equidistant
-            if (std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), i) !=
-                selectedNoteIndices_.end()) {
+            if (std::ranges::contains(selectedNoteIndices_, i)) {
                 bestIndex = i;
             }
         }
@@ -402,9 +403,7 @@ void VelocityLaneComponent::paint(juce::Graphics& g) {
 
             // Draw circle on top — selected notes are larger and brighter
             bool isBeingDragged = isDragging_ && isPrimaryClip && i == draggingNoteIndex_;
-            bool isSelected =
-                isPrimaryClip && std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(),
-                                           i) != selectedNoteIndices_.end();
+            bool isSelected = isPrimaryClip && std::ranges::contains(selectedNoteIndices_, i);
             float radius = isSelected ? 4.5f : circleRadius;
             auto circleColour = isBeingDragged ? noteColour.brighter(0.5f)
                                 : isSelected   ? noteColour.brighter(0.3f)
@@ -510,10 +509,10 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
             }
             if (sortedSelectedIndices_.size() < 2)
                 return;
-            std::sort(sortedSelectedIndices_.begin(), sortedSelectedIndices_.end(),
-                      [&clip](size_t a, size_t b) {
-                          return clip->midiNotes[a].startBeat < clip->midiNotes[b].startBeat;
-                      });
+            const auto startBeatOf = [&clip](size_t index) {
+                return clip->midiNotes[index].startBeat;
+            };
+            std::ranges::sort(sortedSelectedIndices_, {}, startBeatOf);
 
             isRampDragging_ = true;
             isCurveHandleVisible_ = false;
@@ -545,9 +544,7 @@ void VelocityLaneComponent::mouseDown(const juce::MouseEvent& e) {
 
             // B5: Store starting velocities of all selected notes
             selectionDragStartVelocities_.clear();
-            bool noteIsSelected =
-                std::find(selectedNoteIndices_.begin(), selectedNoteIndices_.end(), noteIndex) !=
-                selectedNoteIndices_.end();
+            bool noteIsSelected = std::ranges::contains(selectedNoteIndices_, noteIndex);
             if (noteIsSelected && selectedNoteIndices_.size() > 1) {
                 for (size_t idx : selectedNoteIndices_) {
                     if (idx < clip->midiNotes.size()) {

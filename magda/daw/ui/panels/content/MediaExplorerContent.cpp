@@ -2031,8 +2031,7 @@ void MediaExplorerContent::fileClicked(const juce::File& file, const juce::Mouse
         juce::PopupMenu menu;
         auto favorites = magda::Config::getInstance().getBrowserFavorites();
         auto path = file.getFullPathName().toStdString();
-        bool alreadyFavorite =
-            std::find(favorites.begin(), favorites.end(), path) != favorites.end();
+        bool alreadyFavorite = std::ranges::contains(favorites, path);
 
         if (alreadyFavorite) {
             menu.addItem(1, "Remove from favorites");

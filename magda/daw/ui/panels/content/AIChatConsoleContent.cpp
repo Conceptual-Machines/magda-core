@@ -8,6 +8,7 @@
 #include <set>
 #include <string>
 #include <thread>
+#include <tuple>
 
 #include "../../../../agents/agent_tool_bridge.hpp"
 #include "../../../../agents/automation_agent.hpp"
@@ -1293,8 +1294,8 @@ juce::String AIChatConsoleContent::resolveAliases(const juce::String& text) {
     // Sort by alias length descending to avoid prefix collisions
     // (e.g. @pro matching inside @pro_q_3)
     auto sorted = allAliases_;
-    std::sort(sorted.begin(), sorted.end(),
-              [](const auto& a, const auto& b) { return a.alias.length() > b.alias.length(); });
+    const auto aliasLength = [](const AliasEntry& entry) { return entry.alias.length(); };
+    std::ranges::sort(sorted, std::ranges::greater{}, aliasLength);
 
     // Convert @alias to <alias> token format for the LLM — resolved at DSL execution time
     auto resolved = text;
@@ -2034,17 +2035,15 @@ std::vector<magda::ClipId> getSelectedDrummerContextClipIds() {
             ids.push_back(clipId);
     }
 
-    std::sort(ids.begin(), ids.end(), [](auto a, auto b) {
+    const auto inArrangementOrder = [](magda::ClipId a, magda::ClipId b) {
         const auto* clipA = magda::ClipManager::getInstance().getClip(a);
         const auto* clipB = magda::ClipManager::getInstance().getClip(b);
         if (clipA == nullptr || clipB == nullptr)
             return a < b;
-        if (clipA->trackId != clipB->trackId)
-            return clipA->trackId < clipB->trackId;
-        if (clipA->placement.startBeat != clipB->placement.startBeat)
-            return clipA->placement.startBeat < clipB->placement.startBeat;
-        return a < b;
-    });
+        return std::tuple{clipA->trackId, clipA->placement.startBeat, a} <
+               std::tuple{clipB->trackId, clipB->placement.startBeat, b};
+    };
+    std::ranges::sort(ids, inArrangementOrder);
 
     return ids;
 }
@@ -2196,9 +2195,10 @@ void AIChatConsoleContent::toggleMidiContextTrack(magda::TrackId trackId) {
     if (midiClipIds.empty())
         return;
 
-    const bool allSelected =
-        std::all_of(midiClipIds.begin(), midiClipIds.end(),
-                    [this](auto clipId) { return midiContextClipIds_.contains(clipId); });
+    const auto isInMidiContext = [this](magda::ClipId clipId) {
+        return midiContextClipIds_.contains(clipId);
+    };
+    const bool allSelected = std::ranges::all_of(midiClipIds, isInMidiContext);
     for (auto clipId : midiClipIds) {
         if (allSelected)
             midiContextClipIds_.erase(clipId);
@@ -2485,9 +2485,7 @@ void AIChatConsoleContent::buildAliasList() {
         DBG("AIChatConsole: failed to load plugin aliases: " << e.what());
     }
 
-    // Sort by alias
-    std::sort(allAliases_.begin(), allAliases_.end(),
-              [](const AliasEntry& a, const AliasEntry& b) { return a.alias < b.alias; });
+    std::ranges::sort(allAliases_, {}, &AliasEntry::alias);
 }
 
 void AIChatConsoleContent::showAutocomplete(const juce::String& filter) {
@@ -2552,9 +2550,7 @@ std::vector<AIChatConsoleContent::ParamAliasEntry> AIChatConsoleContent::collect
     walk(magda::AliasLayer::Curated);
     walk(magda::AliasLayer::AutoGen);
 
-    std::sort(out.begin(), out.end(), [](const ParamAliasEntry& a, const ParamAliasEntry& b) {
-        return a.paramAlias < b.paramAlias;
-    });
+    std::ranges::sort(out, {}, &ParamAliasEntry::paramAlias);
     return out;
 }
 

@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <tuple>
 
 #include "../../interaction/ArrangementHitTester.hpp"
 #include "../../panels/state/PanelController.hpp"
@@ -190,13 +191,13 @@ void TrackContentPanel::viewModeChanged(ViewMode mode, const AudioEngineProfile&
 std::vector<ClipInfo> TrackContentPanel::previewLaneClips(TrackId trackId) const {
     auto& clipManager = ClipManager::getInstance();
 
-    const bool laneIsDragging =
-        std::any_of(clipComponents_.begin(), clipComponents_.end(), [&](const auto& comp) {
-            if (!comp->isCurrentlyDragging())
-                return false;
-            const auto* clip = clipManager.getClip(comp->getClipId());
-            return clip != nullptr && clip->trackId == trackId;
-        });
+    const auto isDraggingFromThisLane = [&](const auto& comp) {
+        if (!comp->isCurrentlyDragging())
+            return false;
+        const auto* clip = clipManager.getClip(comp->getClipId());
+        return clip != nullptr && clip->trackId == trackId;
+    };
+    const bool laneIsDragging = std::ranges::any_of(clipComponents_, isDraggingFromThisLane);
     if (!laneIsDragging)
         return {};
 
@@ -1143,7 +1144,7 @@ bool TrackContentPanel::tryBeginTimeSelectionGrab(const juce::MouseEvent& event)
         originalClipsInSelection_.clear();
         const auto& clips = ClipManager::getInstance().getArrangementClips();
         for (const auto& clip : clips) {
-            auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+            auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
             if (it == visibleTrackIds_.end())
                 continue;
 
@@ -2444,18 +2445,15 @@ void TrackContentPanel::rebuildClipComponents() {
     // level, which keeps a later clip above the one it crossfades into (#1499)
     // instead of following hash-map iteration order.
     auto clips = ClipManager::getInstance().getArrangementClips();
-    std::sort(clips.begin(), clips.end(), [](const ClipInfo& a, const ClipInfo& b) {
-        if (a.stackOrder != b.stackOrder)
-            return a.stackOrder < b.stackOrder;
-        if (a.placement.startBeat != b.placement.startBeat)
-            return a.placement.startBeat < b.placement.startBeat;
-        return a.id < b.id;
-    });
+    const auto stackThenStart = [](const ClipInfo& clip) {
+        return std::tuple{clip.stackOrder, clip.placement.startBeat, clip.id};
+    };
+    std::ranges::sort(clips, {}, stackThenStart);
 
     // Create a component for each clip that belongs to a visible track
     for (const auto& clip : clips) {
         // Check if clip's track is visible
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip.trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip.trackId);
         if (it == visibleTrackIds_.end()) {
             continue;  // Track not visible
         }
@@ -2656,7 +2654,7 @@ void TrackContentPanel::updateClipComponentPositions() {
         }
 
         // Find the track index
-        auto it = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), clip->trackId);
+        auto it = std::ranges::find(visibleTrackIds_, clip->trackId);
         if (it == visibleTrackIds_.end()) {
             clipComp->setVisible(false);
             continue;
@@ -3106,7 +3104,7 @@ bool TrackContentPanel::isAutomationLaneVisible(TrackId trackId, AutomationLaneI
     auto it = visibleAutomationLanes_.find(trackId);
     if (it != visibleAutomationLanes_.end()) {
         const auto& lanes = it->second;
-        return std::find(lanes.begin(), lanes.end(), laneId) != lanes.end();
+        return std::ranges::contains(lanes, laneId);
     }
     return false;
 }
@@ -3132,7 +3130,7 @@ bool TrackContentPanel::getAutomationLaneStripAtY(int y, int& trackIndex,
         if (y < bounds.getY() || y >= bounds.getY() + AutomationLaneComponent::HEADER_HEIGHT)
             continue;
 
-        auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), entry.trackId);
+        auto trackIt = std::ranges::find(visibleTrackIds_, entry.trackId);
         if (trackIt == visibleTrackIds_.end())
             return false;
 
@@ -3226,7 +3224,7 @@ void TrackContentPanel::rebuildAutomationLaneComponents() {
                 if (!onAutomationTimeSelectionBeatsChanged || tempoBPM <= 0.0)
                     return;
 
-                auto trackIt = std::find(visibleTrackIds_.begin(), visibleTrackIds_.end(), trackId);
+                auto trackIt = std::ranges::find(visibleTrackIds_, trackId);
                 if (trackIt == visibleTrackIds_.end())
                     return;
 

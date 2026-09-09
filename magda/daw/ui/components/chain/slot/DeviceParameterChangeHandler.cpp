@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 
 #include "audio/AudioBridge.hpp"
 #include "audio/plugins/compiled/CompiledFaustInterface.hpp"
@@ -140,13 +141,13 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
     // up changing whatever cell sits at grid index 14, which under the EQ
     // column-major mapping is a different band entirely).
     const auto& layout = paramGrid.getLayout();
-    const auto findIt = std::find_if(
-        device.parameters.begin(), device.parameters.end(),
-        [paramIndex](const magda::ParameterInfo& p) { return p.paramIndex == paramIndex; });
+    const auto findIt =
+        std::ranges::find(device.parameters, paramIndex, &magda::ParameterInfo::paramIndex);
     if (findIt == device.parameters.end())
         return;
 
-    const int paramArrayIndex = static_cast<int>(std::distance(device.parameters.begin(), findIt));
+    const int paramArrayIndex =
+        static_cast<int>(std::ranges::distance(device.parameters.begin(), findIt));
 
     for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
         const auto cell = layout.cellFor(device, slotIndex, currentPage);

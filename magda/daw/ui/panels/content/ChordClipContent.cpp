@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <memory>
+#include <ranges>
 #include <vector>
 
 #include "../../state/TimelineController.hpp"
@@ -98,6 +100,24 @@ std::pair<int, int> partsFromQuality(ChordQuality q) {
             if (t[static_cast<size_t>(b)][static_cast<size_t>(e)].quality == q)
                 return {b, e};
     return {0, 0};
+}
+
+/** @brief A predicate matching the notes linked to a chord group; group 0 links none. */
+auto isInChordGroup(int group) {
+    return [group](const magda::MidiNote& note) { return group != 0 && note.chordGroup == group; };
+}
+
+/** @brief A chord group's note indices, highest first so deleting keeps them valid. */
+std::vector<size_t> noteIndicesInChordGroup(const magda::ClipInfo& clip, int group) {
+    const auto isInGroup = [&clip, group](size_t i) {
+        return isInChordGroup(group)(clip.midiNotes[i]);
+    };
+    std::vector<size_t> indices;
+    std::ranges::copy(std::views::iota(size_t{0}, clip.midiNotes.size()) |
+                          std::views::filter(isInGroup),
+                      std::back_inserter(indices));
+    std::ranges::reverse(indices);
+    return indices;
 }
 
 /// Root / base-quality / extension / octave / inversion editor (CallOutBox).
@@ -432,11 +452,15 @@ bool ChordClipContent::keyPressed(const juce::KeyPress& key) {
         selectedGroup_ != 0) {
         const auto* clip = magda::ClipManager::getInstance().getClip(getEditingClipId());
         if (clip != nullptr) {
-            for (int i = 0; i < static_cast<int>(clip->chordAnnotations.size()); ++i)
-                if (clip->chordAnnotations[static_cast<size_t>(i)].chordGroup == selectedGroup_) {
-                    deleteChord(i);
-                    return true;
-                }
+            const auto isSelectedGroup = [this](const magda::ClipInfo::ChordAnnotation& ann) {
+                return ann.chordGroup == selectedGroup_;
+            };
+            const auto& annotations = clip->chordAnnotations;
+            if (const auto it = std::ranges::find_if(annotations, isSelectedGroup);
+                it != annotations.end()) {
+                deleteChord(static_cast<int>(std::ranges::distance(annotations.begin(), it)));
+                return true;
+            }
         }
     }
     return PianoRollContent::keyPressed(key);
@@ -507,13 +531,10 @@ void ChordClipContent::openChordEditor(int annIndex) {
     const auto spec = magda::music::ChordEngine::parseChordName(ann.chordName);
 
     // Derive the octave from the chord's lowest linked note.
-    int octave = 4;
-    int lowest = 128;
-    for (const auto& n : clip->midiNotes)
-        if (ann.chordGroup != 0 && n.chordGroup == ann.chordGroup)
-            lowest = std::min(lowest, n.noteNumber);
-    if (lowest <= 127)
-        octave = lowest / 12 - 1;
+    auto groupPitches = clip->midiNotes | std::views::filter(isInChordGroup(ann.chordGroup)) |
+                        std::views::transform(&magda::MidiNote::noteNumber);
+    const int octave =
+        std::ranges::empty(groupPitches) ? 4 : std::ranges::min(groupPitches) / 12 - 1;
 
     // Anchor the editor at the block; capture the bar (stable across edits, where
     // the annotation index is not).
@@ -555,13 +576,9 @@ void ChordClipContent::replaceChordNotes(int annIndex, const std::vector<int>& p
 
     auto& undo = magda::UndoManager::getInstance();
 
-    // Delete the chord's existing notes (highest index first so earlier indices
-    // stay valid), then insert the new voicing at the same bar/length.
-    std::vector<size_t> indices;
-    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
-        if (group != 0 && clip->midiNotes[i].chordGroup == group)
-            indices.push_back(i);
-    std::sort(indices.rbegin(), indices.rend());
+    // Delete the chord's existing notes, then insert the new voicing at the same
+    // bar/length.
+    const auto indices = noteIndicesInChordGroup(*clip, group);
     for (size_t idx : indices)
         undo.executeCommand(std::make_unique<magda::DeleteMidiNoteCommand>(clipId, idx));
 
@@ -580,9 +597,9 @@ std::vector<int> ChordClipContent::chordPitches(int annIndex) const {
         annIndex >= static_cast<int>(clip->chordAnnotations.size()))
         return pitches;
     const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
-    for (const auto& n : clip->midiNotes)
-        if (group != 0 && n.chordGroup == group)
-            pitches.push_back(n.noteNumber);
+    std::ranges::copy(clip->midiNotes | std::views::filter(isInChordGroup(group)) |
+                          std::views::transform(&magda::MidiNote::noteNumber),
+                      std::back_inserter(pitches));
     return pitches;
 }
 
@@ -622,11 +639,7 @@ void ChordClipContent::deleteChord(int annIndex) {
         return;
     const int group = clip->chordAnnotations[static_cast<size_t>(annIndex)].chordGroup;
 
-    std::vector<size_t> indices;
-    for (size_t i = 0; i < clip->midiNotes.size(); ++i)
-        if (group != 0 && clip->midiNotes[i].chordGroup == group)
-            indices.push_back(i);
-    std::sort(indices.rbegin(), indices.rend());
+    const auto indices = noteIndicesInChordGroup(*clip, group);
 
     auto& undo = magda::UndoManager::getInstance();
     for (size_t idx : indices)
@@ -713,10 +726,11 @@ bool ChordClipContent::insertChordAtBeat(double clipRelativeBeat, const std::vec
     constexpr int kDefaultVelocity = 100;
 
     // A bar that already has a chord is for editing it, not stacking a new one.
-    for (const auto& ann : clip->chordAnnotations) {
-        if (bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats)
-            return false;
-    }
+    const auto coversBar = [bar](const magda::ClipInfo::ChordAnnotation& ann) {
+        return bar >= ann.beatPosition && bar < ann.beatPosition + ann.lengthBeats;
+    };
+    if (std::ranges::any_of(clip->chordAnnotations, coversBar))
+        return false;
 
     // Insert the notes, then detection builds the (linked) chord-lane block, so
     // later note edits re-sync the chord via syncChordAnnotations().
