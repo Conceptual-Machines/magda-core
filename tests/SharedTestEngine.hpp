@@ -45,6 +45,14 @@ inline TracktionEngineWrapper& getSharedEngine() {
         // test asserts is there on a desktop platform -- correctly, because
         // that is real behaviour and not an artefact of being a test. What is
         // wanted is narrower: keep the engine, close the output.
+        // Free the context before closing the device, the order shutdown already
+        // uses. closeDevices() asserts activeContexts.isEmpty(), and initialize()
+        // has just called ensureContextAllocated(), so closing first fires a
+        // jassert that the corpus harness reads as "the engine asserted while
+        // rendering" against whichever case happened to trigger the lazy init.
+        if (auto* edit = engine.getEdit())
+            edit->getTransport().freePlaybackContext();
+
         if (auto* wrapped = engine.getEngine())
             wrapped->getDeviceManager().closeDevices();
 
