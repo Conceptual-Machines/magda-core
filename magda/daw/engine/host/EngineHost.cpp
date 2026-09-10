@@ -227,8 +227,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     // ===== Following the model =====
 
     void tracksChanged() override {
-        // The only place a teardown is visible: the publish this schedules is
-        // coalesced, and the next project is loaded before it runs (#2572).
+        // Inferred, because nothing declares a teardown (#2576): the publish
+        // this schedules is coalesced, and the next project is loaded before
+        // it runs (#2572).
         if (modelHoldsNoDevices())
             factory_.forgetBuiltDevices();
 
