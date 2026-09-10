@@ -825,6 +825,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+
+        # The message-thread half of the control executor (#2581). Here because
+        # magda_tests has no message loop to run it on.
+        engine/test_control_executor_juce.cpp
     )
 endif()
 

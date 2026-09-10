@@ -160,6 +160,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMidiClipReachesAnInstrument(); });
         magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
         magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testExternalKeysNamesOnlyExternals(); });
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testDroppedKeyIsStillRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testMetersReadWhatWasRendered(); });
@@ -400,6 +401,43 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "The slot's new plugin is named for rebuild");
+    }
+
+    void testExternalKeysNamesOnlyExternals() {
+        beginTest("The keys a save asks about are the model's external plugins");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        trackManager.addDeviceToTrack(trackId, polySynth(magda::DeviceId{1}));
+
+        // A plugin that is a file on this machine rather than a class this
+        // build holds, which is the whole of what makes it external.
+        auto external = polySynth(magda::DeviceId{2});
+        external.name = "Some VST";
+        external.format = magda::PluginFormat::VST3;
+        trackManager.addDeviceToTrack(trackId, external);
+
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(master != nullptr, "The master track is there to publish");
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+
+        const auto keys = factory.externalKeys();
+        expect(keys.size() == 1, "The compiled synth is not one of these");
+        expect(keys.front() == engine::DeviceKey{magda::ChainSegment::Fx, magda::DeviceId{2}},
+               "And the VST is");
+
+        // What a single-slot capture asks before it reaches for a plugin: the
+        // compiled synth has no chunk, and asking about one would report the
+        // absence as a state that could not be read.
+        expect(factory.isExternalKey(keys.front()), "The VST is one by key too");
+        expect(
+            !factory.isExternalKey(engine::DeviceKey{magda::ChainSegment::Fx, magda::DeviceId{1}}),
+            "The compiled synth is not");
+        expect(
+            !factory.isExternalKey(engine::DeviceKey{magda::ChainSegment::Fx, magda::DeviceId{99}}),
+            "And neither is a key the model does not carry");
     }
 
     void testClearedProjectIsRebuilt() {

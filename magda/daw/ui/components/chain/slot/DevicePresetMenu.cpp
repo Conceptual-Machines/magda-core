@@ -190,8 +190,8 @@ void showMagdaPresetMenu(juce::Component* targetComponent, const juce::String& p
 std::optional<magda::DeviceInfo> snapshotDeviceForPreset(const magda::DeviceInfo& fallbackDevice,
                                                          const magda::ChainNodePath& nodePath) {
     auto& trackManager = magda::TrackManager::getInstance();
-    if (auto* bridge = getAudioBridge())
-        bridge->getPluginManager().capturePluginState(nodePath);
+    if (auto* engine = trackManager.getAudioEngine())
+        engine->capturePluginStateAt(nodePath);
 
     if (auto* live = trackManager.getDeviceInChainByPath(nodePath))
         return *live;

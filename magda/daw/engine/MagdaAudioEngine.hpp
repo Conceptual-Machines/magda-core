@@ -128,6 +128,8 @@ class MagdaAudioEngine final : public AudioEngine {
     void setMidiDevicesReadyCallback(std::function<void()> callback) override;
     AudioBridge* getAudioBridge() override;
     const AudioBridge* getAudioBridge() const override;
+    void captureAllPluginStates() override;
+    void capturePluginStateAt(const ChainNodePath& devicePath) override;
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;

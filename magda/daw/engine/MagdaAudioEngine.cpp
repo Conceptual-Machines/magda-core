@@ -268,6 +268,29 @@ AudioBridge* MagdaAudioEngine::getAudioBridge() {
 const AudioBridge* MagdaAudioEngine::getAudioBridge() const {
     return tracktion_->getAudioBridge();
 }
+
+/**
+ * @brief Both engines, in that order (#2581).
+ *
+ * The fork first, because a MAGDA device's state is captured nowhere else and
+ * its synced plugin is still where that is read from. The instances this
+ * renders through go over the top: for an external plugin the fork holds a
+ * parallel copy that never heard a note, and the chunk that copy writes is the
+ * one the project was loaded with.
+ */
+void MagdaAudioEngine::captureAllPluginStates() {
+    tracktion_->captureAllPluginStates();
+
+    if (host_ != nullptr)
+        host_->captureExternalPluginStates();
+}
+
+void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
+    tracktion_->capturePluginStateAt(devicePath);
+
+    if (host_ != nullptr)
+        host_->captureExternalPluginStateAt(devicePath);
+}
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

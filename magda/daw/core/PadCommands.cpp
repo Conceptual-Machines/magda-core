@@ -21,8 +21,7 @@ namespace {
 void capturePadPluginStates(const ChainNodePath& gridPath) {
     auto& tm = TrackManager::getInstance();
     if (auto* engine = tm.getAudioEngine())
-        if (auto* bridge = engine->getAudioBridge())
-            bridge->getPluginManager().capturePluginState(gridPath);
+        engine->capturePluginStateAt(gridPath);
 }
 
 PadRack snapshotPads(const ChainNodePath& gridPath) {

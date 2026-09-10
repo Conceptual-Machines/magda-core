@@ -79,6 +79,11 @@ void ExternalPluginLoader::syncAssignments(const std::map<engine::DeviceKey, Dev
     }
 }
 
+audio::engine_adapter::AssignmentRequest ExternalPluginLoader::request(
+    engine::DeviceKey key) const {
+    return assignments_.request(key);
+}
+
 void ExternalPluginLoader::forgetSlots() {
     assignments_.releaseAll();
     slots_.clear();

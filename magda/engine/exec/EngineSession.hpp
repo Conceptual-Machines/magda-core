@@ -391,6 +391,12 @@ class EngineSession {
         return store_.meterTap(key);
     }
 
+    /// A lease on the device at @p key, for a host reaching one for something
+    /// that is not a block (#2581). On the publishing thread.
+    std::shared_ptr<EngineDevice> device(DeviceKey key) const {
+        return store_.device(key);
+    }
+
     /// Values the live plan found somewhere to publish from -- not the
     /// number of taps the store holds, since a key the parameter table does
     /// not carry has a tap that is never written through. On the publishing

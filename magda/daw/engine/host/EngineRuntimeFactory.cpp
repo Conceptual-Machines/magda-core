@@ -65,6 +65,21 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
         externals_->syncAssignments(devices_);
 }
 
+std::vector<engine::DeviceKey> EngineRuntimeFactory::externalKeys() const {
+    std::vector<engine::DeviceKey> keys;
+
+    for (const auto& [key, device] : devices_)
+        if (adapter::isExternalDevice(device))
+            keys.push_back(key);
+
+    return keys;
+}
+
+bool EngineRuntimeFactory::isExternalKey(engine::DeviceKey key) const {
+    const auto found = devices_.find(key);
+    return found != devices_.end() && adapter::isExternalDevice(found->second);
+}
+
 void EngineRuntimeFactory::forgetBuiltDevices() {
     for (const auto& [key, identity] : built_)
         rebuild_.insert(key);

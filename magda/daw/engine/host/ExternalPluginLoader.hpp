@@ -83,6 +83,17 @@ class ExternalPluginLoader final {
      */
     std::unique_ptr<engine::EngineDevice> device(engine::DeviceKey key, const DeviceInfo& model);
 
+    /**
+     * @brief What to remember about @p key while an operation on it runs.
+     *
+     * The same token the load path carries, for the other direction: a state
+     * capture asks at completion whether the slot it read is still the slot it
+     * is about to be written onto (#2581). An unregistered key yields an
+     * already-expired request, so a capture against a slot this loader never
+     * held is refused rather than committed.
+     */
+    audio::engine_adapter::AssignmentRequest request(engine::DeviceKey key) const;
+
     /// Every slot ends: the project was cleared (#2572). The assignments go
     /// with them, which expires the loads in flight against their keys.
     void forgetSlots();
