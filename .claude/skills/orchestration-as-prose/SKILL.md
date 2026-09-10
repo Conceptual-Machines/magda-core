@@ -16,47 +16,58 @@ Yes -> done. No -> the steps want names, not comments. That is the whole rule.
 
 ## The tell
 
-**Numbered step comments.** In this tree, `ClipSynchronizer::syncAudioClipToEngine` is 456 lines
-carrying thirteen of them:
-
-```cpp
-// 1. Get Tracktion track
-// 2. Check if clip already synced
-// 3. CREATE new clip if doesn't exist
-// 3b. REVERSE — must be handled before position/loop/offset sync.
-...
-// 13. CHANNELS — removed (L/R controls removed from Inspector)
-```
-
-Every number is a function nobody extracted. The `3b` and `5b` are the giveaway: steps were
-inserted into a list that had outgrown being a list. Read it as the reference for what this skill
-is against.
+**Numbered step comments.** Every number is a function nobody extracted. `ClipSynchronizer::syncAudioClipToEngine` carried thirteen of them across 456 lines, and the `3b` and `5b` were the giveaway — steps being inserted into a list that had outgrown being a list.
 
 Smaller tells, same disease:
 
-- A comment introducing a block. `// Set file offset (trim point in file)` is a function name with
-  a `//` in front of it.
+- A comment introducing a block. `// Set file offset (trim point in file)` is a function name with a `//` in front of it.
+- Braces labelled on the way out: `}  // if (teClip)`, `}  // else (already synced)`. Structure you cannot see without being told.
 - Blank lines as paragraph breaks. If a body needs paragraphs, it needs functions.
-- A local declared far from its use, or reused for two meanings. The dead `double bpm` at
-  `ClipSynchronizer.cpp:916` survived precisely because nobody could see the whole body.
+- A local declared far from its use, or reused for two meanings. Four dead `double bpm` locals lived for years in that file because nobody could see a whole body.
 - Mixed altitude: a plan publish on one line, index arithmetic on the next.
 
 ## What it looks like when it works
 
-`publishProject` (tests/EngineSessionScaffold.hpp) — compile the plan, resolve its values, collect
-what the model holds, publish all four together:
+Both of those functions have been through this. The tail of `syncAudioClipToEngine`
+(`magda/daw/audio/session/ClipSynchronizer.cpp`), which is the shape to copy:
 
 ```cpp
-result.plan = std::make_shared<const RenderPlan>(compileRenderPlan(tracks, master));
+    syncPlacement(*teClip, *clip);
+    needsGraphReallocation |= syncStretchMode(*teClip, *clip, sourceBeats);
 
-PlanValues values;
-resolvePlanValues(*result.plan, tracks, master, values, lanes);
+    // A reversed clip's tempo mode, loop range and offset belong to Tracktion
+    // for as long as it stays reversed.
+    if (!reversed)
+        syncTempoMode(*teClip, *clip, sourceBeats);
 
-const auto ids = collectRuntimeStateIds(tracks, master);
-result.published = session.publish(result.plan, context, ids, std::move(values)).published;
+    syncWarpMarkers(clipId, *teClip, *clip);
+
+    if (!reversed)
+        syncLoopRangeAndOffset(edit_, *teClip, *clip, sourceBeats);
+
+    syncPitch(*teClip, *clip);
+    syncBeatDetection(*teClip, *clip);
+    syncMix(*teClip, *clip);
+    syncFades(*teClip, *clip);
 ```
 
-No comment explains the order. The names carry it.
+The order is still exactly what Tracktion demands. What changed is that you can read it, and
+the two comments left are the two things the names genuinely cannot say — why a reversed clip
+skips three of the steps.
+
+| | before | after |
+|---|---|---|
+| `syncAudioClipToEngine` | 456 lines, 13 numbered steps | 57 |
+| `syncClipPropertyToEngine` | 241 lines, 7 levels of nesting | 13 |
+
+Behaviour is identical, and the null-diff corpus says so rather than the author: all 74 cases
+produce byte-identical peak, rms and shift figures either side of the change. That is the other
+half of this skill — an orchestration refactor is safe exactly when something end-to-end can
+tell you nothing moved.
+
+`publishProject` (tests/EngineSessionScaffold.hpp) is the same shape written that way to begin
+with: compile the plan, resolve its values, collect what the model holds, publish the four
+together. No comment explains the order because the names carry it.
 
 ## Rules
 

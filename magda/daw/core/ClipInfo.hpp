@@ -811,6 +811,18 @@ struct ClipInfo {
                event->sourceInstantToTimelineBeats(start, projectBpm);
     }
 
+    /**
+     * @brief @ref loopLengthBeats, or the whole clip when it carries a zero.
+     *
+     * A v1 project can still hold the 0 sentinel, which would otherwise ask the
+     * engine to loop nothing. Read straight from the field rather than through
+     * loopLengthInBeats() above: the callers are MIDI clips, whose loop is
+     * already in clip beats and needs no source-region mapping.
+     */
+    double effectiveLoopLengthBeats(double bpm) const {
+        return loopLengthBeats > 0.0 ? loopLengthBeats : getLengthInBeats(bpm);
+    }
+
     // =========================================================================
     // Clip-level placement and mix
     //

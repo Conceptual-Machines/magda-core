@@ -297,6 +297,28 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     bool syncArrangementClipToEngine(ClipId clipId);
 
     /**
+     * @brief The session half of syncClipPropertyToEngine().
+     *
+     * A slot not synced yet becomes one; one that is has its changed properties
+     * pushed.
+     */
+    bool syncSessionClipPropertyToEngine(ClipId clipId, const ClipInfo& clip);
+
+    /**
+     * @brief Put a session clip in auto-tempo or time-based mode.
+     *
+     * Auto-tempo audio goes through configureSessionAutoTempo(); anything else
+     * keeps its time-based loop state.
+     *
+     * @return The stretch mode that stood before configureSessionAutoTempo() ran,
+     * which is what the mode check downstream compares against. Nullopt when it
+     * did not run.
+     */
+    std::optional<tracktion::TimeStretcher::Mode> applySessionTempoMode(tracktion::Clip& teClip,
+                                                                        const ClipInfo& clip,
+                                                                        bool autoTempoAudio);
+
+    /**
      * @brief Sync MIDI clip properties to Tracktion Engine
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
@@ -329,13 +351,21 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
     ExistingTeClip findOrDiscardTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
                                        const ClipInfo& clip);
 
-    /// Null when the model names no file, the file is missing, or Tracktion
-    /// refused the insert. Each is reported.
+    /**
+     * @brief Create the TE clip for @p clip on @p audioTrack.
+     *
+     * @return Null when the model names no file, the file is missing, or
+     * Tracktion refused the insert. Each is reported.
+     */
     tracktion::WaveAudioClip* createTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
                                            const ClipInfo& clip);
 
-    /// Hand the reverse flag over and let Tracktion own the mirrored offset and
-    /// loop range. Defers the graph rebuild until the proxy is playable.
+    /**
+     * @brief Hand the reverse flag over to Tracktion.
+     *
+     * Tracktion then owns the mirrored offset and loop range. The graph rebuild
+     * is deferred until the reversed proxy is playable.
+     */
     void applyReverse(ClipId clipId, tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
