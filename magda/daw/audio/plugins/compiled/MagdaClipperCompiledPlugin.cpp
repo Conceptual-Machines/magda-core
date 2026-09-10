@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-#include "BlockMath.hpp"
+#include "core/BlockMath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"

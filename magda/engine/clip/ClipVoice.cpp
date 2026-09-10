@@ -1,6 +1,7 @@
 #include "clip/ClipVoice.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 
@@ -188,14 +189,26 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample region
     const auto secondsPerSample = blockSeconds / block.numSamples;
     const auto channels = region.getNumChannels();
 
-    for (auto sample = from.value; sample < to.value; ++sample) {
-        const auto seconds = block.seconds.start + (sample * secondsPerSample);
-        const auto progress = static_cast<float>((seconds - startSeconds) / length);
-        const auto gain = fadeGain(curve, rising ? progress : 1.0f - progress);
+    // The envelope is the same for every channel, so it is built once per chunk
+    // and each channel is one vector multiply against it (#2152).
+    constexpr int kChunkSamples = 256;
+    std::array<float, kChunkSamples> gains{};
+
+    for (auto sample = from.value; sample < to.value; sample += kChunkSamples) {
+        const auto chunk =
+            static_cast<int>(std::min<decltype(to.value)>(kChunkSamples, to.value - sample));
+
+        for (int i = 0; i < chunk; ++i) {
+            const auto seconds = block.seconds.start + ((sample + i) * secondsPerSample);
+            const auto progress = static_cast<float>((seconds - startSeconds) / length);
+            gains[static_cast<std::size_t>(i)] =
+                fadeGain(curve, rising ? progress : 1.0f - progress);
+        }
 
         const auto index = static_cast<std::size_t>(sample - regionFirstSample.value);
         for (std::size_t channel = 0; channel < channels; ++channel)
-            region.getChannelPointer(channel)[index] *= gain;
+            juce::FloatVectorOperations::multiply(region.getChannelPointer(channel) + index,
+                                                  gains.data(), chunk);
     }
 }
 

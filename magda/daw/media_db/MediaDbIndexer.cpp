@@ -158,10 +158,8 @@ std::optional<std::vector<float>> loadMono48k(const std::filesystem::path& path)
     std::vector<float> mono(static_cast<size_t>(srcLen), 0.0F);
     const float gain = 1.0F / static_cast<float>(srcChannels);
     for (int ch = 0; ch < srcChannels; ++ch) {
-        const float* src = multi.getReadPointer(ch);
-        for (int i = 0; i < srcLen; ++i) {
-            mono[static_cast<size_t>(i)] += src[i] * gain;
-        }
+        juce::FloatVectorOperations::addWithMultiply(mono.data(), multi.getReadPointer(ch), gain,
+                                                     srcLen);
     }
     if (srcSr == 48000) {
         return mono;

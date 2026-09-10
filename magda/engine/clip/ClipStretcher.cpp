@@ -179,6 +179,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         // Grown here, on the thread that made this, and never again.
         const auto frames = stretchPushSamples();
         interleaved_.resize(static_cast<std::size_t>(frames) * channels_);
+        sources_.resize(static_cast<std::size_t>(channels_));
         deinterleaved_.resize(static_cast<std::size_t>(stretchWorkSamples(setup.maxBlockSamples)) *
                               channels_);
 
@@ -345,16 +346,15 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         for (std::size_t channel = 0; channel < output.getNumChannels(); ++channel) {
             auto* destination = output.getChannelPointer(channel);
             const auto source = std::min(static_cast<int>(channel), channels_ - 1);
+            const float* interleaved = deinterleaved_.data() + source;
 
             for (auto sample = 0; sample < ready; ++sample)
-                destination[sample] =
-                    deinterleaved_[static_cast<std::size_t>(sample) * channels_ + source];
+                destination[sample] = interleaved[sample * channels_];
 
             // A pipe that has not caught up yet is silence rather than whatever
             // the scratch held. It happens on the blocks a locate is still being
             // absorbed over, and the voice hears it as not having sounded.
-            for (auto sample = ready; sample < out; ++sample)
-                destination[sample] = 0.0f;
+            juce::FloatVectorOperations::clear(destination + ready, out - ready);
         }
     }
 
@@ -454,13 +454,19 @@ class SoundTouchClipStretcher final : public ClipStretcher {
     }
 
     void write(juce::dsp::AudioBlock<const float> block, int offset, int count) {
+        // Where each pipe channel reads from, once rather than per sample. A
+        // block narrower than the pipe repeats its last channel, which is what
+        // the clamp inside the loop did.
+        for (auto channel = 0; channel < channels_; ++channel) {
+            const auto source =
+                std::min(static_cast<std::size_t>(channel), block.getNumChannels() - 1);
+            sources_[static_cast<std::size_t>(channel)] = block.getChannelPointer(source) + offset;
+        }
+
         for (auto sample = 0; sample < count; ++sample)
-            for (auto channel = 0; channel < channels_; ++channel) {
-                const auto source =
-                    std::min(static_cast<std::size_t>(channel), block.getNumChannels() - 1);
+            for (auto channel = 0; channel < channels_; ++channel)
                 interleaved_[static_cast<std::size_t>(sample) * channels_ + channel] =
-                    block.getChannelPointer(source)[offset + sample];
-            }
+                    sources_[static_cast<std::size_t>(channel)][sample];
 
         touch_.putSamples(interleaved_.data(), static_cast<unsigned int>(count));
     }
@@ -487,6 +493,7 @@ class SoundTouchClipStretcher final : public ClipStretcher {
 
     std::vector<float> interleaved_;
     std::vector<float> deinterleaved_;
+    std::vector<const float*> sources_;
     soundtouch::SoundTouch touch_;
 };
 
@@ -591,10 +598,10 @@ class ResamplingClipStretcher final : public ClipStretcher {
                 std::min(static_cast<std::size_t>(channel), input.getNumChannels() - 1);
             const auto taken = std::min(in, kHistory);
 
-            if (taken < kHistory)
-                for (auto sample = 0; sample < kHistory - taken; ++sample)
-                    history_.setSample(channel, sample,
-                                       history_.getSample(channel, sample + taken));
+            if (taken < kHistory) {
+                auto* kept = history_.getWritePointer(channel);
+                std::copy(kept + taken, kept + kHistory, kept);
+            }
 
             history_.copyFrom(channel, kHistory - taken,
                               input.getChannelPointer(source) + in - taken, taken);
