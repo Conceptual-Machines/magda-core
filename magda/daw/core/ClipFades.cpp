@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "ClipOcclusion.hpp"
+#include "RangesHelpers.hpp"
 #include "TempoUtils.hpp"
 
 namespace magda {
@@ -14,12 +16,24 @@ namespace {
 // has to be a real case, not a float coincidence.
 constexpr double kBeatTol = 1e-6;
 
+const ClipInfo* addressOf(const ClipInfo& clip) {
+    return &clip;
+}
+
+double startBeatOf(const ClipInfo* clip) {
+    return clip->placement.startBeat;
+}
+
+double endBeatOf(const ClipInfo* clip) {
+    return clip->placement.endBeat();
+}
+
 std::vector<const ClipInfo*> laneView(const std::vector<ClipInfo>& clips) {
-    std::vector<const ClipInfo*> lane;
-    lane.reserve(clips.size());
-    for (const auto& clip : clips)
-        lane.push_back(&clip);
-    return lane;
+    return clips | std::views::transform(addressOf) | toStd<std::vector<const ClipInfo*>>();
+}
+
+auto clipWithId(ClipId clipId) {
+    return [clipId](const ClipInfo& clip) { return clip.id == clipId; };
 }
 
 }  // namespace
@@ -41,28 +55,24 @@ std::optional<CrossfadeInfo> crossfadeAtStartOf(const ClipInfo& clip,
     // about its own edge, so a clip fades into a neighbour that hard-cuts just
     // the same. What IS asked for is that the overlap plays both - fading into
     // a clip that has been silenced under this one is a dip, not a fade.
-    const ClipInfo* best = nullptr;
-    for (const auto* other : lane) {
+    const auto startsFirstAndReachesOver = [&](const ClipInfo* other) {
         if (other->id == clip.id || other->view != ClipView::Arrangement ||
             other->trackId != clip.trackId || !other->isAudio() ||
-            !overlapPlaysThrough(clip, *other))
-            continue;
-        const double oStart = other->placement.startBeat;
-        const double oEnd = other->placement.endBeat();
-        if (!(oEnd > startB))
-            continue;
+            !overlapPlaysThrough(clip, *other) || !(other->placement.endBeat() > startB))
+            return false;
         // Starts before this one - or on the very same beat, where the clip on
         // top is the one arriving.
-        const bool startsFirst =
-            oStart < startB - kBeatTol ||
-            (std::abs(oStart - startB) <= kBeatTol && clipSitsBelow(*other, clip));
-        if (startsFirst) {
-            if (!best || oEnd > best->placement.endBeat())
-                best = other;
-        }
-    }
-    if (!best)
+        const double oStart = other->placement.startBeat;
+        return oStart < startB - kBeatTol ||
+               (std::abs(oStart - startB) <= kBeatTol && clipSitsBelow(*other, clip));
+    };
+
+    auto arriving = lane | std::views::filter(startsFirstAndReachesOver);
+    const auto longestTail = std::ranges::max_element(arriving, {}, endBeatOf);
+    if (longestTail == std::ranges::end(arriving))
         return std::nullopt;
+
+    const ClipInfo* best = *longestTail;
     return CrossfadeInfo{best->id, clip.id, startB, std::min(best->placement.endBeat(), endB)};
 }
 
@@ -78,43 +88,41 @@ std::optional<CrossfadeInfo> crossfadeAtEndOf(const ClipInfo& clip,
     // this clip is the one leaving and draws the fade OUT. A clip that swallows
     // another is not on its right - it started first - so a swallowed clip
     // fades in and holds, rather than fading in and back out of itself.
-    const ClipInfo* best = nullptr;
-    for (const auto* other : lane) {
+    const auto arrivesOverEnd = [&](const ClipInfo* other) {
         if (other->id == clip.id || other->view != ClipView::Arrangement ||
             other->trackId != clip.trackId || !other->isAudio() ||
             !overlapPlaysThrough(clip, *other))
-            continue;
+            return false;
         const double oStart = other->placement.startBeat;
-        const double oEnd = other->placement.endBeat();
         if (!(oStart < endB) ||
             (oStart <= startB + kBeatTol &&
              (std::abs(oStart - startB) > kBeatTol || !clipSitsBelow(clip, *other))))
-            continue;
+            return false;
         // Runs past this clip's end, or ends on the very same beat.
-        if (oEnd > endB - kBeatTol) {
-            if (!best || oStart < best->placement.startBeat)
-                best = other;
-        }
-    }
-    if (!best)
+        return other->placement.endBeat() > endB - kBeatTol;
+    };
+
+    auto leaving = lane | std::views::filter(arrivesOverEnd);
+    const auto earliestStart = std::ranges::min_element(leaving, {}, startBeatOf);
+    if (earliestStart == std::ranges::end(leaving))
         return std::nullopt;
+
+    const ClipInfo* best = *earliestStart;
     return CrossfadeInfo{clip.id, best->id, std::max(best->placement.startBeat, startB), endB};
 }
 
 std::optional<CrossfadeInfo> crossfadeAtStartIn(const std::vector<ClipInfo>& lane, ClipId clipId) {
-    for (const auto& clip : lane) {
-        if (clip.id == clipId)
-            return crossfadeAtStartOf(clip, laneView(lane));
-    }
-    return std::nullopt;
+    const auto found = std::ranges::find_if(lane, clipWithId(clipId));
+    if (found == lane.end())
+        return std::nullopt;
+    return crossfadeAtStartOf(*found, laneView(lane));
 }
 
 std::optional<CrossfadeInfo> crossfadeAtEndIn(const std::vector<ClipInfo>& lane, ClipId clipId) {
-    for (const auto& clip : lane) {
-        if (clip.id == clipId)
-            return crossfadeAtEndOf(clip, laneView(lane));
-    }
-    return std::nullopt;
+    const auto found = std::ranges::find_if(lane, clipWithId(clipId));
+    if (found == lane.end())
+        return std::nullopt;
+    return crossfadeAtEndOf(*found, laneView(lane));
 }
 
 EffectiveFades effectiveFadesOf(const ClipInfo& clip, const std::vector<const ClipInfo*>& lane,
@@ -153,11 +161,8 @@ EffectiveFades effectiveFadesOf(const ClipInfo& clip, const std::vector<const Cl
 }
 
 EffectiveFades effectiveFadesIn(const std::vector<ClipInfo>& lane, ClipId clipId, double bpm) {
-    for (const auto& clip : lane) {
-        if (clip.id == clipId)
-            return effectiveFadesOf(clip, laneView(lane), bpm);
-    }
-    return {};
+    const auto found = std::ranges::find_if(lane, clipWithId(clipId));
+    return found == lane.end() ? EffectiveFades{} : effectiveFadesOf(*found, laneView(lane), bpm);
 }
 
 }  // namespace magda

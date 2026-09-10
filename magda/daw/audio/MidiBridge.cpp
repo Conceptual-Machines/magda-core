@@ -1,5 +1,11 @@
 #include "MidiBridge.hpp"
 
+#include <algorithm>
+#include <iterator>
+#include <memory>
+#include <ranges>
+
+#include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
 
@@ -60,54 +66,52 @@ void MidiBridge::stopAllInputs() {
         juce::Thread::sleep(1);
 }
 
+namespace {
+
+// Output enable state is not tracked the way input enable state is, so both
+// physical lists come back disabled.
+MidiDeviceInfo asPhysicalDevice(const juce::MidiDeviceInfo& device) {
+    MidiDeviceInfo info;
+    info.id = device.identifier;
+    info.name = device.name;
+    info.isEnabled = false;
+    info.isAvailable = true;
+    return info;
+}
+
+}  // namespace
+
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
-    std::vector<MidiDeviceInfo> devices;
-
-    // Use JUCE's MidiInput::getAvailableDevices() for physical MIDI devices
-    auto midiInputs = juce::MidiInput::getAvailableDevices();
-
-    for (const auto& device : midiInputs) {
-        MidiDeviceInfo info;
-        info.id = device.identifier;
-        info.name = device.name;
-        info.isEnabled = false;
-        info.isAvailable = true;
-        devices.push_back(info);
-    }
+    const auto midiInputs = juce::MidiInput::getAvailableDevices();
+    auto devices =
+        midiInputs | std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
     // Include TE virtual MIDI devices only when enabled. The routing
     // selectors refresh via onMidiDeviceListChanged when the device
     // state changes, so the filter is effective.
-    for (auto& dev : engine_.getDeviceManager().getMidiInDevices()) {
-        if (dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) && dev->isEnabled()) {
-            MidiDeviceInfo info;
-            info.id = dev->getDeviceID();
-            info.name = dev->getName();
-            info.isEnabled = dev->isEnabled();
-            info.isAvailable = true;
-            devices.push_back(info);
-        }
-    }
+    const auto isEnabledVirtualInput = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
+        return dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr && dev->isEnabled();
+    };
+    const auto asVirtualDevice = [](const std::shared_ptr<te::MidiInputDevice>& dev) {
+        MidiDeviceInfo info;
+        info.id = dev->getDeviceID();
+        info.name = dev->getName();
+        info.isEnabled = dev->isEnabled();
+        info.isAvailable = true;
+        return info;
+    };
 
+    const auto teDevices = engine_.getDeviceManager().getMidiInDevices();
+    std::ranges::copy(teDevices | std::views::filter(isEnabledVirtualInput) |
+                          std::views::transform(asVirtualDevice),
+                      std::back_inserter(devices));
     return devices;
 }
 
 std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiOutputs() {
-    std::vector<MidiDeviceInfo> devices;
-
-    auto midiOutputs = juce::MidiOutput::getAvailableDevices();
-
-    for (const auto& device : midiOutputs) {
-        MidiDeviceInfo info;
-        info.id = device.identifier;
-        info.name = device.name;
-        info.isEnabled = false;  // Output enable state not tracked same way
-        info.isAvailable = true;
-
-        devices.push_back(info);
-    }
-
-    return devices;
+    const auto midiOutputs = juce::MidiOutput::getAvailableDevices();
+    return midiOutputs | std::views::transform(asPhysicalDevice) |
+           toStd<std::vector<MidiDeviceInfo>>();
 }
 
 bool MidiBridge::sendMidi(const juce::String& deviceNameOrId, const juce::MidiMessage& msg) {

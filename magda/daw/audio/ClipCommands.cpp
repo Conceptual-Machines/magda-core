@@ -6,8 +6,10 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <ranges>
 #include <utility>
 
+#include "../core/RangesHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
@@ -1664,11 +1666,8 @@ void DeleteTimeSelectionCommand::undo() {
     // Re-trimmed/kept clips keep their engine mapping, so forceNotifyClipsChanged
     // (topology only) won't restore their length/position. Push every restored
     // clip's placement back to the engine; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 
@@ -1780,11 +1779,8 @@ void InsertTimeCommand::undo() {
     clipManager.forceNotifyClipsChanged();
     // Push every restored placement back to the engine so shifted/split clips
     // return to their pre-insert positions; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 
@@ -1853,11 +1849,8 @@ void SplitClipsAtBeatCommand::undo() {
     clipManager.forceNotifyClipsChanged();
     // Re-merged clips keep their engine mapping, so push every restored
     // placement back to the engine; unchanged clips are cheap no-ops.
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     createdClipIds_.clear();
     executed_ = false;
 }
@@ -2013,11 +2006,8 @@ void RippleDeleteRangeCommand::undo() {
     }
 
     clipManager.forceNotifyClipsChanged();
-    std::vector<ClipId> restoredIds;
-    restoredIds.reserve(snapshot_.size());
-    for (const auto& clip : snapshot_)
-        restoredIds.push_back(clip.id);
-    clipManager.forceNotifyMultipleClipPropertiesChanged(restoredIds);
+    clipManager.forceNotifyMultipleClipPropertiesChanged(
+        snapshot_ | std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>());
     executed_ = false;
 }
 

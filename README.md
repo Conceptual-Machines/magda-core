@@ -50,9 +50,12 @@ See [Issues](https://github.com/Conceptual-Machines/magda-core/issues) for known
 
 - C++23 compiler **and standard library**: GCC 13+, Clang 16+ with libc++,
   AppleClang 16+, or MSVC 19.36+ (VS 2022 17.6). The floor is the library, not
-  the language: `std::views::zip` and `std::ranges::contains` are in use, and
-  libstdc++ only gained `views::zip` in GCC 13.1, so a GCC 12 build fails even
-  though CMake will select C++23 for it.
+  the language: `std::views::zip`, `std::views::chunk_by`,
+  `std::ranges::fold_left` and `std::ranges::contains` are in use, and libstdc++
+  only gained them in GCC 13.1, so a GCC 12 build fails even though CMake will
+  select C++23 for it. `std::ranges::to` is *not* used: libstdc++ only has it
+  from GCC 14, so collecting goes through `toStd<C>()` / `toJuce<C>()` in
+  `magda/daw/core/RangesHelpers.hpp`.
   (CI builds with GCC 13.3, AppleClang 16.0 and MSVC 19.50.)
 - CMake 3.24+
 - [Git LFS](https://git-lfs.com/) — required to fetch bundled binary assets

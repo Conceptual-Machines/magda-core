@@ -5,7 +5,9 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <ranges>
 
+#include "../../core/RangesHelpers.hpp"
 #include "../../core/StringTable.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/UserAlert.hpp"
@@ -248,17 +250,22 @@ class AnalysisJob : public juce::Thread {
         // Resolve the track set up front (Deep) so the total pass count -- and
         // therefore the progress estimate -- is known before rendering starts:
         // one master pass plus one pass per track.
+        const auto isAnalysable = [](const TrackInfo& track) {
+            return track.type != TrackType::Chord;
+        };
+        const auto stillExists = [](TrackId id) {
+            return TrackManager::getInstance().getTrack(id) != nullptr;
+        };
+
         std::vector<TrackId> trackIds;
         if (deep) {
-            if (request_.trackSet.empty()) {
-                for (const auto& track : TrackManager::getInstance().getTracks())
-                    if (track.type != TrackType::Chord)
-                        trackIds.push_back(track.id);
-            } else {
-                for (auto id : request_.trackSet)
-                    if (TrackManager::getInstance().getTrack(id) != nullptr)
-                        trackIds.push_back(id);
-            }
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            trackIds = request_.trackSet.empty()
+                           ? tracks | std::views::filter(isAnalysable) |
+                                 std::views::transform(&TrackInfo::id) |
+                                 toStd<std::vector<TrackId>>()
+                           : request_.trackSet | std::views::filter(stillExists) |
+                                 toStd<std::vector<TrackId>>();
         }
         const int totalPasses = deep ? 1 + static_cast<int>(trackIds.size()) : 1;
 
@@ -394,12 +401,11 @@ class AnalysisJob : public juce::Thread {
             // Annotate each track with its type (audio/MIDI) + effect chain. build()
             // preserves source order, so measurements.tracks[i] matches sourceTrackIds[i].
             auto& tmgr = magda::TrackManager::getInstance();
-            for (size_t i = 0; i < measurements.tracks.size() && i < sourceTrackIds.size(); ++i) {
-                const auto tid = sourceTrackIds[i];
+            for (auto&& [measured, tid] : std::views::zip(measurements.tracks, sourceTrackIds)) {
                 if (tid == magda::INVALID_TRACK_ID)
                     continue;
-                measurements.tracks[i].role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
-                measurements.tracks[i].chain = tmgr.getChainSummary(tid);
+                measured.role = tmgr.getPrimaryInstrument(tid) ? "MIDI" : "audio";
+                measured.chain = tmgr.getChainSummary(tid);
             }
 
             if (skipped > 0)

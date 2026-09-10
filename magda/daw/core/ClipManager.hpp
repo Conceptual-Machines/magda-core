@@ -943,6 +943,10 @@ class ClipManager {
     double findNonOverlappingStartBeats(TrackId trackId, double desiredStartBeats,
                                         double lengthBeats, ClipView view) const;
 
+    /// Arrangement order: a lane reads left to right, so its ids come back
+    /// that way. Ids with no clip behind them sort as equivalent.
+    void sortByTimelineStart(std::vector<ClipId>& clipIds) const;
+
     // How far (in timeline beats) an audio clip's edge can extend before it
     // runs out of source material. Left = earlier than its current start
     // (bounded by the source read offset), right = past its current end

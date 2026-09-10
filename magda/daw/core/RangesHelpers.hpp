@@ -2,6 +2,7 @@
 
 #include <juce_data_structures/juce_data_structures.h>
 
+#include <cstddef>
 #include <ranges>
 #include <utility>
 
@@ -42,6 +43,45 @@ template <class C, std::ranges::input_range R> C toJuce(R&& range) {
     for (auto&& value : range)
         out.add(std::forward<decltype(value)>(value));
     return out;
+}
+
+/** @brief Collect a range into a std container (#2149).
+ *
+ *  std::ranges::to is libstdc++ 14, and Linux CI builds with GCC 13.3, which is
+ *  the floor the README documents.
+ */
+template <class C, std::ranges::input_range R> C toStd(R&& range) {
+    C out;
+    if constexpr (std::ranges::sized_range<R> && requires { out.reserve(std::size_t{}); })
+        out.reserve(static_cast<std::size_t>(std::ranges::size(range)));
+    for (auto&& value : range)
+        out.insert(out.end(), std::forward<decltype(value)>(value));
+    return out;
+}
+
+namespace detail {
+
+template <class C> struct ToJuceClosure {
+    template <std::ranges::input_range R> friend C operator|(R&& range, ToJuceClosure) {
+        return toJuce<C>(std::forward<R>(range));
+    }
+};
+
+template <class C> struct ToStdClosure {
+    template <std::ranges::input_range R> friend C operator|(R&& range, ToStdClosure) {
+        return toStd<C>(std::forward<R>(range));
+    }
+};
+
+}  // namespace detail
+
+/** @brief The pipe forms, so a pipeline ends where it reads: `| toStd<V>()`. */
+template <class C> auto toJuce() {
+    return detail::ToJuceClosure<C>{};
+}
+
+template <class C> auto toStd() {
+    return detail::ToStdClosure<C>{};
 }
 
 }  // namespace magda

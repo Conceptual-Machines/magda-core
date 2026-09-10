@@ -2,11 +2,13 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <set>
 #include <vector>
 
 #include "core/ClipManager.hpp"
 #include "core/CompSectionMath.hpp"
+#include "core/RangesHelpers.hpp"
 #include "project/ProjectManager.hpp"
 
 namespace magda {
@@ -17,10 +19,9 @@ constexpr double kCrossfadeSeconds = 0.012;  // 12 ms equal-power crossfade at b
 
 // Longest take defines the comp timeline extent.
 double compLengthSeconds(const AudioClipModel& audio) {
-    double len = 0.0;
-    for (const auto& t : audio.takes)
-        len = std::max(len, t.durationSeconds);
-    return len;
+    if (audio.takes.empty())
+        return 0.0;
+    return std::ranges::max(audio.takes | std::views::transform(&AudioTake::durationSeconds));
 }
 
 // Rebuild the comp section list so [a, b) plays `take`, splitting/merging as
@@ -28,18 +29,16 @@ double compLengthSeconds(const AudioClipModel& audio) {
 // the shared (domain-neutral) algorithm; CompSection (seconds) <-> CompSpan.
 std::vector<CompSection> assignSection(const std::vector<CompSection>& existing, double compLen,
                                        int baseTake, double a, double b, int take) {
-    std::vector<CompSpan> spans;
-    spans.reserve(existing.size());
-    for (const auto& s : existing)
-        spans.push_back({s.startSeconds, s.endSeconds, s.takeIndex});
+    const auto asSpan = [](const CompSection& section) {
+        return CompSpan{section.startSeconds, section.endSeconds, section.takeIndex};
+    };
+    const auto asSection = [](const CompSpan& span) {
+        return CompSection{span.start, span.end, span.takeIndex};
+    };
 
-    const auto out = assignCompSections(spans, compLen, baseTake, a, b, take);
-
-    std::vector<CompSection> result;
-    result.reserve(out.size());
-    for (const auto& s : out)
-        result.push_back({s.start, s.end, s.takeIndex});
-    return result;
+    const auto spans = existing | std::views::transform(asSpan) | toStd<std::vector<CompSpan>>();
+    return assignCompSections(spans, compLen, baseTake, a, b, take) |
+           std::views::transform(asSection) | toStd<std::vector<CompSection>>();
 }
 
 // Equal-power gains across a fade position p in [0, 1].
@@ -90,9 +89,8 @@ double stitchComp(const CompSnapshot& snap) {
     if (sampleRate <= 0.0 || numChannels <= 0 || snap.sections.empty())
         return 0.0;
 
-    double compLen = 0.0;
-    for (const auto& s : snap.sections)
-        compLen = std::max(compLen, s.endSeconds);
+    const double compLen =
+        std::ranges::max(snap.sections | std::views::transform(&CompSection::endSeconds));
     const int total = static_cast<int>(std::round(compLen * sampleRate));
     if (total <= 0)
         return 0.0;

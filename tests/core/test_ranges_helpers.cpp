@@ -1,6 +1,8 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 #include <ranges>
+#include <set>
 #include <vector>
 
 #include "magda/daw/core/RangesHelpers.hpp"
@@ -83,4 +85,60 @@ TEST_CASE("removeChildrenWithType() leaves nested children of that type alone",
     magda::removeChildrenWithType(tree, juce::Identifier("STEP"));
 
     CHECK(tree.getChild(0).getNumChildren() == 1);
+}
+
+// The two collect helpers (#2144, #2149). std::ranges::to rejects juce::Array
+// and StringArray, and is libstdc++ 14, past the GCC 13 floor in the README.
+
+TEST_CASE("toStd() collects a pipeline into a vector", "[ranges][collect]") {
+    const std::vector<int> source{1, 2, 3, 4, 5};
+    const auto isOdd = [](int n) { return n % 2 != 0; };
+    const auto doubled = [](int n) { return n * 2; };
+
+    CHECK(magda::toStd<std::vector<int>>(source | std::views::filter(isOdd) |
+                                         std::views::transform(doubled)) ==
+          std::vector<int>{2, 6, 10});
+}
+
+TEST_CASE("toStd() reads as the last stage of the pipe", "[ranges][collect]") {
+    const std::vector<int> source{1, 2, 3};
+    const auto negated = [](int n) { return -n; };
+
+    CHECK((source | std::views::transform(negated) | magda::toStd<std::vector<int>>()) ==
+          std::vector<int>{-1, -2, -3});
+}
+
+TEST_CASE("toStd() fills a node container through insert()", "[ranges][collect]") {
+    const std::vector<int> source{3, 1, 3, 2};
+
+    CHECK((source | magda::toStd<std::set<int>>()) == std::set<int>{1, 2, 3});
+}
+
+TEST_CASE("toStd() of an empty pipeline is empty", "[ranges][collect]") {
+    const std::vector<int> source{1, 3, 5};
+    const auto isEven = [](int n) { return n % 2 == 0; };
+
+    CHECK((source | std::views::filter(isEven) | magda::toStd<std::vector<int>>()).empty());
+}
+
+TEST_CASE("toStd() collects move-only elements", "[ranges][collect]") {
+    const std::vector<int> source{1, 2, 3};
+    const auto boxed = [](int n) { return std::make_unique<int>(n); };
+
+    const auto boxes =
+        source | std::views::transform(boxed) | magda::toStd<std::vector<std::unique_ptr<int>>>();
+
+    REQUIRE(boxes.size() == 3);
+    CHECK(*boxes[1] == 2);
+}
+
+TEST_CASE("toJuce() collects into a JUCE container", "[ranges][collect]") {
+    const std::vector<int> source{1, 2, 3};
+    const auto asString = [](int n) { return juce::String(n); };
+
+    const auto names =
+        source | std::views::transform(asString) | magda::toJuce<juce::StringArray>();
+
+    REQUIRE(names.size() == 3);
+    CHECK(names[2] == "3");
 }

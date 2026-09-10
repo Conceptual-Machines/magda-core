@@ -1,5 +1,8 @@
 #include "TrackController.hpp"
 
+#include <ranges>
+
+#include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
 
 namespace magda {
@@ -573,12 +576,7 @@ juce::String TrackController::getTrackAudioInput(TrackId trackId) const {
 
 std::vector<TrackId> TrackController::getAllTrackIds() const {
     juce::ScopedLock lock(trackLock_);
-    std::vector<TrackId> trackIds;
-    trackIds.reserve(trackMapping_.size());
-    for (const auto& [trackId, track] : trackMapping_) {
-        trackIds.push_back(trackId);
-    }
-    return trackIds;
+    return trackMapping_ | std::views::keys | toStd<std::vector<TrackId>>();
 }
 
 void TrackController::clearAllMappings() {

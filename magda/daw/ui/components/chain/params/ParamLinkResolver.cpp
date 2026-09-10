@@ -1,8 +1,38 @@
 #include "params/ParamLinkResolver.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <ranges>
+
+#include "core/ParameterUtils.hpp"
+#include "core/RangesHelpers.hpp"
 
 namespace magda::daw::ui {
+
+namespace {
+
+constexpr auto linkIsEnabled = [](const auto& link) { return link.enabled; };
+constexpr auto everyLink = [](const auto&) { return true; };
+
+/// What one level's sources add to a parameter. Left fold: the sum keeps the
+/// order the sources are stacked in.
+template <class Sources, class LinkCounts>
+float sumLinkedOffsets(const Sources* sources, const magda::ControlTarget& target,
+                       LinkCounts counts) {
+    if (sources == nullptr)
+        return 0.0f;
+
+    const auto offsetOf = [&](const auto& source) {
+        const auto* link = source.getLink(target);
+        if (link == nullptr || !counts(*link))
+            return 0.0f;
+        return magda::ParameterUtils::modulationOffset(source.value, link->amount, link->bipolar);
+    };
+
+    return std::ranges::fold_left(*sources | std::views::transform(offsetOf), 0.0f, std::plus{});
+}
+
+}  // namespace
 
 std::vector<ResolvedModLink> getLinkedMods(const ParamLinkContext& ctx) {
     std::vector<ResolvedModLink> linked;
@@ -127,93 +157,28 @@ bool hasActiveLinks(const ParamLinkContext& ctx) {
 }
 
 float computeTotalModModulation(const ParamLinkContext& ctx) {
-    float total = 0.0f;
-    if (ctx.deviceId == magda::INVALID_DEVICE_ID) {
-        return total;
-    }
+    if (ctx.deviceId == magda::INVALID_DEVICE_ID)
+        return 0.0f;
 
-    magda::ControlTarget modTarget =
-        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    const auto modTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
-    // Device-level mods
-    if (ctx.deviceMods) {
-        for (const auto& mod : *ctx.deviceMods) {
-            if (const auto* link = mod.getLink(modTarget)) {
-                if (!link->enabled)
-                    continue;
-                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
-                total += modOffset * link->amount;
-            }
-        }
-    }
-
-    // Rack-level mods
-    if (ctx.rackMods) {
-        for (const auto& mod : *ctx.rackMods) {
-            if (const auto* link = mod.getLink(modTarget)) {
-                if (!link->enabled)
-                    continue;
-                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
-                total += modOffset * link->amount;
-            }
-        }
-    }
-
-    // Track-level mods
-    if (ctx.trackMods) {
-        for (const auto& mod : *ctx.trackMods) {
-            if (const auto* link = mod.getLink(modTarget)) {
-                if (!link->enabled)
-                    continue;
-                float modOffset = link->bipolar ? (mod.value * 2.0f - 1.0f) : mod.value;
-                total += modOffset * link->amount;
-            }
-        }
-    }
-
-    return total;
+    // A mod link that is switched off contributes nothing; device, rack and
+    // track levels all stack onto the same parameter.
+    return sumLinkedOffsets(ctx.deviceMods, modTarget, linkIsEnabled) +
+           sumLinkedOffsets(ctx.rackMods, modTarget, linkIsEnabled) +
+           sumLinkedOffsets(ctx.trackMods, modTarget, linkIsEnabled);
 }
 
 float computeTotalMacroModulation(const ParamLinkContext& ctx) {
-    float total = 0.0f;
-    if (ctx.deviceId == magda::INVALID_DEVICE_ID) {
-        return total;
-    }
+    if (ctx.deviceId == magda::INVALID_DEVICE_ID)
+        return 0.0f;
 
-    magda::ControlTarget macroTarget =
-        magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
+    const auto macroTarget = magda::ControlTarget::pluginParam(ctx.devicePath, ctx.paramIndex);
 
-    // Device-level macros
-    if (ctx.deviceMacros) {
-        for (const auto& macro : *ctx.deviceMacros) {
-            if (const auto* link = macro.getLink(macroTarget)) {
-                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
-                total += macroOffset * link->amount;
-            }
-        }
-    }
-
-    // Rack-level macros
-    if (ctx.rackMacros) {
-        for (const auto& macro : *ctx.rackMacros) {
-            if (const auto* link = macro.getLink(macroTarget)) {
-                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
-                total += macroOffset * link->amount;
-            }
-        }
-    }
-
-    // Track-level macros
-    if (ctx.trackMacros) {
-        for (const auto& macro : *ctx.trackMacros) {
-            if (const auto* link = macro.getLink(macroTarget)) {
-                float macroOffset = link->bipolar ? (macro.value * 2.0f - 1.0f) : macro.value;
-                total += macroOffset * link->amount;
-            }
-        }
-    }
-
-    return total;
+    // A macro link has no switch of its own: linking one is the switch.
+    return sumLinkedOffsets(ctx.deviceMacros, macroTarget, everyLink) +
+           sumLinkedOffsets(ctx.rackMacros, macroTarget, everyLink) +
+           sumLinkedOffsets(ctx.trackMacros, macroTarget, everyLink);
 }
 
 const magda::ModInfo* resolveModPtr(const magda::ModSelection& sel,

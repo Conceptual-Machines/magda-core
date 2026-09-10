@@ -1,6 +1,9 @@
 #include "plugins/MidiStrumPlugin.hpp"
 
 #include <algorithm>
+#include <ranges>
+
+#include "core/RangesHelpers.hpp"
 
 namespace magda::daw::audio {
 
@@ -105,9 +108,9 @@ ParameterInfo slotInfo(int index) {
             break;
 
         case MidiStrumPlugin::kShape: {
-            std::vector<juce::String> names;
-            for (const auto& shape : shapes())
-                names.emplace_back(shape.name);
+            const auto nameOf = [](const auto& shape) { return juce::String(shape.name); };
+            auto names =
+                shapes() | std::views::transform(nameOf) | toStd<std::vector<juce::String>>();
             discrete("shape", "Shape", 1.0f, std::move(names));  // Ease In
             break;
         }
@@ -465,20 +468,20 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
 }
 
 std::vector<float> MidiStrumPlugin::curveOnsetPreview(int shapeIndex, int cyclesIndex, int count) {
-    std::vector<float> out;
     if (count <= 0)
-        return out;
+        return {};
 
     std::array<float, 1024> lut{};
     buildLut(shapeIndex, lut);
     const int cyc = juce::jlimit(0, 7, cyclesIndex) + 1;  // index 0..7 -> 1..8
 
-    out.reserve(static_cast<size_t>(count));
-    for (int i = 0; i < count; ++i) {
+    const auto onsetAt = [&lut, count, cyc](int i) {
         const float u = (count == 1) ? 0.0f : static_cast<float>(i) / static_cast<float>(count - 1);
-        out.push_back(juce::jlimit(0.0f, 1.0f, sampleCycled(lut, u, cyc)));
-    }
-    return out;
+        return juce::jlimit(0.0f, 1.0f, sampleCycled(lut, u, cyc));
+    };
+
+    return std::views::iota(0, count) | std::views::transform(onsetAt) |
+           toStd<std::vector<float>>();
 }
 
 }  // namespace magda::daw::audio
