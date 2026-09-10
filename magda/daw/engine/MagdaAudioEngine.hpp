@@ -8,6 +8,10 @@ namespace magda::daw::engine_host {
 class EngineHost;
 }
 
+namespace magda {
+class TracktionEngineWrapper;
+}
+
 /**
  * @file MagdaAudioEngine.hpp
  * @brief The app's second AudioEngine, backed by magda::engine (#2551).
@@ -188,6 +192,11 @@ class MagdaAudioEngine final : public AudioEngine {
     /// The half of the interface that is not an engine question. See the file
     /// comment: this goes away with #2554.
     std::unique_ptr<AudioEngine> tracktion_;
+
+    /// The same object as itself. The plugin scan and the formats that can open
+    /// a plugin are the plugin manager's, and AudioEngine exposes neither
+    /// (#2566); a pointer rather than a cast so the ownership stays above.
+    TracktionEngineWrapper* fork_ = nullptr;
 
     /// What actually renders. Declared after the fork so it is destroyed
     /// first: the device it has a callback on is the fork's, and the fork

@@ -25,6 +25,8 @@
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/audio/plugins/engine/EngineExternalDevice.hpp"
 #include "magda/daw/audio/plugins/engine/PluginAssignments.hpp"
+#include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
+#include "magda/daw/engine/host/ExternalPluginLoader.hpp"
 #include "param/ParamBlock.hpp"
 #include "transport/TempoMap.hpp"
 
@@ -49,6 +51,7 @@
 namespace {
 
 namespace adapter = magda::daw::audio::engine_adapter;
+namespace host = magda::daw::engine_host;
 
 /**
  * @brief One parameter of the stub, automatable or not.
@@ -638,6 +641,14 @@ juce::PluginDescription descriptionFor(const magda::DeviceInfo& device) {
 /// The key a device holds while these tests keep it in the main FX section.
 magda::engine::DeviceKey keyFor(const magda::DeviceInfo& device) {
     return {magda::ChainSegment::Fx, device.id};
+}
+
+/// Run the message loop until every queued plugin load has been delivered.
+/// JUCE stores a completion and runs it a turn or more later, so a test that
+/// read the answer straight after asking would read it before it was written.
+void dispatchPendingLoads() {
+    for (int attempts = 0; attempts < 20; ++attempts)
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(10);
 }
 
 /// Read a plugin and write what it holds into @p device, which is what a caller
@@ -3164,4 +3175,204 @@ TEST_CASE("The dry signal survives a plugin that produced nothing usable",
 
     CHECK(block.buffer.getSample(0, 0) == Catch::Approx(0.25f));
     CHECK(block.buffer.getSample(0, 1) == Catch::Approx(0.25f));
+}
+
+// =============================================================================
+// The live path (#2566)
+// =============================================================================
+//
+// Everything above is the adapter answering one question about one plugin. This
+// is the loader driving it for a session: a publish asks for a device, gets
+// nothing while the plugin opens, and asks again at the next one. What these
+// cases are about is the gap between those two publishes, which is where a
+// project can be edited.
+
+namespace {
+
+/// One external device, the plugin the scan matched it to, and the formats that
+/// can open it. The fixture every case below starts from.
+struct LiveSlot {
+    magda::DeviceInfo model = externalDevice();
+    juce::KnownPluginList known;
+    juce::AudioPluginFormatManager formats;
+
+    LiveSlot() {
+        model.fileOrIdentifier = "stub.plugin";
+        formats.addFormat(std::make_unique<StubFormat>());
+    }
+
+    /// Put @p device's plugin in the scan's results, which is what the loader
+    /// searches. Defaults to this slot's own.
+    void install() {
+        install(model);
+    }
+
+    void install(const magda::DeviceInfo& device) {
+        auto installed = descriptionFor(device);
+        installed.pluginFormatName = "StubFormat";
+        installed.fileOrIdentifier = device.fileOrIdentifier;
+        known.addType(installed);
+    }
+
+    magda::engine::DeviceKey key() const {
+        return keyFor(model);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("An external plugin a live plan names is loaded and handed over",
+          "[engine][external][host]") {
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+
+    std::optional<magda::DeviceInfo> published;
+    host::ExternalPluginLoader loader(
+        [&slot](magda::engine::DeviceKey) { return &slot.model; },
+        [&published](magda::engine::DeviceKey, const magda::DeviceInfo& resolved,
+                     const std::vector<magda::RestoredParameter>&) { published = resolved; });
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+
+    // The publish that asks gets nothing, which is the point: it returns to the
+    // message loop instead of waiting seconds for a plugin to open, and the op
+    // it left unbound passes audio through meanwhile.
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+    CHECK(loader.held() == 0);
+
+    dispatchPendingLoads();
+
+    // The model is corrected before the plan that binds the instance is
+    // compiled: the widths and the MIDI edges come from what the plugin turned
+    // out to be, not from what the project guessed.
+    REQUIRE(published.has_value());
+    CHECK(published->audioOutputChannels == 2);
+    CHECK(loader.held() == 1);
+
+    CHECK(loader.device(slot.key(), slot.model) != nullptr);
+    CHECK(loader.held() == 0);
+}
+
+TEST_CASE("A slot re-registered for the same plugin keeps the load it started",
+          "[engine][external][host]") {
+    // Every publish registers every device in the project, and a project
+    // publishes on every edit. Minting a new assignment each time would expire
+    // the load still running -- so a plugin would never finish loading in a
+    // session anybody was using.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+
+    host::ExternalPluginLoader loader([&slot](magda::engine::DeviceKey) { return &slot.model; },
+                                      [](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                                         const std::vector<magda::RestoredParameter>&) {});
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    for (int again = 0; again < 3; ++again)
+        loader.syncAssignments({{slot.key(), slot.model}});
+
+    dispatchPendingLoads();
+    CHECK(loader.device(slot.key(), slot.model) != nullptr);
+}
+
+TEST_CASE("A slot that changed plugin while loading is not published onto",
+          "[engine][external][host]") {
+    // The identity boundary, from the side that owns it. The answer arrives for
+    // a question the slot has stopped asking, and restoring it would put one
+    // plugin's state onto another.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+
+    auto replaced = slot.model;
+    replaced.name = "Another Stub";
+    replaced.fileOrIdentifier = "another.plugin";
+    slot.install(replaced);
+
+    const magda::DeviceInfo* current = &slot.model;
+    bool published = false;
+    host::ExternalPluginLoader loader(
+        [&current](magda::engine::DeviceKey) { return current; },
+        [&published](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                     const std::vector<magda::RestoredParameter>&) { published = true; });
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    current = &replaced;
+    loader.syncAssignments({{slot.key(), replaced}});
+
+    dispatchPendingLoads();
+    CHECK_FALSE(published);
+    CHECK(loader.held() == 0);
+
+    // And the refusal does not take the slot with it. The load that failed
+    // answered the assignment before this one, so it says nothing about whether
+    // the plugin the slot now names can be opened.
+    CHECK(loader.device(slot.key(), replaced) == nullptr);
+    dispatchPendingLoads();
+
+    CHECK(loader.device(slot.key(), replaced) != nullptr);
+    CHECK(published);
+}
+
+TEST_CASE("A plugin the scan has not found yet is asked about again", "[engine][external][host]") {
+    // A session opens before the scan finishes, and a project loaded then names
+    // plugins nothing has heard of. Nothing was spent finding that out -- no
+    // instance was made -- so the next publish asks again, and the scan
+    // finishing is what changes the answer.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+
+    host::ExternalPluginLoader loader([&slot](magda::engine::DeviceKey) { return &slot.model; },
+                                      [](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                                         const std::vector<magda::RestoredParameter>&) {});
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    slot.install();
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    dispatchPendingLoads();
+    CHECK(loader.device(slot.key(), slot.model) != nullptr);
+}
+
+TEST_CASE("An external device is not reported as one no catalog could build",
+          "[engine][external][host]") {
+    // Two different findings, and one used to read as the other. A device the
+    // app knows and the engine cannot build is a project rendering without part
+    // of itself; an external plugin still opening is a project about to render
+    // with all of it, and naming every one of those buried the first.
+    host::EngineRuntimeFactory factory;
+
+    magda::TrackInfo track;
+    track.id = 1;
+    track.chain.fxChainElements.emplace_back(externalDevice());
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+
+    factory.setModel({track}, master);
+
+    // Null, because no loader is attached: the op stays unbound, which the
+    // executor renders as a pass-through.
+    CHECK(factory.createDevice(keyFor(externalDevice())) == nullptr);
+    CHECK(factory.unbuilt().empty());
 }

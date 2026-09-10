@@ -6,12 +6,15 @@
 #include <atomic>
 #include <ranges>
 
+#include "../../audio/plugin_manager/ExternalPluginState.hpp"
+#include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
+#include "ExternalPluginLoader.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
@@ -20,6 +23,8 @@
 #include "plan/PlanCompiler.hpp"
 
 namespace magda::daw::engine_host {
+
+namespace adapter = magda::daw::audio::engine_adapter;
 
 namespace {
 
@@ -47,7 +52,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::Timer,
                                 private TrackManagerListener,
                                 private ClipManagerListener {
-    Impl() {
+    Impl()
+        : loader_([this](engine::DeviceKey key) { return modelDevice(key); },
+                  [this](engine::DeviceKey key, const DeviceInfo& resolved,
+                         const std::vector<RestoredParameter>& restored) {
+                      applyLoadedDevice(key, resolved, restored);
+                  }) {
+        factory_.loadExternalsWith(loader_);
+
         if (!EngineTrace::enabled())
             return;
 
@@ -97,8 +109,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             std::ranges::count(plan.ops, engine::OpKind::ClipMidi, &engine::PlanOp::kind);
 
         EngineTrace::print("plan: " + juce::String(devices) + " device ops (" +
-                           juce::String(static_cast<int>(unbuilt_.size())) + " unbuilt), " +
-                           juce::String(midi) + " clip-midi ops, " +
+                           juce::String(static_cast<int>(unbuilt_.size())) + " unbuilt, " +
+                           juce::String(static_cast<int>(factory_.loadingExternals())) +
+                           " loading), " + juce::String(midi) + " clip-midi ops, " +
                            juce::String(rendered_.load(std::memory_order_relaxed)) +
                            " callbacks so far");
     }
@@ -308,6 +321,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         context_ = context;
         scratch_.setSize(kChannels, context.maxBlockSize);
 
+        // What a plugin is created at. Everything the store held has gone with
+        // the session, so the publish below asks for each of them again.
+        loader_.setContext(context);
+
         voices_ = std::make_unique<engine::ClipVoicePool>(files_, reader_, context);
         voiceThread_ = std::make_unique<engine::ClipVoiceThread>(*voices_);
 
@@ -396,10 +413,63 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                          automation.getClips());
     }
 
+    /**
+     * @brief The model's own DeviceInfo at @p key, or null.
+     *
+     * Read when it is asked for rather than from the publish's copy: a plugin
+     * load takes seconds, and what the model holds when one finishes is what
+     * its state has to be restored onto. Per track because TrackManager hands
+     * out mutable tracks but not a mutable project.
+     */
+    DeviceInfo* modelDevice(engine::DeviceKey key) {
+        DeviceInfo* found = nullptr;
+
+        TrackManager::getInstance().forEachTrackIncludingMaster([&found, key](TrackInfo& track) {
+            if (found != nullptr)
+                return;
+
+            const auto devices = adapter::devicesIn(track);
+            if (const auto device = devices.find(key); device != devices.end())
+                found = device->second;
+        });
+
+        return found;
+    }
+
+    /**
+     * @brief Write what a plugin turned out to be back into the model.
+     *
+     * The engine never corrects the model itself, so this is where an external
+     * plugin's real bus widths, MIDI capability and role arrive, and the plan
+     * compiles port widths and MIDI edges from exactly those. The parameters
+     * come with them because a chunk is allowed to disagree with the array a
+     * project saved, and everything downstream reads the model.
+     */
+    void applyLoadedDevice(engine::DeviceKey key, const DeviceInfo& resolved,
+                           const std::vector<RestoredParameter>& restored) {
+        auto* device = modelDevice(key);
+        if (device == nullptr)
+            return;
+
+        *device = resolved;
+        applyRestoredParameters(*device, restored);
+
+        // Only the main FX chain has a path to tell: findDevicePath searches
+        // that segment alone, and a DeviceId is section-local, so a post-FX id
+        // would find whichever unrelated device holds the same number there.
+        if (key.segment == ChainSegment::Fx)
+            if (const auto path = TrackManager::getInstance().findDevicePath(key.deviceId);
+                path.isValid())
+                TrackManager::getInstance().notifyDevicePropertyChanged(path);
+
+        // Last, so the plan that binds the loader's instance is compiled from
+        // the model as corrected above.
+        wantPlan();
+    }
+
     /// Devices the model names and no catalog could build. Named rather than
-    /// counted, and only when the set changes: every external plugin is one of
-    /// these until the plugin scan reaches this factory (#2566), and a line per
-    /// publish would bury everything else.
+    /// counted, and only when the set changes: a line per publish would bury
+    /// everything else.
     void reportUnbuiltDevices() {
         if (factory_.unbuilt() == unbuilt_)
             return;
@@ -412,6 +482,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     EngineFileReaders files_;
     engine::PrefetchThread reader_;
     EngineRuntimeFactory factory_;
+
+    /// After the factory, so it is destroyed first: a load still in flight is
+    /// gated on the assignment table this owns, and a table that has gone is a
+    /// load nobody is waiting for.
+    ExternalPluginLoader loader_;
 
     juce::AudioDeviceManager* devices_ = nullptr;
     engine::RenderContext context_{};
@@ -456,6 +531,11 @@ EngineHost::~EngineHost() = default;
 
 void EngineHost::start(juce::AudioDeviceManager& devices) {
     impl_->start(devices);
+}
+
+void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
+                                   const juce::KnownPluginList& knownPlugins) {
+    impl_->loader_.setServices(&formats, &knownPlugins);
 }
 
 void EngineHost::stop() {

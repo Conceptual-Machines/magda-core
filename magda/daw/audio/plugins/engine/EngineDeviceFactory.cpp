@@ -16,21 +16,18 @@ namespace magda::daw::audio::engine_adapter {
 
 namespace {
 
-/// One descent, written once, over whichever constness the caller has.
+/// One track's descent, written once, over whichever constness the caller has.
 ///
 /// A flat stage's elements are devices rather than a tree, so it is walked
 /// directly; flat does not mean padless, and a device carrying pads is
 /// descended into the same way a tree device is.
-template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, Master& master) {
-    using Device =
-        std::conditional_t<std::is_const_v<Master>, const magda::DeviceInfo, magda::DeviceInfo>;
-    std::map<magda::engine::DeviceKey, Device*> devices;
-
+template <typename Track, typename Devices>
+void collectTrackDevices(Track& track, Devices& devices) {
     const auto collectTree = [&devices](auto& elements, const magda::ChainNodePath& parentPath,
                                         magda::ChainSegment segment) {
         magda::chain_walk::forEachDevice(
             elements, parentPath, magda::chain_walk::Pads::Enter,
-            [&devices, segment](Device& device, const magda::ChainNodePath&) {
+            [&devices, segment](auto& device, const magda::ChainNodePath&) {
                 devices[magda::engine::DeviceKey{segment, device.id}] = &device;
             });
     };
@@ -49,17 +46,21 @@ template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, 
         }
     };
 
-    const auto collectTrack = [&](auto& track) {
-        const auto path = magda::ChainNodePath::trackLevel(track.id);
-        collectTree(track.chain.fxChainElements, path, magda::ChainSegment::Fx);
-        collectFlat(track.chain.postFxChainElements, path, magda::ChainSegment::PostFx);
-        collectFlat(track.chain.mixerAnalysisElements, path, magda::ChainSegment::MixerAnalysis);
-    };
+    const auto path = magda::ChainNodePath::trackLevel(track.id);
+    collectTree(track.chain.fxChainElements, path, magda::ChainSegment::Fx);
+    collectFlat(track.chain.postFxChainElements, path, magda::ChainSegment::PostFx);
+    collectFlat(track.chain.mixerAnalysisElements, path, magda::ChainSegment::MixerAnalysis);
+}
+
+template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, Master& master) {
+    using Device =
+        std::conditional_t<std::is_const_v<Master>, const magda::DeviceInfo, magda::DeviceInfo>;
+    std::map<magda::engine::DeviceKey, Device*> devices;
 
     for (auto& track : tracks)
-        collectTrack(track);
+        collectTrackDevices(track, devices);
 
-    collectTrack(master);
+    collectTrackDevices(master, devices);
     return devices;
 }
 
@@ -134,6 +135,16 @@ std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(
 std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
     const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
     return collectDevices(tracks, master);
+}
+
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInfo& track) {
+    std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devices;
+    collectTrackDevices(track, devices);
+    return devices;
+}
+
+bool isExternalDevice(const magda::DeviceInfo& device) {
+    return device.format != magda::PluginFormat::Internal;
 }
 
 /// enableAllBuses first, at the same point the fork does it

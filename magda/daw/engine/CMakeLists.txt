@@ -53,10 +53,12 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineProject.cpp
         host/EngineRuntimeFactory.cpp
         host/EngineTrace.cpp
+        host/ExternalPluginLoader.cpp
         host/EngineHost.hpp
         host/EngineProject.hpp
         host/EngineRuntimeFactory.hpp
         host/EngineTrace.hpp
+        host/ExternalPluginLoader.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)
 

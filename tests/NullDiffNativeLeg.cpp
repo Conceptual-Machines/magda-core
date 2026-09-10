@@ -185,12 +185,6 @@ class ImpulseSynthDevice final : public EngineDevice {
     }
 };
 
-/// Whether @p device is a plugin somebody else shipped, which is the one kind
-/// this leg cannot build from a catalog and has to find on the machine.
-bool isExternalDevice(const magda::DeviceInfo& device) {
-    return device.format != magda::PluginFormat::Internal;
-}
-
 /**
  * @brief Correct every external device against the scan, before the plan reads it.
  *
@@ -213,7 +207,7 @@ std::map<DeviceKey, std::string> resolveExternalDevices(
     std::map<DeviceKey, std::string> identities;
 
     for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
-        if (!isExternalDevice(*device))
+        if (!adapter::isExternalDevice(*device))
             continue;
 
         auto resolved = adapter::resolveEngineExternalPlugin(*device, services);
@@ -277,7 +271,7 @@ std::map<DeviceKey, adapter::ExternalDeviceResult> createExternalDevices(
     std::map<DeviceKey, adapter::ExternalDeviceResult> created;
 
     for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
-        if (!isExternalDevice(*device) || !reached.contains(key))
+        if (!adapter::isExternalDevice(*device) || !reached.contains(key))
             continue;
 
         // Built for an offline render, which is what this leg is; see the
@@ -619,7 +613,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
                     break;
                 }
 
-                if (model != nullptr && isExternalDevice(*model)) {
+                if (model != nullptr && adapter::isExternalDevice(*model)) {
                     // Already made, above, because the plan was compiled from
                     // what the instance turned out to be rather than from what
                     // the project guessed. This binds that instance; a second
