@@ -4,6 +4,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "EngineTrace.hpp"
@@ -93,14 +94,21 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         trace_ = &trace;
     }
 
+    /// Nothing the store holds belongs to the model any more: the project was
+    /// cleared and DeviceIds start from 1 again (#2572). Called at the
+    /// teardown, which the next publish is too late to see.
+    void forgetBuiltDevices();
+
     std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
+    std::set<engine::DeviceKey> devicesToRebuild() override;
     std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
 
   private:
-    std::unique_ptr<engine::EngineDevice> traced(std::unique_ptr<engine::EngineDevice> device);
+    std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
+                                                   std::unique_ptr<engine::EngineDevice> device);
     std::unique_ptr<engine::EngineAudioSource> audioSource(TrackId trackId,
                                                            engine::Section section);
     std::unique_ptr<engine::EngineMidiSource> midiSource(TrackId trackId, engine::Section section);
@@ -110,6 +118,15 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     engine::LaunchHandleFeed* handles_ = nullptr;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
+
+    /// Which device each key's live instance was built from. Kept for a key
+    /// the model drops, since only a publish that succeeded evicts one; that
+    /// is an entry and a short string per DeviceKey ever realised.
+    std::map<engine::DeviceKey, juce::String> built_;
+
+    /// What the next publish must rebuild.
+    std::set<engine::DeviceKey> rebuild_;
+
     std::vector<juce::String> unbuilt_;
     EngineTrace* trace_ = nullptr;
     ExternalPluginLoader* externals_ = nullptr;

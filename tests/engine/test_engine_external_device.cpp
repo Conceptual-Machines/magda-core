@@ -3328,6 +3328,42 @@ TEST_CASE("A slot that changed plugin while loading is not published onto",
     CHECK(published);
 }
 
+TEST_CASE("A load in flight when the project is cleared is not published onto",
+          "[engine][external][host]") {
+    // The same identity boundary from the other direction (#2572): a DeviceKey
+    // survives a project load, so a late answer lands on the slot that
+    // inherited it.
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+
+    bool published = false;
+    host::ExternalPluginLoader loader(
+        [&slot](magda::engine::DeviceKey) { return &slot.model; },
+        [&published](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                     const std::vector<magda::RestoredParameter>&) { published = true; });
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    loader.forgetSlots();
+
+    dispatchPendingLoads();
+    CHECK_FALSE(published);
+    CHECK(loader.held() == 0);
+
+    // And the next project asks for itself rather than inheriting a spent slot.
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+
+    dispatchPendingLoads();
+    CHECK(loader.device(slot.key(), slot.model) != nullptr);
+    CHECK(published);
+}
+
 TEST_CASE("A plugin the scan has not found yet is asked about again", "[engine][external][host]") {
     // A session opens before the scan finishes, and a project loaded then names
     // plugins nothing has heard of. Nothing was spent finding that out -- no

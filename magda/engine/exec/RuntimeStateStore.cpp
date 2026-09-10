@@ -104,6 +104,14 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
+    // Out before anything is realised, so realiseOne() asks the factory again;
+    // kept, because the plan still rendering names them (#2572).
+    for (const auto& key : factory_.devicesToRebuild())
+        if (const auto found = devices_.find(key); found != devices_.end()) {
+            retired_.push_back(std::move(found->second));
+            devices_.erase(found);
+        }
+
     // A context that has changed is the one case where something already
     // playing is touched, and it is only reachable with the audio device
     // stopped: nothing renders at a sample rate it was not prepared for.
@@ -293,6 +301,10 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
     });
 
+    // Not earlier: until the swap they were what the live plan named.
+    removed += retired_.size();
+    retired_.clear();
+
     return removed;
 }
 
@@ -475,9 +487,10 @@ ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
 }
 
 std::size_t RuntimeStateStore::size() const {
-    return devices_.size() + clipAudio_.size() + clipMidi_.size() + sessionAudio_.size() +
-           sessionMidi_.size() + handles_.size() + audioInputs_.size() + midiInputs_.size() +
-           meters_.size() + valueTaps_.size() + takes_.size() + takeTaps_.size();
+    return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
+           sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +
+           midiInputs_.size() + meters_.size() + valueTaps_.size() + takes_.size() +
+           takeTaps_.size();
 }
 
 }  // namespace magda::engine

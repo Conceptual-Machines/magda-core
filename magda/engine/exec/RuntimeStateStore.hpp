@@ -79,6 +79,16 @@ class RuntimeStateFactory {
     }
 
     /**
+     * @brief Keys whose device is no longer the one the store holds (#2572).
+     *
+     * Asked once per publish, before anything is realised. The instance being
+     * replaced stays alive until the swap, since the live plan still names it.
+     */
+    virtual std::set<DeviceKey> devicesToRebuild() {
+        return {};
+    }
+
+    /**
      * @brief The level tap behind one Meter op, or nullptr for one nobody reads.
      *
      * Declining is the ordinary answer, not a failure: a plan has a meter at
@@ -361,6 +371,10 @@ class RuntimeStateStore {
     bool hasContext_ = false;
 
     std::unordered_map<DeviceKey, std::unique_ptr<EngineDevice>, DeviceKeyHash> devices_;
+
+    /// Instances a rebuild took out of devices_, held until releaseDeleted()
+    /// (#2572).
+    std::vector<std::unique_ptr<EngineDevice>> retired_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;

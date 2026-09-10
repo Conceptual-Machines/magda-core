@@ -83,6 +83,10 @@ class ExternalPluginLoader final {
      */
     std::unique_ptr<engine::EngineDevice> device(engine::DeviceKey key, const DeviceInfo& model);
 
+    /// Every slot ends: the project was cleared (#2572). The assignments go
+    /// with them, which expires the loads in flight against their keys.
+    void forgetSlots();
+
     /// How many plugins are loaded and waiting to be bound. For tests.
     std::size_t held() const;
 

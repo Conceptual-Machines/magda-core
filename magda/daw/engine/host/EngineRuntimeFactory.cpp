@@ -1,5 +1,7 @@
 #include "EngineRuntimeFactory.hpp"
 
+#include <utility>
+
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
@@ -7,6 +9,17 @@
 namespace magda::daw::engine_host {
 
 namespace adapter = magda::daw::audio::engine_adapter;
+
+namespace {
+
+/// Which device a slot asks for, as one string. No display name and no role,
+/// so a rename and a load's own correction are not a different device.
+juce::String deviceIdentityOf(const DeviceInfo& device) {
+    return device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
+           device.getFormatString();
+}
+
+}  // namespace
 
 EngineFileReaders::EngineFileReaders() {
     formats_.registerBasicFormats();
@@ -35,11 +48,40 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
 
+    // A slot whose plugin changed since its instance was built (#2572). A key
+    // the model has stopped naming is kept rather than dropped: the store
+    // evicts on a publish that succeeded, and a rejected one leaves it holding
+    // a device this would otherwise have forgotten.
+    for (const auto& [key, identity] : built_) {
+        const auto found = devices_.find(key);
+        if (found != devices_.end() && deviceIdentityOf(found->second) != identity)
+            rebuild_.insert(key);
+    }
+
     // Before anything is asked for, so a device that has changed plugin since
     // the last publish has expired the load it had in flight by the time this
     // publish asks for one.
     if (externals_ != nullptr)
         externals_->syncAssignments(devices_);
+}
+
+void EngineRuntimeFactory::forgetBuiltDevices() {
+    for (const auto& [key, identity] : built_)
+        rebuild_.insert(key);
+
+    built_.clear();
+
+    if (externals_ != nullptr)
+        externals_->forgetSlots();
+}
+
+std::set<engine::DeviceKey> EngineRuntimeFactory::devicesToRebuild() {
+    // So a key the store could not realise this publish -- an external still
+    // opening -- is not asked for again against an instance that has gone.
+    for (const auto& key : rebuild_)
+        built_.erase(key);
+
+    return std::exchange(rebuild_, {});
 }
 
 std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine::DeviceKey key) {
@@ -52,10 +94,11 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     // is not ready: the loader answers null while it opens one, and the store
     // asks again at the next publish (#2566).
     if (adapter::isExternalDevice(found->second))
-        return traced(externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
+        return handOver(key, found->second,
+                        externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
 
     if (auto device = adapter::createEngineDevice(found->second))
-        return traced(std::move(device));
+        return handOver(key, found->second, std::move(device));
 
     // Said out loud once per publish rather than left as silence. A device the
     // app can build and the engine cannot is a project playing without part of
@@ -64,10 +107,16 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     return nullptr;
 }
 
-/// Every device this factory hands over, through the trace when one is on.
-std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::traced(
-    std::unique_ptr<engine::EngineDevice> device) {
-    if (device == nullptr || trace_ == nullptr)
+/// Every device this factory hands over, recorded against the model it came
+/// from and wrapped in the trace when one is on.
+std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
+    engine::DeviceKey key, const DeviceInfo& model, std::unique_ptr<engine::EngineDevice> device) {
+    if (device == nullptr)
+        return nullptr;
+
+    built_[key] = deviceIdentityOf(model);
+
+    if (trace_ == nullptr)
         return device;
 
     return std::make_unique<TracingDevice>(std::move(device), *trace_);
