@@ -1,6 +1,7 @@
 #include "EngineTrace.hpp"
 
 #include <cstdlib>
+#include <iostream>
 
 namespace magda::daw::engine_host {
 
@@ -8,7 +9,7 @@ namespace {
 
 juce::String describe(const EngineTrace::Entry& entry) {
     juce::String line;
-    line << "[trace] block " << juce::String(entry.block) << " beat " << juce::String(entry.beat, 4)
+    line << "block " << juce::String(entry.block) << " beat " << juce::String(entry.beat, 4)
          << "  ";
 
     switch (entry.kind) {
@@ -45,6 +46,10 @@ bool EngineTrace::enabled() {
     return asked;
 }
 
+void EngineTrace::print(const juce::String& line) {
+    std::cerr << "[trace] " << line << std::endl;
+}
+
 void EngineTrace::write(Entry entry) {
     const auto at = written_.load(std::memory_order_relaxed);
 
@@ -65,7 +70,7 @@ juce::StringArray EngineTrace::drain() {
         lines.add(describe(entries_[read_ % kCapacity]));
 
     if (const auto lost = dropped_.exchange(0, std::memory_order_relaxed); lost > 0)
-        lines.add("[trace] " + juce::String(lost) + " entries dropped");
+        lines.add(juce::String(lost) + " entries dropped");
 
     return lines;
 }

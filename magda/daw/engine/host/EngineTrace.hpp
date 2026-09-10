@@ -33,6 +33,15 @@ class EngineTrace {
     /// Whether the environment asked for this. Read once.
     static bool enabled();
 
+    /**
+     * @brief One line of it, in front of whoever switched it on.
+     *
+     * Deliberately not juce::Logger: the app installs a FileLogger at startup,
+     * so everything written through it lands in magda.log and nothing reaches
+     * the terminal the trace was asked for from. A trace is a console tool.
+     */
+    static void print(const juce::String& line);
+
     enum class Kind : std::uint8_t { NoteOn, NoteOff, Publish, Swap };
 
     struct Entry {

@@ -55,16 +55,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // thread, and reading them in order is the whole point.
         factory_.traceInto(trace_);
         startTimer(100);
+        EngineTrace::print("MIDI trace on. Publishes and what reached each device, in order.");
     }
 
     ~Impl() override {
         detach();
     }
 
-    /// The audio thread's side of the trace, on the thread allowed to log it.
+    /// The audio thread's side of the trace, on the thread allowed to print it.
     void timerCallback() override {
         for (const auto& line : trace_.drain())
-            juce::Logger::writeToLog(line);
+            EngineTrace::print(line);
     }
 
     /// Where the transport was when the model moved, in the same stream as the
