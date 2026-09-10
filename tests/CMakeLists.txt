@@ -217,6 +217,7 @@ set(TEST_SOURCES
     automation/test_automation_singleton.cpp
     agents/test_instruction_executor_context.cpp
     # Faust pool refactor (Phase 1: metadata parser)
+    dsp/test_block_math.cpp
     dsp/test_faust_metadata_parser.cpp
     dsp/test_faust_ui_harvester.cpp
     dsp/test_faust_device_layout.cpp

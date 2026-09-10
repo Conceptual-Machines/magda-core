@@ -55,11 +55,9 @@ void MagdaClipperCompiledPlugin::beforeCompute(DeviceProcessContext& context, in
     const int channels = std::min(context.audio->getNumChannels(), engineInputCount(engineIndex));
 
     float peak = 0.0f;
-    for (int channel = 0; channel < channels; ++channel) {
-        const float* samples = context.audio->getReadPointer(channel, context.startSample);
-        for (int i = 0; i < context.numSamples; ++i)
-            peak = std::max(peak, std::fabs(samples[i]));
-    }
+    for (int channel = 0; channel < channels; ++channel)
+        peak = std::max(
+            peak, context.audio->getMagnitude(channel, context.startSample, context.numSamples));
 
     inputPeakDb_.store(20.0f * std::log10(std::max(peak, 1.0e-6f)), std::memory_order_relaxed);
 }

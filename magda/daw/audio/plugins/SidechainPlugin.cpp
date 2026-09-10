@@ -1,5 +1,6 @@
 #include "plugins/SidechainPlugin.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace magda::daw::audio {
@@ -166,31 +167,51 @@ void SidechainPlugin::process(DeviceProcessContext& context) {
     const bool sidesOnly = juce::roundToInt(displayValue(kChannelModeParamIndex)) ==
                                static_cast<int>(ChannelMode::Sides) &&
                            numChannels >= 2;
+    // The gain is a serial recursion, so it stays a scalar loop; writing it out
+    // once lets each channel be walked contiguously below instead of strided,
+    // and takes the loop-invariant sidesOnly branch off the sample path. The
+    // chunk is a fixed stack buffer, so the ramp neither allocates here nor
+    // depends on prepare() having been told a block size.
+    static constexpr int kGainChunk = 256;
+    float gains[kGainChunk];
+
+    const int firstPlainChannel = sidesOnly ? 2 : 0;
     float gain = currentGain_;
-    for (int i = 0; i < numSamples; ++i) {
-        if (rampSamplesLeft_ > 0) {
-            rampValue_ += rampStep_;
-            --rampSamplesLeft_;
-            if (rampSamplesLeft_ == 0)
-                rampValue_ = lastTarget_;  // land exactly, no float drift
+
+    for (int done = 0; done < numSamples;) {
+        const int chunk = std::min(numSamples - done, kGainChunk);
+
+        for (int i = 0; i < chunk; ++i) {
+            if (rampSamplesLeft_ > 0) {
+                rampValue_ += rampStep_;
+                --rampSamplesLeft_;
+                if (rampSamplesLeft_ == 0)
+                    rampValue_ = lastTarget_;  // land exactly, no float drift
+            }
+            // Attack when ducking (gain falling), release when recovering.
+            const float coeff = rampValue_ < gain ? attackCoeff : releaseCoeff;
+            gain += coeff * (rampValue_ - gain);
+            gains[i] = gain;
         }
-        // Attack when ducking (gain falling), release when recovering.
-        const float coeff = rampValue_ < gain ? attackCoeff : releaseCoeff;
-        gain += coeff * (rampValue_ - gain);
+
+        const int chunkOffset = offset + done;
         if (sidesOnly) {
-            const float left = channels[0][offset + i];
-            const float right = channels[1][offset + i];
-            const float mid = 0.5f * (left + right);
-            const float side = 0.5f * (left - right) * gain;
-            channels[0][offset + i] = mid + side;
-            channels[1][offset + i] = mid - side;
-            for (int ch = 2; ch < numChannels; ++ch)
-                channels[ch][offset + i] *= gain;
-        } else {
-            for (int ch = 0; ch < numChannels; ++ch)
-                channels[ch][offset + i] *= gain;
+            float* left = channels[0] + chunkOffset;
+            float* right = channels[1] + chunkOffset;
+            for (int i = 0; i < chunk; ++i) {
+                const float mid = 0.5f * (left[i] + right[i]);
+                const float side = 0.5f * (left[i] - right[i]) * gains[i];
+                left[i] = mid + side;
+                right[i] = mid - side;
+            }
         }
+
+        for (int ch = firstPlainChannel; ch < numChannels; ++ch)
+            juce::FloatVectorOperations::multiply(channels[ch] + chunkOffset, gains, chunk);
+
+        done += chunk;
     }
+
     currentGain_ = gain;
 }
 

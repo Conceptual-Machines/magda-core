@@ -9,6 +9,7 @@
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
+#include "../BlockMath.hpp"
 #include "../PluginWindowBridge.hpp"
 #include "../TrackController.hpp"
 #include "../TracktionHelpers.hpp"
@@ -511,9 +512,7 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
     // (so each can track a different part of the spectrum), then take the peak
     // and stream it to the follower's envelope DSP.
     const int n = std::min(numSamples, static_cast<int>(followerScratch_.size()));
-    float rawPeak = 0.0f;
-    for (int s = 0; s < n; ++s)
-        rawPeak = std::max(rawPeak, std::abs(mono[s]));
+    const float rawPeak = peakMagnitude(mono, n);
 
     static std::atomic<int> pushLogThrottle{0};
     const bool logThisBlock = (pushLogThrottle.fetch_add(1, std::memory_order_relaxed) % 100) == 0;
@@ -534,16 +533,15 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
 
         float peak = 0.0f;
         if (!slot.hpEnabled && !slot.lpEnabled) {
-            for (int s = 0; s < n; ++s)
-                peak = std::max(peak, std::abs(mono[s] * slot.gain));
+            // Scaling by a constant is monotone in magnitude, so the peak of
+            // the scaled block is the scaled peak: no second pass.
+            peak = rawPeak * std::abs(slot.gain);
         } else {
             float* work = followerScratch_.data();
-            if (slot.gain == 1.0f) {
+            if (slot.gain == 1.0f)
                 std::copy(mono, mono + n, work);
-            } else {
-                for (int s = 0; s < n; ++s)
-                    work[s] = mono[s] * slot.gain;
-            }
+            else
+                juce::FloatVectorOperations::copyWithMultiply(work, mono, slot.gain, n);
 
             if (slot.hpEnabled) {
                 if (slot.curHpFreq != slot.hpFreq) {
@@ -562,9 +560,7 @@ void PluginManager::pushFollowerSourceBuffer(TrackId sourceTrackId, const float*
                 slot.lp.process(work, n);
             }
 
-            peak = 0.0f;
-            for (int s = 0; s < n; ++s)
-                peak = std::max(peak, std::abs(work[s]));
+            peak = peakMagnitude(work, n);
         }
 
         const float outBefore = slot.mod->getCurrentValue();
