@@ -310,10 +310,33 @@ class ClipSynchronizer : public ClipManagerListener, public TrackManagerListener
      * @param clipId The MAGDA clip ID
      * @param clip The ClipInfo from ClipManager
      *
-     * Handles position, speed, tempo sync, loop, offset, pitch, fades, etc.
-     * Complex logic for beat-based vs. time-based properties
+     * Creates the TE clip if needed, then walks the properties in the order
+     * Tracktion requires.
      */
     bool syncAudioClipToEngine(ClipId clipId, const ClipInfo* clip);
+
+    /**
+     * @brief The TE clip already standing for @p clipId, if one still is.
+     *
+     * `discarded` says a stale, moved or source-changed clip was removed. The
+     * graph needs rebuilding for that whether or not a new clip replaces it.
+     */
+    struct ExistingTeClip {
+        tracktion::WaveAudioClip* clip = nullptr;
+        bool discarded = false;
+    };
+
+    ExistingTeClip findOrDiscardTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
+                                       const ClipInfo& clip);
+
+    /// Null when the model names no file, the file is missing, or Tracktion
+    /// refused the insert. Each is reported.
+    tracktion::WaveAudioClip* createTeClip(ClipId clipId, tracktion::AudioTrack& audioTrack,
+                                           const ClipInfo& clip);
+
+    /// Hand the reverse flag over and let Tracktion own the mirrored offset and
+    /// loop range. Defers the graph rebuild until the proxy is playable.
+    void applyReverse(ClipId clipId, tracktion::WaveAudioClip& teClip, const ClipInfo& clip);
 
     /**
      * @brief Re-attach loop-record takes onto a freshly built TE clip.
