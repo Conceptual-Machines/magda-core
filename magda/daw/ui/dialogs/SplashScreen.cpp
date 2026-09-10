@@ -2,6 +2,7 @@
 
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "magda.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -105,11 +106,16 @@ class SplashScreen::ContentComponent : public juce::Component {
         g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
                    juce::Justification::centred);
 
-        // Version
+        // Version, and the engine beside it once there is one and it is not the
+        // default: a report from the native engine says so from the first
+        // thing on screen, and every other splash reads as it always did.
+        auto versionText = tr("splash.version_prefix") + MAGDA_VERSION;
+        if (engineName_.isNotEmpty() && engineName_ != nameOf(AudioEngineChoice::Tracktion))
+            versionText << " (" << engineName_ << ")";
+
         g.setFont(fm.getUIFont(12.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.drawText(tr("splash.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
-                   juce::Justification::centred);
+        g.drawText(versionText, bounds.removeFromTop(20), juce::Justification::centred);
 
         // Status text
         bounds.removeFromTop(4);
@@ -212,6 +218,11 @@ class SplashScreen::ContentComponent : public juce::Component {
         repaint();
     }
 
+    void setEngine(const juce::String& engineName) {
+        engineName_ = engineName;
+        repaint();
+    }
+
     void mouseDown(const juce::MouseEvent& e) override {
         if (badgeBounds_.contains(e.getPosition()))
             kConceptualMachinesUrl.launchInDefaultBrowser();
@@ -225,6 +236,7 @@ class SplashScreen::ContentComponent : public juce::Component {
     std::unique_ptr<juce::Drawable> faustLogo_;
     juce::Rectangle<int> badgeBounds_;
     juce::String statusText_;
+    juce::String engineName_;
 };
 
 // =============================================================================
@@ -249,6 +261,11 @@ void SplashScreen::lookAndFeelChanged() {
 
 void SplashScreen::dismiss() {
     setVisible(false);
+}
+
+void SplashScreen::setEngine(const juce::String& engineName) {
+    if (auto* content = dynamic_cast<ContentComponent*>(getContentComponent()))
+        content->setEngine(engineName);
 }
 
 void SplashScreen::setStatus(const juce::String& text) {

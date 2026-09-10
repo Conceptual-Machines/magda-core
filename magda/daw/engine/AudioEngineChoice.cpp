@@ -4,18 +4,33 @@
 
 #include <cstdlib>
 
+#include "../core/Config.hpp"
+
 namespace magda {
 
 AudioEngineChoice chosenAudioEngine() {
-    if (const auto* value = std::getenv("MAGDA_AUDIO_ENGINE")) {
-        const auto asked = juce::String(value).trim().toLowerCase();
-        if (asked == "magda")
-            return AudioEngineChoice::Magda;
-        if (asked == "tracktion")
-            return AudioEngineChoice::Tracktion;
-    }
+    // The variable on top of the setting, so "does it still happen on the other
+    // engine" is answered by one run rather than by changing somebody's
+    // preferences (#2559).
+    if (const auto* value = std::getenv("MAGDA_AUDIO_ENGINE"))
+        if (const auto asked = parseAudioEngine(value))
+            return *asked;
 
-    return AudioEngineChoice::Tracktion;
+    return parseAudioEngine(Config::getInstance().getAudioEngine())
+        .value_or(AudioEngineChoice::Tracktion);
+}
+
+const char* settingWordFor(AudioEngineChoice choice) {
+    return choice == AudioEngineChoice::Magda ? "magda" : "tracktion";
+}
+
+std::optional<AudioEngineChoice> parseAudioEngine(const juce::String& word) {
+    const auto asked = word.trim().toLowerCase();
+    if (asked == settingWordFor(AudioEngineChoice::Magda))
+        return AudioEngineChoice::Magda;
+    if (asked == settingWordFor(AudioEngineChoice::Tracktion))
+        return AudioEngineChoice::Tracktion;
+    return std::nullopt;
 }
 
 const char* nameOf(AudioEngineChoice choice) {

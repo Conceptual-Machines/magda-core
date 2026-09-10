@@ -972,7 +972,10 @@ void MainWindow::setupMenuCallbacks() {
         });
     };
 
-    callbacks.onAbout = []() { AboutDialog::show(); };
+    callbacks.onAbout = [this]() {
+        auto* engine = mainComponent ? mainComponent->getAudioEngine() : nullptr;
+        AboutDialog::show(engine != nullptr ? engine->engineName() : juce::String());
+    };
 
     // Settings menu callbacks
     callbacks.onControllerSettings = [this]() { ControllersDialog::showDialog(this); };

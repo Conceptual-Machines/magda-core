@@ -3,6 +3,7 @@
 #include <memory>
 
 #include "AudioEngine.hpp"
+#include "AudioEngineChoice.hpp"
 
 namespace magda::daw::engine_host {
 class EngineHost;
@@ -75,6 +76,10 @@ class MagdaAudioEngine final : public AudioEngine {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
+
+    juce::String engineName() const override {
+        return nameOf(AudioEngineChoice::Magda);
+    }
 
     bool initialize() override;
     void shutdown() override;

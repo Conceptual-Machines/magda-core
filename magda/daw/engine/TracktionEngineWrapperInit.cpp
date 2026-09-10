@@ -38,6 +38,13 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
 }
 
 std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    // The setting is read before either engine exists to read it: the config is
+    // otherwise loaded inside initialize(), which runs after this call has
+    // already chosen (#2559). Loading it here rather than moving that call
+    // leaves every other caller of initialize() alone, and load() only reads
+    // the file into fields.
+    Config::getInstance().load();
+
     const auto choice = chosenAudioEngine();
 
     // Out loud, once, wherever an engine is built. Which one a session ran on

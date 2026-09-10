@@ -181,6 +181,9 @@ set(TEST_SOURCES
     TestConfigRedirect.cpp
     project/test_config_path_redirect.cpp
     # Keyboard clip nudging (#1957)
+    # Which engine a run comes up on (#2559): the variable, the setting, and the
+    # order between them.
+    engine/test_audio_engine_choice.cpp
     clips/test_clip_nudge.cpp
     # The MPE pitch glide's curve (#2198): the shape the piano roll draws, the
     # compiler compiles and the Tracktion bridge hands over, and the inverse the

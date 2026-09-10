@@ -3,6 +3,7 @@
 #include "BinaryData.h"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "magda.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -20,7 +21,7 @@ const juce::String kConceptualMachinesCopyright("(C) 2026 Conceptual Machines");
 
 class AboutDialog::ContentComponent : public juce::Component {
   public:
-    ContentComponent() {
+    explicit ContentComponent(juce::String engineName) : engineName_(std::move(engineName)) {
         // Load the SVG logo
         if (auto xml = juce::XmlDocument::parse(
                 juce::String::fromUTF8(BinaryData::magdalisa_svg, BinaryData::magdalisa_svgSize))) {
@@ -113,11 +114,16 @@ class AboutDialog::ContentComponent : public juce::Component {
         g.drawText("Multi-Agent Digital Audio", bounds.removeFromTop(24),
                    juce::Justification::centred);
 
-        // Version
+        // Version, and the engine beside it only where it is not the default
+        // one: a report from somebody running the native engine says which, and
+        // every other about box reads as it always did (#2559).
+        auto versionText = tr("about.version_prefix") + MAGDA_VERSION;
+        if (engineName_.isNotEmpty() && engineName_ != nameOf(AudioEngineChoice::Tracktion))
+            versionText << " (" << engineName_ << ")";
+
         g.setFont(fm.getUIFont(12.0f));
         g.setColour(DarkTheme::getColour(DarkTheme::TEXT_DIM));
-        g.drawText(tr("about.version_prefix") + MAGDA_VERSION, bounds.removeFromTop(20),
-                   juce::Justification::centred);
+        g.drawText(versionText, bounds.removeFromTop(20), juce::Justification::centred);
 
         // Credits line
         bounds.removeFromTop(10);
@@ -243,6 +249,7 @@ class AboutDialog::ContentComponent : public juce::Component {
     }
 
   private:
+    const juce::String engineName_;
     std::unique_ptr<juce::Drawable> logo_;
     std::unique_ptr<juce::Drawable> conceptualMachinesBadge_;
     std::unique_ptr<juce::Drawable> teLogo_;
@@ -256,11 +263,11 @@ class AboutDialog::ContentComponent : public juce::Component {
 // AboutDialog
 // =============================================================================
 
-AboutDialog::AboutDialog()
+AboutDialog::AboutDialog(juce::String engineName)
     : DialogWindow(tr("dialogs.about")
                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
                    DarkTheme::getColour(DarkTheme::PANEL_BACKGROUND), true) {
-    setContentOwned(new ContentComponent(), true);
+    setContentOwned(new ContentComponent(std::move(engineName)), true);
     setUsingNativeTitleBar(false);
     setResizable(false, false);
     centreWithSize(getWidth(), getHeight());
@@ -271,8 +278,8 @@ void AboutDialog::closeButtonPressed() {
     delete this;
 }
 
-void AboutDialog::show() {
-    auto* dialog = new AboutDialog();
+void AboutDialog::show(juce::String engineName) {
+    auto* dialog = new AboutDialog(std::move(engineName));
     dialog->setVisible(true);
     dialog->toFront(true);
 }

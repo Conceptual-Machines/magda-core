@@ -303,6 +303,12 @@ class MagdaDAWApplication : public JUCEApplication {
         // wired: this is the site the app actually takes.
         daw_engine_ = magda::createDefaultAudioEngine();
 
+        // Named on the splash as soon as there is one, from the engine itself
+        // rather than from the setting, which takes a restart to mean anything
+        // (#2559).
+        if (splashScreen_ && daw_engine_)
+            splashScreen_->setEngine(daw_engine_->engineName());
+
         // Show plugin scan status on splash screen
         daw_engine_->setPluginScanStatusCallback([this](const juce::String& status) {
             if (splashScreen_)

@@ -82,6 +82,7 @@ class AudioSettingsDialog : public juce::Component,
     void onOutputDeviceSelected();
     void enableAllChannelsOnCurrentDevice();
     void savePreferencesIfNeeded();
+    void onAudioEngineSelected();
 
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
@@ -95,6 +96,12 @@ class AudioSettingsDialog : public juce::Component,
     juce::ProgressBar deviceRefreshSpinner_;
     juce::Label deviceRefreshLabel_;
     juce::ToggleButton setAsPreferredCheckbox_;
+
+    // Which engine renders. Here because it is an audio-device-level choice and
+    // this is where a user already comes to change one (#2559).
+    juce::Label engineLabel_;
+    juce::ComboBox engineComboBox_;
+    juce::Label engineRestartLabel_;
 
     juce::TextButton closeButton_;
     juce::Label deviceNameLabel_;
