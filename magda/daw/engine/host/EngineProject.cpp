@@ -1,9 +1,7 @@
 #include "EngineProject.hpp"
 
-#include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SourcePool.hpp"
-#include "../../core/TrackManager.hpp"
 
 namespace magda::daw::engine_host {
 
@@ -48,17 +46,6 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator) {
                                 .numerator = numerator,
                                 .denominator = denominator,
                             }});
-}
-
-bool modelHoldsNoDevices() {
-    const auto& tracks = TrackManager::getInstance().getTracks();
-
-    // First, so the walk only happens in the state that can answer yes.
-    if (!tracks.empty())
-        return false;
-
-    const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
-    return master == nullptr || audio::engine_adapter::devicesIn(tracks, *master).empty();
 }
 
 }  // namespace magda::daw::engine_host

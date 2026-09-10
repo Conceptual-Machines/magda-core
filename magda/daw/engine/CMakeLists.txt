@@ -67,6 +67,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/magda/daw
         ${CMAKE_SOURCE_DIR}/magda/daw/audio
+        # ProjectInfo.hpp reaches the configured version.hpp, and the host
+        # follows the project lifecycle (#2576).
+        ${CMAKE_BINARY_DIR}/magda/daw/generated
     )
 
     # magda_engine is added after magda/daw, so this names it before it exists.

@@ -21,6 +21,17 @@ class ProjectManagerListener {
     virtual ~ProjectManagerListener() = default;
 
     /**
+     * @brief Called when the current project's runtime is over
+     *
+     * Fired by every path that replaces the project - load, import, new,
+     * close - after the transport has stopped and before the model is
+     * cleared. A listener that has to drop what it built for the outgoing
+     * project does it here rather than inferring the gap from an empty model
+     * (#2576).
+     */
+    virtual void projectTeardown() {}
+
+    /**
      * @brief Called when a project is opened or created
      */
     virtual void projectOpened(const ProjectInfo& info) {
@@ -361,6 +372,12 @@ class ProjectManager {
     void endUndoableMutation();
     void setUndoHistoryDirty(bool dirty);
     void refreshDirtyState();
+
+    /// Stop the transport and declare the current project's runtime over.
+    /// Every path that replaces the project goes through here, before it
+    /// clears the model.
+    void beginProjectTeardown();
+
     void notifyProjectOpened();
     void notifyProjectSaved();
     void notifyProjectClosed();

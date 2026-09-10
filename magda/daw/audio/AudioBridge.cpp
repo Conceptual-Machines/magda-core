@@ -159,6 +159,7 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
 
     // Register as TrackManager listener
     TrackManager::getInstance().addListener(this);
+    ProjectManager::getInstance().addListener(this);
 
     // Hook into ModulatorEngine's per-tick callback so that after the visual
     // sim updates each ModInfo, we overlay TE's authoritative LFO phase +
@@ -204,6 +205,7 @@ AudioBridge::~AudioBridge() {
         stopTimer();
 
         // Now safe to remove listeners as timer is stopped and shutdown flag is set
+        ProjectManager::getInstance().removeListener(this);
         TrackManager::getInstance().removeListener(this);
         // Note: ClipManager listener removed by ClipSynchronizer destructor
 
@@ -291,6 +293,24 @@ void AudioBridge::resetTestState() {
     automationPlayback_.clearAllLanes();
     trackController_.clearAllMappings();
     pluginManager_.clearAllMappings();
+}
+
+// =============================================================================
+// ProjectManagerListener implementation
+// =============================================================================
+
+/**
+ * @brief Drop the TE tracks and plugins the outgoing project was synced into
+ *
+ * The plugin sync is additive and keyed by chain path, and ids restart at 1 in
+ * every project: a device left mapped is one the next sync skips creating, and
+ * it becomes a husk with no editor and no processing.
+ */
+void AudioBridge::projectTeardown() {
+    for (auto trackId : trackController_.getAllTrackIds()) {
+        pluginManager_.cleanupTrackPlugins(trackId);
+        trackController_.removeAudioTrack(trackId);
+    }
 }
 
 // =============================================================================

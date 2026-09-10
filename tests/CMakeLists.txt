@@ -114,6 +114,7 @@ set(TEST_SOURCES
     project/test_project_document_adapters.cpp
     # Unsaved-changes tracking across the undo stack and project boundaries
     project/test_project_dirty_tracking.cpp
+    project/test_project_teardown.cpp
     clips/test_session_clip_playback.cpp
     devices/test_sidechain_triggers.cpp
     devices/test_sidechain_device.cpp
