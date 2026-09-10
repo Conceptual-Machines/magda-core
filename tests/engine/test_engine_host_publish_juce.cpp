@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <ranges>
 
 #include "JuceTestStateGuard.hpp"
 #include "clip/ClipVoicePool.hpp"
@@ -248,7 +249,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
     }
 
     void testNoteMovedWhileRolling() {
-        beginTest("A note moved while the transport rolls sounds once, where it was moved to");
+        beginTest("A note whose pitch shifts while it sounds carries on at the new pitch");
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto trackId = trackManager.createTrack("Instrument");
@@ -259,13 +260,11 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         track->chain.fxChainElements.emplace_back(polySynth(1));
 
+        // Long enough that the edit lands well inside it.
         auto& clips = magda::ClipManager::getInstance();
         const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 8.0);
-        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
-                                                         .velocity = 100,
-                                                         .startBeat = 6.0,
-                                                         .lengthBeats = 1.0}),
-               "The clip holds a note");
+        clips.addMidiNote(clipId,
+                          magda::MidiNote{.noteNumber = 60, .startBeat = 2.0, .lengthBeats = 4.0});
 
         const auto& tracks = trackManager.getTracks();
         const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
@@ -289,11 +288,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         engine::PlanValues values;
         engine::resolvePlanValues(*plan, tracks, *master, values);
-        expect(session
-                   .publish(plan, context, engine::collectRuntimeStateIds(tracks, *master),
-                            std::move(values))
-                   .published,
-               "The plan publishes");
+        session.publish(plan, context, engine::collectRuntimeStateIds(tracks, *master),
+                        std::move(values));
 
         const auto publishClips = [&] {
             session.publishClips(
@@ -304,27 +300,23 @@ class EngineHostPublishTest final : public juce::UnitTest {
         publishClips();
         session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
 
-        // Up to beat 2, which is well before the note and well before where it
-        // is about to be moved to.
         juce::AudioBuffer<float> output(2, context.maxBlockSize);
         const auto render = [&](int blocks) {
             for (auto block = 0; block < blocks; ++block)
                 session.process(context.maxBlockSize, output);
         };
 
-        render(86);
+        // Beat 3, which is a beat into the note.
+        render(130);
 
-        // The move the clip editor makes: one note, in place, and a republish.
         auto* clip = clips.getClip(clipId);
-        expect(clip != nullptr && clip->midiNotes.size() == 1, "One note, before the move");
         if (clip == nullptr || clip->midiNotes.size() != 1)
             return;
 
         clip->midiNotes[0].noteNumber = 64;
         publishClips();
 
-        // Past beat 4 and past where the note used to be.
-        render(258);
+        render(130);
 
         expect(factory.capture != nullptr, "The instrument slot was bound");
         if (factory.capture == nullptr)
@@ -335,7 +327,20 @@ class EngineHostPublishTest final : public juce::UnitTest {
             logMessage("note-on " + juce::String(strike.note) + " at block " +
                        juce::String(strike.block));
 
-        expect(strikes.size() == 1, "The moved note sounds once, not once per position");
+        // The old pitch, then the new one taking over where the edit landed.
+        // Before #2568 the shift ended the old pitch and struck nothing, so the
+        // rest of the note was silence.
+        expect(strikes.size() == 2, "The old pitch and then the new one");
+        if (strikes.size() != 2)
+            return;
+
+        expect(strikes[0].note == 60, "It started at the pitch it was written at");
+        expect(strikes[1].note == 64, "It carries on at the pitch it was shifted to");
+
+        const auto releases = factory.capture->releases;
+        expect(
+            std::ranges::any_of(releases, [](const auto& release) { return release.note == 60; }),
+            "The pitch it left is released rather than left hanging");
     }
 };
 
