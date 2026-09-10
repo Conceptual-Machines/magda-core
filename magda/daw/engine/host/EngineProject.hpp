@@ -39,8 +39,4 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
 /// What the length of a project is with no Edit to ask (#2579).
 double projectEndBeat();
 
-/// Whether the model names a device anywhere, master included. What a project
-/// teardown looks like while it is happening, until one is declared (#2576).
-bool modelHoldsNoDevices();
-
 }  // namespace magda::daw::engine_host

@@ -15,6 +15,7 @@
 #include "../../core/ClipManager.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
@@ -95,7 +96,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::AsyncUpdater,
                                 private juce::Timer,
                                 private TrackManagerListener,
-                                private ClipManagerListener {
+                                private ClipManagerListener,
+                                private ProjectManagerListener {
     Impl()
         : loader_([this](engine::DeviceKey key) { return modelDevice(key); },
                   [this](engine::DeviceKey key, const DeviceInfo& resolved,
@@ -221,6 +223,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_ = &devices;
         TrackManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
+        ProjectManager::getInstance().addListener(this);
         devices_->addAudioCallback(this);
     }
 
@@ -232,6 +235,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // through, and removeAudioCallback returns only once the audio thread
         // is out of here.
         devices_->removeAudioCallback(this);
+        ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
         TrackManager::getInstance().removeListener(this);
         devices_ = nullptr;
@@ -328,13 +332,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     // ===== Following the model =====
 
-    void tracksChanged() override {
-        // Inferred, because nothing declares a teardown (#2576): the publish
-        // this schedules is coalesced, and the next project is loaded before
-        // it runs (#2572).
-        if (modelHoldsNoDevices())
-            factory_.forgetBuiltDevices();
+    /// Nothing the store holds outlives the project it was built for: track
+    /// and device ids restart at 1 in the next one, so its keys would collide
+    /// with devices that are already gone (#2572).
+    void projectTeardown() override {
+        factory_.forgetBuiltDevices();
+    }
 
+    void tracksChanged() override {
         wantPlan();
     }
     void trackDevicesChanged(TrackId) override {
