@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <ranges>
 
@@ -18,6 +19,7 @@
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
 #include "magda/daw/engine/host/EngineTrace.hpp"
+#include "magda/daw/engine/host/LiveMidiSources.hpp"
 #include "plan/PlanCompiler.hpp"
 
 /**
@@ -114,8 +116,9 @@ class NoteCapture final : public engine::EngineDevice {
 class CapturingFactory final : public engine::RuntimeStateFactory {
   public:
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                engine::LaunchHandleFeed& handles) {
-        inner_.attach(clips, streams, handles);
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
+                host::LiveMidiSources& sources) {
+        inner_.attach(clips, streams, handles, liveInputs, sources);
     }
 
     void setModel(const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
@@ -163,6 +166,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testDroppedKeyIsStillRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testMetersReadWhatWasRendered(); });
+        magda::test::runWithCleanJuceState([this] { testAuditionReachesAnIdleTrack(); });
+        magda::test::runWithCleanJuceState([this] { testDeviceMidiReachesOnlyItsOwnTrack(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
     }
 
@@ -222,6 +227,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         host::EngineFileReaders files;
         magda::engine::PrefetchThread reader(false);
+        host::LiveMidiSources sources;
         host::EngineRuntimeFactory factory;
         factory.setModel(tracks, *master);
 
@@ -233,7 +239,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
-        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -298,12 +305,14 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         host::EngineFileReaders files;
         engine::PrefetchThread reader(false);
+        host::LiveMidiSources sources;
         CapturingFactory factory;
         factory.setModel(tracks, *master);
 
         engine::ClipVoicePool voices(files, reader, context);
         engine::EngineSession session(factory, nullptr, &voices);
-        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
 
         const auto plan =
             std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
@@ -458,12 +467,14 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         host::EngineFileReaders files;
         magda::engine::PrefetchThread reader(false);
+        host::LiveMidiSources sources;
         host::EngineRuntimeFactory factory;
         factory.setModel(tracks, *master);
 
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
-        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -499,6 +510,155 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // Destructive, which is what stops the frame rate deciding how much of
         // the signal a meter ever sees.
         expect(trackTap->read().loudest() == 0.0f, "A second read takes nothing twice");
+    }
+
+    /// A track with a Poly Synth on it, which is the shortest path from a note
+    /// to a level. DeviceIds are unique within a section across the whole
+    /// project, so two tracks cannot share one.
+    static magda::TrackId synthTrack(const juce::String& name, magda::DeviceId deviceId,
+                                     magda::InputMonitorMode monitor,
+                                     const juce::String& midiInput) {
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack(name);
+        auto* track = trackManager.getTrack(trackId);
+        if (track == nullptr)
+            return magda::INVALID_TRACK_ID;
+
+        track->chain.fxChainElements.emplace_back(polySynth(deviceId));
+        track->inputMonitor = monitor;
+        track->midiInputDevice = midiInput;
+        return trackId;
+    }
+
+    static juce::MidiBuffer noteOn(int note) {
+        juce::MidiBuffer buffer;
+        buffer.addEvent(juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(100)), 0);
+        return buffer;
+    }
+
+    void testAuditionReachesAnIdleTrack() {
+        beginTest("A preview sounds on a track that is monitoring nothing");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(trackId != magda::INVALID_TRACK_ID && master != nullptr,
+               "The track and the master exist");
+        if (trackId == magda::INVALID_TRACK_ID || master == nullptr)
+            return;
+
+        const auto& tracks = trackManager.getTracks();
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+        host::LiveMidiSources sources;
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
+        session.liveInputs().prepare(0, context.maxBlockSize);
+
+        // Without the option the track is neither armed nor monitoring, so
+        // there is no input op for the preview to reach (#2579).
+        const auto plan = std::make_shared<const magda::engine::RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, *master, {.auditionMidi = true}));
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan is published");
+
+        const auto played = noteOn(60);
+        const std::array<magda::engine::LiveMidiStream, 1> streams{
+            magda::engine::LiveMidiStream{sources.auditionSourceFor(trackId), &played}};
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        session.process(context.maxBlockSize, output, {{}, streams});
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        auto* trackTap = session.meterTap(magda::engine::trackMeterKey(trackId));
+        auto* masterTap = session.meterTap(magda::engine::trackMeterKey(magda::MASTER_TRACK_ID));
+        expect(trackTap != nullptr && masterTap != nullptr, "Both meters are bound");
+        if (trackTap == nullptr || masterTap == nullptr)
+            return;
+
+        expect(trackTap->read().loudest() > 0.0f, "The note played on the track sounded");
+        expect(masterTap->read().loudest() > 0.0f, "And the master heard it");
+    }
+
+    void testDeviceMidiReachesOnlyItsOwnTrack() {
+        beginTest("A device's live MIDI sounds on the track routed to it and on no other");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto routed = synthTrack("Monitoring", 1, magda::InputMonitorMode::In, "all");
+        const auto idle = synthTrack("Idle", 2, magda::InputMonitorMode::Off, {});
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(routed != magda::INVALID_TRACK_ID && idle != magda::INVALID_TRACK_ID &&
+                   master != nullptr,
+               "Both tracks and the master exist");
+        if (routed == magda::INVALID_TRACK_ID || idle == magda::INVALID_TRACK_ID ||
+            master == nullptr)
+            return;
+
+        const auto& tracks = trackManager.getTracks();
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+
+        // Registered before the publish, which is what an "all" route resolves
+        // against.
+        host::LiveMidiSources sources;
+        const auto device = sources.sourceFor("test-device");
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
+        session.liveInputs().prepare(0, context.maxBlockSize);
+
+        const auto plan = std::make_shared<const magda::engine::RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, *master, {.auditionMidi = true}));
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan is published");
+
+        const auto played = noteOn(60);
+        const std::array<magda::engine::LiveMidiStream, 1> streams{
+            magda::engine::LiveMidiStream{device, &played}};
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        session.process(context.maxBlockSize, output, {{}, streams});
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        auto* routedTap = session.meterTap(magda::engine::trackMeterKey(routed));
+        auto* idleTap = session.meterTap(magda::engine::trackMeterKey(idle));
+        expect(routedTap != nullptr && idleTap != nullptr, "Both meters are bound");
+        if (routedTap == nullptr || idleTap == nullptr)
+            return;
+
+        expect(routedTap->read().loudest() > 0.0f, "The track routed to the device heard it");
+
+        // The audition op every track now carries reads its own source alone;
+        // kAnyLiveMidiSource here would have merged the two.
+        expect(idleTap->read().loudest() == 0.0f, "The track monitoring nothing did not");
     }
 
     void testOnlyTrackMetersAreTapped() {

@@ -9,12 +9,14 @@
 
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
+#include "LiveMidiSources.hpp"
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/AudioFileReader.hpp"
+#include "io/LiveInput.hpp"
 #include "launch/SessionLauncher.hpp"
 
 /**
@@ -53,10 +55,12 @@ class EngineFileReaders final : public engine::AudioFileReaderFactory {
  */
 class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
   public:
-    /// The feeds every source it makes will read. Once, before the first
-    /// publish; all three outlive every source bound into any plan.
+    /// The feeds every source it makes will read, and the registry a live
+    /// route resolves through. Once, before the first publish; all of them
+    /// outlive every source bound into any plan.
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                engine::LaunchHandleFeed& handles);
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
+                LiveMidiSources& sources);
 
     /**
      * @brief What the model holds now, for the publish about to happen.
@@ -107,7 +111,22 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
 
+    /// The track's audition, and the devices its route names. createAudioInput
+    /// is deliberately left unoverridden: live audio is #2553's.
+    std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
+
   private:
+    /// What a track's MIDI input op resolves through, as the model held it at
+    /// the last setModel().
+    struct MidiRoute {
+        juce::String device;
+        bool monitors = false;
+    };
+
+    /// The device sources @p route names, resolved here rather than in
+    /// render(): this runs on the publishing thread.
+    std::vector<engine::LiveMidiSourceId> routedSources(const MidiRoute& route);
+
     std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
                                                    std::unique_ptr<engine::EngineDevice> device);
     std::unique_ptr<engine::EngineAudioSource> audioSource(TrackId trackId,
@@ -117,6 +136,10 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     engine::ClipSnapshotFeed* clips_ = nullptr;
     engine::ClipStreamFeed* streams_ = nullptr;
     engine::LaunchHandleFeed* handles_ = nullptr;
+    const engine::LiveInputFeed* liveInputs_ = nullptr;
+    LiveMidiSources* sources_ = nullptr;
+
+    std::map<TrackId, MidiRoute> midiRoutes_;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
 

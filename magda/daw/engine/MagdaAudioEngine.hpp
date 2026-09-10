@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "../audio/MidiBridge.hpp"
+#include "../audio/TrackMeters.hpp"
 #include "AudioEngine.hpp"
 #include "AudioEngineChoice.hpp"
 
@@ -10,8 +12,9 @@ class EngineHost;
 }
 
 namespace magda {
+class MagdaApiLive;
 class TracktionEngineWrapper;
-}
+}  // namespace magda
 
 /**
  * @file MagdaAudioEngine.hpp
@@ -29,10 +32,10 @@ class TracktionEngineWrapper;
  *
  * ## What magda::engine answers, and what is still the fork's
  *
- * Transport, tempo, loop and metronome are published to an EngineSession and
- * rendered from the audio device callback: what fills the output buffer is
- * magda::engine and nothing else. The tempo *model* is still the fork's, since
- * the app has no tempo track of its own, so a tempo edit reaches both.
+ * Transport, tempo, loop and metronome are held here, published to an
+ * EngineSession and rendered from the audio device callback: what fills the
+ * output buffer is magda::engine and nothing else, and what the ruler converts
+ * through is the map it renders with. Tempo automation is #2554.
  *
  * Recording, session launch and offline render are not wired yet (#2552,
  * #2553, #2555) and say so once in the log rather than answering silently.
@@ -40,10 +43,10 @@ class TracktionEngineWrapper;
  * ## Why it holds a Tracktion engine
  *
  * AudioEngine is 80 pure virtuals and roughly 25 of them are not engine
- * questions: plugin scanning and exclusion lists, groove templates, MagdaApi,
- * PluginWindowManager, the sampler media list, the tempo-ripple command. Two
- * more, getAudioBridge and getMidiBridge, hand back types built around
- * te::Edit and cannot be answered by a non-TE engine at all.
+ * questions: plugin scanning and exclusion lists, groove templates, the device
+ * manager, the sampler media list, the tempo-ripple command. getAudioBridge
+ * hands back a type built around te::Edit and is answered null here;
+ * getMidiBridge is the fork's, and a MidiBridge needs no Edit.
  *
  * Narrowing that interface first would have made this a refactor with nothing
  * audible at the end of it, so instead this owns a TracktionEngineWrapper and
@@ -62,17 +65,17 @@ class TracktionEngineWrapper;
  * Said here because scaffolding that nobody scheduled is how a cutover leaves a
  * permanent seam behind it.
  *
- * ## What the Tracktion engine is not allowed to do
+ * ## What the Tracktion engine is under this one
  *
- * Render. Its transport is never started and its edit never gets a
- * playback context, so the only thing filling an output buffer is this class.
- * Both engines holding the device at once is the one failure that would sound
- * like an engine bug rather than a wiring mistake.
+ * Services: the engine, the plugin formats, the device manager, the MidiBridge
+ * and the project save hooks. `initialisePlayback()` is never called, so there
+ * is no Edit and so no playback context, and nothing on that side can fill an
+ * output buffer. tests/engine/test_magda_audio_engine_juce.cpp pins it.
  */
 
 namespace magda {
 
-class MagdaAudioEngine final : public AudioEngine {
+class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
@@ -128,6 +131,12 @@ class MagdaAudioEngine final : public AudioEngine {
     void setMidiDevicesReadyCallback(std::function<void()> callback) override;
     AudioBridge* getAudioBridge() override;
     const AudioBridge* getAudioBridge() const override;
+    TrackMeters& meters() override {
+        return meters_;
+    }
+    const TrackMeters& meters() const override {
+        return meters_;
+    }
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;
@@ -173,6 +182,19 @@ class MagdaAudioEngine final : public AudioEngine {
     void onLoopRegionChanged(double startSeconds, double endSeconds, bool enabled) override;
     void onLoopEnabledChanged(bool enabled) override;
 
+    /** @brief A message from @p deviceId, for whichever tracks are routed to it. */
+    void pushMidi(const juce::String& deviceId, const juce::MidiMessage& message) override;
+
+    /** @brief A note played at @p trackId itself: the piano roll, pads and chords. */
+    void audition(TrackId trackId, const juce::MidiMessage& message) override;
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+    /** @brief The fork, so a test can assert what it was never brought up as. */
+    const TracktionEngineWrapper& fork() const {
+        return *fork_;
+    }
+#endif
+
     // Overridden because AudioEngine and AudioEngineListener give these default
     // bodies rather than leaving them pure. Not forwarding them compiles
     // perfectly and then answers no-op, false and empty for the rest of the
@@ -187,16 +209,26 @@ class MagdaAudioEngine final : public AudioEngine {
     void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) override;
 
   private:
-    /// Whatever has not moved to magda::engine yet, said once per method
-    /// rather than answered with silence.
-    /// Where the host's levels go, and the fork told to stop measuring what it
-    /// no longer renders (#2570). Once, in initialize().
-    void meterInto(AudioBridge* bridge);
+    /** @brief Wire the host's levels into @ref meters_. Once, in initialize(). */
+    void meterInto();
 
+    /** @brief Say once that @p method has not moved to magda::engine yet. */
     void reportUnwired(const char* method, const char* issue) const;
 
-    /// The loop as one value, from the fork that still holds both halves.
-    void publishLoop();
+    /// Track and master meters, fed by the host (#2579).
+    TrackMeters meters_;
+
+    /// Whether initialize() brought the services up. What "there is a project"
+    /// means with no Edit to ask.
+    bool initialised_ = false;
+
+    /// Held rather than acted on: count-in itself is #2553.
+    int countInMode_ = 0;
+
+    /// Last frame's transport, for the play-start and loop edges modulators
+    /// retrigger on.
+    bool wasPlaying_ = false;
+    double lastPosition_ = 0.0;
 
     /// The half of the interface that is not an engine question. See the file
     /// comment: this goes away with #2554.
@@ -211,6 +243,11 @@ class MagdaAudioEngine final : public AudioEngine {
     /// first: the device it has a callback on is the fork's, and the fork
     /// closes it on its way out.
     std::unique_ptr<daw::engine_host::EngineHost> host_;
+
+    /// This engine's own facade onto the model; the fork builds a second one in
+    /// initialisePlayback(), which is never called here. Last, so it lets go of
+    /// the fork's MidiBridge before the fork does.
+    std::unique_ptr<MagdaApiLive> api_;
 };
 
 }  // namespace magda

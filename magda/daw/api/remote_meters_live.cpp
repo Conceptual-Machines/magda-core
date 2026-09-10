@@ -1,4 +1,4 @@
-#include "../audio/AudioBridge.hpp"
+#include "../audio/TrackMeters.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "remote_subscriptions.hpp"
 
@@ -30,14 +30,12 @@ class LiveMeterSource final : public MeterSource {
     std::vector<TrackLevels> sample() override {
         std::vector<TrackLevels> levels;
 
-        auto* bridge = engine_.getAudioBridge();
-        if (bridge == nullptr)
-            return levels;
+        auto& meters = engine_.meters();
 
         // The ring is indexed by track id, so ask the tracks that exist rather
         // than sweeping all 128 slots. Ids come from the ring's own bound, which
         // is what makes the loop safe without knowing the project.
-        auto& buffer = bridge->getRemoteMeteringBuffer();
+        auto& buffer = meters.remote;
         for (TrackId trackId = 0; trackId < MeteringBuffer::kMaxTracks; ++trackId) {
             MeterData data;
             if (!buffer.drainToLatest(trackId, data))
@@ -49,8 +47,8 @@ class LiveMeterSource final : public MeterSource {
         // just a pair of atomics the same 30 Hz pass writes. It is reported under
         // the master sentinel so a client addresses it the way it addresses the
         // master track everywhere else in the API.
-        levels.push_back({MASTER_TRACK_ID, bridge->getMasterPeakL(), bridge->getMasterPeakR(),
-                          bridge->getMasterPeakL() > 1.0f || bridge->getMasterPeakR() > 1.0f});
+        levels.push_back({MASTER_TRACK_ID, meters.getMasterPeakL(), meters.getMasterPeakR(),
+                          meters.getMasterPeakL() > 1.0f || meters.getMasterPeakR() > 1.0f});
         return levels;
     }
 

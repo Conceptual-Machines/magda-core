@@ -1719,6 +1719,55 @@ TEST_CASE("Auto input monitoring only counts while the track is armed",
     }
 }
 
+TEST_CASE("Audition gives every track that reads MIDI something to preview through",
+          "[engine][plan][compiler][2579]") {
+    const auto instrumentTrack = [] {
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+        return track;
+    };
+
+    CompileOptions auditioning;
+    auditioning.auditionMidi = true;
+
+    SECTION("an idle instrument track has no live input by default") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+    }
+
+    SECTION("with audition on it has exactly one") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
+    }
+
+    SECTION("a track whose chain reads no MIDI still has none") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+    }
+
+    SECTION("a monitoring track routed to a device still has one") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+        tracks[0].inputMonitor = InputMonitorMode::In;
+        tracks[0].midiInputDevice = "Keyboard";
+
+        // The store keys live inputs by TrackId, so a second op on the same
+        // track would be a second binding to one object.
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
+    }
+}
+
 TEST_CASE("A frozen track is reported as not compiled", "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1)};
     tracks[0].frozen = true;

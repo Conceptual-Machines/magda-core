@@ -3,6 +3,7 @@
 #include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
 #include "../audio/MidiBridge.hpp"
+#include "../audio/TrackMeters.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
 #include "../audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
@@ -335,87 +336,75 @@ void TracktionEngineWrapper::setupMidiDevices() {
     }
 }
 
-void TracktionEngineWrapper::createEditAndBridges() {
-    // Create a temporary Edit (project)
-    auto editFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                        .getChildFile("magda_temp.tracktionedit");
+bool TracktionEngineWrapper::initialiseServices() {
+    // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
+    juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
+    auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
+    auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
+    engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
+                                                  std::move(engineBehaviour));
 
-    // Delete any existing temp file to ensure clean state
-    if (editFile.existsAsFile()) {
-        editFile.deleteFile();
-    }
+    // Load config early so preferred device settings are available
+    juce::Logger::writeToLog("[Init] Loading config...");
+    magda::Config::getInstance().load();
 
-    currentEdit_ = tracktion::createEmptyEdit(*engine_, editFile);
+    // Load hardware controller profiles (bundled + user)
+    juce::Logger::writeToLog("[Init] Loading controller profiles...");
+    magda::ControllerProfileRegistry::getInstance().load();
 
-    if (!currentEdit_) {
-        DBG("Tracktion Engine initialized (no Edit created)");
-        return;
-    }
+    // Initialize plugin formats and load plugin list
+    juce::Logger::writeToLog("[Init] initializePluginFormats()...");
+    initializePluginFormats();
+    juce::Logger::writeToLog("[Init] initializePluginFormats() done");
 
-    // Set default tempo
-    auto& tempoSeq = currentEdit_->tempoSequence;
-    if (tempoSeq.getNumTempos() > 0) {
-        auto* tempo = tempoSeq.getTempo(0);
-        if (tempo) {
-            tempo->setBpm(120.0);
-        }
-    }
-
-    // Ensure playback context is created for MIDI routing
-    currentEdit_->getTransport().ensureContextAllocated();
-    if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
-        DBG("Playback context allocated for live MIDI monitoring");
-        DBG("  Total inputs in context: " << ctx->getAllInputs().size());
-    } else {
-        DBG("WARNING: ensureContextAllocated() called but context is still null!");
-    }
-
-    // Create AudioBridge for TrackManager synchronization
-    audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_);
-    audioBridge_->syncAll();
-
-#ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
-    // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
-    // Disabled in test builds (the shared engine would attach to the
-    // AutomationManager singleton and perturb other tests).
-    tempoLaneSync_ = std::make_unique<TempoLaneSync>(*currentEdit_);
-#endif
-
-    // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
-    // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
-    // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
     if (!isHeadlessRuntime()) {
-        sessionScheduler_ = std::make_unique<SessionClipScheduler>(
-            *audioBridge_, *currentEdit_, audioBridge_->getSessionAudioMonitor());
-        // Install the session monitor plugin up-front so the audio-thread
-        // pulse (transport position, beat indicator) keeps ticking even
-        // before any session clip has been launched.
-        audioBridge_->ensureSessionMonitorPlugin();
-        sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
-        sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
-        sessionRecorder_->setPlayStateQuery([this](ClipId clipId) {
-            return sessionScheduler_ ? sessionScheduler_->getClipPlayState(clipId)
-                                     : SessionClipPlayState::Stopped;
-        });
-        sessionRecorder_->setLaunchTimeQuery([this](TrackId trackId) {
-            return audioBridge_ ? audioBridge_->getLastLaunchTimeForTrack(trackId) : 0.0;
-        });
-        pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
-        audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
-        // The export capture pass needs the live transport + hardware I/O;
-        // pointless (and Timer-based) in the headless runtime.
-        insertRenderCapture_ = std::make_unique<InsertRenderCaptureService>(*currentEdit_);
+        // Initialize device manager with preferred settings
+        juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
+        initializeDeviceManager();
+        juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
+
+        // Configure audio devices if user has preferences
+        juce::Logger::writeToLog("[Init] configureAudioDevices()...");
+        configureAudioDevices();
+        juce::Logger::writeToLog("[Init] configureAudioDevices() done");
+
+        // Setup MIDI devices
+        juce::Logger::writeToLog("[Init] setupMidiDevices()...");
+        setupMidiDevices();
+        juce::Logger::writeToLog("[Init] setupMidiDevices() done");
+    } else {
+        juce::Logger::writeToLog("[Init] Headless mode: skipping audio/MIDI device startup");
     }
 
-    // Configure AudioBridge
-    audioBridge_->enableAllMidiInputDevices();
+    // MIDI device management and routing serve both engines, so the bridge is
+    // built here and not with the Edit (#2579).
+    midiBridge_ = std::make_unique<MidiBridge>(*engine_);
+    midiBridge_->setMeters(&meters_);
+
+    installProjectStateHooks();
+
+    // Ensure devicesLoading_ is cleared so transport isn't blocked
+    // The async changeListenerCallback may not fire if no MIDI devices are present
+    if (devicesLoading_) {
+        devicesLoading_ = false;
+    }
+
+    return engine_ != nullptr;
+}
+
+void TracktionEngineWrapper::installProjectStateHooks() {
+    // Installed before any AudioBridge exists, and under the magda engine none
+    // ever is, so the plugin-state half is checked at save time (#2579).
+    auto alive = aliveFlag_;
+
+    previousBeforeSave_ = std::move(ProjectManager::getInstance().onBeforeSave);
+    previousAfterLoad_ = std::move(ProjectManager::getInstance().onAfterLoad);
 
     // Wire up state capture before project save
-    auto* bridge = audioBridge_.get();
-    ProjectManager::getInstance().onBeforeSave = [bridge]() {
-        if (bridge) {
-            bridge->captureAllPluginStates();
-            bridge->captureWarpMarkerStates();
+    ProjectManager::getInstance().onBeforeSave = [this, alive]() {
+        if (*alive && audioBridge_) {
+            audioBridge_->captureAllPluginStates();
+            audioBridge_->captureWarpMarkerStates();
         }
 
         // Capture zoom/scroll state
@@ -478,18 +467,93 @@ void TracktionEngineWrapper::createEditAndBridges() {
             });
         }
     };
+}
 
-    // Create MidiBridge for MIDI device management
-    midiBridge_ = std::make_unique<MidiBridge>(*engine_);
+bool TracktionEngineWrapper::initialisePlayback() {
+    juce::Logger::writeToLog("[Init] initialisePlayback()...");
+
+    // Create a temporary Edit (project)
+    auto editFile = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                        .getChildFile("magda_temp.tracktionedit");
+
+    // Delete any existing temp file to ensure clean state
+    if (editFile.existsAsFile()) {
+        editFile.deleteFile();
+    }
+
+    currentEdit_ = tracktion::createEmptyEdit(*engine_, editFile);
+
+    if (!currentEdit_) {
+        DBG("Tracktion Engine initialized (no Edit created)");
+        return false;
+    }
+
+    // Set default tempo
+    auto& tempoSeq = currentEdit_->tempoSequence;
+    if (tempoSeq.getNumTempos() > 0) {
+        auto* tempo = tempoSeq.getTempo(0);
+        if (tempo) {
+            tempo->setBpm(120.0);
+        }
+    }
+
+    // Ensure playback context is created for MIDI routing
+    currentEdit_->getTransport().ensureContextAllocated();
+    if (auto* ctx = currentEdit_->getCurrentPlaybackContext()) {
+        DBG("Playback context allocated for live MIDI monitoring");
+        DBG("  Total inputs in context: " << ctx->getAllInputs().size());
+    } else {
+        DBG("WARNING: ensureContextAllocated() called but context is still null!");
+    }
+
+    // Create AudioBridge for TrackManager synchronization
+    audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_);
+    audioBridge_->syncAll();
+
+#ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
+    // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
+    // Disabled in test builds (the shared engine would attach to the
+    // AutomationManager singleton and perturb other tests).
+    tempoLaneSync_ = std::make_unique<TempoLaneSync>(*currentEdit_);
+#endif
+
+    // Create SessionClipScheduler and PluginWindowManager only when NOT in headless CI
+    // Both extend juce::Timer which creates GUI infrastructure and leaks in tests
+    // Check: Skip if DISPLAY env var not set (Linux headless) or if explicitly disabled
+    if (!isHeadlessRuntime()) {
+        sessionScheduler_ = std::make_unique<SessionClipScheduler>(
+            *audioBridge_, *currentEdit_, audioBridge_->getSessionAudioMonitor());
+        // Install the session monitor plugin up-front so the audio-thread
+        // pulse (transport position, beat indicator) keeps ticking even
+        // before any session clip has been launched.
+        audioBridge_->ensureSessionMonitorPlugin();
+        sessionRecorder_ = std::make_unique<SessionRecorder>(*currentEdit_);
+        sessionRecorder_->setRecordingPreviews(&recordingPreviews_);
+        sessionRecorder_->setPlayStateQuery([this](ClipId clipId) {
+            return sessionScheduler_ ? sessionScheduler_->getClipPlayState(clipId)
+                                     : SessionClipPlayState::Stopped;
+        });
+        sessionRecorder_->setLaunchTimeQuery([this](TrackId trackId) {
+            return audioBridge_ ? audioBridge_->getLastLaunchTimeForTrack(trackId) : 0.0;
+        });
+        pluginWindowManager_ = std::make_unique<PluginWindowManager>(*engine_, *currentEdit_);
+        audioBridge_->setPluginWindowManager(pluginWindowManager_.get());
+        // The export capture pass needs the live transport + hardware I/O;
+        // pointless (and Timer-based) in the headless runtime.
+        insertRenderCapture_ = std::make_unique<InsertRenderCaptureService>(*currentEdit_);
+    }
+
+    // Configure AudioBridge
+    audioBridge_->enableAllMidiInputDevices();
+
     midiBridge_->setAudioBridge(audioBridge_.get());
     midiBridge_->setRecordingQueue(&recordingNoteQueue_, &transportPositionForMidi_);
 
     // Track-routed MIDI ("track:N" inputs) bypasses MidiBridge entirely, so the
     // recording preview for those tracks is fed by MidiInputRouter via TE input
     // consumers into its own single-producer queue.
-    if (audioBridge_)
-        audioBridge_->setTrackMidiRecordingQueue(&trackMidiRecordingNoteQueue_,
-                                                 &transportPositionForMidi_);
+    audioBridge_->setTrackMidiRecordingQueue(&trackMidiRecordingNoteQueue_,
+                                             &transportPositionForMidi_);
 
     // Register as transport listener for recording callbacks
     currentEdit_->getTransport().addListener(this);
@@ -504,64 +568,17 @@ void TracktionEngineWrapper::createEditAndBridges() {
     live->setEditAccessor([this]() -> tracktion::Edit* { return currentEdit_.get(); });
     magdaApi_ = std::move(live);
 
-    DBG("Tracktion Engine initialized with Edit, AudioBridge, and MidiBridge");
+    juce::Logger::writeToLog("[Init] initialisePlayback() done");
+    return currentEdit_ != nullptr;
 }
 
 bool TracktionEngineWrapper::initialize() {
     try {
-        // Initialize Tracktion Engine with custom UIBehaviour for plugin windows
-        juce::Logger::writeToLog("[Init] Creating Tracktion Engine...");
-        auto uiBehaviour = std::make_unique<MagdaUIBehaviour>();
-        auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
-        engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
-                                                      std::move(engineBehaviour));
-
-        // Load config early so preferred device settings are available
-        juce::Logger::writeToLog("[Init] Loading config...");
-        magda::Config::getInstance().load();
-
-        // Load hardware controller profiles (bundled + user)
-        juce::Logger::writeToLog("[Init] Loading controller profiles...");
-        magda::ControllerProfileRegistry::getInstance().load();
-
-        // Initialize plugin formats and load plugin list
-        juce::Logger::writeToLog("[Init] initializePluginFormats()...");
-        initializePluginFormats();
-        juce::Logger::writeToLog("[Init] initializePluginFormats() done");
-
-        if (!isHeadlessRuntime()) {
-            // Initialize device manager with preferred settings
-            juce::Logger::writeToLog("[Init] initializeDeviceManager()...");
-            initializeDeviceManager();
-            juce::Logger::writeToLog("[Init] initializeDeviceManager() done");
-
-            // Configure audio devices if user has preferences
-            juce::Logger::writeToLog("[Init] configureAudioDevices()...");
-            configureAudioDevices();
-            juce::Logger::writeToLog("[Init] configureAudioDevices() done");
-
-            // Setup MIDI devices
-            juce::Logger::writeToLog("[Init] setupMidiDevices()...");
-            setupMidiDevices();
-            juce::Logger::writeToLog("[Init] setupMidiDevices() done");
-        } else {
-            juce::Logger::writeToLog("[Init] Headless mode: skipping audio/MIDI device startup");
-        }
-
-        // Create Edit and bridges
-        juce::Logger::writeToLog("[Init] createEditAndBridges()...");
-        createEditAndBridges();
-        juce::Logger::writeToLog("[Init] createEditAndBridges() done");
-
-        // Ensure devicesLoading_ is cleared so transport isn't blocked
-        // The async changeListenerCallback may not fire if no MIDI devices are present
-        if (devicesLoading_) {
-            devicesLoading_ = false;
-        }
+        const bool ready = initialiseServices() && initialisePlayback();
 
         juce::Logger::writeToLog("[Init] initialize() complete, edit=" +
                                  juce::String(currentEdit_ != nullptr ? "OK" : "NULL"));
-        return currentEdit_ != nullptr;
+        return ready;
 
     } catch (const std::exception& e) {
         juce::Logger::writeToLog("ERROR: Failed to initialize: " + juce::String(e.what()));
@@ -619,9 +636,10 @@ void TracktionEngineWrapper::shutdown() {
         sessionScheduler_.reset();
     }
 
-    // Clear the pre-save/post-load callbacks before destroying AudioBridge
-    ProjectManager::getInstance().onBeforeSave = nullptr;
-    ProjectManager::getInstance().onAfterLoad = nullptr;
+    // Put back whatever save/load hooks were there before this installed its
+    // own, before destroying the AudioBridge they capture.
+    ProjectManager::getInstance().onBeforeSave = std::move(previousBeforeSave_);
+    ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
     // Clear MidiBridge's reference to AudioBridge before destroying it
     if (midiBridge_)
@@ -658,8 +676,10 @@ void TracktionEngineWrapper::shutdown() {
         // Cancel any active MIDI Learn session before shutting down the router.
         MidiLearnCoordinator::getInstance().cancelLearn();
         // Shut down ControllerRouter before stopping MIDI inputs so it can
-        // unsubscribe from MidiBridge cleanly.
-        ControllerRouter::getInstance().shutdown();
+        // unsubscribe from MidiBridge cleanly. Only when it listens to this
+        // bridge: a second wrapper in a process must not unbind the first's.
+        if (ControllerRouter::getInstance().isBoundTo(midiBridge_.get()))
+            ControllerRouter::getInstance().shutdown();
         DBG("Stopping MIDI inputs...");
         midiBridge_->stopAllInputs();
         DBG("Destroying MidiBridge...");

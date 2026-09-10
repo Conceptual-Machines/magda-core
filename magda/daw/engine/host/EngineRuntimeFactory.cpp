@@ -19,6 +19,31 @@ juce::String deviceIdentityOf(const DeviceInfo& device) {
            device.getFormatString();
 }
 
+/**
+ * @brief A track's live MIDI: its own audition, and the devices routed to it.
+ *
+ * Named sources rather than kAnyLiveMidiSource, which would merge every other
+ * track's audition into this one.
+ */
+class TrackMidiInput final : public engine::EngineMidiSource {
+  public:
+    TrackMidiInput(const engine::LiveInputFeed& feed, engine::LiveMidiSourceId audition,
+                   std::vector<engine::LiveMidiSourceId> routed)
+        : feed_(feed), audition_(audition), routed_(std::move(routed)) {}
+
+    void render(const engine::BlockInfo& /*block*/, juce::MidiBuffer& out) override {
+        feed_.appendEvents(audition_, out, engine::kMaxMidiBytesPerPort);
+
+        for (const auto source : routed_)
+            feed_.appendEvents(source, out, engine::kMaxMidiBytesPerPort);
+    }
+
+  private:
+    const engine::LiveInputFeed& feed_;
+    engine::LiveMidiSourceId audition_ = engine::kAnyLiveMidiSource;
+    std::vector<engine::LiveMidiSourceId> routed_;
+};
+
 }  // namespace
 
 EngineFileReaders::EngineFileReaders() {
@@ -35,15 +60,23 @@ std::unique_ptr<engine::AudioFileReader> EngineFileReaders::open(const std::stri
 }
 
 void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                                  engine::LaunchHandleFeed& handles) {
+                                  engine::LaunchHandleFeed& handles,
+                                  const engine::LiveInputFeed& liveInputs,
+                                  LiveMidiSources& sources) {
     clips_ = &clips;
     streams_ = &streams;
     handles_ = &handles;
+    liveInputs_ = &liveInputs;
+    sources_ = &sources;
 }
 
 void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
     devices_.clear();
     unbuilt_.clear();
+    midiRoutes_.clear();
+
+    for (const auto& track : tracks)
+        midiRoutes_.emplace(track.id, MidiRoute{track.midiInputDevice, track.monitorsInput()});
 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
@@ -149,6 +182,33 @@ std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createSessionAu
 std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createSessionMidiSource(
     TrackId trackId) {
     return midiSource(trackId, engine::Section::Session);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(TrackId trackId) {
+    if (liveInputs_ == nullptr || sources_ == nullptr)
+        return nullptr;
+
+    const auto found = midiRoutes_.find(trackId);
+    const auto route = found != midiRoutes_.end() ? found->second : MidiRoute{};
+
+    return std::make_unique<TrackMidiInput>(*liveInputs_, sources_->auditionSourceFor(trackId),
+                                            routedSources(route));
+}
+
+std::vector<engine::LiveMidiSourceId> EngineRuntimeFactory::routedSources(const MidiRoute& route) {
+    // Monitoring is the fork's own gate on hearing an input, and a "track:"
+    // route is carried inside the plan rather than by a device.
+    if (!route.monitors || route.device.isEmpty() || route.device.startsWith("track:"))
+        return {};
+
+    if (route.device == "all")
+        return sources_->deviceSources();
+
+    const auto source = sources_->resolveRoute(route.device);
+    if (source == LiveMidiSources::kNoSource)
+        return {};
+
+    return {source};
 }
 
 // Both sections through the handle-reading constructor, including the

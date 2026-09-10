@@ -28,6 +28,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         testPluginScanningState();
         testDeviceManagerAccess();
         testThreadSafety();
+        testServicesWithoutPlayback();
     }
 
   private:
@@ -223,6 +224,22 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.isDevicesLoading();
 
         expect(true, "Concurrent access patterns work");
+    }
+
+    void testServicesWithoutPlayback() {
+        beginTest("initialiseServices() builds no playback half");
+
+        // Its own wrapper: the shared engine is fully initialized (#2579).
+        TracktionEngineWrapper wrapper;
+        wrapper.setForceHeadless(true);
+
+        expect(wrapper.initialiseServices(), "Services should come up");
+        expect(wrapper.getEdit() == nullptr, "No Edit until playback is initialised");
+        expect(wrapper.getAudioBridge() == nullptr, "No AudioBridge until playback is initialised");
+        expect(wrapper.getMidiBridge() != nullptr, "MidiBridge is a service");
+
+        expect(wrapper.initialisePlayback(), "Playback should come up");
+        expect(wrapper.getEdit() != nullptr, "Edit exists once playback is initialised");
     }
 };
 

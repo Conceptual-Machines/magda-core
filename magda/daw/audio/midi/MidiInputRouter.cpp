@@ -5,6 +5,7 @@
 
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../MidiBridge.hpp"
 #include "TrackController.hpp"
 #include "midi/MidiDeviceMatch.hpp"
 #include "plugins/MidiChordEnginePlugin.hpp"
@@ -202,7 +203,7 @@ te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
     // with the same name would break the cast and leave the feature silently
     // disabled.
     const auto isQwertyDevice = [](const auto& dev) {
-        return dev->getName() == "QWERTY Keyboard" &&
+        return dev->getName() == kQwertyMidiDeviceId &&
                dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr;
     };
 
@@ -214,7 +215,7 @@ te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
             qwertyMidiDevice_ = *found;
 
         if (!qwertyMidiDevice_) {
-            auto result = engine_.getDeviceManager().createVirtualMidiDevice("QWERTY Keyboard");
+            auto result = engine_.getDeviceManager().createVirtualMidiDevice(kQwertyMidiDeviceId);
             if (result.wasOk()) {
                 const auto newMidiInputs = engine_.getDeviceManager().getMidiInDevices();
                 if (const auto found = std::ranges::find_if(newMidiInputs, isQwertyDevice);

@@ -8,6 +8,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/MidiBridge.hpp"
+#include "../../../audio/TrackMeters.hpp"
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/Config.hpp"
 #include "../../../core/DeviceInfo.hpp"
@@ -512,15 +513,12 @@ TrackHeadersPanel::~TrackHeadersPanel() {
 }
 
 void TrackHeadersPanel::timerCallback() {
-    // Get metering data from AudioBridge (30 FPS timer)
+    // Get metering data from the audio engine (30 FPS timer)
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Decay rate for MIDI activity (fade out over time)
     const float midiDecayRate = 0.7f;  // Per frame decay (~100ms to near-zero at 30fps)
@@ -560,7 +558,7 @@ void TrackHeadersPanel::timerCallback() {
         }
 
         // Check for new MIDI note-on (counter comparison), gated by monitor mode
-        auto counter = bridge->getMidiActivityCounter(header->trackId);
+        auto counter = meters.midiActivity.getActivityCounter(header->trackId);
         if (counter != header->lastMidiCounter) {
             header->lastMidiCounter = counter;
 
@@ -575,7 +573,7 @@ void TrackHeadersPanel::timerCallback() {
                             showActivity = true;
                             break;
                         case InputMonitorMode::Auto:
-                            showActivity = !bridge->isTransportPlaying();
+                            showActivity = !audioEngine_->isPlaying();
                             break;
                         case InputMonitorMode::Off:
                             showActivity = false;

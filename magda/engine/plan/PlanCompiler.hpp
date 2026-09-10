@@ -37,6 +37,15 @@ struct CompileOptions {
      * tries it. The two ways of being wrong are not worth the same.
      */
     bool monitorTracks = false;
+
+    /**
+     * @brief Give every track that reads MIDI a live input op (#2579).
+     *
+     * Otherwise one is compiled only for a track that is armed or monitoring
+     * in, and a piano-roll preview on an idle track has nothing to reach. Set
+     * by the app; off for a bounce and for the corpus.
+     */
+    bool auditionMidi = false;
 };
 
 /**

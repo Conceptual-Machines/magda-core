@@ -8,6 +8,7 @@
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/TrackMeters.hpp"
 #include "../../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../../core/MixerStripOrder.hpp"
 #include "../../core/RackInfo.hpp"
@@ -2630,20 +2631,17 @@ void MixerView::timerCallback() {
     if (isResizeDragging_)
         return;
 
-    // Read metering data from AudioBridge
+    // Read metering data from the audio engine
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Auto-clear held peaks on the rising edge of playback so the readouts
     // reflect the current take rather than the loudest-ever value. Clicking a
     // peak label resets it manually at any time (see ClickableLabel wiring).
-    const bool isPlaying = bridge->isTransportPlaying();
+    const bool isPlaying = audioEngine_->isPlaying();
     if (isPlaying && !wasPlaying_) {
         for (auto& strip : channelStrips)
             strip->resetPeak();
@@ -2674,8 +2672,8 @@ void MixerView::timerCallback() {
 
     // Update master strip meters
     if (masterStrip) {
-        float masterPeakL = bridge->getMasterPeakL();
-        float masterPeakR = bridge->getMasterPeakR();
+        float masterPeakL = meters.getMasterPeakL();
+        float masterPeakR = meters.getMasterPeakR();
         masterStrip->setPeakLevels(masterPeakL, masterPeakR);
     }
 }

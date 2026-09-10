@@ -248,15 +248,13 @@ MainWindow::MainWindow(AudioEngine* audioEngine)
             else
                 removeKeyListener(kb);
 
-            // Enable/disable the virtual MIDI device and notify the
-            // routing selectors to refresh their cached device lists.
+            // Enable/disable the QWERTY device and notify the routing
+            // selectors to refresh their cached device lists.
             if (auto* engine = mainComponent->getAudioEngine()) {
-                if (auto* bridge = engine->getAudioBridge()) {
-                    if (auto* vmd = bridge->getQwertyMidiDevice())
-                        vmd->setEnabled(enabled);
-                }
-                if (auto* mb = engine->getMidiBridge())
+                if (auto* mb = engine->getMidiBridge()) {
+                    mb->setQwertyEnabled(enabled);
                     mb->notifyMidiDeviceListChanged();
+                }
             }
             DBG("QWERTY keyboard " << (enabled ? "ON" : "OFF"));
         };
@@ -1181,8 +1179,8 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     // onQwertyKeyboardToggled callback set in the MainWindow constructor
     // (after setContentOwned) so the key listener registers on the
     // DocumentWindow, not on MainComponent.
-    if (auto* bridge = engine->getAudioBridge()) {
-        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*bridge, engine->getMidiBridge());
+    if (auto* midiBridge = engine->getMidiBridge()) {
+        qwertyKeyboard_ = std::make_unique<QwertyMidiKeyboard>(*midiBridge);
     }
 
     transportPanel->onTempoChange = [this](double bpm) {
@@ -1215,11 +1213,13 @@ void MainWindow::MainComponent::setupAudioEngineCallbacks(AudioEngine* engine) {
     };
 
     transportPanel->onAutomationWriteToggle = [this](bool enabled) {
-        if (auto* bridge = getAudioEngine()->getAudioBridge())
+        auto* engine = getAudioEngine();
+        if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr)
             bridge->setAutomationWriteEnabled(enabled);
     };
     transportPanel->onAutomationModeChanged = [this](AutomationMode mode) {
-        if (auto* bridge = getAudioEngine()->getAudioBridge())
+        auto* engine = getAudioEngine();
+        if (auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr)
             bridge->setAutomationMode(mode);
     };
 

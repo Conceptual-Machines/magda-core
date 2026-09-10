@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../audio/TrackMeters.hpp"
 #include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../command.hpp"
 #include "../interfaces/clip_interface.hpp"
@@ -28,6 +29,7 @@ class SessionClipScheduler;
 class SessionRecorder;
 class TracktionTempoMap;
 class TempoLaneSync;
+struct ProjectInfo;
 
 /**
  * @brief Tracktion Engine implementation of AudioEngine
@@ -74,6 +76,22 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Initialize the engine
     bool initialize() override;
+
+    /**
+     * @brief Bring up the half that is not playback: the engine, plugin formats,
+     *        devices, the MidiBridge and the project save hooks (#2579).
+     * @return Whether the Tracktion engine was created.
+     */
+    bool initialiseServices();
+
+    /**
+     * @brief Bring up the Edit and everything that renders through it (#2579).
+     *
+     * Never called under the magda engine, which renders for itself.
+     * @return Whether an Edit was created.
+     */
+    bool initialisePlayback();
+
     void shutdown() final;
     bool hasActiveEdit() const override {
         return currentEdit_ != nullptr;
@@ -268,6 +286,13 @@ class TracktionEngineWrapper : public AudioEngine,
         return audioBridge_.get();
     }
 
+    TrackMeters& meters() override {
+        return meters_;
+    }
+    const TrackMeters& meters() const override {
+        return meters_;
+    }
+
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)
@@ -330,6 +355,7 @@ class TracktionEngineWrapper : public AudioEngine,
      *  shared across consumers (AI Chat panel, Lua controller, future CLI).
      *  The reference is valid for the lifetime of the wrapper. */
     MagdaApi& getMagdaApi() override {
+        jassert(magdaApi_ != nullptr);
         return *magdaApi_;
     }
 
@@ -583,7 +609,10 @@ class TracktionEngineWrapper : public AudioEngine,
     void initializeDeviceManager();
     void configureAudioDevices();
     void setupMidiDevices();
-    void createEditAndBridges();
+
+    /** @brief Install ProjectManager's save and load hooks. The plugin-state
+     *  half is guarded at save time, since there may be no AudioBridge (#2579). */
+    void installProjectStateHooks();
 
     // Change listener helper methods
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
@@ -601,6 +630,10 @@ class TracktionEngineWrapper : public AudioEngine,
     // Keeps the edit-scoped Tempo automation lane in sync with
     // currentEdit_->tempoSequence (both directions). Recreated per Edit.
     std::unique_ptr<TempoLaneSync> tempoLaneSync_;
+
+    // Declared before audioBridge_ so it outlives it: AudioBridge holds a
+    // reference to this (#2579).
+    TrackMeters meters_;
 
     // Audio bridge for TrackManager synchronization
     std::unique_ptr<AudioBridge> audioBridge_;
@@ -708,6 +741,11 @@ class TracktionEngineWrapper : public AudioEngine,
     mutable std::unique_ptr<PluginScanCoordinator> pluginScanCoordinator_;
     std::thread pluginDiscoveryThread_;
     std::shared_ptr<std::atomic<bool>> aliveFlag_ = std::make_shared<std::atomic<bool>>(true);
+
+    /// The save and load hooks as they were before this installed its own, put
+    /// back at shutdown so a second wrapper in a process does not strip the first's.
+    std::function<void()> previousBeforeSave_;
+    std::function<void(const ProjectInfo&)> previousAfterLoad_;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE(TracktionEngineWrapper)
 };

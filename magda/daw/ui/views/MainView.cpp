@@ -20,6 +20,7 @@
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/TrackMeters.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
 #include "core/ClipCommands.hpp"
@@ -670,13 +671,10 @@ void MainView::timerCallback() {
     if (!audioEngine_ || !masterHeaderPanel)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
     // Update master header panel with real levels
-    float masterPeakL = bridge->getMasterPeakL();
-    float masterPeakR = bridge->getMasterPeakR();
+    auto& meters = audioEngine_->meters();
+    float masterPeakL = meters.getMasterPeakL();
+    float masterPeakR = meters.getMasterPeakR();
     masterHeaderPanel->setPeakLevels(masterPeakL, masterPeakR);
 
     // Update aux section metering

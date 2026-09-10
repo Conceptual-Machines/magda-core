@@ -8,6 +8,7 @@
 #include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
 #include "AudioBridge.hpp"
+#include "TrackMeters.hpp"
 
 namespace magda {
 
@@ -17,6 +18,13 @@ MidiBridge::MidiBridge(te::Engine& engine) : engine_(engine) {
 
 void MidiBridge::setAudioBridge(AudioBridge* audioBridge) {
     audioBridge_ = audioBridge;
+}
+
+void MidiBridge::setLiveSink(LiveMidiSink* sink) {
+    liveSink_.store(sink, std::memory_order_release);
+    if (sink == nullptr)
+        while (activeCallbacks_.load(std::memory_order_acquire) > 0)
+            juce::Thread::sleep(1);
 }
 
 MidiBridge::~MidiBridge() {
@@ -105,6 +113,14 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     std::ranges::copy(teDevices | std::views::filter(isEnabledVirtualInput) |
                           std::views::transform(asVirtualDevice),
                       std::back_inserter(devices));
+
+    // No fork virtual device under magda: list the keyboard itself, under the
+    // same visibility rule the fork's device has above.
+    const bool forkDeviceListed = std::ranges::any_of(
+        devices, [](const MidiDeviceInfo& d) { return d.id == kQwertyMidiDeviceId; });
+    if (liveSink_.load(std::memory_order_acquire) && !forkDeviceListed && qwertyEnabled_)
+        devices.emplace_back(kQwertyMidiDeviceId, kQwertyMidiDeviceId, /*enabled=*/true);
+
     return devices;
 }
 
@@ -156,17 +172,28 @@ bool MidiBridge::sendSysEx(const juce::String& deviceNameOrId, const juce::uint8
 }
 
 bool MidiBridge::injectMidiToTrack(TrackId trackId, const juce::MidiMessage& msg) {
-    if (audioBridge_ == nullptr)
-        return false;
+    bool handled = false;
 
-    auto* audioTrack = audioBridge_->getAudioTrack(trackId);
-    if (audioTrack == nullptr)
-        return false;
+    if (auto* sink = liveSink_.load(std::memory_order_acquire)) {
+        sink->audition(trackId, msg);
+        handled = true;
+    }
 
-    audioTrack->injectLiveMidiMessage(msg, {});
+    if (audioBridge_) {
+        if (auto* audioTrack = audioBridge_->getAudioTrack(trackId)) {
+            audioTrack->injectLiveMidiMessage(msg, {});
+            handled = true;
+        }
+    }
+
+    if (!handled)
+        return false;
 
     if (msg.isNoteOn()) {
-        audioBridge_->triggerMidiActivity(trackId);
+        if (meters_)
+            meters_->midiActivity.triggerActivity(trackId);
+        if (audioBridge_)
+            audioBridge_->triggerMidiActivity(trackId);
         TrackManager::getInstance().triggerMidiNoteOn(trackId);
     } else if (msg.isNoteOff()) {
         TrackManager::getInstance().triggerMidiNoteOff(trackId);
@@ -322,6 +349,9 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
                 listener->onRawMidi(sourceDeviceId, sourceDeviceName, message);
     }
 
+    if (auto* sink = liveSink_.load(std::memory_order_acquire))
+        sink->pushMidi(sourceDeviceId, message);
+
     // Push event to global queue for MIDI monitor
     {
         MidiEventEntry entry;
@@ -364,6 +394,8 @@ void MidiBridge::handleIncomingMidiMessage(juce::MidiInput* source,
             // MidiBridge only monitors MIDI activity for UI visualization.
 
             if (message.isNoteOn()) {
+                if (meters_)
+                    meters_->midiActivity.triggerActivity(trackId);
                 if (audioBridge_)
                     audioBridge_->triggerMidiActivity(trackId);
                 TrackManager::getInstance().triggerMidiNoteOn(trackId);
@@ -444,6 +476,8 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
 
         // UI activity fires regardless of arm — same as physical MIDI.
         if (isNoteOn) {
+            if (meters_)
+                meters_->midiActivity.triggerActivity(trackId);
             if (audioBridge_)
                 audioBridge_->triggerMidiActivity(trackId);
             TrackManager::getInstance().triggerMidiNoteOn(trackId);
@@ -469,6 +503,34 @@ void MidiBridge::broadcastSynthesizedNote(const juce::String& sourceDeviceId, in
         evt.isNoteOn = isNoteOn;
         evt.transportSeconds = transportPosition_->load(std::memory_order_relaxed);
         recordingQueue_->push(evt);
+    }
+}
+
+void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
+    const auto message =
+        isNoteOn ? juce::MidiMessage::noteOn(1, note, static_cast<juce::uint8>(velocity))
+                 : juce::MidiMessage::noteOff(1, note, static_cast<juce::uint8>(velocity));
+
+    if (audioBridge_) {
+        if (auto* vmd = audioBridge_->getQwertyMidiDevice()) {
+            if (isNoteOn)
+                vmd->keyboardState.noteOn(1, note, static_cast<float>(velocity) / 127.0f);
+            else
+                vmd->keyboardState.noteOff(1, note, 0.0f);
+        }
+    }
+
+    if (auto* sink = liveSink_.load(std::memory_order_acquire))
+        sink->pushMidi(kQwertyMidiDeviceId, message);
+
+    broadcastSynthesizedNote(kQwertyMidiDeviceId, note, velocity, isNoteOn);
+}
+
+void MidiBridge::setQwertyEnabled(bool enabled) {
+    qwertyEnabled_ = enabled;
+    if (audioBridge_) {
+        if (auto* vmd = audioBridge_->getQwertyMidiDevice())
+            vmd->setEnabled(enabled);
     }
 }
 

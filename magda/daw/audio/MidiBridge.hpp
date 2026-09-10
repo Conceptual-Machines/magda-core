@@ -15,8 +15,9 @@ namespace magda {
 
 namespace te = tracktion;
 
-// Forward declaration
+// Forward declarations
 class AudioBridge;
+struct TrackMeters;
 
 /**
  * @brief Bridges MAGDA's MIDI model to Tracktion Engine's MIDI system.
@@ -48,6 +49,23 @@ struct RawMidiListener {
                            const juce::MidiMessage& msg) = 0;
 };
 
+/// The QWERTY keyboard's device identifier on both engines: the fork names its
+/// virtual device this and TE uses the name as the ID, so a track routed to it
+/// on one engine is routed to it on the other.
+inline constexpr const char* kQwertyMidiDeviceId = "QWERTY Keyboard";
+
+/**
+ * @brief Where live MIDI goes when something other than the fork renders (#2579).
+ *
+ * Called from the MIDI callback thread and the message thread; never the audio thread.
+ */
+class LiveMidiSink {
+  public:
+    virtual ~LiveMidiSink() = default;
+    virtual void pushMidi(const juce::String& deviceId, const juce::MidiMessage& message) = 0;
+    virtual void audition(TrackId trackId, const juce::MidiMessage& message) = 0;
+};
+
 // ============================================================================
 // MidiBridge
 // ============================================================================
@@ -74,6 +92,23 @@ class MidiBridge : public juce::MidiInputCallback {
     void clearAudioBridge() {
         audioBridge_ = nullptr;
     }
+
+    /**
+     * @brief Set the shared meters object that feeds the MIDI activity light.
+     *
+     * Lets the activity light work with no AudioBridge, under the magda engine.
+     */
+    void setMeters(TrackMeters* meters) {
+        meters_ = meters;
+    }
+
+    /**
+     * @brief Set where live MIDI goes under the magda engine, or clear it.
+     *
+     * Clearing (nullptr) waits for any in-flight handleIncomingMidiMessage
+     * call to drain, the way stopAllInputs waits on activeCallbacks_.
+     */
+    void setLiveSink(LiveMidiSink* sink);
 
     /**
      * @brief Enable/disable forwarding MIDI to instrument plugins.
@@ -269,6 +304,15 @@ class MidiBridge : public juce::MidiInputCallback {
     void broadcastSynthesizedNote(const juce::String& sourceDeviceId, int noteNumber, int velocity,
                                   bool isNoteOn);
 
+    /**
+     * @brief Play a QWERTY-keyboard note through whichever engine is live, and
+     * fan it out to the UI via broadcastSynthesizedNote.
+     */
+    void playQwertyNote(int note, int velocity, bool isNoteOn);
+
+    /// Enables or disables the QWERTY device on the fork, and for the sink path.
+    void setQwertyEnabled(bool enabled);
+
     void resetTestState();
 
   private:
@@ -285,6 +329,15 @@ class MidiBridge : public juce::MidiInputCallback {
 
     // AudioBridge reference for triggering MIDI activity (not owned)
     AudioBridge* audioBridge_ = nullptr;
+
+    // Shared MIDI-activity monitor; not owned (#2579).
+    TrackMeters* meters_ = nullptr;
+
+    // Where live MIDI goes under the magda engine; not owned (#2579).
+    std::atomic<LiveMidiSink*> liveSink_{nullptr};
+
+    // QWERTY enable state for the sink path, where there is no fork device to ask.
+    bool qwertyEnabled_ = false;
 
     // Track MIDI input routing (trackId → MIDI device ID)
     std::unordered_map<TrackId, juce::String> trackMidiInputs_;

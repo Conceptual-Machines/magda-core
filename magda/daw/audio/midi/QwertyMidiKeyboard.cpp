@@ -2,13 +2,11 @@
 
 #include <tracktion_engine/tracktion_engine.h>
 
-#include "AudioBridge.hpp"
 #include "MidiBridge.hpp"
 
 namespace magda {
 
-QwertyMidiKeyboard::QwertyMidiKeyboard(AudioBridge& bridge, MidiBridge* midiBridge)
-    : bridge_(bridge), midiBridge_(midiBridge) {}
+QwertyMidiKeyboard::QwertyMidiKeyboard(MidiBridge& midiBridge) : midiBridge_(midiBridge) {}
 
 QwertyMidiKeyboard::~QwertyMidiKeyboard() {
     allNotesOff();
@@ -99,30 +97,11 @@ int QwertyMidiKeyboard::keyToNote(int keyCode) const {
 }
 
 void QwertyMidiKeyboard::sendNoteOn(int note) {
-    auto* vmd = bridge_.getQwertyMidiDevice();
-    if (!vmd)
-        return;
-    // Canonical programmatic injection: MidiInputDevice is registered as a
-    // listener on its own keyboardState, so this dispatches via
-    // handleNoteOn → handleIncomingMidiMessage(msg, midiSourceID) with the
-    // device's own source ID, which is what TE's recording pipeline keys off.
-    vmd->keyboardState.noteOn(1, note, static_cast<float>(velocity_) / 127.0f);
-
-    // Mirror the physical-MIDI fan-out: UI activity on every track routed to
-    // this device (armed or not) and preview push only on armed ones.
-    if (midiBridge_)
-        midiBridge_->broadcastSynthesizedNote(vmd->getDeviceID(), note, velocity_,
-                                              /*isNoteOn=*/true);
+    midiBridge_.playQwertyNote(note, velocity_, /*isNoteOn=*/true);
 }
 
 void QwertyMidiKeyboard::sendNoteOff(int note) {
-    auto* vmd = bridge_.getQwertyMidiDevice();
-    if (!vmd)
-        return;
-    vmd->keyboardState.noteOff(1, note, 0.0f);
-
-    if (midiBridge_)
-        midiBridge_->broadcastSynthesizedNote(vmd->getDeviceID(), note, 0, /*isNoteOn=*/false);
+    midiBridge_.playQwertyNote(note, velocity_, /*isNoteOn=*/false);
 }
 
 void QwertyMidiKeyboard::allNotesOff() {

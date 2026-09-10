@@ -62,6 +62,12 @@ class ControllerRouter : public ControllerRegistryListener,
      */
     void setMidiBridge(MidiBridge* bridge);
 
+    /// Whether @p bridge is the one this listens to, so an engine tearing its
+    /// own MidiBridge down can leave a router bound to another alone.
+    bool isBoundTo(const MidiBridge* bridge) const {
+        return midiBridge_ == bridge;
+    }
+
     /**
      * @brief Cleanly shut down the router.
      *

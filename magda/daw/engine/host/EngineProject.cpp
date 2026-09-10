@@ -1,5 +1,7 @@
 #include "EngineProject.hpp"
 
+#include <algorithm>
+
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/SourcePool.hpp"
@@ -48,6 +50,15 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator) {
                                 .numerator = numerator,
                                 .denominator = denominator,
                             }});
+}
+
+double projectEndBeat() {
+    double end = 0.0;
+
+    for (const auto& clip : ClipManager::getInstance().getArrangementClips())
+        end = std::max(end, clip.placement.endBeat());
+
+    return end;
 }
 
 bool modelHoldsNoDevices() {

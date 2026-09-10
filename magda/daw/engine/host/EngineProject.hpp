@@ -35,6 +35,10 @@ std::vector<engine::ClipSourceInfo> clipSources();
 /// (#2554 moves that).
 engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
 
+/// Where the last arrangement clip ends, in beats, or zero when there are none.
+/// What the length of a project is with no Edit to ask (#2579).
+double projectEndBeat();
+
 /// Whether the model names a device anywhere, master included. What a project
 /// teardown looks like while it is happening, until one is declared (#2576).
 bool modelHoldsNoDevices();

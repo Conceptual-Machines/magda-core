@@ -376,8 +376,16 @@ void MainWindow::launchAudioExport(const ExportAudioDialog::Settings& settings,
                 // Launch progress window with background rendering (non-blocking)
                 // The window will delete itself via threadComplete() callback.
                 auto* captureService = engine->getInsertRenderCaptureService();
+                auto renderSession = engine->createOfflineRenderSession(resumePlaybackAfterRender);
+                if (!renderSession) {
+                    juce::AlertWindow::showMessageBoxAsync(juce::AlertWindow::WarningIcon,
+                                                           tr("dialogs.export_audio"),
+                                                           tr("export.error.render_failed"));
+                    fileChooser_.reset();
+                    return;
+                }
                 auto* progressWindow = new ExportProgressWindow(
-                    engine->createOfflineRenderSession(resumePlaybackAfterRender), request, file,
+                    std::move(renderSession), request, file,
                     [captureService]() {
                         // Remove the hidden capture taps + temp files (no-op when
                         // no capture pass ran).

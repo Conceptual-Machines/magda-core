@@ -551,6 +551,7 @@ target_sources(magda_daw PRIVATE
     session/SessionClipCommandQueue.hpp
     session/SessionClipStateQueue.hpp
     MeteringBuffer.hpp
+    TrackMeters.hpp
     params/ParameterQueue.hpp
     transport/TransportStateManager.hpp
     midi/MidiActivityMonitor.hpp
