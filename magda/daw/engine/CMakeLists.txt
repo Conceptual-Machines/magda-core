@@ -50,9 +50,11 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineHost.cpp
         host/EngineProject.cpp
         host/EngineRuntimeFactory.cpp
+        host/EngineTrace.cpp
         host/EngineHost.hpp
         host/EngineProject.hpp
         host/EngineRuntimeFactory.hpp
+        host/EngineTrace.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)
 

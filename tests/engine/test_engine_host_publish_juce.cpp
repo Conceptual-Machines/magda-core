@@ -6,6 +6,7 @@
 #include "JuceTestStateGuard.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "core/SourcePool.hpp"
+#include "exec/EngineDevice.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
@@ -14,6 +15,7 @@
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
+#include "magda/daw/engine/host/EngineTrace.hpp"
 #include "plan/PlanCompiler.hpp"
 
 /**
@@ -32,6 +34,7 @@
 namespace {
 
 namespace host = magda::daw::engine_host;
+namespace engine = magda::engine;
 
 /// The Poly Synth as a project saves it. Every compiled synth MAGDA ships is
 /// one of these, and it is the shortest path from a note to a sound.
@@ -59,6 +62,77 @@ magda::DeviceInfo polySynth(magda::DeviceId id) {
     return device;
 }
 
+/// Every note-on that reached the instrument, and when. Bound in the
+/// instrument's place so that what is measured is what the chain delivered
+/// rather than what came out of a synth.
+class NoteCapture final : public engine::EngineDevice {
+  public:
+    struct Strike {
+        int note = 0;
+        int block = 0;
+    };
+
+    void process(engine::DeviceBlock& block) override {
+        if (block.midiIn != nullptr)
+            for (const auto entry : *block.midiIn) {
+                const auto message = entry.getMessage();
+                if (message.isNoteOn())
+                    strikes.push_back({message.getNoteNumber(), blocks});
+                else if (message.isNoteOff())
+                    releases.push_back({message.getNoteNumber(), blocks});
+            }
+
+        block.audio.clear();
+        ++blocks;
+    }
+
+    std::vector<Strike> strikes;
+    std::vector<Strike> releases;
+    int blocks = 0;
+};
+
+/// The app's own factory with the instrument swapped for a capture, so a case
+/// can say which notes reached the chain rather than inferring it from a level.
+class CapturingFactory final : public engine::RuntimeStateFactory {
+  public:
+    void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
+                engine::LaunchHandleFeed& handles) {
+        inner_.attach(clips, streams, handles);
+    }
+
+    void setModel(const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
+        inner_.setModel(tracks, master);
+    }
+
+    std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey) override {
+        auto device = std::make_unique<NoteCapture>();
+        capture = device.get();
+        return device;
+    }
+
+    std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(
+        magda::TrackId trackId) override {
+        return inner_.createClipAudioSource(trackId);
+    }
+    std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(
+        magda::TrackId trackId) override {
+        return inner_.createClipMidiSource(trackId);
+    }
+    std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(
+        magda::TrackId trackId) override {
+        return inner_.createSessionAudioSource(trackId);
+    }
+    std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(
+        magda::TrackId trackId) override {
+        return inner_.createSessionMidiSource(trackId);
+    }
+
+    NoteCapture* capture = nullptr;
+
+  private:
+    host::EngineRuntimeFactory inner_;
+};
+
 class EngineHostPublishTest final : public juce::UnitTest {
   public:
     EngineHostPublishTest() : juce::UnitTest("Engine Host Publish Tests", "magda") {}
@@ -66,6 +140,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testLanesSplitBySection(); });
         magda::test::runWithCleanJuceState([this] { testMidiClipReachesAnInstrument(); });
+        magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
     }
 
   private:
@@ -127,6 +202,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         host::EngineRuntimeFactory factory;
         factory.setModel(tracks, *master);
 
+        // The instrumentation the app runs under MAGDA_ENGINE_TRACE_MIDI
+        // (#2568), exercised here so a trace nobody can read is a failing test
+        // rather than an empty log in the middle of a repro.
+        host::EngineTrace trace;
+        factory.traceInto(trace);
+
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
@@ -160,6 +241,101 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // the app was holding reached a compiled instrument and came back as
         // audio.
         expect(peak > 0.0f, "The note made a sound");
+
+        const auto traced = trace.drain();
+        expect(traced.joinIntoString("\n").contains("note-on  60"),
+               "The trace records the note-on that reached the instrument");
+    }
+
+    void testNoteMovedWhileRolling() {
+        beginTest("A note moved while the transport rolls sounds once, where it was moved to");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        expect(track != nullptr, "The track exists");
+        if (track == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 8.0);
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
+                                                         .velocity = 100,
+                                                         .startBeat = 6.0,
+                                                         .lengthBeats = 1.0}),
+               "The clip holds a note");
+
+        const auto& tracks = trackManager.getTracks();
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        if (master == nullptr)
+            return;
+
+        const engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+
+        host::EngineFileReaders files;
+        engine::PrefetchThread reader(false);
+        CapturingFactory factory;
+        factory.setModel(tracks, *master);
+
+        engine::ClipVoicePool voices(files, reader, context);
+        engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
+
+        const auto plan =
+            std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
+
+        engine::PlanValues values;
+        engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan publishes");
+
+        const auto publishClips = [&] {
+            session.publishClips(
+                std::make_shared<const engine::ClipSnapshot>(engine::compileClipSnapshot(
+                    host::clipLanesFor(tracks), host::clipSources(), tempo)));
+        };
+
+        publishClips();
+        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+
+        // Up to beat 2, which is well before the note and well before where it
+        // is about to be moved to.
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        const auto render = [&](int blocks) {
+            for (auto block = 0; block < blocks; ++block)
+                session.process(context.maxBlockSize, output);
+        };
+
+        render(86);
+
+        // The move the clip editor makes: one note, in place, and a republish.
+        auto* clip = clips.getClip(clipId);
+        expect(clip != nullptr && clip->midiNotes.size() == 1, "One note, before the move");
+        if (clip == nullptr || clip->midiNotes.size() != 1)
+            return;
+
+        clip->midiNotes[0].noteNumber = 64;
+        publishClips();
+
+        // Past beat 4 and past where the note used to be.
+        render(258);
+
+        expect(factory.capture != nullptr, "The instrument slot was bound");
+        if (factory.capture == nullptr)
+            return;
+
+        const auto& strikes = factory.capture->strikes;
+        for (const auto& strike : strikes)
+            logMessage("note-on " + juce::String(strike.note) + " at block " +
+                       juce::String(strike.block));
+
+        expect(strikes.size() == 1, "The moved note sounds once, not once per position");
     }
 };
 

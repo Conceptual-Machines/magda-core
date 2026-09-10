@@ -10,6 +10,7 @@
 #include "../../core/TrackManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
+#include "EngineTrace.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
@@ -42,10 +43,39 @@ void report(const juce::String& what, const std::vector<std::string>& messages) 
  */
 struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::AsyncUpdater,
+                                private juce::Timer,
                                 private TrackManagerListener,
                                 private ClipManagerListener {
+    Impl() {
+        if (!EngineTrace::enabled())
+            return;
+
+        // Both ends of the race into one stream (#2568): the publishes below
+        // write to it on this thread and the devices write to it on the audio
+        // thread, and reading them in order is the whole point.
+        factory_.traceInto(trace_);
+        startTimer(100);
+    }
+
     ~Impl() override {
         detach();
+    }
+
+    /// The audio thread's side of the trace, on the thread allowed to log it.
+    void timerCallback() override {
+        for (const auto& line : trace_.drain())
+            juce::Logger::writeToLog(line);
+    }
+
+    /// Where the transport was when the model moved, in the same stream as the
+    /// notes, so an edit can be placed against the block that sounded one.
+    void traceEdit(EngineTrace::Kind kind) {
+        if (EngineTrace::enabled())
+            trace_.write({.kind = kind, .beat = positionBeats()});
+    }
+
+    double positionBeats() const {
+        return session_ != nullptr ? session_->positionBeats() : 0.0;
     }
 
     void start(juce::AudioDeviceManager& devices) {
@@ -104,6 +134,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         livePlan_ = std::move(plan);
+        traceEdit(EngineTrace::Kind::Swap);
         reportUnbuiltDevices();
     }
 
@@ -133,6 +164,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             engine::compileClipSnapshot(clipLanesFor(tracks), clipSources(), tempoMap()));
         report("clips", snapshot->diagnostics);
 
+        traceEdit(EngineTrace::Kind::Publish);
         session_->publishClips(std::move(snapshot));
     }
 
@@ -375,6 +407,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<bool> clips_{false};
 
     std::vector<juce::String> unbuilt_;
+    EngineTrace trace_;
 };
 
 EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}
@@ -408,7 +441,7 @@ bool EngineHost::isPlaying() const {
 }
 
 double EngineHost::positionBeats() const {
-    return impl_->session_ != nullptr ? impl_->session_->positionBeats() : 0.0;
+    return impl_->positionBeats();
 }
 
 double EngineHost::positionSeconds() const {

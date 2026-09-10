@@ -41,8 +41,12 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     if (found == devices_.end())
         return nullptr;
 
-    if (auto device = adapter::createEngineDevice(found->second))
+    if (auto device = adapter::createEngineDevice(found->second)) {
+        if (trace_ != nullptr)
+            return std::make_unique<TracingDevice>(std::move(device), *trace_);
+
         return device;
+    }
 
     // Said out loud once per publish rather than left as silence. A device the
     // app can build and the engine cannot is a project playing without part of

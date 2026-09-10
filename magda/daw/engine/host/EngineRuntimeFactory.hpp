@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 
+#include "EngineTrace.hpp"
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "core/DeviceInfo.hpp"
@@ -70,6 +71,13 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         return unbuilt_;
     }
 
+    /// Record what reaches every device this makes from now on (#2568). Set
+    /// before the first publish, and only when the trace is switched on: a
+    /// device already made is not wrapped retrospectively.
+    void traceInto(EngineTrace& trace) {
+        trace_ = &trace;
+    }
+
     std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
     std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(TrackId trackId) override;
@@ -87,6 +95,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
     std::vector<juce::String> unbuilt_;
+    EngineTrace* trace_ = nullptr;
 };
 
 }  // namespace magda::daw::engine_host
