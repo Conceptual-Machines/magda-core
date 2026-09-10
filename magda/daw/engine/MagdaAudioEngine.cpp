@@ -78,6 +78,12 @@ juce::File MagdaAudioEngine::getEditFile() const {
     return tracktion_->getEditFile();
 }
 void MagdaAudioEngine::play() {
+    // The fork's guard, and it is about the device rather than about the
+    // engine: both render through the one the fork opens, and starting into a
+    // device that is still being enumerated is a glitch either way.
+    if (tracktion_->isDevicesLoading())
+        return;
+
     host_->play();
 }
 void MagdaAudioEngine::stop() {
@@ -334,7 +340,12 @@ void MagdaAudioEngine::onTransportStopRecording() {
     reportUnwired("onTransportStopRecording", "#2553");
 }
 void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
-    locate(positionSeconds);
+    // Only while stopped, which is the fork's rule and the right one: this
+    // fires whenever the edit cursor moves, and clicking in the piano roll to
+    // place a note moves it. Seeking on that would drag the transport out from
+    // under whoever is listening.
+    if (!isPlaying())
+        locate(positionSeconds);
 }
 void MagdaAudioEngine::onTempoChanged(double bpm) {
     tracktion_->onTempoChanged(bpm);
