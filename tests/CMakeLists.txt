@@ -441,6 +441,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The pass in flight, reported without a poll (#2463): its length off the
     # transport that stamped it, and its notes where the finished clip holds them.
     list(APPEND TEST_SOURCES engine/test_record_tap.cpp)
+    # A key that has come to mean a different device (#2572): the store is
+    # asked again for it, and the instance it replaces outlives the live plan.
+    list(APPEND TEST_SOURCES engine/test_runtime_state_rebuild.cpp)
     # A take carried across a plan swap (#2465): what an unrelated edit does to
     # a recording in flight, and what the three that end one leave behind.
     list(APPEND TEST_SOURCES AllocationWatch.cpp)

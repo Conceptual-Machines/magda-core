@@ -11,6 +11,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -59,6 +60,23 @@ magda::DeviceInfo polySynth(magda::DeviceId id) {
         info.currentValue = info.defaultValue;
         device.parameters.push_back(std::move(info));
     }
+
+    return device;
+}
+
+/// A compiled effect, for a case that needs a second kind of device rather
+/// than a second copy of the first.
+magda::DeviceInfo chorus(magda::DeviceId id) {
+    using Chorus = magda::daw::audio::compiled::MagdaChorusCompiledPlugin;
+
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Chorus";
+    device.pluginId = Chorus::xmlTypeName;
+    device.deviceType = magda::DeviceType::Effect;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 2;
+    device.audioOutputChannels = 2;
 
     return device;
 }
@@ -142,6 +160,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testLanesSplitBySection(); });
         magda::test::runWithCleanJuceState([this] { testMidiClipReachesAnInstrument(); });
         magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
+        magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
     }
 
   private:
@@ -341,6 +361,75 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(
             std::ranges::any_of(releases, [](const auto& release) { return release.note == 60; }),
             "The pitch it left is released rather than left hanging");
+    }
+
+    /// The one device the factory holds, at the key a track-level FX slot has.
+    static constexpr magda::engine::DeviceKey firstFxSlot() {
+        return magda::engine::DeviceKey{magda::ChainSegment::Fx, 1};
+    }
+
+    void testReplacedPluginIsRebuilt() {
+        beginTest("A slot whose plugin changed is a device the store must rebuild");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+        expect(factory.devicesToRebuild().empty(), "Nothing has been built to rebuild");
+        expect(factory.createDevice(firstFxSlot()) != nullptr, "The catalog builds the synth");
+
+        // The retention contract, which is what a fader reorder relies on: the
+        // same model published again asks for nothing.
+        factory.setModel(trackManager.getTracks(), *master);
+        expect(factory.devicesToRebuild().empty(), "A device that did not change is kept");
+
+        // The same DeviceId, a different plugin. Within a project this is a
+        // slot's plugin being swapped; across one it is #2572, and the factory
+        // cannot tell the two apart because a DeviceKey does not say.
+        track->chain.fxChainElements[0] = chorus(1);
+        factory.setModel(trackManager.getTracks(), *master);
+
+        const auto rebuild = factory.devicesToRebuild();
+        expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
+               "The slot's new plugin is named for rebuild");
+    }
+
+    void testClearedProjectIsRebuilt() {
+        beginTest("A cleared project is every device it held named for rebuild");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+        expect(factory.createDevice(firstFxSlot()) != nullptr, "The catalog builds the synth");
+        expect(!host::modelHoldsNoDevices(), "A project with a device in it is not a teardown");
+
+        // What a project load does before it restores anything, and the only
+        // moment the empty model is visible: the publish it schedules runs
+        // after the next project is already in place.
+        trackManager.clearAllTracks();
+        expect(host::modelHoldsNoDevices(), "A cleared project names no device anywhere");
+
+        factory.forgetBuiltDevices();
+        const auto rebuild = factory.devicesToRebuild();
+        expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
+               "Every device the store holds is the previous project's");
     }
 };
 

@@ -111,3 +111,14 @@ arrives — which is why the store re-asks rather than remembering a null
 `restoredParameters` into the model on the message thread and publishes a plan
 compiled from it: the corpus's two-pass compile, spread over as many message
 loop turns as the plugins take.
+
+### When a slot's instance is replaced
+
+The store keeps what it holds for a key it is asked for again, so nothing
+rebuilds a device in place unless the factory says the key means something
+else: `RuntimeStateFactory::devicesToRebuild()`, asked once per publish before
+anything is realised. `EngineRuntimeFactory` names a key whose plugin identity
+moved since the instance was built, and every key it holds when a project is
+cleared — DeviceIds restart at 1, so the next project's slots inherit them
+(#2572). The instance being replaced stays alive and unbound until the swap;
+`ExternalPluginLoader::forgetSlots` expires the loads in flight beside it.

@@ -227,6 +227,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     // ===== Following the model =====
 
     void tracksChanged() override {
+        // The only place a project teardown is visible. The publish this
+        // schedules is coalesced, and a load fills the next project in before
+        // it runs, so by then the model is already the new one -- while
+        // DeviceIds have started from 1 again, so every key the store holds
+        // names a different device (#2572).
+        if (modelHoldsNoDevices())
+            factory_.forgetBuiltDevices();
+
         wantPlan();
     }
     void trackDevicesChanged(TrackId) override {

@@ -1,5 +1,7 @@
 #include "EngineRuntimeFactory.hpp"
 
+#include <utility>
+
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
@@ -7,6 +9,20 @@
 namespace magda::daw::engine_host {
 
 namespace adapter = magda::daw::audio::engine_adapter;
+
+namespace {
+
+/// Which device a slot is asking for, as one string to compare. pluginId is
+/// what both catalogs dispatch on; the rest is the file an external plugin
+/// resolves to, and is empty for everything else. Nothing here is a display
+/// name or a role, so renaming a device or a load correcting one is not a slot
+/// asking for something else.
+juce::String deviceIdentityOf(const DeviceInfo& device) {
+    return device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
+           device.getFormatString();
+}
+
+}  // namespace
 
 EngineFileReaders::EngineFileReaders() {
     formats_.registerBasicFormats();
@@ -35,11 +51,48 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
 
+    // A slot whose plugin was replaced since the instance behind it was built
+    // (#2572). Nothing else can say so: the store keeps what it holds for a key
+    // it is asked for again. A key the model has dropped needs no rebuild --
+    // the store evicts that one on its own rule.
+    for (auto entry = built_.begin(); entry != built_.end();) {
+        const auto found = devices_.find(entry->first);
+        if (found == devices_.end()) {
+            entry = built_.erase(entry);
+            continue;
+        }
+
+        if (deviceIdentityOf(found->second) != entry->second)
+            rebuild_.insert(entry->first);
+
+        ++entry;
+    }
+
     // Before anything is asked for, so a device that has changed plugin since
     // the last publish has expired the load it had in flight by the time this
     // publish asks for one.
     if (externals_ != nullptr)
         externals_->syncAssignments(devices_);
+}
+
+void EngineRuntimeFactory::forgetBuiltDevices() {
+    for (const auto& [key, identity] : built_)
+        rebuild_.insert(key);
+
+    built_.clear();
+
+    if (externals_ != nullptr)
+        externals_->forgetSlots();
+}
+
+std::set<engine::DeviceKey> EngineRuntimeFactory::devicesToRebuild() {
+    // Forgotten as they are handed over, so a key the store could not realise
+    // this publish -- an external still opening -- is not asked for again
+    // against an instance that has already gone.
+    for (const auto& key : rebuild_)
+        built_.erase(key);
+
+    return std::exchange(rebuild_, {});
 }
 
 std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine::DeviceKey key) {
@@ -52,10 +105,11 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     // is not ready: the loader answers null while it opens one, and the store
     // asks again at the next publish (#2566).
     if (adapter::isExternalDevice(found->second))
-        return traced(externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
+        return handOver(key, found->second,
+                        externals_ != nullptr ? externals_->device(key, found->second) : nullptr);
 
     if (auto device = adapter::createEngineDevice(found->second))
-        return traced(std::move(device));
+        return handOver(key, found->second, std::move(device));
 
     // Said out loud once per publish rather than left as silence. A device the
     // app can build and the engine cannot is a project playing without part of
@@ -64,10 +118,17 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     return nullptr;
 }
 
-/// Every device this factory hands over, through the trace when one is on.
-std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::traced(
-    std::unique_ptr<engine::EngineDevice> device) {
-    if (device == nullptr || trace_ == nullptr)
+/// Every device this factory hands over: recorded against the device it was
+/// built from, so a later publish can tell the key has come to mean something
+/// else, and through the trace when one is on.
+std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
+    engine::DeviceKey key, const DeviceInfo& model, std::unique_ptr<engine::EngineDevice> device) {
+    if (device == nullptr)
+        return nullptr;
+
+    built_[key] = deviceIdentityOf(model);
+
+    if (trace_ == nullptr)
         return device;
 
     return std::make_unique<TracingDevice>(std::move(device), *trace_);

@@ -62,11 +62,9 @@ void ExternalPluginLoader::syncAssignments(const std::map<engine::DeviceKey, Dev
             continue;
         }
 
-        // Every load in flight against the old assignment expires here. A
-        // device the store has already bound does not: it keeps what it holds
-        // for a key it is asked for again, so this reaches a slot whose plugin
-        // changed while its first load was still running, and #2572 is the
-        // other half.
+        // Every load in flight against the old assignment expires here. The
+        // instance the store has already bound is retired separately, by the
+        // rebuild the same identity change puts to it (#2572).
         assignments_.replaceAssignment(key);
         found->second = Slot{.identity = std::move(identity), .generation = ++generation_};
     }
@@ -80,6 +78,11 @@ void ExternalPluginLoader::syncAssignments(const std::map<engine::DeviceKey, Dev
         assignments_.release(slot->first);
         slot = slots_.erase(slot);
     }
+}
+
+void ExternalPluginLoader::forgetSlots() {
+    assignments_.releaseAll();
+    slots_.clear();
 }
 
 std::unique_ptr<engine::EngineDevice> ExternalPluginLoader::device(engine::DeviceKey key,

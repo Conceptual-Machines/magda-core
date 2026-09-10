@@ -4,6 +4,7 @@
 
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "EngineTrace.hpp"
@@ -93,14 +94,26 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         trace_ = &trace;
     }
 
+    /**
+     * @brief Nothing the store holds belongs to the model any more (#2572).
+     *
+     * A project was cleared, and DeviceIds start from 1 again, so every key
+     * that comes round names a different device. Called where the teardown is
+     * noticed rather than at the next publish, because by then the model is
+     * already the next project's.
+     */
+    void forgetBuiltDevices();
+
     std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
+    std::set<engine::DeviceKey> devicesToRebuild() override;
     std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
 
   private:
-    std::unique_ptr<engine::EngineDevice> traced(std::unique_ptr<engine::EngineDevice> device);
+    std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
+                                                   std::unique_ptr<engine::EngineDevice> device);
     std::unique_ptr<engine::EngineAudioSource> audioSource(TrackId trackId,
                                                            engine::Section section);
     std::unique_ptr<engine::EngineMidiSource> midiSource(TrackId trackId, engine::Section section);
@@ -110,6 +123,15 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     engine::LaunchHandleFeed* handles_ = nullptr;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
+
+    /// Which device each key's live instance was built from, so a key that has
+    /// come to mean something else can be told from one that has not.
+    std::map<engine::DeviceKey, juce::String> built_;
+
+    /// What the next publish must rebuild, filled by setModel() and
+    /// forgetBuiltDevices() and taken by devicesToRebuild().
+    std::set<engine::DeviceKey> rebuild_;
+
     std::vector<juce::String> unbuilt_;
     EngineTrace* trace_ = nullptr;
     ExternalPluginLoader* externals_ = nullptr;

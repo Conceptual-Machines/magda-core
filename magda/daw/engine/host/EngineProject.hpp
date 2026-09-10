@@ -35,4 +35,9 @@ std::vector<engine::ClipSourceInfo> clipSources();
 /// (#2554 moves that).
 engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
 
+/// Whether the model names a device anywhere, master included. What a project
+/// teardown looks like while it is happening: the next project's devices come
+/// up under the same keys, because DeviceIds start from 1 again (#2572).
+bool modelHoldsNoDevices();
+
 }  // namespace magda::daw::engine_host
