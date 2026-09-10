@@ -15,6 +15,7 @@
 #include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
+#include "AudioEngineChoice.hpp"
 #include "AudioEngineListener.hpp"
 #include "PluginExclusions.hpp"
 
@@ -132,6 +133,14 @@ struct AudioEngineOptions {
 class AudioEngine : public AudioEngineListener {
   public:
     ~AudioEngine() override = default;
+
+    /// Which engine this is, for the about box (#2559). Asked of the engine
+    /// that was built rather than of chosenAudioEngine(), whose answer moves
+    /// the moment the setting changes and only means anything at the next
+    /// start.
+    virtual juce::String engineName() const {
+        return nameOf(AudioEngineChoice::Tracktion);
+    }
 
     // ===== Lifecycle =====
     virtual bool initialize() = 0;

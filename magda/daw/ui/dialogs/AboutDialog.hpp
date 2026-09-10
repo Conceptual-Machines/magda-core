@@ -6,10 +6,12 @@ namespace magda {
 
 class AboutDialog : public juce::DialogWindow {
   public:
-    AboutDialog();
+    /// @param engineName what the running engine calls itself, shown beside the
+    ///        version only where it is not the default one (#2559).
+    explicit AboutDialog(juce::String engineName = {});
 
     void closeButtonPressed() override;
-    static void show();
+    static void show(juce::String engineName = {});
 
   private:
     class ContentComponent;

@@ -1,5 +1,9 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
+#include <optional>
+
 /**
  * @file AudioEngineChoice.hpp
  * @brief Which engine renders, asked in one place (#2551).
@@ -33,5 +37,18 @@ AudioEngineChoice chosenAudioEngine();
 
 /// The choice as a word, for the one log line that says which engine ran.
 const char* nameOf(AudioEngineChoice choice);
+
+/**
+ * @brief The choice as the word the variable takes and the config file stores.
+ *
+ * Not @ref nameOf, which reads as a log line rather than as a value: a setting
+ * and an environment variable have to be the same vocabulary, so that a report
+ * quoting one is answered by typing the other (#2559).
+ */
+const char* settingWordFor(AudioEngineChoice choice);
+
+/// Nothing, rather than a default, for anything that is neither word: an unset
+/// variable and a hand-edited config file are different callers' decisions.
+std::optional<AudioEngineChoice> parseAudioEngine(const juce::String& word);
 
 }  // namespace magda

@@ -180,6 +180,7 @@ void Config::save() {
     root->setProperty("preferredAudioDevice", toJuceString(preferredAudioDevice));
     root->setProperty("preferredInputDevice", toJuceString(preferredInputDevice));
     root->setProperty("preferredOutputDevice", toJuceString(preferredOutputDevice));
+    root->setProperty("audioEngine", toJuceString(audioEngine));
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
 
@@ -571,6 +572,7 @@ void Config::load() {
     preferredAudioDevice = getString("preferredAudioDevice", preferredAudioDevice);
     preferredInputDevice = getString("preferredInputDevice", preferredInputDevice);
     preferredOutputDevice = getString("preferredOutputDevice", preferredOutputDevice);
+    audioEngine = getString("audioEngine", audioEngine);
     preferredInputChannels = getInt("preferredInputChannels", preferredInputChannels);
     preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
 
