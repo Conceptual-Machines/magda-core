@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <ranges>
 
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
@@ -79,6 +80,29 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return session_ != nullptr ? session_->positionBeats() : 0.0;
     }
 
+    /**
+     * @brief What the plan asked for and what it got.
+     *
+     * The other half of whether this path is live: a trace with no notes in it
+     * means one of a device nothing could build, a callback that never ran, or
+     * an engine that was never chosen, and those look identical from silence.
+     */
+    void tracePlan(const engine::RenderPlan& plan) {
+        if (!EngineTrace::enabled())
+            return;
+
+        const auto devices =
+            std::ranges::count(plan.ops, engine::OpKind::Device, &engine::PlanOp::kind);
+        const auto midi =
+            std::ranges::count(plan.ops, engine::OpKind::ClipMidi, &engine::PlanOp::kind);
+
+        EngineTrace::print("plan: " + juce::String(devices) + " device ops (" +
+                           juce::String(static_cast<int>(unbuilt_.size())) + " unbuilt), " +
+                           juce::String(midi) + " clip-midi ops, " +
+                           juce::String(rendered_.load(std::memory_order_relaxed)) +
+                           " callbacks so far");
+    }
+
     void start(juce::AudioDeviceManager& devices) {
         if (devices_ != nullptr)
             return;
@@ -136,6 +160,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         livePlan_ = std::move(plan);
         traceEdit(EngineTrace::Kind::Swap);
+        tracePlan(*livePlan_);
         reportUnbuiltDevices();
     }
 
@@ -312,6 +337,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         rate_.store(device->getCurrentSampleRate());
         blockSize_.store(device->getCurrentBufferSizeSamples());
         triggerAsyncUpdate();
+
+        if (EngineTrace::enabled())
+            EngineTrace::print(
+                "device \"" + device->getName() + "\" at " +
+                juce::String(device->getCurrentSampleRate(), 0) + " Hz, " +
+                juce::String(device->getCurrentBufferSizeSamples()) + " samples, " +
+                juce::String(device->getActiveOutputChannels().countNumberOfSetBits()) +
+                " outputs");
     }
 
     void audioDeviceStopped() override {}
@@ -321,6 +354,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           const juce::AudioIODeviceCallbackContext&) override {
         for (auto channel = 0; channel < numOutputChannels; ++channel)
             juce::FloatVectorOperations::clear(output[channel], numSamples);
+
+        rendered_.fetch_add(1, std::memory_order_relaxed);
 
         // Read without a guard because there is nothing to guard against:
         // rebuild() takes this callback off the device before it touches the
@@ -406,6 +441,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
     std::atomic<bool> clips_{false};
+
+    /// Callbacks this host has rendered. Only ever read by the trace, and the
+    /// one number that separates "nothing sounded" from "nothing ran".
+    std::atomic<std::uint64_t> rendered_{0};
 
     std::vector<juce::String> unbuilt_;
     EngineTrace trace_;

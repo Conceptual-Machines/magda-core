@@ -47,7 +47,17 @@ bool EngineTrace::enabled() {
 }
 
 void EngineTrace::print(const juce::String& line) {
+    // Both destinations, because which one somebody is reading is not this
+    // file's business: the app installs a FileLogger, so writeToLog alone
+    // reaches magda.log and never the terminal, and stderr alone is gone when
+    // the run ends.
+    //
+    // Only when a logger is installed, though. With none, JUCE's own fallback
+    // is this same stderr, and every line would arrive twice.
     std::cerr << "[trace] " << line << std::endl;
+
+    if (juce::Logger::getCurrentLogger() != nullptr)
+        juce::Logger::writeToLog("[trace] " + line);
 }
 
 void EngineTrace::write(Entry entry) {
