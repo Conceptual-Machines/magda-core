@@ -100,3 +100,14 @@ had a preset applied, or been deleted — so:
 
 `isInstalledExternalPlugin` only says a scanned plugin exists to try loading
 — it does not promise instantiation will succeed.
+
+### Who drives the asynchronous path
+
+`magda/daw/engine/host/ExternalPluginLoader.hpp` (#2566). It owns the
+`PluginAssignments` a live session registers against, starts one load per slot,
+and answers `EngineRuntimeFactory::createDevice` with null until the instance
+arrives — which is why the store re-asks rather than remembering a null
+(`RuntimeStateStore.hpp`). Completion writes `resolvedDevice` and
+`restoredParameters` into the model on the message thread and publishes a plan
+compiled from it: the corpus's two-pass compile, spread over as many message
+loop turns as the plugins take.

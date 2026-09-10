@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "EngineTrace.hpp"
+#include "ExternalPluginLoader.hpp"
 #include "clip/ClipSnapshotFeed.hpp"
 #include "clip/ClipStreamFeed.hpp"
 #include "core/DeviceInfo.hpp"
@@ -66,9 +67,23 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     void setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master);
 
     /// Devices the model names that no catalog could build, by display name.
-    /// Read after a publish; external plugins are all of them for now (#2566).
+    /// Read after a publish. External plugins are not among them: they are not
+    /// built from a catalog at all (#2566).
     const std::vector<juce::String>& unbuilt() const {
         return unbuilt_;
+    }
+
+    /// Where external plugins come from. Set before the first publish; without
+    /// one every external device in the project stays unbound, which the
+    /// executor renders as a pass-through.
+    void loadExternalsWith(ExternalPluginLoader& loader) {
+        externals_ = &loader;
+    }
+
+    /// External plugins this publish is still waiting on. A plan with unbound
+    /// device ops and none of these is a plan whose plugins are not coming.
+    std::size_t loadingExternals() const {
+        return externals_ != nullptr ? externals_->loading() : 0;
     }
 
     /// Record what reaches every device this makes from now on (#2568). Set
@@ -85,6 +100,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
 
   private:
+    std::unique_ptr<engine::EngineDevice> traced(std::unique_ptr<engine::EngineDevice> device);
     std::unique_ptr<engine::EngineAudioSource> audioSource(TrackId trackId,
                                                            engine::Section section);
     std::unique_ptr<engine::EngineMidiSource> midiSource(TrackId trackId, engine::Section section);
@@ -96,6 +112,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::map<engine::DeviceKey, DeviceInfo> devices_;
     std::vector<juce::String> unbuilt_;
     EngineTrace* trace_ = nullptr;
+    ExternalPluginLoader* externals_ = nullptr;
 };
 
 }  // namespace magda::daw::engine_host

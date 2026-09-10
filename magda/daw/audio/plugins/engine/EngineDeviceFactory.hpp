@@ -56,6 +56,18 @@ std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(
 std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
     const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master);
 
+/// @overload For a host that holds the model one track at a time, which is
+/// what TrackManager hands out mutably.
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInfo& track);
+
+/**
+ * @brief Whether @p device is a plugin somebody else shipped.
+ *
+ * The one kind neither catalog can build: it is a file on this machine, found
+ * through the scan and loaded, rather than a class this build contains.
+ */
+bool isExternalDevice(const magda::DeviceInfo& device);
+
 /**
  * @brief The engine device @p device names, or null when nothing can make one.
  *

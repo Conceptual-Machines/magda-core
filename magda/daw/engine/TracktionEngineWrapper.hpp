@@ -404,6 +404,15 @@ class TracktionEngineWrapper : public AudioEngine,
      */
     juce::KnownPluginList& getKnownPluginList();
     const juce::KnownPluginList& getKnownPluginList() const;
+
+    /**
+     * @brief The formats this build can open a plugin with.
+     *
+     * The plugin manager's own, handed to magda::engine so it can create the
+     * plugins a plan names (#2566); getKnownPluginList() is the other half of
+     * the same question.
+     */
+    juce::AudioPluginFormatManager& getPluginFormatManager();
     juce::Array<juce::PluginDescription> getKnownPluginTypes() const override;
     void addPluginListChangeListener(juce::ChangeListener* listener) override;
     void removePluginListChangeListener(juce::ChangeListener* listener) override;

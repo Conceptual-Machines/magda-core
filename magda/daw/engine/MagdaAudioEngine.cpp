@@ -15,6 +15,7 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
     // starts a plugin scan. The CLI is such a caller.
     auto wrapper = std::make_unique<TracktionEngineWrapper>();
     wrapper->setForceHeadless(options.headless);
+    fork_ = wrapper.get();
     tracktion_ = std::move(wrapper);
 
     // Here rather than in initialize(), so that everything below can ask it
@@ -42,6 +43,10 @@ MagdaAudioEngine::~MagdaAudioEngine() = default;
 bool MagdaAudioEngine::initialize() {
     if (!tracktion_->initialize())
         return false;
+
+    // Before the device, so the first publish can already load the plugins a
+    // project names rather than going without them until the second (#2566).
+    host_->setPluginServices(fork_->getPluginFormatManager(), fork_->getKnownPluginList());
 
     // After the fork, because the device is its to open: the settings UI, the
     // channel lists and the driver choice are all still on that side, and two

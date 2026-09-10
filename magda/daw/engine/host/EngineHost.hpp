@@ -4,7 +4,9 @@
 
 namespace juce {
 class AudioDeviceManager;
-}
+class AudioPluginFormatManager;
+class KnownPluginList;
+}  // namespace juce
 
 /**
  * @file EngineHost.hpp
@@ -44,6 +46,17 @@ class EngineHost {
      * with no plan renders anyway (EngineSession::process).
      */
     void start(juce::AudioDeviceManager& devices);
+
+    /**
+     * @brief Where external plugins are found and what can open them (#2566).
+     *
+     * Both are the fork's, which owns the scan; the engine has no catalog of
+     * its own for a plugin that is a file on a machine rather than a class this
+     * build contains. Before @ref start, or the first publish goes without
+     * them.
+     */
+    void setPluginServices(juce::AudioPluginFormatManager& formats,
+                           const juce::KnownPluginList& knownPlugins);
 
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.

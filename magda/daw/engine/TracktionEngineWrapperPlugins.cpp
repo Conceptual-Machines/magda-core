@@ -315,6 +315,10 @@ const juce::KnownPluginList& TracktionEngineWrapper::getKnownPluginList() const 
     return engine_->getPluginManager().knownPluginList;
 }
 
+juce::AudioPluginFormatManager& TracktionEngineWrapper::getPluginFormatManager() {
+    return engine_->getPluginManager().pluginFormatManager;
+}
+
 juce::Array<juce::PluginDescription> TracktionEngineWrapper::getKnownPluginTypes() const {
     return getKnownPluginList().getTypes();
 }
