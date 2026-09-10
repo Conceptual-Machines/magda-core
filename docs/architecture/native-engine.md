@@ -373,6 +373,15 @@ the old epoch is destroyed right there, on the publishing thread. The callback n
 **Crossfade** (`plan/PlanCrossfade.hpp`) ramps the edges an edit moved. Fades are ops the
 compiler never emitted, added by a pass over its output and gone again at the next publish.
 
+**A note that is already sounding follows the edit.** Change a playing note's pitch and the
+pitch changes under your fingers, because a voice renders what the published snapshot says
+rather than what an event said when it started. The fork cannot do that: by then the note is a
+MIDI message its plugin has already been handed, and the model no longer reaches it.
+
+This is intended, and it is worth writing down because nothing would catch it being taken away.
+The null-diff corpus pins renders, and a render never edits anything mid-note, so a later pass
+chasing parity could remove this and every suite would stay green.
+
 ---
 
 ## 5. Who runs what
