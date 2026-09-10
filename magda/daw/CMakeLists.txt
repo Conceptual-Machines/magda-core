@@ -685,6 +685,11 @@ target_compile_definitions(magda_daw
     TRACKTION_ENABLE_TIMESTRETCH_SIGNALSMITH=1
     MAGDA_DAWPROJECT_SCHEMA_DIR="${CMAKE_SOURCE_DIR}/third_party/dawproject"
     $<$<BOOL:${JUCE_ASIO_ENABLED}>:JUCE_ASIO=1>
+    # Whether there is a second engine to choose at all (#2551). MagdaAudioEngine
+    # is compiled here whatever the answer, so it is the one place that has to
+    # ask: without the host below linked, choosing that engine is a link error
+    # rather than a quiet fallback.
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:MAGDA_HAS_NATIVE_ENGINE=1>
     PRIVATE
     # Tracktion Engine carries a MAGDA test hook (magdaTestEvaluateLoopSessionDecision,
     # in tracktion_TransportControl.cpp) gated on MAGDA_ENABLE_TEST_HOOKS. TE now
@@ -713,6 +718,10 @@ target_link_libraries(magda_daw_app
     magda_agents
     magda_scripting
     MagdaAssets
+    # magda::engine and the app's end of it (#2551). Here rather than on
+    # magda_daw because magda_daw only names the host through a pimpl'd header:
+    # the engine's own includes never reach it.
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
     # JUCE/TE come transitively from magda_daw: its re-exported INTERFACE gives
     # the headers + defines to compile this target's own sources, and its
     # $<LINK_ONLY:...> forwards the modules' frameworks + the objects already in
@@ -827,6 +836,7 @@ target_include_directories(magda_plugin_scanner
 target_link_libraries(magda_cli
     PRIVATE
     magda_daw
+    $<$<BOOL:${MAGDA_BUILD_NATIVE_ENGINE}>:magda_engine_host>
     juce::juce_core
     juce::juce_events
     juce::juce_audio_devices

@@ -185,76 +185,6 @@ class ImpulseSynthDevice final : public EngineDevice {
     }
 };
 
-/// Every device in @p elements and everything nested inside them, keyed in
-/// @p segment.
-///
-/// Keyed by DeviceKey and not by DeviceId: an id is unique within a chain
-/// segment and not across them (#1899), so a map keyed by the number alone
-/// would let a post-FX device stand in for the FX device with the same one.
-/// OpKey::deviceKey() carries the segment for that reason; this has to match.
-///
-/// The walk is the model's own (ChainWalk.hpp) rather than one written here,
-/// entered with Pads::Enter. A Drum Grid's pads are chains of devices and
-/// PlanCompiler::emitPadRack() emits an op for each of them, so a walk that
-/// stopped at the grid would leave every plugin in every pad looked up and not
-/// found -- bound to a stand-in, never resolved, and reported as nothing. Two
-/// definitions of "every device in a project" is exactly the disagreement that
-/// file exists to prevent.
-void collectDevices(std::vector<magda::ChainElement>& elements,
-                    const magda::ChainNodePath& parentPath, ChainSegment segment,
-                    std::map<DeviceKey, magda::DeviceInfo*>& out) {
-    magda::chain_walk::forEachDevice(
-        elements, parentPath, magda::chain_walk::Pads::Enter,
-        [&out, segment](magda::DeviceInfo& device, const magda::ChainNodePath&) {
-            out[DeviceKey{segment, device.id}] = &device;
-        });
-}
-
-/// The same for a flat stage, whose elements are devices rather than a tree.
-///
-/// Flat means no racks; it does not mean no pads, so a device that carries them
-/// is descended into the same way.
-void collectFlatDevices(std::vector<magda::PostFxChainElement>& elements,
-                        const magda::ChainNodePath& parentPath, ChainSegment segment,
-                        std::map<DeviceKey, magda::DeviceInfo*>& out) {
-    for (auto& element : elements) {
-        out[DeviceKey{segment, element.device.id}] = &element.device;
-
-        if (!element.device.pads)
-            continue;
-
-        for (auto& pad : element.device.pads->chains)
-            collectDevices(pad.elements, parentPath, segment, out);
-    }
-}
-
-/// Every device the plan can emit an op for, by the key the op carries.
-///
-/// The master's chain is walked with the rest. It is as much of the project as
-/// any track's, the compiler emits Device ops for it, and a master left out of
-/// this map is a master limiter that silently becomes a stand-in: the case
-/// still renders, still compares, and is measuring a project without its
-/// master chain in it.
-std::map<DeviceKey, magda::DeviceInfo*> devicesIn(std::vector<TrackInfo>& tracks,
-                                                  TrackInfo& master) {
-    std::map<DeviceKey, magda::DeviceInfo*> devices;
-
-    const auto collectTrack = [&devices](TrackInfo& track) {
-        const auto trackPath = magda::ChainNodePath::trackLevel(track.id);
-        collectDevices(track.chain.fxChainElements, trackPath, ChainSegment::Fx, devices);
-        collectFlatDevices(track.chain.postFxChainElements, trackPath, ChainSegment::PostFx,
-                           devices);
-        collectFlatDevices(track.chain.mixerAnalysisElements, trackPath,
-                           ChainSegment::MixerAnalysis, devices);
-    };
-
-    for (auto& track : tracks)
-        collectTrack(track);
-
-    collectTrack(master);
-    return devices;
-}
-
 /// Whether @p device is a plugin somebody else shipped, which is the one kind
 /// this leg cannot build from a catalog and has to find on the machine.
 bool isExternalDevice(const magda::DeviceInfo& device) {
@@ -282,7 +212,7 @@ std::map<DeviceKey, std::string> resolveExternalDevices(
     const adapter::ExternalPluginServices& services) {
     std::map<DeviceKey, std::string> identities;
 
-    for (auto& [key, device] : devicesIn(tracks, master)) {
+    for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
         if (!isExternalDevice(*device))
             continue;
 
@@ -346,7 +276,7 @@ std::map<DeviceKey, adapter::ExternalDeviceResult> createExternalDevices(
     const adapter::ExternalPluginServices& services) {
     std::map<DeviceKey, adapter::ExternalDeviceResult> created;
 
-    for (auto& [key, device] : devicesIn(tracks, master)) {
+    for (auto& [key, device] : adapter::devicesIn(tracks, master)) {
         if (!isExternalDevice(*device) || !reached.contains(key))
             continue;
 
@@ -586,7 +516,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     std::vector<std::unique_ptr<GainDevice>> gains;
     std::vector<std::unique_ptr<ImpulseSynthDevice>> synths;
 
-    const auto modelDevices = devicesIn(tracks, master);
+    const auto modelDevices = adapter::devicesIn(tracks, master);
 
     // The tracks the corpus compares MIDI for, which is the same question the
     // incumbent asks when it decides where to put a capture. Asked once, of the

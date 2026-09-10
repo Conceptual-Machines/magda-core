@@ -544,7 +544,8 @@ target_link_libraries(magda_tests
 )
 
 if(MAGDA_BUILD_NATIVE_ENGINE)
-    target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices)
+    target_link_libraries(magda_tests PRIVATE magda_engine magda_engine_devices
+                          magda_engine_host)
 endif()
 
 # Include directories
@@ -811,6 +812,11 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         MgdFixture.cpp
         MgdFixtures.cpp
         engine/test_real_project_corpus_juce.cpp
+
+        # What the app hands the engine at runtime (#2551). Here rather than in
+        # magda_tests because it reads TrackManager and ClipManager, and those
+        # are the singletons a running MAGDA keeps its model in.
+        engine/test_engine_host_publish_juce.cpp
     )
 endif()
 
@@ -841,8 +847,13 @@ target_link_libraries(magda_juce_tests
 # magda_engine_devices with it (#2174): the device layer the native leg binds a
 # Device op through, so both legs run the app's own devices rather than a pair
 # written for the corpus.
+#
+# magda_engine_host because magda_daw now carries MagdaAudioEngine, which calls
+# into it (#2551). Nothing here drives the app's engine; this is the link the
+# class needs to exist at all.
 if(MAGDA_BUILD_NATIVE_ENGINE)
-    target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices)
+    target_link_libraries(magda_juce_tests PRIVATE magda_engine magda_engine_devices
+                          magda_engine_host)
 endif()
 
 # The Faust standard library is deliberately NOT staged beside this binary,

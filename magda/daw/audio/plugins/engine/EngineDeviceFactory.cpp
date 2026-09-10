@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "core/ChainWalk.hpp"
 #include "core/DeviceState.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
@@ -14,6 +15,53 @@
 namespace magda::daw::audio::engine_adapter {
 
 namespace {
+
+/// One descent, written once, over whichever constness the caller has.
+///
+/// A flat stage's elements are devices rather than a tree, so it is walked
+/// directly; flat does not mean padless, and a device carrying pads is
+/// descended into the same way a tree device is.
+template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, Master& master) {
+    using Device =
+        std::conditional_t<std::is_const_v<Master>, const magda::DeviceInfo, magda::DeviceInfo>;
+    std::map<magda::engine::DeviceKey, Device*> devices;
+
+    const auto collectTree = [&devices](auto& elements, const magda::ChainNodePath& parentPath,
+                                        magda::ChainSegment segment) {
+        magda::chain_walk::forEachDevice(
+            elements, parentPath, magda::chain_walk::Pads::Enter,
+            [&devices, segment](Device& device, const magda::ChainNodePath&) {
+                devices[magda::engine::DeviceKey{segment, device.id}] = &device;
+            });
+    };
+
+    const auto collectFlat = [&devices, &collectTree](auto& elements,
+                                                      const magda::ChainNodePath& parentPath,
+                                                      magda::ChainSegment segment) {
+        for (auto& element : elements) {
+            devices[magda::engine::DeviceKey{segment, element.device.id}] = &element.device;
+
+            if (!element.device.pads)
+                continue;
+
+            for (auto& pad : element.device.pads->chains)
+                collectTree(pad.elements, parentPath, segment);
+        }
+    };
+
+    const auto collectTrack = [&](auto& track) {
+        const auto path = magda::ChainNodePath::trackLevel(track.id);
+        collectTree(track.chain.fxChainElements, path, magda::ChainSegment::Fx);
+        collectFlat(track.chain.postFxChainElements, path, magda::ChainSegment::PostFx);
+        collectFlat(track.chain.mixerAnalysisElements, path, magda::ChainSegment::MixerAnalysis);
+    };
+
+    for (auto& track : tracks)
+        collectTrack(track);
+
+    collectTrack(master);
+    return devices;
+}
 
 /// The property a spec is looked up by, which is what a plugin state tree
 /// carries and what both catalogs match their ids and aliases against.
@@ -77,6 +125,16 @@ void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
 }
 
 }  // namespace
+
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(
+    std::vector<magda::TrackInfo>& tracks, magda::TrackInfo& master) {
+    return collectDevices(tracks, master);
+}
+
+std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
+    return collectDevices(tracks, master);
+}
 
 /// enableAllBuses first, at the same point the fork does it
 /// (completePluginInstanceCreation) and for the same reason: a plugin whose

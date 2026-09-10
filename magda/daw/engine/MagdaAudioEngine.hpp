@@ -4,6 +4,10 @@
 
 #include "AudioEngine.hpp"
 
+namespace magda::daw::engine_host {
+class EngineHost;
+}
+
 /**
  * @file MagdaAudioEngine.hpp
  * @brief The app's second AudioEngine, backed by magda::engine (#2551).
@@ -17,6 +21,16 @@
  *
  * Selected in createDefaultAudioEngine rather than chosen at build time, so
  * both engines ship in one binary and switching them is a setting.
+ *
+ * ## What magda::engine answers, and what is still the fork's
+ *
+ * Transport, tempo, loop and metronome are published to an EngineSession and
+ * rendered from the audio device callback: what fills the output buffer is
+ * magda::engine and nothing else. The tempo *model* is still the fork's, since
+ * the app has no tempo track of its own, so a tempo edit reaches both.
+ *
+ * Recording, session launch and offline render are not wired yet (#2552,
+ * #2553, #2555) and say so once in the log rather than answering silently.
  *
  * ## Why it holds a Tracktion engine
  *
@@ -167,9 +181,21 @@ class MagdaAudioEngine final : public AudioEngine {
     void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) override;
 
   private:
+    /// Whatever has not moved to magda::engine yet, said once per method
+    /// rather than answered with silence.
+    void reportUnwired(const char* method, const char* issue) const;
+
+    /// The loop as one value, from the fork that still holds both halves.
+    void publishLoop();
+
     /// The half of the interface that is not an engine question. See the file
     /// comment: this goes away with #2554.
     std::unique_ptr<AudioEngine> tracktion_;
+
+    /// What actually renders. Declared after the fork so it is destroyed
+    /// first: the device it has a callback on is the fork's, and the fork
+    /// closes it on its way out.
+    std::unique_ptr<daw::engine_host::EngineHost> host_;
 };
 
 }  // namespace magda
