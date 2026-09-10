@@ -364,7 +364,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
     }
 
     /// The key a track's first FX slot has.
-    static constexpr magda::engine::DeviceKey firstFxSlot() {
+    static magda::engine::DeviceKey firstFxSlot() {
         return magda::engine::DeviceKey{magda::ChainSegment::Fx, 1};
     }
 
