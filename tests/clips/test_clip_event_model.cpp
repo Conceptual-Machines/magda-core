@@ -388,6 +388,62 @@ TEST_CASE("Loop length in beats is a timeline view, not a source view", "[clip][
     }
 }
 
+TEST_CASE("A zero loop length means the whole clip, not no loop", "[clip][event][loop][sentinel]") {
+    // A v1 project can still carry 0 in loopLengthBeats. Handed to the engine
+    // as-is it asks for a loop of nothing, so every caller wrote the same
+    // fallback by hand; effectiveLoopLengthBeats is that fallback, once.
+    EventModelFixture fixture;
+    constexpr double kProjectBpm = 120.0;
+
+    ClipInfo clip;
+    clip.setMidiContent();
+    clip.setPlacementBeats(0.0, 8.0);
+    clip.loopEnabled = true;
+
+    SECTION("A set length is its own answer") {
+        clip.loopLengthBeats = 3.0;
+        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(3.0));
+    }
+
+    SECTION("A zero falls back to the clip's own length") {
+        clip.loopLengthBeats = 0.0;
+        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(8.0));
+    }
+
+    SECTION("The fallback is the clip length, not a zero passed through") {
+        clip.loopLengthBeats = 0.0;
+        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) > 0.0);
+    }
+}
+
+TEST_CASE("effectiveLoopLengthBeats and loopLengthInBeats are different questions",
+          "[clip][event][loop][sentinel]") {
+    // The names are one word apart and the answers are not interchangeable:
+    // loopLengthInBeats maps an audio clip's source region onto the timeline,
+    // effectiveLoopLengthBeats reads the clip-beat field with a fallback.
+    // Swapping one for the other compiles and plays the wrong length, which is
+    // exactly the edit this case exists to fail.
+    EventModelFixture fixture;
+    constexpr double kProjectBpm = 120.0;
+
+    ClipInfo clip;
+    clip.setAudioContent();
+    clip.setPlacementBeats(0.0, 8.0);
+    auto& event = magda::test::giveAudioEvent(clip, "/tmp/loop-174.wav", 8.0);
+    event.interpBpm = 174.0;
+    event.speedRatio = 1.0;
+    event.autoTempo = false;
+    event.setLoopStartSeconds(1.0);
+    event.setLoopLengthSeconds(2.0);
+    clip.loopEnabled = true;
+    clip.loopLengthBeats = 0.0;
+
+    // Two seconds at the project's own tempo is four beats; the field carries
+    // the sentinel, so the other accessor answers with the whole clip.
+    REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(4.0));
+    REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(8.0));
+}
+
 TEST_CASE("A warped loop reports its warped timeline span", "[clip][event][loop][warp]") {
     // warpEnabled is independent of autoTempo: setClipWarpEnabled does not
     // turn beat mode on, and the engine treats either as source-beat
