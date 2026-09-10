@@ -3,11 +3,11 @@
 #include <memory>
 
 #include "core/LLMClientProvider.hpp"
-#include "engine/TracktionEngineWrapper.hpp"
+#include "engine/AudioEngine.hpp"
 
 // Global engine instance
 namespace {
-std::unique_ptr<magda::TracktionEngineWrapper> g_engine;
+std::unique_ptr<magda::AudioEngine> g_engine;
 }  // namespace
 
 bool magda_initialize() {
@@ -15,10 +15,12 @@ bool magda_initialize() {
     DBG("Initializing system...");
 
     try {
-        // Initialize Tracktion Engine
-        g_engine = std::make_unique<magda::TracktionEngineWrapper>();
+        // Through the factory, which is where the choice of engine is made
+        // (#2551). Naming an implementation is what makes that choice
+        // unreachable from whoever took this path.
+        g_engine = magda::createDefaultAudioEngine();
         if (!g_engine->initialize()) {
-            DBG("ERROR: Failed to initialize Tracktion Engine");
+            DBG("ERROR: Failed to initialize the audio engine");
             return false;
         }
 

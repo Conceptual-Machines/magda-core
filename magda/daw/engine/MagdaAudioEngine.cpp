@@ -1,9 +1,11 @@
 #include "MagdaAudioEngine.hpp"
 
-#include <cstdlib>
+#include <set>
+#include <string>
 
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "TracktionEngineWrapper.hpp"
+#include "host/EngineHost.hpp"
 
 namespace magda {
 
@@ -14,44 +16,56 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
     auto wrapper = std::make_unique<TracktionEngineWrapper>();
     wrapper->setForceHeadless(options.headless);
     tracktion_ = std::move(wrapper);
+
+    // Here rather than in initialize(), so that everything below can ask it
+    // things without first asking whether it exists. It renders nothing until
+    // start() puts it on a device.
+    host_ = std::make_unique<daw::engine_host::EngineHost>();
+}
+
+void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) const {
+    static std::set<std::string> said;
+    if (!said.insert(method).second)
+        return;
+
+    juce::Logger::writeToLog(juce::String("[engine] ") + method +
+                             " is not wired on magda::engine yet (" + issue + ")");
 }
 
 MagdaAudioEngine::~MagdaAudioEngine() = default;
 
-bool MagdaAudioEngine::requested(const AudioEngineOptions& options) {
-    juce::ignoreUnused(options);
-
-    // Named symmetrically, and by what each engine is rather than by which one
-    // is the newcomer: "native" only means anything while there is something
-    // for it to be native against, and after #2557 there will not be.
-    //
-    // The environment wins over the setting (#2559), so a bug report asking
-    // "does it still happen on the other engine" is answered by one run rather
-    // than by changing somebody's preferences.
-    if (const auto* value = std::getenv("MAGDA_AUDIO_ENGINE")) {
-        const auto choice = juce::String(value).trim().toLowerCase();
-        if (choice == "magda")
-            return true;
-        if (choice == "tracktion")
-            return false;
-    }
-
-    return false;
-}
-
-// --- the delegated half ------------------------------------------------------
+// --- what magda::engine answers ----------------------------------------------
 //
-// Everything below forwards. Each method moves up into a native implementation
-// as its subsystem is wired, and what is left when #2554 lands is what actually
-// had to be on this interface.
+// Transport and what is published with it. Everything below this section still
+// forwards, and each method moves up here as its subsystem is wired.
 
 bool MagdaAudioEngine::initialize() {
-    // Said once, out loud. Which engine a session ran on is the first question
-    // any report about it raises, and the answer should not need a debugger.
-    juce::Logger::writeToLog("[engine] rendering through magda::engine (#2551)");
-    return tracktion_->initialize();
+    if (!tracktion_->initialize())
+        return false;
+
+    // After the fork, because the device is its to open: the settings UI, the
+    // channel lists and the driver choice are all still on that side, and two
+    // device managers over one interface is the failure this class exists not
+    // to have. What changes is who fills the buffer.
+    if (auto* devices = tracktion_->getDeviceManager())
+        host_->start(*devices);
+
+    // Seeded from the fork rather than left at the engine's own 120 in 4/4. A
+    // project whose tempo never changes after it loads would otherwise place
+    // every clip at a tempo nobody chose.
+    host_->setTempo(tracktion_->getTempo());
+
+    int numerator = 4;
+    int denominator = 4;
+    tracktion_->getTimeSignature(numerator, denominator);
+    host_->setTimeSignature(numerator, denominator);
+    publishLoop();
+
+    return true;
 }
 void MagdaAudioEngine::shutdown() {
+    // Before the fork's, which closes the device this is rendering into.
+    host_->stop();
     tracktion_->shutdown();
 }
 bool MagdaAudioEngine::hasActiveEdit() const {
@@ -64,25 +78,38 @@ juce::File MagdaAudioEngine::getEditFile() const {
     return tracktion_->getEditFile();
 }
 void MagdaAudioEngine::play() {
-    tracktion_->play();
+    // The fork's guard, and it is about the device rather than about the
+    // engine: both render through the one the fork opens, and starting into a
+    // device that is still being enumerated is a glitch either way.
+    if (tracktion_->isDevicesLoading())
+        return;
+
+    host_->play();
 }
 void MagdaAudioEngine::stop() {
-    tracktion_->stop();
+    host_->stopPlaying();
 }
 void MagdaAudioEngine::pause() {
-    tracktion_->pause();
+    // The engine has no pause: a stop that does not move the cursor is the same
+    // thing, and is what this asks for.
+    host_->stopPlaying();
 }
 void MagdaAudioEngine::record() {
-    tracktion_->record();
+    reportUnwired("record", "#2553");
 }
 void MagdaAudioEngine::locate(double positionSeconds) {
+    host_->locateSeconds(positionSeconds);
+
+    // The fork keeps the position too, because half the app still asks it
+    // things about the edit. Harmless while its transport is stopped, which is
+    // the one thing this class guarantees about it.
     tracktion_->locate(positionSeconds);
 }
 double MagdaAudioEngine::getCurrentPosition() const {
-    return tracktion_->getCurrentPosition();
+    return host_->positionSeconds();
 }
 bool MagdaAudioEngine::isPlaying() const {
-    return tracktion_->isPlaying();
+    return host_->isPlaying();
 }
 bool MagdaAudioEngine::isRecording() const {
     return tracktion_->isRecording();
@@ -106,19 +133,26 @@ bool MagdaAudioEngine::isSessionTrackStopPending(TrackId trackId) const {
     return tracktion_->isSessionTrackStopPending(trackId);
 }
 double MagdaAudioEngine::getAudioThreadTransportSeconds() const {
-    return tracktion_->getAudioThreadTransportSeconds();
+    return host_->positionSeconds();
 }
 void MagdaAudioEngine::deactivateAllSessionClips() {
     tracktion_->deactivateAllSessionClips();
 }
+// Tempo, time signature and loop reach both engines. The fork still owns the
+// model -- its tempo sequence is what the ruler, the grid and every
+// beats<->seconds conversion in the UI read through tempoMap() -- and the
+// engine needs the same numbers to render with (#2554 is where that authority
+// moves).
 void MagdaAudioEngine::setTempo(double bpm) {
     tracktion_->setTempo(bpm);
+    host_->setTempo(bpm);
 }
 double MagdaAudioEngine::getTempo() const {
     return tracktion_->getTempo();
 }
 void MagdaAudioEngine::setTimeSignature(int numerator, int denominator) {
     tracktion_->setTimeSignature(numerator, denominator);
+    host_->setTimeSignature(numerator, denominator);
 }
 void MagdaAudioEngine::getTimeSignature(int& numerator, int& denominator) const {
     tracktion_->getTimeSignature(numerator, denominator);
@@ -128,9 +162,18 @@ const TempoMap* MagdaAudioEngine::tempoMap() const {
 }
 void MagdaAudioEngine::setLooping(bool enabled) {
     tracktion_->setLooping(enabled);
+    publishLoop();
 }
 void MagdaAudioEngine::setLoopRegionBeats(BeatRange range) {
     tracktion_->setLoopRegionBeats(range);
+    publishLoop();
+}
+
+/// Both halves of a loop from the one place that holds them: the enable and
+/// the range arrive separately and the engine takes them as one value.
+void MagdaAudioEngine::publishLoop() {
+    const auto range = tracktion_->getLoopRegionBeats();
+    host_->setLoop(tracktion_->isLooping(), range.start.value, range.end.value);
 }
 bool MagdaAudioEngine::isLooping() const {
     return tracktion_->isLooping();
@@ -140,6 +183,7 @@ BeatRange MagdaAudioEngine::getLoopRegionBeats() const {
 }
 void MagdaAudioEngine::setMetronomeEnabled(bool enabled) {
     tracktion_->setMetronomeEnabled(enabled);
+    host_->setMetronomeEnabled(enabled);
 }
 bool MagdaAudioEngine::isMetronomeEnabled() const {
     return tracktion_->isMetronomeEnabled();
@@ -174,6 +218,13 @@ bool MagdaAudioEngine::isDevicesLoading() const {
 void MagdaAudioEngine::setDevicesLoadingCallback(
     std::function<void(bool, const juce::String&)> callback) {
     tracktion_->setDevicesLoadingCallback(callback);
+}
+void MagdaAudioEngine::setPluginScanStatusCallback(
+    std::function<void(const juce::String&)> callback) {
+    tracktion_->setPluginScanStatusCallback(std::move(callback));
+}
+void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
+    tracktion_->setMidiDevicesReadyCallback(std::move(callback));
 }
 AudioBridge* MagdaAudioEngine::getAudioBridge() {
     return tracktion_->getAudioBridge();
@@ -267,35 +318,50 @@ void MagdaAudioEngine::previewNoteOnTrack(const std::string& track_id, int noteN
                                           bool isNoteOn) {
     tracktion_->previewNoteOnTrack(track_id, noteNumber, velocity, isNoteOn);
 }
+// The UI's own transport, which TimelineController drives. Deliberately not
+// forwarded: the fork's versions of these are locate-and-play, and starting its
+// transport is the one thing this class must never do.
 void MagdaAudioEngine::onTransportPlay(double positionSeconds) {
-    tracktion_->onTransportPlay(positionSeconds);
+    locate(positionSeconds);
+    play();
 }
 void MagdaAudioEngine::onTransportStop(double returnPositionSeconds) {
-    tracktion_->onTransportStop(returnPositionSeconds);
+    stop();
+    locate(returnPositionSeconds);
 }
 void MagdaAudioEngine::onTransportPause() {
-    tracktion_->onTransportPause();
+    pause();
 }
 void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
-    tracktion_->onTransportRecord(positionSeconds);
+    juce::ignoreUnused(positionSeconds);
+    reportUnwired("onTransportRecord", "#2553");
 }
 void MagdaAudioEngine::onTransportStopRecording() {
-    tracktion_->onTransportStopRecording();
+    reportUnwired("onTransportStopRecording", "#2553");
 }
 void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
-    tracktion_->onEditPositionChanged(positionSeconds);
+    // Only while stopped, which is the fork's rule and the right one: this
+    // fires whenever the edit cursor moves, and clicking in the piano roll to
+    // place a note moves it. Seeking on that would drag the transport out from
+    // under whoever is listening.
+    if (!isPlaying())
+        locate(positionSeconds);
 }
 void MagdaAudioEngine::onTempoChanged(double bpm) {
     tracktion_->onTempoChanged(bpm);
+    host_->setTempo(bpm);
 }
 void MagdaAudioEngine::onTimeSignatureChanged(int numerator, int denominator) {
     tracktion_->onTimeSignatureChanged(numerator, denominator);
+    host_->setTimeSignature(numerator, denominator);
 }
 void MagdaAudioEngine::onLoopRegionChanged(double startSeconds, double endSeconds, bool enabled) {
     tracktion_->onLoopRegionChanged(startSeconds, endSeconds, enabled);
+    publishLoop();
 }
 void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
     tracktion_->onLoopEnabledChanged(enabled);
+    publishLoop();
 }
 
 // --- the bases' defaulted virtuals -------------------------------------------

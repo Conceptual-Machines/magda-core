@@ -235,6 +235,22 @@ class AudioEngine : public AudioEngineListener {
     virtual void setDevicesLoadingCallback(
         std::function<void(bool, const juce::String&)> callback) = 0;
 
+    // ===== Startup hooks =====
+    //
+    // What the application asks of an engine while it is coming up. On the
+    // interface rather than on one implementation's public fields, because the
+    // app owns the startup sequence and must not have to know which engine it
+    // was given -- naming a concrete type there is what made the choice
+    // unreachable from the running app (#2551).
+
+    /** Startup plugin-detection status, for the splash screen. */
+    virtual void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) = 0;
+
+    /** Fires the first time MIDI devices become available, and on subsequent
+        device-list changes. Work needing MIDI output ports open waits for this:
+        a SysEx send issued before JUCE opens the port is dropped. */
+    virtual void setMidiDevicesReadyCallback(std::function<void()> callback) = 0;
+
     // ===== Audio Management =====
     virtual AudioBridge* getAudioBridge() = 0;
     virtual const AudioBridge* getAudioBridge() const = 0;

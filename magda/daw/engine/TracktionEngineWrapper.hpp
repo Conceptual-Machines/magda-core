@@ -138,6 +138,12 @@ class TracktionEngineWrapper : public AudioEngine,
     void setTempo(double bpm) override;
     double getTempo() const override;
     const TempoMap* tempoMap() const override;
+    void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) override {
+        onPluginScanStatus = std::move(callback);
+    }
+    void setMidiDevicesReadyCallback(std::function<void()> callback) override {
+        onMidiDevicesReady = std::move(callback);
+    }
     void setTimeSignature(int numerator, int denominator) override;
     void getTimeSignature(int& numerator, int& denominator) const override;
     void setLooping(bool enabled) override;

@@ -3,10 +3,13 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 
 #include "core/DeviceInfo.hpp"
+#include "core/TrackInfo.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
 #include "plan/RenderPlan.hpp"
@@ -24,6 +27,34 @@
  */
 
 namespace magda::daw::audio::engine_adapter {
+
+/**
+ * @brief Every device a plan can emit an op for, by the key that op carries.
+ *
+ * Keyed by DeviceKey and not by DeviceId: an id is unique within a chain
+ * segment and not across them (#1899), so a map keyed by the number alone would
+ * let a post-FX device stand in for the FX device with the same one.
+ * OpKey::deviceKey() carries the segment for that reason; this has to match.
+ *
+ * The descent is the model's own (ChainWalk.hpp), entered with Pads::Enter. A
+ * Drum Grid's pads are chains of devices and PlanCompiler::emitPadRack() emits
+ * an op for each of them, so a walk that stopped at the grid would leave every
+ * plugin in every pad looked up and not found. The master's chain is walked
+ * with the rest, for the same reason: the compiler emits Device ops for it, and
+ * a caller that left it out would resolve a master limiter to nothing.
+ *
+ * One definition, shared by the corpus and the running app, because two walks
+ * of "every device in this project" drift the first time the model grows a
+ * container -- the failure #2204 is about, and one that shows up as a device
+ * silently standing in for itself.
+ */
+std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(
+    std::vector<magda::TrackInfo>& tracks, magda::TrackInfo& master);
+
+/// @overload For a caller that only reads the model, which is what a live
+/// publish does: resolution copies before it corrects.
+std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master);
 
 /**
  * @brief The engine device @p device names, or null when nothing can make one.

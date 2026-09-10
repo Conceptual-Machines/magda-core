@@ -91,7 +91,7 @@ void magdaTerminateHandler() noexcept {
 class MagdaDAWApplication : public JUCEApplication {
   private:
     std::unique_ptr<juce::FileLogger> fileLogger_;
-    std::unique_ptr<magda::TracktionEngineWrapper> daw_engine_;
+    std::unique_ptr<magda::AudioEngine> daw_engine_;
     // Lua-driven MIDI controller scripts (issue #592). Lives in the app
     // layer rather than inside TracktionEngineWrapper so the engine library
     // (magda_daw) doesn't pull magda_scripting into its link line.
@@ -296,13 +296,18 @@ class MagdaDAWApplication : public JUCEApplication {
         juce::Logger::writeToLog("finishInitialisation() entered");
 
         // 3. Initialize audio engine
-        daw_engine_ = std::make_unique<magda::TracktionEngineWrapper>();
+        //
+        // Through the factory, which is where the choice of engine is made
+        // (#2551). Naming an implementation here is what made that choice
+        // unreachable from the running app while every other site looked
+        // wired: this is the site the app actually takes.
+        daw_engine_ = magda::createDefaultAudioEngine();
 
         // Show plugin scan status on splash screen
-        daw_engine_->onPluginScanStatus = [this](const juce::String& status) {
+        daw_engine_->setPluginScanStatusCallback([this](const juce::String& status) {
             if (splashScreen_)
                 splashScreen_->setStatus(status);
-        };
+        });
 
         if (splashScreen_)
             splashScreen_->setStatus("Initializing audio engine...");
@@ -331,7 +336,7 @@ class MagdaDAWApplication : public JUCEApplication {
             // script were loaded. Hook fires on first MIDI device-list change
             // after engine init, then on every subsequent change. We only want
             // the auto-load to fire once.
-            daw_engine_->onMidiDevicesReady = [this]() {
+            daw_engine_->setMidiDevicesReadyCallback([this]() {
                 if (scriptAutoLoaded_)
                     return;
                 scriptAutoLoaded_ = true;
@@ -344,7 +349,7 @@ class MagdaDAWApplication : public JUCEApplication {
                     (luaController_ ? luaController_->currentScriptName() : juce::String{}) + "'");
                 if (!ok)
                     juce::Logger::writeToLog("[lua] No controller script loaded");
-            };
+            });
             juce::MessageManager::callAsync([this]() {
                 if (scriptAutoLoaded_ || luaController_ == nullptr)
                     return;

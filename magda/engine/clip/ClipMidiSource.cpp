@@ -422,16 +422,29 @@ void ClipMidiSource::expectLane(juce::MidiBuffer& out, const BlockInfo& block,
 
             expected.set(channel, note);
 
-            if (!active_.active(channel, note))
-                continue;  // nobody is holding it, and a swap does not chase
-            if (active_.owner(channel, note) == clip.clipId)
-                continue;  // already sounding, from the clip that should own it
+            if (active_.active(channel, note)) {
+                if (active_.owner(channel, note) == clip.clipId)
+                    continue;  // already sounding, from the clip that should own it
 
-            // The wrong clip is holding this pitch. Hand it over rather than
-            // leaving it: ending first keeps the receiver's count right, and
-            // striking it again is what makes the new clip's own note-off
-            // legal when it arrives instead of rejected for the wrong owner.
-            endNote(out, EventSample{0}, channel, note);
+                // The wrong clip is holding this pitch. Hand it over rather
+                // than leaving it: ending first keeps the receiver's count
+                // right, and striking it again is what makes the new clip's own
+                // note-off legal when it arrives instead of rejected for the
+                // wrong owner.
+                endNote(out, EventSample{0}, channel, note);
+            }
+
+            // Nobody is holding it, and the new snapshot says it should be
+            // sounding here: a note whose pitch was shifted while it played, or
+            // one moved so that it now covers the cursor. Struck, for the
+            // reason a locate strikes what it lands inside -- the alternative
+            // is that editing a held note silences it until the next one, which
+            // is what this did before (#2568).
+            //
+            // Only a note the swap changed can reach this: one the edit left
+            // alone is still active and owned by its own clip, and was skipped
+            // above. So an unrelated edit somewhere else in the project, which
+            // republishes the whole snapshot, re-strikes nothing.
             startNote(out, block, clip, index, from);
         }
     }
