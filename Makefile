@@ -194,6 +194,20 @@ run-console: debug
 	@echo "🎵 Running MAGDA DAW (console mode)..."
 	"$(APP_BINARY_DEBUG)"
 
+# The native engine (#2551), until the choice becomes a setting (#2559). Console
+# mode, because that is where its diagnostics go.
+.PHONY: run-magda
+run-magda: debug
+	@echo "🎵 Running MAGDA DAW on magda::engine..."
+	MAGDA_AUDIO_ENGINE=magda "$(APP_BINARY_DEBUG)"
+
+# The same, with every note reaching a device and every publish printed in one
+# stream (#2568). For pinning down an edit-during-playback bug by ear.
+.PHONY: run-magda-trace
+run-magda-trace: debug
+	@echo "🎵 Running MAGDA DAW on magda::engine, MIDI trace on..."
+	MAGDA_AUDIO_ENGINE=magda MAGDA_ENGINE_TRACE_MIDI=1 "$(APP_BINARY_DEBUG)"
+
 .PHONY: cli
 cli:
 	@echo "🔨 Building magda-cli (Debug)..."
@@ -557,6 +571,8 @@ help:
 	@echo "Run targets:"
 	@echo "  run            - Build and run the application"
 	@echo "  run-console    - Run with console output visible"
+	@echo "  run-magda      - Run on the native engine (magda::engine)"
+	@echo "  run-magda-trace - Run on the native engine with the MIDI trace on"
 	@echo "  run-console-cpu - Run debug analyzer CPU baseline with console output"
 	@echo "  run-console-webgpu - Run debug Dawn/WebGPU analyzer POC with console output"
 	@echo "  run-console-cpu-log - Run CPU baseline and write app output to $(CPU_RUN_LOG)"
