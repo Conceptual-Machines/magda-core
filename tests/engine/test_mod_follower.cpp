@@ -301,6 +301,37 @@ TEST_CASE("Hold keeps the envelope up before it is allowed to fall", "[engine][m
     CHECK(state.envelope < reached);
 }
 
+TEST_CASE("A source that stays loud keeps the hold armed", "[engine][mod][follower]") {
+    // The attack closes a fraction of the gap per sample and never arrives, so
+    // a source that stays up is still driving the envelope however long it has
+    // been up, and the hold is refreshed for as long as it is. An envelope that
+    // arrived at the source would leave that branch and spend the hold where
+    // nothing had stopped, and the follower would fall the instant the source
+    // did.
+    FollowerSettings settings;
+    settings.attackMs = 1.0f;
+    settings.releaseMs = 10.0f;
+    settings.holdMs = 5.0f;
+
+    FollowerState state;
+    state.sourcePeak = 1.0f;
+
+    // Far longer than the attack, so the gap is down to the last few ulps.
+    const auto block = blockOf(static_cast<int>(kSampleRate / 1000.0));
+    for (int i = 0; i < 200; ++i)
+        advanceFollower(state, settings, block, timing());
+    const auto reached = state.envelope;
+    CHECK(reached < 1.0f);
+
+    state.sourcePeak = 0.0f;
+    for (int i = 0; i < 5; ++i)
+        advanceFollower(state, settings, block, timing());
+    CHECK(state.envelope == approx(reached));
+
+    advanceFollower(state, settings, block, timing());
+    CHECK(state.envelope < reached);
+}
+
 TEST_CASE("A follower with a silent source contributes nothing", "[engine][mod][follower]") {
     FollowerSettings settings;
     FollowerState state;

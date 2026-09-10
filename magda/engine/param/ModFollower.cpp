@@ -195,7 +195,13 @@ float advanceFollower(FollowerState& state, const FollowerSettings& settings,
             // Attack, and for the whole block: a step closes a fixed fraction of
             // what is left and never arrives, so the envelope cannot cross the
             // input and change branch part way through.
-            state.envelope = decayed(state.envelope, input, attack, numSamples);
+            //
+            // Kept under the input rather than allowed to round onto it, which
+            // is what the per-sample form did by construction. An envelope that
+            // arrived would leave this branch, and the hold is refreshed here:
+            // a source that stayed loud would then release the moment it fell.
+            state.envelope = std::min(decayed(state.envelope, input, attack, numSamples),
+                                      std::nextafter(input, 0.0f));
             state.holdLeft = holdSamples;
         } else {
             // At or under the input, where the hold spends itself first and the
