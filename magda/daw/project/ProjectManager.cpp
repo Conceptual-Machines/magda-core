@@ -295,7 +295,7 @@ bool ProjectManager::newProject() {
         return false;
     }
 
-    resetTransportForProjectBoundary();
+    beginProjectTeardown();
 
     // Clear all project content from singleton managers. Source ids are
     // project-scoped like clip ids, so the pool empties here rather than in
@@ -457,7 +457,7 @@ bool ProjectManager::loadProject(const juce::File& file,
         return false;
     }
 
-    resetTransportForProjectBoundary();
+    beginProjectTeardown();
 
     // Set tempo/time sig/loop on the audio engine BEFORE committing tracks & clips,
     // so that audio engine clip sync uses the correct BPM.
@@ -570,7 +570,7 @@ void ProjectManager::importDawProjectAsync(
                             return;
                         }
 
-                        resetTransportForProjectBoundary();
+                        beginProjectTeardown();
 
                         if (onBeforeCommit)
                             onBeforeCommit(staged->info);
@@ -660,7 +660,7 @@ void ProjectManager::loadProjectAsync(
                     return;
                 }
 
-                resetTransportForProjectBoundary();
+                beginProjectTeardown();
 
                 // Set tempo/time sig/loop BEFORE committing tracks & clips,
                 // so that audio engine clip sync uses the correct BPM.
@@ -713,7 +713,7 @@ bool ProjectManager::closeProject() {
 
     deleteAutosaveFile();
 
-    resetTransportForProjectBoundary();
+    beginProjectTeardown();
 
     // Clear all project content from singleton managers. Source ids are
     // project-scoped like clip ids, so the pool empties here rather than in
@@ -850,6 +850,16 @@ void ProjectManager::addListener(ProjectManagerListener* listener) {
 
 void ProjectManager::removeListener(ProjectManagerListener* listener) {
     listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+}
+
+void ProjectManager::beginProjectTeardown() {
+    // The transport first: a listener about to drop what it built for this
+    // project should not be dropping it out from under a running render.
+    resetTransportForProjectBoundary();
+
+    for (auto* listener : listeners_) {
+        listener->projectTeardown();
+    }
 }
 
 void ProjectManager::notifyProjectOpened() {

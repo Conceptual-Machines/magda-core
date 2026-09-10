@@ -11,6 +11,7 @@
 #include "../core/DeviceInfo.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/TypeIds.hpp"
+#include "../project/ProjectManager.hpp"
 #include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "ExternalInsertDeviceEnablement.hpp"
@@ -55,7 +56,10 @@ class SessionMonitorPlugin;
  * - UI thread: Receives TrackManager/ClipManager notifications, updates mappings
  * - Audio thread: Reads mappings, processes parameter changes, pushes metering
  */
-class AudioBridge : public TrackManagerListener, public ClipManagerListener, public juce::Timer {
+class AudioBridge : public TrackManagerListener,
+                    public ClipManagerListener,
+                    public ProjectManagerListener,
+                    public juce::Timer {
   public:
     /**
      * @brief Construct AudioBridge with Tracktion Engine references
@@ -66,6 +70,12 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     ~AudioBridge() override;
 
     void resetTestState();
+
+    // =========================================================================
+    // ProjectManagerListener implementation
+    // =========================================================================
+
+    void projectTeardown() override;
 
     // =========================================================================
     // TrackManagerListener implementation

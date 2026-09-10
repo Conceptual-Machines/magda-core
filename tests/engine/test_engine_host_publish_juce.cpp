@@ -403,7 +403,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
     }
 
     void testClearedProjectIsRebuilt() {
-        beginTest("A cleared project is every device it held named for rebuild");
+        beginTest("A torn-down project is every device it held named for rebuild");
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto trackId = trackManager.createTrack("Instrument");
@@ -418,14 +418,11 @@ class EngineHostPublishTest final : public juce::UnitTest {
         host::EngineRuntimeFactory factory;
         factory.setModel(trackManager.getTracks(), *master);
         expect(factory.createDevice(firstFxSlot()) != nullptr, "The catalog builds the synth");
-        expect(!host::modelHoldsNoDevices(), "A project with a device in it is not a teardown");
 
-        // What a project load does before it restores anything, and the only
-        // moment the empty model is visible.
-        trackManager.clearAllTracks();
-        expect(host::modelHoldsNoDevices(), "A cleared project names no device anywhere");
-
+        // What EngineHost does on a declared project teardown (#2576), while
+        // the outgoing project is still the model.
         factory.forgetBuiltDevices();
+
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "Every device the store holds is the previous project's");
