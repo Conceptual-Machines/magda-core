@@ -7,6 +7,7 @@
 #include "AutomationLaneComponent.hpp"
 #include "core/AutomationCommands.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/UndoManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -230,36 +231,37 @@ void AutomationCurveEditor::paintGrid(juce::Graphics& g) {
     auto paramInfo = getParameterInfoForTarget(lane->target);
 
     // Build list of normalized grid positions based on parameter type
+    const auto tickAt = [&paramInfo](double realValue) {
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(realValue), paramInfo));
+    };
+
     std::vector<double> gridNorms;
 
     if (paramInfo.scale == ParameterScale::FaderDB) {
         // dB values that make sense for a fader
-        const double dbValues[] = {6.0, 3.0, 0.0, -6.0, -12.0, -18.0, -24.0, -36.0, -48.0, -60.0};
-        for (double db : dbValues) {
-            float norm = ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        static constexpr double kDbTicks[] = {6.0,   3.0,   0.0,   -6.0,  -12.0,
+                                              -18.0, -24.0, -36.0, -48.0, -60.0};
+        gridNorms = kDbTicks | std::views::transform(tickAt) | toStd<std::vector<double>>();
     } else if (lane->target.kind == ControlTarget::Kind::TrackPan) {
         // Pan: fine divisions from -1 to +1
-        for (double pan = -1.0; pan <= 1.0; pan += 0.25) {
-            float norm = ParameterUtils::realToNormalized(static_cast<float>(pan), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        const auto panAt = [&tickAt](int step) { return tickAt(-1.0 + step * 0.25); };
+        gridNorms =
+            std::views::iota(0, 9) | std::views::transform(panAt) | toStd<std::vector<double>>();
     } else if (paramInfo.isBipolar()) {
         // Symmetric real-value grid so 0 lands exactly at mid-lane.
         // Quarter + half divisions give a readable ±max, ±50%, 0 grid.
-        float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
-        const double frac[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
-        for (double f : frac) {
-            float norm =
-                ParameterUtils::realToNormalized(static_cast<float>(f * absMax), paramInfo);
-            gridNorms.push_back(static_cast<double>(norm));
-        }
+        const float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+        static constexpr double kFractions[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
+        const auto scaledTickAt = [&tickAt, absMax](double fraction) {
+            return tickAt(fraction * absMax);
+        };
+        gridNorms = kFractions | std::views::transform(scaledTickAt) | toStd<std::vector<double>>();
     } else {
         // Generic: 10% increments
-        for (int i = 1; i < 10; ++i) {
-            gridNorms.push_back(i / 10.0);
-        }
+        const auto tenthStep = [](int step) { return step / 10.0; };
+        gridNorms = std::views::iota(1, 10) | std::views::transform(tenthStep) |
+                    toStd<std::vector<double>>();
     }
 
     auto bounds = getLocalBounds();

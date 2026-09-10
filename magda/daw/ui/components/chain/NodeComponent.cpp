@@ -2,6 +2,7 @@
 
 #include <BinaryData.h>
 
+#include <ranges>
 #include <utility>
 
 #include "../../utils/SelectionPolicy.hpp"
@@ -10,6 +11,7 @@
 #include "core/AutomationInfo.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/LinkModeManager.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/controllers/ControllerActivation.hpp"
@@ -24,6 +26,26 @@
 namespace magda::daw::ui {
 
 namespace {
+/// The raw pointers a fade timer takes, out of a container that owns them.
+std::vector<juce::Component*> fadeTargets(const auto& owned) {
+    const auto rawPointer = [](const auto& item) -> juce::Component* { return item.get(); };
+    return owned | std::views::transform(rawPointer) | toStd<std::vector<juce::Component*>>();
+}
+
+/// The modifiers a link picker can offer: the enabled ones, by id and name.
+std::vector<std::pair<magda::ModId, juce::String>> enabledModifiers(const magda::ModArray* mods) {
+    if (mods == nullptr)
+        return {};
+
+    const auto isEnabled = [](const magda::ModInfo& mod) { return mod.enabled; };
+    const auto asEntry = [](const magda::ModInfo& mod) {
+        return std::pair{mod.id, magda::getModDisplayName(mod)};
+    };
+
+    return *mods | std::views::filter(isEnabled) | std::views::transform(asEntry) |
+           toStd<std::vector<std::pair<magda::ModId, juce::String>>>();
+}
+
 juce::Image createChainNodeDragImage(const juce::String& label, int itemCount) {
     constexpr int width = 188;
     constexpr int height = 42;
@@ -1802,14 +1824,7 @@ void NodeComponent::updateModsPanel() {
     // Same-scope modifiers — each knob's "Link to Modulator" submenu
     // can target another mod's rate. Skip the knob's own ModId is done
     // inside the knob (it knows its own currentMod_.id).
-    std::vector<std::pair<magda::ModId, juce::String>> modList;
-    if (mods) {
-        modList.reserve(mods->size());
-        for (const auto& m : *mods)
-            if (m.enabled)
-                modList.emplace_back(m.id, magda::getModDisplayName(m));
-    }
-    modsPanel_->setAvailableModifiers(modList);
+    modsPanel_->setAvailableModifiers(enabledModifiers(mods));
 }
 
 void NodeComponent::updateMacroValueDisplay(int macroIndex, float value) {
@@ -1831,11 +1846,7 @@ void NodeComponent::fadeInParamPanelContent() {
         return;
     }
 
-    std::vector<juce::Component*> targets;
-    targets.reserve(paramKnobs_.size());
-    for (auto& knob : paramKnobs_)
-        targets.push_back(knob.get());
-    paramPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
+    paramPanelFadeTimer_->fadeIn(fadeTargets(paramKnobs_), SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelParamPanelContentFade() {
@@ -1843,14 +1854,8 @@ void NodeComponent::cancelParamPanelContentFade() {
 }
 
 void NodeComponent::fadeOutParamPanelContent() {
-    std::vector<juce::Component*> targets;
-    if (macroPanel_) {
-        targets.push_back(macroPanel_.get());
-    } else {
-        targets.reserve(paramKnobs_.size());
-        for (auto& knob : paramKnobs_)
-            targets.push_back(knob.get());
-    }
+    const auto targets =
+        macroPanel_ ? std::vector<juce::Component*>{macroPanel_.get()} : fadeTargets(paramKnobs_);
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
     paramPanelFadeTimer_->fadeOut(
@@ -1887,11 +1892,7 @@ void NodeComponent::fadeInModPanelContent() {
         return;
     }
 
-    std::vector<juce::Component*> targets;
-    targets.reserve(3);
-    for (auto& button : modSlotButtons_)
-        targets.push_back(button.get());
-    modPanelFadeTimer_->fadeIn(targets, SIDE_PANEL_FADE_IN_MS, repaintPanel);
+    modPanelFadeTimer_->fadeIn(fadeTargets(modSlotButtons_), SIDE_PANEL_FADE_IN_MS, repaintPanel);
 }
 
 void NodeComponent::cancelModPanelContentFade() {
@@ -1899,14 +1900,8 @@ void NodeComponent::cancelModPanelContentFade() {
 }
 
 void NodeComponent::fadeOutModPanelContent() {
-    std::vector<juce::Component*> targets;
-    if (modsPanel_) {
-        targets.push_back(modsPanel_.get());
-    } else {
-        targets.reserve(3);
-        for (auto& button : modSlotButtons_)
-            targets.push_back(button.get());
-    }
+    const auto targets =
+        modsPanel_ ? std::vector<juce::Component*>{modsPanel_.get()} : fadeTargets(modSlotButtons_);
 
     auto safeThis = juce::Component::SafePointer<NodeComponent>(this);
     modPanelFadeTimer_->fadeOut(
@@ -1955,14 +1950,7 @@ void NodeComponent::updateMacroPanel() {
 
     // Same-scope modifiers — let the macro link picker offer "Modulators →
     // <mod> → Rate" entries that resolve to the LFO's rate / rateType param.
-    std::vector<std::pair<magda::ModId, juce::String>> mods;
-    if (const auto* modsData = getModsData()) {
-        mods.reserve(modsData->size());
-        for (const auto& m : *modsData)
-            if (m.enabled)
-                mods.emplace_back(m.id, magda::getModDisplayName(m));
-    }
-    macroPanel_->setAvailableModifiers(mods);
+    macroPanel_->setAvailableModifiers(enabledModifiers(getModsData()));
 }
 
 // === Modulator Editor Panel ===

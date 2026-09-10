@@ -2,11 +2,16 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+#include <functional>
+#include <ranges>
+
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
 #include "audio/AudioBridge.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/TrackCommands.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/NodeHeaderStyles.hpp"
@@ -363,11 +368,7 @@ void RackComponent::resizedContent(juce::Rectangle<int> contentArea) {
     chainViewport_.setBounds(contentArea);
 
     // Calculate total height for chain rows container
-    int totalHeight = 0;
-    for (const auto& row : chainRows_) {
-        totalHeight += row->getPreferredHeight() + 2;
-    }
-    totalHeight = juce::jmax(totalHeight, contentArea.getHeight());
+    const int totalHeight = juce::jmax(stackedChainRowsHeight(), contentArea.getHeight());
 
     // Set container size and layout rows inside it
     chainRowsContainer_.setSize(
@@ -423,11 +424,15 @@ void RackComponent::resizedCollapsed(juce::Rectangle<int>& area) {
     deltaButton_->setVisible(true);
 }
 
+int RackComponent::stackedChainRowsHeight() const {
+    const auto rowAndGapHeight = [](const auto& row) { return row->getPreferredHeight() + 2; };
+
+    return std::ranges::fold_left(chainRows_ | std::views::transform(rowAndGapHeight), 0,
+                                  std::plus{});
+}
+
 int RackComponent::getPreferredHeight() const {
-    int height = HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + 8;
-    for (const auto& row : chainRows_) {
-        height += row->getPreferredHeight() + 2;
-    }
+    const int height = HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + 8 + stackedChainRowsHeight();
     return juce::jmax(height, HEADER_HEIGHT + CHAINS_LABEL_HEIGHT + MIN_CONTENT_HEIGHT);
 }
 
@@ -735,20 +740,14 @@ std::map<magda::DeviceId, std::vector<juce::String>> RackComponent::getDevicePar
     const auto* rack = magda::TrackManager::getInstance().getRackByPath(rackPath_);
     if (rack == nullptr)
         return result;
+    // One level, the same devices getAvailableDevices() offers: a nested rack's
+    // devices are picked from that rack's own component.
     for (const auto& chain : rack->chains) {
         for (const auto& element : chain.elements) {
             if (!magda::isDevice(element))
                 continue;
             const auto& device = magda::getDevice(element);
-            std::vector<juce::String> names;
-            for (const auto& param : device.parameters) {
-                if (param.paramIndex < 0)
-                    continue;
-                if (param.paramIndex >= static_cast<int>(names.size()))
-                    names.resize(static_cast<size_t>(param.paramIndex) + 1);
-                names[static_cast<size_t>(param.paramIndex)] = param.name;
-            }
-            result[device.id] = std::move(names);
+            result[device.id] = device.paramNamesByIndex();
         }
     }
     return result;

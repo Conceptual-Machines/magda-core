@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "KitRow.hpp"
 #include "MacroInfo.hpp"
@@ -465,6 +466,21 @@ struct DeviceInfo {
     }
     const ParameterInfo* findParameterByIndex(int paramIndex) const {
         return const_cast<DeviceInfo*>(this)->findParameterByIndex(paramIndex);
+    }
+
+    // Parameter names positioned at their own paramIndex, so a link picker can
+    // read a name back from the index a stored target carries. paramIndex is a
+    // TE slot rather than an array position, so gaps stay empty.
+    std::vector<juce::String> paramNamesByIndex() const {
+        std::vector<juce::String> names;
+        for (const auto& param : parameters) {
+            if (param.paramIndex < 0)
+                continue;
+            if (param.paramIndex >= static_cast<int>(names.size()))
+                names.resize(static_cast<size_t>(param.paramIndex) + 1);
+            names[static_cast<size_t>(param.paramIndex)] = param.name;
+        }
+        return names;
     }
 
     juce::String getFormatString() const {

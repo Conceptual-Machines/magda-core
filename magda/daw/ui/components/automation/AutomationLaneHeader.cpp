@@ -2,12 +2,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 #include <utility>
 #include <vector>
 
 #include "../../../core/AutomationCommands.hpp"
 #include "../../../core/AutomationManager.hpp"
 #include "../../../core/ParameterUtils.hpp"
+#include "../../../core/RangesHelpers.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../core/UndoManager.hpp"
 #include "../../state/TimelineController.hpp"
@@ -356,6 +358,144 @@ void layoutAutoLaneHeaderButtons(AutoLaneHeaderButtons& buttons, const Automatio
                                kModeBtnSize, kModeBtnSize);
 }
 
+std::vector<AutomationGridTick> automationGridTicks(const AutomationTarget& target,
+                                                    const ParameterInfo& paramInfo) {
+    const auto tickAt = [&paramInfo](double realValue) {
+        return static_cast<double>(
+            ParameterUtils::realToNormalized(static_cast<float>(realValue), paramInfo));
+    };
+    const auto asLabelledTick = [&tickAt](const auto& tick) {
+        return std::pair{tickAt(tick.first), juce::String(tick.second)};
+    };
+
+    static constexpr double kQuarterNorms[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+
+    std::vector<AutomationGridTick> gridValues;
+    if (paramInfo.scale == ParameterScale::FaderDB) {
+        static constexpr std::pair<double, const char*> kDbTicks[] = {
+            {6.0, "6"},     {3.0, "3"},     {0.0, "0"},     {-6.0, "-6"},  {-12.0, "-12"},
+            {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
+        gridValues = kDbTicks | std::views::transform(asLabelledTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (target.kind == ControlTarget::Kind::TrackPan) {
+        static constexpr std::pair<double, const char*> kPanTicks[] = {
+            {1.0, "R"}, {0.5, "50R"}, {0.0, "C"}, {-0.5, "50L"}, {-1.0, "L"}};
+        gridValues = kPanTicks | std::views::transform(asLabelledTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.scale == ParameterScale::Boolean) {
+        // A switch has exactly two meaningful positions. Without
+        // this it falls through to the 10% grid at the bottom of
+        // the chain and reads as a continuous percentage.
+        gridValues.emplace_back(1.0, "On");
+        gridValues.emplace_back(0.0, "Off");
+    } else if (paramInfo.isBipolar()) {
+        // Bipolar params (EQ gain, pitch, etc): symmetric labels
+        // around zero so the 0 line lands mid-lane. Use the larger
+        // |bound| so extremes land on both ends regardless of
+        // asymmetry.
+        const float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
+        const double realTicks[] = {absMax, absMax * 0.5, 0.0, -absMax * 0.5, -absMax};
+        const auto asSignedTick = [&](double real) {
+            const int rounded = static_cast<int>(std::round(real));
+            const juce::String label =
+                rounded > 0 ? "+" + juce::String(rounded) : juce::String(rounded);
+            return std::pair{tickAt(real), label + paramInfo.unit};
+        };
+        gridValues = realTicks | std::views::transform(asSignedTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
+        // Discrete: use the choices array as label source. Each
+        // index maps to a real value (0..N-1) — sample evenly so
+        // the lane shows musical labels (e.g. "1 Bar", "1/4",
+        // "1/8") instead of falling through to the 10% fallback.
+        // If the parameter curated a sparse labelTicks set (e.g.
+        // sync division skipping the triplet/dotted entries that
+        // snap on playback), use it directly so the thinner can't
+        // re-introduce the labels we deliberately excluded.
+        if (!paramInfo.labelTicks.empty()) {
+            gridValues = paramInfo.labelTicks | std::views::transform(asLabelledTick) |
+                         toStd<std::vector<AutomationGridTick>>();
+        } else {
+            const auto asChoiceTick = [&](int index) {
+                return std::pair{tickAt(index), paramInfo.choices[static_cast<size_t>(index)]};
+            };
+            gridValues = std::views::iota(0, static_cast<int>(paramInfo.choices.size())) |
+                         std::views::transform(asChoiceTick) |
+                         toStd<std::vector<AutomationGridTick>>();
+        }
+    } else if (paramInfo.unit.isNotEmpty()) {
+        // Unipolar with unit: evenly spaced in normalized space,
+        // labelled with the real value in the parameter's own unit.
+        const auto asUnitTick = [&](double norm) {
+            const float real =
+                ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
+            return std::pair{norm,
+                             juce::String(static_cast<int>(std::round(real))) + paramInfo.unit};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asUnitTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (paramInfo.displayText) {
+        // displayText wraps TE's valueToString, which expects a
+        // plugin-native value — NOT normalized [0,1]. Sample the
+        // REAL value at each visual position so any scaleAnchor
+        // skew is honoured, then project from info-range onto the
+        // TE-native range so the provider sees what it expects.
+        const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
+        const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
+        const auto asDisplayTick = [&](double norm) {
+            float teRaw = NAN;
+            if (infoSpan > 0.0f) {
+                const float real =
+                    ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
+                const float normInInfo = (real - paramInfo.minValue) / infoSpan;
+                teRaw = paramInfo.teMinValue + normInInfo * teSpan;
+            } else {
+                teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
+            }
+            const auto text = paramInfo.displayText->format(teRaw);
+            return std::pair{
+                norm, text.isNotEmpty() ? text : juce::String(static_cast<int>(norm * 100)) + "%"};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asDisplayTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else if (!paramInfo.valueTable.empty()) {
+        const auto asTableTick = [&](double norm) {
+            const int idx = juce::jlimit(
+                0, static_cast<int>(paramInfo.valueTable.size()) - 1,
+                static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
+            return std::pair{norm, paramInfo.valueTable[static_cast<size_t>(idx)].trim()};
+        };
+        gridValues = kQuarterNorms | std::views::transform(asTableTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    } else {
+        const auto asPercentTick = [](int step) {
+            return std::pair{step / 10.0, juce::String(step * 10) + "%"};
+        };
+        gridValues = std::views::iota(1, 10) | std::views::transform(asPercentTick) |
+                     toStd<std::vector<AutomationGridTick>>();
+    }
+
+    return gridValues;
+}
+
+std::vector<AutomationGridTick> thinAutomationGridTicks(std::vector<AutomationGridTick> ticks,
+                                                        int maxLabels) {
+    if (maxLabels >= static_cast<int>(ticks.size()))
+        return ticks;
+    if (maxLabels == 1)
+        return {ticks[ticks.size() / 2]};
+
+    const auto srcMax = static_cast<double>(ticks.size() - 1);
+    const auto sampleAt = [&](int i) {
+        const auto srcIdx =
+            static_cast<size_t>(std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
+        return ticks[srcIdx];
+    };
+
+    return std::views::iota(0, maxLabels) | std::views::transform(sampleAt) |
+           toStd<std::vector<AutomationGridTick>>();
+}
+
 void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane, int laneTopY,
                                int width, int laneHeight, int topInset) {
     const int y = laneTopY + topInset;
@@ -408,123 +548,7 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
         constexpr float tickLen = 5.0f;
 
         if (contentHeight > 20) {
-            auto paramInfo = getParameterInfoForTarget(lane.target);
-
-            // Build grid values: pairs of (normalized, label)
-            std::vector<std::pair<double, juce::String>> gridValues;
-            if (paramInfo.scale == ParameterScale::FaderDB) {
-                const std::pair<double, const char*> dbValues[] = {
-                    {6.0, "6"},     {3.0, "3"},     {0.0, "0"},     {-6.0, "-6"},  {-12.0, "-12"},
-                    {-18.0, "-18"}, {-24.0, "-24"}, {-36.0, "-36"}, {-48.0, "-48"}};
-                for (const auto& [db, label] : dbValues) {
-                    float norm =
-                        ParameterUtils::realToNormalized(static_cast<float>(db), paramInfo);
-                    gridValues.emplace_back(static_cast<double>(norm), label);
-                }
-            } else if (lane.target.kind == ControlTarget::Kind::TrackPan) {
-                gridValues.emplace_back(
-                    static_cast<double>(ParameterUtils::realToNormalized(1.0f, paramInfo)), "R");
-                gridValues.emplace_back(
-                    static_cast<double>(ParameterUtils::realToNormalized(0.5f, paramInfo)), "50R");
-                gridValues.emplace_back(
-                    static_cast<double>(ParameterUtils::realToNormalized(0.0f, paramInfo)), "C");
-                gridValues.emplace_back(
-                    static_cast<double>(ParameterUtils::realToNormalized(-0.5f, paramInfo)), "50L");
-                gridValues.emplace_back(
-                    static_cast<double>(ParameterUtils::realToNormalized(-1.0f, paramInfo)), "L");
-            } else if (paramInfo.scale == ParameterScale::Boolean) {
-                // A switch has exactly two meaningful positions. Without
-                // this it falls through to the 10% grid at the bottom of
-                // the chain and reads as a continuous percentage.
-                gridValues.emplace_back(1.0, "On");
-                gridValues.emplace_back(0.0, "Off");
-            } else if (paramInfo.isBipolar()) {
-                // Bipolar params (EQ gain, pitch, etc): symmetric labels
-                // around zero so the 0 line lands mid-lane. Use the larger
-                // |bound| so extremes land on both ends regardless of
-                // asymmetry.
-                float absMax = std::max(std::abs(paramInfo.minValue), std::abs(paramInfo.maxValue));
-                const double realTicks[] = {absMax, absMax * 0.5, 0.0, -absMax * 0.5, -absMax};
-                for (double real : realTicks) {
-                    float norm =
-                        ParameterUtils::realToNormalized(static_cast<float>(real), paramInfo);
-                    juce::String label;
-                    int rounded = static_cast<int>(std::round(real));
-                    if (rounded > 0)
-                        label = "+" + juce::String(rounded);
-                    else
-                        label = juce::String(rounded);
-                    label += paramInfo.unit;
-                    gridValues.emplace_back(static_cast<double>(norm), label);
-                }
-            } else if (paramInfo.scale == ParameterScale::Discrete && !paramInfo.choices.empty()) {
-                // Discrete: use the choices array as label source. Each
-                // index maps to a real value (0..N-1) — sample evenly so
-                // the lane shows musical labels (e.g. "1 Bar", "1/4",
-                // "1/8") instead of falling through to the 10% fallback.
-                // If the parameter curated a sparse labelTicks set (e.g.
-                // sync division skipping the triplet/dotted entries that
-                // snap on playback), use it directly so the thinner can't
-                // re-introduce the labels we deliberately excluded.
-                if (!paramInfo.labelTicks.empty()) {
-                    for (const auto& [realValue, label] : paramInfo.labelTicks) {
-                        float norm = ParameterUtils::realToNormalized(realValue, paramInfo);
-                        gridValues.emplace_back(static_cast<double>(norm), label);
-                    }
-                } else {
-                    int numChoices = static_cast<int>(paramInfo.choices.size());
-                    for (int i = 0; i < numChoices; ++i) {
-                        float norm =
-                            ParameterUtils::realToNormalized(static_cast<float>(i), paramInfo);
-                        gridValues.emplace_back(static_cast<double>(norm),
-                                                paramInfo.choices[static_cast<size_t>(i)]);
-                    }
-                }
-            } else if (paramInfo.unit.isNotEmpty()) {
-                // Unipolar with unit: evenly spaced in normalized space,
-                // labelled with the real value in the parameter's own unit.
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    float real =
-                        ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
-                    juce::String label =
-                        juce::String(static_cast<int>(std::round(real))) + paramInfo.unit;
-                    gridValues.emplace_back(norm, label);
-                }
-            } else if (paramInfo.displayText) {
-                // displayText wraps TE's valueToString, which expects a
-                // plugin-native value — NOT normalized [0,1]. Sample the
-                // REAL value at each visual position so any scaleAnchor
-                // skew is honoured, then project from info-range onto the
-                // TE-native range so the provider sees what it expects.
-                const float teSpan = paramInfo.teMaxValue - paramInfo.teMinValue;
-                const float infoSpan = paramInfo.maxValue - paramInfo.minValue;
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    float teRaw = NAN;
-                    if (infoSpan > 0.0f) {
-                        float real =
-                            ParameterUtils::normalizedToReal(static_cast<float>(norm), paramInfo);
-                        float normInInfo = (real - paramInfo.minValue) / infoSpan;
-                        teRaw = paramInfo.teMinValue + normInInfo * teSpan;
-                    } else {
-                        teRaw = paramInfo.teMinValue + static_cast<float>(norm) * teSpan;
-                    }
-                    auto text = paramInfo.displayText->format(teRaw);
-                    gridValues.emplace_back(
-                        norm, text.isNotEmpty() ? text
-                                                : juce::String(static_cast<int>(norm * 100)) + "%");
-                }
-            } else if (!paramInfo.valueTable.empty()) {
-                for (double norm : {0.0, 0.25, 0.5, 0.75, 1.0}) {
-                    int idx = juce::jlimit(
-                        0, static_cast<int>(paramInfo.valueTable.size()) - 1,
-                        static_cast<int>(std::round(norm * (paramInfo.valueTable.size() - 1))));
-                    gridValues.emplace_back(norm,
-                                            paramInfo.valueTable[static_cast<size_t>(idx)].trim());
-                }
-            } else {
-                for (int i = 1; i < 10; ++i)
-                    gridValues.emplace_back(i / 10.0, juce::String(i * 10) + "%");
-            }
+            const auto paramInfo = getParameterInfoForTarget(lane.target);
 
             g.setFont(FontManager::getInstance().getUIFont(8.0f));
             constexpr int labelH = 10;
@@ -533,22 +557,10 @@ void paintAutomationLaneHeader(juce::Graphics& g, const AutomationLaneInfo& lane
             // across the range (endpoints included whenever at least two labels
             // fit), while tall lanes show every sample.
             constexpr int labelSpacing = labelH + 6;
-            int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
-            if (maxLabels < static_cast<int>(gridValues.size())) {
-                std::vector<std::pair<double, juce::String>> thinned;
-                thinned.reserve(static_cast<size_t>(maxLabels));
-                if (maxLabels == 1) {
-                    thinned.push_back(gridValues[gridValues.size() / 2]);
-                } else {
-                    const auto srcMax = static_cast<double>(gridValues.size() - 1);
-                    for (int i = 0; i < maxLabels; ++i) {
-                        int srcIdx = static_cast<int>(
-                            std::round(static_cast<double>(i) * srcMax / (maxLabels - 1)));
-                        thinned.push_back(gridValues[static_cast<size_t>(srcIdx)]);
-                    }
-                }
-                gridValues = std::move(thinned);
-            }
+            const int maxLabels = juce::jmax(1, contentHeight / labelSpacing);
+            const auto gridValues =
+                thinAutomationGridTicks(automationGridTicks(lane.target, paramInfo), maxLabels);
+
             for (const auto& [norm, label] : gridValues) {
                 int tickY = contentTop + static_cast<int>((1.0 - norm) * contentHeight);
                 // Tick
