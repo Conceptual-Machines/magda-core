@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "BlockMath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"
@@ -50,10 +51,7 @@ float gainReductionForLevel(float levelDb, float thresholdDb, float ratio, float
 
 /// Peak magnitude over @p numSamples of one channel.
 float peakOfChannel(const float* samples, int numSamples) {
-    float peak = 0.0f;
-    for (int i = 0; i < numSamples; ++i)
-        peak = std::max(peak, std::fabs(samples[i]));
-    return peak;
+    return peakMagnitude(samples, numSamples);
 }
 
 /// Peak magnitude over one channel range of @p buffer.

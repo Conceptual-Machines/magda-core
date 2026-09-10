@@ -39,13 +39,15 @@ void FollowerSourceTapPlugin::applyToBuffer(const te::PluginRenderContext& fc) {
     if (numChannels <= 0) {
         std::fill(mono, mono + numSamples, 0.0f);
     } else {
-        const float scale = 1.0f / static_cast<float>(numChannels);
-        for (int i = 0; i < numSamples; ++i) {
-            float sum = 0.0f;
-            for (int ch = 0; ch < numChannels; ++ch)
-                sum += fc.destBuffer->getSample(ch, fc.bufferStartSample + i);
-            mono[i] = sum * scale;
-        }
+        // Summed first and scaled once, which is the order the per-sample loop
+        // this replaced accumulated in.
+        juce::FloatVectorOperations::copy(
+            mono, fc.destBuffer->getReadPointer(0, fc.bufferStartSample), numSamples);
+        for (int ch = 1; ch < numChannels; ++ch)
+            juce::FloatVectorOperations::add(
+                mono, fc.destBuffer->getReadPointer(ch, fc.bufferStartSample), numSamples);
+        juce::FloatVectorOperations::multiply(mono, 1.0f / static_cast<float>(numChannels),
+                                              numSamples);
     }
 
     realtimeContext_->pushFollowerSourceBuffer(sourceTrackId_, mono, numSamples, sampleRate_);

@@ -1,6 +1,7 @@
 #include "plugins/compiled/MagdaEqCompiledPlugin.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "core/ParameterInfo.hpp"
@@ -275,38 +276,39 @@ void MagdaEqCompiledPlugin::processAudio(DeviceProcessContext& context) {
     const float outputGain = std::pow(10.0f, slotDisplayValue(kOutputSlot) / 20.0f);
 
     std::fill_n(preTapScratch_.data(), numSamples, 0.0f);
-    for (int channel = 0; channel < hostChannels; ++channel) {
-        const float* source = context.audio->getReadPointer(channel, startSample);
-        for (int i = 0; i < numSamples; ++i)
-            preTapScratch_[static_cast<size_t>(i)] += source[i];
-    }
+    for (int channel = 0; channel < hostChannels; ++channel)
+        juce::FloatVectorOperations::add(
+            preTapScratch_.data(), context.audio->getReadPointer(channel, startSample), numSamples);
     const float channelInverse = 1.0f / static_cast<float>(hostChannels);
-    for (int i = 0; i < numSamples; ++i)
-        preTapScratch_[static_cast<size_t>(i)] *= channelInverse;
+    juce::FloatVectorOperations::multiply(preTapScratch_.data(), channelInverse, numSamples);
     preSpectrumTap_.write(preTapScratch_.data(), numSamples);
 
     // Heavy boosts at high Q can rarely produce non-finite samples during a
     // quick freq/Q sweep, so the output goes through the same sanitising pass
     // every compiled device applies.
+    // The enable flags hold for the whole block, so the bands that run are
+    // compacted once rather than tested numSamples x kBandCount times.
+    std::array<int, kBandCount> activeBands{};
+    int activeBandCount = 0;
+    for (int band = 0; band < kBandCount; ++band)
+        if (bandEnabled[static_cast<size_t>(band)])
+            activeBands[static_cast<size_t>(activeBandCount++)] = band;
+
     std::fill_n(postTapScratch_.data(), numSamples, 0.0f);
     for (int channel = 0; channel < hostChannels; ++channel) {
         float* out = context.audio->getWritePointer(channel, startSample);
         for (int i = 0; i < numSamples; ++i) {
             float sample = out[i];
-            for (int band = 0; band < kBandCount; ++band) {
-                if (!bandEnabled[static_cast<size_t>(band)])
-                    continue;
-                sample = processRbj(
-                    sample, coeffs[static_cast<size_t>(band)],
-                    biquadStates_[static_cast<size_t>(band)][static_cast<size_t>(channel)]);
+            for (int active = 0; active < activeBandCount; ++active) {
+                const auto band = static_cast<size_t>(activeBands[static_cast<size_t>(active)]);
+                sample = processRbj(sample, coeffs[band],
+                                    biquadStates_[band][static_cast<size_t>(channel)]);
             }
-            const float sanitized = sanitise(sample * outputGain);
-            out[i] = sanitized;
-            postTapScratch_[static_cast<size_t>(i)] += sanitized;
+            out[i] = sanitise(sample * outputGain);
         }
+        juce::FloatVectorOperations::add(postTapScratch_.data(), out, numSamples);
     }
-    for (int i = 0; i < numSamples; ++i)
-        postTapScratch_[static_cast<size_t>(i)] *= channelInverse;
+    juce::FloatVectorOperations::multiply(postTapScratch_.data(), channelInverse, numSamples);
     postSpectrumTap_.write(postTapScratch_.data(), numSamples);
 }
 

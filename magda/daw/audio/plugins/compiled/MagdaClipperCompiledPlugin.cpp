@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "BlockMath.hpp"
 #include "core/ParameterInfo.hpp"
 #include "faust/dsp/dsp.h"
 #include "faust/gui/UI.h"
@@ -54,12 +55,14 @@ void MagdaClipperCompiledPlugin::beforeCompute(DeviceProcessContext& context, in
     // sees.
     const int channels = std::min(context.audio->getNumChannels(), engineInputCount(engineIndex));
 
+    // Not getMagnitude(): it reduces through findMinAndMax, so one NaN sample
+    // would be published into inputPeakDb_ and stay there through every later
+    // finite block, taking the curve's dot with it.
     float peak = 0.0f;
-    for (int channel = 0; channel < channels; ++channel) {
-        const float* samples = context.audio->getReadPointer(channel, context.startSample);
-        for (int i = 0; i < context.numSamples; ++i)
-            peak = std::max(peak, std::fabs(samples[i]));
-    }
+    for (int channel = 0; channel < channels; ++channel)
+        peak = std::max(peak,
+                        peakMagnitude(context.audio->getReadPointer(channel, context.startSample),
+                                      context.numSamples));
 
     inputPeakDb_.store(20.0f * std::log10(std::max(peak, 1.0e-6f)), std::memory_order_relaxed);
 }
