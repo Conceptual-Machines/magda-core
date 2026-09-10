@@ -86,9 +86,11 @@ class EngineHost {
     /// Read every external plugin this is rendering back into the model.
     void captureExternalPluginStates();
 
-    /// The one at @p devicePath, for a caller flushing a single slot before it
-    /// copies, removes or snapshots it. Nothing for a path that is not an
-    /// external plugin this is rendering.
+    /// The one at @p devicePath and anything on its pads, for a caller
+    /// flushing a single slot before it copies, removes or snapshots it. A
+    /// Drum Grid is passed by its own path because its pads ride along in its
+    /// state (#2207). Nothing for a path holding no external plugin this is
+    /// rendering.
     void captureExternalPluginStateAt(const ChainNodePath& devicePath);
 
     // ===== Transport =====

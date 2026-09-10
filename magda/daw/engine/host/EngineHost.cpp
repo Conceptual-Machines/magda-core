@@ -4,8 +4,8 @@
 
 #include <algorithm>
 #include <atomic>
-#include <optional>
 #include <ranges>
+#include <set>
 
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
@@ -13,6 +13,7 @@
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
 #include "../../core/AutomationManager.hpp"
+#include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -72,26 +73,39 @@ DeviceInfo* modelDeviceAt(engine::DeviceKey key) {
     return found;
 }
 
-/// The key the engine knows a device by, from the path the app knows it by.
-/// Inverted off the same walk the publish uses rather than rebuilt from the
-/// path's own steps, so the two cannot come to disagree about which section a
-/// device is in.
-std::optional<engine::DeviceKey> keyOfDeviceAt(const ChainNodePath& devicePath) {
-    const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+/**
+ * @brief The keys the engine knows the device at @p devicePath by, and its pads.
+ *
+ * A single-slot caller passes a Drum Grid's own path, because a pad's patch
+ * rides along in the grid's state rather than having a path of its own
+ * (#2207). The grid is a device this build holds, so reading only the key the
+ * path names would read nothing and leave the pads' plugins behind.
+ *
+ * Inverted off the same walk the publish uses rather than rebuilt from the
+ * path's own steps, so the two cannot come to disagree about which section a
+ * device is in.
+ */
+std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
+    auto& trackManager = TrackManager::getInstance();
+
+    const auto* target = trackManager.getDeviceInChainByPath(devicePath);
     if (target == nullptr)
-        return std::nullopt;
+        return {};
 
-    std::optional<engine::DeviceKey> found;
+    std::set<const DeviceInfo*> subtree{target};
+    if (target->pads)
+        for (const auto& pad : target->pads->chains)
+            chain_walk::forEachDevice(pad.elements, devicePath, chain_walk::Pads::Enter,
+                                      [&subtree](const DeviceInfo& device, const ChainNodePath&) {
+                                          subtree.insert(&device);
+                                      });
 
-    TrackManager::getInstance().forEachTrackIncludingMaster([&found, target](TrackInfo& track) {
-        if (found.has_value())
-            return;
+    std::vector<engine::DeviceKey> found;
 
+    trackManager.forEachTrackIncludingMaster([&found, &subtree](TrackInfo& track) {
         for (const auto& [key, device] : adapter::devicesIn(track))
-            if (device == target) {
-                found = key;
-                return;
-            }
+            if (subtree.contains(device))
+                found.push_back(key);
     });
 
     return found;
@@ -624,16 +638,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        const auto key = keyOfDeviceAt(devicePath);
-
         // A chain is mostly devices this build holds, and those are asked of
         // the fork. Reaching for one here would find no external plugin bound
         // and report that as a state that could not be read.
-        if (!key.has_value() || !factory_.isExternalKey(*key))
-            return;
+        auto asked = false;
+        for (const auto key : keysOfDeviceAt(devicePath))
+            if (factory_.isExternalKey(key)) {
+                requestCapture(key);
+                asked = true;
+            }
 
-        requestCapture(*key);
-        control_->drain();
+        if (asked)
+            control_->drain();
     }
 
     /**
