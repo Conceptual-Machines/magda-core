@@ -15,6 +15,7 @@
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "../ui/state/TimelineEvents.hpp"
+#include "MagdaAudioEngine.hpp"
 #include "MagdaEngineBehaviour.hpp"
 #include "MagdaUIBehaviour.hpp"
 #include "PluginScanCoordinator.hpp"
@@ -34,6 +35,12 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
 }
 
 std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    // The native engine holds a fork of its own for the half of the interface
+    // that is not an engine question, so this is a choice between two engines
+    // rather than a choice about whether the fork is built (#2551).
+    if (MagdaAudioEngine::requested(options))
+        return std::make_unique<MagdaAudioEngine>(options);
+
     auto engine = std::make_unique<TracktionEngineWrapper>();
     engine->setForceHeadless(options.headless);
     return engine;
