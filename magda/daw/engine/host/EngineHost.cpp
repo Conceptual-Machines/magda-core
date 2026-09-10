@@ -109,6 +109,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         const auto levels = tap->read();
+
+        // A meter reading nothing and a meter nothing reads look identical from
+        // a still mixer, so the trace says which (#2570).
+        if (EngineTrace::enabled() && levels.loudest() > 0.0f)
+            EngineTrace::print("meter: track " + juce::String(trackId) + " peak " +
+                               juce::String(levels.loudest(), 4));
+
         meters_(trackId, levels.peak[0], levels.peak[1]);
     }
 
