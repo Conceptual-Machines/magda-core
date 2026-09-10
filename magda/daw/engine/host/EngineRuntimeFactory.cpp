@@ -75,8 +75,11 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
     unbuilt_.clear();
     midiRoutes_.clear();
 
+    // receivesLiveMidiInput rather than monitorsInput: the fork routes a track
+    // in Auto too (MidiInputRouter::updateMidiInputRouting).
     for (const auto& track : tracks)
-        midiRoutes_.emplace(track.id, MidiRoute{track.midiInputDevice, track.monitorsInput()});
+        midiRoutes_.emplace(track.id,
+                            MidiRoute{track.midiInputDevice, track.receivesLiveMidiInput()});
 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
@@ -198,10 +201,12 @@ std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(
 std::vector<engine::LiveMidiSourceId> EngineRuntimeFactory::routedSources(const MidiRoute& route) {
     // Monitoring is the fork's own gate on hearing an input, and a "track:"
     // route is carried inside the plan rather than by a device.
-    if (!route.monitors || route.device.isEmpty() || route.device.startsWith("track:"))
+    if (!route.monitors || route.device.startsWith("track:"))
         return {};
 
-    if (route.device == "all")
+    // An empty field is "all" on the fork too: a monitoring track that names
+    // no device is routed to every input (MidiInputRouter.cpp:747).
+    if (route.device.isEmpty() || route.device == "all")
         return sources_->deviceSources();
 
     const auto source = sources_->resolveRoute(route.device);

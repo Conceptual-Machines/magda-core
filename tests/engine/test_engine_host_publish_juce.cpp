@@ -600,12 +600,15 @@ class EngineHostPublishTest final : public juce::UnitTest {
         auto& trackManager = magda::TrackManager::getInstance();
         const auto routed = synthTrack("Monitoring", 1, magda::InputMonitorMode::In, "all");
         const auto idle = synthTrack("Idle", 2, magda::InputMonitorMode::Off, {});
+        // Monitoring with no device named, which the fork routes to every
+        // input (MidiInputRouter::updateMidiInputRouting) and so must this.
+        const auto unnamed = synthTrack("Unnamed", 3, magda::InputMonitorMode::In, {});
         const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
         expect(routed != magda::INVALID_TRACK_ID && idle != magda::INVALID_TRACK_ID &&
-                   master != nullptr,
-               "Both tracks and the master exist");
+                   unnamed != magda::INVALID_TRACK_ID && master != nullptr,
+               "The tracks and the master exist");
         if (routed == magda::INVALID_TRACK_ID || idle == magda::INVALID_TRACK_ID ||
-            master == nullptr)
+            unnamed == magda::INVALID_TRACK_ID || master == nullptr)
             return;
 
         const auto& tracks = trackManager.getTracks();
@@ -650,11 +653,15 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         auto* routedTap = session.meterTap(magda::engine::trackMeterKey(routed));
         auto* idleTap = session.meterTap(magda::engine::trackMeterKey(idle));
-        expect(routedTap != nullptr && idleTap != nullptr, "Both meters are bound");
-        if (routedTap == nullptr || idleTap == nullptr)
+        auto* unnamedTap = session.meterTap(magda::engine::trackMeterKey(unnamed));
+        expect(routedTap != nullptr && idleTap != nullptr && unnamedTap != nullptr,
+               "The meters are bound");
+        if (routedTap == nullptr || idleTap == nullptr || unnamedTap == nullptr)
             return;
 
         expect(routedTap->read().loudest() > 0.0f, "The track routed to the device heard it");
+        expect(unnamedTap->read().loudest() > 0.0f,
+               "So did the track monitoring with no device named");
 
         // The audition op every track now carries reads its own source alone;
         // kAnyLiveMidiSource here would have merged the two.
