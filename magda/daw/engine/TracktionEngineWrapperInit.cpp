@@ -15,6 +15,7 @@
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "../ui/state/TimelineEvents.hpp"
+#include "AudioEngineChoice.hpp"
 #if MAGDA_HAS_NATIVE_ENGINE
     #include "MagdaAudioEngine.hpp"
 #endif
@@ -37,12 +38,23 @@ TracktionEngineWrapper::~TracktionEngineWrapper() {
 }
 
 std::unique_ptr<AudioEngine> createDefaultAudioEngine(AudioEngineOptions options) {
+    const auto choice = chosenAudioEngine();
+
+    // Out loud, once, wherever an engine is built. Which one a session ran on
+    // is the first question any report about it raises, and the answer should
+    // not need a debugger -- or a guess about which construction site the app
+    // took.
+    juce::Logger::writeToLog(juce::String("[engine] rendering through ") + nameOf(choice) +
+                             " (#2551)");
+
     // The native engine holds a fork of its own for the half of the interface
     // that is not an engine question, so this is a choice between two engines
-    // rather than a choice about whether the fork is built (#2551).
+    // rather than a choice about whether the fork is built.
 #if MAGDA_HAS_NATIVE_ENGINE
-    if (MagdaAudioEngine::requested(options))
+    if (choice == AudioEngineChoice::Magda)
         return std::make_unique<MagdaAudioEngine>(options);
+#else
+    juce::ignoreUnused(choice);
 #endif
 
     auto engine = std::make_unique<TracktionEngineWrapper>();

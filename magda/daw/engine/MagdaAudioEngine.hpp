@@ -72,11 +72,6 @@ class MagdaAudioEngine final : public AudioEngine {
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
 
-    /// Whether the app was asked for this engine. MAGDA_AUDIO_ENGINE takes
-    /// "magda" or "tracktion" and wins over the setting (#2559), so a run can
-    /// be switched without a rebuild and without touching preferences.
-    static bool requested(const AudioEngineOptions& options);
-
     bool initialize() override;
     void shutdown() override;
     bool hasActiveEdit() const override;
@@ -120,6 +115,8 @@ class MagdaAudioEngine final : public AudioEngine {
     bool isDevicesLoading() const override;
     void setDevicesLoadingCallback(
         std::function<void(bool, const juce::String&)> callback) override;
+    void setPluginScanStatusCallback(std::function<void(const juce::String&)> callback) override;
+    void setMidiDevicesReadyCallback(std::function<void()> callback) override;
     AudioBridge* getAudioBridge() override;
     const AudioBridge* getAudioBridge() const override;
     MidiBridge* getMidiBridge() override;

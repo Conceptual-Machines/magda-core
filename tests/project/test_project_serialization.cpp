@@ -223,6 +223,8 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     }
 
     void setDevicesLoadingCallback(std::function<void(bool, const juce::String&)>) override {}
+    void setPluginScanStatusCallback(std::function<void(const juce::String&)>) override {}
+    void setMidiDevicesReadyCallback(std::function<void()>) override {}
 
     AudioBridge* getAudioBridge() override {
         return nullptr;

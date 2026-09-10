@@ -7,6 +7,7 @@ target_sources(magda_daw PRIVATE
     TempoLaneSync.cpp
     TempoSequenceRippleCommand.cpp
     OfflineRenderHelper.cpp
+    AudioEngineChoice.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
@@ -24,6 +25,7 @@ target_sources(magda_daw PRIVATE
     PluginWindowManager.cpp
     # Headers (listed for IDE visibility)
     AudioEngine.hpp
+    AudioEngineChoice.hpp
     OfflineRenderHelper.hpp
     TracktionEngineWrapper.hpp
     MagdaUIBehaviour.hpp
@@ -89,3 +91,41 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
             $<TARGET_PROPERTY:${_juce_module},INTERFACE_COMPILE_DEFINITIONS>)
     endforeach()
 endif()
+
+# --- One construction site ----------------------------------------------------
+#
+# Which engine renders is decided in createDefaultAudioEngine, and that is worth
+# nothing if a caller can name an implementation instead. magda_daw_main.cpp did
+# exactly that, so #2558's seam and #2551's engine were both switchable
+# everywhere except in the running app, and the environment variable looked
+# wired while doing nothing.
+#
+# Checked at configure time rather than left to review, the way the native
+# engine's own dependency boundary is (magda/engine/CMakeLists.txt).
+#
+# The engine directory itself is exempt: the factory is here, and so is
+# MagdaAudioEngine, which holds a fork of its own by design. Tests are exempt
+# because a test that wants one engine specifically is asking a different
+# question from an application that must not care.
+file(GLOB_RECURSE MAGDA_ENGINE_CALLER_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/../*.cpp")
+
+foreach(_caller_source ${MAGDA_ENGINE_CALLER_SOURCES})
+    file(RELATIVE_PATH _caller_relative "${CMAKE_SOURCE_DIR}" "${_caller_source}")
+
+    if(_caller_relative MATCHES "^magda/daw/engine/")
+        continue()
+    endif()
+
+    file(STRINGS "${_caller_source}" _engine_construction
+        REGEX "(make_unique|make_shared)<[ \t]*(magda::)?(TracktionEngineWrapper|MagdaAudioEngine)")
+
+    if(_engine_construction)
+        message(FATAL_ERROR
+            "\n"
+            "Audio engine constructed directly in ${_caller_relative}:\n"
+            "    ${_engine_construction}\n"
+            "Which engine renders is createDefaultAudioEngine's to decide (#2551).\n"
+            "Naming an implementation here makes that choice unreachable.\n")
+    endif()
+endforeach()

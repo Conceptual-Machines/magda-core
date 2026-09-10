@@ -1,6 +1,5 @@
 #include "MagdaAudioEngine.hpp"
 
-#include <cstdlib>
 #include <set>
 #include <string>
 
@@ -35,37 +34,12 @@ void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) cons
 
 MagdaAudioEngine::~MagdaAudioEngine() = default;
 
-bool MagdaAudioEngine::requested(const AudioEngineOptions& options) {
-    juce::ignoreUnused(options);
-
-    // Named symmetrically, and by what each engine is rather than by which one
-    // is the newcomer: "native" only means anything while there is something
-    // for it to be native against, and after #2557 there will not be.
-    //
-    // The environment wins over the setting (#2559), so a bug report asking
-    // "does it still happen on the other engine" is answered by one run rather
-    // than by changing somebody's preferences.
-    if (const auto* value = std::getenv("MAGDA_AUDIO_ENGINE")) {
-        const auto choice = juce::String(value).trim().toLowerCase();
-        if (choice == "magda")
-            return true;
-        if (choice == "tracktion")
-            return false;
-    }
-
-    return false;
-}
-
 // --- what magda::engine answers ----------------------------------------------
 //
 // Transport and what is published with it. Everything below this section still
 // forwards, and each method moves up here as its subsystem is wired.
 
 bool MagdaAudioEngine::initialize() {
-    // Said once, out loud. Which engine a session ran on is the first question
-    // any report about it raises, and the answer should not need a debugger.
-    juce::Logger::writeToLog("[engine] rendering through magda::engine (#2551)");
-
     if (!tracktion_->initialize())
         return false;
 
@@ -238,6 +212,13 @@ bool MagdaAudioEngine::isDevicesLoading() const {
 void MagdaAudioEngine::setDevicesLoadingCallback(
     std::function<void(bool, const juce::String&)> callback) {
     tracktion_->setDevicesLoadingCallback(callback);
+}
+void MagdaAudioEngine::setPluginScanStatusCallback(
+    std::function<void(const juce::String&)> callback) {
+    tracktion_->setPluginScanStatusCallback(std::move(callback));
+}
+void MagdaAudioEngine::setMidiDevicesReadyCallback(std::function<void()> callback) {
+    tracktion_->setMidiDevicesReadyCallback(std::move(callback));
 }
 AudioBridge* MagdaAudioEngine::getAudioBridge() {
     return tracktion_->getAudioBridge();
