@@ -1,6 +1,9 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
 #include <atomic>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -241,7 +244,13 @@ class MagdaCompiledEffect : public CompiledFaustDevice {
 
     /// Finite, and inside the same +/-16 ceiling every compiled device applies
     /// before handing a block back to the host.
-    static float sanitise(float sample);
+    ///
+    /// Defined here rather than in the .cpp: the build has no LTO, so out of
+    /// line this is one call per sample from every device that is not this one,
+    /// and the surrounding loop cannot vectorise across it.
+    static float sanitise(float sample) {
+        return std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
+    }
 
   private:
     /// What one dsp control declared about itself.

@@ -388,10 +388,6 @@ void MagdaCompiledEffect::reset() {
     onReset();
 }
 
-float MagdaCompiledEffect::sanitise(float sample) {
-    return std::isfinite(sample) ? juce::jlimit(-16.0f, 16.0f, sample) : 0.0f;
-}
-
 void MagdaCompiledEffect::writeZones(DeviceProcessContext& context) {
     const float bpm =
         context.tempoMap != nullptr
