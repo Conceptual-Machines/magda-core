@@ -119,7 +119,9 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
 
-    /// Which device each key's live instance was built from.
+    /// Which device each key's live instance was built from. Kept for a key
+    /// the model drops, since only a publish that succeeded evicts one; that
+    /// is an entry and a short string per DeviceKey ever realised.
     std::map<engine::DeviceKey, juce::String> built_;
 
     /// What the next publish must rebuild.

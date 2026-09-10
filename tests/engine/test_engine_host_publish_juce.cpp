@@ -161,6 +161,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
         magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testDroppedKeyIsStillRebuilt(); });
     }
 
   private:
@@ -426,6 +427,34 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "Every device the store holds is the previous project's");
+    }
+
+    void testDroppedKeyIsStillRebuilt() {
+        beginTest("A key the model dropped is still one the store may hold");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+        expect(factory.createDevice(firstFxSlot()) != nullptr, "The catalog builds the synth");
+
+        // The device deleted, and the publish that would have evicted it
+        // refused: the store only evicts after a swap, so it still holds one.
+        track->chain.fxChainElements.clear();
+        factory.setModel(trackManager.getTracks(), *master);
+
+        factory.forgetBuiltDevices();
+        const auto rebuild = factory.devicesToRebuild();
+        expect(rebuild.contains(firstFxSlot()),
+               "The key is named for rebuild rather than forgotten with the model");
     }
 };
 

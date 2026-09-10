@@ -49,18 +49,13 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
         devices_.emplace(key, *device);
 
     // A slot whose plugin changed since its instance was built (#2572). A key
-    // the model dropped needs no rebuild: the store evicts that one itself.
-    for (auto entry = built_.begin(); entry != built_.end();) {
-        const auto found = devices_.find(entry->first);
-        if (found == devices_.end()) {
-            entry = built_.erase(entry);
-            continue;
-        }
-
-        if (deviceIdentityOf(found->second) != entry->second)
-            rebuild_.insert(entry->first);
-
-        ++entry;
+    // the model has stopped naming is kept rather than dropped: the store
+    // evicts on a publish that succeeded, and a rejected one leaves it holding
+    // a device this would otherwise have forgotten.
+    for (const auto& [key, identity] : built_) {
+        const auto found = devices_.find(key);
+        if (found != devices_.end() && deviceIdentityOf(found->second) != identity)
+            rebuild_.insert(key);
     }
 
     // Before anything is asked for, so a device that has changed plugin since
