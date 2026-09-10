@@ -156,6 +156,8 @@ set(TEST_SOURCES
     devices/test_step_pattern_state.cpp
     # Coalescing a pattern drag into one undo step, and only that drag (#2335)
     devices/test_step_pattern_commands.cpp
+    devices/test_plugin_state_strippers.cpp
+    devices/test_step_sequencer_state.cpp
     # Handing a published pattern to the audio thread a block at a time (#2335)
     midi/test_published_pattern.cpp
     utilities/test_string_table.cpp
@@ -335,6 +337,7 @@ set(TEST_SOURCES
     audio/test_demucs_separator.cpp
     audio/test_spleeter_separator.cpp
     core/test_device_info_predicates.cpp
+    core/test_ranges_helpers.cpp
 )
 
 # Native audio engine (epic #1882). The engine is a dark target with no TE and

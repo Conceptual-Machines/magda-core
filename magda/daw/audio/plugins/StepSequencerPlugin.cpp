@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <ranges>
 
+#include "core/RangesHelpers.hpp"
 #include "plugins/DeviceNoteSink.hpp"
 
 namespace magda::daw::audio {
@@ -203,10 +205,7 @@ void StepSequencerPlugin::flushState(juce::ValueTree& state) {
     const auto live = pattern();
     state.setProperty(SettingIDs::numSteps, live.playingLength(), nullptr);
 
-    for (int i = state.getNumChildren() - 1; i >= 0; --i) {
-        if (state.getChild(i).hasType(kStepTree))
-            state.removeChild(i, nullptr);
-    }
+    removeChildrenWithType(state, kStepTree);
 
     // Only the steps that differ from a default one, which is what the model
     // writes too: absence and a default step read back the same.
@@ -246,11 +245,8 @@ void StepSequencerPlugin::restoreState(const juce::ValueTree& state) {
     if (const auto* value = state.getPropertyPointer(SettingIDs::numSteps))
         parsed.length = std::clamp(static_cast<int>(*value), 1, MAX_STEPS);
 
-    for (int i = 0; i < state.getNumChildren(); ++i) {
-        const auto child = state.getChild(i);
-        if (!child.hasType(kStepTree))
-            continue;
-
+    const auto isStep = [](const juce::ValueTree& child) { return child.hasType(kStepTree); };
+    for (const auto child : children(state) | std::views::filter(isStep)) {
         const int index = child.getProperty(kStepIndex, -1);
         if (index < 0 || index >= MAX_STEPS)
             continue;

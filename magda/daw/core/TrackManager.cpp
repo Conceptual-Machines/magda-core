@@ -19,6 +19,7 @@
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
+#include "RangesHelpers.hpp"
 #include "SelectionManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 
@@ -154,8 +155,8 @@ void scanEmbeddedDeviceIds(const juce::ValueTree& tree, int& maxDeviceId) {
             maxDeviceId = std::max(maxDeviceId, embeddedDeviceId);
     }
 
-    for (int i = 0; i < tree.getNumChildren(); ++i)
-        scanEmbeddedDeviceIds(tree.getChild(i), maxDeviceId);
+    for (auto child : children(tree))
+        scanEmbeddedDeviceIds(child, maxDeviceId);
 }
 
 void scanEmbeddedDeviceIds(const juce::String& pluginState, int& maxDeviceId) {
