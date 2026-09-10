@@ -1,7 +1,10 @@
 #include "ClipOcclusion.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <ranges>
+
+#include "RangesHelpers.hpp"
 
 namespace magda {
 
@@ -19,17 +22,38 @@ bool overlaps(const ClipInfo& a, const ClipInfo& b) {
 
 /// The clip this one is looking for in the lane, or nullptr.
 const ClipInfo* findClip(const std::vector<ClipInfo>& trackClips, ClipId clipId) {
-    for (const auto& candidate : trackClips)
-        if (candidate.id == clipId)
-            return &candidate;
-    return nullptr;
+    const auto hasId = [clipId](const ClipInfo& candidate) { return candidate.id == clipId; };
+    const auto found = std::ranges::find_if(trackClips, hasId);
+    return found == trackClips.end() ? nullptr : &*found;
+}
+
+const ClipInfo* addressOf(const ClipInfo& clip) {
+    return &clip;
+}
+
+bool stacksBelow(const ClipInfo* a, const ClipInfo* b) {
+    return clipSitsBelow(*a, *b);
+}
+
+double rangeStart(const BeatRange& range) {
+    return range.start.value;
+}
+
+bool isNonEmptyRange(const BeatRange& range) {
+    return range.end.value > range.start.value + kTolBeats;
+}
+
+/// Another clip's span clamped into [start, end): what the pair share.
+BeatRange overlapRange(const ClipInfo& other, double start, double end) {
+    const auto& placement = other.placement;
+    return {BeatPosition{std::max(placement.startBeat, start)},
+            BeatPosition{std::min(placement.startBeat + placement.lengthBeats, end)}};
 }
 
 /// Sorted, non-overlapping covers, so trimming and hole-finding can walk them
 /// once. Touching ranges merge: two clips butted together cover as one.
 std::vector<BeatRange> mergeRanges(std::vector<BeatRange> ranges) {
-    std::sort(ranges.begin(), ranges.end(),
-              [](const BeatRange& a, const BeatRange& b) { return a.start.value < b.start.value; });
+    std::ranges::sort(ranges, {}, rangeStart);
 
     std::vector<BeatRange> merged;
     for (const auto& range : ranges) {
@@ -61,12 +85,9 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
     std::unordered_map<ClipId, AudibleSpan> spans;
     spans.reserve(trackClips.size());
 
-    std::vector<const ClipInfo*> ordered;
-    ordered.reserve(trackClips.size());
-    for (const auto& clip : trackClips)
-        ordered.push_back(&clip);
-    std::sort(ordered.begin(), ordered.end(),
-              [](const ClipInfo* a, const ClipInfo* b) { return clipSitsBelow(*a, *b); });
+    auto ordered =
+        trackClips | std::views::transform(addressOf) | toStd<std::vector<const ClipInfo*>>();
+    std::ranges::sort(ordered, stacksBelow);
 
     for (size_t i = 0; i < ordered.size(); ++i) {
         const ClipInfo& clip = *ordered[i];
@@ -84,34 +105,28 @@ std::unordered_map<ClipId, AudibleSpan> computeAudibleSpans(
         const double clipStart = span.startBeat;
         const double clipEnd = span.endBeat();
 
-        // Only the clips above this one can cover it.
-        std::vector<BeatRange> covers;
-        for (size_t j = i + 1; j < ordered.size(); ++j) {
-            const ClipInfo& upper = *ordered[j];
-
+        const auto silencesThisClip = [&clip](const ClipInfo* upper) {
             // A clip nobody can hear covers nothing: letting a hand-disabled
             // clip (#1736) occlude would silence the clip below on behalf of
             // silence.
-            if (!upper.enabled)
-                continue;
+            if (!upper->enabled)
+                return false;
             // The one switch: either clip asking makes the overlap play both,
             // and nothing else does. Ticking it on the clip that had gone
             // silent — the one you would reach for, and the only one with
             // anything to gain — used to do nothing at all (#2003).
-            if (upper.overlapPlaysBoth || clip.overlapPlaysBoth)
-                continue;
+            if (upper->overlapPlaysBoth || clip.overlapPlaysBoth)
+                return false;
+            return upper->placement.lengthBeats > 0.0;
+        };
+        const auto clampedToClip = [&](const ClipInfo* upper) {
+            return overlapRange(*upper, clipStart, clipEnd);
+        };
 
-            const double uStart = upper.placement.startBeat;
-            const double uEnd = uStart + upper.placement.lengthBeats;
-            if (!(uEnd > uStart))
-                continue;
-
-            const double from = std::max(uStart, clipStart);
-            const double to = std::min(uEnd, clipEnd);
-            if (to > from + kTolBeats)
-                covers.push_back({BeatPosition{from}, BeatPosition{to}});
-        }
-
+        // Only the clips above this one can cover it.
+        auto covers = ordered | std::views::drop(static_cast<std::ptrdiff_t>(i) + 1) |
+                      std::views::filter(silencesThisClip) | std::views::transform(clampedToClip) |
+                      std::views::filter(isNonEmptyRange) | toStd<std::vector<BeatRange>>();
         covers = mergeRanges(std::move(covers));
 
         // Covers touching an edge pull that edge in — that is a shorter clip,
@@ -164,18 +179,16 @@ std::vector<BeatRange> computeBothPlayRanges(const std::vector<ClipInfo>& trackC
 
     // Above and below alike: both clips of a pair that sounds together mark it
     // (#2003).
-    std::vector<BeatRange> shared;
-    for (const auto& other : trackClips) {
-        if (other.id == clipId || !overlapPlaysThrough(*clip, other))
-            continue;
+    const auto soundsWithClip = [&](const ClipInfo& other) {
+        return other.id != clipId && overlapPlaysThrough(*clip, other);
+    };
+    const auto clampedToClip = [&](const ClipInfo& other) {
+        return overlapRange(other, start, end);
+    };
 
-        const double from = std::max(other.placement.startBeat, start);
-        const double to = std::min(other.placement.startBeat + other.placement.lengthBeats, end);
-        if (to > from + kTolBeats)
-            shared.push_back({BeatPosition{from}, BeatPosition{to}});
-    }
-
-    return mergeRanges(std::move(shared));
+    return mergeRanges(trackClips | std::views::filter(soundsWithClip) |
+                       std::views::transform(clampedToClip) | std::views::filter(isNonEmptyRange) |
+                       toStd<std::vector<BeatRange>>());
 }
 
 std::vector<BeatRange> computeShowThroughRanges(const std::vector<ClipInfo>& trackClips,
@@ -189,21 +202,18 @@ std::vector<BeatRange> computeShowThroughRanges(const std::vector<ClipInfo>& tra
     if (!(end > start))
         return {};
 
-    std::vector<BeatRange> showing;
-    for (const auto& other : trackClips) {
-        if (other.id == clipId || !clipSitsBelow(other, *clip))
-            continue;
+    const auto showsThroughClip = [&](const ClipInfo& other) {
         // A cover has nothing left to show: it silences what is under it.
-        if (!overlapPlaysThrough(*clip, other))
-            continue;
+        return other.id != clipId && clipSitsBelow(other, *clip) &&
+               overlapPlaysThrough(*clip, other);
+    };
+    const auto clampedToClip = [&](const ClipInfo& other) {
+        return overlapRange(other, start, end);
+    };
 
-        const double from = std::max(other.placement.startBeat, start);
-        const double to = std::min(other.placement.startBeat + other.placement.lengthBeats, end);
-        if (to > from + kTolBeats)
-            showing.push_back({BeatPosition{from}, BeatPosition{to}});
-    }
-
-    return mergeRanges(std::move(showing));
+    return mergeRanges(trackClips | std::views::filter(showsThroughClip) |
+                       std::views::transform(clampedToClip) | std::views::filter(isNonEmptyRange) |
+                       toStd<std::vector<BeatRange>>());
 }
 
 }  // namespace magda

@@ -1,10 +1,12 @@
 #include "racks/RackSyncManager.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 #include "../../core/DrumGridPads.hpp"
 #include "TracktionHelpers.hpp"
 #include "core/ChainRoutingModel.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/TrackManager.hpp"
 #include "modifiers/CurveSnapshot.hpp"
 #include "modifiers/ModifierHelpers.hpp"
@@ -298,44 +300,30 @@ void RackSyncManager::removeRackInternal(RackId rackId, bool clearDeviceState) {
 }
 
 void RackSyncManager::removeRacksForTrack(TrackId trackId) {
-    std::vector<RackId> toRemove;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId == trackId)
-            toRemove.push_back(rackId);
-    }
-    for (auto rackId : toRemove) {
+    // Collected first: removeRack() erases from the map being walked.
+    for (auto rackId : getSyncedRackIdsForTrack(trackId))
         removeRack(rackId);
-    }
 }
 
 std::vector<RackId> RackSyncManager::getSyncedRackIds() const {
-    std::vector<RackId> ids;
-    ids.reserve(syncedRacks_.size());
-    for (const auto& [rackId, _] : syncedRacks_) {
-        ids.push_back(rackId);
-    }
-    return ids;
+    return syncedRacks_ | std::views::keys | toStd<std::vector<RackId>>();
 }
 
 std::vector<RackId> RackSyncManager::getSyncedRackIdsForTrack(TrackId trackId) const {
-    std::vector<RackId> ids;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId == trackId)
-            ids.push_back(rackId);
-    }
-    return ids;
+    const auto onTrack = [trackId](const auto& entry) { return entry.second.trackId == trackId; };
+
+    return syncedRacks_ | std::views::filter(onTrack) | std::views::keys |
+           toStd<std::vector<RackId>>();
 }
 
 std::vector<DeviceId> RackSyncManager::getInnerDeviceIdsForTrack(TrackId trackId) const {
-    std::vector<DeviceId> ids;
-    for (const auto& [rackId, synced] : syncedRacks_) {
-        if (synced.trackId != trackId)
-            continue;
-        for (const auto& [deviceId, plugin] : synced.innerPlugins) {
-            ids.push_back(deviceId);
-        }
-    }
-    return ids;
+    const auto onTrack = [trackId](const auto& entry) { return entry.second.trackId == trackId; };
+    const auto innerPluginsOf = [](const auto& entry) -> const auto& {
+        return entry.second.innerPlugins;
+    };
+
+    return syncedRacks_ | std::views::filter(onTrack) | std::views::transform(innerPluginsOf) |
+           std::views::join | std::views::keys | toStd<std::vector<DeviceId>>();
 }
 
 std::unordered_map<TrackId, RackSyncManager::TrackMeteringInfo> RackSyncManager::getMeteringMap()

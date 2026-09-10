@@ -1,9 +1,13 @@
 #include "ParameterUtils.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <limits>
+#include <ranges>
 
+#include "RangesHelpers.hpp"
 #include "TechnicalText.hpp"
 #include "TempoUtils.hpp"
 
@@ -329,13 +333,14 @@ float applyModulation(float baseNormalized, float modValue, float amount, bool b
 
 float applyModulations(float baseNormalized,
                        const std::vector<std::pair<float, float>>& modsAndAmounts, bool bipolar) {
-    float result = baseNormalized;
+    const auto offsetOf = [bipolar](const std::pair<float, float>& mod) {
+        return modulationOffset(mod.first, mod.second, bipolar);
+    };
 
-    for (const auto& [modValue, amount] : modsAndAmounts) {
-        result += modulationOffset(modValue, amount, bipolar);
-    }
-
-    return juce::jlimit(0.0f, 1.0f, result);
+    // Left fold: the sum keeps the order the mods were stacked in.
+    return juce::jlimit(0.0f, 1.0f,
+                        std::ranges::fold_left(modsAndAmounts | std::views::transform(offsetOf),
+                                               baseNormalized, std::plus{}));
 }
 
 namespace {
@@ -742,6 +747,15 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
     // Build the set of "natural" grid values in normalized space for this
     // parameter, then snap to the closest one. Values mirror what the
     // curve editor and track header paint as grid lines.
+    const auto normalizedTick = [&info](double realValue) {
+        return static_cast<double>(realToNormalized(static_cast<float>(realValue), info));
+    };
+    const auto tenthStep = [](int step) { return step / 10.0; };
+    const auto tenPercentSteps = [&tenthStep] {
+        return std::views::iota(0, 11) | std::views::transform(tenthStep) |
+               toStd<std::vector<double>>();
+    };
+
     std::vector<double> gridNorms;
 
     switch (info.scale) {
@@ -749,10 +763,8 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
             // dB ticks — same set the paint code uses.
             static constexpr double kDbTicks[] = {6.0,   3.0,   0.0,   -6.0,  -12.0,
                                                   -18.0, -24.0, -36.0, -48.0, -60.0};
-            for (double db : kDbTicks) {
-                float n = realToNormalized(static_cast<float>(db), info);
-                gridNorms.push_back(static_cast<double>(n));
-            }
+            gridNorms =
+                kDbTicks | std::views::transform(normalizedTick) | toStd<std::vector<double>>();
             // Always include the endpoints so snap can reach max/min.
             gridNorms.push_back(0.0);
             gridNorms.push_back(1.0);
@@ -760,12 +772,15 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
         }
 
         case ParameterScale::Discrete: {
-            if (info.choices.empty())
+            // One choice has nowhere to snap to, and its step would be 0/0.
+            const int count = static_cast<int>(info.choices.size());
+            if (count < 2)
                 return normalized;
-            int count = static_cast<int>(info.choices.size());
-            for (int i = 0; i < count; ++i) {
-                gridNorms.push_back(static_cast<double>(i) / (count - 1));
-            }
+            const auto evenStep = [count](int index) {
+                return static_cast<double>(index) / (count - 1);
+            };
+            gridNorms = std::views::iota(0, count) | std::views::transform(evenStep) |
+                        toStd<std::vector<double>>();
             break;
         }
 
@@ -777,38 +792,28 @@ double snapNormalizedToGrid(double normalized, const ParameterInfo& info) {
             // Detect by range; otherwise fall through to 10% steps.
             if (info.minValue == -1.0f && info.maxValue == 1.0f) {
                 static constexpr double kPanTicks[] = {-1.0, -0.5, 0.0, 0.5, 1.0};
-                for (double p : kPanTicks) {
-                    float n = realToNormalized(static_cast<float>(p), info);
-                    gridNorms.push_back(static_cast<double>(n));
-                }
+                gridNorms = kPanTicks | std::views::transform(normalizedTick) |
+                            toStd<std::vector<double>>();
                 break;
             }
             // Generic linear (e.g., percent): 10% steps.
-            for (int i = 0; i <= 10; ++i)
-                gridNorms.push_back(i / 10.0);
+            gridNorms = tenPercentSteps();
             break;
         }
 
         default:
             // Generic fallback: 10% steps in normalized space.
-            for (int i = 0; i <= 10; ++i)
-                gridNorms.push_back(i / 10.0);
+            gridNorms = tenPercentSteps();
             break;
     }
 
     if (gridNorms.empty())
         return normalized;
 
-    double best = gridNorms.front();
-    double bestDist = std::abs(normalized - best);
-    for (double g : gridNorms) {
-        double d = std::abs(normalized - g);
-        if (d < bestDist) {
-            bestDist = d;
-            best = g;
-        }
-    }
-    return best;
+    const auto distanceFromValue = [normalized](double grid) {
+        return std::abs(normalized - grid);
+    };
+    return *std::ranges::min_element(gridNorms, {}, distanceFromValue);
 }
 
 juce::String getChoiceString(int index, const ParameterInfo& info) {

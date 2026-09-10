@@ -3,12 +3,14 @@
 #include <algorithm>
 #include <cmath>
 #include <iterator>
+#include <ranges>
 
 #include "AutomationCurve.hpp"
 #include "ClipLaneFlattener.hpp"
 #include "GridDivision.hpp"
 #include "ParameterInfo.hpp"
 #include "ParameterUtils.hpp"
+#include "RangesHelpers.hpp"
 #include "TrackManager.hpp"
 #include "audio/AudioBridge.hpp"
 #include "audio/automation/ControlTargetResolver.hpp"
@@ -17,6 +19,19 @@
 namespace magda {
 
 namespace {
+
+/// The highest id in a range, or 0 when it is empty: ids count from 1, so the
+/// counters below still land on 1 for a project with nothing in it.
+int highestId(std::ranges::input_range auto&& ids) {
+    const auto larger = [](int a, int b) { return std::max(a, b); };
+    return std::ranges::fold_left(ids, 0, larger);
+}
+
+auto baselineFor(const AutomationTarget& target) {
+    return [&target](const std::pair<AutomationTarget, double>& entry) {
+        return entry.first == target;
+    };
+}
 
 bool isPostFxAutomationTarget(const AutomationTarget& target) {
     switch (target.kind) {
@@ -417,32 +432,29 @@ const AutomationLaneInfo* AutomationManager::getLane(AutomationLaneId laneId) co
 }
 
 std::vector<AutomationLaneId> AutomationManager::getLanesForTrack(TrackId trackId) const {
-    std::vector<AutomationLaneId> result;
-    for (const auto& lane : lanes_) {
-        if (lane.target.devicePath.trackId == trackId) {
-            result.push_back(lane.id);
-        }
-    }
-    return result;
+    const auto onTrack = [trackId](const AutomationLaneInfo& lane) {
+        return lane.target.devicePath.trackId == trackId;
+    };
+
+    return lanes_ | std::views::filter(onTrack) | std::views::transform(&AutomationLaneInfo::id) |
+           toStd<std::vector<AutomationLaneId>>();
 }
 
 std::vector<AutomationLaneId> AutomationManager::getEditScopedLanes() const {
-    std::vector<AutomationLaneId> result;
-    for (const auto& lane : lanes_) {
-        if (lane.target.isEditScoped()) {
-            result.push_back(lane.id);
-        }
-    }
-    return result;
+    const auto isEditScoped = [](const AutomationLaneInfo& lane) {
+        return lane.target.isEditScoped();
+    };
+
+    return lanes_ | std::views::filter(isEditScoped) |
+           std::views::transform(&AutomationLaneInfo::id) | toStd<std::vector<AutomationLaneId>>();
 }
 
 AutomationLaneId AutomationManager::getLaneForTarget(const AutomationTarget& target) const {
-    for (const auto& lane : lanes_) {
-        if (lane.target == target) {
-            return lane.id;
-        }
-    }
-    return INVALID_AUTOMATION_LANE_ID;
+    const auto hasTarget = [&target](const AutomationLaneInfo& lane) {
+        return lane.target == target;
+    };
+    const auto found = std::ranges::find_if(lanes_, hasTarget);
+    return found == lanes_.end() ? INVALID_AUTOMATION_LANE_ID : found->id;
 }
 
 // ============================================================================
@@ -518,26 +530,22 @@ std::vector<AutomationTarget> AutomationManager::getUserTouchedTargets() const {
 }
 
 void AutomationManager::setTouchBaseline(const AutomationTarget& target, double normalizedValue) {
-    for (auto& entry : touchBaselines_) {
-        if (entry.first == target) {
-            entry.second = normalizedValue;
-            return;
-        }
-    }
-    touchBaselines_.emplace_back(target, normalizedValue);
+    const auto found = std::ranges::find_if(touchBaselines_, baselineFor(target));
+    if (found == touchBaselines_.end())
+        touchBaselines_.emplace_back(target, normalizedValue);
+    else
+        found->second = normalizedValue;
 }
 
 std::optional<double> AutomationManager::getTouchBaseline(const AutomationTarget& target) const {
-    for (const auto& entry : touchBaselines_) {
-        if (entry.first == target)
-            return entry.second;
-    }
-    return std::nullopt;
+    const auto found = std::ranges::find_if(touchBaselines_, baselineFor(target));
+    if (found == touchBaselines_.end())
+        return std::nullopt;
+    return found->second;
 }
 
 void AutomationManager::clearTouchBaseline(const AutomationTarget& target) {
-    std::erase_if(touchBaselines_,
-                  [&](const std::pair<AutomationTarget, double>& e) { return e.first == target; });
+    std::erase_if(touchBaselines_, baselineFor(target));
 }
 
 AutomationVisualState AutomationManager::getVisualState(const AutomationTarget& target) const {
@@ -579,11 +587,14 @@ std::optional<double> AutomationManager::getCurrentTargetValue(const AutomationT
 }
 
 void AutomationManager::resetRuntimeAuthorityStates() {
-    std::vector<AutomationLaneId> runtimeLanes;
-    for (const auto& lane : lanes_) {
-        if (isAutomationGestureActive(lane.authorityState))
-            runtimeLanes.push_back(lane.id);
-    }
+    const auto isGesturing = [](const AutomationLaneInfo& lane) {
+        return isAutomationGestureActive(lane.authorityState);
+    };
+
+    // Collected first: dispatching moves lanes through their authority states.
+    const auto runtimeLanes = lanes_ | std::views::filter(isGesturing) |
+                              std::views::transform(&AutomationLaneInfo::id) |
+                              toStd<std::vector<AutomationLaneId>>();
     for (const auto laneId : runtimeLanes)
         dispatchAuthorityEvent(laneId, AutomationAuthorityEvent::ResetRuntime);
 }
@@ -1206,33 +1217,18 @@ void AutomationManager::restoreClip(AutomationClipInfo& clip) {
 }
 
 void AutomationManager::refreshIdCountersFromLanes() {
-    int maxLaneId = 0;
-    int maxClipId = 0;
-    int maxPointId = 0;
+    auto laneIds = lanes_ | std::views::transform(&AutomationLaneInfo::id);
+    auto lanePointIds = lanes_ | std::views::transform(&AutomationLaneInfo::absolutePoints) |
+                        std::views::join | std::views::transform(&AutomationPoint::id);
+    auto laneClipIds =
+        lanes_ | std::views::transform(&AutomationLaneInfo::clipIds) | std::views::join;
+    auto clipIds = clips_ | std::views::transform(&AutomationClipInfo::id);
+    auto clipPointIds = clips_ | std::views::transform(&AutomationClipInfo::points) |
+                        std::views::join | std::views::transform(&AutomationPoint::id);
 
-    for (const auto& lane : lanes_) {
-        maxLaneId = std::max(maxLaneId, lane.id);
-
-        for (const auto& point : lane.absolutePoints) {
-            maxPointId = std::max(maxPointId, point.id);
-        }
-
-        for (auto clipId : lane.clipIds) {
-            maxClipId = std::max(maxClipId, clipId);
-        }
-    }
-
-    for (const auto& clip : clips_) {
-        maxClipId = std::max(maxClipId, clip.id);
-
-        for (const auto& point : clip.points) {
-            maxPointId = std::max(maxPointId, point.id);
-        }
-    }
-
-    nextLaneId_ = maxLaneId + 1;
-    nextClipId_ = maxClipId + 1;
-    nextPointId_ = maxPointId + 1;
+    nextLaneId_ = highestId(laneIds) + 1;
+    nextClipId_ = std::max(highestId(laneClipIds), highestId(clipIds)) + 1;
+    nextPointId_ = std::max(highestId(lanePointIds), highestId(clipPointIds)) + 1;
 }
 
 // ============================================================================

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <ranges>
 #include <set>
 #include <unordered_set>
 
@@ -1358,13 +1359,8 @@ std::vector<TrackId> TrackManager::getChildTracks(TrackId groupId) const {
 }
 
 std::vector<TrackId> TrackManager::getTopLevelTracks() const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isTopLevel()) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    return tracks_ | std::views::filter(&TrackInfo::isTopLevel) |
+           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
 }
 
 std::vector<TrackId> TrackManager::getAllDescendants(TrackId trackId) const {
@@ -3164,23 +3160,19 @@ void TrackManager::setTrackHeight(TrackId trackId, ViewMode mode, int height) {
 // ============================================================================
 
 std::vector<TrackId> TrackManager::getVisibleTracks(ViewMode mode) const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isVisibleIn(mode)) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    const auto isVisible = [mode](const TrackInfo& track) { return track.isVisibleIn(mode); };
+
+    return tracks_ | std::views::filter(isVisible) | std::views::transform(&TrackInfo::id) |
+           toStd<std::vector<TrackId>>();
 }
 
 std::vector<TrackId> TrackManager::getVisibleTopLevelTracks(ViewMode mode) const {
-    std::vector<TrackId> result;
-    for (const auto& track : tracks_) {
-        if (track.isTopLevel() && track.isVisibleIn(mode)) {
-            result.push_back(track.id);
-        }
-    }
-    return result;
+    const auto isVisibleAtTopLevel = [mode](const TrackInfo& track) {
+        return track.isTopLevel() && track.isVisibleIn(mode);
+    };
+
+    return tracks_ | std::views::filter(isVisibleAtTopLevel) |
+           std::views::transform(&TrackInfo::id) | toStd<std::vector<TrackId>>();
 }
 
 // ============================================================================

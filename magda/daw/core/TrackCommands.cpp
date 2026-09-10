@@ -10,6 +10,7 @@
 #include "../engine/AudioEngine.hpp"
 #include "../project/ProjectManager.hpp"
 #include "ClipManager.hpp"
+#include "RangesHelpers.hpp"
 #include "TempoUtils.hpp"
 
 namespace magda {
@@ -20,12 +21,24 @@ ChainNodePath parentChainOf(const ChainNodePath& path) {
 }
 
 std::vector<ChainElement> deepCopyChainElements(const std::vector<ChainElement>& elements) {
-    std::vector<ChainElement> copied;
-    copied.reserve(elements.size());
-    for (const auto& element : elements)
-        copied.push_back(deepCopyElement(element));
-    return copied;
+    return elements | std::views::transform(deepCopyElement) | toStd<std::vector<ChainElement>>();
 }
+
+/// Container order for the move records: same parent chain first, then the
+/// index each element sat at inside it.
+const auto byParentThenIndex = [](const auto& a, const auto& b) {
+    const auto& parentA = a.originalParentPath;
+    const auto& parentB = b.originalParentPath;
+    if (parentA == parentB)
+        return a.originalIndex < b.originalIndex;
+    if (parentA.trackId != parentB.trackId)
+        return parentA.trackId < parentB.trackId;
+    return parentA.toString() < parentB.toString();
+};
+
+const auto sameParent = [](const auto& a, const auto& b) {
+    return a.originalParentPath == b.originalParentPath;
+};
 
 ChainNodePath findChainElementPathRecursive(const ChainNodePath& parentPath,
                                             const std::vector<ChainElement>& elements,
@@ -477,25 +490,16 @@ void MoveChainElementsCommand::execute() {
         if (index < 0)
             continue;
 
-        const bool alreadyRecorded =
-            std::any_of(records.begin(), records.end(), [type, id](const auto& record) {
-                return record.type == type && record.id == id;
-            });
-        if (alreadyRecorded)
+        const auto namesSameElement = [type, id](const auto& record) {
+            return record.type == type && record.id == id;
+        };
+        if (std::ranges::any_of(records, namesSameElement))
             continue;
 
         records.push_back({path, parentPath, index, type, id});
     }
 
-    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
-        const auto& parentA = a.originalParentPath;
-        const auto& parentB = b.originalParentPath;
-        if (parentA == parentB)
-            return a.originalIndex < b.originalIndex;
-        if (parentA.trackId != parentB.trackId)
-            return parentA.trackId < parentB.trackId;
-        return parentA.toString() < parentB.toString();
-    });
+    std::ranges::stable_sort(records, byParentThenIndex);
 
     commands_.clear();
     commands_.reserve(records.size());
@@ -523,13 +527,7 @@ void MoveChainElementsCommand::undo() {
 
     auto& tm = TrackManager::getInstance();
     auto records = movedElements_;
-    std::stable_sort(records.begin(), records.end(), [](const auto& a, const auto& b) {
-        if (a.originalParentPath == b.originalParentPath)
-            return a.originalIndex < b.originalIndex;
-        if (a.originalParentPath.trackId != b.originalParentPath.trackId)
-            return a.originalParentPath.trackId < b.originalParentPath.trackId;
-        return a.originalParentPath.toString() < b.originalParentPath.toString();
-    });
+    std::ranges::stable_sort(records, byParentThenIndex);
 
     auto restoreRecord = [&tm](const auto& record) {
         auto currentPath = findChainElementPath(tm, record.type, record.id);
@@ -545,21 +543,15 @@ void MoveChainElementsCommand::undo() {
             dropIndexForHome(tm, currentPath, record.originalParentPath, record.originalIndex));
     };
 
-    auto begin = records.begin();
-    while (begin != records.end()) {
-        auto end = std::find_if(begin, records.end(), [&](const auto& record) {
-            return record.originalParentPath != begin->originalParentPath;
-        });
+    for (auto chunk : records | std::views::chunk_by(sameParent)) {
+        const auto originalIndexOf = [](const auto& record) { return record.originalIndex; };
+        const auto lowestOriginal = std::ranges::min_element(chunk, {}, originalIndexOf);
 
-        const auto minOriginalIt = std::min_element(begin, end, [](const auto& a, const auto& b) {
-            return a.originalIndex < b.originalIndex;
-        });
         int minCurrentIndex = std::numeric_limits<int>::max();
         bool allStillInOriginalContainer = true;
-
-        for (auto it = begin; it != end; ++it) {
-            const auto currentPath = findChainElementPath(tm, it->type, it->id);
-            if (!currentPath.isValid() || parentChainOf(currentPath) != it->originalParentPath) {
+        for (const auto& record : chunk) {
+            const auto currentPath = findChainElementPath(tm, record.type, record.id);
+            if (!currentPath.isValid() || parentChainOf(currentPath) != record.originalParentPath) {
                 allStillInOriginalContainer = false;
                 break;
             }
@@ -569,17 +561,18 @@ void MoveChainElementsCommand::undo() {
                 minCurrentIndex = std::min(minCurrentIndex, currentIndex);
         }
 
-        if (allStillInOriginalContainer && minOriginalIt != end &&
-            minCurrentIndex < minOriginalIt->originalIndex) {
-            for (auto it = std::make_reverse_iterator(end); it != std::make_reverse_iterator(begin);
-                 ++it)
-                restoreRecord(*it);
+        // The chunk sits earlier than it started, so restoring front-first
+        // would push each element past the one before it.
+        const bool restoreFromBack = allStillInOriginalContainer &&
+                                     lowestOriginal != std::ranges::end(chunk) &&
+                                     minCurrentIndex < lowestOriginal->originalIndex;
+        if (restoreFromBack) {
+            for (const auto& record : chunk | std::views::reverse)
+                restoreRecord(record);
         } else {
-            for (auto it = begin; it != end; ++it)
-                restoreRecord(*it);
+            for (const auto& record : chunk)
+                restoreRecord(record);
         }
-
-        begin = end;
     }
 }
 

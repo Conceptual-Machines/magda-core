@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <map>
+#include <ranges>
 #include <set>
 #include <unordered_set>
 #include <utility>
@@ -8,6 +9,7 @@
 #include "../../core/ChainRoutingModel.hpp"
 #include "../../core/PluginCapabilities.hpp"
 #include "../../core/RackInfo.hpp"
+#include "../../core/RangesHelpers.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../core/aliases/AutoAliasGenerator.hpp"
 #include "../../profiling/PerformanceProfiler.hpp"
@@ -44,6 +46,18 @@
 namespace magda {
 
 namespace {
+/// Every synced plugin on a track: the scope a modifier or macro teardown
+/// walks. The caller holds pluginLock_.
+std::vector<te::Plugin*> scopePluginsForTrack(const auto& syncedDevices, TrackId trackId) {
+    const auto onTrackWithPlugin = [trackId](const auto& entry) {
+        return entry.second.trackId == trackId && entry.second.plugin != nullptr;
+    };
+    const auto pluginOf = [](const auto& entry) { return entry.second.plugin.get(); };
+
+    return syncedDevices | std::views::filter(onTrackWithPlugin) | std::views::transform(pluginOf) |
+           toStd<std::vector<te::Plugin*>>();
+}
+
 void clearAutomationCurve(te::AutomatableParameter* param) {
     if (!param)
         return;
@@ -358,11 +372,8 @@ void PluginManager::syncAllPlugins() {
             for (auto it = syncedDevices_.begin(); it != syncedDevices_.end();) {
                 if (validDevicePaths.find(it->first) == validDevicePaths.end() &&
                     !isDrumGridPadPathLocked(it->first)) {
-                    std::vector<te::Plugin*> scopePlugins;
-                    for (const auto& [_deviceId, sd] : syncedDevices_) {
-                        if (sd.trackId == it->second.trackId && sd.plugin)
-                            scopePlugins.push_back(sd.plugin.get());
-                    }
+                    const auto scopePlugins =
+                        scopePluginsForTrack(syncedDevices_, it->second.trackId);
                     auto* teTrack = trackController_.getAudioTrack(it->second.trackId);
                     auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
                     if (!modifierList && it->second.trackId == MASTER_TRACK_ID) {
@@ -520,11 +531,7 @@ void PluginManager::syncTrackPlugins(TrackId trackId) {
 
         // Remove from mappings while under lock
         deferredHolders_.clear();  // Drain previous cycle's deferred holders
-        std::vector<te::Plugin*> scopePlugins;
-        for (const auto& [_deviceId, sd] : syncedDevices_) {
-            if (sd.trackId == trackId && sd.plugin)
-                scopePlugins.push_back(sd.plugin.get());
-        }
+        const auto scopePlugins = scopePluginsForTrack(syncedDevices_, trackId);
         auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
         auto* macroList = teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;
         for (const auto& devicePath : toRemove) {
@@ -958,12 +965,7 @@ void PluginManager::cleanupTrackPlugins(TrackId trackId) {
                 midiPluginsToDelete.push_back(sd.midiRestorePlugin.get());
         }
 
-        std::vector<te::Plugin*> scopePlugins;
-        scopePlugins.reserve(devicePaths.size());
-        for (const auto& [deviceId, sd] : syncedDevices_) {
-            if (sd.trackId == trackId && sd.plugin)
-                scopePlugins.push_back(sd.plugin.get());
-        }
+        const auto scopePlugins = scopePluginsForTrack(syncedDevices_, trackId);
 
         auto* modifierList = teTrack ? teTrack->getModifierList() : nullptr;
         auto* macroList = teTrack ? &teTrack->getMacroParameterListForWriting() : nullptr;

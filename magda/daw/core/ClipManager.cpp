@@ -4,7 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
+#include <iterator>
 #include <limits>
+#include <ranges>
 #include <unordered_map>
 
 #include "../project/ProjectManager.hpp"
@@ -13,6 +16,7 @@
 #include "Config.hpp"
 #include "GridDivision.hpp"
 #include "MidiFileWriter.hpp"
+#include "RangesHelpers.hpp"
 #include "TempoUtils.hpp"
 #include "TimeStretchModes.hpp"
 #include "TrackManager.hpp"
@@ -763,6 +767,17 @@ void ClipManager::setAudioClipCurrentTake(ClipId clipId, int takeIndex) {
 }
 
 namespace {
+// Append the events of one take that land in a comp section [start, end).
+template <std::ranges::input_range R, class Beat>
+void appendEventsInSection(const R& events, Beat beatOf, const MidiCompSection& section,
+                           std::vector<std::ranges::range_value_t<R>>& out) {
+    const auto insideSection = [&](const auto& event) {
+        const double beat = std::invoke(beatOf, event);
+        return beat >= section.startBeat && beat < section.endBeat;
+    };
+    std::ranges::copy(events | std::views::filter(insideSection), std::back_inserter(out));
+}
+
 // Assemble a clip's active event vectors from its comp sections + take note
 // sets: each section [startBeat, endBeat) contributes the events of its take
 // whose start beat falls in that range.
@@ -773,19 +788,15 @@ void rebuildMidiComp(ClipInfo& clip) {
     std::vector<MidiPitchBendData> pb;
 
     const int numTakes = static_cast<int>(midi.takes.size());
-    for (const auto& sec : midi.comp) {
-        if (sec.takeIndex < 0 || sec.takeIndex >= numTakes)
-            continue;
-        const auto& take = midi.takes[static_cast<size_t>(sec.takeIndex)];
-        for (const auto& n : take.notes)
-            if (n.startBeat >= sec.startBeat && n.startBeat < sec.endBeat)
-                notes.push_back(n);
-        for (const auto& c : take.cc)
-            if (c.beatPosition >= sec.startBeat && c.beatPosition < sec.endBeat)
-                cc.push_back(c);
-        for (const auto& p : take.pitchBend)
-            if (p.beatPosition >= sec.startBeat && p.beatPosition < sec.endBeat)
-                pb.push_back(p);
+    const auto namesATake = [numTakes](const MidiCompSection& section) {
+        return section.takeIndex >= 0 && section.takeIndex < numTakes;
+    };
+
+    for (const auto& section : midi.comp | std::views::filter(namesATake)) {
+        const auto& take = midi.takes[static_cast<size_t>(section.takeIndex)];
+        appendEventsInSection(take.notes, &MidiNote::startBeat, section, notes);
+        appendEventsInSection(take.cc, &MidiCCData::beatPosition, section, cc);
+        appendEventsInSection(take.pitchBend, &MidiPitchBendData::beatPosition, section, pb);
     }
 
     clip.midiNotes = std::move(notes);
@@ -829,17 +840,18 @@ void ClipManager::setMidiCompSection(ClipId clipId, double startBeat, double end
         return;
 
     ClipInfo before = *clip;
-    std::vector<CompSpan> spans;
-    spans.reserve(midi.comp.size());
-    for (const auto& s : midi.comp)
-        spans.push_back({s.startBeat, s.endBeat, s.takeIndex});
+    const auto asSpan = [](const MidiCompSection& section) {
+        return CompSpan{section.startBeat, section.endBeat, section.takeIndex};
+    };
+    const auto asSection = [](const CompSpan& span) {
+        return MidiCompSection{span.start, span.end, span.takeIndex};
+    };
 
+    const auto spans = midi.comp | std::views::transform(asSpan) | toStd<std::vector<CompSpan>>();
     const auto out =
         assignCompSections(spans, compLen, midi.currentTakeIndex, startBeat, endBeat, takeIndex);
 
-    midi.comp.clear();
-    for (const auto& s : out)
-        midi.comp.push_back({s.start, s.end, s.takeIndex});
+    midi.comp = out | std::views::transform(asSection) | toStd<std::vector<MidiCompSection>>();
     midi.compActive = true;
 
     rebuildMidiComp(*clip);
@@ -2336,6 +2348,29 @@ void ClipManager::setLaunchFadeSamples(ClipId clipId, int samples) {
 // clip, so an overlap can never degenerate into full containment.
 static constexpr double kCrossfadeEdgeGuardBeats = 1e-3;
 
+namespace {
+
+const ClipInfo* addressOf(const ClipInfo& clip) {
+    return &clip;
+}
+
+bool isFound(const ClipInfo* clip) {
+    return clip != nullptr;
+}
+
+const ClipInfo& derefClip(const ClipInfo* clip) {
+    return *clip;
+}
+
+/// The crossfade rules take a lane of pointers and filter it themselves, so
+/// what they are handed is every clip in the project.
+std::vector<const ClipInfo*> everyClipAsLane(const std::unordered_map<ClipId, ClipInfo>& clips) {
+    return clips | std::views::values | std::views::transform(addressOf) |
+           toStd<std::vector<const ClipInfo*>>();
+}
+
+}  // namespace
+
 std::optional<ClipManager::CrossfadeInfo> ClipManager::crossfadeAtStartIn(
     const std::vector<ClipInfo>& lane, ClipId clipId) {
     return ::magda::crossfadeAtStartIn(lane, clipId);
@@ -2347,12 +2382,11 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::crossfadeAtEndIn(
 }
 
 std::vector<ClipInfo> ClipManager::arrangementLane(TrackId trackId) const {
-    std::vector<ClipInfo> lane;
-    for (ClipId id : getClipsOnTrack(trackId, ClipView::Arrangement)) {
-        if (const auto* clip = getClip(id))
-            lane.push_back(*clip);
-    }
-    return lane;
+    const auto clipIds = getClipsOnTrack(trackId, ClipView::Arrangement);
+    const auto clipFor = [this](ClipId id) { return getClip(id); };
+
+    return clipIds | std::views::transform(clipFor) | std::views::filter(isFound) |
+           std::views::transform(derefClip) | toStd<std::vector<ClipInfo>>();
 }
 
 ClipManager::EffectiveFades ClipManager::effectiveFadesIn(const std::vector<ClipInfo>& lane,
@@ -2365,11 +2399,7 @@ ClipManager::EffectiveFades ClipManager::getEffectiveFades(ClipId clipId, double
     if (clip == nullptr)
         return {};
 
-    std::vector<const ClipInfo*> lane;
-    lane.reserve(clips_.size());
-    for (const auto& [cid, other] : clips_)
-        lane.push_back(&other);
-    return effectiveFadesOf(*clip, lane, bpm);
+    return effectiveFadesOf(*clip, everyClipAsLane(clips_), bpm);
 }
 
 std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipId clipId) const {
@@ -2377,11 +2407,7 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtStart(ClipI
     if (!clip)
         return std::nullopt;
 
-    std::vector<const ClipInfo*> lane;
-    lane.reserve(clips_.size());
-    for (const auto& [cid, other] : clips_)
-        lane.push_back(&other);
-    return crossfadeAtStartOf(*clip, lane);
+    return crossfadeAtStartOf(*clip, everyClipAsLane(clips_));
 }
 
 std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtEnd(ClipId clipId) const {
@@ -2389,11 +2415,7 @@ std::optional<ClipManager::CrossfadeInfo> ClipManager::getCrossfadeAtEnd(ClipId 
     if (!clip)
         return std::nullopt;
 
-    std::vector<const ClipInfo*> lane;
-    lane.reserve(clips_.size());
-    for (const auto& [cid, other] : clips_)
-        lane.push_back(&other);
-    return crossfadeAtEndOf(*clip, lane);
+    return crossfadeAtEndOf(*clip, everyClipAsLane(clips_));
 }
 
 ClipId ClipManager::findCrossfadeNeighbour(ClipId clipId, bool atStart) const {
@@ -2755,6 +2777,18 @@ void ClipManager::clearChordAnnotations(ClipId clipId) {
 // Access
 // ============================================================================
 
+namespace {
+
+bool isArrangementClip(const ClipInfo& clip) {
+    return clip.view == ClipView::Arrangement;
+}
+
+bool isSessionClip(const ClipInfo& clip) {
+    return clip.view == ClipView::Session;
+}
+
+}  // namespace
+
 ClipInfo* ClipManager::getClip(ClipId clipId) {
     auto it = clips_.find(clipId);
     return (it != clips_.end()) ? &it->second : nullptr;
@@ -2766,63 +2800,48 @@ const ClipInfo* ClipManager::getClip(ClipId clipId) const {
 }
 
 std::vector<ClipInfo> ClipManager::getArrangementClips() const {
-    std::vector<ClipInfo> result;
-    result.reserve(clips_.size());
-    for (const auto& [id, clip] : clips_) {
-        if (clip.view == ClipView::Arrangement)
-            result.push_back(clip);
-    }
-    return result;
+    return clips_ | std::views::values | std::views::filter(isArrangementClip) |
+           toStd<std::vector<ClipInfo>>();
 }
 
 std::vector<ClipInfo> ClipManager::getSessionClips() const {
-    std::vector<ClipInfo> result;
-    result.reserve(clips_.size());
-    for (const auto& [id, clip] : clips_) {
-        if (clip.view == ClipView::Session)
-            result.push_back(clip);
-    }
-    return result;
+    return clips_ | std::views::values | std::views::filter(isSessionClip) |
+           toStd<std::vector<ClipInfo>>();
 }
 
 std::vector<ClipInfo> ClipManager::getClips() const {
-    std::vector<ClipInfo> result;
-    result.reserve(clips_.size());
-    for (const auto& [id, clip] : clips_)
-        result.push_back(clip);
-    return result;
+    return clips_ | std::views::values | toStd<std::vector<ClipInfo>>();
 }
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId) const {
-    std::vector<ClipId> result;
-    for (const auto& [id, clip] : clips_) {
-        if (clip.trackId == trackId)
-            result.push_back(clip.id);
-    }
-    std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
-        const auto* clipA = getClip(a);
-        const auto* clipB = getClip(b);
-        const double bpm = currentProjectTempoOrDefault();
-        return clipA && clipB && clipA->getTimelineStart(bpm) < clipB->getTimelineStart(bpm);
-    });
+    const auto onTrack = [trackId](const ClipInfo& clip) { return clip.trackId == trackId; };
+
+    auto result = clips_ | std::views::values | std::views::filter(onTrack) |
+                  std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>();
+    sortByTimelineStart(result);
     return result;
 }
 
 std::vector<ClipId> ClipManager::getClipsOnTrack(TrackId trackId, ClipView view) const {
-    std::vector<ClipId> result;
-    for (const auto& [id, clip] : clips_) {
-        if (clip.trackId == trackId && clip.view == view)
-            result.push_back(clip.id);
-    }
-    if (view == ClipView::Arrangement) {
-        std::sort(result.begin(), result.end(), [this](ClipId a, ClipId b) {
-            const auto* clipA = getClip(a);
-            const auto* clipB = getClip(b);
-            const double bpm = currentProjectTempoOrDefault();
-            return clipA && clipB && clipA->getTimelineStart(bpm) < clipB->getTimelineStart(bpm);
-        });
-    }
+    const auto onTrackInView = [trackId, view](const ClipInfo& clip) {
+        return clip.trackId == trackId && clip.view == view;
+    };
+
+    auto result = clips_ | std::views::values | std::views::filter(onTrackInView) |
+                  std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>();
+    if (view == ClipView::Arrangement)
+        sortByTimelineStart(result);
     return result;
+}
+
+void ClipManager::sortByTimelineStart(std::vector<ClipId>& clipIds) const {
+    const double bpm = currentProjectTempoOrDefault();
+    const auto startsEarlier = [this, bpm](ClipId a, ClipId b) {
+        const auto* clipA = getClip(a);
+        const auto* clipB = getClip(b);
+        return clipA && clipB && clipA->getTimelineStart(bpm) < clipB->getTimelineStart(bpm);
+    };
+    std::ranges::sort(clipIds, startsEarlier);
 }
 
 ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
@@ -2840,17 +2859,14 @@ ClipId ClipManager::getClipAtPosition(TrackId trackId, double time) const {
 
 std::vector<ClipId> ClipManager::getClipsInRange(TrackId trackId, double startTime,
                                                  double endTime) const {
-    std::vector<ClipId> result;
     const double bpm = currentProjectTempoOrDefault();
-    for (const auto& [id, clip] : clips_) {
-        const double clipStart = clip.getTimelineStart(bpm);
-        const double clipEnd = clip.getTimelineEnd(bpm);
-        if (clip.view == ClipView::Arrangement && clip.trackId == trackId && clipStart < endTime &&
-            clipEnd > startTime) {
-            result.push_back(clip.id);
-        }
-    }
-    return result;
+    const auto overlapsRange = [&](const ClipInfo& clip) {
+        return isArrangementClip(clip) && clip.trackId == trackId &&
+               clip.getTimelineStart(bpm) < endTime && clip.getTimelineEnd(bpm) > startTime;
+    };
+
+    return clips_ | std::views::values | std::views::filter(overlapsRange) |
+           std::views::transform(&ClipInfo::id) | toStd<std::vector<ClipId>>();
 }
 
 // ============================================================================
@@ -2947,7 +2963,7 @@ void ClipManager::addListener(ClipManagerListener* listener) {
 }
 
 void ClipManager::removeListener(ClipManagerListener* listener) {
-    listeners_.erase(std::remove(listeners_.begin(), listeners_.end(), listener), listeners_.end());
+    std::erase(listeners_, listener);
 }
 
 // ============================================================================
