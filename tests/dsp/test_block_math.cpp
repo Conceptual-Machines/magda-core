@@ -7,9 +7,10 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <limits>
+#include <utility>
 #include <vector>
 
-#include "magda/daw/audio/BlockMath.hpp"
+#include "magda/daw/core/BlockMath.hpp"
 
 using magda::peakMagnitude;
 
@@ -120,4 +121,81 @@ TEST_CASE("peakMagnitude counts a lone spike in the tail", "[dsp][blockmath]") {
     samples.back() = -2.5f;
 
     CHECK(peakOf(samples) == 2.5f);
+}
+
+// blockMinMax() is the same reduction with both extremes kept, for the thumbnail
+// and media-db column walks (#2152).
+
+namespace {
+
+// The loop blockMinMax() replaces, kept here as the oracle.
+std::pair<float, float> minMaxByLoop(const std::vector<float>& samples) {
+    float lowest = 1.0f;
+    float highest = -1.0f;
+    for (float sample : samples) {
+        lowest = std::min(lowest, sample);
+        highest = std::max(highest, sample);
+    }
+    return {lowest, highest};
+}
+
+juce::Range<float> minMaxOf(const std::vector<float>& samples) {
+    return magda::blockMinMax(samples.data(), static_cast<int>(samples.size()));
+}
+
+}  // namespace
+
+TEST_CASE("blockMinMax reports both extremes", "[dsp][blockmath]") {
+    const auto range = minMaxOf({0.1f, -0.9f, 0.3f});
+    CHECK(range.getStart() == -0.9f);
+    CHECK(range.getEnd() == 0.3f);
+}
+
+TEST_CASE("blockMinMax agrees with the loop it replaces", "[dsp][blockmath]") {
+    for (int length : {1, 3, 4, 5, 7, 8, 15, 16, 17, 63, 64, 65, 1023}) {
+        std::vector<float> samples;
+        samples.reserve(static_cast<size_t>(length));
+        for (int i = 0; i < length; ++i)
+            samples.push_back(std::sin(static_cast<float>(i) * 0.37f) *
+                              (i % 3 == 0 ? -0.9f : 0.6f));
+
+        const auto [lowest, highest] = minMaxByLoop(samples);
+        const auto range = minMaxOf(samples);
+
+        INFO("length " << length);
+        CHECK(range.getStart() == lowest);
+        CHECK(range.getEnd() == highest);
+    }
+}
+
+TEST_CASE("blockMinMax of an empty or absent block is a zero range", "[dsp][blockmath]") {
+    CHECK(magda::blockMinMax(nullptr, 64) == juce::Range<float>());
+
+    const std::vector<float> samples{0.5f};
+    CHECK(magda::blockMinMax(samples.data(), 0) == juce::Range<float>());
+    CHECK(magda::blockMinMax(samples.data(), -1) == juce::Range<float>());
+}
+
+TEST_CASE("blockMinMax walks past a NaN to the real extremes", "[dsp][blockmath]") {
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+
+    std::vector<float> block(64, 0.05f);
+    block[3] = -0.8f;
+    block[5] = nan;
+    block[40] = nan;
+    block[52] = 0.95f;
+
+    const auto range = minMaxOf(block);
+    CHECK(range.getStart() == -0.8f);
+    CHECK(range.getEnd() == 0.95f);
+
+    // A block of nothing but NaN has no extremes to report.
+    CHECK(minMaxOf({nan, nan, nan}) == juce::Range<float>());
+}
+
+TEST_CASE("blockMinMax keeps an all-positive block off zero", "[dsp][blockmath]") {
+    // The minimum is a real sample, not a floor the accumulator started at.
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    CHECK(minMaxOf({0.4f, 0.9f}).getStart() == 0.4f);
+    CHECK(minMaxOf({0.4f, nan, 0.9f}).getStart() == 0.4f);
 }

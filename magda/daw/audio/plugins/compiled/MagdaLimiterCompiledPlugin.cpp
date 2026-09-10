@@ -67,19 +67,19 @@ float MagdaLimiterDspCore::coefficient(float timeMs, double sampleRate) {
 void MagdaLimiterDspCore::prepare(double sampleRate, int, int numChannels) {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
     delaySamples_ = std::max(1, static_cast<int>(std::ceil(sampleRate_ * 0.005)));
-    const auto channels = static_cast<size_t>(std::max(1, numChannels));
-    const auto lineLength = static_cast<size_t>(delaySamples_) + 1;
+    numLines_ = std::max(1, numChannels);
+    lineStride_ = juce::nextPowerOfTwo(delaySamples_ + 1);
+    lineMask_ = lineStride_ - 1;
 
-    delayLines_.assign(channels, std::vector<float>(lineLength, 0.0f));
-    frame_.assign(channels, 0.0f);
+    delayLines_.assign(static_cast<size_t>(numLines_) * static_cast<size_t>(lineStride_), 0.0f);
+    frame_.assign(static_cast<size_t>(numLines_), 0.0f);
     reset();
 }
 
 void MagdaLimiterDspCore::reset() {
     writeIndex_ = 0;
     gain_ = 1.0f;
-    for (auto& line : delayLines_)
-        std::fill(line.begin(), line.end(), 0.0f);
+    std::fill(delayLines_.begin(), delayLines_.end(), 0.0f);
 }
 
 MagdaLimiterDspCore::Stats MagdaLimiterDspCore::process(juce::AudioBuffer<float>& buffer,
@@ -90,7 +90,7 @@ MagdaLimiterDspCore::Stats MagdaLimiterDspCore::process(juce::AudioBuffer<float>
     if (channels <= 0 || numSamples <= 0)
         return stats;
 
-    if (static_cast<int>(delayLines_.size()) < channels)
+    if (numLines_ < channels)
         prepare(sampleRate_, numSamples, channels);
 
     const float thresholdDb = juce::jlimit(-24.0f, 0.0f, settings.thresholdDb);
@@ -98,18 +98,25 @@ MagdaLimiterDspCore::Stats MagdaLimiterDspCore::process(juce::AudioBuffer<float>
     const float outputGain = dbToGain(juce::jlimit(-24.0f, 0.0f, settings.outputDb));
     const float attackCoeff = coefficient(std::max(0.1f, settings.attackMs), sampleRate_);
     const float releaseCoeff = coefficient(std::max(10.0f, settings.releaseMs), sampleRate_);
-    const int lineLength = static_cast<int>(delayLines_.front().size());
+    // The gain follower is a recursion, so the sample loop stays serial; what it
+    // does not need is a bounds-checked accessor and a division per sample.
+    float* const* const io = buffer.getArrayOfWritePointers();
+    float* const lines = delayLines_.data();
+    float* const frame = frame_.data();
 
     float maxReduction = 0.0f;
     for (int i = 0; i < numSamples; ++i) {
+        const int sample = startSample + i;
+        const int readIndex = (writeIndex_ + lineStride_ - delaySamples_) & lineMask_;
+
         float detectorPeak = 0.0f;
         for (int ch = 0; ch < channels; ++ch) {
-            const float input = buffer.getSample(ch, startSample + i);
+            const float input = io[ch][sample];
             const float finiteInput = std::isfinite(input) ? input : 0.0f;
             stats.inputPeak = std::max(stats.inputPeak, std::abs(finiteInput));
 
             const float driven = finiteInput * preGain;
-            delayLines_[static_cast<size_t>(ch)][static_cast<size_t>(writeIndex_)] = driven;
+            lines[ch * lineStride_ + writeIndex_] = driven;
             detectorPeak = std::max(detectorPeak, std::abs(driven));
         }
 
@@ -118,24 +125,22 @@ MagdaLimiterDspCore::Stats MagdaLimiterDspCore::process(juce::AudioBuffer<float>
         gain_ = desiredGain + coeff * (gain_ - desiredGain);
         maxReduction = std::max(maxReduction, gain_ < 1.0f ? -ampToDb(gain_) : 0.0f);
 
-        const int readIndex = (writeIndex_ + 1) % lineLength;
         float postPeak = 0.0f;
         for (int ch = 0; ch < channels; ++ch) {
-            const float limited =
-                delayLines_[static_cast<size_t>(ch)][static_cast<size_t>(readIndex)] * gain_;
-            frame_[static_cast<size_t>(ch)] = limited;
+            const float limited = lines[ch * lineStride_ + readIndex] * gain_;
+            frame[ch] = limited;
             postPeak = std::max(postPeak, std::abs(limited));
         }
 
         const float safetyGain = postPeak > 1.0f ? 1.0f / postPeak : 1.0f;
         for (int ch = 0; ch < channels; ++ch) {
-            const float output = frame_[static_cast<size_t>(ch)] * safetyGain * outputGain;
+            const float output = frame[ch] * safetyGain * outputGain;
             const float clean = std::isfinite(output) ? juce::jlimit(-1.0f, 1.0f, output) : 0.0f;
-            buffer.setSample(ch, startSample + i, clean);
+            io[ch][sample] = clean;
             stats.outputPeak = std::max(stats.outputPeak, std::abs(clean));
         }
 
-        writeIndex_ = (writeIndex_ + 1) % lineLength;
+        writeIndex_ = (writeIndex_ + 1) & lineMask_;
     }
 
     stats.gainReductionDb = maxReduction;

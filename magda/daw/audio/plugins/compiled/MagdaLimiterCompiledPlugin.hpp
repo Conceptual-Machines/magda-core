@@ -36,7 +36,12 @@ class MagdaLimiterDspCore {
     int writeIndex_ = 0;
     float gain_ = 1.0f;
 
-    std::vector<std::vector<float>> delayLines_;
+    // One flat lookahead line, channel-major with a power-of-two stride so the
+    // ring wraps on a mask rather than a per-sample division (#2152).
+    int lineStride_ = 2;
+    int lineMask_ = 1;
+    int numLines_ = 0;
+    std::vector<float> delayLines_;
     std::vector<float> frame_;
 };
 

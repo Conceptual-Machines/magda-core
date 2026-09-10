@@ -100,6 +100,7 @@ double stitchComp(const CompSnapshot& snap) {
 
     juce::AudioBuffer<float> out(numChannels, total);
     out.clear();
+    std::vector<float> gains;
 
     for (size_t i = 0; i < snap.sections.size(); ++i) {
         const auto& sec = snap.sections[i];
@@ -125,7 +126,9 @@ double stitchComp(const CompSnapshot& snap) {
         readTakeInto(*readers[takeIndex], temp, 0, regionStart, regionLen);
 
         // Equal-power fades into the overlap windows so neighbouring sections sum
-        // to constant power across each boundary.
+        // to constant power across each boundary. The gain follows the sample
+        // position alone, so the ramp is built once and applied per channel.
+        gains.assign(static_cast<size_t>(regionLen), 1.0f);
         for (int n = 0; n < regionLen; ++n) {
             const int absN = regionStart + n;
             float gain = 1.0f;
@@ -139,10 +142,11 @@ double stitchComp(const CompSnapshot& snap) {
                     0.0f, 1.0f, (absN - (secEnd - half)) / static_cast<float>(2 * half));
                 gain *= fadeOutGain(p);
             }
-            if (gain != 1.0f)
-                for (int ch = 0; ch < numChannels; ++ch)
-                    temp.setSample(ch, n, temp.getSample(ch, n) * gain);
+            gains[static_cast<size_t>(n)] = gain;
         }
+        for (int ch = 0; ch < numChannels; ++ch)
+            juce::FloatVectorOperations::multiply(temp.getWritePointer(ch), gains.data(),
+                                                  regionLen);
 
         for (int ch = 0; ch < numChannels; ++ch)
             out.addFrom(ch, regionStart, temp, ch, 0, regionLen);

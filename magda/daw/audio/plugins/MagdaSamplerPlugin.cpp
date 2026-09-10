@@ -318,8 +318,12 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         return;
 
     const int totalSamples = sound->audioData.getNumSamples();
-    const int numChannels =
-        juce::jmin(outputBuffer.getNumChannels(), sound->audioData.getNumChannels());
+    const int outChannels = outputBuffer.getNumChannels();
+    const int numChannels = juce::jmin(outChannels, sound->audioData.getNumChannels());
+    const bool monoFanout = numChannels == 1 && outChannels > 1;
+
+    float* const* const out = outputBuffer.getArrayOfWritePointers();
+    const float* const* const src = sound->audioData.getArrayOfReadPointers();
 
     for (int i = 0; i < numSamples; ++i) {
         float envLevel = adsr.getNextSample();
@@ -357,21 +361,16 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
         float gain = envLevel * velocityGain;
 
         for (int ch = 0; ch < numChannels; ++ch) {
-            const float* data = sound->audioData.getReadPointer(ch);
+            const float* data = src[ch];
             float s0 = data[pos0];
             float s1 = (pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
             float sample = (s0 + frac * (s1 - s0)) * gain;
-            outputBuffer.addSample(ch, startSample + i, sample);
-        }
+            out[ch][startSample + i] += sample;
 
-        // If mono sample, duplicate to all output channels
-        if (numChannels == 1 && outputBuffer.getNumChannels() > 1) {
-            const float* data = sound->audioData.getReadPointer(0);
-            float s0 = data[pos0];
-            float s1 = (pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
-            float sample = (s0 + frac * (s1 - s0)) * gain;
-            for (int ch = 1; ch < outputBuffer.getNumChannels(); ++ch)
-                outputBuffer.addSample(ch, startSample + i, sample);
+            // A mono source feeds every output channel.
+            if (monoFanout)
+                for (int extra = 1; extra < outChannels; ++extra)
+                    out[extra][startSample + i] += sample;
         }
 
         sourceSamplePosition += pitchRatio;

@@ -1,6 +1,7 @@
 #include "AudioThumbnailManager.hpp"
 
 #include "WaveformPeakCache.hpp"
+#include "core/BlockMath.hpp"
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
@@ -414,8 +415,8 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     static_cast<juce::int64>(static_cast<double>(x + 1) * totalSamples / width),
                     totalSamples);
 
-                float minVal = 1.0f;
-                float maxVal = -1.0f;
+                float minVal = 0.0f;
+                float maxVal = 0.0f;
 
                 if (usePeakCache) {
                     const auto mm = peakCache->getMinMaxForRange(ch, startSample + colStart,
@@ -423,22 +424,18 @@ void AudioThumbnailManager::drawWaveformFromSamples(
                     minVal = mm.min;
                     maxVal = mm.max;
                 } else if (useFullBuffer) {
-                    const float* samples = buffer.getReadPointer(ch);
-                    for (juce::int64 s = colStart; s < colEnd; ++s) {
-                        const float v = samples[s];
-                        minVal = std::min(minVal, v);
-                        maxVal = std::max(maxVal, v);
-                    }
+                    const auto column = magda::blockMinMax(buffer.getReadPointer(ch) + colStart,
+                                                           static_cast<int>(colEnd - colStart));
+                    minVal = column.getStart();
+                    maxVal = column.getEnd();
                 } else {
                     int count = static_cast<int>(colEnd - colStart);
                     int readCount = juce::jmin(count, chunkBuffer.getNumSamples());
                     reader->read(&chunkBuffer, 0, readCount, startSample + colStart, true, true);
-                    const float* samples = chunkBuffer.getReadPointer(ch);
-                    for (int s = 0; s < readCount; ++s) {
-                        const float v = samples[s];
-                        minVal = std::min(minVal, v);
-                        maxVal = std::max(maxVal, v);
-                    }
+                    const auto column =
+                        magda::blockMinMax(chunkBuffer.getReadPointer(ch), readCount);
+                    minVal = column.getStart();
+                    maxVal = column.getEnd();
                 }
 
                 if (minVal > maxVal)

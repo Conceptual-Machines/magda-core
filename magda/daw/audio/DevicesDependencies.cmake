@@ -325,11 +325,11 @@ function(magda_validate_device_pack_sources PACK_NAME)
             endif()
 
             # The SDK's share of core/: types a device speaks in, plus header-only
-            # utilities over JUCE with no host state behind them (RangesHelpers).
+            # utilities over JUCE with no host state behind them (RangesHelpers, BlockMath).
             if(_magda_pack_include MATCHES "[<\"]([^>\"]*/)?core/([^>\"]+)[>\"]")
                 set(_magda_pack_core_header "${CMAKE_MATCH_2}")
                 if(NOT _magda_pack_core_header MATCHES
-                   "^(TypeIds|TechnicalText|ChainNodePath|ControlTarget|ParameterInfo|ParameterUtils|DeviceInfo|KitRow|MacroInfo|ModInfo|RangesHelpers|SidechainPort|TempoUtils)\\.hpp$")
+                   "^(TypeIds|TechnicalText|BlockMath|ChainNodePath|ControlTarget|ParameterInfo|ParameterUtils|DeviceInfo|KitRow|MacroInfo|ModInfo|RangesHelpers|SidechainPort|TempoUtils)\\.hpp$")
                     message(FATAL_ERROR
                         "${PACK_NAME} includes a non-SDK core header: "
                         "${_magda_pack_source}\n${_magda_pack_include}")

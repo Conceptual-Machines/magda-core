@@ -6,6 +6,8 @@
 #include <map>
 #include <set>
 
+#include "core/BlockMath.hpp"
+
 namespace magda::engine {
 namespace {
 
@@ -1067,12 +1069,11 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     const auto channels = static_cast<int>(in.getNumChannels());
     const auto scale = channels > 0 ? 1.0f / static_cast<float>(channels) : 0.0f;
 
-    for (int s = 0; s < numSamples; ++s) {
-        float sum = 0.0f;
-        for (int c = 0; c < channels; ++c)
-            sum += in.getSample(c, s);
-        detectMono_[static_cast<std::size_t>(s)] = sum * scale;
-    }
+    juce::FloatVectorOperations::clear(detectMono_.data(), numSamples);
+    for (int c = 0; c < channels; ++c)
+        juce::FloatVectorOperations::addWithMultiply(
+            detectMono_.data(), in.getChannelPointer(static_cast<std::size_t>(c)), scale,
+            numSamples);
 
     const auto mono =
         std::span<const float>{detectMono_}.first(static_cast<std::size_t>(numSamples));
@@ -1082,8 +1083,8 @@ void PlanExecutor::renderModSource(OpId id, const BlockInfo& block) {
     // and a duck should follow whichever side is loud.
     float peak = 0.0f;
     for (int c = 0; c < channels; ++c)
-        for (int s = 0; s < numSamples; ++s)
-            peak = std::max(peak, std::abs(in.getSample(c, s)));
+        peak = std::max(
+            peak, peakMagnitude(in.getChannelPointer(static_cast<std::size_t>(c)), numSamples));
 
     auto* detector = triggerForOp_[i].get();
     if (detector == nullptr)
