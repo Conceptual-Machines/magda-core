@@ -1327,15 +1327,8 @@ std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAv
 
 std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDeviceParamNames()
     const {
-    std::vector<juce::String> names;
-    for (const auto& param : device_.parameters) {
-        if (param.paramIndex < 0)
-            continue;
-        if (param.paramIndex >= static_cast<int>(names.size()))
-            names.resize(static_cast<size_t>(param.paramIndex) + 1);
-        names[static_cast<size_t>(param.paramIndex)] = param.name;
-    }
-    std::map<magda::DeviceId, std::vector<juce::String>> result = {{device_.id, std::move(names)}};
+    std::map<magda::DeviceId, std::vector<juce::String>> result = {
+        {device_.id, device_.paramNamesByIndex()}};
     drum_grid_slot::appendDeviceParamNames(customUI_.getDrumGridUI(), result);
     return result;
 }

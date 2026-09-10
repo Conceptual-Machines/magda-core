@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ranges>
 
 #include "BinaryData.h"
 #include "audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "core/RangesHelpers.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -548,11 +550,9 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
 }
 
 std::vector<LinkableTextSlider*> PolySynthUI::getLinkableSliders() {
-    std::vector<LinkableTextSlider*> sliders;
-    sliders.reserve(kNumParams);
-    for (auto& c : controls_)
-        sliders.push_back(c.slider.get());
-    return sliders;
+    const auto sliderOf = [](const auto& control) { return control.slider.get(); };
+
+    return controls_ | std::views::transform(sliderOf) | toStd<std::vector<LinkableTextSlider*>>();
 }
 
 void PolySynthUI::layoutOscSection() {

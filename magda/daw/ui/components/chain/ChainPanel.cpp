@@ -1,7 +1,9 @@
 #include "ChainPanel.hpp"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
+#include <ranges>
 
 #include "ChainNodePathDrag.hpp"
 #include "DeviceSlotComponent.hpp"
@@ -14,6 +16,7 @@
 #include "core/GestureRouter.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/UndoManager.hpp"
@@ -405,16 +408,9 @@ void ChainPanel::resizedContent(juce::Rectangle<int> contentArea) {
 }
 
 int ChainPanel::calculateTotalContentWidth() const {
-    // Add left padding during drag/drop to show insertion indicator before first element
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int totalWidth = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
-
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
-    for (const auto& slot : elementSlots_) {
-        totalWidth += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
-    }
-    totalWidth += getScaledWidth(APPEND_ZONE_WIDTH);
-    return totalWidth;
+    // The append zone sits past the last slot, where calculateAppendZoneX()
+    // already ends.
+    return calculateAppendZoneX() + getScaledWidth(APPEND_ZONE_WIDTH);
 }
 
 int ChainPanel::getContentWidth() const {
@@ -908,15 +904,16 @@ int ChainPanel::calculateIndicatorX(int index) const {
 }
 
 int ChainPanel::calculateAppendZoneX() const {
-    bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
-    int x = isDraggingOrDropping ? DRAG_LEFT_PADDING : 0;
-    int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+    // Drag/drop adds left padding, so the insertion indicator has room before
+    // the first element.
+    const bool isDraggingOrDropping = dragOriginalIndex_ >= 0 || dropInsertIndex_ >= 0;
+    const int scaledArrowWidth = getScaledWidth(ARROW_WIDTH);
+    const auto slotAndArrowWidth = [this, scaledArrowWidth](const auto& slot) {
+        return getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
+    };
 
-    for (const auto& slot : elementSlots_) {
-        x += getScaledWidth(slot->getPreferredWidth()) + scaledArrowWidth;
-    }
-
-    return x;
+    return std::ranges::fold_left(elementSlots_ | std::views::transform(slotAndArrowWidth),
+                                  isDraggingOrDropping ? DRAG_LEFT_PADDING : 0, std::plus{});
 }
 
 void ChainPanel::timerCallback() {

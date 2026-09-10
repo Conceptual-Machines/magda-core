@@ -727,6 +727,10 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_timeline_extreme_zoom_paint_juce.cpp
     ui/test_repaint_invariance_juce.cpp
     ui/test_arrange_beat_native_juce.cpp
+    # The lane header's value axis: eight label sources picked by scale and
+    # target, and nothing else in either suite paints a lane header.
+    automation/test_automation_grid_ticks_juce.cpp
+    ../magda/daw/ui/components/automation/AutomationLaneHeader.cpp
     automation/test_tempo_map_juce.cpp
     automation/test_tempo_lane_bridge_juce.cpp
     automation/test_tempo_lane_sync_juce.cpp

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <ranges>
 
 #include "../../interaction/ClipDragTargets.hpp"
 #include "../../interaction/ClipNudge.hpp"
@@ -11,6 +12,7 @@
 #include "core/ClipCommands.hpp"
 #include "core/ClipPlacementPolicy.hpp"
 #include "core/GestureRouter.hpp"
+#include "core/RangesHelpers.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TempoUtils.hpp"
 #include "core/UndoManager.hpp"
@@ -579,14 +581,14 @@ namespace {
 // clips live in a scene grid, not on the timeline, and are left alone even
 // when a session view put them in the same selection.
 std::vector<ClipId> selectedArrangementClips() {
-    std::vector<ClipId> clips;
     auto& clipManager = ClipManager::getInstance();
-    for (ClipId clipId : SelectionManager::getInstance().getSelectedClips()) {
+    const auto isOnTimeline = [&clipManager](ClipId clipId) {
         const auto* clip = clipManager.getClip(clipId);
-        if (clip != nullptr && clip->view == ClipView::Arrangement)
-            clips.push_back(clipId);
-    }
-    return clips;
+        return clip != nullptr && clip->view == ClipView::Arrangement;
+    };
+
+    const auto& selected = SelectionManager::getInstance().getSelectedClips();
+    return selected | std::views::filter(isOnTimeline) | toStd<std::vector<ClipId>>();
 }
 
 // Frozen tracks are rendered to audio, so their clips must not move out from
