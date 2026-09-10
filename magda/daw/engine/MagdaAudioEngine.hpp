@@ -189,6 +189,10 @@ class MagdaAudioEngine final : public AudioEngine {
   private:
     /// Whatever has not moved to magda::engine yet, said once per method
     /// rather than answered with silence.
+    /// Where the host's levels go, and the fork told to stop measuring what it
+    /// no longer renders (#2570). Once, in initialize().
+    void meterInto(AudioBridge* bridge);
+
     void reportUnwired(const char* method, const char* issue) const;
 
     /// The loop as one value, from the fork that still holds both halves.

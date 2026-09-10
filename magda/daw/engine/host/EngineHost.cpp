@@ -32,6 +32,9 @@ namespace {
 /// and a narrow device is a declared width rather than a smaller buffer.
 constexpr int kChannels = 2;
 
+/// 30 fps, which is what the fork's own metering timer runs at.
+constexpr int kMeterIntervalMs = 33;
+
 /// Anything a publish could not honour, named by the half that reported it.
 void report(const juce::String& what, const std::vector<std::string>& messages) {
     for (const auto& message : messages)
@@ -60,6 +63,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                   }) {
         factory_.loadExternalsWith(loader_);
 
+        // A tap read late loses nothing, since the peak is held until
+        // something takes it, so this is how smooth a meter looks.
+        startTimer(kMeterIntervalMs);
+
         if (!EngineTrace::enabled())
             return;
 
@@ -67,18 +74,42 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // write to it on this thread and the devices write to it on the audio
         // thread, and reading them in order is the whole point.
         factory_.traceInto(trace_);
-        startTimer(100);
         EngineTrace::print("MIDI trace on. Publishes and what reached each device, in order.");
     }
 
     ~Impl() override {
+        stopTimer();
         detach();
     }
 
-    /// The audio thread's side of the trace, on the thread allowed to print it.
+    /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
+        publishMeters();
+
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
+    }
+
+    /// What every track's output tap has held since the last tick (#2570).
+    /// Walked off the model, and the one reader: LevelTap::read is
+    /// destructive.
+    void publishMeters() {
+        if (session_ == nullptr || meters_ == nullptr)
+            return;
+
+        for (const auto& track : TrackManager::getInstance().getTracks())
+            publishMeter(track.id);
+
+        publishMeter(MASTER_TRACK_ID);
+    }
+
+    void publishMeter(TrackId trackId) {
+        auto* tap = session_->meterTap(engine::trackMeterKey(trackId));
+        if (tap == nullptr)
+            return;
+
+        const auto levels = tap->read();
+        meters_(trackId, levels.peak[0], levels.peak[1]);
     }
 
     /// Where the transport was when the model moved, in the same stream as the
@@ -529,6 +560,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::vector<juce::String> unbuilt_;
     EngineTrace trace_;
+
+    /// Where the levels go. Null until a caller asks (#2570).
+    EngineHost::MeterSink meters_;
 };
 
 EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}
@@ -542,6 +576,10 @@ void EngineHost::start(juce::AudioDeviceManager& devices) {
 void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
                                    const juce::KnownPluginList& knownPlugins) {
     impl_->loader_.setServices(&formats, &knownPlugins);
+}
+
+void EngineHost::meterInto(MeterSink sink) {
+    impl_->meters_ = std::move(sink);
 }
 
 void EngineHost::stop() {

@@ -386,6 +386,11 @@ class EngineSession {
         return store_.valueTap(key);
     }
 
+    /// The level behind one Meter op (#2570).
+    LevelTap* meterTap(const OpKey& key) const {
+        return store_.meterTap(key);
+    }
+
     /// Values the live plan found somewhere to publish from -- not the
     /// number of taps the store holds, since a key the parameter table does
     /// not carry has a tap that is never written through. On the publishing

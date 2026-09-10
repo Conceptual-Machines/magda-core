@@ -1278,6 +1278,15 @@ void AudioBridge::timerCallback() {
     // Update metering from level measurers (runs at 30 FPS on message thread).
     // (Skipped entirely during an offline render by the early return above, so
     // the live meters don't twitch to the render's audio either.)
+    //
+    // Skipped whole when another engine renders (#2570): these taps sit in a
+    // graph nothing plays through, so all of them read silence.
+    if (!meteringFedElsewhere_)
+        updateMetersFromGraph();
+}
+
+/// What the fork's own graph taps say, pushed to everything that draws a meter.
+void AudioBridge::updateMetersFromGraph() {
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
             refreshInputMeterClients(trackMapping);

@@ -162,6 +162,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testDroppedKeyIsStillRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testMetersReadWhatWasRendered(); });
+        magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
     }
 
   private:
@@ -427,6 +429,92 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "Every device the store holds is the previous project's");
+    }
+
+    void testMetersReadWhatWasRendered() {
+        beginTest("A track's meter and the master's read what the engine rendered");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 4.0);
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
+                                                         .velocity = 100,
+                                                         .startBeat = 0.0,
+                                                         .lengthBeats = 2.0}),
+               "The clip holds a note");
+
+        const auto& tracks = trackManager.getTracks();
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed());
+
+        const auto plan = std::make_shared<const magda::engine::RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, *master));
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan is published");
+
+        session.publishClips(
+            std::make_shared<const magda::engine::ClipSnapshot>(magda::engine::compileClipSnapshot(
+                host::clipLanesFor(tracks), host::clipSources(), tempo)));
+        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        // The key the host asks under has to be the one the compiler emitted,
+        // which a null here is the only symptom of.
+        auto* trackTap = session.meterTap(magda::engine::trackMeterKey(trackId));
+        auto* masterTap = session.meterTap(magda::engine::trackMeterKey(magda::MASTER_TRACK_ID));
+        expect(trackTap != nullptr && masterTap != nullptr, "Both meters are bound");
+        if (trackTap == nullptr || masterTap == nullptr)
+            return;
+
+        expect(trackTap->read().loudest() > 0.0f, "The track's meter read the note");
+        expect(masterTap->read().loudest() > 0.0f, "The master's meter read it too");
+
+        // Destructive, which is what stops the frame rate deciding how much of
+        // the signal a meter ever sees.
+        expect(trackTap->read().loudest() == 0.0f, "A second read takes nothing twice");
+    }
+
+    void testOnlyTrackMetersAreTapped() {
+        beginTest("A meter nobody collects is declined");
+
+        host::EngineRuntimeFactory factory;
+
+        magda::engine::OpKey deviceMeter;
+        deviceMeter.trackId = 1;
+        deviceMeter.deviceId = 1;
+        deviceMeter.role = magda::engine::OpRole::DeviceMeter;
+
+        expect(factory.createMeter(magda::engine::trackMeterKey(1)) != nullptr,
+               "A track's output level is read");
+        expect(factory.createMeter(deviceMeter) == nullptr,
+               "A device slot's is not: the chain UI reads DeviceMeteringManager");
     }
 
     void testDroppedKeyIsStillRebuilt() {

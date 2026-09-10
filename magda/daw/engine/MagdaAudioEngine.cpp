@@ -3,6 +3,7 @@
 #include <set>
 #include <string>
 
+#include "../audio/AudioBridge.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "TracktionEngineWrapper.hpp"
 #include "host/EngineHost.hpp"
@@ -22,6 +23,34 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
     // things without first asking whether it exists. It renders nothing until
     // start() puts it on a device.
     host_ = std::make_unique<daw::engine_host::EngineHost>();
+}
+
+/**
+ * @brief Point the host's meters at the fork's rings (#2570).
+ *
+ * The only side holding both an engine that measures and a bridge that
+ * publishes. Three rings because they are three readers of one measurement,
+ * which is why the fork pushes to all three too.
+ */
+void MagdaAudioEngine::meterInto(AudioBridge* bridge) {
+    if (bridge == nullptr)
+        return;
+
+    bridge->setMeteringFedElsewhere(true);
+
+    host_->meterInto([bridge](TrackId trackId, float peakL, float peakR) {
+        // No ring can hold it: MASTER_TRACK_ID is negative, and the master
+        // strip reads the bridge directly.
+        if (trackId == MASTER_TRACK_ID) {
+            bridge->setMasterPeak(peakL, peakR);
+            return;
+        }
+
+        const MeterData data{.peakL = peakL, .peakR = peakR};
+        bridge->getMeteringBuffer().pushLevels(trackId, data);
+        bridge->getRecordingMeteringBuffer().pushLevels(trackId, data);
+        bridge->getRemoteMeteringBuffer().pushLevels(trackId, data);
+    });
 }
 
 void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) const {
@@ -47,6 +76,8 @@ bool MagdaAudioEngine::initialize() {
     // Before the device, so the first publish can already load the plugins a
     // project names rather than going without them until the second (#2566).
     host_->setPluginServices(fork_->getPluginFormatManager(), fork_->getKnownPluginList());
+
+    meterInto(tracktion_->getAudioBridge());
 
     // After the fork, because the device is its to open: the settings UI, the
     // channel lists and the driver choice are all still on that side, and two

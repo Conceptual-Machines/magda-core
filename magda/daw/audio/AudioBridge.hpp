@@ -654,6 +654,19 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
         return deviceMetering_;
     }
 
+    /// Another engine fills the meters, so this one stops polling graph taps
+    /// nothing renders through (#2570). Set once, before the first tick.
+    void setMeteringFedElsewhere(bool fedElsewhere) {
+        meteringFedElsewhere_ = fedElsewhere;
+    }
+
+    /// What the master strip shows, for a caller that metered it itself. The
+    /// metering buffer cannot hold it: MASTER_TRACK_ID is negative (#2570).
+    void setMasterPeak(float peakL, float peakR) {
+        masterPeakL_.store(peakL, std::memory_order_relaxed);
+        masterPeakR_.store(peakR, std::memory_order_relaxed);
+    }
+
     /**
      * @brief Get master channel peak level (left)
      * @return Peak level as linear gain
@@ -821,6 +834,10 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
     // =========================================================================
 
   private:
+    /// The fork's own graph taps, read on the timer and pushed to every meter
+    /// ring. Skipped whole when another engine feeds them (#2570).
+    void updateMetersFromGraph();
+
     // Timer callback for metering updates (runs on message thread)
     void timerCallback() override;
     void refreshInputMeterClients(const std::map<TrackId, te::AudioTrack*>& trackMapping);
@@ -874,6 +891,9 @@ class AudioBridge : public TrackManagerListener, public ClipManagerListener, pub
 
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;
+
+    // Message thread only, like the timer that reads it (#2570).
+    bool meteringFedElsewhere_ = false;
 
     // Master channel metering (lock-free atomics for thread safety)
     std::atomic<float> masterPeakL_{0.0f};

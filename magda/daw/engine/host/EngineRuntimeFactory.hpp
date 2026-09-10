@@ -101,6 +101,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
     std::set<engine::DeviceKey> devicesToRebuild() override;
+    std::unique_ptr<engine::LevelTap> createMeter(const engine::OpKey& key) override;
     std::unique_ptr<engine::EngineAudioSource> createClipAudioSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createClipMidiSource(TrackId trackId) override;
     std::unique_ptr<engine::EngineAudioSource> createSessionAudioSource(TrackId trackId) override;
