@@ -53,8 +53,7 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator) {
 bool modelHoldsNoDevices() {
     const auto& tracks = TrackManager::getInstance().getTracks();
 
-    // Tested first, so the walk only happens in the one state that can answer
-    // yes: every other publish is a project with tracks in it.
+    // First, so the walk only happens in the state that can answer yes.
     if (!tracks.empty())
         return false;
 

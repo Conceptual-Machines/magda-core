@@ -62,9 +62,8 @@ void ExternalPluginLoader::syncAssignments(const std::map<engine::DeviceKey, Dev
             continue;
         }
 
-        // Every load in flight against the old assignment expires here. The
-        // instance the store has already bound is retired separately, by the
-        // rebuild the same identity change puts to it (#2572).
+        // Every load in flight against the old assignment expires here; the
+        // bound instance is retired by the rebuild instead (#2572).
         assignments_.replaceAssignment(key);
         found->second = Slot{.identity = std::move(identity), .generation = ++generation_};
     }

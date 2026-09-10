@@ -94,14 +94,9 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         trace_ = &trace;
     }
 
-    /**
-     * @brief Nothing the store holds belongs to the model any more (#2572).
-     *
-     * A project was cleared, and DeviceIds start from 1 again, so every key
-     * that comes round names a different device. Called where the teardown is
-     * noticed rather than at the next publish, because by then the model is
-     * already the next project's.
-     */
+    /// Nothing the store holds belongs to the model any more: the project was
+    /// cleared and DeviceIds start from 1 again (#2572). Called at the
+    /// teardown, which the next publish is too late to see.
     void forgetBuiltDevices();
 
     std::unique_ptr<engine::EngineDevice> createDevice(engine::DeviceKey key) override;
@@ -124,12 +119,10 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
 
-    /// Which device each key's live instance was built from, so a key that has
-    /// come to mean something else can be told from one that has not.
+    /// Which device each key's live instance was built from.
     std::map<engine::DeviceKey, juce::String> built_;
 
-    /// What the next publish must rebuild, filled by setModel() and
-    /// forgetBuiltDevices() and taken by devicesToRebuild().
+    /// What the next publish must rebuild.
     std::set<engine::DeviceKey> rebuild_;
 
     std::vector<juce::String> unbuilt_;

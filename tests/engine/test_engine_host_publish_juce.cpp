@@ -64,8 +64,7 @@ magda::DeviceInfo polySynth(magda::DeviceId id) {
     return device;
 }
 
-/// A compiled effect, for a case that needs a second kind of device rather
-/// than a second copy of the first.
+/// A compiled effect, for a case that needs a second kind of device.
 magda::DeviceInfo chorus(magda::DeviceId id) {
     using Chorus = magda::daw::audio::compiled::MagdaChorusCompiledPlugin;
 
@@ -363,7 +362,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
             "The pitch it left is released rather than left hanging");
     }
 
-    /// The one device the factory holds, at the key a track-level FX slot has.
+    /// The key a track's first FX slot has.
     static constexpr magda::engine::DeviceKey firstFxSlot() {
         return magda::engine::DeviceKey{magda::ChainSegment::Fx, 1};
     }
@@ -386,14 +385,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(factory.devicesToRebuild().empty(), "Nothing has been built to rebuild");
         expect(factory.createDevice(firstFxSlot()) != nullptr, "The catalog builds the synth");
 
-        // The retention contract, which is what a fader reorder relies on: the
-        // same model published again asks for nothing.
+        // The retention contract: the same model published again asks for nothing.
         factory.setModel(trackManager.getTracks(), *master);
         expect(factory.devicesToRebuild().empty(), "A device that did not change is kept");
 
-        // The same DeviceId, a different plugin. Within a project this is a
-        // slot's plugin being swapped; across one it is #2572, and the factory
-        // cannot tell the two apart because a DeviceKey does not say.
+        // The same DeviceId, a different plugin: a slot swapped within a
+        // project, and #2572 across one.
         track->chain.fxChainElements[0] = chorus(1);
         factory.setModel(trackManager.getTracks(), *master);
 
@@ -421,8 +418,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(!host::modelHoldsNoDevices(), "A project with a device in it is not a teardown");
 
         // What a project load does before it restores anything, and the only
-        // moment the empty model is visible: the publish it schedules runs
-        // after the next project is already in place.
+        // moment the empty model is visible.
         trackManager.clearAllTracks();
         expect(host::modelHoldsNoDevices(), "A cleared project names no device anywhere");
 

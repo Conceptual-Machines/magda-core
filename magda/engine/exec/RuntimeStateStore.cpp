@@ -104,10 +104,8 @@ template <typename Map, typename Ids> std::size_t eraseUnnamed(Map& map, const I
 }  // namespace
 
 PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderContext& context) {
-    // Keys the host says mean a different device now (#2572). Taken out before
-    // anything is realised, so realiseOne() asks the factory again rather than
-    // handing back what it holds; kept, because the plan still rendering is the
-    // one that named them.
+    // Out before anything is realised, so realiseOne() asks the factory again;
+    // kept, because the plan still rendering names them (#2572).
     for (const auto& key : factory_.devicesToRebuild())
         if (const auto found = devices_.find(key); found != devices_.end()) {
             retired_.push_back(std::move(found->second));
@@ -303,8 +301,7 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         return !keep.tracks.contains(entry.first.trackId) && !takes_.contains(entry.first);
     });
 
-    // The instances a rebuild took out of devices_. Here and nowhere earlier:
-    // until the swap, they were what the live plan named.
+    // Not earlier: until the swap they were what the live plan named.
     removed += retired_.size();
     retired_.clear();
 

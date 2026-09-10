@@ -3330,10 +3330,9 @@ TEST_CASE("A slot that changed plugin while loading is not published onto",
 
 TEST_CASE("A load in flight when the project is cleared is not published onto",
           "[engine][external][host]") {
-    // The same identity boundary from the other direction (#2572). A DeviceKey
-    // survives a project load, because DeviceIds start from 1 again, so an
-    // answer arriving afterwards would restore the old project's state onto
-    // whatever slot inherited the key.
+    // The same identity boundary from the other direction (#2572): a DeviceKey
+    // survives a project load, so a late answer lands on the slot that
+    // inherited it.
     juce::ScopedJuceInitialiser_GUI juce;
 
     LiveSlot slot;
@@ -3356,8 +3355,7 @@ TEST_CASE("A load in flight when the project is cleared is not published onto",
     CHECK_FALSE(published);
     CHECK(loader.held() == 0);
 
-    // And the project that comes up next asks for itself, rather than
-    // inheriting a slot that has been spent or a load it never started.
+    // And the next project asks for itself rather than inheriting a spent slot.
     loader.syncAssignments({{slot.key(), slot.model}});
     CHECK(loader.device(slot.key(), slot.model) == nullptr);
 

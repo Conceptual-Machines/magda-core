@@ -81,16 +81,8 @@ class RuntimeStateFactory {
     /**
      * @brief Keys whose device is no longer the one the store holds (#2572).
      *
-     * A slot's plugin replaced, or a DeviceId handed out again to a different
-     * device after a project was cleared. The store keeps what it holds for a
-     * key it is asked for again -- that is what stops a fader reorder
-     * rebuilding an instrument mid-note -- so nothing else can say a key has
-     * come to mean something new.
-     *
      * Asked once per publish, before anything is realised. The instance being
-     * replaced stays alive and unbound until the swap, on the same reading
-     * everything else here follows: the plan the audio thread is rendering
-     * still names it.
+     * replaced stays alive until the swap, since the live plan still names it.
      */
     virtual std::set<DeviceKey> devicesToRebuild() {
         return {};
@@ -380,8 +372,8 @@ class RuntimeStateStore {
 
     std::unordered_map<DeviceKey, std::unique_ptr<EngineDevice>, DeviceKeyHash> devices_;
 
-    /// Instances a rebuild took out of devices_, alive until releaseDeleted()
-    /// says the audio thread is out of the plan that named them (#2572).
+    /// Instances a rebuild took out of devices_, held until releaseDeleted()
+    /// (#2572).
     std::vector<std::unique_ptr<EngineDevice>> retired_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;

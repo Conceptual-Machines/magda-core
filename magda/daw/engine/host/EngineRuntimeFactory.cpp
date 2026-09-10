@@ -12,11 +12,8 @@ namespace adapter = magda::daw::audio::engine_adapter;
 
 namespace {
 
-/// Which device a slot is asking for, as one string to compare. pluginId is
-/// what both catalogs dispatch on; the rest is the file an external plugin
-/// resolves to, and is empty for everything else. Nothing here is a display
-/// name or a role, so renaming a device or a load correcting one is not a slot
-/// asking for something else.
+/// Which device a slot asks for, as one string. No display name and no role,
+/// so a rename and a load's own correction are not a different device.
 juce::String deviceIdentityOf(const DeviceInfo& device) {
     return device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
            device.getFormatString();
@@ -51,10 +48,8 @@ void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
 
-    // A slot whose plugin was replaced since the instance behind it was built
-    // (#2572). Nothing else can say so: the store keeps what it holds for a key
-    // it is asked for again. A key the model has dropped needs no rebuild --
-    // the store evicts that one on its own rule.
+    // A slot whose plugin changed since its instance was built (#2572). A key
+    // the model dropped needs no rebuild: the store evicts that one itself.
     for (auto entry = built_.begin(); entry != built_.end();) {
         const auto found = devices_.find(entry->first);
         if (found == devices_.end()) {
@@ -86,9 +81,8 @@ void EngineRuntimeFactory::forgetBuiltDevices() {
 }
 
 std::set<engine::DeviceKey> EngineRuntimeFactory::devicesToRebuild() {
-    // Forgotten as they are handed over, so a key the store could not realise
-    // this publish -- an external still opening -- is not asked for again
-    // against an instance that has already gone.
+    // So a key the store could not realise this publish -- an external still
+    // opening -- is not asked for again against an instance that has gone.
     for (const auto& key : rebuild_)
         built_.erase(key);
 
@@ -118,9 +112,8 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::createDevice(engine:
     return nullptr;
 }
 
-/// Every device this factory hands over: recorded against the device it was
-/// built from, so a later publish can tell the key has come to mean something
-/// else, and through the trace when one is on.
+/// Every device this factory hands over, recorded against the model it came
+/// from and wrapped in the trace when one is on.
 std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
     engine::DeviceKey key, const DeviceInfo& model, std::unique_ptr<engine::EngineDevice> device) {
     if (device == nullptr)
