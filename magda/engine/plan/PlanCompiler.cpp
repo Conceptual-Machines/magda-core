@@ -1490,9 +1490,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
 
     emitSends(false, out);
 
-    const OpKey meterKey{track.id,          INVALID_RACK_ID,    INVALID_CHAIN_ID,
-                         INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
-    out = PortRef{addOp(OpKind::Meter, meterKey, {out}, {SignalKind::Audio}), 0};
+    out = PortRef{addOp(OpKind::Meter, trackMeterKey(track.id), {out}, {SignalKind::Audio}), 0};
     trackSidechainTap_[track.id] = out;
 
     const OpKey muteKey{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,

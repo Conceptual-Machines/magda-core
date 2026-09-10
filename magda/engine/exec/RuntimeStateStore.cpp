@@ -486,6 +486,11 @@ ValueTap* RuntimeStateStore::valueTap(const ParamKey& key) const {
     return found == valueTaps_.end() ? nullptr : found->second.get();
 }
 
+LevelTap* RuntimeStateStore::meterTap(const OpKey& key) const {
+    const auto found = meters_.find(key);
+    return found == meters_.end() ? nullptr : found->second.get();
+}
+
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
            sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +

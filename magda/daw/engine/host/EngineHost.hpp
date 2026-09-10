@@ -1,6 +1,9 @@
 #pragma once
 
+#include <functional>
 #include <memory>
+
+#include "../../core/TypeIds.hpp"
 
 namespace juce {
 class AudioDeviceManager;
@@ -57,6 +60,16 @@ class EngineHost {
      */
     void setPluginServices(juce::AudioPluginFormatManager& formats,
                            const juce::KnownPluginList& knownPlugins);
+
+    /**
+     * @brief Where the levels this renders go (#2570).
+     *
+     * On the message thread at meter rate, per track and for the master, with
+     * the peak since the last call. Set before @ref start; without one nothing
+     * reads the taps, which costs only the meters.
+     */
+    using MeterSink = std::function<void(TrackId trackId, float peakL, float peakR)>;
+    void meterInto(MeterSink sink);
 
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.

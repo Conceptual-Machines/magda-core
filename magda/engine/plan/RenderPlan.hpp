@@ -343,6 +343,13 @@ struct OpKey {
     bool operator<(const OpKey& o) const;
 };
 
+/// The key of the Meter op at @p trackId's output. One definition, because a
+/// host looking a meter up under a key one field out reads nothing (#2570).
+inline OpKey trackMeterKey(TrackId trackId) {
+    return OpKey{trackId,           INVALID_RACK_ID,    INVALID_CHAIN_ID,
+                 INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
+}
+
 /** A reference to one output port of an earlier op. */
 struct PortRef {
     OpId op = INVALID_OP_ID;

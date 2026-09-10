@@ -267,6 +267,14 @@ class RuntimeStateStore {
     ValueTap* valueTap(const ParamKey& key) const;
 
     /**
+     * @brief The tap the Meter op at @p key writes to, or nullptr (#2570).
+     *
+     * Null for a meter the factory declined and for an op no plan has named.
+     * One reader, since LevelTap::read is destructive.
+     */
+    LevelTap* meterTap(const OpKey& key) const;
+
+    /**
      * @brief Make a handle for every slot @p clips names, publish them, and
      *        retire the ones the snapshot has stopped naming.
      *

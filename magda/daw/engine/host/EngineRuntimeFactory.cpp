@@ -122,6 +122,15 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
     return std::make_unique<TracingDevice>(std::move(device), *trace_);
 }
 
+/// A track's output level, and nothing else (#2570): the per-slot meters read
+/// through DeviceMeteringManager and a monitored input's through #1895.
+std::unique_ptr<engine::LevelTap> EngineRuntimeFactory::createMeter(const engine::OpKey& key) {
+    if (key.role != engine::OpRole::TrackMeter)
+        return nullptr;
+
+    return std::make_unique<engine::LevelTap>();
+}
+
 std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createClipAudioSource(
     TrackId trackId) {
     return audioSource(trackId, engine::Section::Arrangement);
