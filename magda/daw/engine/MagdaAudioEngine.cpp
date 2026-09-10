@@ -90,7 +90,7 @@ bool MagdaAudioEngine::initialize() {
 
     // Named before the first publish, so a track routed to "all" hears the
     // keyboard from its first note rather than from the next republish.
-    host_->registerLiveMidiSource(kQwertyMidiDeviceId);
+    host_->registerLiveMidiSource(qwertyMidiDeviceId());
 
     // After the fork, because the device is its to open: the settings UI, the
     // channel lists and the driver choice are all still on that side, and two

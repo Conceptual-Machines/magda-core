@@ -1,5 +1,6 @@
 #include "EngineRuntimeFactory.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -28,20 +29,23 @@ juce::String deviceIdentityOf(const DeviceInfo& device) {
 class TrackMidiInput final : public engine::EngineMidiSource {
   public:
     TrackMidiInput(const engine::LiveInputFeed& feed, engine::LiveMidiSourceId audition,
-                   std::vector<engine::LiveMidiSourceId> routed)
+                   std::shared_ptr<const EngineRuntimeFactory::MidiRouteTable> routed)
         : feed_(feed), audition_(audition), routed_(std::move(routed)) {}
 
     void render(const engine::BlockInfo& /*block*/, juce::MidiBuffer& out) override {
         feed_.appendEvents(audition_, out, engine::kMaxMidiBytesPerPort);
 
-        for (const auto source : routed_)
-            feed_.appendEvents(source, out, engine::kMaxMidiBytesPerPort);
+        const auto count = routed_->count.load(std::memory_order_acquire);
+        for (auto i = 0; i < count; ++i)
+            feed_.appendEvents(
+                routed_->sources[static_cast<std::size_t>(i)].load(std::memory_order_relaxed), out,
+                engine::kMaxMidiBytesPerPort);
     }
 
   private:
     const engine::LiveInputFeed& feed_;
     engine::LiveMidiSourceId audition_ = engine::kAnyLiveMidiSource;
-    std::vector<engine::LiveMidiSourceId> routed_;
+    std::shared_ptr<const EngineRuntimeFactory::MidiRouteTable> routed_;
 };
 
 }  // namespace
@@ -68,18 +72,13 @@ void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipS
     handles_ = &handles;
     liveInputs_ = &liveInputs;
     sources_ = &sources;
+    resolveRouteTables();
 }
 
 void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
     devices_.clear();
     unbuilt_.clear();
-    midiRoutes_.clear();
-
-    // receivesLiveMidiInput rather than monitorsInput: the fork routes a track
-    // in Auto too (MidiInputRouter::updateMidiInputRouting).
-    for (const auto& track : tracks)
-        midiRoutes_.emplace(track.id,
-                            MidiRoute{track.midiInputDevice, track.receivesLiveMidiInput()});
+    refreshMidiRoutes(tracks);
 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
@@ -191,11 +190,44 @@ std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(
     if (liveInputs_ == nullptr || sources_ == nullptr)
         return nullptr;
 
-    const auto found = midiRoutes_.find(trackId);
-    const auto route = found != midiRoutes_.end() ? found->second : MidiRoute{};
-
     return std::make_unique<TrackMidiInput>(*liveInputs_, sources_->auditionSourceFor(trackId),
-                                            routedSources(route));
+                                            routeTableFor(trackId));
+}
+
+void EngineRuntimeFactory::MidiRouteTable::set(const std::vector<engine::LiveMidiSourceId>& ids) {
+    const auto n = std::min(static_cast<int>(ids.size()), kMaxSources);
+    for (auto i = 0; i < n; ++i)
+        sources[static_cast<std::size_t>(i)].store(ids[static_cast<std::size_t>(i)],
+                                                   std::memory_order_relaxed);
+    count.store(n, std::memory_order_release);
+}
+
+std::shared_ptr<EngineRuntimeFactory::MidiRouteTable> EngineRuntimeFactory::routeTableFor(
+    TrackId trackId) {
+    auto& table = routeTables_[trackId];
+    if (table == nullptr)
+        table = std::make_shared<MidiRouteTable>();
+    return table;
+}
+
+void EngineRuntimeFactory::refreshMidiRoutes(const std::vector<TrackInfo>& tracks) {
+    midiRoutes_.clear();
+
+    // receivesLiveMidiInput rather than monitorsInput: the fork routes a track
+    // in Auto too (MidiInputRouter::updateMidiInputRouting).
+    for (const auto& track : tracks)
+        midiRoutes_.emplace(track.id,
+                            MidiRoute{track.midiInputDevice, track.receivesLiveMidiInput()});
+
+    resolveRouteTables();
+}
+
+void EngineRuntimeFactory::resolveRouteTables() {
+    if (sources_ == nullptr)
+        return;
+
+    for (const auto& [trackId, route] : midiRoutes_)
+        routeTableFor(trackId)->set(routedSources(route));
 }
 
 std::vector<engine::LiveMidiSourceId> EngineRuntimeFactory::routedSources(const MidiRoute& route) {

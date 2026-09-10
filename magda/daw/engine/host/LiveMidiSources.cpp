@@ -5,8 +5,12 @@
 namespace magda::daw::engine_host {
 
 void LiveMidiSources::registerAvailableDevices() {
-    for (const auto& device : juce::MidiInput::getAvailableDevices())
+    auto available = juce::MidiInput::getAvailableDevices();
+    for (const auto& device : available)
         sourceFor(device.identifier);
+
+    const juce::ScopedLock held(lock_);
+    available_ = std::move(available);
 }
 
 int LiveMidiSources::sourceFor(const juce::String& deviceId) {
@@ -43,12 +47,26 @@ int LiveMidiSources::resolveRoute(const juce::String& midiInputDevice) {
         midiInputDevice.startsWith("track:"))
         return kNoSource;
 
-    const auto available = juce::MidiInput::getAvailableDevices();
+    // The list registerAvailableDevices() took, not a fresh enumeration: this
+    // runs per track on every values publish.
+    const auto available = [this] {
+        const juce::ScopedLock held(lock_);
+        return available_;
+    }();
 
     const auto byIdentifier = [&](const juce::MidiDeviceInfo& device) {
         return device.identifier == midiInputDevice;
     };
     if (const auto* found = std::ranges::find_if(available, byIdentifier); found != available.end())
+        return sourceFor(found->identifier);
+
+    // What the fork's selectors store for a hardware input: TE's own ID,
+    // derived from the JUCE identifier (tracktion_PhysicalMidiInputDevice.cpp:294).
+    const auto byForkId = [&](const juce::MidiDeviceInfo& device) {
+        return "midiin_" + juce::String::toHexString(device.identifier.hashCode()) ==
+               midiInputDevice;
+    };
+    if (const auto* found = std::ranges::find_if(available, byForkId); found != available.end())
         return sourceFor(found->identifier);
 
     // Older projects stored the name. Resolved to the identifier either way,

@@ -203,7 +203,7 @@ te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
     // with the same name would break the cast and leave the feature silently
     // disabled.
     const auto isQwertyDevice = [](const auto& dev) {
-        return dev->getName() == kQwertyMidiDeviceId &&
+        return dev->getName() == kQwertyMidiDeviceName &&
                dynamic_cast<te::VirtualMidiInputDevice*>(dev.get()) != nullptr;
     };
 
@@ -215,7 +215,7 @@ te::VirtualMidiInputDevice* MidiInputRouter::getQwertyMidiDevice() {
             qwertyMidiDevice_ = *found;
 
         if (!qwertyMidiDevice_) {
-            auto result = engine_.getDeviceManager().createVirtualMidiDevice(kQwertyMidiDeviceId);
+            auto result = engine_.getDeviceManager().createVirtualMidiDevice(kQwertyMidiDeviceName);
             if (result.wasOk()) {
                 const auto newMidiInputs = engine_.getDeviceManager().getMidiInDevices();
                 if (const auto found = std::ranges::find_if(newMidiInputs, isQwertyDevice);

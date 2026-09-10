@@ -49,10 +49,15 @@ struct RawMidiListener {
                            const juce::MidiMessage& msg) = 0;
 };
 
-/// The QWERTY keyboard's device identifier on both engines: the fork names its
-/// virtual device this and TE uses the name as the ID, so a track routed to it
-/// on one engine is routed to it on the other.
-inline constexpr const char* kQwertyMidiDeviceId = "QWERTY Keyboard";
+/// What the fork's virtual keyboard device is called.
+inline constexpr const char* kQwertyMidiDeviceName = "QWERTY Keyboard";
+
+/// The keyboard's device ID on both engines: what the fork's virtual device
+/// reports (tracktion_DeviceManager.cpp:248 derives it from the name), so a
+/// track routed to it on one engine is routed to it on the other.
+inline juce::String qwertyMidiDeviceId() {
+    return "vmidiin_" + juce::String::toHexString(juce::String(kQwertyMidiDeviceName).hashCode());
+}
 
 /**
  * @brief Where live MIDI goes when something other than the fork renders (#2579).

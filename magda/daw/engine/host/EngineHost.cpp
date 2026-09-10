@@ -295,6 +295,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         engine::PlanValues values;
         report("values", resolveValues(*livePlan_, tracks, *master, values));
         report("values", session_->publishValues(std::move(values)).messages);
+
+        // A monitor or route change is a track property, so it arrives here
+        // rather than as a plan, and the input the store already holds reads
+        // the table this rewrites.
+        factory_.refreshMidiRoutes(tracks);
     }
 
     /// What every track plays, resolved against the tempo the transport is

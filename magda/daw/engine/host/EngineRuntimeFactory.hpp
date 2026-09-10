@@ -2,6 +2,8 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 
+#include <array>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <set>
@@ -115,9 +117,29 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     /// is deliberately left unoverridden: live audio is #2553's.
     std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
 
+    /**
+     * @brief A track's routed device sources, as a table the publisher rewrites.
+     *
+     * The store builds a track's input once and keeps it across every later
+     * publish, so a monitor or route change after that has to reach the input
+     * some other way: this is written on the publishing thread and read on the
+     * audio thread, count last so a reader sees whole entries.
+     */
+    struct MidiRouteTable {
+        static constexpr int kMaxSources = 32;
+        std::array<std::atomic<engine::LiveMidiSourceId>, kMaxSources> sources{};
+        std::atomic<int> count{0};
+
+        void set(const std::vector<engine::LiveMidiSourceId>& ids);
+    };
+
+    /// Every track's routed sources from the model as it is now. setModel
+    /// calls it; the host calls it again on a values publish, which is where
+    /// a monitor change arrives.
+    void refreshMidiRoutes(const std::vector<TrackInfo>& tracks);
+
   private:
-    /// What a track's MIDI input op resolves through, as the model held it at
-    /// the last setModel().
+    /// What a track's MIDI input op resolves through.
     struct MidiRoute {
         juce::String device;
         bool monitors = false;
@@ -126,6 +148,12 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     /// The device sources @p route names, resolved here rather than in
     /// render(): this runs on the publishing thread.
     std::vector<engine::LiveMidiSourceId> routedSources(const MidiRoute& route);
+
+    std::shared_ptr<MidiRouteTable> routeTableFor(TrackId trackId);
+
+    /// Every stored route into its table. Needs the registry, so it runs from
+    /// whichever of setModel and attach comes second.
+    void resolveRouteTables();
 
     std::unique_ptr<engine::EngineDevice> handOver(engine::DeviceKey key, const DeviceInfo& model,
                                                    std::unique_ptr<engine::EngineDevice> device);
@@ -139,7 +167,12 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     const engine::LiveInputFeed* liveInputs_ = nullptr;
     LiveMidiSources* sources_ = nullptr;
 
+    /// The model's routes as of the last setModel or refresh.
     std::map<TrackId, MidiRoute> midiRoutes_;
+
+    /// Shared with the input that reads it, so a table outlives the store's
+    /// eviction of that input and the factory's copy is never dangling.
+    std::map<TrackId, std::shared_ptr<MidiRouteTable>> routeTables_;
 
     std::map<engine::DeviceKey, DeviceInfo> devices_;
 

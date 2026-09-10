@@ -663,6 +663,19 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // The audition op every track now carries reads its own source alone;
         // kAnyLiveMidiSource here would have merged the two.
         expect(idleTap->read().loudest() == 0.0f, "The track monitoring nothing did not");
+
+        // The store keeps the input it built, so a monitor switched on after
+        // the publish reaches it through the route table, not a new source.
+        if (auto* track = trackManager.getTrack(idle))
+            track->inputMonitor = magda::InputMonitorMode::In;
+        factory.refreshMidiRoutes(trackManager.getTracks());
+
+        session.process(context.maxBlockSize, output, {{}, streams});
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        expect(idleTap->read().loudest() > 0.0f,
+               "Switched to monitor In after the publish, the track hears the device");
     }
 
     void testOnlyTrackMetersAreTapped() {

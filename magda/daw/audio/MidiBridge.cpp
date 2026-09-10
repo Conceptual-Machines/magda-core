@@ -117,9 +117,9 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     // No fork virtual device under magda: list the keyboard itself, under the
     // same visibility rule the fork's device has above.
     const bool forkDeviceListed = std::ranges::any_of(
-        devices, [](const MidiDeviceInfo& d) { return d.id == kQwertyMidiDeviceId; });
+        devices, [id = qwertyMidiDeviceId()](const MidiDeviceInfo& d) { return d.id == id; });
     if (liveSink_.load(std::memory_order_acquire) && !forkDeviceListed && qwertyEnabled_)
-        devices.emplace_back(kQwertyMidiDeviceId, kQwertyMidiDeviceId, /*enabled=*/true);
+        devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
 
     return devices;
 }
@@ -521,9 +521,9 @@ void MidiBridge::playQwertyNote(int note, int velocity, bool isNoteOn) {
     }
 
     if (auto* sink = liveSink_.load(std::memory_order_acquire))
-        sink->pushMidi(kQwertyMidiDeviceId, message);
+        sink->pushMidi(qwertyMidiDeviceId(), message);
 
-    broadcastSynthesizedNote(kQwertyMidiDeviceId, note, velocity, isNoteOn);
+    broadcastSynthesizedNote(qwertyMidiDeviceId(), note, velocity, isNoteOn);
 }
 
 void MidiBridge::setQwertyEnabled(bool enabled) {

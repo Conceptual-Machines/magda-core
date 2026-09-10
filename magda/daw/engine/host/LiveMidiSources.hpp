@@ -46,15 +46,16 @@ class LiveMidiSources {
     /**
      * @brief The id a track's `midiInputDevice` names, or @ref kNoSource.
      *
-     * By JUCE identifier and then by device name, the way MidiInputRouter
-     * reads the same field. A field naming nothing this machine has is taken
-     * as the id it will push under, which is how the QWERTY keyboard resolves:
-     * its device id is its own name.
+     * By JUCE identifier, by the fork's hashed ID for it, then by device name,
+     * the way MidiInputRouter reads the same field. A field naming nothing
+     * this machine has is taken as the id it will push under, which is how the
+     * QWERTY keyboard resolves: it pushes under the fork's ID for it.
      */
     int resolveRoute(const juce::String& midiInputDevice);
 
   private:
     juce::CriticalSection lock_;
+    juce::Array<juce::MidiDeviceInfo> available_;
     std::map<juce::String, int> devices_;
     std::map<TrackId, int> auditions_;
     int next_ = 1;
