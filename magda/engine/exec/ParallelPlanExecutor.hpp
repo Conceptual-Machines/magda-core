@@ -107,6 +107,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     void clearUnboundValueTaps() {
         core_.clearUnboundValueTaps();
     }
+    void takeUnpaidReroutesFrom(const ParallelPlanExecutor& previous) {
+        core_.takeUnpaidReroutesFrom(previous.core_);
+    }
     int audioBufferCount() const {
         return core_.audioBufferCount();
     }

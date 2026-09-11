@@ -196,6 +196,20 @@ class PlanExecutor {
                                      const PlanExecutor* previous = nullptr,
                                      const ParamTable* params = nullptr);
 
+    /**
+     * @brief Take over the panics @p previous still owes (#2418).
+     *
+     * A device in a silenced rack is never processed, so what it owes outlives
+     * the plan that owed it. Claimed rather than copied: @p previous is still
+     * rendering, and a debt left behind would be spent twice -- the second
+     * panic cutting whatever the first one's notes came back as.
+     *
+     * At the swap rather than at prepare, because until then the publish can
+     * still be refused, and a debt claimed by a plan that never renders is a
+     * note nothing releases.
+     */
+    void takeUnpaidReroutesFrom(const PlanExecutor& previous);
+
     /// Forget the prepared plan and everything sized for it. Off the audio
     /// thread. Every prepare starts here, so a refused plan leaves nothing
     /// behind that could still be rendered.
@@ -508,16 +522,21 @@ class PlanExecutor {
 
     /// Devices owed a panic on their first block of this plan: the swap took a
     /// MIDI source away from them, and a note-off they are waiting for is not
-    /// coming. Cleared by the block that spends it.
+    /// coming. Cleared by the block that spends it, or by the executor that
+    /// takes the debt over.
     ///
-    /// Atomic because a debt outlives the executor that took it: the one being
-    /// replaced is still rendering while the next one is prepared, and reading
-    /// what it has not spent is a read racing that render.
-    std::vector<std::atomic<char>> reroutedMidi_;
+    /// Atomic and mutable because a debt outlives the executor that took it:
+    /// the one being replaced is still rendering while the next one is
+    /// prepared, so the handover has to be a claim rather than a read.
+    mutable std::vector<std::atomic<char>> reroutedMidi_;
 
     /// The panic flag beside a MIDI slot (#2418). False for a port the plan
     /// left unconnected, the way midiIn hands back an empty buffer for one.
     bool midiInPanic(const PortRef& ref) const;
+
+    /// Every panic this still owes, taken off it as they are read. Const
+    /// because the executor being claimed from is the live one.
+    std::set<DeviceKey> claimUnpaidReroutes() const;
     void setMidiOutPanic(OpId op, int port, bool panic);
 
     /// Whether an op's output port 0 is the buffer one of its inputs

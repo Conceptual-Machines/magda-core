@@ -388,15 +388,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         const auto was = midiBehindDevices(*previous->plan_);
         const auto now = midiBehindDevices(plan);
 
-        // A debt the plan being replaced never got to pay. A device in a muted
-        // rack is not processed at all, so its panic is still owed however
-        // many publishes land before the rack comes back, and the store is
-        // holding the instrument that holds the notes all the while.
-        std::set<DeviceKey> unpaid;
-        for (std::size_t i = 0; i < previous->plan_->ops.size(); ++i)
-            if (previous->reroutedMidi_[i].load(std::memory_order_relaxed) != 0)
-                unpaid.insert(previous->plan_->ops[i].key.deviceKey());
-
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
             if (op.kind != OpKind::Device)
@@ -411,7 +402,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                   return !after->second.contains(source);
                               });
 
-            reroutedMidi_[i].store(lost || unpaid.contains(key) ? 1 : 0, std::memory_order_relaxed);
+            reroutedMidi_[i].store(lost ? 1 : 0, std::memory_order_relaxed);
         }
     }
 
@@ -1015,6 +1006,31 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+std::set<DeviceKey> PlanExecutor::claimUnpaidReroutes() const {
+    std::set<DeviceKey> unpaid;
+
+    const auto owed = plan_ == nullptr ? 0 : std::min(plan_->ops.size(), reroutedMidi_.size());
+    for (std::size_t i = 0; i < owed; ++i)
+        if (reroutedMidi_[i].exchange(0, std::memory_order_relaxed) != 0)
+            unpaid.insert(plan_->ops[i].key.deviceKey());
+
+    return unpaid;
+}
+
+void PlanExecutor::takeUnpaidReroutesFrom(const PlanExecutor& previous) {
+    if (&previous == this || plan_ == nullptr)
+        return;
+
+    const auto unpaid = previous.claimUnpaidReroutes();
+    if (unpaid.empty())
+        return;
+
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i)
+        if (const auto& op = plan_->ops[i];
+            op.kind == OpKind::Device && unpaid.contains(op.key.deviceKey()))
+            reroutedMidi_[i].store(1, std::memory_order_relaxed);
 }
 
 bool PlanExecutor::midiInPanic(const PortRef& ref) const {

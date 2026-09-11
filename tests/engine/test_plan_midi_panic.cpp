@@ -410,6 +410,44 @@ TEST_CASE("a panic owed to a silenced device survives the next publish",
     PlanExecutor third;
     REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
 
+    // What EngineSession::publish does at the swap.
+    third.takeUnpaidReroutesFrom(second);
+
+    republished.render(third);
+    CHECK(republished.device.lastHeard());
+}
+
+TEST_CASE("an owed panic is handed over rather than copied", "[engine][exec][2418][2579]") {
+    // The epoch being replaced is still rendering while its successor is
+    // prepared, so a debt read and left behind is delivered twice: once by the
+    // plan still playing, once by the one about to. The second would cut what
+    // the first one's notes were re-asserted as.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    playing.render(first);
+
+    RouteHarness rerouted{2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+
+    // Muted, so the panic it was handed is still owed.
+    rerouted.values.ops[2].silent = true;
+    rerouted.render(second);
+    CHECK(rerouted.device.heard.empty());
+
+    RouteHarness republished{2};
+    PlanExecutor third;
+    REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
+    third.takeUnpaidReroutesFrom(second);
+
+    // Still the live one until the swap, and no longer owed anything.
+    rerouted.values.ops[2].silent = false;
+    rerouted.render(second);
+    CHECK_FALSE(rerouted.device.lastHeard());
+
     republished.render(third);
     CHECK(republished.device.lastHeard());
 }
