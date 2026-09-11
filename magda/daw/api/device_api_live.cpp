@@ -350,14 +350,13 @@ bool DeviceApiLive::openDeviceEditor(const ChainNodePath& devicePath) {
     if (getDevice(devicePath) == nullptr)
         return false;
     auto* engine = TrackManager::getInstance().getAudioEngine();
-    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
+    if (engine == nullptr)
         return false;
-    bridge->showPluginWindow(devicePath);
-    // showPluginWindow is best-effort — an analysis device or a plugin with no
-    // native editor shows nothing — so report what actually happened rather
-    // than that the request was heard.
-    return bridge->isPluginWindowOpen(devicePath);
+
+    // Best-effort — an analysis device or a plugin with no native editor shows
+    // nothing — so report what actually happened rather than that the request
+    // was heard. Asked of whichever engine renders the instance (#2580).
+    return engine->showDeviceEditor(devicePath);
 }
 
 }  // namespace magda

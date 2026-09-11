@@ -344,20 +344,20 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
             toggleAnalyzerWindow();
             return;
         }
-        // Get the audio bridge and toggle plugin window
+        // Asked of whichever engine is rendering: the window opens onto the
+        // instance that makes the sound (#2580).
         auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-        if (audioEngine) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(nodePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-                learnButton_->setEnabled(isOpen);
-                if (!isOpen && learnButton_->getToggleState()) {
-                    learnButton_->setToggleState(false, juce::dontSendNotification);
-                    learnButton_->setActive(false);
-                    paramGrid_->setLearnMode(false);
-                }
-            }
+        if (audioEngine == nullptr)
+            return;
+
+        const bool isOpen = audioEngine->toggleDeviceEditor(nodePath_);
+        uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+        uiButton_->setActive(isOpen);
+        learnButton_->setEnabled(isOpen);
+        if (!isOpen && learnButton_->getToggleState()) {
+            learnButton_->setToggleState(false, juce::dontSendNotification);
+            learnButton_->setActive(false);
+            paramGrid_->setLearnMode(false);
         }
     };
     addAndMakeVisible(*uiButton_);
@@ -636,13 +636,13 @@ void DeviceSlotComponent::aiSoundDesignerPreferenceChanged(const juce::String& p
 }
 
 void DeviceSlotComponent::timerCallback() {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    if (!engine)
         return;
 
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return;
+    // Null under the native engine, and only the slot meter below needs it
+    // (#2570): the editor's light is the engine's answer either way.
+    auto* bridge = engine->getAudioBridge();
 
     if (compiledPanel_ != nullptr || traits_.isAnalysis)
         refreshInlinePluginBindings();
@@ -652,7 +652,7 @@ void DeviceSlotComponent::timerCallback() {
         // Analysis devices use the popout AnalyzerWindow, not a native plugin window.
         const bool isOpen = audio::isInternalAnalysisPlugin(device_.pluginId)
                                 ? (analyzerWindow_ != nullptr && analyzerWindow_->isVisible())
-                                : bridge->isPluginWindowOpen(nodePath_);
+                                : engine->isDeviceEditorOpen(nodePath_);
         bool currentState = uiButton_->getToggleState();
 
         // Only update if state changed to avoid unnecessary repaints
@@ -688,7 +688,7 @@ void DeviceSlotComponent::timerCallback() {
     } else {
         // Poll device peak levels for right-side meter strip
         magda::DeviceMeteringManager::DeviceMeterData data;
-        if (bridge->getDeviceMetering().getLatestLevels(nodePath_, data)) {
+        if (bridge != nullptr && bridge->getDeviceMetering().getLatestLevels(nodePath_, data)) {
             levelMeter_.setLevels(data.peakL, data.peakR);
         }
     }
@@ -1627,11 +1627,9 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
         if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
             toggleAnalyzerWindow();
         } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                bool isOpen = bridge->togglePluginWindow(nodePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-            }
+            const bool isOpen = audioEngine->toggleDeviceEditor(nodePath_);
+            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+            uiButton_->setActive(isOpen);
         }
     } else {
         // Pass to base class for normal click handling

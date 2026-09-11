@@ -332,6 +332,21 @@ void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
     if (host_ != nullptr)
         host_->applyExternalPluginStateAt(devicePath);
 }
+
+// The window opens onto the instance this renders through, and the fork holds
+// no copy of it any more (#2580).
+bool MagdaAudioEngine::showDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->showDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::hideDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->hideDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::toggleDeviceEditor(const ChainNodePath& devicePath) {
+    return host_->toggleDeviceEditor(devicePath);
+}
+bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const {
+    return host_->isDeviceEditorOpen(devicePath);
+}
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

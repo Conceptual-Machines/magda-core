@@ -149,8 +149,24 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     magda::SavedStateOutcome applyState(const magda::DeviceInfo& saved);
 
+    // ===== The plugin's own window (#2580) =====
+    //
+    // Here for the same reason again: the instance has no accessor, and the
+    // object that owns it is the only one allowed to reach its editor. Call on
+    // the control executor, which is the message thread's.
+
+    /// Open the editor, or bring it to the front. False for a plugin with no
+    /// editor of its own.
+    bool showEditor();
+
+    /// Close it. Silent for a window that is not open.
+    void hideEditor();
+
+    bool isEditorOpen() const;
+
   private:
     class PlayHead;
+    class EditorWindow;
 
     void writeParameters(const magda::engine::DeviceParams& params);
 
@@ -172,6 +188,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     std::unique_ptr<juce::AudioPluginInstance> instance_;
     std::unique_ptr<PlayHead> playHead_;
+
+    /// The plugin's window while it is open, and null while it is not: closing
+    /// it from its own title bar is what destroys it, so this is also the
+    /// answer to whether it is showing.
+    std::unique_ptr<EditorWindow> editor_;
 
     /**
      * @brief What the plan's parameter slot at this index addresses.

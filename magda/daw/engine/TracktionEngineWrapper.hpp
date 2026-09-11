@@ -298,6 +298,12 @@ class TracktionEngineWrapper : public AudioEngine,
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
 
+    /** @brief The windows onto those same plugins (#2580). */
+    bool showDeviceEditor(const ChainNodePath& devicePath) override;
+    bool hideDeviceEditor(const ChainNodePath& devicePath) override;
+    bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
+    bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
+
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)

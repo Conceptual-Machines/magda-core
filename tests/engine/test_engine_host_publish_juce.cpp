@@ -173,7 +173,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testDeviceMidiReachesOnlyItsOwnTrack(); });
         magda::test::runWithCleanJuceState([this] { testRouteRemovalPanicsTheInput(); });
         magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
-        magda::test::runWithCleanJuceState([this] { testRouteChangesAreAPlanChange(); });
+        magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
     }
 
@@ -888,37 +888,45 @@ class EngineHostPublishTest final : public juce::UnitTest {
                "Unplugged, it leaves the all route and the keyboard stays");
     }
 
-    void testRouteChangesAreAPlanChange() {
-        beginTest("What the compiler reads for a track's input is what a values publish watches");
+    void testShapeChangesAreAPlanChange() {
+        beginTest("An edit a values publish cannot carry is one the plan's fingerprint moves for");
 
         auto& trackManager = magda::TrackManager::getInstance();
+        const auto sourceId = synthTrack("Source", 2, magda::InputMonitorMode::Off, {});
         const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
         auto* track = trackManager.getTrack(trackId);
-        expect(track != nullptr, "The track exists");
-        if (track == nullptr)
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
             return;
 
-        const auto compiledFrom = host::inputRoutingOf(trackManager.getTracks());
+        const auto shapeNow = [&] {
+            return magda::engine::planFingerprint(magda::engine::compileRenderPlan(
+                trackManager.getTracks(), *master, {.auditionMidi = true}));
+        };
+
+        const auto compiledFrom = shapeNow();
 
         // A mixer move is what a values publish is for.
         track->volume = 0.5f;
-        expect(host::inputRoutingOf(trackManager.getTracks()) == compiledFrom,
-               "A fader move is not a routing change");
+        expect(shapeNow() == compiledFrom, "A fader move is not a shape change");
 
-        // Each of these is an edge or an op the plan holds, so none of them can
-        // be carried by a values publish.
-        track->midiInputDevice = "track:2";
-        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom, "A MIDI route is");
+        // Each of these is an op or an edge the plan holds, so a values
+        // publish has nowhere to put it and the host recompiles.
+        auto& device = magda::getDevice(track->chain.fxChainElements[0]);
+        device.bypassed = true;
+        expect(shapeNow() != compiledFrom, "Bypassing a device is");
+        device.bypassed = false;
 
-        track->midiInputDevice = "";
-        track->audioInputDevice = "Input 1";
-        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom,
-               "So is an audio input");
-
-        track->audioInputDevice = "";
+        // Monitoring is what the compiler gates an input route on, so the
+        // switch and the route are one edit here.
         track->inputMonitor = magda::InputMonitorMode::In;
-        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom,
-               "So is the monitor switch that decides whether either is read");
+        track->midiInputDevice = "track:" + juce::String(sourceId);
+        expect(shapeNow() != compiledFrom, "So is taking MIDI from another track");
+        track->midiInputDevice = "";
+
+        track->audioInputDevice = "Input 1";
+        expect(shapeNow() != compiledFrom, "So is a monitored audio input");
     }
 
     void testOnlyTrackMetersAreTapped() {

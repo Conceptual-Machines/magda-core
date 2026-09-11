@@ -548,6 +548,19 @@ adapter::CaptureOutcome apply(adapter::DeviceControlPlane& plane, magda::engine:
     return answered.get();
 }
 
+/** @brief The same, for an editor request (#2580). */
+adapter::EditorOutcome editor(adapter::DeviceControlPlane& plane, magda::engine::DeviceKey key,
+                              adapter::EditorAction action) {
+    std::promise<adapter::EditorOutcome> answer;
+    auto answered = answer.get_future();
+
+    plane.editorWindow(key, action, [&answer](adapter::EditorOutcome outcome) {
+        answer.set_value(std::move(outcome));
+    });
+
+    return answered.get();
+}
+
 /// A registry over one device, which is what a runtime hands a plane (#2270).
 ///
 /// It owns the device, the way a runtime owns the ones it runs, and hands out a
@@ -2966,6 +2979,50 @@ TEST_CASE("A key with no device bound is a failure rather than an empty state",
     // And it says which slot, because a host with a project's worth of devices
     // is holding a failure that has to name one of them.
     CHECK(answered.failure().contains("12"));
+}
+
+TEST_CASE("A plugin with no editor of its own opens no window", "[engine][external][2580]") {
+    // What a generic editor would paper over: an analysis device, or a plugin
+    // whose UI this build cannot make. The answer is "not showing" rather than
+    // a failure -- nothing went wrong, there is nothing to open.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto shown = editor(plane, key, adapter::EditorAction::Show);
+    CHECK(shown.ok());
+    CHECK_FALSE(shown.isShowing());
+    CHECK_FALSE(external->isEditorOpen());
+
+    // And a hide on a window that was never open is not a failure either.
+    const auto hidden = editor(plane, key, adapter::EditorAction::Hide);
+    CHECK(hidden.ok());
+    CHECK_FALSE(hidden.isShowing());
+}
+
+TEST_CASE("An editor asked of a key with no device bound says which", "[engine][external][2580]") {
+    const auto registry = std::make_shared<const EmptyRegistry>();
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto answered =
+        editor(plane, {magda::ChainSegment::PostFx, 12}, adapter::EditorAction::Toggle);
+    CHECK_FALSE(answered.ok());
+    CHECK(answered.failure().contains("no plugin is bound"));
+    CHECK(answered.failure().contains("12"));
+
+    // A failure is never mistaken for an answer, which is what ok() reads.
+    CHECK_FALSE(answered.isShowing());
 }
 
 TEST_CASE("A plugin that will not describe itself is a failure with a reason",

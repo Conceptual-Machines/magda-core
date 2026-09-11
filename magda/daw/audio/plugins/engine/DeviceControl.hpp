@@ -85,6 +85,51 @@ class CaptureOutcome {
 };
 
 /**
+ * @brief What an editor request came back with: its window, or why not (#2580).
+ *
+ * "Showing" because that is what the caller asks next -- the slot's light. A
+ * plugin with no editor of its own is not showing rather than a failure:
+ * nothing went wrong, there is nothing to open.
+ */
+class EditorOutcome {
+  public:
+    /// Whether the plugin's window is on screen now.
+    static EditorOutcome showing(bool isShowing);
+
+    /// Why there is no answer: the device, its runtime, or the plane has gone.
+    static EditorOutcome failed(juce::String reason);
+
+    bool ok() const {
+        return failure_.isEmpty();
+    }
+
+    bool isShowing() const {
+        return showing_;
+    }
+
+    /// Why nothing was asked. Empty when ok().
+    const juce::String& failure() const {
+        return failure_;
+    }
+
+  private:
+    EditorOutcome() = default;
+
+    bool showing_ = false;
+    juce::String failure_;
+};
+
+/// What to do with a device's editor window (#2580).
+enum class EditorAction {
+    Show,
+    Hide,
+    Toggle,
+
+    /// Ask without touching it, which is what a slot redrawing wants.
+    Query,
+};
+
+/**
  * @brief Where a host asks a device for anything that is not a block.
  *
  * One implementation runs the plugin in this process; another asks a process
@@ -141,6 +186,18 @@ class DeviceControlPlane {
      */
     virtual bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
                             CaptureCallback completed) = 0;
+
+    /// What an editor request is answered with, on this plane's executor.
+    using EditorCallback = std::function<void(EditorOutcome)>;
+
+    /**
+     * @brief Show, hide, toggle or ask after the editor of the device at @p key.
+     *
+     * Same contract as @ref captureState, on an executor that is the message
+     * thread's -- which is where a window may be opened at all (#2580).
+     */
+    virtual bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                              EditorCallback completed) = 0;
 
     /// Where this plane's work runs, for a host that has something else to
     /// put on the same thread.
@@ -201,6 +258,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
     bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
     bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
                     CaptureCallback completed) override;
+    bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                      EditorCallback completed) override;
 
   private:
     std::weak_ptr<const DeviceRegistry> devices_;

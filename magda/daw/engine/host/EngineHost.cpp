@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <span>
@@ -121,10 +122,20 @@ DeviceInfo* modelDeviceAt(engine::DeviceKey key) {
  * the grid's path (#2207). Looked up through devicesIn(), the walk the
  * publish uses, so both agree which chain section a device is in.
  */
-std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
-    auto& trackManager = TrackManager::getInstance();
+std::vector<engine::DeviceKey> keysOfDevices(const std::set<const DeviceInfo*>& wanted) {
+    std::vector<engine::DeviceKey> found;
 
-    const auto* target = trackManager.getDeviceInChainByPath(devicePath);
+    TrackManager::getInstance().forEachTrackIncludingMaster([&found, &wanted](TrackInfo& track) {
+        for (const auto& [key, device] : adapter::devicesIn(track))
+            if (wanted.contains(device))
+                found.push_back(key);
+    });
+
+    return found;
+}
+
+std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
+    const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
     if (target == nullptr)
         return {};
 
@@ -136,15 +147,21 @@ std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
                                           subtree.insert(&device);
                                       });
 
-    std::vector<engine::DeviceKey> found;
+    return keysOfDevices(subtree);
+}
 
-    trackManager.forEachTrackIncludingMaster([&found, &subtree](TrackInfo& track) {
-        for (const auto& [key, device] : adapter::devicesIn(track))
-            if (subtree.contains(device))
-                found.push_back(key);
-    });
+/// The one device @p devicePath names, without the pads a capture also takes:
+/// a pad's editor is its own, and not what a click on the grid asked for.
+std::optional<engine::DeviceKey> keyOfDeviceAt(const ChainNodePath& devicePath) {
+    const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (target == nullptr)
+        return std::nullopt;
 
-    return found;
+    const auto keys = keysOfDevices({target});
+    if (keys.empty())
+        return std::nullopt;
+
+    return keys.front();
 }
 
 /**
@@ -204,6 +221,11 @@ class SessionDevices final : public adapter::DeviceRegistry {
  * callback renders is what the model last published, and both are bounded by
  * the device's own start and stop.
  */
+/// Whether an edit could have changed what the plan is, as opposed to what it
+/// is worth. Only a compile can answer it; this is which edits are worth
+/// asking about (#2592).
+enum class Shape { Unchanged, MayHaveMoved };
+
 struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::AsyncUpdater,
                                 private juce::Timer,
@@ -363,7 +385,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The four things a plan publish is: the topology, the values resolved
     /// against it, the IDs the model still holds, and the context they render
     /// under.
-    void publishPlan() {
+    /// The model as an engine plan. One call, so the compile options cannot
+    /// differ between the publish and the comparison below.
+    static std::shared_ptr<const engine::RenderPlan> compilePlan(
+        const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
+        return std::make_shared<const engine::RenderPlan>(
+            engine::compileRenderPlan(tracks, master, {.auditionMidi = true}));
+    }
+
+    void publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
         const auto& tracks = TrackManager::getInstance().getTracks();
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || master == nullptr)
@@ -375,8 +405,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         sources_.registerAvailableDevices();
         factory_.setModel(tracks, *master);
 
-        auto plan = std::make_shared<const engine::RenderPlan>(
-            engine::compileRenderPlan(tracks, *master, {.auditionMidi = true}));
+        if (plan == nullptr)
+            plan = compilePlan(tracks, *master);
         report("plan", plan->diagnostics);
 
         engine::PlanValues values;
@@ -390,7 +420,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         livePlan_ = std::move(plan);
-        routing_ = inputRoutingOf(tracks);
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
@@ -405,13 +434,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || livePlan_ == nullptr || master == nullptr)
             return;
 
-        // An input route or a monitor switch arrives here, being a track
-        // property, and the route tables below cannot carry either: a
-        // "track:N" edge is compiled into the plan, and what a monitored
-        // audio input is at all is an op (#2579).
-        if (inputRoutingOf(tracks) != routing_) {
-            publishPlan();
-            return;
+        // A property edit can be one values cannot carry: a bypass takes the
+        // device out of the plan, a route moves an edge, a monitor switch
+        // decides whether an input op exists at all. Compiling and comparing
+        // is the exact question; a list of properties would be one more thing
+        // to keep in step with the compiler (#2592).
+        if (shape_.exchange(false, std::memory_order_relaxed)) {
+            auto compiled = compilePlan(tracks, *master);
+            if (engine::planFingerprint(*compiled) != engine::planFingerprint(*livePlan_)) {
+                publishPlan(std::move(compiled));
+                return;
+            }
         }
 
         engine::PlanValues values;
@@ -484,20 +517,24 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void deviceAdded(const ChainNodePath&, const DeviceInfo&) override {
         wantPlan();
     }
+    // A property is the kind of edit that can move the plan's shape -- a
+    // bypass takes the device out of it, a route moves an edge -- so these say
+    // so, and publishValues() checks. A parameter cannot: that is what values
+    // are for.
     void trackPropertyChanged(int) override {
-        wantValues();
+        wantValues(Shape::MayHaveMoved);
     }
     void masterChannelChanged() override {
-        wantValues();
+        wantValues(Shape::MayHaveMoved);
     }
     void devicePropertyChanged(const ChainNodePath&) override {
-        wantValues();
+        wantValues(Shape::MayHaveMoved);
     }
     void deviceParameterChanged(const ChainNodePath&, int, float) override {
-        wantValues();
+        wantValues(Shape::Unchanged);
     }
     void deviceModifiersChanged(TrackId) override {
-        wantValues();
+        wantValues(Shape::MayHaveMoved);
     }
     void clipsChanged() override {
         wantClips();
@@ -510,7 +547,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         plan_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
-    void wantValues() {
+    void wantValues(Shape shape) {
+        if (shape == Shape::MayHaveMoved)
+            shape_.store(true, std::memory_order_relaxed);
+
         values_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
@@ -591,6 +631,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         plan_.store(false, std::memory_order_relaxed);
         values_.store(false, std::memory_order_relaxed);
+        shape_.store(false, std::memory_order_relaxed);
         clips_.store(false, std::memory_order_relaxed);
 
         publishTransport();
@@ -782,6 +823,38 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         control_->drain();
     }
 
+    /**
+     * @brief The editor of the device at @p devicePath, and what it is now (#2580).
+     *
+     * Synchronous: every caller is a click whose slot draws the answer, and
+     * the drain is what makes it arrive before this returns.
+     */
+    bool deviceEditor(const ChainNodePath& devicePath, adapter::EditorAction action) {
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value() || !factory_.isExternalKey(*key))
+            return false;
+
+        auto showing = false;
+        const auto asked = plane_.editorWindow(*key, action, [&showing](adapter::EditorOutcome it) {
+            // Said out loud: a click that opened nothing has no other way to
+            // report why.
+            if (!it.ok()) {
+                juce::Logger::writeToLog("[engine] editor: " + it.failure());
+                return;
+            }
+
+            showing = it.isShowing();
+        });
+
+        if (!asked)
+            return false;
+
+        // The completion writes a local, so it must have run before this
+        // returns. drain() is what says it has.
+        control_->drain();
+        return showing;
+    }
+
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
         if (session_ == nullptr)
             return;
@@ -932,10 +1005,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// values against it without compiling another.
     std::shared_ptr<const engine::RenderPlan> livePlan_;
 
-    /// The input routing that plan was compiled from. What a values publish
-    /// compares against to know it has to be a plan publish instead.
-    std::vector<InputRouting> routing_;
-
     double bpm_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
@@ -955,6 +1024,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<int> inputChannels_{0};
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
+
+    /// An edit arrived that a values publish may not be able to carry.
+    std::atomic<bool> shape_{false};
     std::atomic<bool> clips_{false};
 
     /// Callbacks this host has rendered. Only ever read by the trace, and the
@@ -1016,6 +1088,22 @@ void EngineHost::captureExternalPluginStateAt(const ChainNodePath& devicePath) {
 
 void EngineHost::applyExternalPluginStateAt(const ChainNodePath& devicePath) {
     impl_->applyExternalPluginStateAt(devicePath);
+}
+
+bool EngineHost::showDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Show);
+}
+
+bool EngineHost::hideDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Hide);
+}
+
+bool EngineHost::toggleDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Toggle);
+}
+
+bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Query);
 }
 
 void EngineHost::play() {

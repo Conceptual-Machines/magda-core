@@ -110,6 +110,22 @@ bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
     });
 }
 
+EditorOutcome EditorOutcome::showing(bool isShowing) {
+    EditorOutcome outcome;
+    outcome.showing_ = isShowing;
+    return outcome;
+}
+
+EditorOutcome EditorOutcome::failed(juce::String reason) {
+    EditorOutcome outcome;
+
+    // Never empty, or ok() would read a failure as an answer.
+    outcome.failure_ = reason.isNotEmpty()
+                           ? std::move(reason)
+                           : juce::String("the editor request failed for no stated reason");
+    return outcome;
+}
+
 bool LocalDeviceControlPlane::applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
                                          CaptureCallback completed) {
     if (!completed || executor() == nullptr)
@@ -157,6 +173,55 @@ bool LocalDeviceControlPlane::applyState(magda::engine::DeviceKey key, magda::De
         }
 
         completed(CaptureOutcome::taken(std::move(*snapshot)));
+    });
+}
+
+bool LocalDeviceControlPlane::editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                                           EditorCallback completed) {
+    if (!completed || executor() == nullptr)
+        return false;
+
+    // Same rules as captureState(): an editor being built must not overlap a
+    // state read on one plugin (#2268).
+    return executor()->run([devices = devices_, key, action,
+                            completed](ExecutionState state) mutable {
+        if (state == ExecutionState::Cancelled) {
+            completed(EditorOutcome::failed("the control plane closed before this ran"));
+            return;
+        }
+
+        const auto registry = devices.lock();
+        if (!registry) {
+            completed(
+                EditorOutcome::failed("the runtime that owned " + describeKey(key) + " is gone"));
+            return;
+        }
+
+        const auto device = registry->find(key);
+        if (device == nullptr) {
+            completed(EditorOutcome::failed("no plugin is bound for " + describeKey(key)));
+            return;
+        }
+
+        switch (action) {
+            case EditorAction::Show:
+                device->showEditor();
+                break;
+            case EditorAction::Hide:
+                device->hideEditor();
+                break;
+            case EditorAction::Toggle:
+                if (device->isEditorOpen())
+                    device->hideEditor();
+                else
+                    device->showEditor();
+                break;
+            case EditorAction::Query:
+                break;
+        }
+
+        // What it is now, whatever was asked.
+        completed(EditorOutcome::showing(device->isEditorOpen()));
     });
 }
 

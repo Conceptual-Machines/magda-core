@@ -124,6 +124,16 @@ class EngineHost {
      */
     void applyExternalPluginStateAt(const ChainNodePath& devicePath);
 
+    // ===== The plugins' own windows (#2580) =====
+    //
+    // Message thread, each answering what the window is afterwards, which is
+    // what the slot draws. False for a device this is not rendering.
+
+    bool showDeviceEditor(const ChainNodePath& devicePath);
+    bool hideDeviceEditor(const ChainNodePath& devicePath);
+    bool toggleDeviceEditor(const ChainNodePath& devicePath);
+    bool isDeviceEditorOpen(const ChainNodePath& devicePath);
+
     // ===== Transport =====
     //
     // Play, stop and locate are a request the clock applies once, so each of
