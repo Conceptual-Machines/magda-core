@@ -202,6 +202,13 @@ ExternalDeviceResult adaptExternalPluginInstance(
         resolvedDevice.canReceiveMidi = true;
     resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
 
+    // After the chunk, which is free to rename a parameter or move its default.
+    // Nothing but the instance can enumerate a hosted plugin's parameters, and
+    // the model is what every reader downstream has (#2595).
+    auto described = magda::describeHostParameters(*instance, device);
+    resolvedDevice.parameters = std::move(described.parameters);
+    resolvedDevice.wrapperParameters = std::move(described.wrapperParameters);
+
     auto restored = magda::snapshotHostParameters(*instance);
 
     return {.device = std::make_unique<EngineExternalDevice>(std::move(instance), resolvedDevice,

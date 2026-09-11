@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
 #include "magda/daw/audio/Vst3Preset.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
@@ -760,6 +761,25 @@ struct Block {
     juce::AudioBuffer<float> buffer;
     magda::engine::BlockInfo info;
 };
+
+/// The stub with the names real plugins turn out to have: two parameters called
+/// the same thing and one with no name at all.
+std::unique_ptr<StubPlugin> awkwardlyNamedStub() {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    plugin->addHostedParameter(std::make_unique<StubParameter>("cut1", "Cutoff", 0.0f, true));
+    plugin->addHostedParameter(std::make_unique<StubParameter>("cut2", "Cutoff", 0.0f, true));
+    plugin->addHostedParameter(std::make_unique<StubParameter>("blank", "", 0.0f, true));
+    return plugin;
+}
+
+/// The resolved record at plan slot @p index, from whichever bucket holds it.
+const magda::ParameterInfo* resolvedParameterAt(const adapter::ExternalDeviceResult& result,
+                                                int index) {
+    if (!result.resolvedDevice.has_value())
+        return nullptr;
+
+    return result.resolvedDevice->findParameterByIndex(index);
+}
 
 }  // namespace
 
@@ -1761,6 +1781,149 @@ TEST_CASE("A device with no saved state keeps the plugin's defaults", "[engine][
 
     REQUIRE(result.device != nullptr);
     CHECK(raw->stateRestores == 0);
+}
+
+TEST_CASE("An external plugin's parameters reach the model", "[engine][external]") {
+    // Nothing but the instance can enumerate them, and everything that
+    // addresses one reads the model: the plan's parameter table, a macro link,
+    // the slot's grid. A device published with an empty array is a plugin the
+    // host cannot see the inside of at all (#2595).
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    magda::DeviceInfo model;
+    model.name = "Stub";
+    model.format = magda::PluginFormat::VST3;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.resolvedDevice.has_value());
+
+    // The plugin's own, at the slots the fork's list puts them at, with the
+    // non-automatable one between them absent the way the fork drops it.
+    const auto& parameters = result.resolvedDevice->parameters;
+    REQUIRE(parameters.size() == 2);
+    CHECK(parameters[0].paramIndex == 2);
+    CHECK(parameters[0].name == "Gain");
+    CHECK(parameters[0].stableId == "gain");
+    CHECK(parameters[1].paramIndex == 3);
+    CHECK(parameters[1].name == "Tone");
+    CHECK(parameters[1].stableId == "tone");
+
+    // And the pair the plugin never declared, in the bucket the fork's split
+    // puts it in rather than among the plugin's own.
+    const auto& wrapper = result.resolvedDevice->wrapperParameters;
+    REQUIRE(wrapper.size() == 2);
+    CHECK(wrapper[0].paramIndex == 0);
+    CHECK(wrapper[0].wrapperRole == magda::WrapperRole::DryGain);
+    CHECK(wrapper[1].paramIndex == 1);
+    CHECK(wrapper[1].wrapperRole == magda::WrapperRole::WetGain);
+}
+
+TEST_CASE("Resolved parameters carry the range the plan converts through", "[engine][external]") {
+    // The plan resolves a slot in the parameter's own units and the adapter
+    // converts it back through this description. An external plugin's units are
+    // normalised, so a made-up range here would move every value the plan
+    // writes.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    magda::DeviceInfo model;
+    model.format = magda::PluginFormat::VST3;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    const auto* tone = resolvedParameterAt(result, 3);
+    REQUIRE(tone != nullptr);
+    CHECK(tone->minValue == Catch::Approx(0.0f));
+    CHECK(tone->maxValue == Catch::Approx(1.0f));
+    CHECK(tone->teMinValue == Catch::Approx(0.0f));
+    CHECK(tone->teMaxValue == Catch::Approx(1.0f));
+    CHECK(tone->scale == magda::ParameterScale::Linear);
+    CHECK(magda::ParameterUtils::realToNormalized(0.3f, *tone) == Catch::Approx(0.3f));
+
+    // The plugin's own default, not the struct's 0.5.
+    CHECK(tone->defaultValue == Catch::Approx(0.0f));
+}
+
+TEST_CASE("Resolved parameters describe the plugin after its chunk", "[engine][external]") {
+    // A patch is allowed to move a parameter, so a list read before the chunk
+    // describes a plugin that no longer exists. Everything downstream reads
+    // these values, and the plan writes them back every block.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    const StubPlugin::State chunkVoice{.tone = 0.9f, .fixed = 0.8f};
+    juce::MemoryBlock chunk(&chunkVoice, sizeof(chunkVoice));
+
+    auto model = externalDeviceSaving(1.0f, 0.25f);  // stale: the chunk says 0.9
+    model.pluginState = chunk.toBase64Encoding();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    const auto* tone = resolvedParameterAt(result, 3);
+    REQUIRE(tone != nullptr);
+    CHECK(tone->currentValue == Catch::Approx(0.9f));
+}
+
+TEST_CASE("The wrapper pair keeps the mix the model held", "[engine][external]") {
+    // Nothing on the plugin holds these: they are the host's own numbers and no
+    // chunk carries them, so rebuilding the list from the instance must not
+    // take a slot's mix back to fully wet.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    auto model = externalDevice();
+    model.wrapperParameters[0].currentValue = 0.3f;
+    model.wrapperParameters[1].currentValue = 0.7f;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    const auto* dry = resolvedParameterAt(result, 0);
+    const auto* wet = resolvedParameterAt(result, 1);
+    REQUIRE(dry != nullptr);
+    REQUIRE(wet != nullptr);
+    CHECK(dry->currentValue == Catch::Approx(0.3f));
+    CHECK(wet->currentValue == Catch::Approx(0.7f));
+
+    // The rest of the record is still the rebuilt one, ids included.
+    CHECK(dry->stableId == "dry level");
+    CHECK(wet->stableId == "wet level");
+}
+
+TEST_CASE("A device that never had a wrapper pair gets one fully wet", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    magda::DeviceInfo model;
+    model.format = magda::PluginFormat::VST3;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    const auto* dry = resolvedParameterAt(result, 0);
+    const auto* wet = resolvedParameterAt(result, 1);
+    REQUIRE(dry != nullptr);
+    REQUIRE(wet != nullptr);
+    CHECK(dry->currentValue == Catch::Approx(0.0f));
+    CHECK(wet->currentValue == Catch::Approx(1.0f));
+}
+
+TEST_CASE("Repeated and missing parameter names are the fork's", "[engine][external]") {
+    // A project moved between the engines has to find the same parameter under
+    // the same name, and plenty of plugins declare two called the same thing or
+    // none at all. The suffix and the numbering are
+    // ExternalPlugin::buildParameterList's.
+    const auto result =
+        adapter::adaptExternalPluginInstance(awkwardlyNamedStub(), externalDevice());
+    REQUIRE(result.resolvedDevice.has_value());
+
+    const auto* first = resolvedParameterAt(result, 4);
+    const auto* second = resolvedParameterAt(result, 5);
+    const auto* unnamed = resolvedParameterAt(result, 6);
+    REQUIRE(first != nullptr);
+    REQUIRE(second != nullptr);
+    REQUIRE(unnamed != nullptr);
+
+    CHECK(first->name == "Cutoff");
+    CHECK(second->name == "Cutoff (2)");
+
+    // Numbered by its place in the plugin's own array, which counts the
+    // non-automatable parameter the host's list skips.
+    CHECK(unnamed->name == "Unnamed 6");
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {

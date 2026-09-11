@@ -80,6 +80,32 @@ namespace magda {
 std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
     const juce::AudioPluginInstance& instance);
 
+/** @brief A plugin's parameters, split the way DeviceInfo keeps them. */
+struct HostParameters {
+    std::vector<ParameterInfo> parameters;
+    std::vector<ParameterInfo> wrapperParameters;
+};
+
+/**
+ * @brief The model's record of every parameter @p instance exposes.
+ *
+ * The other half of hostParameterOrder(): that says which slot a saved value
+ * lands on, this says what the slot is. Only the instance can enumerate a
+ * hosted plugin's parameters, and everything that addresses one reads the model
+ * (#2595).
+ *
+ * Names, ids, ranges and defaults are the fork's
+ * (ExternalPlugin::buildParameterList), de-duplicating suffix included, so a
+ * project moved between engines finds the same parameter under the same name.
+ * The range is normalised because that is the space the fork wraps an external
+ * parameter in, and the plan converts through it (ParameterUtils::domainOf).
+ *
+ * The wrapper pair keeps the value @p device holds: it is the host's own
+ * number, no chunk carries it, and the model is the only place it lives.
+ */
+HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
+                                      const DeviceInfo& device);
+
 /** One parameter's live value, addressed the way a project addresses it. */
 struct RestoredParameter {
     int paramIndex = 0;
