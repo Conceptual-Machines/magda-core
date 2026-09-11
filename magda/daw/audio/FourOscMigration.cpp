@@ -104,18 +104,20 @@ std::vector<FourOscCandidate> findFourOscDevices(const std::vector<TrackInfo>& t
     return found;
 }
 
-juce::File backupFileFor(const juce::File& project) {
+juce::File convertedProjectFileFor(const juce::File& project) {
     if (project == juce::File{})
         return {};
 
-    // A sibling rather than a hidden file: this is the copy the user goes back
-    // to if the conversion was not what they wanted, so it belongs where they
-    // keep their projects. Nonexistent, so converting twice does not overwrite
-    // the first copy.
-    return project
-        .getSiblingFile(project.getFileNameWithoutExtension() + " (4OSC)" +
-                        project.getFileExtension())
-        .getNonexistentSibling();
+    // Up out of the project's own folder, so the new one is its neighbour
+    // rather than a stray .mgd inside it.
+    const auto projects = project.getParentDirectory().getParentDirectory();
+    if (!projects.isDirectory())
+        return {};
+
+    const auto name = project.getFileNameWithoutExtension() + " (Poly Synth)";
+    const auto folder = projects.getChildFile(name).getNonexistentSibling();
+
+    return folder.getChildFile(folder.getFileName() + project.getFileExtension());
 }
 
 juce::String describeConversion(const std::vector<FourOscCandidate>& candidates) {
@@ -143,8 +145,8 @@ juce::String describeConversion(const std::vector<FourOscCandidate>& candidates)
         text += ".";
     }
 
-    text += " Your project is saved as a new file first. The converted one cannot be turned "
-            "back into a 4OSC project.";
+    text += " The converted project is saved alongside this one as a new project. This one "
+            "is left as it is.";
 
     return text;
 }

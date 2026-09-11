@@ -285,8 +285,7 @@ TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
 
     CHECK(text.contains("Poly Synth"));
     CHECK(text.contains("Unison"));
-    CHECK(text.contains("saved as a new file"));
-    CHECK(text.contains("cannot be turned"));
+    CHECK(text.contains("saved alongside this one"));
 }
 
 TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
@@ -304,26 +303,24 @@ TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
     CHECK_FALSE(text.contains("will be lost"));
 }
 
-TEST_CASE("The backup sits beside the project and never overwrites", "[core][4osc]") {
-    const auto project = juce::File::getSpecialLocation(juce::File::tempDirectory)
-                             .getChildFile("FourOscMigration")
-                             .getChildFile("Song.mgd");
+TEST_CASE("The converted project is a new project beside the old one", "[core][4osc]") {
+    // A MAGDA project is a folder holding its .mgd, so the new one is the
+    // folder's neighbour rather than a stray file inside it.
+    const auto root =
+        juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile("FourOscMigration");
+    const auto project = root.getChildFile("Song").getChildFile("Song.mgd");
     project.getParentDirectory().createDirectory();
 
-    const auto backup = magda::daw::audio::backupFileFor(project);
-    CHECK(backup.getParentDirectory() == project.getParentDirectory());
-    CHECK(backup.getFileName() == "Song (4OSC).mgd");
+    const auto converted = magda::daw::audio::convertedProjectFileFor(project);
+    CHECK(converted.getFileName() == "Song (Poly Synth).mgd");
+    CHECK(converted.getParentDirectory().getFileName() == "Song (Poly Synth)");
+    CHECK(converted.getParentDirectory().getParentDirectory() == root);
 
-    // Converting twice must not take the first copy with it.
-    backup.replaceWithText("first");
-    CHECK(magda::daw::audio::backupFileFor(project).getFileName() != backup.getFileName());
-
-    backup.deleteFile();
-    project.getParentDirectory().deleteRecursively();
+    root.deleteRecursively();
 }
 
-TEST_CASE("A project that was never saved has no backup to write", "[core][4osc]") {
-    CHECK(magda::daw::audio::backupFileFor(juce::File{}) == juce::File{});
+TEST_CASE("A project that was never saved has nowhere to sit beside", "[core][4osc]") {
+    CHECK(magda::daw::audio::convertedProjectFileFor(juce::File{}) == juce::File{});
 }
 
 TEST_CASE("The built-in effects become a rack of MAGDA devices", "[core][4osc]") {
@@ -427,4 +424,38 @@ TEST_CASE("Converting a project replaces the synth and adds its effects",
 
     // And a second pass finds nothing left to do.
     CHECK(magda::daw::audio::convertFourOscDevices(tracks) == 0);
+}
+
+TEST_CASE("A 4OSC saved as legacy engine XML still translates", "[core][4osc]") {
+    // The format a project old enough to hold a 4OSC actually uses.
+    // device_state::decode() refuses it, and reading nothing there left every
+    // oscillator looking like "none" and the converted synth silent.
+    magda::DeviceInfo device;
+    device.id = magda::DeviceId{3};
+    device.name = "4OSC";
+    device.pluginId = "4osc";
+    device.isInstrument = true;
+    device.format = magda::PluginFormat::Internal;
+    device.pluginState = R"(<PLUGIN type="4osc" waveShape1="3" waveShape2="1" filterType="1"
+                                    voiceMode="0"/>)";
+
+    const auto translated = magda::daw::audio::translateFourOsc(device);
+
+    CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot) == 1.0f);
+    CHECK(slotValue(translated.device, oscSlot(1, 0)) == 1.0f);  // sawUp -> Saw
+    CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot + 1) == 1.0f);
+    CHECK(slotValue(translated.device, oscSlot(2, 0)) == 0.0f);              // sine
+    CHECK(slotValue(translated.device, PolySynth::kVoiceModeSlot) == 1.0f);  // mono
+}
+
+TEST_CASE("A patch whose oscillators are all off is not silently enabled", "[core][4osc]") {
+    // The other side of the same bug: "none" everywhere really does mean
+    // silence, and must not be confused with state that could not be read.
+    magda::DeviceInfo device;
+    device.pluginId = "4osc";
+    device.pluginState = R"(<PLUGIN type="4osc" waveShape1="0"/>)";
+
+    const auto translated = magda::daw::audio::translateFourOsc(device);
+    for (auto osc = 0; osc < 4; ++osc)
+        CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot + osc) == 0.0f);
 }

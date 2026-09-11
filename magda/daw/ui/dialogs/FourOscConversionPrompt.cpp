@@ -26,20 +26,30 @@ struct Prompt {
         : alert(title, message, juce::MessageBoxIconType::QuestionIcon) {}
 };
 
-void writeBackup() {
-    const auto project = ProjectManager::getInstance().getCurrentProjectFile();
-    const auto backup = audio::backupFileFor(project);
-
-    if (project.existsAsFile() && backup != juce::File{})
-        project.copyFileTo(backup);
-}
-
+/// Convert, then save as a project of its own. The one that was opened is
+/// never written to, so a 4OSC project stays openable on the Tracktion
+/// engine.
 void convertAndSave() {
-    // Before the conversion, so the copy is the project as it was opened.
-    writeBackup();
+    auto& projects = ProjectManager::getInstance();
+    const auto destination = audio::convertedProjectFileFor(projects.getCurrentProjectFile());
 
-    if (audio::convertFourOscDevices(TrackManager::getInstance()) > 0)
-        ProjectManager::getInstance().saveProject();
+    if (audio::convertFourOscDevices(TrackManager::getInstance()) == 0)
+        return;
+
+    // An unsaved project has nowhere to sit beside, so it keeps the converted
+    // devices and the user names it at their next save.
+    if (destination == juce::File{})
+        return;
+
+    if (!projects.saveProjectAs(destination))
+        juce::AlertWindow::showAsync(juce::MessageBoxOptions()
+                                         .withIconType(juce::MessageBoxIconType::WarningIcon)
+                                         .withTitle("Could not save the converted project")
+                                         .withMessage(projects.getLastError() +
+                                                      "\n\nThe conversion is still in this "
+                                                      "session. Save it somewhere with Save As.")
+                                         .withButton("OK"),
+                                     nullptr);
 }
 
 }  // namespace

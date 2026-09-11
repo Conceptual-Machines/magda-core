@@ -31,9 +31,15 @@ struct FourOscCandidate {
 std::vector<FourOscCandidate> findFourOscDevices(const std::vector<TrackInfo>& tracks,
                                                  const TrackInfo& master);
 
-/// Where the pre-conversion project is written, beside @p project. A project
-/// that has never been saved has no file and gets no copy.
-juce::File backupFileFor(const juce::File& project);
+/**
+ * @brief Where the converted project is saved, as a new project beside the old.
+ *
+ * A MAGDA project is a folder holding its .mgd and its media, so this names a
+ * sibling of that folder rather than a file inside it. Pass the result to
+ * ProjectManager::saveProjectAs(), which builds the folder. Nothing for a
+ * project that has never been saved and so has nowhere to sit beside.
+ */
+juce::File convertedProjectFileFor(const juce::File& project);
 
 /// What the dialog says, built from @p candidates. Names the gaps when there
 /// are any and promises nothing when there are not.

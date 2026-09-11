@@ -12,6 +12,7 @@
 #include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaReverbCompiledPlugin.hpp"
+#include "plugins/tracktion/TracktionDeviceStateBridge.hpp"
 
 namespace magda::daw::audio {
 
@@ -40,16 +41,18 @@ std::optional<float> parameterValue(const DeviceInfo& device, const juce::String
 
 /// 4OSC keeps wave shape, filter type and voice mode outside its parameters,
 /// as properties on its own ValueTree.
-juce::NamedValueSet savedProperties(const DeviceInfo& device) {
-    if (const auto doc = device_state::decode(device.pluginState))
-        return doc->root.props;
-
-    return {};
+///
+/// Through devicePluginTreeFromState() rather than device_state::decode():
+/// a project old enough to hold a 4OSC often stores it as legacy engine XML,
+/// which decode() refuses. Reading nothing there left every oscillator
+/// looking like "none" and the translated synth silent.
+juce::ValueTree savedProperties(const DeviceInfo& device) {
+    return tracktion_adapter::devicePluginTreeFromState(device.pluginState);
 }
 
-int propertyOr(const juce::NamedValueSet& props, const juce::String& name, int fallback) {
-    const auto* value = props.getVarPointer(name);
-    return value != nullptr ? static_cast<int>(*value) : fallback;
+int propertyOr(const juce::ValueTree& props, const juce::String& name, int fallback) {
+    const auto value = props.getProperty(juce::Identifier(name));
+    return value.isVoid() ? fallback : static_cast<int>(value);
 }
 
 void setSlot(DeviceInfo& device, int slot, float value) {
@@ -153,8 +156,8 @@ DeviceInfo polySynthDevice(const DeviceInfo& fourOsc) {
     return device;
 }
 
-void translateOscillators(const DeviceInfo& fourOsc, const juce::NamedValueSet& props,
-                          DeviceInfo& poly, std::vector<FourOscGap>& gaps) {
+void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& props, DeviceInfo& poly,
+                          std::vector<FourOscGap>& gaps) {
     for (auto osc = 1; osc <= PolySynth::kNumOscillators; ++osc) {
         const auto number = juce::String(osc);
         const auto base = PolySynth::kOscBaseSlot + (osc - 1) * PolySynth::kOscSlotCount;
@@ -225,7 +228,7 @@ void translateEnvelopes(const DeviceInfo& fourOsc, DeviceInfo& poly) {
     percent("filterVelocity", PolySynth::kVelFilterSlot);
 }
 
-void translateFilter(const DeviceInfo& fourOsc, const juce::NamedValueSet& props, DeviceInfo& poly,
+void translateFilter(const DeviceInfo& fourOsc, const juce::ValueTree& props, DeviceInfo& poly,
                      std::vector<FourOscGap>& gaps) {
     const auto type = polyFilterTypeFor(propertyOr(props, "filterType", 0));
 
@@ -259,7 +262,7 @@ void translateFilter(const DeviceInfo& fourOsc, const juce::NamedValueSet& props
         gaps.push_back({"Filter Key", "dropped: no keyboard tracking"});
 }
 
-void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::NamedValueSet& props,
+void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::ValueTree& props,
                             std::vector<FourOscGap>& gaps) {
     for (auto osc = 1; osc <= PolySynth::kNumOscillators; ++osc)
         if (propertyOr(props, "voices" + juce::String(osc), 1) > 1) {
@@ -319,7 +322,7 @@ float gainFromDecibels(float decibels) {
  * @p nextId hands out ids for the devices, which the caller owns: these are
  * new devices in the project and cannot reuse the synth's.
  */
-std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::NamedValueSet& props,
+std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::ValueTree& props,
                                        const std::function<DeviceId()>& nextId) {
     ChainInfo chain;
 
