@@ -143,6 +143,38 @@ TEST_CASE("TargetResolver - resolve unknown ResolverRef kind fails", "[aliases][
 // @ sigil - selected-chain device preference
 // ============================================================================
 
+TEST_CASE("A pathless alias resolves by parameter name or not at all", "[aliases][resolver]") {
+    // The device was matched on its name, which says nothing about its
+    // parameter ORDER. Lending it the index the alias stored for whatever it
+    // was made against puts the alias on a neighbouring control.
+    DeviceInfo synth = makeDevice(10, "Poly Synth", {"Cutoff", "Resonance"});
+
+    FixedChainContext ctx;
+    ctx.addDevice(makePath(1, 10), synth);
+
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+
+    StoredAlias alias;
+    alias.pluginTypeKey = "polysynth";  // pluginNameToAlias("Poly Synth")
+    alias.paramIndex = 1;               // "Resonance" here, something else where it was made
+
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    reg.set(AliasLayer::UserGlobal, "detune", alias);
+    CHECK_FALSE(resolver.resolve(Target{AliasRef{"detune", "polysynth"}}).ok());
+
+    // A name the device does have resolves to that parameter's own index.
+    reg.set(AliasLayer::UserGlobal, "cutoff", alias);
+    const auto found = resolver.resolve(Target{AliasRef{"cutoff", "polysynth"}});
+    REQUIRE(found.ok());
+    CHECK(found.target.paramIndex == 0);
+}
+
 TEST_CASE("@ resolution prefers selected-chain devices over registry", "[aliases][resolver]") {
     // A device named "Serum" lives on the selected track (track 1).
     // The AliasRegistry also has a type-level alias for "serum.cutoff" pointing

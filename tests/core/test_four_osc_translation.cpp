@@ -159,6 +159,24 @@ TEST_CASE("A patch that wrote nothing lands on 4OSC's defaults", "[core][4osc]")
     CHECK(translated.gaps.empty());
 }
 
+TEST_CASE("A stock-named 4OSC does not stay called 4OSC", "[core][4osc]") {
+    // A pathless alias materialises against the device whose normalised NAME
+    // matches its key, so a device still called 4OSC answers for 4OSC's
+    // aliases after the swap.
+    auto stock = FourOscPatch{}.build();
+    stock.name = "4OSC";
+    CHECK(magda::daw::audio::translateFourOsc(stock).device.name == "Poly Synth");
+
+    auto registered = FourOscPatch{}.build();
+    registered.name = "4OSC Synth";
+    CHECK(magda::daw::audio::translateFourOsc(registered).device.name == "Poly Synth");
+
+    // A name somebody chose is theirs.
+    auto named = FourOscPatch{}.build();
+    named.name = "Bass";
+    CHECK(magda::daw::audio::translateFourOsc(named).device.name == "Bass");
+}
+
 TEST_CASE("What the host owns on the slot survives the swap", "[core][4osc]") {
     // The gain knob, the macros and the modulators belong to the device in the
     // chain, not to the plugin being replaced underneath it. Building the

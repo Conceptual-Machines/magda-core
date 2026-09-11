@@ -253,6 +253,12 @@ int polyVoiceModeFor(int fourOscMode) {
     }
 }
 
+/// The names a 4OSC carries when nobody has renamed it: the id a project
+/// saves, and the display name the registry gives it (BaseDevicePack.cpp).
+bool isStockFourOscName(const juce::String& name) {
+    return name.equalsIgnoreCase("4osc") || name.equalsIgnoreCase("4OSC Synth");
+}
+
 /// A Poly Synth at its defaults, which is what everything 4OSC does not
 /// describe is left at.
 ///
@@ -287,6 +293,14 @@ DeviceInfo polySynthDevice(const DeviceInfo& fourOsc) {
     device.miniMixerParameters.clear();
     device.aiSoundDesignerParameters.clear();
     device.currentParameterPage = 0;
+
+    // A Poly Synth called "4OSC" is wrong everywhere the name is read, the
+    // alias registry included: a pathless alias materialises against the
+    // device whose normalised NAME matches its key (TargetResolver.cpp), so a
+    // 4OSC alias would come straight back onto this one. A name somebody
+    // chose is theirs and stays.
+    if (isStockFourOscName(device.name))
+        device.name = metadata.deviceName();
 
     for (auto index = 0; index < metadata.parameterCount(); ++index) {
         auto info = metadata.parameterInfo(index);
