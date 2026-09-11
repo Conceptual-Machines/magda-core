@@ -13,6 +13,7 @@
 #endif
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
@@ -683,7 +684,10 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
                              ? ParameterScale::Boolean
                              : (numStates > 0 && numStates <= 12 ? ParameterScale::Discrete
                                                                  : ParameterScale::Linear);
-            info.scanInput.paramIndex = i;
+            // The position in this list, not the loop counter: a parameter
+            // skipped above leaves the two apart, and a detection result is
+            // applied by position.
+            info.scanInput.paramIndex = static_cast<int>(result.size());
             info.scanInput.name = info.name;
             info.scanInput.label = parameter->getLabel();
             info.scanInput.rangeMin = info.rangeMin;
@@ -715,22 +719,31 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
     if (instance == nullptr)
         return result;
 
-    const auto parameters = instance->getParameters();
-    for (int i = 0; i < parameters.size(); ++i) {
-        auto* parameter = parameters[i];
-        if (parameter == nullptr || !parameter->isAutomatable())
-            continue;
+    // The host's own list rather than the plugin's raw array, because that is
+    // what DeviceInfo::parameters is built from: same filter, same order, same
+    // names. A config entry is stored by its position in the list, so a scan
+    // that filtered differently -- this one dropped unnamed parameters, which
+    // the model keeps -- saved every later override onto the wrong control
+    // (#2601). The wrapper pair is the host's own and is not configurable, so
+    // it is not offered.
+    const auto described = magda::describeHostParameters(*instance, magda::DeviceInfo{});
+    const auto order = magda::hostParameterOrder(*instance);
+
+    for (const auto& model : described.parameters) {
+        // The host slot addresses the live parameter; the position in this list
+        // is what a scan result is addressed by. The two differ by the wrapper
+        // pair, and everything downstream -- the dialog's rows, the config
+        // file's entries -- counts positions.
+        auto* parameter = order[static_cast<std::size_t>(model.paramIndex)];
 
         ScannedPluginParameter info;
-        info.name = parameter->getName(128);
-        if (info.name.isEmpty())
-            continue;
+        info.name = model.name;
         info.defaultValue = parameter->getDefaultValue();
         const auto rawLabel = parameter->getLabel().trim();
         info.unit = rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("(")
                         ? (rawLabel.isEmpty() ? juce::String("%") : rawLabel)
                         : juce::String("%");
-        info.scanInput.paramIndex = i;
+        info.scanInput.paramIndex = static_cast<int>(result.size());
         info.scanInput.name = info.name;
         info.scanInput.label = rawLabel;
 

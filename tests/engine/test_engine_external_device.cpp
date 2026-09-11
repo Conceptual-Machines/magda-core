@@ -788,6 +788,21 @@ const magda::ParameterInfo* resolvedParameterAt(const adapter::ExternalDeviceRes
     return result.resolvedDevice->findParameterByIndex(index);
 }
 
+/// The model of a hosted plugin whose Tone has been detected as a frequency.
+///
+/// `displayText` is deliberately absent, which is the shape a project load
+/// produces: the provider is not serialised, and the host attaches one only
+/// after the plugin has been restored.
+magda::DeviceInfo externalDeviceWithDetectedRange(float tone) {
+    auto device = externalDevice();
+    auto& detected = device.parameters[1];
+    detected.minValue = 20.0f;
+    detected.maxValue = 20000.0f;
+    detected.scale = magda::ParameterScale::Logarithmic;
+    detected.currentValue = tone;
+    return device;
+}
+
 }  // namespace
 
 TEST_CASE("External device reports the instance's latency", "[engine][external]") {
@@ -1991,6 +2006,55 @@ TEST_CASE("Resolved parameters carry no text provider of their own", "[engine][e
     const auto* tone = resolvedParameterAt(result, 3);
     REQUIRE(tone != nullptr);
     CHECK(tone->displayText == nullptr);
+}
+
+TEST_CASE("A detected display range does not move the value it is drawn against",
+          "[engine][external][2601]") {
+    // Detection gives a hosted parameter a real range to be drawn against, and
+    // the model goes on holding the plugin's own normalised number underneath.
+    // The write to the plugin and the read back have to agree on which of the
+    // two they are in, or opening a project moves every detected parameter.
+    auto model = externalDeviceWithDetectedRange(0.7f);
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // The plugin was handed the position the model holds, not that number read
+    // as a frequency and squashed against the bottom of 20 Hz.
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+
+    // And what came back is the same number, rather than the 20 Hz a conversion
+    // through the display range would have written into a field the plan, the
+    // UI and automation all read as normalised.
+    magda::applyRestoredParameters(model, result.restoredParameters);
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
+}
+
+TEST_CASE("The answer does not depend on a provider no project carries",
+          "[engine][external][2601]") {
+    // ParameterInfo::displayText is not serialised, so the same device has one
+    // an hour into a session and none on the load that opened it. A restore
+    // that read it would move a detected parameter on every project open and
+    // leave it alone on every reload of the same slot.
+    magda::installDeviceParameterDisplayTextProviderFactory();
+
+    auto model = externalDeviceWithDetectedRange(0.7f);
+    model.parameters[1].displayText =
+        magda::makeParameterDisplayTextProvider({}, model.id, model.parameters[1].paramIndex);
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+
+    magda::applyRestoredParameters(model, result.restoredParameters);
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {

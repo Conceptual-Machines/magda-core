@@ -268,6 +268,10 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     return true;
 }
 
+bool applyToDevice(DeviceInfo& device) {
+    return applyToDevice(configIdFor(device), device);
+}
+
 bool hasAiSoundDesignerParameters(const juce::String& uniqueId) {
     const auto config = load(uniqueId);
     if (!config)

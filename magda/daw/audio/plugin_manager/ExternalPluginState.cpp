@@ -4,7 +4,6 @@
 #include <map>
 
 #include "../Vst3Preset.hpp"
-#include "core/ParameterUtils.hpp"
 
 namespace magda {
 
@@ -88,6 +87,30 @@ void applyVst3Records(DeviceInfo& device, const Vst3PresetRead& read) {
         device.vst3ClassId = vst3::classIdFromPreset(read.preset);
 
     device.vst3Preset = juce::Base64::toBase64(read.preset.getData(), read.preset.getSize());
+}
+
+/// Where @p info's stored value sits in [0, 1], as the plugin takes it.
+///
+/// A hosted plugin's parameters are stored in the plugin's own normalised
+/// domain whatever display range has been detected over them, and
+/// teMinValue/teMaxValue is the record of that domain. Deliberately not
+/// ParameterUtils::modelToNormalizedValue(), which tells a display-mapped
+/// internal device from a hosted plugin by whether a display-text provider is
+/// attached: no project serialises that provider, so the same device would
+/// answer one way on the load that opens a project and another once the host
+/// had attached one (#2601).
+float normalisedFrom(const ParameterInfo& info) {
+    const auto teSpan = info.teMaxValue - info.teMinValue;
+    const auto normalised =
+        teSpan > 0.0f ? (info.currentValue - info.teMinValue) / teSpan : info.currentValue;
+
+    return std::clamp(normalised, 0.0f, 1.0f);
+}
+
+/// The inverse: what the model stores for a plugin reporting @p normalised.
+float modelValueFrom(float normalised, const ParameterInfo& info) {
+    const auto teSpan = info.teMaxValue - info.teMinValue;
+    return teSpan > 0.0f ? info.teMinValue + normalised * teSpan : normalised;
 }
 
 /// The length the fork asks a plugin for its parameter names at.
@@ -227,8 +250,7 @@ SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
         if (info == nullptr)
             continue;
 
-        parameter->setValue(
-            std::clamp(ParameterUtils::realToNormalized(info->currentValue, *info), 0.0f, 1.0f));
+        parameter->setValue(normalisedFrom(*info));
     }
 
     // The portable preset is asked first, because a project only carries one
@@ -298,8 +320,11 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
         for (auto* bucket : {&device.parameters, &device.wrapperParameters})
             for (auto& info : *bucket)
                 if (info.paramIndex == parameter.paramIndex)
-                    info.currentValue = ParameterUtils::normalizedToReal(
-                        parameter.value, ParameterUtils::domainOf(info));
+                    // The inverse of what applySavedPluginState() wrote.
+                    // Converting to the display range instead would put a
+                    // frequency in a field everything else reads as
+                    // normalised (#2601).
+                    info.currentValue = modelValueFrom(parameter.value, info);
 }
 
 Vst3PresetRead readVst3Preset(const juce::AudioPluginInstance& instance) {
