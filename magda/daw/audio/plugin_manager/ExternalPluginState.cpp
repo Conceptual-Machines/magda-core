@@ -1,6 +1,7 @@
 #include "ExternalPluginState.hpp"
 
 #include <algorithm>
+#include <map>
 
 #include "../Vst3Preset.hpp"
 #include "core/ParameterUtils.hpp"
@@ -89,6 +90,59 @@ void applyVst3Records(DeviceInfo& device, const Vst3PresetRead& read) {
     device.vst3Preset = juce::Base64::toBase64(read.preset.getData(), read.preset.getSize());
 }
 
+/// The length the fork asks a plugin for its parameter names at.
+constexpr int kParameterNameLength = 1024;
+
+/// A record over [0, 1], which is the only shape an external plugin's
+/// parameters take: the fork wraps every one of them in that range whatever the
+/// plugin's own units are.
+ParameterInfo normalisedParameter(int index, const juce::String& name) {
+    ParameterInfo info;
+    info.paramIndex = index;
+    info.name = name;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    return info;
+}
+
+/// The fork's name for @p parameter, de-duplication included: a repeated name
+/// gains a " (2)", and an unnamed one is numbered by its position in the
+/// plugin's own array. @p used counts the names seen before this one.
+juce::String hostParameterName(const juce::AudioProcessorParameter& parameter,
+                               std::map<juce::String, int>& used) {
+    const auto declared = parameter.getName(kParameterNameLength);
+    const auto seen = ++used[declared.isEmpty() ? juce::String("Unnamed") : declared];
+
+    if (declared.isEmpty())
+        return "Unnamed " + juce::String(parameter.getParameterIndex() + 1);
+
+    return seen > 1 ? declared + " (" + juce::String(seen) + ")" : declared;
+}
+
+/// The fork's id for @p parameter: the plugin's own where it declares one, and
+/// its index otherwise.
+juce::String hostParameterId(const juce::AudioProcessorParameter& parameter) {
+    if (const auto* withId = dynamic_cast<const juce::AudioProcessorParameterWithID*>(&parameter))
+        return withId->paramID;
+
+    return juce::String(parameter.getParameterIndex());
+}
+
+/// One of the wrapper pair, at the value @p device holds for it.
+ParameterInfo wrapperParameter(const DeviceInfo& device, int index, const juce::String& id,
+                               const juce::String& name, WrapperRole role, float defaultValue) {
+    auto info = normalisedParameter(index, name);
+    info.stableId = id;
+    info.wrapperRole = role;
+    info.defaultValue = defaultValue;
+
+    const auto* saved = modelParameterAt(device, index);
+    info.currentValue = saved != nullptr ? saved->currentValue : defaultValue;
+    return info;
+}
+
 }  // namespace
 
 std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
@@ -103,6 +157,32 @@ std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
             order.push_back(parameter);
 
     return order;
+}
+
+HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
+                                      const DeviceInfo& device) {
+    HostParameters described;
+
+    described.wrapperParameters = {
+        wrapperParameter(device, 0, "dry level", "Dry Level", WrapperRole::DryGain, 0.0f),
+        wrapperParameter(device, 1, "wet level", "Wet Level", WrapperRole::WetGain, 1.0f)};
+
+    const auto order = hostParameterOrder(instance);
+    std::map<juce::String, int> used;
+
+    for (int index = kWrapperParameterCount; index < static_cast<int>(order.size()); ++index) {
+        const auto* parameter = order[static_cast<std::size_t>(index)];
+        if (parameter == nullptr)
+            continue;
+
+        auto info = normalisedParameter(index, hostParameterName(*parameter, used));
+        info.stableId = hostParameterId(*parameter);
+        info.defaultValue = parameter->getDefaultValue();
+        info.currentValue = parameter->getValue();
+        described.parameters.push_back(std::move(info));
+    }
+
+    return described;
 }
 
 /** @brief Suspends a plugin's processing for the lifetime of this object. */
