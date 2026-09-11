@@ -216,15 +216,20 @@ void StepSequencerUI::updateFromParameters(const std::vector<magda::ParameterInf
 }
 
 void StepSequencerUI::setPattern(const step_pattern::MonoPattern& pattern) {
-    if (pattern == pattern_)
-        return;
+    // The controls are written whether or not the pattern moved. Returning
+    // early on an unchanged pattern left them at their own defaults for a
+    // pattern that happens to equal the default one, which reads as a 16-step
+    // pattern under a Steps of 1 (#2602). Only the repaint is worth skipping.
+    const bool changed = !(pattern == pattern_);
 
     pattern_ = pattern;
     const int steps = pattern_.playingLength();
     stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
     rampCurveDisplay_.setNumTicks(steps);
     cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
-    repaint();
+
+    if (changed)
+        repaint();
 }
 
 void StepSequencerUI::syncSettingsFromDevice() {
