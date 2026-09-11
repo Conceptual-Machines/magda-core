@@ -419,7 +419,8 @@ TEST_CASE("The built-in effects become a rack of MAGDA devices", "[core][4osc]")
                            .build();
 
     auto next = magda::DeviceId{100};
-    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(patch, nextEffectId);
 
     REQUIRE(translated.effects != nullptr);
     REQUIRE(translated.effects->chains.size() == 1);
@@ -453,8 +454,8 @@ TEST_CASE("The delay is synced to the beat value 4OSC held", "[core][4osc]") {
             patch.floatProperty("delay", beats);
 
         auto next = magda::DeviceId{100};
-        const auto translated =
-            magda::daw::audio::translateFourOsc(patch.build(), [&next] { return next++; });
+        const auto nextEffectId = [&next] { return next++; };
+        const auto translated = magda::daw::audio::translateFourOsc(patch.build(), nextEffectId);
 
         REQUIRE(translated.effects != nullptr);
         const auto& elements = translated.effects->chains.front().elements;
@@ -486,7 +487,8 @@ TEST_CASE("Only the effects that were switched on are built", "[core][4osc]") {
     const auto patch = FourOscPatch{}.property("reverbOn", 1).build();
 
     auto next = magda::DeviceId{100};
-    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(patch, nextEffectId);
 
     REQUIRE(translated.effects != nullptr);
     REQUIRE(translated.effects->chains.front().elements.size() == 1);
@@ -497,8 +499,8 @@ TEST_CASE("A patch with no effects on builds no rack", "[core][4osc]") {
     const auto patch = FourOscPatch{}.property("waveShape1", 3).build();
 
     auto next = magda::DeviceId{100};
-    CHECK(magda::daw::audio::translateFourOsc(patch, [&next] { return next++; }).effects ==
-          nullptr);
+    const auto nextEffectId = [&next] { return next++; };
+    CHECK(magda::daw::audio::translateFourOsc(patch, nextEffectId).effects == nullptr);
 }
 
 TEST_CASE("The effects are no longer reported as losses", "[core][4osc]") {
@@ -506,7 +508,8 @@ TEST_CASE("The effects are no longer reported as losses", "[core][4osc]") {
     const auto patch = FourOscPatch{}.property("reverbOn", 1).property("delayOn", 1).build();
 
     auto next = magda::DeviceId{100};
-    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(patch, nextEffectId);
 
     CHECK_FALSE(mentions(translated.gaps, "Reverb"));
     CHECK_FALSE(mentions(translated.gaps, "Delay"));

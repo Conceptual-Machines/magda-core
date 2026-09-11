@@ -53,6 +53,7 @@ std::vector<juce::String> distinctGaps(const std::vector<FourOscCandidate>& cand
 int convertIn(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
               TrackManager& tracks, std::set<ChainNodePath>& replaced) {
     auto converted = 0;
+    const auto nextEffectId = [&tracks] { return tracks.allocateDeviceId(); };
 
     for (auto index = 0; index < static_cast<int>(elements.size()); ++index) {
         auto& element = elements[static_cast<std::size_t>(index)];
@@ -82,7 +83,7 @@ int convertIn(std::vector<ChainElement>& elements, const ChainNodePath& parentPa
         if (!isFourOscDevice(device))
             continue;
 
-        auto translated = translateFourOsc(device, [&tracks] { return tracks.allocateDeviceId(); });
+        auto translated = translateFourOsc(device, nextEffectId);
         device = std::move(translated.device);
         ++converted;
         replaced.insert(devicePath);
@@ -195,7 +196,7 @@ int convertFourOscDevices(TrackManager& tracks) {
     auto converted = 0;
     std::set<ChainNodePath> replaced;
 
-    tracks.forEachTrackIncludingMaster([&tracks, &converted, &replaced](TrackInfo& track) {
+    const auto convertTrack = [&tracks, &converted, &replaced](TrackInfo& track) {
         const auto onThisTrack = convertIn(track.chain.fxChainElements,
                                            ChainNodePath::trackLevel(track.id), tracks, replaced);
         if (onThisTrack == 0)
@@ -203,7 +204,9 @@ int convertFourOscDevices(TrackManager& tracks) {
 
         converted += onThisTrack;
         tracks.notifyTrackDevicesChanged(track.id);
-    });
+    };
+
+    tracks.forEachTrackIncludingMaster(convertTrack);
 
     if (replaced.empty())
         return converted;
@@ -211,9 +214,11 @@ int convertFourOscDevices(TrackManager& tracks) {
     // Poly Synth's parameters are different controls in different units at the
     // same indices, and the path a link names still resolves. A macro left
     // pointing at 4OSC's Tune 1 would drive Poly Synth's Osc 1 Wave.
-    tracks.forEachTrackIncludingMaster([&replaced](TrackInfo& track) {
+    const auto dropStaleLinks = [&replaced](TrackInfo& track) {
         device_param_migrations::dropParamLinksInTrack(track, replaced);
-    });
+    };
+
+    tracks.forEachTrackIncludingMaster(dropStaleLinks);
 
     auto& automation = AutomationManager::getInstance();
     for (const auto lane :

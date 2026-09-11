@@ -94,22 +94,21 @@ void offerFourOscConversion() {
     prompt->alert.addButton("Create it", 1, juce::KeyPress(juce::KeyPress::returnKey));
     prompt->alert.addButton("Not now", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
-    prompt->alert.enterModalState(true, juce::ModalCallbackFunction::create([prompt](int result) {
-                                      // Remembered whichever button was pressed: somebody who ticks
-                                      // it and converts this project does not want asking about the
-                                      // next.
-                                      if (prompt->dontAskAgain.getToggleState())
-                                          Config::getInstance().setSkipFourOscConversionPrompt(
-                                              true);
+    const auto onDismissed = [prompt](int result) {
+        // Remembered whichever button was pressed: somebody who ticks it and
+        // converts this project does not want asking about the next.
+        if (prompt->dontAskAgain.getToggleState())
+            Config::getInstance().setSkipFourOscConversionPrompt(true);
 
-                                      if (result != 1)
-                                          return;
+        if (result != 1)
+            return;
 
-                                      // Off the modal callback, so the alert is gone before a save
-                                      // dialog or an error of its own can appear behind it.
-                                      juce::MessageManager::callAsync([] { convertAndSave(); });
-                                  }),
-                                  false);
+        // Off the modal callback, so the alert is gone before a save dialog or
+        // an error of its own can appear behind it.
+        juce::MessageManager::callAsync([] { convertAndSave(); });
+    };
+
+    prompt->alert.enterModalState(true, juce::ModalCallbackFunction::create(onDismissed), false);
 }
 
 }  // namespace magda::daw::ui

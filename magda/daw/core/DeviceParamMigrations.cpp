@@ -379,14 +379,16 @@ void dropParamLinksInTrack(TrackInfo& track, const std::set<ChainNodePath>& path
                paths.count(target.devicePath) > 0;
     };
 
-    forEachLinkOwnerInTrack(track, [&addressed](MacroArray& macros, ModArray& mods) {
+    const auto dropFromOwner = [&addressed](MacroArray& macros, ModArray& mods) {
+        const auto isAddressed = [&addressed](const auto& link) { return addressed(link.target); };
+
         for (auto& macro : macros)
-            std::erase_if(macro.links,
-                          [&addressed](const MacroLink& link) { return addressed(link.target); });
+            std::erase_if(macro.links, isAddressed);
         for (auto& mod : mods)
-            std::erase_if(mod.links,
-                          [&addressed](const ModLink& link) { return addressed(link.target); });
-    });
+            std::erase_if(mod.links, isAddressed);
+    };
+
+    forEachLinkOwnerInTrack(track, dropFromOwner);
 }
 
 std::vector<AutomationLaneId> lanesAddressing(const std::vector<AutomationLaneInfo>& lanes,
