@@ -522,6 +522,30 @@ TEST_CASE("4OSC's master level becomes the synth's output gain", "[core][4osc]")
                     PolySynth::kOutputGainSlot) == Catch::Approx(-6.0f));
 }
 
+TEST_CASE("A patch with effects puts both gains after the rack", "[core][4osc]") {
+    // 4OSC applies its master level after all four effects, and the slot's own
+    // trim after the whole plugin. Left on the synth, both would sit in front
+    // of the distortion and change its drive.
+    auto source = FourOscPatch{}
+                      .property("distortionOn", 1)
+                      .parameter("masterLevel", -6.0f)
+                      .parameter("distortion", 0.5f)
+                      .build();
+    source.gainDb = -3.0f;
+    source.gainValue = 0.7f;
+
+    auto next = magda::DeviceId{100};
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(source, nextEffectId);
+
+    REQUIRE(translated.effects != nullptr);
+    CHECK(translated.effects->volume == Catch::Approx(-9.0f));
+
+    CHECK(slotValue(translated.device, PolySynth::kOutputGainSlot) == Catch::Approx(0.0f));
+    CHECK(translated.device.gainDb == Catch::Approx(0.0f));
+    CHECK(translated.device.gainValue == Catch::Approx(1.0f));
+}
+
 TEST_CASE("Converting a project replaces the synth and adds its effects",
           "[core][4osc][.singleton]") {
     auto& tracks = magda::TrackManager::getInstance();

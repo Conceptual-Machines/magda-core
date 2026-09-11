@@ -24,6 +24,11 @@ using PolySynth = compiled::MagdaPolySynthCompiledPlugin;
 /// 4OSC's own wave numbering (FourOscPlugin.h).
 enum class FourOscWave { none, sine, triangle, sawUp, sawDown, square, random };
 
+/// The rack fader's own range (RackComponent.cpp), which is what the gains
+/// moved onto it have to fit in.
+constexpr float kRackFaderMinDb = -60.0f;
+constexpr float kRackFaderMaxDb = 6.0f;
+
 /// Poly Synth's, which is a different order and a shorter list.
 constexpr int kPolySine = 0;
 constexpr int kPolySaw = 1;
@@ -596,10 +601,27 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
     if (nextEffectId)
         translated.effects = buildEffects(fourOsc, props, nextEffectId);
 
-    // 4OSC's master level is the synth's own output, not an effect.
     const auto master = parameterValue(fourOsc, props, "masterLevel");
-    setSlot(translated.device, PolySynth::kOutputGainSlot,
-            clampToSlot(translated.device, PolySynth::kOutputGainSlot, master));
+
+    if (translated.effects == nullptr) {
+        // Nothing between the synth and the slot's output, so the master level
+        // is the synth's own output gain.
+        setSlot(translated.device, PolySynth::kOutputGainSlot,
+                clampToSlot(translated.device, PolySynth::kOutputGainSlot, master));
+
+        return translated;
+    }
+
+    // 4OSC runs its effects BEFORE its master level, and the slot's own trim
+    // follows the whole plugin (FourOscPlugin::applyEffects). Split across two
+    // slots, both of those now sit in front of the rack, where a gain is a
+    // different distortion drive and a different delay and reverb balance.
+    // The rack's fader is where they land: it is the one control in the
+    // translation that is downstream of all four effects.
+    translated.effects->volume =
+        std::clamp(master + translated.device.gainDb, kRackFaderMinDb, kRackFaderMaxDb);
+    translated.device.gainDb = 0.0f;
+    translated.device.gainValue = 1.0f;
 
     return translated;
 }

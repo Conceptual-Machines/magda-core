@@ -101,13 +101,24 @@ int convertIn(std::vector<ChainElement>& elements, const ChainNodePath& parentPa
     return converted;
 }
 
+/// The alias layers a project owns. UserGlobal is the user's own config and
+/// Curated is shipped: a conversion makes a copy of one project and has no
+/// business editing either.
+bool isProjectLocal(AliasLayer layer) {
+    return layer == AliasLayer::UserProject || layer == AliasLayer::AutoGen;
+}
+
 /**
- * @brief Forget every controller binding and alias naming a 4OSC parameter on
- * @p paths.
+ * @brief Forget every project-local controller binding and alias naming a 4OSC
+ * parameter on @p paths.
  *
  * Both store a concrete path and index, and the path still resolves after the
  * replacement, so what they addressed on 4OSC they would address on Poly
  * Synth. Bindings go first: one of them can reach its target through an alias.
+ *
+ * Project scope only. A global binding or a UserGlobal alias belongs to the
+ * user across every project, including the one this copy was made from, and
+ * removing it here would take it from all of them.
  */
 void forgetExplicitReferences(const std::set<ChainNodePath>& paths) {
     auto& bindings = BindingRegistry::getInstance();
@@ -115,12 +126,13 @@ void forgetExplicitReferences(const std::set<ChainNodePath>& paths) {
 
     for (const auto& path : paths)
         for (auto index = 0; index < fourOscParameterCount(); ++index) {
-            bindings.removeFor(ControlTarget::pluginParam(path, index));
+            const auto target = ControlTarget::pluginParam(path, index);
+
+            for (const auto& binding : bindings.findFor(target))
+                bindings.remove(BindingScope::Project, binding.id);
 
             for (const auto& match : aliases.findByPath(path, index, /*autoGenOnly=*/false))
-                // Curated is shipped and read-only, and carries no concrete
-                // path to have matched on.
-                if (match.layer != AliasLayer::Curated)
+                if (isProjectLocal(match.layer))
                     aliases.clear(match.layer, match.canonicalName);
         }
 }
