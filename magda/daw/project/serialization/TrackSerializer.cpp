@@ -522,7 +522,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
 
     // Plugin native state (base64 blob, only if captured)
-    if (device.pluginState.isNotEmpty()) {
+    if (device.hasPluginState()) {
         obj->setProperty("pluginState", device.pluginState);
     }
 

@@ -2161,7 +2161,7 @@ te::Plugin::Ptr PluginManager::createPluginOnly(TrackId trackId, const DeviceInf
                 edit_.getPluginCache().createNewPlugin(te::ExternalPlugin::xmlTypeName, descCopy);
 
             // Restore plugin native state for rack plugins
-            if (plugin && device.pluginState.isNotEmpty()) {
+            if (plugin && device.hasPluginState()) {
                 if (auto* ext = dynamic_cast<te::ExternalPlugin*>(plugin.get())) {
                     ext->state.setProperty(te::IDs::state, device.pluginState, nullptr);
                     if (!ext->isInitialisingAsync()) {
@@ -2344,7 +2344,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                     // authoritative restore + param-cache refresh happens after
                     // syncFromDeviceInfo below, where it can't be clobbered by the
                     // saved per-parameter array.)
-                    if (device.pluginState.isNotEmpty()) {
+                    if (device.hasPluginState()) {
                         ext->restorePluginStateFromValueTree(ext->state);
                     }
                     // Imported DAWproject .vstpreset state (instance is live here).
@@ -2581,7 +2581,7 @@ te::Plugin::Ptr PluginManager::loadDeviceAsPlugin(const ChainNodePath& devicePat
                 if ((device.pluginId.containsIgnoreCase(daw::audio::DrumGridPlugin::xmlTypeName) ||
                      device.pluginId.containsIgnoreCase(
                          daw::audio::MagdaSamplerPlugin::xmlTypeName)) &&
-                    device.pluginState.isNotEmpty()) {
+                    device.hasPluginState()) {
                     auto savedState = daw::audio::tracktion_adapter::devicePluginTreeFromState(
                         device.pluginState);
                     if (savedState.isValid())

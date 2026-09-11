@@ -141,7 +141,7 @@ Provenance provenanceFromMagdaVersion(const juce::String& version) {
 }
 
 bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& provenance) {
-    if (device.format != PluginFormat::Internal || device.pluginState.isEmpty())
+    if (device.format != PluginFormat::Internal || !device.hasPluginState())
         return false;
 
     const auto doc = ds::decode(device.pluginState);
