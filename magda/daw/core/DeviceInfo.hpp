@@ -429,7 +429,8 @@ struct DeviceInfo {
     // Multi-output configuration (for instruments with >2 output channels)
     MultiOutConfig multiOut;
 
-    // Plugin native state (base64-encoded binary blob from TE ExternalPlugin)
+    // Saved device state. An external plugin's own chunk, base64-encoded; for
+    // an internal device, a device_state document (DeviceStateHydration.cpp).
     juce::String pluginState;
 
     // VST3 class id (32-char hex FUID) for hosted VST3 plugins, captured once
@@ -506,9 +507,8 @@ struct DeviceInfo {
         return format != PluginFormat::Internal;
     }
 
-    /// Whether the plugin saved a state chunk. A preset without one carries
-    /// only its parameter values.
-    bool hasPluginChunk() const {
+    /// Whether pluginState holds anything.
+    bool hasPluginState() const {
         return pluginState.isNotEmpty();
     }
 

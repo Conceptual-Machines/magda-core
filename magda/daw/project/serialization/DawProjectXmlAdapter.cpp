@@ -363,7 +363,7 @@ std::optional<DeviceStateFile> deviceStateFile(const DeviceInfo& device) {
             return DeviceStateFile{base + ".vstpreset", decoded.getMemoryBlock()};
     }
 
-    if (device.pluginState.isNotEmpty()) {
+    if (device.hasPluginState()) {
         const auto* utf8 = device.pluginState.toRawUTF8();
         return DeviceStateFile{base + ".bin", juce::MemoryBlock(utf8, std::strlen(utf8))};
     }

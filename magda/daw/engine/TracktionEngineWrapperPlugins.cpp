@@ -848,7 +848,7 @@ void TracktionEngineWrapper::applyPluginStateAt(const ChainNodePath& devicePath)
 
     // A preset with no chunk must not repopulate: that would discard the
     // parameter values it carried.
-    if (!live->hasPluginChunk())
+    if (!live->hasPluginState())
         return;
 
     applyExternalPluginChunk(plugin.get(), live->pluginState);

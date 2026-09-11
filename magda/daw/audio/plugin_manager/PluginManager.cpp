@@ -577,7 +577,7 @@ void PluginManager::restorePluginState(const ChainNodePath& devicePath,
                                        const te::Plugin::Ptr& plugin) {
     auto& tm = TrackManager::getInstance();
     auto* devInfo = tm.getDeviceInChainByPath(devicePath);
-    if (!devInfo || devInfo->pluginState.isEmpty()) {
+    if (!devInfo || !devInfo->hasPluginState()) {
         return;
     }
 
