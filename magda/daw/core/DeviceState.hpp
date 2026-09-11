@@ -135,4 +135,13 @@ void forEachNode(const Node& root, const std::function<void(const Node&)>& visit
  */
 juce::ValueTree toValueTree(const Node& node);
 
+/**
+ * @brief A v1 document as the same tree, for the engine that reads it.
+ *
+ * The engine's object ids and the modifier assignments it hangs on every
+ * plugin are dropped; what is left is the device's own state. Invalid when
+ * @p text is not a v1 document or does not parse.
+ */
+juce::ValueTree legacyEngineStateTree(const juce::String& text);
+
 }  // namespace magda::device_state

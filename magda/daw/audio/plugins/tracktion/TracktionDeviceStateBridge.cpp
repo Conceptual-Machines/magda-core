@@ -120,16 +120,10 @@ juce::String canonicalDeviceType(const juce::String& pluginType) {
 }
 
 juce::ValueTree legacyPluginTree(const juce::String& savedState) {
-    auto xml = juce::parseXML(savedState);
-    if (!xml)
-        return {};
-
-    auto tree = juce::ValueTree::fromXml(*xml);
+    auto tree = ds::legacyEngineStateTree(savedState);
     if (!tree.isValid())
         return {};
 
-    stripTracktionIdsRecursive(tree);
-    stripModifierAssignmentsRecursive(tree);
     adoptCanonicalPluginType(tree);
     return tree;
 }

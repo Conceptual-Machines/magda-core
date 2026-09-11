@@ -967,6 +967,56 @@ TEST_CASE("an engine-built arpeggiator gets the settings the model saved",
     CHECK(arp->hardAngle.load());
 }
 
+TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][devices][2602]") {
+    // Every other fixture here builds its state with device_state::encode, so
+    // they all exercise the one format that already worked. Most internal
+    // devices in a project folder are still saved as the engine's v1 XML,
+    // which decode() refuses by design: read only v2 and every one of them
+    // came up running its defaults (#2602).
+    magda::DeviceInfo model;
+    model.pluginId = "arpeggiator";
+    model.pluginState = R"(<PLUGIN type="arpeggiator" id="1042" arpRampCycles="5"
+                                  arpQuantize="0.75" arpQuantizeSub="32" arpHardAngle="1">
+                             <MODIFIERASSIGNMENTS/>
+                           </PLUGIN>)";
+    REQUIRE(magda::device_state::looksLikeLegacyEngineState(model.pluginState));
+
+    auto device = adapter::createEngineDevice(model);
+    REQUIRE(device != nullptr);
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(device.get());
+    REQUIRE(hosted != nullptr);
+
+    auto* arp = dynamic_cast<magda::daw::audio::ArpeggiatorPlugin*>(&hosted->device());
+    REQUIRE(arp != nullptr);
+
+    CHECK(arp->rampCycles.load() == 5);
+    CHECK(arp->quantize.load() == Catch::Approx(0.75f));
+    CHECK(arp->quantizeSub.load() == 32);
+    CHECK(arp->hardAngle.load());
+}
+
+TEST_CASE("the engine's own ids and assignments do not reach the device",
+          "[engine][devices][2602]") {
+    // The id the engine stamps on every node and the assignments MAGDA rebuilds
+    // from its own modifier list are the engine's, not the device's.
+    const auto tree = magda::device_state::legacyEngineStateTree(
+        R"(<PLUGIN type="arpeggiator" id="1042" arpRampCycles="5">
+             <MODIFIERASSIGNMENTS><LFO id="7"/></MODIFIERASSIGNMENTS>
+             <NESTED id="99" keep="yes"/>
+           </PLUGIN>)");
+
+    REQUIRE(tree.isValid());
+    CHECK_FALSE(tree.hasProperty("id"));
+    CHECK(tree.getProperty("arpRampCycles").toString() == "5");
+    CHECK(tree.getChildWithName("MODIFIERASSIGNMENTS") == juce::ValueTree{});
+
+    const auto nested = tree.getChildWithName("NESTED");
+    REQUIRE(nested.isValid());
+    CHECK_FALSE(nested.hasProperty("id"));
+    CHECK(nested.getProperty("keep").toString() == "yes");
+}
+
 TEST_CASE("the Rings resonator renders through the engine's device op", "[engine][devices][2299]") {
     // The first hand-written device to cross for #2299. What earns it a named
     // case next to the generic sweep above is its shape: a MIDI-excited synth

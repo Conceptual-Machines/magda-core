@@ -103,25 +103,48 @@ std::unique_ptr<MagdaDevice> createSdkDevice(const juce::String& pluginId) {
     return {};
 }
 
+/// The device's own state as a tree, in whichever format the project holds it.
+///
+/// Most internal devices in a project folder are still saved as the engine's
+/// v1 XML, which `decode()` refuses by design, so reading only v2 took every
+/// one of them and ran its defaults (#2602).
+juce::ValueTree savedStateTree(const juce::String& savedState) {
+    if (magda::device_state::looksLikeLegacyEngineState(savedState)) {
+        auto tree = magda::device_state::legacyEngineStateTree(savedState);
+        adoptCanonicalPluginType(tree);
+        return tree;
+    }
+
+    const auto doc = magda::device_state::decode(savedState);
+    if (!doc)
+        return {};
+
+    auto tree = magda::device_state::toValueTree(doc->root);
+    tree.setProperty(typeProperty(), doc->deviceType, nullptr);
+    return tree;
+}
+
 /// Hand the device whatever the project saved for it.
 ///
 /// Parameters are not this: the plan's value layer resolves every one of them
 /// per block and the adapter writes them before each process() call. What this
 /// carries is everything else -- the runtime Faust device's dsp source, an EQ's
 /// collapsed curve -- without which a device built here runs its defaults and
-/// renders a project nobody saved. A device with no saved state, or state from a
-/// schema this build refuses, keeps those defaults, which is what the fork does
-/// with the same document.
-void restoreSavedState(MagdaDevice& device, const juce::String& savedState) {
+/// renders a project nobody saved.
+void restoreSavedState(MagdaDevice& device, const juce::String& pluginId,
+                       const juce::String& savedState) {
     if (savedState.isEmpty())
         return;
 
-    const auto doc = magda::device_state::decode(savedState);
-    if (!doc)
+    const auto tree = savedStateTree(savedState);
+    if (!tree.isValid()) {
+        // Said out loud. #2602 went unnoticed for as long as it did because
+        // this path dropped a project's state without a word.
+        juce::Logger::writeToLog("EngineDeviceFactory: unreadable saved state for " + pluginId +
+                                 ", running its defaults");
         return;
+    }
 
-    auto tree = magda::device_state::toValueTree(doc->root);
-    tree.setProperty(typeProperty(), doc->deviceType, nullptr);
     device.restoreState(tree);
 }
 
@@ -250,7 +273,7 @@ std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::Dev
     // Before the adapter, not after. EngineMagdaDevice snapshots the device's
     // parameter metadata when it is constructed, so a device that restores its
     // state later would be mapped against the parameters it had before.
-    restoreSavedState(*sdkDevice, device.pluginState);
+    restoreSavedState(*sdkDevice, device.pluginId, device.pluginState);
 
     return std::make_unique<EngineMagdaDevice>(std::move(sdkDevice), offlineRender);
 }
