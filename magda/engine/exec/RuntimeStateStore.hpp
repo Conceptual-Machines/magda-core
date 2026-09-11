@@ -361,6 +361,16 @@ class RuntimeStateStore {
      */
     const LaunchTap* launchTap(const SlotKey& key) const;
 
+    /**
+     * @brief A lease on the device at @p key, or nothing (#2581).
+     *
+     * What lets a host reach a device for something that is not a block: the
+     * lease carries the instance rather than pointing at it, so a publish that
+     * evicts it partway through a state read does not take it away. On the
+     * publishing thread, which is the only thread this map is written from.
+     */
+    std::shared_ptr<EngineDevice> device(DeviceKey key) const;
+
     /// @brief Objects currently owned, for tests and diagnostics.
     std::size_t size() const;
 
@@ -378,11 +388,14 @@ class RuntimeStateStore {
     RenderContext context_;
     bool hasContext_ = false;
 
-    std::unordered_map<DeviceKey, std::unique_ptr<EngineDevice>, DeviceKeyHash> devices_;
+    /// Shared rather than owned outright, so that a control operation can hold
+    /// the device it is reading across a publish that drops it (#2581). The
+    /// store is still the only thing that creates or evicts one.
+    std::unordered_map<DeviceKey, std::shared_ptr<EngineDevice>, DeviceKeyHash> devices_;
 
     /// Instances a rebuild took out of devices_, held until releaseDeleted()
     /// (#2572).
-    std::vector<std::unique_ptr<EngineDevice>> retired_;
+    std::vector<std::shared_ptr<EngineDevice>> retired_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> clipAudio_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> clipMidi_;
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> sessionAudio_;

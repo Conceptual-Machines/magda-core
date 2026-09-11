@@ -243,6 +243,10 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return meters_;
     }
 
+    void captureAllPluginStates() override {}
+
+    void capturePluginStateAt(const ChainNodePath&) override {}
+
     MidiBridge* getMidiBridge() override {
         return nullptr;
     }

@@ -491,6 +491,11 @@ LevelTap* RuntimeStateStore::meterTap(const OpKey& key) const {
     return found == meters_.end() ? nullptr : found->second.get();
 }
 
+std::shared_ptr<EngineDevice> RuntimeStateStore::device(DeviceKey key) const {
+    const auto found = devices_.find(key);
+    return found == devices_.end() ? nullptr : found->second;
+}
+
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
            sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +

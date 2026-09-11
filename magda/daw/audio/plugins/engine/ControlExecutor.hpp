@@ -129,6 +129,20 @@ class ControlExecutor {
      */
     virtual bool run(Work work) = 0;
 
+    /**
+     * @brief Return once the work queued before this call has been answered.
+     *
+     * What a caller that cannot come back later needs: a project save reads
+     * every plugin's state and then writes the file, in one call on one
+     * thread (#2581). Whether that means running the work here or waiting for
+     * the thread that will is the implementation's business.
+     *
+     * Nothing happens inside a piece of work already running here. That is
+     * the nesting run() refuses: the outer operation still has its plugin
+     * open, and draining into it would let a second transaction in.
+     */
+    virtual void drain() = 0;
+
     /// Whether the calling thread is this executor's own.
     virtual bool isCurrent() const = 0;
 };
@@ -156,15 +170,37 @@ class MessageThreadControlExecutor final : public ControlExecutor {
     ~MessageThreadControlExecutor() override;
 
     bool run(Work work) override;
+
+    /// Runs what is queued, here, on the message thread. Refused from any
+    /// other: waiting for the message loop from a thread that is not it is
+    /// how a host becomes the reason it never gets there.
+    void drain() override;
+
     bool isCurrent() const override;
 
   private:
     /// Shared with every post this executor has made, so that destroying it
     /// turns them all into cancellations rather than calls into a plane that
     /// has gone.
+    ///
+    /// The queue is the executor's rather than the message loop's, so that a
+    /// caller on the message thread can run what is waiting instead of
+    /// returning to the loop to have it run (#2581). Each post takes one item,
+    /// so a post whose item a drain already took finds nothing and is worth
+    /// nothing, which is the only way the two can disagree.
     struct Posted {
         std::atomic<bool> cancelled{false};
+
+        std::mutex lock;
+        std::deque<Work> queued;
+
+        /// Whether a piece of work is running on the message thread now.
+        /// What makes a nested drain a no-op rather than a second
+        /// transaction inside the first.
+        bool running = false;
     };
+
+    static void pump(Posted& posted);
 
     std::shared_ptr<Posted> posted_;
 };
@@ -196,6 +232,12 @@ class SerialControlThread final : public ControlExecutor {
     ~SerialControlThread() override;
 
     bool run(Work work) override;
+
+    /// Waits for the worker to answer what is queued. From the worker itself
+    /// this is a nested drain and does nothing: the work asking is the work
+    /// that would have to finish first.
+    void drain() override;
+
     bool isCurrent() const override;
 
   private:
@@ -206,6 +248,14 @@ class SerialControlThread final : public ControlExecutor {
         std::condition_variable wake;
         std::deque<Work> queued;
         bool stopping = false;
+
+        /// Whether the worker is inside a piece of work, and what a waiter
+        /// watches alongside the queue: an empty queue with a block still
+        /// running is not an answered one.
+        bool busy = false;
+
+        /// Notified whenever the worker finishes one.
+        std::condition_variable answered;
     };
 
     std::shared_ptr<Shared> shared_;

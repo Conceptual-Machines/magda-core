@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../audio/midi/RecordingNoteQueue.hpp"
+#include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
@@ -269,6 +270,21 @@ class AudioEngine : public AudioEngineListener {
     /// object both engines feed (#2579).
     virtual TrackMeters& meters() = 0;
     virtual const TrackMeters& meters() const = 0;
+
+    // ===== What the live plugins hold =====
+    //
+    // A project stores a plugin's own chunk, and only the instance that is
+    // rendering has one -- so which engine is rendering decides who is asked
+    // (#2581). Both of these are synchronous: the caller writes the project
+    // file, or copies the device, the moment they return.
+
+    /** Read every live plugin's state back into the model. Before a save, and
+        before a duplicate that has to carry the source's live settings. */
+    virtual void captureAllPluginStates() = 0;
+
+    /** The same for the one device at @p devicePath, whose state would
+        otherwise be the state it was placed with. */
+    virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
 
     // ===== MIDI Management =====
     virtual MidiBridge* getMidiBridge() = 0;

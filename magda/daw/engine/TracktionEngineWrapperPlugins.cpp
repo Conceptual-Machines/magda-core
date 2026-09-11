@@ -12,6 +12,7 @@
     #include <sys/mount.h>
 #endif
 
+#include "../audio/AudioBridge.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
@@ -810,6 +811,16 @@ bool TracktionEngineWrapper::upsertGrooveTemplate(const GrooveTemplateData& data
 juce::StringArray TracktionEngineWrapper::getGrooveTemplateNames() const {
     return engine_ != nullptr ? engine_->getGrooveTemplateManager().getTemplateNames()
                               : juce::StringArray{};
+}
+
+void TracktionEngineWrapper::captureAllPluginStates() {
+    if (audioBridge_ != nullptr)
+        audioBridge_->captureAllPluginStates();
+}
+
+void TracktionEngineWrapper::capturePluginStateAt(const ChainNodePath& devicePath) {
+    if (audioBridge_ != nullptr)
+        audioBridge_->getPluginManager().capturePluginState(devicePath);
 }
 
 }  // namespace magda

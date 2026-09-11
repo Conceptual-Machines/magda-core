@@ -828,6 +828,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
 
         # What the app's own engine answers with no Edit behind it (#2579).
         engine/test_magda_audio_engine_juce.cpp
+
+        # The message-thread half of the control executor (#2581). Here because
+        # magda_tests has no message loop to run it on.
+        engine/test_control_executor_juce.cpp
     )
 endif()
 

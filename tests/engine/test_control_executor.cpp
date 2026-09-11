@@ -190,3 +190,43 @@ TEST_CASE("An executor destroyed by its own work does not wait for itself", "[en
     // process with it.
     SUCCEED();
 }
+
+TEST_CASE("A drain returns once what was queued has been answered", "[engine][control]") {
+    // What a project save needs: it reads every plugin's state and then writes
+    // the file, in one call (#2581), so "queued" is not good enough.
+    adapter::SerialControlThread executor;
+
+    std::atomic<int> answered{0};
+
+    for (int item = 0; item < 8; ++item)
+        REQUIRE(executor.run([&answered](ExecutionState state) {
+            if (state != ExecutionState::Ran)
+                return;
+
+            // Slow enough that a drain returning early would be visible rather
+            // than a race that usually passes.
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+            ++answered;
+        }));
+
+    executor.drain();
+
+    CHECK(answered.load() == 8);
+}
+
+TEST_CASE("A drain from inside the work it would wait for does nothing", "[engine][control]") {
+    // The work asking is the work that would have to finish first, so a drain
+    // that waited here would be waiting for itself. Nesting is what run()
+    // refuses for the same reason -- a second transaction inside the first.
+    adapter::SerialControlThread executor;
+
+    std::promise<void> ran;
+    auto finished = ran.get_future();
+
+    REQUIRE(executor.run([&executor, &ran](ExecutionState) {
+        executor.drain();
+        ran.set_value();
+    }));
+
+    REQUIRE(finished.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
+}

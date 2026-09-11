@@ -402,10 +402,16 @@ void TracktionEngineWrapper::installProjectStateHooks() {
 
     // Wire up state capture before project save
     ProjectManager::getInstance().onBeforeSave = [this, alive]() {
-        if (*alive && audioBridge_) {
-            audioBridge_->captureAllPluginStates();
+        // Asked of whichever engine is rendering: only the instance that
+        // rendered holds the chunk a project saves (#2581). The warp markers
+        // stay the bridge's, being the fork's own clip state -- and the bridge
+        // is read here rather than captured, because these hooks are installed
+        // before there is one (#2579).
+        if (auto* engine = TrackManager::getInstance().getAudioEngine())
+            engine->captureAllPluginStates();
+
+        if (*alive && audioBridge_)
             audioBridge_->captureWarpMarkerStates();
-        }
 
         // Capture zoom/scroll state
         if (auto* tc = TimelineController::getCurrent()) {

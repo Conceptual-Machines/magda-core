@@ -137,6 +137,8 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     const TrackMeters& meters() const override {
         return meters_;
     }
+    void captureAllPluginStates() override;
+    void capturePluginStateAt(const ChainNodePath& devicePath) override;
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;
