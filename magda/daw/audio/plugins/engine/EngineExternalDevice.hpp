@@ -140,18 +140,26 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     std::optional<magda::ExternalPluginSnapshot> captureState();
 
+    /**
+     * @brief Write @p saved into the plugin: parameter array, then state chunk.
+     *
+     * Here rather than behind the instance pointer for the same reason as
+     * captureState() (#2573). Call on the control executor. A Failed return
+     * means the plugin threw partway through and must not be read back.
+     */
+    magda::SavedStateOutcome applyState(const magda::DeviceInfo& saved);
+
     // ===== The plugin's own window (#2580) =====
     //
-    // Here rather than through an accessor, for the reason the instance has no
-    // accessor at all: the editor is the plugin's, and the object that owns the
-    // instance is the only one allowed to reach it. Message thread, serialised
-    // against everything else this device is asked (DeviceControl.hpp).
+    // Here for the same reason again: the instance has no accessor, and the
+    // object that owns it is the only one allowed to reach its editor. Call on
+    // the control executor, which is the message thread's.
 
-    /// Open the plugin's editor, or bring it to the front. False for a plugin
-    /// that has no editor of its own, which is what a generic one would hide.
+    /// Open the editor, or bring it to the front. False for a plugin with no
+    /// editor of its own.
     bool showEditor();
 
-    /// Close it. Silent for a plugin whose window is not open.
+    /// Close it. Silent for a window that is not open.
     void hideEditor();
 
     bool isEditorOpen() const;

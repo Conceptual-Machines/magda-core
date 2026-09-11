@@ -84,11 +84,10 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
 /**
  * @brief The plugin's editor in a window of its own (#2580).
  *
- * A DocumentWindow rather than the fork's `te::PluginWindowState`, which is
- * built around a te::Plugin this side does not have. What it owes the device
- * is the close button: JUCE deletes nothing itself, so the window tells its
- * owner and the owner destroys it, which is also what makes "is it open" a
- * question about a pointer rather than about a flag somebody has to maintain.
+ * A DocumentWindow rather than the fork's te::PluginWindowState, which is built
+ * around a te::Plugin this side does not have. Its close button tells the
+ * owner rather than deleting itself, so the owner's pointer is also the answer
+ * to whether it is open.
  */
 class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
   public:
@@ -111,8 +110,7 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
     }
 
     void closeButtonPressed() override {
-        // Not delete-this: the owner holds this by unique_ptr, and a window
-        // that freed itself would leave it dangling until the next question.
+        // Not delete-this: the owner holds this by unique_ptr.
         if (closed_)
             closed_();
     }
@@ -255,10 +253,9 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
-    // Before anything else: the editor is the plugin's own component, and it
-    // has to go while the plugin is still there to take it back (#2580). A
-    // window open here means this device is being destroyed on the thread its
-    // window was opened from, which is the message thread or nothing.
+    // First: the editor is the plugin's own component and has to go while the
+    // plugin is still there to take it back (#2580). A window open here means
+    // this is being destroyed on the thread that opened it.
     jassert(editor_ == nullptr || juce::MessageManager::existsAndIsCurrentThread());
     editor_.reset();
 
@@ -693,6 +690,12 @@ std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState(
     // instance to do it, so the suspension the read asks for is a suspension
     // this device's own process() is already honouring.
     return magda::captureExternalPluginState(*instance_);
+}
+
+magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInfo& saved) {
+    // The write itself, including the suspension, is shared with the fork in
+    // ExternalPluginState.hpp.
+    return magda::applySavedPluginState(*instance_, saved);
 }
 
 }  // namespace magda::daw::audio::engine_adapter

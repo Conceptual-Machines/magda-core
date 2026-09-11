@@ -139,6 +139,7 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     }
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
+    void applyPluginStateAt(const ChainNodePath& devicePath) override;
     bool showDeviceEditor(const ChainNodePath& devicePath) override;
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;

@@ -99,29 +99,35 @@ class EngineHost {
     /// publish and stays bound to it. Message thread.
     void registerVirtualMidiSource(const juce::String& deviceId);
 
-    // ===== What the plugins hold =====
+    // ===== Plugin state =====
     //
-    // A project saves the chunk its plugins wrote, and only the instance that
-    // rendered has one (#2581). Both of these run on the message thread and
-    // return with the reads done, because a save writes the file the moment
-    // they do.
+    // All three run on the message thread and return once the plugin has been
+    // read or written, because a save writes the file immediately after.
 
-    /// Read every external plugin this is rendering back into the model.
+    /** @brief Read every external plugin this renders back into the model. */
     void captureExternalPluginStates();
 
-    /// The one at @p devicePath and anything on its pads, for a caller
-    /// flushing a single slot before it copies, removes or snapshots it. A
-    /// Drum Grid is passed by its own path because its pads ride along in its
-    /// state (#2207). Nothing for a path holding no external plugin this is
-    /// rendering.
+    /**
+     * @brief Read the plugin at @p devicePath, plus any on its pads.
+     *
+     * Callers use this before copying, removing or snapshotting one slot.
+     * Pass a Drum Grid's own path to reach its pads: pad plugins have no
+     * path of their own (#2207).
+     */
     void captureExternalPluginStateAt(const ChainNodePath& devicePath);
+
+    /**
+     * @brief Write the model's state for @p devicePath into the plugin (#2573).
+     *
+     * The model is then updated from the plugin, because a state chunk can
+     * change parameters the model's array does not list.
+     */
+    void applyExternalPluginStateAt(const ChainNodePath& devicePath);
 
     // ===== The plugins' own windows (#2580) =====
     //
-    // Message thread, and each answers what the window is after it: the slot
-    // that asked draws its light from the return value rather than asking
-    // again. False for a device this is not rendering, which is every device
-    // the fork holds instead.
+    // Message thread, each answering what the window is afterwards, which is
+    // what the slot draws. False for a device this is not rendering.
 
     bool showDeviceEditor(const ChainNodePath& devicePath);
     bool hideDeviceEditor(const ChainNodePath& devicePath);

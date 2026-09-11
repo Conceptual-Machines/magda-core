@@ -87,10 +87,9 @@ class CaptureOutcome {
 /**
  * @brief What an editor request came back with: its window, or why not (#2580).
  *
- * "Showing" rather than "shown", because the answer is the same question the
- * caller would ask next: a toggle reports what the slot's light should read,
- * and a plugin with no editor of its own reports not showing rather than a
- * failure -- there is nothing wrong, there is just nothing to open.
+ * "Showing" because that is what the caller asks next -- the slot's light. A
+ * plugin with no editor of its own is not showing rather than a failure:
+ * nothing went wrong, there is nothing to open.
  */
 class EditorOutcome {
   public:
@@ -174,19 +173,28 @@ class DeviceControlPlane {
      */
     virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
 
+    /**
+     * @brief Write @p saved into the plugin at @p key, then read the plugin back.
+     *
+     * For a preset applied to a slot whose plugin is already loaded (#2573).
+     * @p saved is by value because the work runs after this returns.
+     *
+     * The callback receives the plugin's state after the write, not a success
+     * flag: a state chunk can change parameters the model's array does not
+     * list, and the caller must store the snapshot or the plan will send the
+     * stale array back on the next block.
+     */
+    virtual bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                            CaptureCallback completed) = 0;
+
     /// What an editor request is answered with, on this plane's executor.
     using EditorCallback = std::function<void(EditorOutcome)>;
 
     /**
      * @brief Show, hide, toggle or ask after the editor of the device at @p key.
      *
-     * The same contract @ref captureState has, for the same reasons: asked
-     * from any thread, answered on the executor, and serialised against every
-     * other operation on that plugin -- an editor being built is one more
-     * thing that must not overlap a state read.
-     *
-     * The executor is the message thread's, which is where a window may be
-     * opened at all.
+     * Same contract as @ref captureState, on an executor that is the message
+     * thread's -- which is where a window may be opened at all (#2580).
      */
     virtual bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
                               EditorCallback completed) = 0;
@@ -248,6 +256,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                             std::weak_ptr<const DeviceRegistry> devices);
 
     bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                    CaptureCallback completed) override;
     bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
                       EditorCallback completed) override;
 

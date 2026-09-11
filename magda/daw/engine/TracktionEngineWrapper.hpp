@@ -293,11 +293,12 @@ class TracktionEngineWrapper : public AudioEngine,
         return meters_;
     }
 
-    /// What this engine renders through are the bridge's own synced plugins,
-    /// so a capture is a flush of those (#2581), and the window that opens is
-    /// onto one of them (#2580).
+    /** @brief Read the bridge's plugins back into the model. They are what this renders. */
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
+    void applyPluginStateAt(const ChainNodePath& devicePath) override;
+
+    /** @brief The windows onto those same plugins (#2580). */
     bool showDeviceEditor(const ChainNodePath& devicePath) override;
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;

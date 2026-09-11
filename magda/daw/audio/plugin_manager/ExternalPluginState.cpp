@@ -105,8 +105,32 @@ std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
     return order;
 }
 
+/** @brief Suspends a plugin's processing for the lifetime of this object. */
+class ScopedSuspend {
+  public:
+    explicit ScopedSuspend(juce::AudioPluginInstance& instance) : instance_(instance) {
+        instance_.suspendProcessing(true);
+    }
+
+    ~ScopedSuspend() {
+        instance_.suspendProcessing(false);
+    }
+
+    ScopedSuspend(const ScopedSuspend&) = delete;
+    ScopedSuspend& operator=(const ScopedSuspend&) = delete;
+    ScopedSuspend(ScopedSuspend&&) = delete;
+    ScopedSuspend& operator=(ScopedSuspend&&) = delete;
+
+  private:
+    juce::AudioPluginInstance& instance_;
+};
+
 SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
                                         const DeviceInfo& device) {
+    // Stops a render block reaching the plugin while its state is half
+    // written.
+    const ScopedSuspend held(instance);
+
     const auto order = hostParameterOrder(instance);
 
     // The array first. A parameter the model does not describe keeps whatever
@@ -246,25 +270,20 @@ std::optional<ExternalPluginSnapshot> captureExternalPluginState(
     juce::MemoryBlock chunk;
     ExternalPluginSnapshot snapshot;
 
-    // Suspended across the whole read, the way the fork holds its processMutex
-    // across one. Everything here comes off a plugin that is not simultaneously
-    // processing: its chunk, the parameter values that have to agree with that
-    // chunk, and the portable preset beside them. Resuming between any two of
-    // those would let a block move the plugin underneath the rest of the read.
-    instance.suspendProcessing(true);
-
+    // One suspension for all three reads: the chunk, the parameters and the
+    // preset must describe the same moment.
     bool described = true;
-    try {
-        instance.getStateInformation(chunk);
-        snapshot.parameters = snapshotHostParameters(instance);
-        snapshot.portable = readVst3Preset(instance);
-    } catch (...) {
-        described = false;
-    }
+    {
+        const ScopedSuspend held(instance);
 
-    // Restored either way: a plugin left suspended by its own throw would render
-    // silence for the rest of the session.
-    instance.suspendProcessing(false);
+        try {
+            instance.getStateInformation(chunk);
+            snapshot.parameters = snapshotHostParameters(instance);
+            snapshot.portable = readVst3Preset(instance);
+        } catch (...) {
+            described = false;
+        }
+    }
 
     if (!described)
         return std::nullopt;

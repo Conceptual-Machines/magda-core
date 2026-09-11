@@ -247,6 +247,8 @@ class ProjectBoundaryResetEngine : public AudioEngine {
 
     void capturePluginStateAt(const ChainNodePath&) override {}
 
+    void applyPluginStateAt(const ChainNodePath&) override {}
+
     bool showDeviceEditor(const ChainNodePath&) override {
         return false;
     }

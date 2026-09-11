@@ -13,7 +13,9 @@
 #endif
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
 #include "PluginMetadataStore.hpp"
@@ -823,6 +825,38 @@ void TracktionEngineWrapper::capturePluginStateAt(const ChainNodePath& devicePat
         audioBridge_->getPluginManager().capturePluginState(devicePath);
 }
 
+void TracktionEngineWrapper::applyPluginStateAt(const ChainNodePath& devicePath) {
+    if (audioBridge_ == nullptr)
+        return;
+
+    auto* live = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (live == nullptr)
+        return;
+
+    auto plugin = audioBridge_->getPlugin(devicePath);
+    if (plugin == nullptr)
+        return;
+
+    if (dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get()) == nullptr) {
+        namespace ta = daw::audio::tracktion_adapter;
+        if (const auto savedState = ta::devicePluginTreeFromState(live->pluginState);
+            savedState.isValid())
+            plugin->restorePluginStateFromValueTree(savedState);
+
+        return;
+    }
+
+    // A preset with no chunk must not repopulate: that would discard the
+    // parameter values it carried.
+    if (!live->hasPluginChunk())
+        return;
+
+    applyExternalPluginChunk(plugin.get(), live->pluginState);
+
+    if (auto* processor = audioBridge_->getDeviceProcessor(devicePath))
+        processor->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
+}
+
 bool TracktionEngineWrapper::showDeviceEditor(const ChainNodePath& devicePath) {
     if (audioBridge_ == nullptr)
         return false;
@@ -835,8 +869,8 @@ bool TracktionEngineWrapper::hideDeviceEditor(const ChainNodePath& devicePath) {
     if (audioBridge_ == nullptr)
         return false;
 
-    // The bridge has no hide of its own: a toggle on a window that is open is
-    // what closes it, and a window that is not open needs nothing.
+    // The bridge has no hide: a toggle closes an open window, and a closed one
+    // needs nothing.
     if (audioBridge_->isPluginWindowOpen(devicePath))
         audioBridge_->togglePluginWindow(devicePath);
 

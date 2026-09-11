@@ -506,6 +506,12 @@ struct DeviceInfo {
         return format != PluginFormat::Internal;
     }
 
+    /// Whether the plugin saved a state chunk. A preset without one carries
+    /// only its parameter values.
+    bool hasPluginChunk() const {
+        return pluginState.isNotEmpty();
+    }
+
     /// Anything upstream MIDI reaches: an instrument, a MIDI effect, or a plugin
     /// that declared a MIDI input.
     bool consumesMidi() const {

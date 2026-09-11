@@ -116,16 +116,11 @@ DeviceInfo* modelDeviceAt(engine::DeviceKey key) {
 }
 
 /**
- * @brief The keys the engine knows the device at @p devicePath by, and its pads.
+ * @brief The keys for the device at @p devicePath and any device on its pads.
  *
- * A single-slot caller passes a Drum Grid's own path, because a pad's patch
- * rides along in the grid's state rather than having a path of its own
- * (#2207). The grid is a device this build holds, so reading only the key the
- * path names would read nothing and leave the pads' plugins behind.
- *
- * Inverted off the same walk the publish uses rather than rebuilt from the
- * path's own steps, so the two cannot come to disagree about which section a
- * device is in.
+ * Pad devices have no path of their own, so callers address a Drum Grid by
+ * the grid's path (#2207). Looked up through devicesIn(), the walk the
+ * publish uses, so both agree which chain section a device is in.
  */
 std::vector<engine::DeviceKey> keysOfDevices(const std::set<const DeviceInfo*>& wanted) {
     std::vector<engine::DeviceKey> found;
@@ -156,8 +151,7 @@ std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
 }
 
 /// The one device @p devicePath names, without the pads a capture also takes:
-/// a pad's patch rides along in the grid's state, but its editor is its own
-/// and is not what a click on the grid asked for (#2580).
+/// a pad's editor is its own, and not what a click on the grid asked for.
 std::optional<engine::DeviceKey> keyOfDeviceAt(const ChainNodePath& devicePath) {
     const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
     if (target == nullptr)
@@ -170,9 +164,12 @@ std::optional<engine::DeviceKey> keyOfDeviceAt(const ChainNodePath& devicePath) 
     return keys.front();
 }
 
-/// The external plugin behind whatever the store holds for a key, reached
-/// through the trace when one is wrapping it (#2568): a control operation
-/// addresses the device, and a diagnostic must not change the answer.
+/**
+ * @brief The EngineExternalDevice inside @p device, or null if it is not one.
+ *
+ * Unwraps TracingDevice first, so turning the trace on does not change the
+ * answer (#2568).
+ */
 adapter::EngineExternalDevice* externalIn(engine::EngineDevice& device) {
     if (auto* tracing = dynamic_cast<TracingDevice*>(&device))
         return externalIn(tracing->wrapped());
@@ -787,10 +784,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /**
      * @brief Read every external plugin this renders back into the model.
      *
-     * A project keeps the chunk its plugins wrote, and the only instance that
-     * has one is the instance that rendered (#2581). The keys come off the
-     * model this publish was built from; a key nothing is bound to is a
-     * failure with a reason rather than an empty state written over a patch.
+     * A key with no plugin bound is logged and skipped, so a plugin that is
+     * still loading keeps its saved state (#2581).
      */
     void captureExternalPluginStates() {
         if (session_ == nullptr)
@@ -799,20 +794,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         for (const auto key : factory_.externalKeys())
             requestCapture(key);
 
-        // The caller writes the project file the moment this returns, so the
-        // reads have to have happened by then rather than at the next turn of
-        // the message loop.
+        // drain() rather than returning to the message loop: the caller
+        // writes the project file as soon as this returns.
         control_->drain();
     }
 
     /**
      * @brief The editor of the device at @p devicePath, and what it is now (#2580).
      *
-     * Synchronous, because every caller is a click that has to know what it
-     * did: the slot's light reads the answer, and the drain is what makes the
-     * plane's answer arrive before this returns rather than on the next
-     * message. What it drains is the message thread's own queue, so the
-     * window is opened on the thread a window may be opened on.
+     * Synchronous: every caller is a click whose slot draws the answer, and
+     * the drain is what makes it arrive before this returns.
      */
     bool deviceEditor(const ChainNodePath& devicePath, adapter::EditorAction action) {
         const auto key = keyOfDeviceAt(devicePath);
@@ -821,8 +812,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         auto showing = false;
         const auto asked = plane_.editorWindow(*key, action, [&showing](adapter::EditorOutcome it) {
-            // Named rather than swallowed: a person clicking a plugin's slot
-            // and getting nothing has no other way to find out why.
+            // Said out loud: a click that opened nothing has no other way to
+            // report why.
             if (!it.ok()) {
                 juce::Logger::writeToLog("[engine] editor: " + it.failure());
                 return;
@@ -834,8 +825,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (!asked)
             return false;
 
-        // The completion above writes a local, so it must have run by the time
-        // this returns. drain() is what says it has.
+        // The completion writes a local, so it must have run before this
+        // returns. drain() is what says it has.
         control_->drain();
         return showing;
     }
@@ -844,9 +835,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        // A chain is mostly devices this build holds, and those are asked of
-        // the fork. Reaching for one here would find no external plugin bound
-        // and report that as a state that could not be read.
+        // Internal devices are handled by the fork. Asking for one here
+        // would find no external plugin and log a spurious failure.
         auto asked = false;
         for (const auto key : keysOfDeviceAt(devicePath))
             if (factory_.isExternalKey(key)) {
@@ -859,19 +849,61 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /**
-     * @brief Ask for @p key's state, and write it down if it is still its own.
+     * @brief Write the model's state for @p devicePath into the plugin (#2573).
      *
-     * The completion carries its assignment and nothing else: it runs later
-     * than the call that queued it, and a completion holding this object would
-     * be one more thing that has to outlive a project closing
-     * (PluginAssignments.hpp).
+     * The plan sends the parameter array every block; the state chunk is
+     * otherwise only written when the instance is built.
+     */
+    void applyExternalPluginStateAt(const ChainNodePath& devicePath) {
+        if (session_ == nullptr)
+            return;
+
+        auto asked = false;
+        for (const auto key : keysOfDeviceAt(devicePath))
+            if (factory_.isExternalKey(key)) {
+                requestApply(key);
+                asked = true;
+            }
+
+        if (asked)
+            control_->drain();
+    }
+
+    /**
+     * @brief Write the model's state for @p key into its plugin, then read it back.
+     *
+     * The read-back is committed only if @p key still names the same plugin,
+     * since a slot can be given a different one while the work runs.
+     */
+    void requestApply(engine::DeviceKey key) {
+        const auto* saved = modelDeviceAt(key);
+        if (saved == nullptr)
+            return;
+
+        plane_.applyState(
+            key, *saved, [request = loader_.request(key)](adapter::CaptureOutcome held) {
+                if (!held.ok()) {
+                    if (request.isStillWanted())
+                        juce::Logger::writeToLog("[engine] not applied: " + held.failure());
+                    return;
+                }
+
+                adapter::commitCapturedState(request, held.snapshot(), modelDeviceAt);
+            });
+    }
+
+    /**
+     * @brief Read @p key's plugin and store the result on the model.
+     *
+     * The callback captures only its AssignmentRequest: it runs after this
+     * returns, and capturing `this` would tie it to a project that may close
+     * first (PluginAssignments.hpp).
      */
     void requestCapture(engine::DeviceKey key) {
         plane_.captureState(key, [request = loader_.request(key)](adapter::CaptureOutcome taken) {
             if (!taken.ok()) {
-                // Only for a slot that is still the one that was asked about.
-                // A device deleted or replaced while the read ran is a failure
-                // nobody is waiting to hear.
+                // A device deleted or replaced mid-read fails for a reason
+                // nobody needs reporting.
                 if (request.isStillWanted())
                     juce::Logger::writeToLog("[engine] not saved: " + taken.failure());
                 return;
@@ -1029,6 +1061,10 @@ void EngineHost::captureExternalPluginStates() {
 
 void EngineHost::captureExternalPluginStateAt(const ChainNodePath& devicePath) {
     impl_->captureExternalPluginStateAt(devicePath);
+}
+
+void EngineHost::applyExternalPluginStateAt(const ChainNodePath& devicePath) {
+    impl_->applyExternalPluginStateAt(devicePath);
 }
 
 bool EngineHost::showDeviceEditor(const ChainNodePath& devicePath) {

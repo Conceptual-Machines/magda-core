@@ -325,8 +325,16 @@ void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
     if (host_ != nullptr)
         host_->captureExternalPluginStateAt(devicePath);
 }
-// The window that opens is onto the instance this renders through, which is
-// the host's; the fork holds no copy of it any more (#2580).
+
+void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
+    tracktion_->applyPluginStateAt(devicePath);
+
+    if (host_ != nullptr)
+        host_->applyExternalPluginStateAt(devicePath);
+}
+
+// The window opens onto the instance this renders through, and the fork holds
+// no copy of it any more (#2580).
 bool MagdaAudioEngine::showDeviceEditor(const ChainNodePath& devicePath) {
     return host_->showDeviceEditor(devicePath);
 }

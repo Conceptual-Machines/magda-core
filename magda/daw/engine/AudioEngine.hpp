@@ -271,26 +271,25 @@ class AudioEngine : public AudioEngineListener {
     virtual TrackMeters& meters() = 0;
     virtual const TrackMeters& meters() const = 0;
 
-    // ===== What the live plugins hold =====
+    // ===== Plugin state =====
     //
-    // A project stores a plugin's own chunk, and only the instance that is
-    // rendering has one -- so which engine is rendering decides who is asked
-    // (#2581). Both of these are synchronous: the caller writes the project
-    // file, or copies the device, the moment they return.
+    // Only the rendering instance has an up to date state chunk, so these go
+    // to whichever engine is rendering (#2581). All three are synchronous:
+    // callers save the project or copy the device as soon as they return.
 
-    /** Read every live plugin's state back into the model. Before a save, and
-        before a duplicate that has to carry the source's live settings. */
+    /** @brief Read every live plugin's state back into the model. */
     virtual void captureAllPluginStates() = 0;
 
-    /** The same for the one device at @p devicePath, whose state would
-        otherwise be the state it was placed with. */
+    /** @brief The same for the one device at @p devicePath. */
     virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
+
+    /** @brief Write the model's state for @p devicePath into the plugin (#2573). */
+    virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
 
     // ===== The plugins' own windows (#2580) =====
     //
-    // A plugin's editor belongs to the instance that renders, so which engine
-    // is rendering decides whose window opens -- the same split as the state
-    // above. Message thread, and each answers whether the window is showing
+    // The editor belongs to the instance that renders, so the same split as the
+    // state above. Message thread; each answers whether the window is showing
     // afterwards, which is what the slot draws.
 
     virtual bool showDeviceEditor(const ChainNodePath& devicePath) = 0;
