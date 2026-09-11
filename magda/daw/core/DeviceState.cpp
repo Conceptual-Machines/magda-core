@@ -221,6 +221,45 @@ void dropEngineOwned(juce::ValueTree tree) {
 
 }  // namespace
 
+namespace {
+
+Node nodeFrom(const juce::ValueTree& tree) {
+    Node node;
+    node.type = tree.getType().toString();
+
+    for (int i = 0; i < tree.getNumProperties(); ++i) {
+        const auto name = tree.getPropertyName(i);
+        node.props.set(name, tree.getProperty(name));
+    }
+
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+        node.children.push_back(nodeFrom(tree.getChild(i)));
+
+    return node;
+}
+
+}  // namespace
+
+std::optional<Doc> decodeSavedState(const juce::String& text) {
+    if (!looksLikeLegacyEngineState(text))
+        return decode(text);
+
+    const auto tree = legacyEngineStateTree(text);
+    if (!tree.isValid())
+        return std::nullopt;
+
+    static const juce::Identifier kType("type");
+
+    Doc doc;
+    doc.version = 1;
+    doc.deviceType = tree.getProperty(kType).toString();
+    doc.root = nodeFrom(tree);
+    // The root element name is the engine's, not the device's, which is what
+    // v2 records in deviceType.
+    doc.root.type = {};
+    return doc;
+}
+
 juce::ValueTree legacyEngineStateTree(const juce::String& text) {
     if (!looksLikeLegacyEngineState(text))
         return {};

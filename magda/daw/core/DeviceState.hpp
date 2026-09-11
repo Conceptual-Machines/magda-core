@@ -136,6 +136,15 @@ void forEachNode(const Node& root, const std::function<void(const Node&)>& visit
 juce::ValueTree toValueTree(const Node& node);
 
 /**
+ * @brief A saved document in whichever format the project holds it.
+ *
+ * `decode()` is the v2 codec and refuses v1 by design. Anything reading a
+ * device's own saved state wants this instead: most internal devices in a
+ * project folder are still v1 (#2602).
+ */
+std::optional<Doc> decodeSavedState(const juce::String& text);
+
+/**
  * @brief A v1 document as the same tree, for the engine that reads it.
  *
  * The engine's object ids and the modifier assignments it hangs on every

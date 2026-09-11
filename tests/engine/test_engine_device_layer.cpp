@@ -10,6 +10,7 @@
 #include "NullDiffGain.hpp"
 #include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/StepPatternState.hpp"
 #include "exec/EngineDevice.hpp"
 #include "exec/PlanExecutor.hpp"
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
@@ -994,6 +995,22 @@ TEST_CASE("a device saved as the engine's own XML is restored too", "[engine][de
     CHECK(arp->quantize.load() == Catch::Approx(0.75f));
     CHECK(arp->quantizeSub.load() == 32);
     CHECK(arp->hardAngle.load());
+}
+
+TEST_CASE("a step sequencer's pattern is read out of either format", "[engine][devices][2602]") {
+    // The faceplate reads the pattern from the model rather than the running
+    // device, so reading only v2 drew an empty pattern over a sequencer that
+    // was playing the right one.
+    const auto pattern = magda::step_pattern::monoPatternOf(
+        R"(<PLUGIN type="stepsequencer" id="9" seqNumSteps="4">
+             <STEP idx="0" note="62" gate="1" accent="1"/>
+             <STEP idx="1" note="65" gate="1"/>
+           </PLUGIN>)");
+
+    CHECK(pattern.length == 4);
+    CHECK(pattern.steps[0].noteNumber == 62);
+    CHECK(pattern.steps[0].accent);
+    CHECK(pattern.steps[1].noteNumber == 65);
 }
 
 TEST_CASE("the engine's own ids and assignments do not reach the device",

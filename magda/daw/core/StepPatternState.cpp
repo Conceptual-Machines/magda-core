@@ -182,13 +182,17 @@ void writePoly(device_state::Doc& doc, const PolyPattern& pattern) {
 }
 
 MonoPattern monoPatternOf(const juce::String& deviceStateText) {
-    if (auto doc = device_state::decode(deviceStateText))
+    // Either format. The step and note spellings above are frozen, so a v1
+    // document carries the same pattern in the same words; reading only v2 put
+    // an empty pattern on the faceplate of a device that was playing the right
+    // one (#2602).
+    if (auto doc = device_state::decodeSavedState(deviceStateText))
         return readMono(*doc);
     return {};
 }
 
 PolyPattern polyPatternOf(const juce::String& deviceStateText) {
-    if (auto doc = device_state::decode(deviceStateText))
+    if (auto doc = device_state::decodeSavedState(deviceStateText))
         return readPoly(*doc);
     return {};
 }
