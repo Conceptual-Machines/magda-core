@@ -76,6 +76,17 @@ float realToNormalized(float real, const ParameterInfo& info);
 float realToNormalized(float real, const ParameterDomain& domain);
 
 /**
+ * @brief Whether a parameter places a chosen real value at normalized 0.5.
+ *
+ * An anchor counts when it is strictly inside the range. 0.0 is the unset
+ * default, but a range that straddles zero makes 0.0 a real value like any
+ * other, and an anchor outside the range is not one -- so neither a sign test
+ * nor a comparison against zero answers this.
+ */
+bool hasScaleAnchor(const ParameterInfo& info);
+bool hasScaleAnchor(const ParameterDomain& domain);
+
+/**
  * @brief A normalized fader position as the linear gain `TrackManager` stores.
  *
  * `TrackInfo::volume` and `SendInfo::level` are linear gains, while the fader

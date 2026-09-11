@@ -51,10 +51,12 @@ ScannedPluginParameter scanRecord(const ParameterInfo& info, int position) {
     scanned.unit = info.unit;
     scanned.rangeMin = info.minValue;
     scanned.rangeMax = info.maxValue;
-    // scaleAnchor is the real value a parameter asks to sit at the middle of
-    // its own travel, which is what rangeCenter means.
-    scanned.rangeCenter =
-        info.scaleAnchor > 0.0f ? info.scaleAnchor : (info.minValue + info.maxValue) * 0.5f;
+    // A declared anchor is the real value a parameter asks to sit at the middle
+    // of its own travel, which is what rangeCenter means. Asked rather than
+    // compared against zero: a range that straddles zero has a real value there.
+    scanned.rangeCenter = ParameterUtils::hasScaleAnchor(info)
+                              ? info.scaleAnchor
+                              : (info.minValue + info.maxValue) * 0.5f;
     scanned.scale = info.scale;
     scanned.valueTable = info.valueTable.empty() ? info.choices : info.valueTable;
 
