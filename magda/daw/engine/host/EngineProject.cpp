@@ -59,17 +59,4 @@ double projectEndBeat() {
     return end;
 }
 
-std::vector<InputRouting> inputRoutingOf(const std::vector<TrackInfo>& tracks) {
-    std::vector<InputRouting> routing;
-    routing.reserve(tracks.size());
-
-    for (const auto& track : tracks)
-        routing.push_back({.trackId = track.id,
-                           .midiInputDevice = track.midiInputDevice,
-                           .audioInputDevice = track.audioInputDevice,
-                           .monitors = track.monitorsInput()});
-
-    return routing;
-}
-
 }  // namespace magda::daw::engine_host
