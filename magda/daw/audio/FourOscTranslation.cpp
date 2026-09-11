@@ -24,11 +24,6 @@ using PolySynth = compiled::MagdaPolySynthCompiledPlugin;
 /// 4OSC's own wave numbering (FourOscPlugin.h).
 enum class FourOscWave { none, sine, triangle, sawUp, sawDown, square, random };
 
-/// The rack fader's own range (RackComponent.cpp), which is what the gains
-/// moved onto it have to fit in.
-constexpr float kRackFaderMinDb = -60.0f;
-constexpr float kRackFaderMaxDb = 6.0f;
-
 /// Poly Synth's, which is a different order and a shorter list.
 constexpr int kPolySine = 0;
 constexpr int kPolySaw = 1;
@@ -613,15 +608,27 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
     }
 
     // 4OSC runs its effects BEFORE its master level, and the slot's own trim
-    // follows the whole plugin (FourOscPlugin::applyEffects). Split across two
-    // slots, both of those now sit in front of the rack, where a gain is a
-    // different distortion drive and a different delay and reverb balance.
-    // The rack's fader is where they land: it is the one control in the
-    // translation that is downstream of all four effects.
-    translated.effects->volume =
-        std::clamp(master + translated.device.gainDb, kRackFaderMinDb, kRackFaderMaxDb);
-    translated.device.gainDb = 0.0f;
-    translated.device.gainValue = 1.0f;
+    // follows the whole plugin (FourOscPlugin::applyEffects). Split across a
+    // synth slot and a rack, both of those would sit in front of the rack,
+    // where a gain is a different distortion drive and a different delay and
+    // reverb balance.
+    //
+    // They stay two controls rather than one sum, because one sum fits in
+    // neither range. The chain fader takes the master level: -100 dB is the
+    // engine's silence (PlanValues.cpp), which no parameter slot reaches. The
+    // trim takes the last effect's own slot, the only thing downstream of it
+    // that carries a trim's full -60..+12 dB.
+    auto& chain = translated.effects->chains.front();
+    chain.volume = master;
+
+    if (isDevice(chain.elements.back())) {
+        auto& last = getDevice(chain.elements.back());
+        last.gainValue = translated.device.gainValue;
+        last.gainDb = translated.device.gainDb;
+
+        translated.device.gainValue = 1.0f;
+        translated.device.gainDb = 0.0f;
+    }
 
     return translated;
 }

@@ -131,9 +131,25 @@ void forgetExplicitReferences(const std::set<ChainNodePath>& paths) {
             for (const auto& binding : bindings.findFor(target))
                 bindings.remove(BindingScope::Project, binding.id);
 
-            for (const auto& match : aliases.findByPath(path, index, /*autoGenOnly=*/false))
-                if (isProjectLocal(match.layer))
+            for (const auto& match : aliases.findByPath(path, index, /*autoGenOnly=*/false)) {
+                if (isProjectLocal(match.layer)) {
                     aliases.clear(match.layer, match.canonicalName);
+                    continue;
+                }
+
+                if (match.layer != AliasLayer::UserGlobal)
+                    continue;
+
+                // The user's own alias, shared with every project: the name and
+                // the plugin it names survive and only the path into this one
+                // goes. A stored alias with no path is materialised at
+                // resolution time against a device of its own plugin type
+                // (AliasRegistry.hpp), so it stops answering for this device
+                // without being taken from anybody.
+                auto detached = match.alias;
+                detached.path.reset();
+                aliases.set(match.layer, match.canonicalName, detached);
+            }
         }
 }
 

@@ -522,7 +522,7 @@ TEST_CASE("4OSC's master level becomes the synth's output gain", "[core][4osc]")
                     PolySynth::kOutputGainSlot) == Catch::Approx(-6.0f));
 }
 
-TEST_CASE("A patch with effects puts both gains after the rack", "[core][4osc]") {
+TEST_CASE("A patch with effects puts both gains after the effects", "[core][4osc]") {
     // 4OSC applies its master level after all four effects, and the slot's own
     // trim after the whole plugin. Left on the synth, both would sit in front
     // of the distortion and change its drive.
@@ -539,11 +539,48 @@ TEST_CASE("A patch with effects puts both gains after the rack", "[core][4osc]")
     const auto translated = magda::daw::audio::translateFourOsc(source, nextEffectId);
 
     REQUIRE(translated.effects != nullptr);
-    CHECK(translated.effects->volume == Catch::Approx(-9.0f));
+    const auto& chain = translated.effects->chains.front();
+    CHECK(chain.volume == Catch::Approx(-6.0f));
+
+    const auto& last = magda::getDevice(chain.elements.back());
+    CHECK(last.gainDb == Catch::Approx(-3.0f));
+    CHECK(last.gainValue == Catch::Approx(0.7f));
 
     CHECK(slotValue(translated.device, PolySynth::kOutputGainSlot) == Catch::Approx(0.0f));
     CHECK(translated.device.gainDb == Catch::Approx(0.0f));
     CHECK(translated.device.gainValue == Catch::Approx(1.0f));
+}
+
+TEST_CASE("A silent patch with effects stays silent", "[core][4osc]") {
+    // 4OSC's master level reaches -100 dB, which is silence, and no parameter
+    // slot in MAGDA goes below -60. The chain fader does: -100 is the engine's
+    // minus infinity (PlanValues.cpp).
+    const auto patch =
+        FourOscPatch{}.property("reverbOn", 1).parameter("masterLevel", -100.0f).build();
+
+    auto next = magda::DeviceId{100};
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(patch, nextEffectId);
+
+    REQUIRE(translated.effects != nullptr);
+    CHECK(translated.effects->chains.front().volume == Catch::Approx(-100.0f));
+}
+
+TEST_CASE("A trim above what a fader holds survives the move", "[core][4osc]") {
+    // A device trim reaches +12 dB where every fader stops at +6, which is why
+    // the trim moves to another device's trim rather than onto the rack.
+    auto source = FourOscPatch{}.property("reverbOn", 1).build();
+    source.gainDb = 12.0f;
+    source.gainValue = 3.98f;
+
+    auto next = magda::DeviceId{100};
+    const auto nextEffectId = [&next] { return next++; };
+    const auto translated = magda::daw::audio::translateFourOsc(source, nextEffectId);
+
+    REQUIRE(translated.effects != nullptr);
+    const auto& last = magda::getDevice(translated.effects->chains.front().elements.back());
+    CHECK(last.gainDb == Catch::Approx(12.0f));
+    CHECK(last.gainValue == Catch::Approx(3.98f));
 }
 
 TEST_CASE("Converting a project replaces the synth and adds its effects",
