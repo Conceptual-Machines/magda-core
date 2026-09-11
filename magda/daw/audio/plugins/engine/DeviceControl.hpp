@@ -128,6 +128,20 @@ class DeviceControlPlane {
      */
     virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
 
+    /**
+     * @brief Write @p saved into the plugin at @p key, then read the plugin back.
+     *
+     * For a preset applied to a slot whose plugin is already loaded (#2573).
+     * @p saved is by value because the work runs after this returns.
+     *
+     * The callback receives the plugin's state after the write, not a success
+     * flag: a state chunk can change parameters the model's array does not
+     * list, and the caller must store the snapshot or the plan will send the
+     * stale array back on the next block.
+     */
+    virtual bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                            CaptureCallback completed) = 0;
+
     /// Where this plane's work runs, for a host that has something else to
     /// put on the same thread.
     const std::shared_ptr<ControlExecutor>& executor() const {
@@ -185,6 +199,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                             std::weak_ptr<const DeviceRegistry> devices);
 
     bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                    CaptureCallback completed) override;
 
   private:
     std::weak_ptr<const DeviceRegistry> devices_;

@@ -293,10 +293,10 @@ class TracktionEngineWrapper : public AudioEngine,
         return meters_;
     }
 
-    /// What this engine renders through are the bridge's own synced plugins,
-    /// so a capture is a flush of those (#2581).
+    /** @brief Read the bridge's plugins back into the model. They are what this renders. */
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
+    void applyPluginStateAt(const ChainNodePath& devicePath) override;
 
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)

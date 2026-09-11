@@ -140,6 +140,15 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     std::optional<magda::ExternalPluginSnapshot> captureState();
 
+    /**
+     * @brief Write @p saved into the plugin: parameter array, then state chunk.
+     *
+     * Here rather than behind the instance pointer for the same reason as
+     * captureState() (#2573). Call on the control executor. A Failed return
+     * means the plugin threw partway through and must not be read back.
+     */
+    magda::SavedStateOutcome applyState(const magda::DeviceInfo& saved);
+
   private:
     class PlayHead;
 

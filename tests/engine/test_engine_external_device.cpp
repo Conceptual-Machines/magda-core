@@ -535,6 +535,19 @@ adapter::CaptureOutcome capture(adapter::DeviceControlPlane& plane, magda::engin
     return answered.get();
 }
 
+/** @brief The same as capture(), for the write direction (#2573). */
+adapter::CaptureOutcome apply(adapter::DeviceControlPlane& plane, magda::engine::DeviceKey key,
+                              magda::DeviceInfo saved) {
+    std::promise<adapter::CaptureOutcome> answer;
+    auto answered = answer.get_future();
+
+    plane.applyState(key, std::move(saved), [&answer](adapter::CaptureOutcome outcome) {
+        answer.set_value(std::move(outcome));
+    });
+
+    return answered.get();
+}
+
 /// A registry over one device, which is what a runtime hands a plane (#2270).
 ///
 /// It owns the device, the way a runtime owns the ones it runs, and hands out a
@@ -2791,6 +2804,149 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
 
     magda::applyCapturedPluginState(model, answered.snapshot());
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.4f));
+}
+
+TEST_CASE("A preset applied through the plane reaches the plugin", "[engine][external][control]") {
+    // #2573: the plan sends the parameter array every block, but the state
+    // chunk only reaches an instance when it is built, so a preset's chunk
+    // never arrives.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    // A pluginState this instance has never been given.
+    auto preset = model;
+    {
+        auto plugged = std::make_unique<StubPlugin>(2, 2, 0);
+        plugged->tone->setValue(0.9f);
+
+        juce::MemoryBlock chunk;
+        plugged->getStateInformation(chunk);
+        preset.pluginState = chunk.toBase64Encoding();
+    }
+
+    REQUIRE(raw->tone->getValue() != Catch::Approx(0.9f));
+
+    const auto answered = apply(plane, key, preset);
+    REQUIRE(answered.ok());
+    CHECK(raw->tone->getValue() == Catch::Approx(0.9f));
+}
+
+TEST_CASE("An apply answers with what the plugin holds afterwards", "[engine][external][control]") {
+    // The answer must describe the plugin, not the preset that was sent:
+    // see applyState() in DeviceControl.hpp.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    auto preset = model;
+    {
+        auto plugged = std::make_unique<StubPlugin>(2, 2, 0);
+        plugged->tone->setValue(0.6f);
+
+        juce::MemoryBlock chunk;
+        plugged->getStateInformation(chunk);
+        preset.pluginState = chunk.toBase64Encoding();
+    }
+
+    // Stale on purpose: the preset's array disagrees with its own chunk,
+    // which is what a preset written by another host looks like.
+    for (auto& parameter : preset.parameters)
+        parameter.currentValue = 0.0f;
+
+    const auto answered = apply(plane, key, preset);
+    REQUIRE(answered.ok());
+
+    magda::applyCapturedPluginState(preset, answered.snapshot());
+    CHECK(preset.parameters[1].currentValue == Catch::Approx(0.6f));
+}
+
+TEST_CASE("A plugin that throws taking a patch is a failure with a reason",
+          "[engine][external][control]") {
+    // setStateInformation() throws partway, so the plugin holds neither the
+    // old nor the new state. Reading it back would put that in the project.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    raw->throwsOnState = true;
+
+    auto preset = model;
+    preset.pluginState = juce::MemoryBlock(4, true).toBase64Encoding();
+
+    const auto answered = apply(plane, key, preset);
+    CHECK_FALSE(answered.ok());
+    CHECK(answered.failure().contains("could not take that patch"));
+}
+
+TEST_CASE("An apply to a key with no device bound says so", "[engine][external][control]") {
+    const auto registry = std::make_shared<const EmptyRegistry>();
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto answered = apply(plane, {magda::ChainSegment::PostFx, 12}, externalDevice());
+    CHECK_FALSE(answered.ok());
+    CHECK(answered.failure().contains("nothing to apply it to"));
+    CHECK(answered.failure().contains("12"));
+}
+
+TEST_CASE("An apply is not left holding the plugin suspended", "[engine][external][control]") {
+    // A plugin left suspended renders silence for the rest of the session,
+    // so every exit from the write has to resume it (ExternalPluginState.hpp).
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    const auto external = ownedExternalDevice(result);
+    REQUIRE(external != nullptr);
+
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    raw->throwsOnState = true;
+
+    auto preset = model;
+    preset.pluginState = juce::MemoryBlock(4, true).toBase64Encoding();
+
+    CHECK_FALSE(apply(plane, key, preset).ok());
+    CHECK_FALSE(raw->isSuspended());
 }
 
 TEST_CASE("A key with no device bound is a failure rather than an empty state",

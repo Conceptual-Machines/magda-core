@@ -325,6 +325,13 @@ void MagdaAudioEngine::capturePluginStateAt(const ChainNodePath& devicePath) {
     if (host_ != nullptr)
         host_->captureExternalPluginStateAt(devicePath);
 }
+
+void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
+    tracktion_->applyPluginStateAt(devicePath);
+
+    if (host_ != nullptr)
+        host_->applyExternalPluginStateAt(devicePath);
+}
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

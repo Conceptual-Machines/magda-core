@@ -110,6 +110,56 @@ bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
     });
 }
 
+bool LocalDeviceControlPlane::applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
+                                         CaptureCallback completed) {
+    if (!completed || executor() == nullptr)
+        return false;
+
+    // Same threading and lifetime rules as captureState().
+    return executor()->run([devices = devices_, key, saved = std::move(saved),
+                            completed](ExecutionState state) mutable {
+        if (state == ExecutionState::Cancelled) {
+            completed(CaptureOutcome::failed("the control plane closed before this apply ran"));
+            return;
+        }
+
+        const auto registry = devices.lock();
+        if (!registry) {
+            completed(CaptureOutcome::failed("the runtime that owned " + describeKey(key) +
+                                             " is gone, so nothing was applied"));
+            return;
+        }
+
+        const auto device = registry->find(key);
+        if (device == nullptr) {
+            completed(CaptureOutcome::failed("no plugin is bound for " + describeKey(key) +
+                                             ", so there was nothing to apply it to"));
+            return;
+        }
+
+        if (device->applyState(saved) == magda::SavedStateOutcome::Failed) {
+            // setStateInformation() threw partway, so the plugin holds
+            // neither the old nor the new state. Reading it back would record
+            // that as the state somebody asked for.
+            completed(CaptureOutcome::failed("the plugin bound for " + describeKey(key) +
+                                             " could not take that patch"));
+            return;
+        }
+
+        // A state chunk can change parameters the written array did not
+        // list, so the model is updated from the plugin, not from the write.
+        auto snapshot = device->captureState();
+        if (!snapshot.has_value()) {
+            completed(CaptureOutcome::failed("the plugin bound for " + describeKey(key) +
+                                             " took the state and then would not describe "
+                                             "itself"));
+            return;
+        }
+
+        completed(CaptureOutcome::taken(std::move(*snapshot)));
+    });
+}
+
 bool commitCapturedState(const AssignmentRequest& request,
                          const magda::ExternalPluginSnapshot& snapshot,
                          const MutableDeviceLookup& device) {

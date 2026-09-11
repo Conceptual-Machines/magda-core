@@ -31,8 +31,7 @@ class ControlExecutorTest final : public juce::UnitTest {
     }
 
   private:
-    /// Lets the message loop deliver what the executor posted, the way a host
-    /// returning to its loop would.
+    /** @brief Lets the message loop deliver what the executor posted. */
     static void pumpMessageLoop() {
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
