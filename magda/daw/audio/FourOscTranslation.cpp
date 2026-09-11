@@ -34,52 +34,111 @@ constexpr int kPolyTriangle = 3;
 /// project's paramIndex counts in (tests/device_param_schema.txt). The names
 /// a project saves are display names ("Tune 1"), so the id cannot be matched
 /// against them and the index is what addresses a parameter.
-constexpr const char* kFourOscParameterIds[] = {
-    "tune1",          "fineTune1",   "level1",
-    "pulseWidth1",    "detune1",     "spread1",
-    "pan1",           "tune2",       "fineTune2",
-    "level2",         "pulseWidth2", "detune2",
-    "spread2",        "pan2",        "tune3",
-    "fineTune3",      "level3",      "pulseWidth3",
-    "detune3",        "spread3",     "pan3",
-    "tune4",          "fineTune4",   "level4",
-    "pulseWidth4",    "detune4",     "spread4",
-    "pan4",           "lfoRate1",    "lfoDepth1",
-    "lfoRate2",       "lfoDepth2",   "modAttack1",
-    "modDecay1",      "modSustain1", "modRelease1",
-    "modAttack2",     "modDecay2",   "modSustain2",
-    "modRelease2",    "ampAttack",   "ampDecay",
-    "ampSustain",     "ampRelease",  "ampVelocity",
-    "filterAttack",   "filterDecay", "filterSustain",
-    "filterRelease",  "filterFreq",  "filterResonance",
-    "filterAmount",   "filterKey",   "filterVelocity",
-    "distortion",     "reverbSize",  "reverbDamping",
-    "reverbWidth",    "reverbMix",   "delayFeedback",
-    "delayCrossfeed", "delayMix",    "chorusSpeed",
-    "chorusDepth",    "chorusWidth", "chorusMix",
-    "legato",         "masterLevel",
+///
+/// Each carries the value 4OSC holds when nothing writes the property
+/// (FourOscPlugin.cpp), which is not the value Poly Synth holds.
+struct FourOscParameter {
+    const char* id;
+    float defaultValue;
+};
+
+constexpr FourOscParameter kFourOscParameters[] = {
+    {"tune1", 0.0f},
+    {"fineTune1", 0.0f},
+    {"level1", 0.0f},
+    {"pulseWidth1", 0.5f},
+    {"detune1", 0.0f},
+    {"spread1", 0.0f},
+    {"pan1", 0.0f},
+    {"tune2", 0.0f},
+    {"fineTune2", 0.0f},
+    {"level2", 0.0f},
+    {"pulseWidth2", 0.5f},
+    {"detune2", 0.0f},
+    {"spread2", 0.0f},
+    {"pan2", 0.0f},
+    {"tune3", 0.0f},
+    {"fineTune3", 0.0f},
+    {"level3", 0.0f},
+    {"pulseWidth3", 0.5f},
+    {"detune3", 0.0f},
+    {"spread3", 0.0f},
+    {"pan3", 0.0f},
+    {"tune4", 0.0f},
+    {"fineTune4", 0.0f},
+    {"level4", 0.0f},
+    {"pulseWidth4", 0.5f},
+    {"detune4", 0.0f},
+    {"spread4", 0.0f},
+    {"pan4", 0.0f},
+    {"lfoRate1", 1.0f},
+    {"lfoDepth1", 1.0f},
+    {"lfoRate2", 1.0f},
+    {"lfoDepth2", 1.0f},
+    {"modAttack1", 0.1f},
+    {"modDecay1", 0.1f},
+    {"modSustain1", 80.0f},
+    {"modRelease1", 0.1f},
+    {"modAttack2", 0.1f},
+    {"modDecay2", 0.1f},
+    {"modSustain2", 80.0f},
+    {"modRelease2", 0.1f},
+    {"ampAttack", 0.1f},
+    {"ampDecay", 0.1f},
+    {"ampSustain", 80.0f},
+    {"ampRelease", 0.1f},
+    {"ampVelocity", 100.0f},
+    {"filterAttack", 0.1f},
+    {"filterDecay", 0.1f},
+    {"filterSustain", 80.0f},
+    {"filterRelease", 0.1f},
+    {"filterFreq", 69.0f},
+    {"filterResonance", 0.5f},
+    {"filterAmount", 0.0f},
+    {"filterKey", 0.0f},
+    {"filterVelocity", 0.0f},
+    {"distortion", 0.0f},
+    {"reverbSize", 0.0f},
+    {"reverbDamping", 0.0f},
+    {"reverbWidth", 0.0f},
+    {"reverbMix", 0.0f},
+    {"delayFeedback", -10.0f},
+    {"delayCrossfeed", -100.0f},
+    {"delayMix", 0.0f},
+    {"chorusSpeed", 1.0f},
+    {"chorusDepth", 3.0f},
+    {"chorusWidth", 0.5f},
+    {"chorusMix", 0.0f},
+    {"legato", 0.0f},
+    {"masterLevel", 0.0f},
 };
 
 /// Where @p id sits in the list above, or -1.
 int fourOscParameterIndex(const juce::String& id) {
-    for (auto index = 0; index < static_cast<int>(std::size(kFourOscParameterIds)); ++index)
-        if (id == kFourOscParameterIds[index])
+    for (auto index = 0; index < static_cast<int>(std::size(kFourOscParameters)); ++index)
+        if (id == kFourOscParameters[index].id)
             return index;
 
     return -1;
 }
 
 /**
- * @brief The value 4OSC's @p id holds, or nothing.
+ * @brief The value 4OSC's @p id holds.
  *
  * The model first, addressed by index. A legacy project also writes the
  * non-default values into its plugin XML, and that is the fallback: a project
  * saved before the model became the authority for parameters (#2317) can have
  * the value in only one of the two.
+ *
+ * Written by neither means 4OSC was sitting on its own default, and 4OSC's
+ * defaults are not Poly Synth's: leaving the slot alone put an untouched
+ * patch at -12 dB and a 5 ms attack where 4OSC had 0 dB and 100 ms.
  */
-std::optional<float> parameterValue(const DeviceInfo& device, const juce::ValueTree& props,
-                                    const juce::String& id) {
-    if (const auto index = fourOscParameterIndex(id); index >= 0)
+float parameterValue(const DeviceInfo& device, const juce::ValueTree& props,
+                     const juce::String& id) {
+    const auto index = fourOscParameterIndex(id);
+
+    if (index >= 0)
         for (const auto& parameter : device.parameters)
             if (parameter.paramIndex == index)
                 return parameter.currentValue;
@@ -87,7 +146,15 @@ std::optional<float> parameterValue(const DeviceInfo& device, const juce::ValueT
     if (const auto saved = props.getProperty(juce::Identifier(id)); !saved.isVoid())
         return static_cast<float>(saved);
 
-    return std::nullopt;
+    return index >= 0 ? kFourOscParameters[index].defaultValue : 0.0f;
+}
+
+/// Whether the patch moved @p id off 4OSC's default. What makes a control
+/// Poly Synth has no place for worth reporting is that somebody set it.
+bool isSetByPatch(const DeviceInfo& device, const juce::ValueTree& props, const juce::String& id) {
+    const auto index = fourOscParameterIndex(id);
+    return index >= 0 &&
+           parameterValue(device, props, id) != kFourOscParameters[index].defaultValue;
 }
 
 /// 4OSC keeps wave shape, filter type and voice mode outside its parameters,
@@ -236,16 +303,16 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
         if (shape == FourOscWave::sawDown)
             gaps.push_back({"Osc " + number + " saw down", "translated as saw up"});
 
-        if (const auto tune = parameterValue(fourOsc, props, "tune" + number))
-            setSlot(poly, base + 2, clampToSlot(poly, base + 2, *tune));
+        const auto tune = parameterValue(fourOsc, props, "tune" + number);
+        setSlot(poly, base + 2, clampToSlot(poly, base + 2, tune));
 
-        if (const auto fine = parameterValue(fourOsc, props, "fineTune" + number))
-            setSlot(poly, base + 3, clampToSlot(poly, base + 3, *fine));
+        const auto fine = parameterValue(fourOsc, props, "fineTune" + number);
+        setSlot(poly, base + 3, clampToSlot(poly, base + 3, fine));
 
         // Both are already dB. 4OSC reaches -100 where Poly Synth stops at
         // -60, and both are silence.
-        if (const auto level = parameterValue(fourOsc, props, "level" + number))
-            setSlot(poly, base + 1, clampToSlot(poly, base + 1, *level));
+        const auto level = parameterValue(fourOsc, props, "level" + number);
+        setSlot(poly, base + 1, clampToSlot(poly, base + 1, level));
 
         // Addressed by 4OSC's own parameter ids, which are what a project
         // saves.
@@ -254,8 +321,7 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
               std::tuple{"detune", "Detune", "no unison"},
               std::tuple{"spread", "Spread", "no unison"},
               std::tuple{"pan", "Pan", "no per-oscillator pan"}})
-            if (const auto value = parameterValue(fourOsc, props, juce::String(id) + number);
-                value.has_value() && *value != 0.0f)
+            if (isSetByPatch(fourOsc, props, juce::String(id) + number))
                 gaps.push_back({"Osc " + number + " " + label, juce::String("dropped: ") + reason});
     }
 }
@@ -264,12 +330,11 @@ void translateEnvelopes(const DeviceInfo& fourOsc, const juce::ValueTree& props,
     // 4OSC holds envelope times in seconds and sustain as a percentage; Poly
     // Synth uses milliseconds and a 0..1 fraction.
     const auto seconds = [&](const juce::String& name, int slot) {
-        if (const auto value = parameterValue(fourOsc, props, name))
-            setSlot(poly, slot, clampToSlot(poly, slot, *value * 1000.0f));
+        setSlot(poly, slot,
+                clampToSlot(poly, slot, parameterValue(fourOsc, props, name) * 1000.0f));
     };
     const auto percent = [&](const juce::String& name, int slot) {
-        if (const auto value = parameterValue(fourOsc, props, name))
-            setSlot(poly, slot, clampToSlot(poly, slot, *value / 100.0f));
+        setSlot(poly, slot, clampToSlot(poly, slot, parameterValue(fourOsc, props, name) / 100.0f));
     };
 
     seconds("ampAttack", PolySynth::kAmpAttackSlot);
@@ -296,27 +361,27 @@ void translateFilter(const DeviceInfo& fourOsc, const juce::ValueTree& props, De
         // in the path, so the nearest thing is a lowpass out of the way.
         setSlot(poly, PolySynth::kCutoffSlot, slotMaximum(poly, PolySynth::kCutoffSlot));
 
-    if (type.has_value())
-        if (const auto note = parameterValue(fourOsc, props, "filterFreq"))
-            setSlot(poly, PolySynth::kCutoffSlot,
-                    clampToSlot(poly, PolySynth::kCutoffSlot, cutoffHzFromMidiNote(*note)));
+    if (type.has_value()) {
+        const auto note = parameterValue(fourOsc, props, "filterFreq");
+        setSlot(poly, PolySynth::kCutoffSlot,
+                clampToSlot(poly, PolySynth::kCutoffSlot, cutoffHzFromMidiNote(note)));
+    }
 
-    if (const auto resonance = parameterValue(fourOsc, props, "filterResonance"))
-        setSlot(poly, PolySynth::kResonanceSlot,
-                clampToSlot(poly, PolySynth::kResonanceSlot,
-                            *resonance / 100.0f * slotMaximum(poly, PolySynth::kResonanceSlot)));
+    const auto resonance = parameterValue(fourOsc, props, "filterResonance");
+    setSlot(poly, PolySynth::kResonanceSlot,
+            clampToSlot(poly, PolySynth::kResonanceSlot,
+                        resonance / 100.0f * slotMaximum(poly, PolySynth::kResonanceSlot)));
 
     // 4OSC's amount is -1..1 of its own sweep; Poly Synth's is octaves.
-    if (const auto amount = parameterValue(fourOsc, props, "filterAmount"))
-        setSlot(poly, PolySynth::kFilterEnvAmtSlot,
-                clampToSlot(poly, PolySynth::kFilterEnvAmtSlot,
-                            *amount * slotMaximum(poly, PolySynth::kFilterEnvAmtSlot)));
+    const auto amount = parameterValue(fourOsc, props, "filterAmount");
+    setSlot(poly, PolySynth::kFilterEnvAmtSlot,
+            clampToSlot(poly, PolySynth::kFilterEnvAmtSlot,
+                        amount * slotMaximum(poly, PolySynth::kFilterEnvAmtSlot)));
 
     setSlot(poly, PolySynth::kFilterSlopeSlot,
             propertyOr(props, "filterSlope", 12) >= 24 ? 1.0f : 0.0f);
 
-    if (const auto key = parameterValue(fourOsc, props, "filterKey");
-        key.has_value() && *key != 0.0f)
+    if (isSetByPatch(fourOsc, props, "filterKey"))
         gaps.push_back({"Filter Key", "dropped: no keyboard tracking"});
 }
 
@@ -329,15 +394,13 @@ void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::ValueTree& pr
         }
 
     for (auto lfo = 1; lfo <= 2; ++lfo)
-        if (const auto depth = parameterValue(fourOsc, props, "lfoDepth" + juce::String(lfo));
-            depth.has_value() && *depth != 0.0f) {
+        if (isSetByPatch(fourOsc, props, "lfoDepth" + juce::String(lfo))) {
             gaps.push_back({"LFO", "dropped: use a modifier on the parameter"});
             break;
         }
 
     for (auto env = 1; env <= 2; ++env)
-        if (const auto sustain = parameterValue(fourOsc, props, "modSustain" + juce::String(env));
-            sustain.has_value() && *sustain != 0.0f) {
+        if (isSetByPatch(fourOsc, props, "modSustain" + juce::String(env))) {
             gaps.push_back({"Mod envelope", "dropped: use a modifier on the parameter"});
             break;
         }
@@ -385,8 +448,8 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
     ChainInfo chain;
 
     const auto on = [&props](const juce::String& name) { return propertyOr(props, name, 0) != 0; };
-    const auto value = [&fourOsc, &props](const juce::String& name, float fallback) {
-        return parameterValue(fourOsc, props, name).value_or(fallback);
+    const auto value = [&fourOsc, &props](const juce::String& name) {
+        return parameterValue(fourOsc, props, name);
     };
 
     if (on("distortionOn")) {
@@ -395,7 +458,7 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
         // 4OSC multiplies by drive and clamps at 1/(2*drive), so its 0..1 is
         // the whole range of the effect.
         setSlot(device, Clipper::kDriveSlot,
-                clampToSlot(device, Clipper::kDriveSlot, value("distortion", 0.0f) * 24.0f));
+                clampToSlot(device, Clipper::kDriveSlot, value("distortion") * 24.0f));
         chain.elements.push_back(ChainElement{std::move(device)});
     }
 
@@ -403,29 +466,27 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
         using Chorus = compiled::MagdaChorusCompiledPlugin;
         auto device = compiledDevice<Chorus>(nextId());
         setSlot(device, Chorus::kRateSlot,
-                clampToSlot(device, Chorus::kRateSlot, value("chorusSpeed", 1.0f)));
+                clampToSlot(device, Chorus::kRateSlot, value("chorusSpeed")));
         // 4OSC's depth is milliseconds of delay, up to 20; MAGDA's is a
         // fraction of its own range.
         setSlot(device, Chorus::kDepthSlot,
-                clampToSlot(device, Chorus::kDepthSlot, value("chorusDepth", 0.0f) / 20.0f));
+                clampToSlot(device, Chorus::kDepthSlot, value("chorusDepth") / 20.0f));
         setSlot(device, Chorus::kWidthSlot,
-                clampToSlot(device, Chorus::kWidthSlot, value("chorusWidth", 0.0f)));
+                clampToSlot(device, Chorus::kWidthSlot, value("chorusWidth")));
         setSlot(device, Chorus::kMixSlot,
-                clampToSlot(device, Chorus::kMixSlot, value("chorusMix", 0.5f)));
+                clampToSlot(device, Chorus::kMixSlot, value("chorusMix")));
         chain.elements.push_back(ChainElement{std::move(device)});
     }
 
     if (on("delayOn")) {
         using Delay = compiled::MagdaDelayCompiledPlugin;
         auto device = compiledDevice<Delay>(nextId());
-        setSlot(device, Delay::kFeedbackSlot,
-                clampToSlot(device, Delay::kFeedbackSlot,
-                            gainFromDecibels(value("delayFeedback", -100.0f))));
+        setSlot(
+            device, Delay::kFeedbackSlot,
+            clampToSlot(device, Delay::kFeedbackSlot, gainFromDecibels(value("delayFeedback"))));
         setSlot(device, Delay::kCrossSlot,
-                clampToSlot(device, Delay::kCrossSlot,
-                            gainFromDecibels(value("delayCrossfeed", -100.0f))));
-        setSlot(device, Delay::kMixSlot,
-                clampToSlot(device, Delay::kMixSlot, value("delayMix", 0.5f)));
+                clampToSlot(device, Delay::kCrossSlot, gainFromDecibels(value("delayCrossfeed"))));
+        setSlot(device, Delay::kMixSlot, clampToSlot(device, Delay::kMixSlot, value("delayMix")));
         chain.elements.push_back(ChainElement{std::move(device)});
     }
 
@@ -435,13 +496,13 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
         // 4OSC holds all four as 0..1; MAGDA's decay, damping and width are
         // percentages.
         setSlot(device, Reverb::kDecaySlot,
-                clampToSlot(device, Reverb::kDecaySlot, value("reverbSize", 0.5f) * 100.0f));
+                clampToSlot(device, Reverb::kDecaySlot, value("reverbSize") * 100.0f));
         setSlot(device, Reverb::kDampingSlot,
-                clampToSlot(device, Reverb::kDampingSlot, value("reverbDamping", 0.5f) * 100.0f));
+                clampToSlot(device, Reverb::kDampingSlot, value("reverbDamping") * 100.0f));
         setSlot(device, Reverb::kWidthSlot,
-                clampToSlot(device, Reverb::kWidthSlot, value("reverbWidth", 1.0f) * 100.0f));
+                clampToSlot(device, Reverb::kWidthSlot, value("reverbWidth") * 100.0f));
         setSlot(device, Reverb::kMixSlot,
-                clampToSlot(device, Reverb::kMixSlot, value("reverbMix", 0.3f)));
+                clampToSlot(device, Reverb::kMixSlot, value("reverbMix")));
         chain.elements.push_back(ChainElement{std::move(device)});
     }
 
@@ -472,9 +533,9 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
     translateEnvelopes(fourOsc, props, translated.device);
     translateFilter(fourOsc, props, translated.device, translated.gaps);
 
-    if (const auto legato = parameterValue(fourOsc, props, "legato"))
-        setSlot(translated.device, PolySynth::kGlideSlot,
-                clampToSlot(translated.device, PolySynth::kGlideSlot, *legato));
+    const auto legato = parameterValue(fourOsc, props, "legato");
+    setSlot(translated.device, PolySynth::kGlideSlot,
+            clampToSlot(translated.device, PolySynth::kGlideSlot, legato));
 
     setSlot(translated.device, PolySynth::kVoiceModeSlot,
             static_cast<float>(polyVoiceModeFor(propertyOr(props, "voiceMode", 2))));
@@ -485,9 +546,9 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
         translated.effects = buildEffects(fourOsc, props, nextEffectId);
 
     // 4OSC's master level is the synth's own output, not an effect.
-    if (const auto master = parameterValue(fourOsc, props, "masterLevel"))
-        setSlot(translated.device, PolySynth::kOutputGainSlot,
-                clampToSlot(translated.device, PolySynth::kOutputGainSlot, *master));
+    const auto master = parameterValue(fourOsc, props, "masterLevel");
+    setSlot(translated.device, PolySynth::kOutputGainSlot,
+            clampToSlot(translated.device, PolySynth::kOutputGainSlot, master));
 
     return translated;
 }

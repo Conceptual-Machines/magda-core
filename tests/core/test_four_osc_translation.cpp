@@ -133,6 +133,25 @@ TEST_CASE("The translation keeps the device's identity", "[core][4osc]") {
     CHECK(translated.device.isInstrument);
 }
 
+TEST_CASE("A patch that wrote nothing lands on 4OSC's defaults", "[core][4osc]") {
+    // TE writes only what differs from a property's default, so a patch left
+    // alone arrives with no parameters and no properties at all. Poly Synth's
+    // own defaults are a different sound: osc 1 sits at -12 dB where 4OSC
+    // sits at 0, and the amp envelope is 5/200/70%/400 ms against 100/100/80%/
+    // 100 ms.
+    const auto translated = magda::daw::audio::translateFourOsc(FourOscPatch{}.build());
+    const auto& device = translated.device;
+
+    CHECK(slotValue(device, oscSlot(1, 1)) == Catch::Approx(0.0f));
+    CHECK(slotValue(device, PolySynth::kAmpAttackSlot) == Catch::Approx(100.0f));
+    CHECK(slotValue(device, PolySynth::kAmpDecaySlot) == Catch::Approx(100.0f));
+    CHECK(slotValue(device, PolySynth::kAmpSustainSlot) == Catch::Approx(0.8f));
+    CHECK(slotValue(device, PolySynth::kAmpReleaseSlot) == Catch::Approx(100.0f));
+
+    // Nothing was set, so nothing is worth reporting as lost.
+    CHECK(translated.gaps.empty());
+}
+
 TEST_CASE("An oscillator's wave, tune and level carry over", "[core][4osc]") {
     const auto patch = FourOscPatch{}
                            .property("waveShape1", 5)  // square
