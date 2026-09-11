@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <map>
 #include <unordered_map>
 
@@ -27,6 +28,21 @@ namespace magda::engine {
  */
 struct PlanBindings {
     std::unordered_map<DeviceKey, EngineDevice*, DeviceKeyHash> devices;
+
+    /**
+     * @brief Whether a device is owed an all-notes-off (#2418).
+     *
+     * The store's, beside the instance it is about, because that is what the
+     * flag is about: an instrument holding notes whose off is not coming
+     * survives every plan that replaces the one it was rerouted under. A plan
+     * epoch is the wrong owner -- two of them can render across a swap, and a
+     * debt either copied or handed between them is delivered twice or lost.
+     *
+     * One flag, read by whichever epoch renders the device first and cleared
+     * by the read, so it is spent exactly once however many plans come and go
+     * before that block.
+     */
+    std::unordered_map<DeviceKey, std::atomic<char>*, DeviceKeyHash> deviceMidiPanic;
 
     /// Arrangement and session playback for a track (ClipAudio / ClipMidi ops).
     std::unordered_map<TrackId, EngineAudioSource*> clipAudio;

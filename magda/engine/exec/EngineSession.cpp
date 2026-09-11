@@ -96,13 +96,6 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // goes live.
     values_.nonRealtimeReplace(prepared->values);
 
-    // Panics the epoch being replaced never got to deliver, because a device
-    // in a silenced rack is not processed at all. Here rather than at prepare:
-    // until this line the publish could still be refused, and a debt taken
-    // over by a plan that never renders is a note nothing releases (#2418).
-    if (live_ != nullptr)
-        prepared->executor.takeUnpaidReroutesFrom(live_->executor);
-
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
     published_.nonRealtimeReplace(prepared);

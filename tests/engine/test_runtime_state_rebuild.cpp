@@ -1,3 +1,4 @@
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 #include <set>
@@ -108,6 +109,27 @@ TEST_CASE("A key nothing names for rebuild keeps its device", "[engine][store][r
     // The retention contract, unchanged.
     CHECK(bound(store.realise(plan, kContext))->which() == 1);
     CHECK(factory.made == 1);
+}
+
+TEST_CASE("A device's owed panic is the same flag across every publish", "[engine][store][2418]") {
+    // Where a debt about a retained instrument has to live: an all-notes-off
+    // the device has not spent yet outlives the plan that raised it, and both
+    // the plan being replaced and the one replacing it read the one flag.
+    ProbeFactory factory;
+    RuntimeStateStore store(factory);
+
+    const auto plan = planWithDevice();
+
+    const auto first = store.realise(plan, kContext);
+    auto* owed = first.deviceMidiPanic.at(kKey);
+    REQUIRE(owed != nullptr);
+
+    owed->store(1, std::memory_order_relaxed);
+    store.releaseDeleted(plan, namedIds(), nullptr);
+
+    const auto second = store.realise(plan, kContext);
+    CHECK(second.deviceMidiPanic.at(kKey) == owed);
+    CHECK(owed->load(std::memory_order_relaxed) == 1);
 }
 
 TEST_CASE("A key named for rebuild is asked for again", "[engine][store][rebuild]") {

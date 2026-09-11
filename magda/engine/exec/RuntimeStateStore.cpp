@@ -136,8 +136,14 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
             case OpKind::Device:
                 if (auto* device =
                         realiseOne(devices_, op.key.deviceKey(), context,
-                                   [this](DeviceKey key) { return factory_.createDevice(key); }))
+                                   [this](DeviceKey key) { return factory_.createDevice(key); })) {
                     bindings.devices[op.key.deviceKey()] = device;
+
+                    auto& owed = devicePanic_[op.key.deviceKey()];
+                    if (owed == nullptr)
+                        owed = std::make_unique<std::atomic<char>>(0);
+                    bindings.deviceMidiPanic[op.key.deviceKey()] = owed.get();
+                }
                 break;
 
             case OpKind::ClipAudio:

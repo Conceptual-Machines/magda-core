@@ -289,7 +289,7 @@ void PlanExecutor::reset() {
     audioDelays_.clear();
     midiDelays_.clear();
     deviceForOp_.clear();
-    reroutedMidi_.clear();
+    midiPanicForOp_.clear();
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
@@ -328,6 +328,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numOps = plan.ops.size();
 
     deviceForOp_.assign(numOps, nullptr);
+    midiPanicForOp_.assign(numOps, nullptr);
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
@@ -380,10 +381,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // somewhere else: the note-off for what it is holding is going to the old
     // source's new destination, or nowhere. Only sources that left, because
     // one arriving beside the others takes nothing away (#2418).
-    reroutedMidi_ = std::vector<std::atomic<char>>(numOps);
-    for (auto& owed : reroutedMidi_)
-        owed.store(0, std::memory_order_relaxed);
-
     if (previous != nullptr && previous != this && previous->plan_ != nullptr) {
         const auto was = midiBehindDevices(*previous->plan_);
         const auto now = midiBehindDevices(plan);
@@ -402,7 +399,17 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                   return !after->second.contains(source);
                               });
 
-            reroutedMidi_[i].store(lost ? 1 : 0, std::memory_order_relaxed);
+            // Onto the store's flag rather than this executor's own state:
+            // the epoch being replaced is still rendering, and whichever of
+            // the two reaches the device first is the one that should spend
+            // it. Raised only, never cleared here: a device already owed one
+            // is still owed it.
+            //
+            // Read from the bindings rather than from the per-op table, which
+            // is not resolved until further down.
+            const auto owed = bindings.deviceMidiPanic.find(key);
+            if (lost && owed != bindings.deviceMidiPanic.end() && owed->second != nullptr)
+                owed->second->store(1, std::memory_order_relaxed);
         }
     }
 
@@ -615,6 +622,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     break;
                 }
                 deviceForOp_[i] = found->second;
+
+                if (const auto owed = bindings.deviceMidiPanic.find(op.key.deviceKey());
+                    owed != bindings.deviceMidiPanic.end())
+                    midiPanicForOp_[i] = owed->second;
                 break;
             }
 
@@ -1006,31 +1017,6 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
-}
-
-std::set<DeviceKey> PlanExecutor::claimUnpaidReroutes() const {
-    std::set<DeviceKey> unpaid;
-
-    const auto owed = plan_ == nullptr ? 0 : std::min(plan_->ops.size(), reroutedMidi_.size());
-    for (std::size_t i = 0; i < owed; ++i)
-        if (reroutedMidi_[i].exchange(0, std::memory_order_relaxed) != 0)
-            unpaid.insert(plan_->ops[i].key.deviceKey());
-
-    return unpaid;
-}
-
-void PlanExecutor::takeUnpaidReroutesFrom(const PlanExecutor& previous) {
-    if (&previous == this || plan_ == nullptr)
-        return;
-
-    const auto unpaid = previous.claimUnpaidReroutes();
-    if (unpaid.empty())
-        return;
-
-    for (std::size_t i = 0; i < plan_->ops.size(); ++i)
-        if (const auto& op = plan_->ops[i];
-            op.kind == OpKind::Device && unpaid.contains(op.key.deviceKey()))
-            reroutedMidi_[i].store(1, std::memory_order_relaxed);
 }
 
 bool PlanExecutor::midiInPanic(const PortRef& ref) const {
@@ -1628,8 +1614,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // Spent here rather than inside the block below: as the last
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
-            const auto rerouted = reroutedMidi_[static_cast<std::size_t>(i)].exchange(
-                                      0, std::memory_order_relaxed) != 0;
+            auto* owed = midiPanicForOp_[static_cast<std::size_t>(i)];
+            const auto rerouted = owed != nullptr && owed->exchange(0, std::memory_order_relaxed);
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     // What reached the port, plus the block's

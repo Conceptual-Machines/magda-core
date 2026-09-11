@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <map>
 #include <memory>
 #include <optional>
@@ -392,6 +393,12 @@ class RuntimeStateStore {
     /// the device it is reading across a publish that drops it (#2581). The
     /// store is still the only thing that creates or evicts one.
     std::unordered_map<DeviceKey, std::shared_ptr<EngineDevice>, DeviceKeyHash> devices_;
+
+    /// An all-notes-off each device is owed, outliving every plan the way the
+    /// instance does (PlanBindings::deviceMidiPanic). Never evicted: it is a
+    /// byte per device key the project has ever realised, and a flag that
+    /// outlives its instance panics a fresh plugin, which is holding nothing.
+    std::unordered_map<DeviceKey, std::unique_ptr<std::atomic<char>>, DeviceKeyHash> devicePanic_;
 
     /// Instances a rebuild took out of devices_, held until releaseDeleted()
     /// (#2572).
