@@ -1,6 +1,7 @@
 #include "PluginParameterConfigStore.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 
 #include "AppPaths.hpp"
 #include "DeviceInfo.hpp"
@@ -78,6 +79,31 @@ ParameterScale scaleFromString(const juce::String& name) {
     return ParameterScale::Linear;
 }
 
+std::vector<int> entryPositions(const PluginParameterConfig& config,
+                                const std::vector<juce::String>& currentIds) {
+    std::unordered_map<std::string, int> byId;
+    for (int at = 0; at < static_cast<int>(currentIds.size()); ++at)
+        if (const auto& id = currentIds[static_cast<size_t>(at)]; id.isNotEmpty())
+            byId.emplace(id.toStdString(), at);
+
+    const auto matchable = !byId.empty();
+
+    std::vector<int> positions;
+    positions.reserve(config.entries.size());
+
+    for (const auto& entry : config.entries) {
+        if (entry.id.isEmpty() || !matchable) {
+            positions.push_back(entry.index);
+            continue;
+        }
+
+        const auto found = byId.find(entry.id.toStdString());
+        positions.push_back(found != byId.end() ? found->second : -1);
+    }
+
+    return positions;
+}
+
 juce::File configFileFor(const juce::String& uniqueId) {
     return paths::pluginConfigsDir().getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") +
                                                   ".xml");
@@ -106,6 +132,7 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
             entry.index = paramElem->getIntAttribute("index", -1);
             if (entry.index < 0)
                 continue;
+            entry.id = paramElem->getStringAttribute("id");
             entry.name = paramElem->getStringAttribute("name");
             entry.visible = paramElem->getBoolAttribute("visible", false);
             entry.miniMixer = paramElem->getBoolAttribute("mini", false);
@@ -165,6 +192,8 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
     for (const auto& entry : config.entries) {
         auto* paramElem = paramsElem->createNewChildElement("Param");
         paramElem->setAttribute("index", entry.index);
+        if (entry.id.isNotEmpty())
+            paramElem->setAttribute("id", entry.id);
         paramElem->setAttribute("name", entry.name);
         paramElem->setAttribute("visible", entry.visible);
         paramElem->setAttribute("mini", entry.miniMixer);
@@ -210,6 +239,7 @@ PluginParameterConfig fromDevice(const DeviceInfo& device) {
         const auto& info = device.parameters[i];
         PluginParameterConfigEntry entry;
         entry.index = static_cast<int>(i);
+        entry.id = info.stableId;
         entry.name = info.name;
         entry.unit = info.unit;
         entry.scale = info.scale;
@@ -241,17 +271,27 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     // indices 0/1 were dry/wet; those resolve to the wrong slots once and need
     // to be re-saved.)
     const auto count = static_cast<int>(device.parameters.size());
-    for (const auto& entry : config->entries) {
-        if (entry.index < 0 || entry.index >= count)
+
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(device.parameters.size());
+    for (const auto& parameter : device.parameters)
+        currentIds.push_back(parameter.stableId);
+
+    const auto positions = entryPositions(*config, currentIds);
+
+    for (size_t at = 0; at < config->entries.size(); ++at) {
+        const auto& entry = config->entries[at];
+        const auto index = positions[at];
+        if (index < 0 || index >= count)
             continue;
         if (entry.visible)
-            device.visibleParameters.push_back(entry.index);
+            device.visibleParameters.push_back(index);
         if (entry.miniMixer)
-            device.miniMixerParameters.push_back(entry.index);
+            device.miniMixerParameters.push_back(index);
         if (entry.aiAgent)
-            device.aiSoundDesignerParameters.push_back(entry.index);
+            device.aiSoundDesignerParameters.push_back(index);
 
-        auto& parameter = device.parameters[static_cast<size_t>(entry.index)];
+        auto& parameter = device.parameters[static_cast<size_t>(index)];
         if (entry.unit)
             parameter.unit = *entry.unit;
         if (entry.scale)

@@ -65,6 +65,11 @@ magda::DeviceInfo makeExternalDevice() {
     device.parameters.emplace_back(2, "Mode", "", 0.0f, 2.0f, 0.0f,
                                    magda::ParameterScale::Discrete);
     device.parameters[2].choices = {"LP", "BP", "HP"};
+
+    // The ids the plugin declares, which is what an entry is matched by.
+    device.parameters[0].stableId = "cutoff";
+    device.parameters[1].stableId = "res";
+    device.parameters[2].stableId = "mode";
     return device;
 }
 
@@ -177,6 +182,86 @@ TEST_CASE("A device with no uniqueId is filed under its plugin id", "[param-conf
 
     REQUIRE(store::applyToDevice(device));
     CHECK(device.parameters[1].unit == "dB");
+}
+
+TEST_CASE("A config follows its parameter when the plugin renumbers",
+          "[param-config-store][2601]") {
+    // What a plugin update does: a parameter appears, and everything after it
+    // moves down one. Addressed by position, every override past the new one
+    // would describe the wrong control from then on.
+    TempDataDir temp;
+    const auto configured = makeExternalDevice();
+
+    auto config = store::fromDevice(configured);
+    config.entries[2].visible = true;
+    config.entries[2].unit = "shape";
+    REQUIRE(store::save(configured.uniqueId, config));
+
+    auto updated = makeExternalDevice();
+    magda::ParameterInfo added(0, "Drive", "", 0.0f, 1.0f, 0.0f);
+    added.stableId = "drive";
+    updated.parameters.insert(updated.parameters.begin(), added);
+
+    REQUIRE(store::applyToDevice(updated));
+
+    // Mode is at three now, and that is where its override landed.
+    CHECK(updated.parameters[3].name == "Mode");
+    CHECK(updated.parameters[3].unit == "shape");
+    CHECK(updated.visibleParameters == std::vector<int>{3});
+
+    // The parameter that took the old position is untouched.
+    CHECK(updated.parameters[2].unit == "%");
+}
+
+TEST_CASE("An entry for a parameter the plugin dropped is ignored", "[param-config-store][2601]") {
+    TempDataDir temp;
+    const auto configured = makeExternalDevice();
+
+    auto config = store::fromDevice(configured);
+    config.entries[1].visible = true;
+    config.entries[1].unit = "Q";
+    REQUIRE(store::save(configured.uniqueId, config));
+
+    auto updated = makeExternalDevice();
+    updated.parameters.erase(updated.parameters.begin() + 1);  // Resonance is gone
+
+    REQUIRE(store::applyToDevice(updated));
+
+    // Nothing inherits the missing parameter's override, and Mode -- which now
+    // sits where it used to -- keeps its own.
+    CHECK(updated.parameters[1].name == "Mode");
+    CHECK(updated.parameters[1].unit.isEmpty());
+    CHECK(updated.visibleParameters.empty());
+}
+
+TEST_CASE("A config written before ids is still addressed by position",
+          "[param-config-store][2601]") {
+    // Every file on disk today. The id is what a re-save adds.
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+
+    auto config = store::fromDevice(device);
+    for (auto& entry : config.entries)
+        entry.id = {};
+    config.entries[1].unit = "Q";
+    REQUIRE(store::save(device.uniqueId, config));
+
+    REQUIRE(store::applyToDevice(device));
+    CHECK(device.parameters[1].unit == "Q");
+}
+
+TEST_CASE("A parameter that declares no id keeps its position", "[param-config-store][2601]") {
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+    for (auto& parameter : device.parameters)
+        parameter.stableId = {};
+
+    auto config = store::fromDevice(device);
+    config.entries[2].unit = "shape";
+    REQUIRE(store::save(device.uniqueId, config));
+
+    REQUIRE(store::applyToDevice(device));
+    CHECK(device.parameters[2].unit == "shape");
 }
 
 TEST_CASE("legacy visible-only config files still load", "[param-config-store]") {

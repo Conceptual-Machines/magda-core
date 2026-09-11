@@ -21,6 +21,9 @@ namespace magda::daw::ui {
  */
 struct MockParameterInfo {
     juce::String name;
+    /// The parameter's own id, carried from the scan so the config this dialog
+    /// writes is addressed by identity rather than by row.
+    juce::String stableId;
     float defaultValue = 0.5f;
     bool isVisible = true;
     juce::String unit;  // Hz, dB, ms, %, semitones, custom

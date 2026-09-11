@@ -299,9 +299,37 @@ bool DeviceApiLive::setDeviceParameterConfig(const ChainNodePath& devicePath,
     auto config = PluginParameterConfigStore::fromDevice(*device);
     if (const auto saved = PluginParameterConfigStore::load(uniqueId)) {
         config.aiPrompt = saved->aiPrompt;
-        for (const auto& entry : saved->entries) {
-            if (entry.index >= 0 && entry.index < count)
-                config.entries[static_cast<size_t>(entry.index)] = entry;
+
+        std::vector<juce::String> currentIds;
+        currentIds.reserve(config.entries.size());
+        for (const auto& entry : config.entries)
+            currentIds.push_back(entry.id);
+
+        // Field by field onto the entry the parameter has now, rather than
+        // replacing it: the fresh entry carries the device's current position
+        // and id, and assigning the saved one over it would put back the
+        // position it was written at and erase an id a legacy file never had —
+        // so a save through here would never migrate the file.
+        const auto positions = PluginParameterConfigStore::entryPositions(*saved, currentIds);
+
+        for (size_t at = 0; at < saved->entries.size(); ++at) {
+            const auto index = positions[at];
+            if (index < 0 || index >= count)
+                continue;
+
+            const auto& from = saved->entries[at];
+            auto& into = config.entries[static_cast<size_t>(index)];
+            into.name = from.name;
+            into.visible = from.visible;
+            into.miniMixer = from.miniMixer;
+            into.aiAgent = from.aiAgent;
+            into.unit = from.unit;
+            into.scale = from.scale;
+            into.rangeMin = from.rangeMin;
+            into.rangeMax = from.rangeMax;
+            into.rangeCenter = from.rangeCenter;
+            into.choices = from.choices;
+            into.valueTable = from.valueTable;
         }
     }
 

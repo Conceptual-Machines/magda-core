@@ -49,6 +49,12 @@ struct GrooveTemplateData {
 
 struct ScannedPluginParameter {
     juce::String name;
+
+    /// The parameter's own id, which is what a saved config is matched by
+    /// (PluginParameterConfigEntry::id). Empty for a parameter that declares
+    /// none, which falls back to its position.
+    juce::String stableId;
+
     float defaultValue = 0.5f;
     juce::String unit;
     float rangeMin = 0.0f;

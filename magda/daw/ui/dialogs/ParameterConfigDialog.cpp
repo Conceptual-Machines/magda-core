@@ -915,6 +915,7 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
     for (auto& scanned : audioEngine->scanPluginParameters(uniqueId, false)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.defaultValue = scanned.defaultValue;
         info.isVisible = true;
         info.unit = scanned.unit;
@@ -948,6 +949,7 @@ bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId)
     for (auto& scanned : audioEngine->scanPluginParameters(pluginId, true)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.isVisible = true;
         info.defaultValue = scanned.defaultValue;
         info.rangeMin = scanned.rangeMin;
@@ -1252,6 +1254,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         const auto& p = parameters_[i];
         magda::PluginParameterConfigEntry entry;
         entry.index = static_cast<int>(i);
+        entry.id = p.stableId;
         entry.name = p.name;
         // Internal devices intentionally expose no Visible params (only Mini FX),
         // so never persist visibility for them regardless of the default state.
@@ -1299,11 +1302,25 @@ void ParameterConfigDialog::loadParameterConfiguration() {
         param.isVisible = false;
     }
 
+    // By the same rule applyToDevice() reads one: the row a saved entry
+    // describes is the one whose parameter it names, not the one it sat at when
+    // it was written. Overlaying by position would show an old customization
+    // against the wrong control, and this dialog's save would then write that
+    // row's id over it and make the mistake permanent.
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(parameters_.size());
+    for (const auto& parameter : parameters_)
+        currentIds.push_back(parameter.stableId);
+
+    const auto positions = magda::PluginParameterConfigStore::entryPositions(*config, currentIds);
+
     int loadedCount = 0;
-    for (const auto& entry : config->entries) {
-        if (entry.index < 0 || entry.index >= static_cast<int>(parameters_.size()))
+    for (size_t at = 0; at < config->entries.size(); ++at) {
+        const auto& entry = config->entries[at];
+        const auto index = positions[at];
+        if (index < 0 || index >= static_cast<int>(parameters_.size()))
             continue;
-        auto& p = parameters_[static_cast<size_t>(entry.index)];
+        auto& p = parameters_[static_cast<size_t>(index)];
         p.isVisible = entry.visible;
         p.inMiniMixer = entry.miniMixer;
         p.inAiSoundDesigner = entry.aiAgent;

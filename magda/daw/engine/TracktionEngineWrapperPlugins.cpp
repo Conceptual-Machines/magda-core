@@ -675,6 +675,7 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
             const int numStates = parameter->getNumberOfStates();
             ScannedPluginParameter info;
             info.name = parameter->getParameterName();
+            info.stableId = parameter->paramID;
             info.defaultValue = parameter->getDefaultValue().value_or(range.getStart());
             info.unit = "%";
             info.rangeMin = range.getStart();
@@ -738,6 +739,7 @@ std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters
 
         ScannedPluginParameter info;
         info.name = model.name;
+        info.stableId = model.stableId;
         info.defaultValue = parameter->getDefaultValue();
         const auto rawLabel = parameter->getLabel().trim();
         info.unit = rawLabel.length() <= 6 && !rawLabel.contains("[") && !rawLabel.contains("(")
