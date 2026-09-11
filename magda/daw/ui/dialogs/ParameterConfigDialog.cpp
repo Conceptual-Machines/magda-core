@@ -915,6 +915,7 @@ void ParameterConfigDialog::loadParameters(const juce::String& uniqueId) {
     for (auto& scanned : audioEngine->scanPluginParameters(uniqueId, false)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.defaultValue = scanned.defaultValue;
         info.isVisible = true;
         info.unit = scanned.unit;
@@ -948,6 +949,7 @@ bool ParameterConfigDialog::scanInternalParameters(const juce::String& pluginId)
     for (auto& scanned : audioEngine->scanPluginParameters(pluginId, true)) {
         MockParameterInfo info;
         info.name = scanned.name;
+        info.stableId = scanned.stableId;
         info.isVisible = true;
         info.defaultValue = scanned.defaultValue;
         info.rangeMin = scanned.rangeMin;
@@ -1252,6 +1254,7 @@ void ParameterConfigDialog::saveParameterConfiguration() {
         const auto& p = parameters_[i];
         magda::PluginParameterConfigEntry entry;
         entry.index = static_cast<int>(i);
+        entry.id = p.stableId;
         entry.name = p.name;
         // Internal devices intentionally expose no Visible params (only Mini FX),
         // so never persist visibility for them regardless of the default state.

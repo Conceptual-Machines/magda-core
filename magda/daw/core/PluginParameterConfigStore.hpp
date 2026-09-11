@@ -15,13 +15,23 @@ struct DeviceInfo;
  * @brief One parameter's saved customization, as stored in the per-plugin
  * config XML.
  *
- * `index` is the position in `DeviceInfo::parameters`. The optional fields are
+ * `index` is the position in `DeviceInfo::parameters`, used when `id` cannot
+ * answer. The optional fields are
  * detection overrides (unit, scale, range, choices, value table): absent means
  * "leave whatever the device reports", which is how legacy files that predate
  * detection data keep working.
  */
 struct PluginParameterConfigEntry {
     int index = -1;
+
+    /// The parameter's own id (ParameterInfo::stableId), which for a hosted
+    /// plugin is the `paramID` it declares. What an entry is matched by, with
+    /// `index` as the fallback for the files written before this existed and
+    /// for plugins that declare no ids: a plugin that gains a parameter in an
+    /// update renumbers everything after it, and a config addressed by
+    /// position then describes the wrong controls.
+    juce::String id;
+
     juce::String name;
     bool visible = false;
     bool miniMixer = false;

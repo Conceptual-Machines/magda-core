@@ -1,6 +1,7 @@
 #include "PluginParameterConfigStore.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 
 #include "AppPaths.hpp"
 #include "DeviceInfo.hpp"
@@ -106,6 +107,7 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
             entry.index = paramElem->getIntAttribute("index", -1);
             if (entry.index < 0)
                 continue;
+            entry.id = paramElem->getStringAttribute("id");
             entry.name = paramElem->getStringAttribute("name");
             entry.visible = paramElem->getBoolAttribute("visible", false);
             entry.miniMixer = paramElem->getBoolAttribute("mini", false);
@@ -165,6 +167,8 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
     for (const auto& entry : config.entries) {
         auto* paramElem = paramsElem->createNewChildElement("Param");
         paramElem->setAttribute("index", entry.index);
+        if (entry.id.isNotEmpty())
+            paramElem->setAttribute("id", entry.id);
         paramElem->setAttribute("name", entry.name);
         paramElem->setAttribute("visible", entry.visible);
         paramElem->setAttribute("mini", entry.miniMixer);
@@ -210,6 +214,7 @@ PluginParameterConfig fromDevice(const DeviceInfo& device) {
         const auto& info = device.parameters[i];
         PluginParameterConfigEntry entry;
         entry.index = static_cast<int>(i);
+        entry.id = info.stableId;
         entry.name = info.name;
         entry.unit = info.unit;
         entry.scale = info.scale;
@@ -241,17 +246,42 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     // indices 0/1 were dry/wet; those resolve to the wrong slots once and need
     // to be re-saved.)
     const auto count = static_cast<int>(device.parameters.size());
+
+    std::unordered_map<std::string, int> byId;
+    for (int at = 0; at < count; ++at)
+        if (const auto& id = device.parameters[static_cast<size_t>(at)].stableId; id.isNotEmpty())
+            byId.emplace(id.toStdString(), at);
+
+    // The id where there is one to match on, so a plugin that gained or lost a
+    // parameter since the config was written still finds the ones it kept. A
+    // miss is then a parameter the plugin no longer has, and is dropped rather
+    // than falling back: the position it used to hold belongs to something else
+    // now, and that something else has an entry of its own.
+    //
+    // The position is the answer only when nothing can be matched -- a file
+    // written before ids were stored, or a plugin whose parameters declare
+    // none.
+    const auto matchable = !byId.empty();
+    const auto positionOf = [&byId, matchable](const PluginParameterConfigEntry& entry) {
+        if (entry.id.isEmpty() || !matchable)
+            return entry.index;
+
+        const auto found = byId.find(entry.id.toStdString());
+        return found != byId.end() ? found->second : -1;
+    };
+
     for (const auto& entry : config->entries) {
-        if (entry.index < 0 || entry.index >= count)
+        const auto index = positionOf(entry);
+        if (index < 0 || index >= count)
             continue;
         if (entry.visible)
-            device.visibleParameters.push_back(entry.index);
+            device.visibleParameters.push_back(index);
         if (entry.miniMixer)
-            device.miniMixerParameters.push_back(entry.index);
+            device.miniMixerParameters.push_back(index);
         if (entry.aiAgent)
-            device.aiSoundDesignerParameters.push_back(entry.index);
+            device.aiSoundDesignerParameters.push_back(index);
 
-        auto& parameter = device.parameters[static_cast<size_t>(entry.index)];
+        auto& parameter = device.parameters[static_cast<size_t>(index)];
         if (entry.unit)
             parameter.unit = *entry.unit;
         if (entry.scale)
