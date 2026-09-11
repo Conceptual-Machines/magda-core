@@ -16,15 +16,15 @@ namespace {
 
 void collectFrom(const std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
                  std::vector<FourOscCandidate>& found) {
-    chain_walk::forEachDevice(elements, parentPath, chain_walk::Pads::Enter,
-                              [&found](const DeviceInfo& device, const ChainNodePath& path) {
-                                  if (!isFourOscDevice(device))
-                                      return;
+    const auto collectFourOsc = [&found](const DeviceInfo& device, const ChainNodePath& path) {
+        if (!isFourOscDevice(device))
+            return;
 
-                                  found.push_back({.path = path,
-                                                   .deviceName = device.name,
-                                                   .gaps = translateFourOsc(device).gaps});
-                              });
+        found.push_back(
+            {.path = path, .deviceName = device.name, .gaps = translateFourOsc(device).gaps});
+    };
+
+    chain_walk::forEachDevice(elements, parentPath, chain_walk::Pads::Enter, collectFourOsc);
 }
 
 /// The gap reasons across every device, said once each. Four oscillators on
