@@ -255,20 +255,38 @@ int polyVoiceModeFor(int fourOscMode) {
 
 /// A Poly Synth at its defaults, which is what everything 4OSC does not
 /// describe is left at.
+///
+/// Built from the 4OSC rather than from nothing: the slot's gain, its macros
+/// and modulators, its panel state and its name belong to the device in the
+/// chain, not to the plugin being swapped underneath it. Only what describes
+/// 4OSC itself is replaced.
 DeviceInfo polySynthDevice(const DeviceInfo& fourOsc) {
     const PolySynth metadata;
 
-    DeviceInfo device;
-    device.id = fourOsc.id;
-    device.name = fourOsc.name;
+    DeviceInfo device = fourOsc;
     device.pluginId = PolySynth::xmlTypeName;
     device.deviceType = DeviceType::Instrument;
     device.isInstrument = true;
     device.canReceiveMidi = true;
+    device.producesMidi = false;
     device.format = PluginFormat::Internal;
     device.audioInputChannels = 0;
     device.audioOutputChannels = 2;
-    device.bypassed = fourOsc.bypassed;
+
+    // 4OSC's, all of it: the saved patch, the scan identity, the parameters
+    // and every selection made by index into them.
+    device.pluginState = {};
+    device.uniqueId = {};
+    device.fileOrIdentifier = {};
+    device.vst3ClassId = {};
+    device.vst3Preset = {};
+    device.parameters.clear();
+    device.wrapperParameters.clear();
+    device.meters.clear();
+    device.visibleParameters.clear();
+    device.miniMixerParameters.clear();
+    device.aiSoundDesignerParameters.clear();
+    device.currentParameterPage = 0;
 
     for (auto index = 0; index < metadata.parameterCount(); ++index) {
         auto info = metadata.parameterInfo(index);
@@ -439,19 +457,21 @@ float gainFromDecibels(float decibels) {
     return decibels <= -100.0f ? 0.0f : std::pow(10.0f, decibels / 20.0f);
 }
 
-/// The Division entry nearest @p beats (magda_delay.dsp). Both scales count
-/// quarter notes, so the number carries straight across and only has to land
-/// on a menu entry.
-float nearestDelayDivision(float beats) {
-    constexpr float kDivisions[] = {0.125f,   0.16667f, 0.25f, 0.375f,   0.33333f, 0.5f, 0.75f,
-                                    0.66667f, 1.0f,     1.5f,  1.33333f, 2.0f,     3.0f, 4.0f};
+/// The Division choice nearest @p beats, as the index the slot stores. Both
+/// scales count quarter notes, so the number carries across and only has to
+/// land on an entry; the slot holds that entry's position, not its value, and
+/// the entries come from the dsp's own menu rather than a copy of it.
+float nearestDelayDivision(const compiled::MagdaDelayCompiledPlugin& delay, float beats) {
+    const auto values = delay.menuValuesForIdx(compiled::MagdaDelayCompiledPlugin::kDivisionSlot);
+    if (values.empty())
+        return 0.0f;
 
-    auto nearest = kDivisions[0];
-    for (const auto division : kDivisions)
-        if (std::abs(division - beats) < std::abs(nearest - beats))
-            nearest = division;
+    std::size_t nearest = 0;
+    for (std::size_t index = 0; index < values.size(); ++index)
+        if (std::abs(values[index] - beats) < std::abs(values[nearest] - beats))
+            nearest = index;
 
-    return nearest;
+    return static_cast<float>(nearest);
 }
 
 /**
@@ -507,7 +527,7 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
         setSlot(device, Delay::kSyncSlot, 1.0f);
         setSlot(device, Delay::kDivisionSlot,
                 clampToSlot(device, Delay::kDivisionSlot,
-                            nearestDelayDivision(floatPropertyOr(props, "delay", 1.0f))));
+                            nearestDelayDivision(Delay{}, floatPropertyOr(props, "delay", 1.0f))));
         setSlot(
             device, Delay::kFeedbackSlot,
             clampToSlot(device, Delay::kFeedbackSlot, gainFromDecibels(value("delayFeedback"))));
@@ -548,6 +568,10 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
 
 bool isFourOscDevice(const DeviceInfo& device) {
     return device.pluginId.equalsIgnoreCase("4osc");
+}
+
+int fourOscParameterCount() {
+    return static_cast<int>(std::size(kFourOscParameters));
 }
 
 FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,

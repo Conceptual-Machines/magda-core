@@ -40,6 +40,10 @@ struct FourOscTranslation {
 /// Whether @p device is a 4OSC instance, by the pluginId a project saves.
 bool isFourOscDevice(const DeviceInfo& device);
 
+/// How many parameters 4OSC declares, which is the range of indices a saved
+/// link, binding or alias can be naming on one.
+int fourOscParameterCount();
+
 /**
  * @brief Translate @p fourOsc into a Poly Synth device.
  *

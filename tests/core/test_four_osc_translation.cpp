@@ -4,6 +4,7 @@
 
 #include "magda/daw/audio/FourOscMigration.hpp"
 #include "magda/daw/audio/FourOscTranslation.hpp"
+#include "magda/daw/audio/plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -82,6 +83,11 @@ class FourOscPatch {
         return *this;
     }
 
+    FourOscPatch& floatProperty(const juce::String& name, float value) {
+        props_.set(name, value);
+        return *this;
+    }
+
     DeviceInfo build() {
         magda::device_state::Doc doc;
         doc.deviceType = "4osc";
@@ -151,6 +157,31 @@ TEST_CASE("A patch that wrote nothing lands on 4OSC's defaults", "[core][4osc]")
 
     // Nothing was set, so nothing is worth reporting as lost.
     CHECK(translated.gaps.empty());
+}
+
+TEST_CASE("What the host owns on the slot survives the swap", "[core][4osc]") {
+    // The gain knob, the macros and the modulators belong to the device in the
+    // chain, not to the plugin being replaced underneath it. Building the
+    // replacement from nothing put a slot trimmed to -6 dB back at unity.
+    auto source = FourOscPatch{}.build();
+    source.gainValue = 0.5f;
+    source.gainDb = -6.0f;
+    source.macros[0].name = "Brightness";
+    source.macros[0].value = 0.25f;
+    source.modPanelOpen = true;
+
+    const auto translated = magda::daw::audio::translateFourOsc(source);
+
+    CHECK(translated.device.gainValue == Catch::Approx(0.5f));
+    CHECK(translated.device.gainDb == Catch::Approx(-6.0f));
+    CHECK(translated.device.macros[0].name == "Brightness");
+    CHECK(translated.device.macros[0].value == Catch::Approx(0.25f));
+    CHECK(translated.device.modPanelOpen);
+
+    // And nothing of 4OSC's own goes with it.
+    CHECK(translated.device.pluginState.isEmpty());
+    CHECK(translated.device.parameters.size() ==
+          static_cast<std::size_t>(PolySynth{}.parameterCount()));
 }
 
 TEST_CASE("An oscillator's wave, tune and level carry over", "[core][4osc]") {
@@ -405,6 +436,50 @@ TEST_CASE("The built-in effects become a rack of MAGDA devices", "[core][4osc]")
     std::set<magda::DeviceId> ids{patch.id};
     for (const auto& element : elements)
         CHECK(ids.insert(magda::getDevice(element).id).second);
+}
+
+TEST_CASE("The delay is synced to the beat value 4OSC held", "[core][4osc]") {
+    // 4OSC divides its delay by the tempo when it renders, so its number is
+    // beats. The Division slot stores the menu entry's POSITION, not the
+    // quarter-note multiplier the entry carries, and 4OSC's default of one
+    // beat has to reach the entry whose multiplier is 1.0 rather than the
+    // second entry in the list.
+    using Delay = magda::daw::audio::compiled::MagdaDelayCompiledPlugin;
+
+    const auto divisionFor = [](float beats) {
+        juce::NamedValueSet props;
+        auto patch = FourOscPatch{}.property("delayOn", 1);
+        if (beats != 1.0f)
+            patch.floatProperty("delay", beats);
+
+        auto next = magda::DeviceId{100};
+        const auto translated =
+            magda::daw::audio::translateFourOsc(patch.build(), [&next] { return next++; });
+
+        REQUIRE(translated.effects != nullptr);
+        const auto& elements = translated.effects->chains.front().elements;
+        REQUIRE(elements.size() == 1);
+
+        const auto& delay = magda::getDevice(elements.front());
+        CHECK(slotValue(delay, Delay::kSyncSlot) == 1.0f);
+        return static_cast<int>(slotValue(delay, Delay::kDivisionSlot));
+    };
+
+    const Delay metadata;
+    const auto values = metadata.menuValuesForIdx(Delay::kDivisionSlot);
+    REQUIRE(!values.empty());
+
+    const auto indexOfMultiplier = [&values](float multiplier) {
+        for (auto index = 0; index < static_cast<int>(values.size()); ++index)
+            if (std::abs(values[static_cast<std::size_t>(index)] - multiplier) < 1e-3f)
+                return index;
+        FAIL("no division worth " << multiplier);
+        return -1;
+    };
+
+    CHECK(divisionFor(1.0f) == indexOfMultiplier(1.0f));
+    CHECK(divisionFor(0.5f) == indexOfMultiplier(0.5f));
+    CHECK(divisionFor(4.0f) == indexOfMultiplier(4.0f));
 }
 
 TEST_CASE("Only the effects that were switched on are built", "[core][4osc]") {
