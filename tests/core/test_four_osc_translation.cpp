@@ -366,7 +366,7 @@ TEST_CASE("A project with no 4OSC has nothing to ask about", "[core][4osc]") {
     master.id = magda::MASTER_TRACK_ID;
 
     CHECK(magda::daw::audio::findFourOscDevices({}, master).empty());
-    CHECK(magda::daw::audio::describeMigration({}).contains("Tracktion engine"));
+    CHECK(magda::daw::audio::describeMigration({}).contains("Tracktion Engine"));
 }
 
 TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
@@ -413,7 +413,7 @@ TEST_CASE("The converted project is a new project beside the old one", "[core][4
     // Unwrapped: saveProjectAs() makes the folder, and skips making it when
     // the file already looks wrapped.
     const auto converted = magda::daw::audio::convertedProjectFileFor(project);
-    CHECK(converted.getFileName() == "Song (magda engine).mgd");
+    CHECK(converted.getFileName() == "Song (MAGDA Engine).mgd");
     CHECK(converted.getParentDirectory() == root);
 
     root.deleteRecursively();

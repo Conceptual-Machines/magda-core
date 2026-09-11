@@ -93,7 +93,7 @@ void offerFourOscConversion() {
 
     const auto candidates = audio::findFourOscDevices(tracks.getTracks(), *master);
 
-    auto prompt = std::make_shared<Prompt>("Open as a MAGDA engine project?",
+    auto prompt = std::make_shared<Prompt>("Open as a MAGDA Engine project?",
                                            audio::describeMigration(candidates));
 
     prompt->dontAskAgain.setSize(200, 24);

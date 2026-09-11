@@ -187,7 +187,7 @@ juce::File convertedProjectFileFor(const juce::File& project) {
     // Handing it the wrapped path meant it created nothing and wrote into a
     // directory that was not there.
     const auto folder =
-        projects.getChildFile(project.getFileNameWithoutExtension() + " (magda engine)")
+        projects.getChildFile(project.getFileNameWithoutExtension() + " (MAGDA Engine)")
             .getNonexistentSibling();
 
     return projects.getChildFile(folder.getFileName() + project.getFileExtension());
@@ -195,15 +195,12 @@ juce::File convertedProjectFileFor(const juce::File& project) {
 
 juce::String describeMigration(const std::vector<FourOscCandidate>& candidates) {
     juce::String text =
-        "This project was made with the Tracktion engine. MAGDA's engine does not render every "
-        "device the same way, so it opens as a copy and the original is left alone.";
+        "This project was made with Tracktion Engine. MAGDA Engine does not render every device "
+        "the same way, so it opens as a copy and the original is left alone.";
 
     if (!candidates.empty()) {
-        const auto count = static_cast<int>(candidates.size());
-        text += count == 1 ? " Its 4OSC becomes a Poly Synth"
-                           : " Its " + juce::String(count) + " 4OSC devices become Poly Synths";
-        text += ", carrying the oscillators, the filter, both envelopes, the voice settings and "
-                "the built-in effects.";
+        text += " Any 4OSC in it becomes a Poly Synth, carrying the oscillators, the filter, "
+                "both envelopes, the voice settings and the built-in effects.";
 
         const auto gaps = distinctGaps(candidates);
         if (!gaps.empty()) {
