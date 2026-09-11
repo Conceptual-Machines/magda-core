@@ -46,13 +46,12 @@ std::vector<ScannedPluginParameter> scanDeviceParameters(const juce::String& plu
     if (device == nullptr)
         return result;
 
-    constexpr std::array<float, 5> samplePoints{0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-
-    const int count = device->parameterCount();
-    for (int index = 0; index < count; ++index) {
-        const auto info = device->parameterInfo(index);
-        if (info.name.isEmpty())
-            continue;
+    // One scan record off one parameter's own description. `position` is where
+    // the record lands in the result rather than the slot it was read from: a
+    // skipped parameter leaves the two apart, and a detection result is applied
+    // by position.
+    const auto scanRecord = [](const ParameterInfo& info, int position) {
+        constexpr std::array<float, 5> samplePoints{0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
 
         ScannedPluginParameter scanned;
         scanned.name = info.name;
@@ -68,10 +67,7 @@ std::vector<ScannedPluginParameter> scanDeviceParameters(const juce::String& plu
         scanned.scale = info.scale;
         scanned.valueTable = info.valueTable.empty() ? info.choices : info.valueTable;
 
-        // The position in this list, not the loop counter: a parameter skipped
-        // above leaves the two apart, and a detection result is applied by
-        // position.
-        scanned.scanInput.paramIndex = static_cast<int>(result.size());
+        scanned.scanInput.paramIndex = position;
         scanned.scanInput.name = info.name;
         scanned.scanInput.label = info.unit;
         scanned.scanInput.rangeMin = info.minValue;
@@ -89,7 +85,16 @@ std::vector<ScannedPluginParameter> scanDeviceParameters(const juce::String& plu
                     ParameterUtils::normalizedToReal(sample, info), info));
         }
 
-        result.push_back(std::move(scanned));
+        return scanned;
+    };
+
+    const int count = device->parameterCount();
+    for (int index = 0; index < count; ++index) {
+        const auto info = device->parameterInfo(index);
+        if (info.name.isEmpty())
+            continue;
+
+        result.push_back(scanRecord(info, static_cast<int>(result.size())));
     }
 
     return result;
