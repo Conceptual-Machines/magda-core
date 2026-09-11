@@ -411,7 +411,7 @@ void TracktionEngineWrapper::drainRecordingNoteQueue() {
 
         if (preview.isAudioRecording && audioBridge_) {
             MeterData data;
-            if (audioBridge_->getRecordingMeteringBuffer().drainToLatest(trackId, data)) {
+            if (meters_.recording.drainToLatest(trackId, data)) {
                 const AudioPeakSample peak{data.peakL, data.peakR};
                 if (extending || preview.audioPeaks.empty() || preview.currentLengthBeats <= 0.0) {
                     // First pass (incl. any pre-loop lead-in): append as the

@@ -639,12 +639,17 @@ std::vector<std::string> TracktionEngineWrapper::getSystemPluginSearchPaths() co
 std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters(
     const juce::String& pluginId, bool internalPlugin) {
     std::vector<ScannedPluginParameter> result;
-    if (!engine_ || !currentEdit_)
+    if (!engine_)
         return result;
 
     constexpr std::array<float, 5> samplePoints{0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
 
+    // Only the internal branch needs an Edit to build its plugin in; an
+    // external one is opened straight from the format manager (#2579).
     if (internalPlugin) {
+        if (!currentEdit_)
+            return result;
+
         namespace te = tracktion::engine;
         te::Plugin::Ptr plugin;
         if (const auto* spec = daw::audio::findInternalPluginSpec(pluginId)) {

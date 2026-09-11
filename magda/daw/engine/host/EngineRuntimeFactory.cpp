@@ -1,5 +1,6 @@
 #include "EngineRuntimeFactory.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
@@ -19,6 +20,44 @@ juce::String deviceIdentityOf(const DeviceInfo& device) {
            device.getFormatString();
 }
 
+/**
+ * @brief A track's live MIDI: its own audition, and the devices routed to it.
+ *
+ * Named sources rather than kAnyLiveMidiSource, which would merge every other
+ * track's audition into this one.
+ */
+class TrackMidiInput final : public engine::EngineMidiSource {
+  public:
+    TrackMidiInput(const engine::LiveInputFeed& feed, engine::LiveMidiSourceId audition,
+                   std::shared_ptr<const EngineRuntimeFactory::MidiRouteTable> routed)
+        : feed_(feed), audition_(audition), routed_(std::move(routed)) {}
+
+    void render(const engine::BlockInfo& /*block*/, juce::MidiBuffer& out) override {
+        feed_.appendEvents(audition_, out, engine::kMaxMidiBytesPerPort);
+
+        const auto count = routed_->count.load(std::memory_order_acquire);
+        for (auto i = 0; i < count; ++i)
+            feed_.appendEvents(
+                routed_->sources[static_cast<std::size_t>(i)].load(std::memory_order_relaxed), out,
+                engine::kMaxMidiBytesPerPort);
+
+        // A source that has gone will never send the note-off for what it is
+        // still holding, and a route change publishes no topology, so this is
+        // the only panic the instrument gets (#2418).
+        dropped_ = routed_->dropped.exchange(false, std::memory_order_acq_rel);
+    }
+
+    bool raisedAllNotesOff() const override {
+        return dropped_;
+    }
+
+  private:
+    const engine::LiveInputFeed& feed_;
+    engine::LiveMidiSourceId audition_ = engine::kAnyLiveMidiSource;
+    std::shared_ptr<const EngineRuntimeFactory::MidiRouteTable> routed_;
+    bool dropped_ = false;
+};
+
 }  // namespace
 
 EngineFileReaders::EngineFileReaders() {
@@ -35,15 +74,21 @@ std::unique_ptr<engine::AudioFileReader> EngineFileReaders::open(const std::stri
 }
 
 void EngineRuntimeFactory::attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                                  engine::LaunchHandleFeed& handles) {
+                                  engine::LaunchHandleFeed& handles,
+                                  const engine::LiveInputFeed& liveInputs,
+                                  LiveMidiSources& sources) {
     clips_ = &clips;
     streams_ = &streams;
     handles_ = &handles;
+    liveInputs_ = &liveInputs;
+    sources_ = &sources;
+    resolveRouteTables();
 }
 
 void EngineRuntimeFactory::setModel(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
     devices_.clear();
     unbuilt_.clear();
+    refreshMidiRoutes(tracks);
 
     for (const auto& [key, device] : adapter::devicesIn(tracks, master))
         devices_.emplace(key, *device);
@@ -164,6 +209,81 @@ std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createSessionAu
 std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createSessionMidiSource(
     TrackId trackId) {
     return midiSource(trackId, engine::Section::Session);
+}
+
+std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(TrackId trackId) {
+    if (liveInputs_ == nullptr || sources_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<TrackMidiInput>(*liveInputs_, sources_->auditionSourceFor(trackId),
+                                            routeTableFor(trackId));
+}
+
+void EngineRuntimeFactory::MidiRouteTable::set(const std::vector<engine::LiveMidiSourceId>& ids) {
+    const auto n = std::min(static_cast<int>(ids.size()), kMaxSources);
+
+    // Only what is leaving: a source added beside the ones already routed
+    // takes nothing away, and a panic raised for it would cut a chord that is
+    // still being held down.
+    const auto was = count.load(std::memory_order_relaxed);
+    for (auto i = 0; i < was; ++i) {
+        const auto source = sources[static_cast<std::size_t>(i)].load(std::memory_order_relaxed);
+        if (std::ranges::find(ids, source) == ids.end()) {
+            dropped.store(true, std::memory_order_relaxed);
+            break;
+        }
+    }
+
+    for (auto i = 0; i < n; ++i)
+        sources[static_cast<std::size_t>(i)].store(ids[static_cast<std::size_t>(i)],
+                                                   std::memory_order_relaxed);
+    count.store(n, std::memory_order_release);
+}
+
+std::shared_ptr<EngineRuntimeFactory::MidiRouteTable> EngineRuntimeFactory::routeTableFor(
+    TrackId trackId) {
+    auto& table = routeTables_[trackId];
+    if (table == nullptr)
+        table = std::make_shared<MidiRouteTable>();
+    return table;
+}
+
+void EngineRuntimeFactory::refreshMidiRoutes(const std::vector<TrackInfo>& tracks) {
+    midiRoutes_.clear();
+
+    // monitorsInput, which is what the compiler gates a routed input on: the
+    // fork assigns a device to a track in Auto too, but TE's monitor mode
+    // still decides whether it is heard, and this table is heard directly.
+    for (const auto& track : tracks)
+        midiRoutes_.emplace(track.id, MidiRoute{track.midiInputDevice, track.monitorsInput()});
+
+    resolveRouteTables();
+}
+
+void EngineRuntimeFactory::resolveRouteTables() {
+    if (sources_ == nullptr)
+        return;
+
+    for (const auto& [trackId, route] : midiRoutes_)
+        routeTableFor(trackId)->set(routedSources(route));
+}
+
+std::vector<engine::LiveMidiSourceId> EngineRuntimeFactory::routedSources(const MidiRoute& route) {
+    // Monitoring is the fork's own gate on hearing an input, and a "track:"
+    // route is carried inside the plan rather than by a device.
+    if (!route.monitors || route.device.startsWith("track:"))
+        return {};
+
+    // An empty field is "all" on the fork too: a monitoring track that names
+    // no device is routed to every input (MidiInputRouter.cpp:747).
+    if (route.device.isEmpty() || route.device == "all")
+        return sources_->deviceSources();
+
+    const auto source = sources_->resolveRoute(route.device);
+    if (source == LiveMidiSources::kNoSource)
+        return {};
+
+    return {source};
 }
 
 // Both sections through the handle-reading constructor, including the

@@ -935,6 +935,8 @@ rack-scope macros, sends and the envelope follower were each waiting on.
 
 ## 8. What is not built yet
 
+As of [#2579](https://github.com/Conceptual-Machines/magda-core/issues/2579), the fork under the magda engine is services only: plugin scan and formats, the device manager, MidiBridge, and the save hooks. `initialisePlayback()` is never called, so there is no Edit, no playback context and no AudioBridge, and every external plugin is loaded once. What remains the fork's work is tracked in separate issues: external plugin editors [#2580](https://github.com/Conceptual-Machines/magda-core/issues/2580), capture on save [#2581](https://github.com/Conceptual-Machines/magda-core/issues/2581), programs and preset files [#2582](https://github.com/Conceptual-Machines/magda-core/issues/2582), chunk presets [#2573](https://github.com/Conceptual-Machines/magda-core/issues/2573), controller and OSC writes [#2554](https://github.com/Conceptual-Machines/magda-core/issues/2554) and [#2317](https://github.com/Conceptual-Machines/magda-core/issues/2317), device slot meters [#2570](https://github.com/Conceptual-Machines/magda-core/issues/2570), analyzer and custom UI telemetry [#2585](https://github.com/Conceptual-Machines/magda-core/issues/2585), the remote transport API [#2554](https://github.com/Conceptual-Machines/magda-core/issues/2554), export and bounce [#2555](https://github.com/Conceptual-Machines/magda-core/issues/2555), session [#2552](https://github.com/Conceptual-Machines/magda-core/issues/2552), and recording and input [#2553](https://github.com/Conceptual-Machines/magda-core/issues/2553).
+
 Worth knowing before reading the code and wondering where something is:
 
 - **The rest of the device layer**

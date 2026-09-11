@@ -539,6 +539,10 @@ class EngineSession {
     /// displaces is destroyed, on this thread.
     std::shared_ptr<PreparedRender> live_;
     std::shared_ptr<const RenderPlan> livePlan_;
+
+    /// Which publish the live epoch is, counted from one. What says whose
+    /// owed MIDI panic an executor may spend (PlanExecutor::commitReroutes).
+    std::uint64_t planEpoch_ = 0;
 };
 
 }  // namespace magda::engine

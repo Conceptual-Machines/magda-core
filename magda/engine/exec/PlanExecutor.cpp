@@ -5,11 +5,64 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <utility>
 
 #include "core/BlockMath.hpp"
 
 namespace magda::engine {
 namespace {
+
+/**
+ * @brief Every MIDI op behind each device, by key.
+ *
+ * A device is retained across a publish while the plan behind it is rebuilt,
+ * so what it is being fed can change without the device knowing. The keys of
+ * the ops feeding it are what says whether it did: a track's merge keeps its
+ * own key when the track it reads changes underneath it, so comparing one
+ * level would see nothing.
+ *
+ * By DeviceKey, which is the identity the store keeps an instance under
+ * (RuntimeStateStore::realise). A device moved to another track is the same
+ * instrument holding the same notes, under an OpKey that no longer matches.
+ */
+std::map<DeviceKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
+    std::map<DeviceKey, std::set<OpKey>> behind;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& device = plan.ops[i];
+        if (device.kind != OpKind::Device || device.inputs.size() < 2)
+            continue;
+
+        std::set<OpKey> sources;
+        std::vector<char> seen(plan.ops.size(), 0);
+        std::vector<PortRef> pending{device.inputs[1]};
+
+        while (!pending.empty()) {
+            const auto port = pending.back();
+            pending.pop_back();
+
+            if (!port.valid())
+                continue;
+
+            const auto id = static_cast<std::size_t>(port.op);
+            if (std::exchange(seen[id], static_cast<char>(1)) != 0)
+                continue;
+
+            const auto& op = plan.ops[id];
+            sources.insert(op.key);
+
+            for (const auto& input : op.inputs)
+                if (input.valid() &&
+                    plan.ops[static_cast<std::size_t>(input.op)]
+                            .outputs[static_cast<std::size_t>(input.port)] == SignalKind::Midi)
+                    pending.push_back(input);
+        }
+
+        behind[device.key.deviceKey()] = std::move(sources);
+    }
+
+    return behind;
+}
 
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
@@ -236,6 +289,9 @@ void PlanExecutor::reset() {
     audioDelays_.clear();
     midiDelays_.clear();
     deviceForOp_.clear();
+    midiPanicForOp_.clear();
+    reroutedOps_.clear();
+    epoch_ = 0;
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
@@ -274,6 +330,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto numOps = plan.ops.size();
 
     deviceForOp_.assign(numOps, nullptr);
+    midiPanicForOp_.assign(numOps, nullptr);
+    reroutedOps_.clear();
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
@@ -319,6 +377,37 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             ++carriedTriggerDetectors_;
         } else {
             triggerForOp_[i] = std::make_shared<TriggerDetector>();
+        }
+    }
+
+    // A device the store keeps across the swap whose MIDI is now coming from
+    // somewhere else: the note-off for what it is holding is going to the old
+    // source's new destination, or nowhere. Only sources that left, because
+    // one arriving beside the others takes nothing away (#2418).
+    if (previous != nullptr && previous != this && previous->plan_ != nullptr) {
+        const auto was = midiBehindDevices(*previous->plan_);
+        const auto now = midiBehindDevices(plan);
+
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+            if (op.kind != OpKind::Device)
+                continue;
+
+            const auto key = op.key.deviceKey();
+            const auto before = was.find(key);
+            const auto after = now.find(key);
+
+            const auto lost = before != was.end() && after != now.end() &&
+                              std::ranges::any_of(before->second, [&after](const OpKey& source) {
+                                  return !after->second.contains(source);
+                              });
+
+            // Recorded, not raised: this plan may still be refused, and a
+            // debt raised for a routing change that was never published is a
+            // panic on an instrument nothing rerouted. commitReroutes() writes
+            // them once the swap is certain.
+            if (lost)
+                reroutedOps_.push_back(i);
         }
     }
 
@@ -531,6 +620,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                     break;
                 }
                 deviceForOp_[i] = found->second;
+
+                if (const auto owed = bindings.deviceMidiPanicEpoch.find(op.key.deviceKey());
+                    owed != bindings.deviceMidiPanicEpoch.end())
+                    midiPanicForOp_[i] = owed->second;
                 break;
             }
 
@@ -922,6 +1015,30 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+void PlanExecutor::commitReroutes(std::uint64_t epoch) {
+    epoch_ = epoch;
+
+    for (const auto op : reroutedOps_)
+        if (auto* owed = midiPanicForOp_[op]; owed != nullptr)
+            owed->store(epoch, std::memory_order_relaxed);
+}
+
+bool PlanExecutor::takeOwedPanic(std::atomic<std::uint64_t>* owed) const {
+    if (owed == nullptr)
+        return false;
+
+    auto pending = owed->load(std::memory_order_relaxed);
+
+    // Never a later epoch's: the plan that raised it is not the one rendering,
+    // and a note played through this route before the swap still needs the
+    // panic that plan is about to deliver. An earlier one's is this plan's to
+    // deliver, since whoever it was owed by never got to.
+    if (pending == 0 || pending > epoch_)
+        return false;
+
+    return owed->compare_exchange_strong(pending, 0, std::memory_order_relaxed);
 }
 
 bool PlanExecutor::midiInPanic(const PortRef& ref) const {
@@ -1515,6 +1632,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // plan and published with it, which is #2117. Until then a device
             // is handed an empty window rather than a stale one.
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
+
+            // Spent here rather than inside the block below: as the last
+            // operand of an || it would be skipped on a block that already
+            // carried a panic, and fire again on a later one (#2418).
+            const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     // What reached the port, plus the block's
@@ -1530,7 +1652,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                     // nothing is withheld and nothing would come
                                     // back (#2418).
                                     .midiInAllNotesOff =
-                                        !block.continuous || midiInPanic(op.inputs[1]),
+                                        !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
                                     .params = paramValues_.device(window.first, window.count),

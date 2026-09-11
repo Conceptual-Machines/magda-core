@@ -12,6 +12,7 @@
 
 #include "../../audio/AudioBridge.hpp"
 #include "../../audio/MeteringBuffer.hpp"
+#include "../../audio/TrackMeters.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../components/common/InternalFileDrag.hpp"
 #include "../components/common/MasterSpeakerButton.hpp"
@@ -948,7 +949,7 @@ class SessionView::MiniIOStrip : public juce::Component {
 
         juce::BigInteger enabledInputChannels, enabledOutputChannels;
         std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
+        if (auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr) {
             enabledInputChannels = bridge->getEnabledInputChannels();
             enabledOutputChannels = bridge->getEnabledOutputChannels();
             teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
@@ -3608,11 +3609,8 @@ void SessionView::timerCallback() {
     if (!audioEngine_)
         return;
 
-    auto* bridge = audioEngine_->getAudioBridge();
-    if (!bridge)
-        return;
-
-    auto& meteringBuffer = bridge->getMeteringBuffer();
+    auto& meters = audioEngine_->meters();
+    auto& meteringBuffer = meters.mixer;
 
     // Update track strip meters (peek, don't consume — MixerView also reads these)
     for (auto& strip : trackMiniStrips_) {
@@ -3731,8 +3729,8 @@ void SessionView::timerCallback() {
 
     // Update master strip meters
     if (masterStrip_) {
-        float masterPeakL = bridge->getMasterPeakL();
-        float masterPeakR = bridge->getMasterPeakR();
+        float masterPeakL = meters.getMasterPeakL();
+        float masterPeakR = meters.getMasterPeakR();
         masterStrip_->setMeterLevels(masterPeakL, masterPeakR);
     }
 }

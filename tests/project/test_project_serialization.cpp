@@ -9,6 +9,7 @@
 #include <string>
 
 #include "AudioClipTestHelpers.hpp"
+#include "magda/daw/audio/TrackMeters.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -234,6 +235,14 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return nullptr;
     }
 
+    TrackMeters& meters() override {
+        return meters_;
+    }
+
+    const TrackMeters& meters() const override {
+        return meters_;
+    }
+
     void captureAllPluginStates() override {}
 
     void capturePluginStateAt(const ChainNodePath&) override {}
@@ -387,6 +396,7 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     double position = 12.0;
     double loopStart = 0.0;
     double loopEnd = 0.0;
+    TrackMeters meters_;
 };
 
 class ScopedProjectAudioEngine {

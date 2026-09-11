@@ -35,4 +35,28 @@ std::vector<engine::ClipSourceInfo> clipSources();
 /// (#2554 moves that).
 engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
 
+/// Where the last arrangement clip ends, in beats, or zero when there are none.
+/// What the length of a project is with no Edit to ask (#2579).
+double projectEndBeat();
+
+/**
+ * @brief What the compiler read to decide where a track's input comes from.
+ *
+ * A route and a monitor switch are track properties, so they arrive as a
+ * values publish -- but a "track:N" edge is compiled into the plan and a
+ * monitored audio input is an op, so neither can be carried by one. Compared
+ * against what the live plan was built from, this is how the host notices
+ * that a property change has to be a plan.
+ */
+struct InputRouting {
+    TrackId trackId = INVALID_TRACK_ID;
+    juce::String midiInputDevice;
+    juce::String audioInputDevice;
+    bool monitors = false;
+
+    bool operator==(const InputRouting&) const = default;
+};
+
+std::vector<InputRouting> inputRoutingOf(const std::vector<TrackInfo>& tracks);
+
 }  // namespace magda::daw::engine_host

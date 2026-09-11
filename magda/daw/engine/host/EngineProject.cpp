@@ -1,5 +1,7 @@
 #include "EngineProject.hpp"
 
+#include <algorithm>
+
 #include "../../core/ClipManager.hpp"
 #include "../../core/SourcePool.hpp"
 
@@ -46,6 +48,28 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator) {
                                 .numerator = numerator,
                                 .denominator = denominator,
                             }});
+}
+
+double projectEndBeat() {
+    double end = 0.0;
+
+    for (const auto& clip : ClipManager::getInstance().getArrangementClips())
+        end = std::max(end, clip.placement.endBeat());
+
+    return end;
+}
+
+std::vector<InputRouting> inputRoutingOf(const std::vector<TrackInfo>& tracks) {
+    std::vector<InputRouting> routing;
+    routing.reserve(tracks.size());
+
+    for (const auto& track : tracks)
+        routing.push_back({.trackId = track.id,
+                           .midiInputDevice = track.midiInputDevice,
+                           .audioInputDevice = track.audioInputDevice,
+                           .monitors = track.monitorsInput()});
+
+    return routing;
 }
 
 }  // namespace magda::daw::engine_host

@@ -201,6 +201,11 @@ class Compiler {
 
     void emitTrack(const TrackInfo& track);
 
+    /// The track's live MIDI input op, whether it is routed to a device or
+    /// only auditioned. One per track either way, since the store keys inputs
+    /// by TrackId.
+    PortRef emitLiveMidiInput(TrackId trackId);
+
     /// One op per track any modifier listens to, after every track has been
     /// emitted so that every tap exists to read.
     void emitModulationTaps();
@@ -517,6 +522,14 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
     }
 
     return order;
+}
+
+PortRef Compiler::emitLiveMidiInput(TrackId trackId) {
+    const OpKey key{trackId,           INVALID_RACK_ID,       INVALID_CHAIN_ID,
+                    INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
+    const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
+    plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
+    return PortRef{op, 0};
 }
 
 PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources) {
@@ -1350,7 +1363,9 @@ void Compiler::emitTrack(const TrackInfo& track) {
     triggerTapFound_ = false;
 
     std::vector<PortRef> midiSources;
-    if (carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id))) {
+    const auto readsMidi =
+        carriesClips(track) && (chainConsumesMidi(track) || midiSourceTracks_.contains(track.id));
+    if (readsMidi) {
         const OpKey key{track.id,          INVALID_RACK_ID,  INVALID_CHAIN_ID,
                         INVALID_DEVICE_ID, OpRole::ClipMidi, 0};
         midiSources.push_back(PortRef{addOp(OpKind::ClipMidi, key, {}, {SignalKind::Midi}), 0});
@@ -1360,7 +1375,15 @@ void Compiler::emitTrack(const TrackInfo& track) {
         midiSources.push_back(
             PortRef{addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi}), 0});
     }
-    switch (const auto route = activeMidiInputRoute(track); route.kind) {
+    // One live input op per track, whatever else is routed to it: a preview is
+    // queued under the track's own audition source, and the store keys live
+    // inputs by TrackId, so a second op here would be a second binding to one
+    // object (CompileOptions::auditionMidi, #2579).
+    const auto route = activeMidiInputRoute(track);
+    if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
+        midiSources.push_back(emitLiveMidiInput(track.id));
+
+    switch (route.kind) {
         case RouteKind::Track: {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
@@ -1377,14 +1400,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
                      track.midiInputDevice.toStdString() +
                      "' does not name a track, input not connected");
             break;
-        case RouteKind::External: {
-            const OpKey key{track.id,          INVALID_RACK_ID,       INVALID_CHAIN_ID,
-                            INVALID_DEVICE_ID, OpRole::LiveMidiInput, 0};
-            const auto op = addOp(OpKind::MidiInput, key, {}, {SignalKind::Midi});
-            plan_.ops[static_cast<std::size_t>(op)].liveness = LivenessDomain::Live;
-            midiSources.push_back(PortRef{op, 0});
-            break;
-        }
+        case RouteKind::External:
         case RouteKind::None:
             break;
     }

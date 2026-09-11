@@ -2968,6 +2968,8 @@ void buildDrumGridFromSlices(const std::vector<SliceRegion>& slices, const ClipI
     auto* audioEngine = trackManager.getAudioEngine();
     if (!audioEngine)
         return;
+    if (!bridge)
+        return;
     auto* teTrack = bridge->getAudioTrack(newTrackId);
     if (!teTrack)
         return;

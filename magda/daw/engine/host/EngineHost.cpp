@@ -4,8 +4,11 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <ranges>
 #include <set>
+#include <span>
+#include <vector>
 
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
@@ -15,16 +18,20 @@
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
+#include "LiveMidiQueue.hpp"
+#include "LiveMidiSources.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "io/LiveInput.hpp"
 #include "io/PrefetchThread.hpp"
 #include "plan/PlanCompiler.hpp"
 
@@ -41,11 +48,45 @@ constexpr int kChannels = 2;
 /// 30 fps, which is what the fork's own metering timer runs at.
 constexpr int kMeterIntervalMs = 33;
 
+/// Live MIDI sources the callback has room for. One per enabled input plus one
+/// per track ever auditioned; a project past this loses the sources beyond it
+/// rather than allocating for them on the audio thread.
+constexpr int kMaxLiveMidiSources = 64;
+
+/// What one queued event costs a MidiBuffer: a sample position and a length in
+/// front of its three bytes.
+constexpr int kQueuedEventBytes = 9;
+
 /// Anything a publish could not honour, named by the half that reported it.
 void report(const juce::String& what, const std::vector<std::string>& messages) {
     for (const auto& message : messages)
         juce::Logger::writeToLog("[engine] " + what + ": " + juce::String(message));
 }
+
+/**
+ * @brief The engine's tempo map as the app's conversion facade (#2579).
+ *
+ * Holds the map by reference rather than by value: magda::TempoMap is
+ * non-movable, so this is a member of the object that owns the map, and every
+ * refresh of it is seen here.
+ */
+class TempoMapView final : public magda::TempoMap {
+  public:
+    explicit TempoMapView(const engine::TempoMap& map) : map_(map) {}
+
+    double beatToTime(double beat) const override {
+        return map_.beatToTime(beat);
+    }
+    double timeToBeat(double seconds) const override {
+        return map_.timeToBeat(seconds);
+    }
+    double bpmAt(double beat) const override {
+        return map_.bpmAt(beat);
+    }
+
+  private:
+    const engine::TempoMap& map_;
+};
 
 /**
  * @brief The model's own DeviceInfo at @p key, or null.
@@ -204,6 +245,23 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
+
+        traceDroppedLiveMidi();
+    }
+
+    /// Live MIDI that never reached the callback. Only when the count moved,
+    /// since a line per tick would bury the notes that did arrive.
+    void traceDroppedLiveMidi() {
+        const auto dropped = queue_.oversized() + queue_.overflowed() +
+                             droppedEvents_.load(std::memory_order_relaxed);
+        if (!EngineTrace::enabled() || dropped == tracedDrops_)
+            return;
+
+        tracedDrops_ = dropped;
+        EngineTrace::print("live midi dropped: " + juce::String(queue_.oversized()) +
+                           " too long, " + juce::String(queue_.overflowed()) + " overflowed, " +
+                           juce::String(droppedEvents_.load(std::memory_order_relaxed)) +
+                           " in the callback");
     }
 
     /// What every track's output tap has held since the last tick (#2570).
@@ -261,13 +319,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             std::ranges::count(plan.ops, engine::OpKind::Device, &engine::PlanOp::kind);
         const auto midi =
             std::ranges::count(plan.ops, engine::OpKind::ClipMidi, &engine::PlanOp::kind);
+        const auto inputs =
+            std::ranges::count(plan.ops, engine::OpKind::MidiInput, &engine::PlanOp::kind);
 
-        EngineTrace::print("plan: " + juce::String(devices) + " device ops (" +
-                           juce::String(static_cast<int>(unbuilt_.size())) + " unbuilt, " +
-                           juce::String(static_cast<int>(factory_.loadingExternals())) +
-                           " loading), " + juce::String(midi) + " clip-midi ops, " +
-                           juce::String(rendered_.load(std::memory_order_relaxed)) +
-                           " callbacks so far");
+        EngineTrace::print(
+            "plan: " + juce::String(devices) + " device ops (" +
+            juce::String(static_cast<int>(unbuilt_.size())) + " unbuilt, " +
+            juce::String(static_cast<int>(factory_.loadingExternals())) + " loading), " +
+            juce::String(midi) + " clip-midi ops, " + juce::String(inputs) + " midi-input ops, " +
+            juce::String(rendered_.load(std::memory_order_relaxed)) + " callbacks so far");
     }
 
     void start(juce::AudioDeviceManager& devices) {
@@ -311,10 +371,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || master == nullptr)
             return;
 
+        // Before the plan binds them, so an "all" route resolves to the inputs
+        // this machine has now rather than to whichever of them has already
+        // played a note.
+        sources_.registerAvailableDevices();
         factory_.setModel(tracks, *master);
 
-        auto plan =
-            std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
+        auto plan = std::make_shared<const engine::RenderPlan>(
+            engine::compileRenderPlan(tracks, *master, {.auditionMidi = true}));
         report("plan", plan->diagnostics);
 
         engine::PlanValues values;
@@ -328,6 +392,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         livePlan_ = std::move(plan);
+        routing_ = inputRoutingOf(tracks);
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
@@ -342,9 +407,32 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || livePlan_ == nullptr || master == nullptr)
             return;
 
+        // An input route or a monitor switch arrives here, being a track
+        // property, and the route tables below cannot carry either: a
+        // "track:N" edge is compiled into the plan, and what a monitored
+        // audio input is at all is an op (#2579).
+        if (inputRoutingOf(tracks) != routing_) {
+            publishPlan();
+            return;
+        }
+
         engine::PlanValues values;
         report("values", resolveValues(*livePlan_, tracks, *master, values));
         report("values", session_->publishValues(std::move(values)).messages);
+
+        // A monitor or route change is a track property, so it arrives here
+        // rather than as a plan, and the input the store already holds reads
+        // the table this rewrites.
+        factory_.refreshMidiRoutes(tracks);
+    }
+
+    /// A device plugged in or unplugged since the last structural publish.
+    /// Without this the snapshot a route resolves against is the one the last
+    /// plan was compiled with, and a track selecting a newly connected device
+    /// would resolve to a source nothing pushes under.
+    void refreshLiveMidiDevices() {
+        sources_.registerAvailableDevices();
+        factory_.refreshMidiRoutes(TrackManager::getInstance().getTracks());
     }
 
     /// What every track plays, resolved against the tempo the transport is
@@ -496,7 +584,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // block across realtime workers is the next question this can be asked,
         // and not one to answer in the same change that first made a sound.
         session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
-        factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed());
+        factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
+                        session_->liveInputs(), sources_);
+
+        session_->liveInputs().prepare(inputChannels_.load(std::memory_order_relaxed),
+                                       context.maxBlockSize);
+        prepareLiveMidi();
 
         plan_.store(false, std::memory_order_relaxed);
         values_.store(false, std::memory_order_relaxed);
@@ -516,6 +609,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // one waits, and both belong to the publishing thread.
         rate_.store(device->getCurrentSampleRate());
         blockSize_.store(device->getCurrentBufferSizeSamples());
+        inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
         triggerAsyncUpdate();
 
         if (EngineTrace::enabled())
@@ -544,6 +638,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         const auto outputs = std::min(numOutputChannels, kChannels);
+        const auto streams = collectLiveMidi();
 
         // In pieces no longer than the plan was prepared for. A driver handing
         // over more than the block size it declared is rare and legal, and
@@ -552,7 +647,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             const auto piece = std::min(numSamples - done, scratch_.getNumSamples());
             juce::AudioBuffer<float> block(scratch_.getArrayOfWritePointers(), kChannels, piece);
 
-            session_->process(piece, block);
+            // The callback's live MIDI belongs to its first piece alone: every
+            // event is stamped at offset 0, so handing the streams to a second
+            // piece would sound each note again.
+            session_->process(piece, block,
+                              done == 0 ? engine::LiveInputBlock{{}, streams}
+                                        : engine::LiveInputBlock{});
 
             for (auto channel = 0; channel < outputs; ++channel)
                 juce::FloatVectorOperations::copy(output[channel] + done,
@@ -561,10 +661,63 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
     }
 
+    /// Room for every source the callback may see. Off the device, from
+    /// rebuild(), because it allocates.
+    void prepareLiveMidi() {
+        midiBySource_.resize(kMaxLiveMidiSources);
+        for (auto& buffer : midiBySource_)
+            buffer.ensureSize(static_cast<std::size_t>(engine::kMaxMidiBytesPerPort));
+
+        streams_.reserve(kMaxLiveMidiSources);
+    }
+
+    /**
+     * @brief The queue's events, per source, as the span the session reads.
+     *
+     * Audio thread, once per callback. Every event lands at offset 0: placing
+     * one where it was played is part of #2553's monitor round trip, and until
+     * then this is up to a block of jitter.
+     */
+    std::span<const engine::LiveMidiStream> collectLiveMidi() {
+        for (auto& buffer : midiBySource_)
+            buffer.clear();
+
+        streams_.clear();
+
+        queue_.drain([this](const LiveMidiQueue::Event& event) {
+            const auto index = static_cast<std::size_t>(event.source - 1);
+            if (event.source < 1 || index >= midiBySource_.size()) {
+                droppedEvents_.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+
+            auto& buffer = midiBySource_[index];
+            if (static_cast<int>(buffer.data.size()) + kQueuedEventBytes >
+                engine::kMaxMidiBytesPerPort) {
+                droppedEvents_.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+
+            buffer.addEvent(event.bytes, event.size, 0);
+        });
+
+        for (std::size_t i = 0; i < midiBySource_.size(); ++i)
+            if (!midiBySource_[i].isEmpty())
+                streams_.push_back(
+                    {static_cast<engine::LiveMidiSourceId>(i + 1), &midiBySource_[i]});
+
+        return streams_;
+    }
+
     // ===== Odds and ends =====
 
-    engine::TempoMap tempoMap() const {
-        return tempoMapAt(bpm_, numerator_, denominator_);
+    const engine::TempoMap& tempoMap() const {
+        return map_;
+    }
+
+    /** @brief Bake the map again, after anything it is baked from moves. */
+    void refreshTempoMap() {
+        map_ = tempoMapAt(bpm_, numerator_, denominator_);
     }
 
     std::vector<std::string> resolveValues(const engine::RenderPlan& plan,
@@ -689,6 +842,23 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     EngineFileReaders files_;
     engine::PrefetchThread reader_;
+
+    /// Who is playing, and what they played. The registry is the message and
+    /// MIDI threads'; the queue is how one reaches the other side. Before the
+    /// factory, which holds the registry for the length of a publish.
+    LiveMidiSources sources_;
+    LiveMidiQueue queue_;
+
+    /// One buffer per source id, indexed by id - 1, and the streams over the
+    /// ones a callback found anything in. Both sized in rebuild().
+    std::vector<juce::MidiBuffer> midiBySource_;
+    std::vector<engine::LiveMidiStream> streams_;
+
+    /// Events the callback could not place: a source past kMaxLiveMidiSources,
+    /// or a port already holding its whole budget.
+    std::atomic<std::uint32_t> droppedEvents_{0};
+    std::uint32_t tracedDrops_ = 0;
+
     EngineRuntimeFactory factory_;
 
     /// After the factory, so it is destroyed first: a load still in flight is
@@ -726,9 +896,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// values against it without compiling another.
     std::shared_ptr<const engine::RenderPlan> livePlan_;
 
+    /// The input routing that plan was compiled from. What a values publish
+    /// compares against to know it has to be a plan publish instead.
+    std::vector<InputRouting> routing_;
+
     double bpm_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
+
+    /// The three above, baked. Cached rather than rebuilt per read: everything
+    /// published with a tempo reads it, and so does the app through @ref view_.
+    engine::TempoMap map_ = tempoMapAt(bpm_, numerator_, denominator_);
+    TempoMapView view_{map_};
+
     engine::LoopRange loop_;
     engine::ClickSettings click_;
     engine::TransportRequest request_;
@@ -736,6 +916,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::atomic<double> rate_{0.0};
     std::atomic<int> blockSize_{0};
+    std::atomic<int> inputChannels_{0};
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
     std::atomic<bool> clips_{false};
@@ -749,6 +930,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Where the levels go. Null until a caller asks (#2570).
     EngineHost::MeterSink meters_;
+
+    /// Hot-plug, on the message thread. Last, so it is destroyed first and
+    /// nothing calls back into a host that is already unwinding.
+    juce::MidiDeviceListConnection deviceList_ =
+        juce::MidiDeviceListConnection::make([this] { refreshLiveMidiDevices(); });
 };
 
 EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}
@@ -770,6 +956,18 @@ void EngineHost::meterInto(MeterSink sink) {
 
 void EngineHost::stop() {
     impl_->detach();
+}
+
+void EngineHost::audition(TrackId trackId, const juce::MidiMessage& message) {
+    impl_->queue_.push(impl_->sources_.auditionSourceFor(trackId), message);
+}
+
+void EngineHost::pushMidi(const juce::String& deviceId, const juce::MidiMessage& message) {
+    impl_->queue_.push(impl_->sources_.sourceFor(deviceId), message);
+}
+
+void EngineHost::registerVirtualMidiSource(const juce::String& deviceId) {
+    impl_->sources_.registerVirtualDevice(deviceId);
 }
 
 void EngineHost::captureExternalPluginStates() {
@@ -808,6 +1006,7 @@ double EngineHost::positionSeconds() const {
 
 void EngineHost::setTempo(double bpm) {
     impl_->bpm_ = bpm;
+    impl_->refreshTempoMap();
     impl_->publishTransport();
 
     // The snapshot's seconds were derived through the map that just changed, so
@@ -822,6 +1021,7 @@ double EngineHost::tempo() const {
 void EngineHost::setTimeSignature(int numerator, int denominator) {
     impl_->numerator_ = numerator;
     impl_->denominator_ = denominator;
+    impl_->refreshTempoMap();
     impl_->publishTransport();
 }
 
@@ -842,6 +1042,16 @@ void EngineHost::setMetronomeEnabled(bool enabled) {
 
 bool EngineHost::isMetronomeEnabled() const {
     return impl_->click_.enabled;
+}
+
+EngineHost::LoopState EngineHost::loop() const {
+    return {.enabled = impl_->loop_.enabled,
+            .startBeat = impl_->loop_.startBeat,
+            .endBeat = impl_->loop_.endBeat};
+}
+
+const magda::TempoMap* EngineHost::tempoMap() const {
+    return &impl_->view_;
 }
 
 }  // namespace magda::daw::engine_host

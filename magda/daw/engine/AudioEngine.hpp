@@ -31,6 +31,7 @@ class InsertRenderCaptureService;
 class MagdaApi;
 class MidiBridge;
 class PluginWindowManager;
+struct TrackMeters;
 class UndoableCommand;
 
 enum class PluginScanPhase {
@@ -264,6 +265,11 @@ class AudioEngine : public AudioEngineListener {
     // ===== Audio Management =====
     virtual AudioBridge* getAudioBridge() = 0;
     virtual const AudioBridge* getAudioBridge() const = 0;
+
+    /// Track and master meters and MIDI activity, from an engine-neutral
+    /// object both engines feed (#2579).
+    virtual TrackMeters& meters() = 0;
+    virtual const TrackMeters& meters() const = 0;
 
     // ===== What the live plugins hold =====
     //

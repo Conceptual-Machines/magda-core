@@ -473,6 +473,8 @@ juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,
     if (!faust->loadDspSource(displayName, source, error))
         return "compile error: " + error;
 
+    if (!bridge)
+        return "applied \"" + displayName + "\" (live sync not available)";
     bridge->getPluginManager().refreshDeviceParameters(path);
     bridge->getPluginManager().capturePluginState(path);
     return "applied \"" + displayName + "\"";

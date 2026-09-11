@@ -10,7 +10,13 @@ namespace juce {
 class AudioDeviceManager;
 class AudioPluginFormatManager;
 class KnownPluginList;
+class MidiMessage;
+class String;
 }  // namespace juce
+
+namespace magda {
+class TempoMap;
+}
 
 /**
  * @file EngineHost.hpp
@@ -76,6 +82,23 @@ class EngineHost {
     /// Safe to call twice, and called by the destructor.
     void stop();
 
+    // ===== Live MIDI (#2579) =====
+    //
+    // Both queue one message for the next callback, from the message thread or
+    // from a MIDI callback thread. Never from the audio thread.
+
+    /// A note played at @p trackId itself: the piano roll, the chord panel and
+    /// the drum pads, which preview whatever the track is monitoring.
+    void audition(TrackId trackId, const juce::MidiMessage& message);
+
+    /// A message from @p deviceId, for whichever tracks are routed to it.
+    void pushMidi(const juce::String& deviceId, const juce::MidiMessage& message);
+
+    /// Name a device the system's MIDI list does not hold -- the QWERTY
+    /// keyboard -- so a track routed to "all" is bound to it at the next
+    /// publish and stays bound to it. Message thread.
+    void registerVirtualMidiSource(const juce::String& deviceId);
+
     // ===== What the plugins hold =====
     //
     // A project saves the chunk its plugins wrote, and only the instance that
@@ -117,6 +140,18 @@ class EngineHost {
     void setLoop(bool enabled, double startBeat, double endBeat);
     void setMetronomeEnabled(bool enabled);
     bool isMetronomeEnabled() const;
+
+    /** @brief The loop, as the one value the transport is published with. */
+    struct LoopState {
+        bool enabled = false;
+        double startBeat = 0.0;
+        double endBeat = 0.0;
+    };
+    LoopState loop() const;
+
+    /// The tempo and signature above as the app's beats<->seconds facade.
+    /// Never null, and valid until this host is destroyed.
+    const magda::TempoMap* tempoMap() const;
 
   private:
     struct Impl;

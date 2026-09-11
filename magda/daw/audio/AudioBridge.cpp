@@ -115,9 +115,10 @@ void mergeMeterData(MeterData& dest, const MeterData& src) {
 
 }  // namespace
 
-AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit)
+AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters)
     : engine_(engine),
       edit_(edit),
+      meters_(meters),
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
                      TrackManager::getInstance()),
@@ -1298,14 +1299,10 @@ void AudioBridge::timerCallback() {
     // Update metering from level measurers (runs at 30 FPS on message thread).
     // (Skipped entirely during an offline render by the early return above, so
     // the live meters don't twitch to the render's audio either.)
-    //
-    // Skipped whole when another engine renders (#2570): these taps sit in a
-    // graph nothing plays through, so all of them read silence.
-    if (!meteringFedElsewhere_)
-        updateMetersFromGraph();
+    updateMetersFromGraph();
 }
 
-/// What the fork's own graph taps say, pushed to everything that draws a meter.
+/// What the graph taps say, pushed to everything that draws a meter.
 void AudioBridge::updateMetersFromGraph() {
     trackController_.withTrackMapping(
         [this](const std::map<TrackId, te::AudioTrack*>& trackMapping) {
@@ -1339,9 +1336,9 @@ void AudioBridge::updateMetersFromGraph() {
                         if (!hasData)
                             continue;
 
-                        meteringBuffer_.pushLevels(trackId, data);
-                        recordingMeteringBuffer_.pushLevels(trackId, data);
-                        remoteMeteringBuffer_.pushLevels(trackId, data);
+                        meters_.mixer.pushLevels(trackId, data);
+                        meters_.recording.pushLevels(trackId, data);
+                        meters_.remote.pushLevels(trackId, data);
 
                         // Write audio peak to sidechain bus for Audio-triggered modulators
                         float peak = std::max(data.peakL, data.peakR);
@@ -1362,7 +1359,7 @@ void AudioBridge::updateMetersFromGraph() {
         auto meteringMap = pluginManager_.getRackSyncManager().getMeteringMap();
         for (const auto& [trackId, info] : meteringMap) {
             MeterData trackMeter;
-            if (!meteringBuffer_.peekLatest(trackId, trackMeter))
+            if (!meters_.mixer.peekLatest(trackId, trackMeter))
                 continue;
 
             for (const auto& devicePath : info.devicePaths) {
@@ -1397,8 +1394,7 @@ void AudioBridge::updateMetersFromGraph() {
         float peakL = juce::Decibels::decibelsToGain(levelL.dB);
         float peakR = juce::Decibels::decibelsToGain(levelR.dB);
 
-        masterPeakL_.store(peakL, std::memory_order_relaxed);
-        masterPeakR_.store(peakR, std::memory_order_relaxed);
+        meters_.setMasterPeak(peakL, peakR);
     }
 }
 

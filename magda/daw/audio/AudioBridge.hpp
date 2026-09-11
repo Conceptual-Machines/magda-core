@@ -15,14 +15,13 @@
 #include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
 #include "ExternalInsertDeviceEnablement.hpp"
-#include "MeteringBuffer.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
+#include "TrackMeters.hpp"
 #include "WarpMarkerManager.hpp"
 #include "automation/AutomationPlaybackEngine.hpp"
 #include "automation/AutomationRecordingEngine.hpp"
 #include "automation/ControlTargetResolver.hpp"
-#include "midi/MidiActivityMonitor.hpp"
 #include "midi/MidiInputRouter.hpp"
 #include "params/ParameterManager.hpp"
 #include "params/ParameterQueue.hpp"
@@ -65,8 +64,9 @@ class AudioBridge : public TrackManagerListener,
      * @brief Construct AudioBridge with Tracktion Engine references
      * @param engine Reference to the Tracktion Engine instance
      * @param edit Reference to the current Edit (project)
+     * @param meters The engine-neutral object to push levels and MIDI activity into
      */
-    AudioBridge(te::Engine& engine, te::Edit& edit);
+    AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters);
     ~AudioBridge() override;
 
     void resetTestState();
@@ -406,44 +406,6 @@ class AudioBridge : public TrackManagerListener,
     void removeAudioTrack(TrackId trackId);
 
     // =========================================================================
-    // Metering
-    // =========================================================================
-
-    /**
-     * @brief Get the metering buffer for reading levels in UI
-     */
-    MeteringBuffer& getMeteringBuffer() {
-        return meteringBuffer_;
-    }
-    const MeteringBuffer& getMeteringBuffer() const {
-        return meteringBuffer_;
-    }
-
-    /**
-     * @brief Get the dedicated recording metering buffer
-     *
-     * Separate from the main metering buffer so that UI meter consumers
-     * (TrackHeadersPanel, MixerView) don't drain data before the recording
-     * preview can read it.
-     */
-    MeteringBuffer& getRecordingMeteringBuffer() {
-        return recordingMeteringBuffer_;
-    }
-
-    /**
-     * @brief Get the dedicated remote-API metering buffer (#1857)
-     *
-     * A third buffer for the same reason there is a second. A reader that pops
-     * takes data away from the others, and one that only peeks stops seeing new
-     * data once the ring fills — which it does within a second when no UI meter
-     * is on screen to drain it. A remote meter subscriber has to work with the
-     * mixer closed, so it gets its own ring and drains it to the latest value.
-     */
-    MeteringBuffer& getRemoteMeteringBuffer() {
-        return remoteMeteringBuffer_;
-    }
-
-    // =========================================================================
     // Parameter Queue
     // =========================================================================
 
@@ -547,26 +509,17 @@ class AudioBridge : public TrackManagerListener,
     // =========================================================================
 
     /**
-     * @brief Trigger MIDI activity for a track (MIDI thread safe)
-     * @param trackId The track that received MIDI
+     * @brief Feed the sidechain trigger bus for a track's live MIDI (MIDI thread safe).
+     *
+     * The activity light itself is TrackMeters::midiActivity, fed directly by
+     * MidiBridge (#2579).
      */
     void triggerMidiActivity(TrackId trackId) {
-        midiActivity_.triggerActivity(trackId);
-        // Write to sidechain trigger bus so updateAllMods() picks up live MIDI too.
-        sidechainRouting_.triggerMidiActivity(trackId);
         // LFO retrigger is handled on the audio thread by SidechainMonitorPlugin
         // (which calls PluginManager::triggerSidechainNoteOn). Calling it here
         // from the MIDI thread would double-trigger and race with the audio
         // thread's ramp state (non-atomic floats in TE's Ramp).
-    }
-
-    /**
-     * @brief Get the monotonic MIDI activity counter for a track (UI thread)
-     * @param trackId The track to check
-     * @return Counter value — compare with previous to detect new activity
-     */
-    uint32_t getMidiActivityCounter(TrackId trackId) const {
-        return midiActivity_.getActivityCounter(trackId);
+        sidechainRouting_.triggerMidiActivity(trackId);
     }
 
     // =========================================================================
@@ -651,7 +604,7 @@ class AudioBridge : public TrackManagerListener,
     float getMasterPan() const;
 
     // =========================================================================
-    // Master Metering
+    // Device Metering
     // =========================================================================
 
     /**
@@ -662,35 +615,6 @@ class AudioBridge : public TrackManagerListener,
     }
     const DeviceMeteringManager& getDeviceMetering() const {
         return deviceMetering_;
-    }
-
-    /// Another engine fills the meters, so this one stops polling graph taps
-    /// nothing renders through (#2570). Set once, before the first tick.
-    void setMeteringFedElsewhere(bool fedElsewhere) {
-        meteringFedElsewhere_ = fedElsewhere;
-    }
-
-    /// What the master strip shows, for a caller that metered it itself. The
-    /// metering buffer cannot hold it: MASTER_TRACK_ID is negative (#2570).
-    void setMasterPeak(float peakL, float peakR) {
-        masterPeakL_.store(peakL, std::memory_order_relaxed);
-        masterPeakR_.store(peakR, std::memory_order_relaxed);
-    }
-
-    /**
-     * @brief Get master channel peak level (left)
-     * @return Peak level as linear gain
-     */
-    float getMasterPeakL() const {
-        return masterPeakL_.load(std::memory_order_relaxed);
-    }
-
-    /**
-     * @brief Get master channel peak level (right)
-     * @return Peak level as linear gain
-     */
-    float getMasterPeakR() const {
-        return masterPeakR_.load(std::memory_order_relaxed);
     }
 
     // =========================================================================
@@ -844,8 +768,7 @@ class AudioBridge : public TrackManagerListener,
     // =========================================================================
 
   private:
-    /// The fork's own graph taps, read on the timer and pushed to every meter
-    /// ring. Skipped whole when another engine feeds them (#2570).
+    /// The graph taps, read on the timer and pushed to every meter ring.
     void updateMetersFromGraph();
 
     // Timer callback for metering updates (runs on message thread)
@@ -862,19 +785,16 @@ class AudioBridge : public TrackManagerListener,
     te::Engine& engine_;
     te::Edit& edit_;
 
+    // Where levels and MIDI activity go; owned by the wrapper (#2579).
+    TrackMeters& meters_;
+
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID
 
     // (Session clips use ClipSlot-based mapping via trackId + sceneIndex — no ID maps needed)
 
-    // Lock-free communication buffers
-    MeteringBuffer meteringBuffer_;
-    MeteringBuffer recordingMeteringBuffer_;
-    MeteringBuffer remoteMeteringBuffer_;
-
     // Phase 1 refactoring: Pure data managers (extracted from AudioBridge)
     TransportStateManager transportState_;
-    MidiActivityMonitor midiActivity_;
     ParameterManager parameterManager_;
 
     // Phase 2 refactoring: Independent features (extracted from AudioBridge)
@@ -902,12 +822,6 @@ class AudioBridge : public TrackManagerListener,
     // Per-device metering (LevelMeasurer per device, polled on timer)
     DeviceMeteringManager deviceMetering_;
 
-    // Message thread only, like the timer that reads it (#2570).
-    bool meteringFedElsewhere_ = false;
-
-    // Master channel metering (lock-free atomics for thread safety)
-    std::atomic<float> masterPeakL_{0.0f};
-    std::atomic<float> masterPeakR_{0.0f};
     te::LevelMeasurer::Client masterMeterClient_;
     // The playback context the master meter client is registered on (nullptr =
     // not registered). Tracked as a pointer (not a bool) so we re-register when

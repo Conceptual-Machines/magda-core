@@ -71,6 +71,14 @@ int countRole(const RenderPlan& plan, OpRole role) {
     return static_cast<int>(opsWithRole(plan, role).size());
 }
 
+/// Live MIDI input ops on one track, which is what a preview reaches (#2579).
+int liveInputsOn(const RenderPlan& plan, magda::TrackId trackId) {
+    const auto ops = opsWithRole(plan, OpRole::LiveMidiInput);
+    return static_cast<int>(std::ranges::count_if(ops, [&](magda::engine::OpId op) {
+        return plan.ops[static_cast<std::size_t>(op)].key.trackId == trackId;
+    }));
+}
+
 /// The op an input slot reads, or -1 when the slot is unconnected. The two ops
 /// every slot carries whatever the model says are looked through: a delay
 /// stands for the op behind it, so does the subtract that would take a delta on
@@ -1716,6 +1724,75 @@ TEST_CASE("Auto input monitoring only counts while the track is armed",
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
         CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+    }
+}
+
+TEST_CASE("Audition gives every track that reads MIDI something to preview through",
+          "[engine][plan][compiler][2579]") {
+    const auto instrumentTrack = [] {
+        auto track = makeTrack(1);
+        track.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+        return track;
+    };
+
+    CompileOptions auditioning;
+    auditioning.auditionMidi = true;
+
+    SECTION("an idle instrument track has no live input by default") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+    }
+
+    SECTION("with audition on it has exactly one") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
+    }
+
+    SECTION("a track whose chain reads no MIDI still has none") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+    }
+
+    SECTION("a monitoring track routed to a device still has one") {
+        std::vector<TrackInfo> tracks{instrumentTrack()};
+        tracks[0].inputMonitor = InputMonitorMode::In;
+        tracks[0].midiInputDevice = "Keyboard";
+
+        // The store keys live inputs by TrackId, so a second op on the same
+        // track would be a second binding to one object.
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
+    }
+
+    SECTION("a track taking MIDI from another track has one of its own") {
+        auto destination = makeTrack(2);
+        destination.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+        destination.inputMonitor = InputMonitorMode::In;
+        destination.midiInputDevice = "track:1";
+
+        std::vector<TrackInfo> tracks{makeTrack(1), destination};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+
+        // A preview is queued under the destination's own audition source, so
+        // the routed source track is not where it would arrive.
+        CHECK(liveInputsOn(plan, 2) == 1);
+
+        // And the source track keeps its own, which reaches the same
+        // instrument through the route.
+        CHECK(liveInputsOn(plan, 1) == 1);
     }
 }
 

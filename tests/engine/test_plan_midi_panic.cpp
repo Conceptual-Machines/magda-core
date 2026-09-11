@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <utility>
 #include <vector>
 
 #include "EngineSessionScaffold.hpp"
@@ -49,6 +50,18 @@ class LaunchingSource final : public EngineMidiSource {
     bool launched = false;
 };
 
+/// Plays one note and then holds it, which is what a key held down is: the
+/// note-off arrives from wherever the source is routed when the finger lifts.
+class HeldNote final : public EngineMidiSource {
+  public:
+    void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override {
+        if (std::exchange(pending, false))
+            out.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 0);
+    }
+
+    bool pending = true;
+};
+
 /// Renders silence, so a compiled plan's audio slot has a source bound.
 class SilentAudio final : public magda::engine::EngineAudioSource {
   public:
@@ -64,6 +77,11 @@ class PanicProbe final : public EngineDevice {
     void process(DeviceBlock& block) override {
         block.audio.clear();
         heard.push_back(block.midiInAllNotesOff);
+
+        if (block.midiIn != nullptr)
+            for (const auto event : *block.midiIn)
+                notesSeen += event.getMessage().isNoteOn() ? 1 : 0;
+
         if (forwards)
             block.midiOutAllNotesOff = block.midiInAllNotesOff;
         else if (raises)
@@ -76,6 +94,7 @@ class PanicProbe final : public EngineDevice {
     }
 
     std::vector<bool> heard;
+    int notesSeen = 0;
     bool forwards = false;
     bool raises = false;
 };
@@ -225,7 +244,287 @@ struct MergeHarness {
     }
 };
 
+/// One live MIDI input feeding one instrument, which is the shape a track's
+/// MIDI input route compiles to at the destination. The source's track id is
+/// what a "track:N" route change moves.
+struct RouteHarness {
+    RenderPlan plan;
+    PlanBindings bindings;
+    HeldNote source;
+    PanicProbe device;
+    PlanValues values;
+    juce::AudioBuffer<float> output{2, kBlockSize};
+
+    /// The store's, in a test with no store: one per device, shared by every
+    /// plan over it, which is the whole point of where it lives.
+    RouteHarness(std::atomic<std::uint64_t>& owed, TrackId sourceTrack,
+                 TrackId destinationTrack = 7)
+        : owed_(owed) {
+        magda::engine::PlanOp input;
+        input.kind = OpKind::MidiInput;
+        input.key.trackId = sourceTrack;
+        input.key.role = OpRole::LiveMidiInput;
+        input.outputs = {SignalKind::Midi};
+        plan.ops.push_back(input);
+
+        magda::engine::PlanOp merge;
+        merge.kind = OpKind::MergeMidi;
+        merge.key.trackId = destinationTrack;
+        merge.key.role = OpRole::TrackMidiInput;
+        merge.inputs = {PortRef{0, 0}};
+        merge.outputs = {SignalKind::Midi};
+        plan.ops.push_back(merge);
+
+        // The same device on both sides of the swap: what the store retains,
+        // and what is left holding the note.
+        magda::engine::PlanOp instrument;
+        instrument.kind = OpKind::Device;
+        instrument.key.trackId = destinationTrack;
+        instrument.key.deviceId = 9;
+        instrument.key.role = OpRole::DeviceProcess;
+        instrument.inputs = {PortRef{}, PortRef{1, 0}, PortRef{}};
+        instrument.outputs = {SignalKind::Audio};
+        plan.ops.push_back(instrument);
+
+        magda::engine::PlanOp out;
+        out.kind = OpKind::Output;
+        out.key.trackId = destinationTrack;
+        out.key.role = OpRole::HardwareOutput;
+        out.inputs = {PortRef{2, 0}};
+        plan.ops.push_back(out);
+
+        plan.outputOps = {3};
+        magda::engine::bakeScheduling(plan);
+
+        bindings.midiInputs[sourceTrack] = &source;
+        bindings.devices[DeviceKey{9}] = &device;
+        bindings.deviceMidiPanicEpoch[DeviceKey{9}] = &owed_;
+
+        values.planFingerprint = magda::engine::planFingerprint(plan);
+        values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    }
+
+    void render(PlanExecutor& executor, bool continuous = true) {
+        output.clear();
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.playing = true;
+        block.continuous = continuous;
+        executor.process(values, block, output);
+    }
+
+  private:
+    std::atomic<std::uint64_t>& owed_;
+};
+
 }  // namespace
+
+TEST_CASE("a device whose MIDI source was taken away is panicked once",
+          "[engine][exec][2418][2579]") {
+    // A "track:N" route is compiled into the plan, so changing it republishes
+    // rather than rewriting a route table -- and the instrument on the
+    // destination is retained across that swap, still holding whatever the old
+    // source played. Its note-off now goes somewhere else.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
+    CHECK_FALSE(playing.device.lastHeard());
+
+    RouteHarness rerouted{owed, 2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    rerouted.render(second);
+    CHECK(rerouted.device.lastHeard());
+
+    rerouted.render(second);
+    CHECK_FALSE(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a panic the first block already carried is not owed a second",
+          "[engine][exec][2418][2579]") {
+    // The swap and a locate in the same block: the latch is spent by that
+    // block whether or not it was what raised the panic, or the note the
+    // playhead jump re-asserts is cut on whatever block comes next.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+
+    RouteHarness rerouted{owed, 2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    rerouted.render(second, /*continuous=*/false);
+    CHECK(rerouted.device.lastHeard());
+
+    rerouted.render(second);
+    CHECK_FALSE(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a device that moved to another track is panicked on what it left",
+          "[engine][exec][2418][2579]") {
+    // The store keeps an instance by DeviceKey, so dragging an instrument to
+    // another track is the same plugin holding the same notes under an OpKey
+    // that no longer matches. Its MIDI now comes from the track it landed on.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1, 7};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
+
+    RouteHarness moved{owed, 2, 8};
+    PlanExecutor second;
+    REQUIRE(second.prepare(moved.plan, moved.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    moved.render(second);
+    CHECK(moved.device.lastHeard());
+}
+
+TEST_CASE("a panic owed to a silenced device survives the next publish",
+          "[engine][exec][2418][2579]") {
+    // A device in a muted rack is not processed at all, so it cannot spend
+    // what it is owed. Any publish landing before the rack comes back would
+    // otherwise drop the debt, and the store is still holding the instrument
+    // that is still holding the note.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+
+    RouteHarness rerouted{owed, 2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    // Muted before it ever ran under the new plan: the device op is skipped,
+    // and the panic stays owed.
+    rerouted.values.ops[2].silent = true;
+    rerouted.render(second);
+    CHECK(rerouted.device.heard.empty());
+
+    // Any structural edit at all, with the MIDI where the last plan left it.
+    RouteHarness republished{owed, 2};
+    PlanExecutor third;
+    REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
+    third.commitReroutes(++epoch);
+
+    republished.render(third);
+    CHECK(republished.device.lastHeard());
+}
+
+TEST_CASE("the plan still rendering does not spend the next plan's panic",
+          "[engine][exec][2418][2579]") {
+    // Both epochs render across a swap: farbot hands the audio thread the one
+    // it acquired, and a publish lands while it is still rendering it. The
+    // debt is the store's so it outlives either, and it carries the epoch that
+    // raised it so the one still on the old route cannot spend it -- a note
+    // played through that route in the window needs the panic too.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
+
+    // Published, so the debt is written -- but the swap has not happened and
+    // the plan below is the one the audio thread is still holding.
+    RouteHarness rerouted{owed, 2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    playing.render(first);
+    CHECK_FALSE(playing.device.lastHeard());
+
+    // Another note through the old route while it is still the live one. It is
+    // held by the same instrument, and its off will follow the new route.
+    playing.source.pending = true;
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 2);
+    CHECK_FALSE(playing.device.lastHeard());
+
+    // The plan that took the route away is the one that releases both.
+    rerouted.render(second);
+    CHECK(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a plan that was never published owes nothing", "[engine][exec][2418][2579]") {
+    // A candidate can prepare and still be refused -- values that do not fit
+    // it, a device that could not be realised. Nothing it would have rerouted
+    // has been rerouted, so panicking the instrument the live plan is still
+    // feeding would cut a note for an edit that never happened.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+
+    RouteHarness refused{owed, 2};
+    PlanExecutor candidate;
+    REQUIRE(candidate.prepare(refused.plan, refused.bindings, context, &first).empty());
+
+    // No commit: this is where the publish was turned down.
+    playing.render(first);
+    CHECK_FALSE(playing.device.lastHeard());
+}
+
+TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
+          "[engine][exec][2418][2579]") {
+    // The other half: a panic raised on every swap would cut a chord that is
+    // still being held down, which is most republishes.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+
+    RouteHarness same{owed, 1};
+    PlanExecutor second;
+    REQUIRE(second.prepare(same.plan, same.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
+
+    same.render(second);
+    CHECK_FALSE(same.device.lastHeard());
+}
 
 TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec][2418]") {
     // BlockInfo::continuous is the engine's playhead jump: false on the first
