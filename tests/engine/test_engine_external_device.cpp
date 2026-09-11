@@ -87,6 +87,12 @@ class StubParameter final : public juce::AudioProcessorParameterWithID {
         return text.getFloatValue();
     }
 
+    /// A string no formatter working from the range could produce, which is
+    /// how a test tells the plugin's own text from the host's arithmetic.
+    juce::String getText(float value, int) const override {
+        return juce::String(juce::roundToInt(value * 100.0f)) + " frobs";
+    }
+
     /// How many times the host wrote this parameter, which is how a test sees
     /// that an unchanged value is not written again.
     int writes = 0;
@@ -770,6 +776,18 @@ std::unique_ptr<StubPlugin> awkwardlyNamedStub() {
     plugin->addHostedParameter(std::make_unique<StubParameter>("cut2", "Cutoff", 0.0f, true));
     plugin->addHostedParameter(std::make_unique<StubParameter>("blank", "", 0.0f, true));
     return plugin;
+}
+
+/// A stand-in for the app's display-text factory, which is installed with the
+/// engine's services and so is not registered in this binary. It records what
+/// the provider was built for; what it formats is not this test's question.
+std::shared_ptr<magda::ParameterInfo::DisplayTextProvider> recordingProviderFactory(
+    const magda::ChainNodePath& devicePath, int deviceId, int paramIndex) {
+    auto provider = std::make_shared<magda::ParameterInfo::DisplayTextProvider>();
+    provider->devicePath = devicePath;
+    provider->deviceId = deviceId;
+    provider->paramIndex = paramIndex;
+    return provider;
 }
 
 /// The resolved record at plan slot @p index, from whichever bucket holds it.
@@ -1924,6 +1942,73 @@ TEST_CASE("Repeated and missing parameter names are the fork's", "[engine][exter
     // Numbered by its place in the plugin's own array, which counts the
     // non-automatable parameter the host's list skips.
     CHECK(unnamed->name == "Unnamed 6");
+}
+
+TEST_CASE("A parameter's text is the plugin's own", "[engine][external][2600]") {
+    // A hosted plugin's range is normalised, so there is nothing for a
+    // formatter to work from: 0.5 is "0.50" and never "500 Hz". The plugin is
+    // the only thing that knows, and this is the host asking it.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+
+    // Slot three is the stub's Tone, two past the wrapper pair and one past the
+    // parameter no host may automate.
+    CHECK(device.parameterText(3, 0.25f) == "25 frobs");
+    CHECK(device.parameterText(3, 1.0f) == "100 frobs");
+}
+
+TEST_CASE("A slot with nothing behind it has no text", "[engine][external][2600]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+
+    // Slot two answers, so an empty answer below is this slot having nothing
+    // behind it rather than the host having stopped asking.
+    REQUIRE(device.parameterText(2, 0.5f).isNotEmpty());
+
+    // The wrapper pair, which the plugin has never heard of, and a slot past
+    // the end of its list. Both empty, which is what tells the caller to format
+    // from the range instead.
+    CHECK(device.parameterText(0, 0.5f).isEmpty());
+    CHECK(device.parameterText(1, 0.5f).isEmpty());
+    CHECK(device.parameterText(99, 0.5f).isEmpty());
+    CHECK(device.parameterText(-1, 0.5f).isEmpty());
+}
+
+TEST_CASE("The value asked for is clamped to what a parameter can hold",
+          "[engine][external][2600]") {
+    // An automation lane labels its axis at both ends and a knob can be dragged
+    // past them; a plugin asked for a position outside 0..1 is entitled to
+    // anything at all.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+
+    CHECK(device.parameterText(3, -2.0f) == "0 frobs");
+    CHECK(device.parameterText(3, 7.0f) == "100 frobs");
+}
+
+TEST_CASE("Resolved parameters carry a live text provider", "[engine][external][2600]") {
+    // Asked of the plugin per value rather than sampled into a table, so a
+    // continuous parameter reads exactly rather than to the nearest sample.
+    // The factory is the app's, and this stands in for it.
+    REQUIRE(magda::registerParameterDisplayTextProviderFactory(recordingProviderFactory));
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+
+    auto model = externalDevice();
+    model.id = 42;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+
+    const auto* tone = resolvedParameterAt(result, 3);
+    REQUIRE(tone != nullptr);
+    REQUIRE(tone->displayText != nullptr);
+    CHECK(tone->displayText->deviceId == 42);
+    CHECK(tone->displayText->paramIndex == 3);
+
+    // The wrapper pair has none: nothing on the plugin stands behind it.
+    const auto* dry = resolvedParameterAt(result, 0);
+    REQUIRE(dry != nullptr);
+    CHECK(dry->displayText == nullptr);
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {

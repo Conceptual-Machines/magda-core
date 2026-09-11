@@ -179,6 +179,12 @@ HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
         info.stableId = hostParameterId(*parameter);
         info.defaultValue = parameter->getDefaultValue();
         info.currentValue = parameter->getValue();
+
+        // Asked for the plugin's own string rather than sampled into a table,
+        // which is the rule the fork set for the same reason: a table is a
+        // guess between its samples, and a hosted plugin's range is normalised
+        // so there is nothing else to format from (#2600).
+        info.displayText = makeParameterDisplayTextProvider({}, device.id, index);
         described.parameters.push_back(std::move(info));
     }
 

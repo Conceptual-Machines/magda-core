@@ -347,6 +347,24 @@ bool MagdaAudioEngine::toggleDeviceEditor(const ChainNodePath& devicePath) {
 bool MagdaAudioEngine::isDeviceEditorOpen(const ChainNodePath& devicePath) const {
     return host_->isDeviceEditorOpen(devicePath);
 }
+
+/**
+ * @brief The engine that renders the device is the one that can name its value.
+ *
+ * The host first, because an external plugin under this engine has no copy in
+ * the fork at all (#2579); the fork answers for the internal devices it still
+ * syncs, which is also the only reason this does not simply go to the host.
+ */
+juce::String MagdaAudioEngine::formatDeviceParameter(const ChainNodePath& devicePath,
+                                                     int paramIndex, float normalised) const {
+    if (host_ != nullptr) {
+        auto text = host_->formatDeviceParameter(devicePath, paramIndex, normalised);
+        if (text.isNotEmpty())
+            return text;
+    }
+
+    return tracktion_->formatDeviceParameter(devicePath, paramIndex, normalised);
+}
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

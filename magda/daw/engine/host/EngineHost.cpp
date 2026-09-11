@@ -855,6 +855,33 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return showing;
     }
 
+    /**
+     * @brief The plugin's own text for one parameter value (#2600).
+     *
+     * Straight to the device rather than through the plane: this is called
+     * from a paint, and the plane queues everything it is given
+     * (ControlExecutor.hpp). Safe because it is a query -- nothing is
+     * suspended and nothing moves -- and because the message thread this runs
+     * on is the control executor's own, so it overlaps no operation that does.
+     */
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const {
+        if (session_ == nullptr)
+            return {};
+
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value())
+            return {};
+
+        auto held = session_->device(*key);
+        if (held == nullptr)
+            return {};
+
+        auto* external = externalIn(*held);
+        return external != nullptr ? external->parameterText(paramIndex, normalised)
+                                   : juce::String{};
+    }
+
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
         if (session_ == nullptr)
             return;
@@ -1104,6 +1131,11 @@ bool EngineHost::toggleDeviceEditor(const ChainNodePath& devicePath) {
 
 bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
     return impl_->deviceEditor(devicePath, adapter::EditorAction::Query);
+}
+
+juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                               float normalised) const {
+    return impl_->formatDeviceParameter(devicePath, paramIndex, normalised);
 }
 
 void EngineHost::play() {

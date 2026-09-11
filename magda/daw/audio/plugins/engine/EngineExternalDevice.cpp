@@ -698,4 +698,19 @@ magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInf
     return magda::applySavedPluginState(*instance_, saved);
 }
 
+juce::String EngineExternalDevice::parameterText(int slot, float normalised) const {
+    if (slot < 0 || slot >= static_cast<int>(parameters_.size()))
+        return {};
+
+    // Null for the wrapper pair, and for a slot whose parameter this build of
+    // the plugin no longer has.
+    const auto* parameter = parameters_[static_cast<std::size_t>(slot)].parameter;
+    if (parameter == nullptr)
+        return {};
+
+    // The length the fork asks for (ExternalAutomatableParameter::valueToString).
+    constexpr int kMaxTextLength = 16;
+    return parameter->getText(std::clamp(normalised, 0.0f, 1.0f), kMaxTextLength);
+}
+
 }  // namespace magda::daw::audio::engine_adapter

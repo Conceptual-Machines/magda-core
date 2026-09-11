@@ -144,6 +144,8 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
     bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const override;
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;

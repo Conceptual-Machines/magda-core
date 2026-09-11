@@ -13,7 +13,6 @@
 #include "../engine/PluginWindowManager.hpp"
 #include "../profiling/PerformanceProfiler.hpp"
 #include "AudioThumbnailManager.hpp"
-#include "DeviceParameterDisplayTextProvider.hpp"
 #include "Vst3Preset.hpp"
 #include "modifiers/ADSRDebugLog.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
@@ -144,8 +143,6 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters
     deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
     daw::audio::registerDeviceServices(daw::audio::DeviceSessionKey::fromAddress(&edit_),
                                        deviceServices);
-
-    installDeviceParameterDisplayTextProviderFactory();
 
     // Wire up async plugin load completion callback to notify UI
     pluginManager_.onAsyncPluginLoaded = [](TrackId trackId) {
