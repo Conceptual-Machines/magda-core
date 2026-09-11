@@ -18,16 +18,79 @@ bool MessageThreadControlExecutor::run(Work work) {
     if (!work)
         return false;
 
-    // Posted even from the message thread itself. Running it here would let a
+    // Queued even from the message thread itself. Running it here would let a
     // nested operation into a plugin the outer one has open, and would put it
     // ahead of everything already waiting (ControlExecutor.hpp).
     //
-    // The flag travels with the post rather than being read off this object: by
-    // the time it arrives, this executor may be gone, and what the call needs
-    // to know is whether it still means anything rather than who it came from.
-    return juce::MessageManager::callAsync([work = std::move(work), posted = posted_]() mutable {
-        work(posted->cancelled ? ExecutionState::Cancelled : ExecutionState::Ran);
-    });
+    // The post carries the shared state rather than this object: by the time it
+    // arrives, this executor may be gone, and what the call needs is the queue
+    // and the cancelled flag rather than whoever queued it.
+    const std::scoped_lock held(posted_->lock);
+    posted_->queued.push_back(std::move(work));
+
+    if (juce::MessageManager::callAsync([posted = posted_] { pump(*posted); }))
+        return true;
+
+    // No message loop to post to, so nothing will ever answer this. Taken back
+    // out rather than left queued for a drain that may never come: a refusal
+    // says the caller still owes whatever it owed.
+    posted_->queued.pop_back();
+    return false;
+}
+
+void MessageThreadControlExecutor::pump(Posted& posted) {
+    Work work;
+
+    {
+        const std::scoped_lock held(posted.lock);
+
+        // A post whose item a drain already took, or one arriving inside work
+        // that is still running. Both are worth nothing, and the item a
+        // running drain is about to reach is the drain's.
+        if (posted.running || posted.queued.empty())
+            return;
+
+        work = std::move(posted.queued.front());
+        posted.queued.pop_front();
+        posted.running = true;
+    }
+
+    work(posted.cancelled ? ExecutionState::Cancelled : ExecutionState::Ran);
+
+    const std::scoped_lock held(posted.lock);
+    posted.running = false;
+}
+
+void MessageThreadControlExecutor::drain() {
+    // The work belongs on the message thread, so a caller on another one
+    // could only wait for it -- and a thread waiting on the message loop is
+    // usually the reason the loop is not getting there.
+    if (!isCurrent()) {
+        jassertfalse;
+        return;
+    }
+
+    // One at a time, re-reading the queue between: work is entitled to queue
+    // more of itself, and this is where that lands rather than in a snapshot
+    // taken before it ran.
+    for (;;) {
+        Work work;
+
+        {
+            const std::scoped_lock held(posted_->lock);
+            if (posted_->running || posted_->queued.empty())
+                return;
+
+            work = std::move(posted_->queued.front());
+            posted_->queued.pop_front();
+            posted_->running = true;
+        }
+
+        work(posted_->cancelled ? ExecutionState::Cancelled : ExecutionState::Ran);
+
+        const std::scoped_lock held(posted_->lock);
+        posted_->running = false;
+    }
 }
 
 bool MessageThreadControlExecutor::isCurrent() const {
@@ -61,12 +124,22 @@ SerialControlThread::SerialControlThread() : shared_(std::make_shared<Shared>())
 
                 work = std::move(shared->queued.front());
                 shared->queued.pop_front();
+                shared->busy = true;
             }
 
             // Outside the lock, because the work is what takes the time and
             // because it is entitled to queue more of itself -- which run()
             // refuses once stopping, so a drain cannot feed itself.
             work(state);
+
+            {
+                const std::scoped_lock held(shared->lock);
+                shared->busy = false;
+            }
+
+            // What a waiter is watching: an empty queue with a block still
+            // running is not an answered one.
+            shared->answered.notify_all();
         }
     });
 }
@@ -111,6 +184,22 @@ bool SerialControlThread::run(Work work) {
 
     shared_->wake.notify_one();
     return true;
+}
+
+void SerialControlThread::drain() {
+    // The worker asking for its own queue to empty is the work that would have
+    // to finish first, so there is nothing to wait for and nothing to run: a
+    // nested drain, which the header says does nothing.
+    if (isCurrent())
+        return;
+
+    // The worker's own state rather than this object's: a completion running
+    // here is entitled to destroy the executor, and a waiter holding only
+    // `this` would be waiting on something gone.
+    const auto shared = shared_;
+
+    std::unique_lock<std::mutex> held(shared->lock);
+    shared->answered.wait(held, [&shared] { return shared->queued.empty() && !shared->busy; });
 }
 
 bool SerialControlThread::isCurrent() const {

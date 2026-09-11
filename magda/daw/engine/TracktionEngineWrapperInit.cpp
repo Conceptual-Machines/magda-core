@@ -413,10 +413,14 @@ void TracktionEngineWrapper::createEditAndBridges() {
     // Wire up state capture before project save
     auto* bridge = audioBridge_.get();
     ProjectManager::getInstance().onBeforeSave = [bridge]() {
-        if (bridge) {
-            bridge->captureAllPluginStates();
+        // Asked of whichever engine is rendering: only the instance that
+        // rendered holds the chunk a project saves (#2581). The warp markers
+        // stay the bridge's, being the fork's own clip state.
+        if (auto* engine = TrackManager::getInstance().getAudioEngine())
+            engine->captureAllPluginStates();
+
+        if (bridge != nullptr)
             bridge->captureWarpMarkerStates();
-        }
 
         // Capture zoom/scroll state
         if (auto* tc = TimelineController::getCurrent()) {

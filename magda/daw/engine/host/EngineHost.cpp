@@ -5,10 +5,15 @@
 #include <algorithm>
 #include <atomic>
 #include <ranges>
+#include <set>
 
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
+#include "../../audio/plugins/engine/ControlExecutor.hpp"
+#include "../../audio/plugins/engine/DeviceControl.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "../../audio/plugins/engine/EngineExternalDevice.hpp"
 #include "../../core/AutomationManager.hpp"
+#include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -41,6 +46,115 @@ void report(const juce::String& what, const std::vector<std::string>& messages) 
     for (const auto& message : messages)
         juce::Logger::writeToLog("[engine] " + what + ": " + juce::String(message));
 }
+
+/**
+ * @brief The model's own DeviceInfo at @p key, or null.
+ *
+ * Read when it is asked for rather than from a publish's copy: a plugin load
+ * takes seconds, and what the model holds when one finishes is what its state
+ * has to be restored onto. Per track because TrackManager hands out mutable
+ * tracks but not a mutable project.
+ *
+ * A free function rather than a member, so that an asynchronous operation
+ * writing a model carries nothing but its own request (PluginAssignments.hpp).
+ */
+DeviceInfo* modelDeviceAt(engine::DeviceKey key) {
+    DeviceInfo* found = nullptr;
+
+    TrackManager::getInstance().forEachTrackIncludingMaster([&found, key](TrackInfo& track) {
+        if (found != nullptr)
+            return;
+
+        const auto devices = adapter::devicesIn(track);
+        if (const auto device = devices.find(key); device != devices.end())
+            found = device->second;
+    });
+
+    return found;
+}
+
+/**
+ * @brief The keys the engine knows the device at @p devicePath by, and its pads.
+ *
+ * A single-slot caller passes a Drum Grid's own path, because a pad's patch
+ * rides along in the grid's state rather than having a path of its own
+ * (#2207). The grid is a device this build holds, so reading only the key the
+ * path names would read nothing and leave the pads' plugins behind.
+ *
+ * Inverted off the same walk the publish uses rather than rebuilt from the
+ * path's own steps, so the two cannot come to disagree about which section a
+ * device is in.
+ */
+std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
+    auto& trackManager = TrackManager::getInstance();
+
+    const auto* target = trackManager.getDeviceInChainByPath(devicePath);
+    if (target == nullptr)
+        return {};
+
+    std::set<const DeviceInfo*> subtree{target};
+    if (target->pads)
+        for (const auto& pad : target->pads->chains)
+            chain_walk::forEachDevice(pad.elements, devicePath, chain_walk::Pads::Enter,
+                                      [&subtree](const DeviceInfo& device, const ChainNodePath&) {
+                                          subtree.insert(&device);
+                                      });
+
+    std::vector<engine::DeviceKey> found;
+
+    trackManager.forEachTrackIncludingMaster([&found, &subtree](TrackInfo& track) {
+        for (const auto& [key, device] : adapter::devicesIn(track))
+            if (subtree.contains(device))
+                found.push_back(key);
+    });
+
+    return found;
+}
+
+/// The external plugin behind whatever the store holds for a key, reached
+/// through the trace when one is wrapping it (#2568): a control operation
+/// addresses the device, and a diagnostic must not change the answer.
+adapter::EngineExternalDevice* externalIn(engine::EngineDevice& device) {
+    if (auto* tracing = dynamic_cast<TracingDevice*>(&device))
+        return externalIn(tracing->wrapped());
+
+    return dynamic_cast<adapter::EngineExternalDevice*>(&device);
+}
+
+/**
+ * @brief The external devices the live session holds (#2581).
+ *
+ * Owned by the host and held weakly by the plane, which is what makes a
+ * capture outliving the project answer "the runtime is gone" rather than
+ * reach for a session that has been destroyed.
+ */
+class SessionDevices final : public adapter::DeviceRegistry {
+  public:
+    using LiveSession = std::function<const engine::EngineSession*()>;
+
+    explicit SessionDevices(LiveSession session) : session_(std::move(session)) {}
+
+    std::shared_ptr<adapter::EngineExternalDevice> find(engine::DeviceKey key) const override {
+        const auto* session = session_ ? session_() : nullptr;
+        if (session == nullptr)
+            return nullptr;
+
+        auto held = session->device(key);
+        if (held == nullptr)
+            return nullptr;
+
+        auto* external = externalIn(*held);
+        if (external == nullptr)
+            return nullptr;
+
+        // Aliased onto the store's own lease, so what holds the instance open
+        // is the thing that owns it rather than a second count beside it.
+        return {std::move(held), external};
+    }
+
+  private:
+    LiveSession session_;
+};
 
 }  // namespace
 
@@ -462,27 +576,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                          automation.getClips());
     }
 
-    /**
-     * @brief The model's own DeviceInfo at @p key, or null.
-     *
-     * Read when it is asked for rather than from the publish's copy: a plugin
-     * load takes seconds, and what the model holds when one finishes is what
-     * its state has to be restored onto. Per track because TrackManager hands
-     * out mutable tracks but not a mutable project.
-     */
     DeviceInfo* modelDevice(engine::DeviceKey key) {
-        DeviceInfo* found = nullptr;
-
-        TrackManager::getInstance().forEachTrackIncludingMaster([&found, key](TrackInfo& track) {
-            if (found != nullptr)
-                return;
-
-            const auto devices = adapter::devicesIn(track);
-            if (const auto device = devices.find(key); device != devices.end())
-                found = device->second;
-        });
-
-        return found;
+        return modelDeviceAt(key);
     }
 
     /**
@@ -516,6 +611,70 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         wantPlan();
     }
 
+    // ===== What the plugins hold =====
+
+    /**
+     * @brief Read every external plugin this renders back into the model.
+     *
+     * A project keeps the chunk its plugins wrote, and the only instance that
+     * has one is the instance that rendered (#2581). The keys come off the
+     * model this publish was built from; a key nothing is bound to is a
+     * failure with a reason rather than an empty state written over a patch.
+     */
+    void captureExternalPluginStates() {
+        if (session_ == nullptr)
+            return;
+
+        for (const auto key : factory_.externalKeys())
+            requestCapture(key);
+
+        // The caller writes the project file the moment this returns, so the
+        // reads have to have happened by then rather than at the next turn of
+        // the message loop.
+        control_->drain();
+    }
+
+    void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
+        if (session_ == nullptr)
+            return;
+
+        // A chain is mostly devices this build holds, and those are asked of
+        // the fork. Reaching for one here would find no external plugin bound
+        // and report that as a state that could not be read.
+        auto asked = false;
+        for (const auto key : keysOfDeviceAt(devicePath))
+            if (factory_.isExternalKey(key)) {
+                requestCapture(key);
+                asked = true;
+            }
+
+        if (asked)
+            control_->drain();
+    }
+
+    /**
+     * @brief Ask for @p key's state, and write it down if it is still its own.
+     *
+     * The completion carries its assignment and nothing else: it runs later
+     * than the call that queued it, and a completion holding this object would
+     * be one more thing that has to outlive a project closing
+     * (PluginAssignments.hpp).
+     */
+    void requestCapture(engine::DeviceKey key) {
+        plane_.captureState(key, [request = loader_.request(key)](adapter::CaptureOutcome taken) {
+            if (!taken.ok()) {
+                // Only for a slot that is still the one that was asked about.
+                // A device deleted or replaced while the read ran is a failure
+                // nobody is waiting to hear.
+                if (request.isStillWanted())
+                    juce::Logger::writeToLog("[engine] not saved: " + taken.failure());
+                return;
+            }
+
+            adapter::commitCapturedState(request, taken.snapshot(), modelDeviceAt);
+        });
+    }
+
     /// Devices the model names and no catalog could build. Named rather than
     /// counted, and only when the set changes: a line per publish would bury
     /// everything else.
@@ -536,6 +695,21 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// gated on the assignment table this owns, and a table that has gone is a
     /// load nobody is waiting for.
     ExternalPluginLoader loader_;
+
+    /// Where everything that is not a block runs (#2270). The message thread,
+    /// which is where a plugin's editor lives and where the model a completion
+    /// writes is edited from.
+    std::shared_ptr<adapter::ControlExecutor> control_ =
+        std::make_shared<adapter::MessageThreadControlExecutor>();
+
+    /// Held by shared_ptr because the plane holds it weakly: a capture whose
+    /// project closed first finds no registry, which is the answer rather than
+    /// a session that has gone.
+    std::shared_ptr<SessionDevices> sessionDevices_ =
+        std::make_shared<SessionDevices>([this] { return session_.get(); });
+
+    /// After both, since it is built from them.
+    adapter::LocalDeviceControlPlane plane_{control_, sessionDevices_};
 
     juce::AudioDeviceManager* devices_ = nullptr;
     engine::RenderContext context_{};
@@ -596,6 +770,14 @@ void EngineHost::meterInto(MeterSink sink) {
 
 void EngineHost::stop() {
     impl_->detach();
+}
+
+void EngineHost::captureExternalPluginStates() {
+    impl_->captureExternalPluginStates();
+}
+
+void EngineHost::captureExternalPluginStateAt(const ChainNodePath& devicePath) {
+    impl_->captureExternalPluginStateAt(devicePath);
 }
 
 void EngineHost::play() {

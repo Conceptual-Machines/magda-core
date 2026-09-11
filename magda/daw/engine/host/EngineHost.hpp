@@ -3,6 +3,7 @@
 #include <functional>
 #include <memory>
 
+#include "../../core/ChainNodePath.hpp"
 #include "../../core/TypeIds.hpp"
 
 namespace juce {
@@ -74,6 +75,23 @@ class EngineHost {
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.
     void stop();
+
+    // ===== What the plugins hold =====
+    //
+    // A project saves the chunk its plugins wrote, and only the instance that
+    // rendered has one (#2581). Both of these run on the message thread and
+    // return with the reads done, because a save writes the file the moment
+    // they do.
+
+    /// Read every external plugin this is rendering back into the model.
+    void captureExternalPluginStates();
+
+    /// The one at @p devicePath and anything on its pads, for a caller
+    /// flushing a single slot before it copies, removes or snapshots it. A
+    /// Drum Grid is passed by its own path because its pads ride along in its
+    /// state (#2207). Nothing for a path holding no external plugin this is
+    /// rendering.
+    void captureExternalPluginStateAt(const ChainNodePath& devicePath);
 
     // ===== Transport =====
     //

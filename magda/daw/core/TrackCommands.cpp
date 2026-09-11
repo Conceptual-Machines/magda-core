@@ -323,11 +323,8 @@ void DuplicateTrackCommand::execute() {
     // Capture current plugin state so the duplicate gets the source's live settings.
     // Skipped when we're stripping the FX chain anyway — nothing to carry over.
     if (duplicateDevices_) {
-        if (auto* engine = trackManager.getAudioEngine()) {
-            if (auto* bridge = engine->getAudioBridge()) {
-                bridge->captureAllPluginStates();
-            }
-        }
+        if (auto* engine = trackManager.getAudioEngine())
+            engine->captureAllPluginStates();
     }
 
     duplicatedTrackId_ = trackManager.duplicateTrack(sourceTrackId_, duplicateDevices_);
@@ -885,10 +882,8 @@ namespace {
 
 void capturePluginStateAt(const ChainNodePath& devicePath) {
     auto& tm = TrackManager::getInstance();
-    if (auto* engine = tm.getAudioEngine()) {
-        if (auto* bridge = engine->getAudioBridge())
-            bridge->getPluginManager().capturePluginState(devicePath);
-    }
+    if (auto* engine = tm.getAudioEngine())
+        engine->capturePluginStateAt(devicePath);
 }
 
 /// Flush every live plugin under @p chainPath into the model before it is taken
