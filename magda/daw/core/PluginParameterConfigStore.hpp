@@ -77,6 +77,10 @@ PluginParameterConfig fromDevice(const DeviceInfo& device);
 /// exists or it does not parse.
 bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device);
 
+/// @overload Filed under the device's own id, which is its `uniqueId` where it
+/// has one and its `pluginId` otherwise -- older devices carry only the latter.
+bool applyToDevice(DeviceInfo& device);
+
 /// Whether any parameter is opted in to AI/agent control, without a device.
 bool hasAiSoundDesignerParameters(const juce::String& uniqueId);
 

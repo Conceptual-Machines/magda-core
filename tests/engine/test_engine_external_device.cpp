@@ -1993,6 +1993,39 @@ TEST_CASE("Resolved parameters carry no text provider of their own", "[engine][e
     CHECK(tone->displayText == nullptr);
 }
 
+TEST_CASE("A configured display range survives the restore round trip",
+          "[engine][external][2601]") {
+    // Detection gives a hosted parameter a real range to be drawn against, and
+    // the model goes on holding the plugin's own normalised number underneath.
+    // The write to the plugin and the read back have to agree on which of the
+    // two they are in, or opening a project moves every configured parameter.
+    magda::installDeviceParameterDisplayTextProviderFactory();
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto model = externalDevice();
+    auto& tone = model.parameters[1];  // plan slot three, the stub's Tone
+    tone.minValue = 20.0f;
+    tone.maxValue = 20000.0f;
+    tone.scale = magda::ParameterScale::Logarithmic;
+    tone.displayText = magda::makeParameterDisplayTextProvider({}, model.id, tone.paramIndex);
+    tone.currentValue = 0.7f;
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+
+    // The plugin was handed the position the model holds, not that number read
+    // as a frequency and squashed against the bottom of 20 Hz.
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+
+    // And what came back is the same number, rather than the 20 Hz a conversion
+    // through the display range would have written into a field the plan, the
+    // UI and automation all read as normalised.
+    magda::applyRestoredParameters(model, result.restoredParameters);
+    CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
+}
+
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {
     auto plugin = std::make_unique<StubPlugin>(2, 2, 1, 2);
     plugin->emitsMidi = true;

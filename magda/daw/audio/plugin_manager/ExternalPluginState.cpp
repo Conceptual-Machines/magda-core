@@ -227,8 +227,14 @@ SavedStateOutcome applySavedPluginState(juce::AudioPluginInstance& instance,
         if (info == nullptr)
             continue;
 
-        parameter->setValue(
-            std::clamp(ParameterUtils::realToNormalized(info->currentValue, *info), 0.0f, 1.0f));
+        // Through the pair that knows which domain the model stores a value in,
+        // rather than assuming the display one. They differ once a plugin has a
+        // configured display range: the model keeps the plugin's own normalised
+        // number and the range is what the UI draws it against (#2601).
+        parameter->setValue(std::clamp(
+            ParameterUtils::modelToNormalizedValue(ParameterModelValue{info->currentValue}, *info)
+                .value,
+            0.0f, 1.0f));
     }
 
     // The portable preset is asked first, because a project only carries one
@@ -298,8 +304,15 @@ void applyRestoredParameters(DeviceInfo& device, const std::vector<RestoredParam
         for (auto* bucket : {&device.parameters, &device.wrapperParameters})
             for (auto& info : *bucket)
                 if (info.paramIndex == parameter.paramIndex)
-                    info.currentValue = ParameterUtils::normalizedToReal(
-                        parameter.value, ParameterUtils::domainOf(info));
+                    // The inverse of what applySavedPluginState() wrote, and
+                    // the same pair the plan, the UI and automation read
+                    // through: converting to the display range unconditionally
+                    // would put a real value in a field everything else reads
+                    // as normalised (#2601).
+                    info.currentValue =
+                        ParameterUtils::normalizedToModelValue(
+                            ParameterNormalizedValue::clamped(parameter.value), info)
+                            .value;
 }
 
 Vst3PresetRead readVst3Preset(const juce::AudioPluginInstance& instance) {

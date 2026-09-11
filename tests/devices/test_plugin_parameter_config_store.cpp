@@ -150,6 +150,35 @@ TEST_CASE("applyToDevice rebuilds selections and applies overrides", "[param-con
     REQUIRE_FALSE(store::applyToDevice("VST3-Not-Configured", other));
 }
 
+TEST_CASE("applyToDevice finds a device's own config file", "[param-config-store][2601]") {
+    // The id a config is filed under is the device's, and every caller derived
+    // it by hand -- most of them by reading `uniqueId` alone, which is empty on
+    // the older devices that carry only a `pluginId`.
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+
+    auto config = store::fromDevice(device);
+    config.entries[0].unit = "kHz";
+    REQUIRE(store::save(device.uniqueId, config));
+
+    REQUIRE(store::applyToDevice(device));
+    CHECK(device.parameters[0].unit == "kHz");
+}
+
+TEST_CASE("A device with no uniqueId is filed under its plugin id", "[param-config-store][2601]") {
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+    device.uniqueId = {};
+    device.pluginId = "magda_older_device";
+
+    auto config = store::fromDevice(device);
+    config.entries[1].unit = "dB";
+    REQUIRE(store::save(device.pluginId, config));
+
+    REQUIRE(store::applyToDevice(device));
+    CHECK(device.parameters[1].unit == "dB");
+}
+
 TEST_CASE("legacy visible-only config files still load", "[param-config-store]") {
     TempDataDir temp;
     const juce::String uniqueId = "VST3-Legacy-Plugin";
