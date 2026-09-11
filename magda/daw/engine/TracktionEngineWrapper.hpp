@@ -304,6 +304,10 @@ class TracktionEngineWrapper : public AudioEngine,
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
     bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
 
+    /** @brief The fork's processor formats the value (#2600). */
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const override;
+
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)

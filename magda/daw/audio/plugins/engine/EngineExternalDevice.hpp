@@ -149,6 +149,25 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     magda::SavedStateOutcome applyState(const magda::DeviceInfo& saved);
 
+    /**
+     * @brief The plugin's own text for @p normalised at plan slot @p slot (#2600).
+     *
+     * Empty for a slot with no live parameter and for the wrapper pair, which
+     * the plugin has never heard of.
+     *
+     * The one device operation that does not go through the control plane, and
+     * deliberately: a value's text is read inside a paint, once per cell per
+     * repaint and hundreds of times over when a lane labels its axis, so no
+     * queued round trip can serve it. It is also the only operation that
+     * earns the exemption -- it neither suspends the plugin nor changes
+     * anything about it, which is why the fork calls the same JUCE method
+     * unlocked from the message thread today
+     * (DeviceProcessor::formatParameterValue). Message thread, which is the
+     * control executor's own (ControlExecutor.hpp), so this overlaps no other
+     * control operation either.
+     */
+    juce::String parameterText(int slot, float normalised) const;
+
     // ===== The plugin's own window (#2580) =====
     //
     // Here for the same reason again: the instance has no accessor, and the

@@ -38,6 +38,7 @@ set(TEST_SOURCES
     devices/test_chain_info_copy.cpp
     devices/test_drum_grid_pad_commands.cpp
     devices/test_pad_path_types.cpp
+    devices/test_device_parameter_text.cpp
     devices/test_structural_undo_roundtrip.cpp
     devices/test_chain_walk.cpp
     devices/test_structural_matrix.cpp

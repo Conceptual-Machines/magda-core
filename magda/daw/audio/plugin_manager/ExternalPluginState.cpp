@@ -179,6 +179,7 @@ HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
         info.stableId = hostParameterId(*parameter);
         info.defaultValue = parameter->getDefaultValue();
         info.currentValue = parameter->getValue();
+
         described.parameters.push_back(std::move(info));
     }
 

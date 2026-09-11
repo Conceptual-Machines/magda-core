@@ -885,4 +885,14 @@ bool TracktionEngineWrapper::isDeviceEditorOpen(const ChainNodePath& devicePath)
     return audioBridge_ != nullptr && audioBridge_->isPluginWindowOpen(devicePath);
 }
 
+juce::String TracktionEngineWrapper::formatDeviceParameter(const ChainNodePath& devicePath,
+                                                           int paramIndex, float normalised) const {
+    if (audioBridge_ == nullptr)
+        return {};
+
+    auto* processor = audioBridge_->getDeviceProcessor(devicePath);
+    return processor != nullptr ? processor->formatParameterValue(paramIndex, normalised)
+                                : juce::String{};
+}
+
 }  // namespace magda

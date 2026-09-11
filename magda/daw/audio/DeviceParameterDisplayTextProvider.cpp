@@ -1,10 +1,9 @@
 #include "DeviceParameterDisplayTextProvider.hpp"
 
-#include "audio/AudioBridge.hpp"
+#include "core/DeviceInfo.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
-#include "processors/base/DeviceProcessor.hpp"
 
 namespace magda {
 
@@ -15,9 +14,6 @@ juce::String formatParameterDisplayTextFromDevice(
     auto* engine = TrackManager::getInstance().getAudioEngine();
     if (engine == nullptr)
         return {};
-    auto* bridge = engine->getAudioBridge();
-    if (bridge == nullptr)
-        return {};
 
     auto path = provider.devicePath;
     if (!path.isValid() && provider.deviceId != INVALID_DEVICE_ID)
@@ -25,10 +21,10 @@ juce::String formatParameterDisplayTextFromDevice(
     if (!path.isValid())
         return {};
 
-    auto* processor = bridge->getDeviceProcessor(path);
-    if (processor == nullptr)
-        return {};
-    return processor->formatParameterValue(provider.paramIndex, normalizedValue);
+    // The engine, not the fork's bridge: whichever one renders the device is
+    // the one holding the plugin that can name the value, and under the native
+    // engine there is no bridge at all (#2600).
+    return engine->formatDeviceParameter(path, provider.paramIndex, normalizedValue);
 }
 
 std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTextProvider(
@@ -42,6 +38,15 @@ std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTe
 }
 
 }  // namespace
+
+void attachParameterTextProviders(DeviceInfo& device, const ChainNodePath& devicePath) {
+    if (!devicePath.isValid())
+        return;
+
+    for (auto& parameter : device.parameters)
+        parameter.displayText =
+            makeParameterDisplayTextProvider(devicePath, device.id, parameter.paramIndex);
+}
 
 void installDeviceParameterDisplayTextProviderFactory() {
     const bool registered =

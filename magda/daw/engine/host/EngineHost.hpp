@@ -124,6 +124,21 @@ class EngineHost {
      */
     void applyExternalPluginStateAt(const ChainNodePath& devicePath);
 
+    /**
+     * @brief The plugin's own text for a parameter value (#2600).
+     *
+     * @p paramIndex is the plan slot, which is what ParameterInfo carries.
+     * @p normalised is the position the plugin takes. Empty for a device this
+     * is not rendering, and for a parameter it does not have -- which is the
+     * caller's signal to format from the range instead.
+     *
+     * Message thread, and synchronous: a value's text is read inside a paint.
+     * See EngineExternalDevice::parameterText() for why this one operation
+     * does not go through the control plane.
+     */
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const;
+
     // ===== The plugins' own windows (#2580) =====
     //
     // Message thread, each answering what the window is afterwards, which is

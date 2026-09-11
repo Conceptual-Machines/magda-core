@@ -1795,18 +1795,39 @@ ChainNodePath findDeviceUnder(const std::vector<ChainElement>& elements,
 }  // namespace
 
 ChainNodePath TrackManager::findDevicePath(DeviceId deviceId) const {
-    for (const auto& track : tracks_)
-        if (auto found = findDeviceUnder(track.chain.fxChainElements,
-                                         ChainNodePath::trackLevel(track.id), deviceId);
-            found.isValid())
-            return found;
+    return findDevicePath(deviceId, ChainSegment::Fx);
+}
 
-    if (auto found = findDeviceUnder(masterTrack_.chain.fxChainElements,
-                                     ChainNodePath::trackLevel(MASTER_TRACK_ID), deviceId);
-        found.isValid())
-        return found;
+ChainNodePath TrackManager::findDevicePath(DeviceId deviceId, ChainSegment segment) const {
+    if (segment == ChainSegment::Fx) {
+        for (const auto& track : tracks_)
+            if (auto found = findDeviceUnder(track.chain.fxChainElements,
+                                             ChainNodePath::trackLevel(track.id), deviceId);
+                found.isValid())
+                return found;
 
-    return {};  // Not found — returns invalid path
+        return findDeviceUnder(masterTrack_.chain.fxChainElements,
+                               ChainNodePath::trackLevel(MASTER_TRACK_ID), deviceId);
+    }
+
+    ChainNodePath found;
+    forEachTrackIncludingMaster([&found, deviceId, segment](const TrackInfo& track) {
+        if (found.isValid())
+            return;
+
+        const auto& elements = segment == ChainSegment::PostFx ? track.chain.postFxChainElements
+                                                               : track.chain.mixerAnalysisElements;
+
+        for (const auto& element : elements)
+            if (element.device.id == deviceId) {
+                found = segment == ChainSegment::PostFx
+                            ? ChainNodePath::postFxDevice(track.id, deviceId)
+                            : ChainNodePath::mixerAnalysisDevice(track.id, deviceId);
+                return;
+            }
+    });
+
+    return found;
 }
 
 void TrackManager::updateDeviceParameters(DeviceId deviceId,

@@ -286,6 +286,23 @@ class AudioEngine : public AudioEngineListener {
     /** @brief Write the model's state for @p devicePath into the plugin (#2573). */
     virtual void applyPluginStateAt(const ChainNodePath& devicePath) = 0;
 
+    /**
+     * @brief The plugin's own text for a parameter value, or empty (#2600).
+     *
+     * @p paramIndex is the plan/TE slot ParameterInfo carries and
+     * @p normalised the position the live parameter holds. Empty means "this
+     * engine cannot say", and every caller formats from the parameter's range
+     * instead (ParameterUtils::formatValue), so an engine that answers nothing
+     * degrades rather than breaks.
+     *
+     * Whichever engine renders the device is the one that can answer, the same
+     * split as the state and the editor above.
+     */
+    virtual juce::String formatDeviceParameter(const ChainNodePath& /*devicePath*/,
+                                               int /*paramIndex*/, float /*normalised*/) const {
+        return {};
+    }
+
     // ===== The plugins' own windows (#2580) =====
     //
     // The editor belongs to the instance that renders, so the same split as the

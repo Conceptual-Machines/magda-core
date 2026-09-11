@@ -2,6 +2,7 @@
 
 #include "../api/magda_api_live.hpp"
 #include "../audio/AudioBridge.hpp"
+#include "../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TrackMeters.hpp"
 #include "../audio/controllers/ControllerRouter.hpp"
@@ -343,6 +344,12 @@ bool TracktionEngineWrapper::initialiseServices() {
     auto engineBehaviour = std::make_unique<MagdaEngineBehaviour>();
     engine_ = std::make_unique<tracktion::Engine>("MAGDA", std::move(uiBehaviour),
                                                   std::move(engineBehaviour));
+
+    // Here rather than in the AudioBridge's constructor, which is the fork's
+    // and is never built under the native engine (#2600). The provider asks
+    // whichever engine renders a device, so the registration belongs with the
+    // services both of them start.
+    installDeviceParameterDisplayTextProviderFactory();
 
     // Load config early so preferred device settings are available
     juce::Logger::writeToLog("[Init] Loading config...");

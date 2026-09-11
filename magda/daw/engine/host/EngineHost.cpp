@@ -11,6 +11,7 @@
 #include <span>
 #include <vector>
 
+#include "../../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
 #include "../../audio/plugins/engine/DeviceControl.hpp"
@@ -790,13 +791,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         *device = resolved;
         applyRestoredParameters(*device, restored);
 
-        // Only the main FX chain has a path to tell: findDevicePath searches
-        // that segment alone, and a DeviceId is section-local, so a post-FX id
-        // would find whichever unrelated device holds the same number there.
-        if (key.segment == ChainSegment::Fx)
-            if (const auto path = TrackManager::getInstance().findDevicePath(key.deviceId);
-                path.isValid())
-                TrackManager::getInstance().notifyDevicePropertyChanged(path);
+        // Asked with the segment, because a DeviceId is section-local and on
+        // its own names up to three devices (#1899).
+        const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
+
+        // Here rather than where the parameters were described, because this is
+        // where the device's address is known: a DeviceInfo does not say which
+        // section holds it, and a provider that had to look the id up again
+        // would find the wrong device (#2600).
+        attachParameterTextProviders(*device, path);
+
+        if (path.isValid())
+            TrackManager::getInstance().notifyDevicePropertyChanged(path);
 
         // Last, so the plan that binds the loader's instance is compiled from
         // the model as corrected above.
@@ -853,6 +859,33 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // returns. drain() is what says it has.
         control_->drain();
         return showing;
+    }
+
+    /**
+     * @brief The plugin's own text for one parameter value (#2600).
+     *
+     * Straight to the device rather than through the plane: this is called
+     * from a paint, and the plane queues everything it is given
+     * (ControlExecutor.hpp). Safe because it is a query -- nothing is
+     * suspended and nothing moves -- and because the message thread this runs
+     * on is the control executor's own, so it overlaps no operation that does.
+     */
+    juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised) const {
+        if (session_ == nullptr)
+            return {};
+
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value())
+            return {};
+
+        auto held = session_->device(*key);
+        if (held == nullptr)
+            return {};
+
+        auto* external = externalIn(*held);
+        return external != nullptr ? external->parameterText(paramIndex, normalised)
+                                   : juce::String{};
     }
 
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
@@ -1104,6 +1137,11 @@ bool EngineHost::toggleDeviceEditor(const ChainNodePath& devicePath) {
 
 bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
     return impl_->deviceEditor(devicePath, adapter::EditorAction::Query);
+}
+
+juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
+                                               float normalised) const {
+    return impl_->formatDeviceParameter(devicePath, paramIndex, normalised);
 }
 
 void EngineHost::play() {
