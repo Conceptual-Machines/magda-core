@@ -212,9 +212,13 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
     };
     if (const auto found = std::ranges::find_if(devices, matchesPluginType);
         found != devices.end()) {
-        int paramIdx = findParamByKey(*found->device, normalizeParamName(sigil.paramKey));
+        // By name only, as above: the device was matched on its name, which
+        // says nothing about its parameter order.
+        const int paramIdx = findParamByKey(*found->device, normalizeParamName(sigil.paramKey));
         if (paramIdx < 0)
-            paramIdx = stored->paramIndex;
+            return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
+                                          ": materialised on " + found->device->name +
+                                          ", which has no parameter of that name");
 
         ResolveResult r;
         r.target.devicePath = found->path;

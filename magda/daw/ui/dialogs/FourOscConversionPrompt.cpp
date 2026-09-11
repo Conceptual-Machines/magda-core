@@ -20,10 +20,17 @@ namespace audio = magda::daw::audio;
 /// component, so the two are held together and read in the callback.
 struct Prompt {
     juce::AlertWindow alert;
-    juce::ToggleButton dontAskAgain{"Don't ask again"};
+
+    // Nameless on purpose. AlertWindow paints a custom component's name as a
+    // label above it (juce_AlertWindow.cpp), and a ToggleButton built from a
+    // string takes that string as its name as well as its text, so the words
+    // appeared twice.
+    juce::ToggleButton dontAskAgain;
 
     Prompt(const juce::String& title, const juce::String& message)
-        : alert(title, message, juce::MessageBoxIconType::QuestionIcon) {}
+        : alert(title, message, juce::MessageBoxIconType::QuestionIcon) {
+        dontAskAgain.setButtonText("Don't ask again");
+    }
 };
 
 /// Convert, then save as a project of its own. The one that was opened is
