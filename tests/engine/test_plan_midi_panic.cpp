@@ -255,7 +255,7 @@ struct RouteHarness {
     PlanValues values;
     juce::AudioBuffer<float> output{2, kBlockSize};
 
-    explicit RouteHarness(TrackId sourceTrack) {
+    explicit RouteHarness(TrackId sourceTrack, TrackId destinationTrack = 7) {
         magda::engine::PlanOp input;
         input.kind = OpKind::MidiInput;
         input.key.trackId = sourceTrack;
@@ -265,7 +265,7 @@ struct RouteHarness {
 
         magda::engine::PlanOp merge;
         merge.kind = OpKind::MergeMidi;
-        merge.key.trackId = 7;
+        merge.key.trackId = destinationTrack;
         merge.key.role = OpRole::TrackMidiInput;
         merge.inputs = {PortRef{0, 0}};
         merge.outputs = {SignalKind::Midi};
@@ -275,7 +275,7 @@ struct RouteHarness {
         // and what is left holding the note.
         magda::engine::PlanOp instrument;
         instrument.kind = OpKind::Device;
-        instrument.key.trackId = 7;
+        instrument.key.trackId = destinationTrack;
         instrument.key.deviceId = 9;
         instrument.key.role = OpRole::DeviceProcess;
         instrument.inputs = {PortRef{}, PortRef{1, 0}, PortRef{}};
@@ -284,7 +284,7 @@ struct RouteHarness {
 
         magda::engine::PlanOp out;
         out.kind = OpKind::Output;
-        out.key.trackId = 7;
+        out.key.trackId = destinationTrack;
         out.key.role = OpRole::HardwareOutput;
         out.inputs = {PortRef{2, 0}};
         plan.ops.push_back(out);
@@ -299,12 +299,12 @@ struct RouteHarness {
         values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
     }
 
-    void render(PlanExecutor& executor) {
+    void render(PlanExecutor& executor, bool continuous = true) {
         output.clear();
         BlockInfo block;
         block.numSamples = kBlockSize;
         block.playing = true;
-        block.continuous = true;
+        block.continuous = continuous;
         executor.process(values, block, output);
     }
 };
@@ -336,6 +336,50 @@ TEST_CASE("a device whose MIDI source was taken away is panicked once",
 
     rerouted.render(second);
     CHECK_FALSE(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a panic the first block already carried is not owed a second",
+          "[engine][exec][2418][2579]") {
+    // The swap and a locate in the same block: the latch is spent by that
+    // block whether or not it was what raised the panic, or the note the
+    // playhead jump re-asserts is cut on whatever block comes next.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    playing.render(first);
+
+    RouteHarness rerouted{2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+
+    rerouted.render(second, /*continuous=*/false);
+    CHECK(rerouted.device.lastHeard());
+
+    rerouted.render(second);
+    CHECK_FALSE(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a device that moved to another track is panicked on what it left",
+          "[engine][exec][2418][2579]") {
+    // The store keeps an instance by DeviceKey, so dragging an instrument to
+    // another track is the same plugin holding the same notes under an OpKey
+    // that no longer matches. Its MIDI now comes from the track it landed on.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1, 7};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
+
+    RouteHarness moved{2, 8};
+    PlanExecutor second;
+    REQUIRE(second.prepare(moved.plan, moved.bindings, context, &first).empty());
+
+    moved.render(second);
+    CHECK(moved.device.lastHeard());
 }
 
 TEST_CASE("a republish that did not move the MIDI leaves the notes alone",

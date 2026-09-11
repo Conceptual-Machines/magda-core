@@ -20,9 +20,13 @@ namespace {
  * the ops feeding it are what says whether it did: a track's merge keeps its
  * own key when the track it reads changes underneath it, so comparing one
  * level would see nothing.
+ *
+ * By DeviceKey, which is the identity the store keeps an instance under
+ * (RuntimeStateStore::realise). A device moved to another track is the same
+ * instrument holding the same notes, under an OpKey that no longer matches.
  */
-std::map<OpKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
-    std::map<OpKey, std::set<OpKey>> behind;
+std::map<DeviceKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
+    std::map<DeviceKey, std::set<OpKey>> behind;
 
     for (std::size_t i = 0; i < plan.ops.size(); ++i) {
         const auto& device = plan.ops[i];
@@ -54,7 +58,7 @@ std::map<OpKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
                     pending.push_back(input);
         }
 
-        behind[device.key] = std::move(sources);
+        behind[device.key.deviceKey()] = std::move(sources);
     }
 
     return behind;
@@ -386,8 +390,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             if (op.kind != OpKind::Device)
                 continue;
 
-            const auto before = was.find(op.key);
-            const auto after = now.find(op.key);
+            const auto before = was.find(op.key.deviceKey());
+            const auto after = now.find(op.key.deviceKey());
             if (before == was.end() || after == now.end())
                 continue;
 
@@ -1591,6 +1595,12 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // plan and published with it, which is #2117. Until then a device
             // is handed an empty window rather than a stale one.
             const auto window = paramWindowForOp_[static_cast<std::size_t>(i)];
+
+            // Spent here rather than inside the block below: as the last
+            // operand of an || it would be skipped on a block that already
+            // carried a panic, and fire again on a later one (#2418).
+            const auto rerouted = std::exchange(reroutedMidi_[static_cast<std::size_t>(i)],
+                                                static_cast<char>(0)) != 0;
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     // What reached the port, plus the block's
@@ -1606,9 +1616,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                     // nothing is withheld and nothing would come
                                     // back (#2418).
                                     .midiInAllNotesOff =
-                                        !block.continuous || midiInPanic(op.inputs[1]) ||
-                                        std::exchange(reroutedMidi_[static_cast<std::size_t>(i)],
-                                                      static_cast<char>(0)) != 0,
+                                        !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
                                     .params = paramValues_.device(window.first, window.count),
