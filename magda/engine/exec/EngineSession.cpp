@@ -96,6 +96,13 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // goes live.
     values_.nonRealtimeReplace(prepared->values);
 
+    // The panics this plan owes devices it rerouted, written now that nothing
+    // can refuse it and before it renders a block. The epoch is what keeps the
+    // one still playing from spending them: it is carrying the old route, and
+    // a note played through that route between here and the swap is released
+    // by this plan rather than by that one (#2418).
+    prepared->executor.commitReroutes(++planEpoch_);
+
     // The swap. This blocks until the audio thread is out of the block it was
     // in, then hands the previous epoch back here, where its destructor runs.
     published_.nonRealtimeReplace(prepared);

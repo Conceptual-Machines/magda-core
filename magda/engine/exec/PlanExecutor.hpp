@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <set>
 #include <span>
@@ -195,6 +196,19 @@ class PlanExecutor {
                                      const RenderContext& context,
                                      const PlanExecutor* previous = nullptr,
                                      const ParamTable* params = nullptr);
+
+    /**
+     * @brief Publish the panics this plan owes devices it rerouted (#2418).
+     *
+     * At the swap and nowhere earlier: a plan can still be refused after it
+     * prepares, and until it is rendering, the epoch it replaces is -- which
+     * must not spend a debt raised for a route it is not the one carrying, or
+     * a note played through the old route in that window is never released.
+     *
+     * @p epoch is this publish's, and rises with every one. Idempotent for a
+     * plan published twice, since it writes rather than counts.
+     */
+    void commitReroutes(std::uint64_t epoch);
 
     /// Forget the prepared plan and everything sized for it. Off the audio
     /// thread. Every prepare starts here, so a refused plan leaves nothing
@@ -507,10 +521,21 @@ class PlanExecutor {
     juce::MidiBuffer& midiOut(OpId op, int port);
 
     /// Where each device's owed all-notes-off lives, which is the store's
-    /// (PlanBindings::deviceMidiPanic), not this executor's: a debt is about a
-    /// retained instrument and outlives every plan the instrument does. Null
-    /// for an op with no device bound.
-    std::vector<std::atomic<char>*> midiPanicForOp_;
+    /// (PlanBindings::deviceMidiPanicEpoch), not this executor's: a debt is
+    /// about a retained instrument and outlives every plan the instrument
+    /// does. Null for an op with no device bound.
+    std::vector<std::atomic<std::uint64_t>*> midiPanicForOp_;
+
+    /// Device ops this plan took a MIDI source away from, resolved at prepare
+    /// and written to the store only by @ref commitReroutes.
+    std::vector<std::size_t> reroutedOps_;
+
+    /// Which publish this executor is, or zero for one that never went live.
+    /// What decides whose debt it may spend.
+    std::uint64_t epoch_ = 0;
+
+    /// Take the panic @p owed carries if it is this epoch's to deliver.
+    bool takeOwedPanic(std::atomic<std::uint64_t>* owed) const;
 
     /// The panic flag beside a MIDI slot (#2418). False for a port the plan
     /// left unconnected, the way midiIn hands back an empty buffer for one.

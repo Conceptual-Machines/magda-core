@@ -290,6 +290,8 @@ void PlanExecutor::reset() {
     midiDelays_.clear();
     deviceForOp_.clear();
     midiPanicForOp_.clear();
+    reroutedOps_.clear();
+    epoch_ = 0;
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
@@ -329,6 +331,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     deviceForOp_.assign(numOps, nullptr);
     midiPanicForOp_.assign(numOps, nullptr);
+    reroutedOps_.clear();
     insertForOp_.assign(numOps, nullptr);
     audioSourceForOp_.assign(numOps, nullptr);
     midiSourceForOp_.assign(numOps, nullptr);
@@ -399,17 +402,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                   return !after->second.contains(source);
                               });
 
-            // Onto the store's flag rather than this executor's own state:
-            // the epoch being replaced is still rendering, and whichever of
-            // the two reaches the device first is the one that should spend
-            // it. Raised only, never cleared here: a device already owed one
-            // is still owed it.
-            //
-            // Read from the bindings rather than from the per-op table, which
-            // is not resolved until further down.
-            const auto owed = bindings.deviceMidiPanic.find(key);
-            if (lost && owed != bindings.deviceMidiPanic.end() && owed->second != nullptr)
-                owed->second->store(1, std::memory_order_relaxed);
+            // Recorded, not raised: this plan may still be refused, and a
+            // debt raised for a routing change that was never published is a
+            // panic on an instrument nothing rerouted. commitReroutes() writes
+            // them once the swap is certain.
+            if (lost)
+                reroutedOps_.push_back(i);
         }
     }
 
@@ -623,8 +621,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 }
                 deviceForOp_[i] = found->second;
 
-                if (const auto owed = bindings.deviceMidiPanic.find(op.key.deviceKey());
-                    owed != bindings.deviceMidiPanic.end())
+                if (const auto owed = bindings.deviceMidiPanicEpoch.find(op.key.deviceKey());
+                    owed != bindings.deviceMidiPanicEpoch.end())
                     midiPanicForOp_[i] = owed->second;
                 break;
             }
@@ -1017,6 +1015,30 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+void PlanExecutor::commitReroutes(std::uint64_t epoch) {
+    epoch_ = epoch;
+
+    for (const auto op : reroutedOps_)
+        if (auto* owed = midiPanicForOp_[op]; owed != nullptr)
+            owed->store(epoch, std::memory_order_relaxed);
+}
+
+bool PlanExecutor::takeOwedPanic(std::atomic<std::uint64_t>* owed) const {
+    if (owed == nullptr)
+        return false;
+
+    auto pending = owed->load(std::memory_order_relaxed);
+
+    // Never a later epoch's: the plan that raised it is not the one rendering,
+    // and a note played through this route before the swap still needs the
+    // panic that plan is about to deliver. An earlier one's is this plan's to
+    // deliver, since whoever it was owed by never got to.
+    if (pending == 0 || pending > epoch_)
+        return false;
+
+    return owed->compare_exchange_strong(pending, 0, std::memory_order_relaxed);
 }
 
 bool PlanExecutor::midiInPanic(const PortRef& ref) const {
@@ -1614,8 +1636,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // Spent here rather than inside the block below: as the last
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
-            auto* owed = midiPanicForOp_[static_cast<std::size_t>(i)];
-            const auto rerouted = owed != nullptr && owed->exchange(0, std::memory_order_relaxed);
+            const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     // What reached the port, plus the block's

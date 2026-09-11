@@ -255,9 +255,10 @@ struct RouteHarness {
     PlanValues values;
     juce::AudioBuffer<float> output{2, kBlockSize};
 
-    /// The store's flag, in a test with no store: one per device, shared by
-    /// every plan over it, which is the whole point of where it lives.
-    RouteHarness(std::atomic<char>& owed, TrackId sourceTrack, TrackId destinationTrack = 7)
+    /// The store's, in a test with no store: one per device, shared by every
+    /// plan over it, which is the whole point of where it lives.
+    RouteHarness(std::atomic<std::uint64_t>& owed, TrackId sourceTrack,
+                 TrackId destinationTrack = 7)
         : owed_(owed) {
         magda::engine::PlanOp input;
         input.kind = OpKind::MidiInput;
@@ -297,7 +298,7 @@ struct RouteHarness {
 
         bindings.midiInputs[sourceTrack] = &source;
         bindings.devices[DeviceKey{9}] = &device;
-        bindings.deviceMidiPanic[DeviceKey{9}] = &owed_;
+        bindings.deviceMidiPanicEpoch[DeviceKey{9}] = &owed_;
 
         values.planFingerprint = magda::engine::planFingerprint(plan);
         values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
@@ -313,7 +314,7 @@ struct RouteHarness {
     }
 
   private:
-    std::atomic<char>& owed_;
+    std::atomic<std::uint64_t>& owed_;
 };
 
 }  // namespace
@@ -325,11 +326,13 @@ TEST_CASE("a device whose MIDI source was taken away is panicked once",
     // destination is retained across that swap, still holding whatever the old
     // source played. Its note-off now goes somewhere else.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
 
     playing.render(first);
     CHECK(playing.device.notesSeen == 1);
@@ -338,6 +341,7 @@ TEST_CASE("a device whose MIDI source was taken away is panicked once",
     RouteHarness rerouted{owed, 2};
     PlanExecutor second;
     REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
     rerouted.render(second);
     CHECK(rerouted.device.lastHeard());
@@ -352,16 +356,19 @@ TEST_CASE("a panic the first block already carried is not owed a second",
     // block whether or not it was what raised the panic, or the note the
     // playhead jump re-asserts is cut on whatever block comes next.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
     playing.render(first);
 
     RouteHarness rerouted{owed, 2};
     PlanExecutor second;
     REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
     rerouted.render(second, /*continuous=*/false);
     CHECK(rerouted.device.lastHeard());
@@ -376,17 +383,20 @@ TEST_CASE("a device that moved to another track is panicked on what it left",
     // another track is the same plugin holding the same notes under an OpKey
     // that no longer matches. Its MIDI now comes from the track it landed on.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1, 7};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
     playing.render(first);
     CHECK(playing.device.notesSeen == 1);
 
     RouteHarness moved{owed, 2, 8};
     PlanExecutor second;
     REQUIRE(second.prepare(moved.plan, moved.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
     moved.render(second);
     CHECK(moved.device.lastHeard());
@@ -399,16 +409,19 @@ TEST_CASE("a panic owed to a silenced device survives the next publish",
     // otherwise drop the debt, and the store is still holding the instrument
     // that is still holding the note.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
     playing.render(first);
 
     RouteHarness rerouted{owed, 2};
     PlanExecutor second;
     REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
     // Muted before it ever ran under the new plan: the device op is skipped,
     // and the panic stays owed.
@@ -420,47 +433,74 @@ TEST_CASE("a panic owed to a silenced device survives the next publish",
     RouteHarness republished{owed, 2};
     PlanExecutor third;
     REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
+    third.commitReroutes(++epoch);
 
     republished.render(third);
     CHECK(republished.device.lastHeard());
 }
 
-TEST_CASE("whichever plan reaches the device first spends the panic, and only it",
+TEST_CASE("the plan still rendering does not spend the next plan's panic",
           "[engine][exec][2418][2579]") {
-    // Both epochs can render across a swap: farbot hands the audio thread the
-    // one it acquired, and a publish lands while it is still rendering it. The
-    // debt is the store's for that reason -- neither epoch owns it, so it can
-    // be neither delivered twice nor dropped between them.
+    // Both epochs render across a swap: farbot hands the audio thread the one
+    // it acquired, and a publish lands while it is still rendering it. The
+    // debt is the store's so it outlives either, and it carries the epoch that
+    // raised it so the one still on the old route cannot spend it -- a note
+    // played through that route in the window needs the panic too.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
     playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
 
+    // Published, so the debt is written -- but the swap has not happened and
+    // the plan below is the one the audio thread is still holding.
     RouteHarness rerouted{owed, 2};
     PlanExecutor second;
     REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
-    // Muted when the reroute is published, so nothing has spent it yet.
-    rerouted.values.ops[2].silent = true;
-    rerouted.render(second);
-    CHECK(rerouted.device.heard.empty());
+    playing.render(first);
+    CHECK_FALSE(playing.device.lastHeard());
 
-    RouteHarness republished{owed, 2};
-    PlanExecutor third;
-    REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
+    // Another note through the old route while it is still the live one. It is
+    // held by the same instrument, and its off will follow the new route.
+    playing.source.pending = true;
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 2);
+    CHECK_FALSE(playing.device.lastHeard());
 
-    // The epoch being replaced reaches the device first, unmuted by the very
-    // publish that has not swapped yet. It is the one that delivers it.
-    rerouted.values.ops[2].silent = false;
+    // The plan that took the route away is the one that releases both.
     rerouted.render(second);
     CHECK(rerouted.device.lastHeard());
+}
 
-    // And the plan that follows does not deliver it again.
-    republished.render(third);
-    CHECK_FALSE(republished.device.lastHeard());
+TEST_CASE("a plan that was never published owes nothing", "[engine][exec][2418][2579]") {
+    // A candidate can prepare and still be refused -- values that do not fit
+    // it, a device that could not be realised. Nothing it would have rerouted
+    // has been rerouted, so panicking the instrument the live plan is still
+    // feeding would cut a note for an edit that never happened.
+    const RenderContext context{44100.0, kBlockSize, 2};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
+
+    RouteHarness playing{owed, 1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
+    playing.render(first);
+
+    RouteHarness refused{owed, 2};
+    PlanExecutor candidate;
+    REQUIRE(candidate.prepare(refused.plan, refused.bindings, context, &first).empty());
+
+    // No commit: this is where the publish was turned down.
+    playing.render(first);
+    CHECK_FALSE(playing.device.lastHeard());
 }
 
 TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
@@ -468,16 +508,19 @@ TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
     // The other half: a panic raised on every swap would cut a chord that is
     // still being held down, which is most republishes.
     const RenderContext context{44100.0, kBlockSize, 2};
-    std::atomic<char> owed{0};
+    std::atomic<std::uint64_t> owed{0};
+    std::uint64_t epoch = 0;
 
     RouteHarness playing{owed, 1};
     PlanExecutor first;
     REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    first.commitReroutes(++epoch);
     playing.render(first);
 
     RouteHarness same{owed, 1};
     PlanExecutor second;
     REQUIRE(second.prepare(same.plan, same.bindings, context, &first).empty());
+    second.commitReroutes(++epoch);
 
     same.render(second);
     CHECK_FALSE(same.device.lastHeard());

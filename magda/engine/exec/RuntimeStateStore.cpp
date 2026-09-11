@@ -141,8 +141,8 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
 
                     auto& owed = devicePanic_[op.key.deviceKey()];
                     if (owed == nullptr)
-                        owed = std::make_unique<std::atomic<char>>(0);
-                    bindings.deviceMidiPanic[op.key.deviceKey()] = owed.get();
+                        owed = std::make_unique<std::atomic<std::uint64_t>>(0);
+                    bindings.deviceMidiPanicEpoch[op.key.deviceKey()] = owed.get();
                 }
                 break;
 

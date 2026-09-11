@@ -121,15 +121,15 @@ TEST_CASE("A device's owed panic is the same flag across every publish", "[engin
     const auto plan = planWithDevice();
 
     const auto first = store.realise(plan, kContext);
-    auto* owed = first.deviceMidiPanic.at(kKey);
+    auto* owed = first.deviceMidiPanicEpoch.at(kKey);
     REQUIRE(owed != nullptr);
 
-    owed->store(1, std::memory_order_relaxed);
+    owed->store(7, std::memory_order_relaxed);
     store.releaseDeleted(plan, namedIds(), nullptr);
 
     const auto second = store.realise(plan, kContext);
-    CHECK(second.deviceMidiPanic.at(kKey) == owed);
-    CHECK(owed->load(std::memory_order_relaxed) == 1);
+    CHECK(second.deviceMidiPanicEpoch.at(kKey) == owed);
+    CHECK(owed->load(std::memory_order_relaxed) == 7);
 }
 
 TEST_CASE("A key named for rebuild is asked for again", "[engine][store][rebuild]") {

@@ -107,6 +107,9 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     void clearUnboundValueTaps() {
         core_.clearUnboundValueTaps();
     }
+    void commitReroutes(std::uint64_t epoch) {
+        core_.commitReroutes(epoch);
+    }
     int audioBufferCount() const {
         return core_.audioBufferCount();
     }
