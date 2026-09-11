@@ -88,9 +88,7 @@ std::vector<ScannedPluginParameter> scanDeviceParameters(const juce::String& plu
     if (device == nullptr)
         return result;
 
-    const int count = device->parameterCount();
-    for (int index = 0; index < count; ++index) {
-        const auto info = device->parameterInfo(index);
+    for (const auto& info : device->parameters()) {
         if (info.name.isEmpty())
             continue;
 

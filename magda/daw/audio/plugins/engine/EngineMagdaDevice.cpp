@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <ranges>
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
@@ -145,11 +146,9 @@ EngineMagdaDevice::EngineMagdaDevice(std::unique_ptr<MagdaDevice> device, bool o
     : device_(std::move(device)),
       properties_(propertiesForRequiredDevice(device_)),
       offlineRender_(offlineRender) {
-    const int count = std::max(0, device_->parameterCount());
-    parameters_.reserve(static_cast<std::size_t>(count));
+    parameters_.reserve(static_cast<std::size_t>(std::max(0, device_->parameterCount())));
 
-    for (int index = 0; index < count; ++index) {
-        auto info = device_->parameterInfo(index);
+    for (auto [index, info] : std::views::zip(std::views::iota(0), device_->parameters())) {
         // The plan addresses a device's parameters by ParameterInfo::paramIndex
         // and allocates a slot for every index from zero, so a device that left
         // it unset is addressed by its declaration order. Same fallback the
