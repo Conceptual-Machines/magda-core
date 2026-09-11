@@ -11,6 +11,7 @@
 #include <span>
 #include <vector>
 
+#include "../../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
 #include "../../audio/plugins/engine/DeviceControl.hpp"
@@ -790,13 +791,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         *device = resolved;
         applyRestoredParameters(*device, restored);
 
-        // Only the main FX chain has a path to tell: findDevicePath searches
-        // that segment alone, and a DeviceId is section-local, so a post-FX id
-        // would find whichever unrelated device holds the same number there.
-        if (key.segment == ChainSegment::Fx)
-            if (const auto path = TrackManager::getInstance().findDevicePath(key.deviceId);
-                path.isValid())
-                TrackManager::getInstance().notifyDevicePropertyChanged(path);
+        // Asked with the segment, because a DeviceId is section-local and on
+        // its own names up to three devices (#1899).
+        const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
+
+        // Here rather than where the parameters were described, because this is
+        // where the device's address is known: a DeviceInfo does not say which
+        // section holds it, and a provider that had to look the id up again
+        // would find the wrong device (#2600).
+        attachParameterTextProviders(*device, path);
+
+        if (path.isValid())
+            TrackManager::getInstance().notifyDevicePropertyChanged(path);
 
         // Last, so the plan that binds the loader's instance is compiled from
         // the model as corrected above.

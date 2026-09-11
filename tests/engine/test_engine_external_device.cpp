@@ -19,6 +19,7 @@
 #include "core/ParameterInfo.hpp"
 #include "core/ParameterUtils.hpp"
 #include "exec/EngineDevice.hpp"
+#include "magda/daw/audio/DeviceParameterDisplayTextProvider.hpp"
 #include "magda/daw/audio/Vst3Preset.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginLookup.hpp"
 #include "magda/daw/audio/plugin_manager/ExternalPluginState.hpp"
@@ -776,18 +777,6 @@ std::unique_ptr<StubPlugin> awkwardlyNamedStub() {
     plugin->addHostedParameter(std::make_unique<StubParameter>("cut2", "Cutoff", 0.0f, true));
     plugin->addHostedParameter(std::make_unique<StubParameter>("blank", "", 0.0f, true));
     return plugin;
-}
-
-/// A stand-in for the app's display-text factory, which is installed with the
-/// engine's services and so is not registered in this binary. It records what
-/// the provider was built for; what it formats is not this test's question.
-std::shared_ptr<magda::ParameterInfo::DisplayTextProvider> recordingProviderFactory(
-    const magda::ChainNodePath& devicePath, int deviceId, int paramIndex) {
-    auto provider = std::make_shared<magda::ParameterInfo::DisplayTextProvider>();
-    provider->devicePath = devicePath;
-    provider->deviceId = deviceId;
-    provider->paramIndex = paramIndex;
-    return provider;
 }
 
 /// The resolved record at plan slot @p index, from whichever bucket holds it.
@@ -1986,29 +1975,22 @@ TEST_CASE("The value asked for is clamped to what a parameter can hold",
     CHECK(device.parameterText(3, 7.0f) == "100 frobs");
 }
 
-TEST_CASE("Resolved parameters carry a live text provider", "[engine][external][2600]") {
-    // Asked of the plugin per value rather than sampled into a table, so a
-    // continuous parameter reads exactly rather than to the nearest sample.
-    // The factory is the app's, and this stands in for it.
-    REQUIRE(magda::registerParameterDisplayTextProviderFactory(recordingProviderFactory));
+TEST_CASE("Resolved parameters carry no text provider of their own", "[engine][external][2600]") {
+    // The provider stores the device's address, and a DeviceInfo does not say
+    // which chain section holds it -- a DeviceId is section-local and on its own
+    // names up to three devices. So the provider is attached where the key is
+    // known (EngineHost::applyLoadedDevice) rather than here, where it would
+    // have to be looked up again and could find another plugin.
+    // With the app's factory installed, so an absent provider below is this
+    // layer declining to attach one rather than there being none to make.
+    magda::installDeviceParameterDisplayTextProviderFactory();
 
     auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
-
-    auto model = externalDevice();
-    model.id = 42;
-
-    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), externalDevice());
 
     const auto* tone = resolvedParameterAt(result, 3);
     REQUIRE(tone != nullptr);
-    REQUIRE(tone->displayText != nullptr);
-    CHECK(tone->displayText->deviceId == 42);
-    CHECK(tone->displayText->paramIndex == 3);
-
-    // The wrapper pair has none: nothing on the plugin stands behind it.
-    const auto* dry = resolvedParameterAt(result, 0);
-    REQUIRE(dry != nullptr);
-    CHECK(dry->displayText == nullptr);
+    CHECK(tone->displayText == nullptr);
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {

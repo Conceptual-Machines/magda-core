@@ -1,5 +1,6 @@
 #include "DeviceParameterDisplayTextProvider.hpp"
 
+#include "core/DeviceInfo.hpp"
 #include "core/ParameterInfo.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
@@ -37,6 +38,15 @@ std::shared_ptr<ParameterInfo::DisplayTextProvider> makeDeviceParameterDisplayTe
 }
 
 }  // namespace
+
+void attachParameterTextProviders(DeviceInfo& device, const ChainNodePath& devicePath) {
+    if (!devicePath.isValid())
+        return;
+
+    for (auto& parameter : device.parameters)
+        parameter.displayText =
+            makeParameterDisplayTextProvider(devicePath, device.id, parameter.paramIndex);
+}
 
 void installDeviceParameterDisplayTextProviderFactory() {
     const bool registered =

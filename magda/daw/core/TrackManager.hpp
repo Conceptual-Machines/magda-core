@@ -854,7 +854,19 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void setDeviceGainDb(const ChainNodePath& devicePath, float gainDb);
     void setDeviceLevel(const ChainNodePath& devicePath, float level);  // 0-1 linear
 
-    // Find the ChainNodePath for a device by its ID (searches all tracks recursively)
+    /**
+     * @brief The path of the device @p deviceId names in @p segment.
+     *
+     * A DeviceId is section-local (#1899), so the id alone names up to three
+     * devices and the segment is the half that makes it an identity. Fx
+     * descends racks and pads; the two flat sections are one level deep.
+     *
+     * Invalid for a device that section does not hold.
+     */
+    ChainNodePath findDevicePath(DeviceId deviceId, ChainSegment segment) const;
+
+    /// @overload The main FX tree, which is what an unqualified id has always
+    /// meant here.
     ChainNodePath findDevicePath(DeviceId deviceId) const;
 
     // Update device parameters (called by AudioBridge when processor is created)
