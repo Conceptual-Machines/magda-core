@@ -33,11 +33,10 @@ void convertAndSave() {
     auto& projects = ProjectManager::getInstance();
     const auto destination = audio::convertedProjectFileFor(projects.getCurrentProjectFile());
 
-    if (audio::convertFourOscDevices(TrackManager::getInstance()) == 0)
-        return;
+    audio::convertFourOscDevices(TrackManager::getInstance());
 
-    // An unsaved project has nowhere to sit beside, so it keeps the converted
-    // devices and the user names it at their next save.
+    // An unsaved project has nowhere to sit beside, so it keeps whatever the
+    // conversion did and the user names it at their next save.
     if (destination == juce::File{})
         return;
 
@@ -61,21 +60,32 @@ void offerFourOscConversion() {
     if (Config::getInstance().getSkipFourOscConversionPrompt())
         return;
 
+    auto& projects = ProjectManager::getInstance();
+
+    // Already through this engine's migration, so there is nothing to offer.
+    // An empty word is a project saved before the field existed, which is a
+    // Tracktion project.
+    if (projects.getCurrentProjectInfo().savedWithEngine ==
+        settingWordFor(AudioEngineChoice::Magda))
+        return;
+
+    if (projects.getCurrentProjectFile() == juce::File{})
+        return;
+
     auto& tracks = TrackManager::getInstance();
     const auto* master = tracks.getTrack(MASTER_TRACK_ID);
     if (master == nullptr)
         return;
 
     const auto candidates = audio::findFourOscDevices(tracks.getTracks(), *master);
-    if (candidates.empty())
-        return;
 
-    auto prompt = std::make_shared<Prompt>("Convert 4OSC?", audio::describeConversion(candidates));
+    auto prompt = std::make_shared<Prompt>("Open as a MAGDA engine project?",
+                                           audio::describeMigration(candidates));
 
     prompt->dontAskAgain.setSize(200, 24);
     prompt->alert.addCustomComponent(&prompt->dontAskAgain);
-    prompt->alert.addButton("Convert", 1, juce::KeyPress(juce::KeyPress::returnKey));
-    prompt->alert.addButton("Leave as it is", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    prompt->alert.addButton("Create it", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    prompt->alert.addButton("Not now", 0, juce::KeyPress(juce::KeyPress::escapeKey));
 
     prompt->alert.enterModalState(true, juce::ModalCallbackFunction::create([prompt](int result) {
                                       // Remembered whichever button was pressed: somebody who ticks

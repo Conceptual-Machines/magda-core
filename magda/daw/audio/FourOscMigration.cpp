@@ -119,39 +119,35 @@ juce::File convertedProjectFileFor(const juce::File& project) {
     // Handing it the wrapped path meant it created nothing and wrote into a
     // directory that was not there.
     const auto folder =
-        projects.getChildFile(project.getFileNameWithoutExtension() + " (Poly Synth)")
+        projects.getChildFile(project.getFileNameWithoutExtension() + " (magda engine)")
             .getNonexistentSibling();
 
     return projects.getChildFile(folder.getFileName() + project.getFileExtension());
 }
 
-juce::String describeConversion(const std::vector<FourOscCandidate>& candidates) {
-    if (candidates.empty())
-        return {};
+juce::String describeMigration(const std::vector<FourOscCandidate>& candidates) {
+    juce::String text =
+        "This project was made with the Tracktion engine. MAGDA's engine does not render every "
+        "device the same way, so it opens as a copy and the original is left alone.";
 
-    const auto count = static_cast<int>(candidates.size());
-    juce::String text = count == 1 ? "This project uses 4OSC, which the MAGDA engine does not have."
-                                   : "This project uses 4OSC on " + juce::String(count) +
-                                         " devices, and the MAGDA engine does not have it.";
+    if (!candidates.empty()) {
+        const auto count = static_cast<int>(candidates.size());
+        text += count == 1 ? " Its 4OSC becomes a Poly Synth"
+                           : " Its " + juce::String(count) + " 4OSC devices become Poly Synths";
+        text += ", carrying the oscillators, the filter, both envelopes, the voice settings and "
+                "the built-in effects.";
 
-    text += " It can be converted to Poly Synth, which carries the oscillators, the filter, both "
-            "envelopes and the voice settings.";
-
-    const auto gaps = distinctGaps(candidates);
-    if (gaps.empty()) {
-        text += " Everything this patch uses has somewhere to go.";
-    } else {
-        // Named rather than summarised. "Some settings will be lost" tells
-        // somebody to expect a difference without telling them what to listen
-        // for.
-        text += " These have no equivalent and will be lost: ";
-        for (auto index = 0; index < static_cast<int>(gaps.size()); ++index)
-            text += (index > 0 ? ", " : "") + gaps[static_cast<std::size_t>(index)];
-        text += ".";
+        const auto gaps = distinctGaps(candidates);
+        if (!gaps.empty()) {
+            // Named rather than summarised. "Some settings may change" tells
+            // somebody to expect a difference without telling them what to
+            // listen for.
+            text += " These have no equivalent and will be lost: ";
+            for (auto index = 0; index < static_cast<int>(gaps.size()); ++index)
+                text += (index > 0 ? ", " : "") + gaps[static_cast<std::size_t>(index)];
+            text += ".";
+        }
     }
-
-    text += " The converted project is saved alongside this one as a new project. This one "
-            "is left as it is.";
 
     return text;
 }

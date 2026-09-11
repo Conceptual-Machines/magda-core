@@ -297,7 +297,7 @@ TEST_CASE("A project with no 4OSC has nothing to ask about", "[core][4osc]") {
     master.id = magda::MASTER_TRACK_ID;
 
     CHECK(magda::daw::audio::findFourOscDevices({}, master).empty());
-    CHECK(magda::daw::audio::describeConversion({}).isEmpty());
+    CHECK(magda::daw::audio::describeMigration({}).contains("Tracktion engine"));
 }
 
 TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
@@ -311,12 +311,12 @@ TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
     magda::TrackInfo master;
     master.id = magda::MASTER_TRACK_ID;
 
-    const auto text = magda::daw::audio::describeConversion(
+    const auto text = magda::daw::audio::describeMigration(
         magda::daw::audio::findFourOscDevices({track}, master));
 
     CHECK(text.contains("Poly Synth"));
     CHECK(text.contains("Unison"));
-    CHECK(text.contains("saved alongside this one"));
+    CHECK(text.contains("original is left alone"));
 }
 
 TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
@@ -327,10 +327,9 @@ TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
     magda::TrackInfo master;
     master.id = magda::MASTER_TRACK_ID;
 
-    const auto text = magda::daw::audio::describeConversion(
+    const auto text = magda::daw::audio::describeMigration(
         magda::daw::audio::findFourOscDevices({track}, master));
 
-    CHECK(text.contains("somewhere to go"));
     CHECK_FALSE(text.contains("will be lost"));
 }
 
@@ -345,7 +344,7 @@ TEST_CASE("The converted project is a new project beside the old one", "[core][4
     // Unwrapped: saveProjectAs() makes the folder, and skips making it when
     // the file already looks wrapped.
     const auto converted = magda::daw::audio::convertedProjectFileFor(project);
-    CHECK(converted.getFileName() == "Song (Poly Synth).mgd");
+    CHECK(converted.getFileName() == "Song (magda engine).mgd");
     CHECK(converted.getParentDirectory() == root);
 
     root.deleteRecursively();

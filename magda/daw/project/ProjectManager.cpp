@@ -16,6 +16,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
 
@@ -395,6 +396,10 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     ProjectInfo newProject = currentProject_;
     newProject.filePath = actualFile.getFullPathName();
     newProject.name = projectName;
+
+    // Which engine wrote it, so opening it under the other one knows whether
+    // this project has been through that engine's migration (#2437).
+    newProject.savedWithEngine = settingWordFor(chosenAudioEngine());
     newProject.touch();
 
     // Save to file

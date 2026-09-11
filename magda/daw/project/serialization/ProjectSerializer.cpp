@@ -272,6 +272,8 @@ bool ProjectSerializer::loadAndStage(const juce::File& file, StagedProjectData& 
             outData.info.sampleRate = projectObj->getProperty("sampleRate");
         if (projectObj->hasProperty("timelineLengthBars"))
             outData.info.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+        if (projectObj->hasProperty("savedWithEngine"))
+            outData.info.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
         if (projectObj->hasProperty("renderBitDepth"))
             outData.info.renderBitDepth = projectObj->getProperty("renderBitDepth");
         if (projectObj->hasProperty("bounceBitDepth"))
@@ -488,6 +490,7 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     projectObj->setProperty("projectLength", info.projectLength);
     projectObj->setProperty("sampleRate", info.sampleRate);
     projectObj->setProperty("timelineLengthBars", info.timelineLengthBars);
+    projectObj->setProperty("savedWithEngine", info.savedWithEngine);
     projectObj->setProperty("renderBitDepth", info.renderBitDepth);
     projectObj->setProperty("bounceBitDepth", info.bounceBitDepth);
     projectObj->setProperty("keyRoot", info.keyRoot);
@@ -626,6 +629,8 @@ bool ProjectSerializer::deserializeProject(const juce::var& json, ProjectInfo& o
         outInfo.sampleRate = projectObj->getProperty("sampleRate");
     if (projectObj->hasProperty("timelineLengthBars"))
         outInfo.timelineLengthBars = projectObj->getProperty("timelineLengthBars");
+    if (projectObj->hasProperty("savedWithEngine"))
+        outInfo.savedWithEngine = projectObj->getProperty("savedWithEngine").toString();
     if (projectObj->hasProperty("renderBitDepth"))
         outInfo.renderBitDepth = projectObj->getProperty("renderBitDepth");
     if (projectObj->hasProperty("bounceBitDepth"))

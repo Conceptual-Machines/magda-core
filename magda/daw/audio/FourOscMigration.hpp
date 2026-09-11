@@ -41,9 +41,10 @@ std::vector<FourOscCandidate> findFourOscDevices(const std::vector<TrackInfo>& t
  */
 juce::File convertedProjectFileFor(const juce::File& project);
 
-/// What the dialog says, built from @p candidates. Names the gaps when there
-/// are any and promises nothing when there are not.
-juce::String describeConversion(const std::vector<FourOscCandidate>& candidates);
+/// What the dialog says. @p candidates may be empty: a project with no 4OSC
+/// in it is still worth copying, because the engines do not render every
+/// device identically.
+juce::String describeMigration(const std::vector<FourOscCandidate>& candidates);
 
 /**
  * @brief Convert every 4OSC in the project, in place.
