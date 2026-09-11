@@ -4,7 +4,6 @@
 #include <utility>
 
 #include "compiled/CompiledPluginPresentation.hpp"
-#include "core/PluginParameterConfigStore.hpp"
 #include "core/TrackManager.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
@@ -66,42 +65,6 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
 void updateDeviceSlotParameterValues(const magda::DeviceInfo& device,
                                      ParamHostComponent& paramGrid) {
     paramGrid.updateParameterValues(device, paramGrid.getCurrentPage());
-}
-
-bool applyDeviceSlotSavedParameterConfig(magda::DeviceInfo& device,
-                                         const magda::ChainNodePath& nodePath,
-                                         ParamHostComponent* paramGrid) {
-    if (paramGrid == nullptr || device.uniqueId.isEmpty() || device.parameters.empty())
-        return false;
-
-    magda::DeviceInfo tempDevice = device;
-    if (!magda::PluginParameterConfigStore::applyToDevice(tempDevice.uniqueId, tempDevice))
-        return false;
-
-    if (!tempDevice.visibleParameters.empty()) {
-        if (nodePath.isValid())
-            magda::TrackManager::getInstance().setDeviceVisibleParameters(
-                nodePath, tempDevice.visibleParameters);
-        device.visibleParameters = tempDevice.visibleParameters;
-    }
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceMiniMixerParameters(
-            nodePath, tempDevice.miniMixerParameters);
-    device.miniMixerParameters = tempDevice.miniMixerParameters;
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceAiSoundDesignerParameters(
-            nodePath, tempDevice.aiSoundDesignerParameters);
-    device.aiSoundDesignerParameters = tempDevice.aiSoundDesignerParameters;
-
-    if (nodePath.isValid())
-        magda::TrackManager::getInstance().setDeviceAiSoundDesignerPrompt(
-            nodePath, tempDevice.aiSoundDesignerPrompt);
-    device.aiSoundDesignerPrompt = tempDevice.aiSoundDesignerPrompt;
-
-    device.parameters = tempDevice.parameters;
-    return true;
 }
 
 void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,

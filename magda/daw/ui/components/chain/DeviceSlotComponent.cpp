@@ -535,8 +535,6 @@ DeviceSlotComponent::DeviceSlotComponent(const magda::DeviceInfo& device) : devi
     }
 
     updateParameterPagination();
-    applySavedParameterConfig();
-    updateParameterPagination();
 
     // Load parameters for current page
     updateParameterSlots();
@@ -764,10 +762,6 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     customUI_.setDevicePath(path);
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 
-    if (applySavedParameterConfig()) {
-        updateParameterPagination();
-        updateParameterSlots();
-    }
     refreshDeviceTraits(device_);
 
     // Hide power / preset / delete for post-FX analysis devices (the getters
@@ -947,8 +941,6 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     // Update multi-out button visibility
     if (multiOutButton_)
         multiOutButton_->setVisible(device_.multiOut.isMultiOut);
-
-    applySavedParameterConfig();
 
     // Update pagination based on visible parameter count, then clamp current page
     updateParameterPagination();
@@ -1527,10 +1519,6 @@ void DeviceSlotComponent::refreshFaustMeterPanel() {
 
 void DeviceSlotComponent::updateParameterValues() {
     updateDeviceSlotParameterValues(device_, *paramGrid_);
-}
-
-bool DeviceSlotComponent::applySavedParameterConfig() {
-    return applyDeviceSlotSavedParameterConfig(device_, nodePath_, paramGrid_.get());
 }
 
 void DeviceSlotComponent::updateParameterPagination() {
