@@ -509,7 +509,11 @@ class PlanExecutor {
     /// Devices owed a panic on their first block of this plan: the swap took a
     /// MIDI source away from them, and a note-off they are waiting for is not
     /// coming. Cleared by the block that spends it.
-    std::vector<char> reroutedMidi_;
+    ///
+    /// Atomic because a debt outlives the executor that took it: the one being
+    /// replaced is still rendering while the next one is prepared, and reading
+    /// what it has not spent is a read racing that render.
+    std::vector<std::atomic<char>> reroutedMidi_;
 
     /// The panic flag beside a MIDI slot (#2418). False for a port the plan
     /// left unconnected, the way midiIn hands back an empty buffer for one.

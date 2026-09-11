@@ -382,6 +382,38 @@ TEST_CASE("a device that moved to another track is panicked on what it left",
     CHECK(moved.device.lastHeard());
 }
 
+TEST_CASE("a panic owed to a silenced device survives the next publish",
+          "[engine][exec][2418][2579]") {
+    // A device in a muted rack is not processed at all, so it cannot spend
+    // what it is owed. Any publish landing before the rack comes back would
+    // otherwise drop the debt, and the store is still holding the instrument
+    // that is still holding the note.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    playing.render(first);
+
+    RouteHarness rerouted{2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+
+    // Muted before it ever ran under the new plan: the device op is skipped,
+    // and the panic stays owed.
+    rerouted.values.ops[2].silent = true;
+    rerouted.render(second);
+    CHECK(rerouted.device.heard.empty());
+
+    // Any structural edit at all, with the MIDI where the last plan left it.
+    RouteHarness republished{2};
+    PlanExecutor third;
+    REQUIRE(third.prepare(republished.plan, republished.bindings, context, &second).empty());
+
+    republished.render(third);
+    CHECK(republished.device.lastHeard());
+}
+
 TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
           "[engine][exec][2418][2579]") {
     // The other half: a panic raised on every swap would cut a chord that is

@@ -380,25 +380,38 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     // somewhere else: the note-off for what it is holding is going to the old
     // source's new destination, or nowhere. Only sources that left, because
     // one arriving beside the others takes nothing away (#2418).
-    reroutedMidi_.assign(numOps, 0);
+    reroutedMidi_ = std::vector<std::atomic<char>>(numOps);
+    for (auto& owed : reroutedMidi_)
+        owed.store(0, std::memory_order_relaxed);
+
     if (previous != nullptr && previous != this && previous->plan_ != nullptr) {
         const auto was = midiBehindDevices(*previous->plan_);
         const auto now = midiBehindDevices(plan);
+
+        // A debt the plan being replaced never got to pay. A device in a muted
+        // rack is not processed at all, so its panic is still owed however
+        // many publishes land before the rack comes back, and the store is
+        // holding the instrument that holds the notes all the while.
+        std::set<DeviceKey> unpaid;
+        for (std::size_t i = 0; i < previous->plan_->ops.size(); ++i)
+            if (previous->reroutedMidi_[i].load(std::memory_order_relaxed) != 0)
+                unpaid.insert(previous->plan_->ops[i].key.deviceKey());
 
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
             if (op.kind != OpKind::Device)
                 continue;
 
-            const auto before = was.find(op.key.deviceKey());
-            const auto after = now.find(op.key.deviceKey());
-            if (before == was.end() || after == now.end())
-                continue;
+            const auto key = op.key.deviceKey();
+            const auto before = was.find(key);
+            const auto after = now.find(key);
 
-            const auto lost = std::ranges::any_of(before->second, [&after](const OpKey& source) {
-                return !after->second.contains(source);
-            });
-            reroutedMidi_[i] = lost ? 1 : 0;
+            const auto lost = before != was.end() && after != now.end() &&
+                              std::ranges::any_of(before->second, [&after](const OpKey& source) {
+                                  return !after->second.contains(source);
+                              });
+
+            reroutedMidi_[i].store(lost || unpaid.contains(key) ? 1 : 0, std::memory_order_relaxed);
         }
     }
 
@@ -1599,8 +1612,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // Spent here rather than inside the block below: as the last
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
-            const auto rerouted = std::exchange(reroutedMidi_[static_cast<std::size_t>(i)],
-                                                static_cast<char>(0)) != 0;
+            const auto rerouted = reroutedMidi_[static_cast<std::size_t>(i)].exchange(
+                                      0, std::memory_order_relaxed) != 0;
             DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
                                     .midiIn = &midiIn(op.inputs[1]),
                                     // What reached the port, plus the block's
