@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <optional>
+#include <ranges>
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
@@ -428,8 +429,7 @@ void TracktionMagdaDevicePlugin::buildParameters() {
     parameterValues_.reserve(static_cast<std::size_t>(count));
     parameters_.reserve(static_cast<std::size_t>(count));
 
-    for (int index = 0; index < count; ++index) {
-        auto info = device_->parameterInfo(index);
+    for (auto [index, info] : std::views::zip(std::views::iota(0), device_->parameters())) {
         const int stableIndex = info.paramIndex >= 0 ? info.paramIndex : index;
         const auto id = info.stableId.isNotEmpty()
                             ? info.stableId

@@ -3,7 +3,9 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_data_structures/juce_data_structures.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <ranges>
 #include <string_view>
 
 #include "core/ParameterInfo.hpp"
@@ -188,6 +190,14 @@ class MagdaDevice {
         return 0.0f;
     }
     virtual void setParameterValue(int, float) {}
+
+    /// Every parameter this device describes, in slot order. Non-virtual, over
+    /// the two above: a device implements nothing extra. The view yields values,
+    /// because parameterInfo() builds one per call.
+    auto parameters() const {
+        return std::views::iota(0, std::max(0, parameterCount())) |
+               std::views::transform([this](int slot) { return parameterInfo(slot); });
+    }
 
     virtual void flushState(juce::ValueTree&) {}
     virtual void restoreState(const juce::ValueTree&) {}

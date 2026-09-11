@@ -31,12 +31,15 @@ float computeSkew(float anchorPosition) {
     return std::log(anchorPosition) / std::log(0.5f);
 }
 
-// True when the anchor is set and strictly inside (min, max).
-bool hasValidAnchor(const ParameterDomain& domain) {
+}  // namespace
+
+bool hasScaleAnchor(const ParameterDomain& domain) {
     return domain.scaleAnchor > domain.minValue && domain.scaleAnchor < domain.maxValue;
 }
 
-}  // namespace
+bool hasScaleAnchor(const ParameterInfo& info) {
+    return hasScaleAnchor(domainOf(info));
+}
 
 ParameterDomain domainOf(const ParameterInfo& info) {
     ParameterDomain domain;
@@ -64,7 +67,7 @@ float normalizedToReal(float normalized, const ParameterDomain& domain) {
     switch (domain.scale) {
         case ParameterScale::Linear: {
             float range = domain.maxValue - domain.minValue;
-            if (hasValidAnchor(domain) && range > 0.0f) {
+            if (hasScaleAnchor(domain) && range > 0.0f) {
                 float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 normalized = std::pow(normalized, skew);
@@ -78,7 +81,7 @@ float normalizedToReal(float normalized, const ParameterDomain& domain) {
                 return domain.minValue + normalized * (domain.maxValue - domain.minValue);
             }
             float logRange = std::log(domain.maxValue / domain.minValue);
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 // Place anchor at norm=0.5 in log space by skewing norm first.
                 float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
@@ -148,7 +151,7 @@ float realToNormalized(float real, const ParameterDomain& domain) {
             if (range == 0.0f)
                 return 0.0f;
             float linPos = (real - domain.minValue) / range;
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 float anchorPos = (domain.scaleAnchor - domain.minValue) / range;
                 float skew = computeSkew(anchorPos);
                 // Invert the forward skew (norm -> norm^skew) with norm -> norm^(1/skew).
@@ -169,7 +172,7 @@ float realToNormalized(float real, const ParameterDomain& domain) {
             if (logRange == 0.0f)
                 return 0.0f;
             float logPos = std::log(real / domain.minValue) / logRange;
-            if (hasValidAnchor(domain)) {
+            if (hasScaleAnchor(domain)) {
                 float anchorLogPos = std::log(domain.scaleAnchor / domain.minValue) / logRange;
                 float skew = computeSkew(anchorLogPos);
                 logPos = std::pow(juce::jlimit(0.0f, 1.0f, logPos), 1.0f / skew);
