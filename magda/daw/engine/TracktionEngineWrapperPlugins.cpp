@@ -19,6 +19,7 @@
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
 #include "../core/AppPaths.hpp"
+#include "DeviceParameterScan.hpp"
 #include "PluginMetadataStore.hpp"
 #include "PluginScanCoordinator.hpp"
 #include "TracktionEngineWrapper.hpp"
@@ -642,6 +643,14 @@ std::vector<std::string> TracktionEngineWrapper::getSystemPluginSearchPaths() co
 std::vector<ScannedPluginParameter> TracktionEngineWrapper::scanPluginParameters(
     const juce::String& pluginId, bool internalPlugin) {
     std::vector<ScannedPluginParameter> result;
+
+    // A MAGDA device answers for itself, off the catalog rather than out of an
+    // Edit. Its own metadata is what the host wraps anyway, and the native
+    // engine builds no Edit to put a plugin in (#2601).
+    if (internalPlugin)
+        if (auto scanned = scanDeviceParameters(pluginId); !scanned.empty())
+            return scanned;
+
     if (!engine_)
         return result;
 

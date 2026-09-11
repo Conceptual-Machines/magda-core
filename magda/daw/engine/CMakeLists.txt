@@ -8,6 +8,7 @@ target_sources(magda_daw PRIVATE
     TempoSequenceRippleCommand.cpp
     OfflineRenderHelper.cpp
     AudioEngineChoice.cpp
+    DeviceParameterScan.cpp
     TracktionEngineWrapper.cpp
     TracktionEngineWrapperInit.cpp
     TracktionEngineWrapperDevices.cpp
@@ -25,6 +26,7 @@ target_sources(magda_daw PRIVATE
     PluginWindowManager.cpp
     # Headers (listed for IDE visibility)
     AudioEngine.hpp
+    DeviceParameterScan.hpp
     AudioEngineChoice.hpp
     OfflineRenderHelper.hpp
     TracktionEngineWrapper.hpp
