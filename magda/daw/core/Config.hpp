@@ -123,6 +123,15 @@ class Config {
         transportShowBothFormats = show;
     }
 
+    /// Whether the 4OSC conversion prompt has been turned off for good
+    /// (#2437). Set by the "don't ask again" tickbox on the prompt itself.
+    bool getSkipFourOscConversionPrompt() const {
+        return skipFourOscConversionPrompt;
+    }
+    void setSkipFourOscConversionPrompt(bool skip) {
+        skipFourOscConversionPrompt = skip;
+    }
+
     bool getOpenPluginWindowOnDrop() const {
         return openPluginWindowOnDrop;
     }
@@ -1401,6 +1410,7 @@ class Config {
 
     // Open a device's editor window automatically when it is dropped into a chain
     bool openPluginWindowOnDrop = false;
+    bool skipFourOscConversionPrompt = false;
     bool transportDefaultBarsBeats = true;  // Default to bars/beats (false = seconds)
 
     // Panel visibility settings
