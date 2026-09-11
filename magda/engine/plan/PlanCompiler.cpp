@@ -1375,7 +1375,15 @@ void Compiler::emitTrack(const TrackInfo& track) {
         midiSources.push_back(
             PortRef{addOp(OpKind::SessionMidi, sessionKey, {}, {SignalKind::Midi}), 0});
     }
-    switch (const auto route = activeMidiInputRoute(track); route.kind) {
+    // One live input op per track, whatever else is routed to it: a preview is
+    // queued under the track's own audition source, and the store keys live
+    // inputs by TrackId, so a second op here would be a second binding to one
+    // object (CompileOptions::auditionMidi, #2579).
+    const auto route = activeMidiInputRoute(track);
+    if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
+        midiSources.push_back(emitLiveMidiInput(track.id));
+
+    switch (route.kind) {
         case RouteKind::Track: {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
@@ -1393,13 +1401,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
                      "' does not name a track, input not connected");
             break;
         case RouteKind::External:
-            midiSources.push_back(emitLiveMidiInput(track.id));
-            break;
         case RouteKind::None:
-            // Nothing is routed here, so this is the op a preview reaches
-            // (CompileOptions::auditionMidi, #2579).
-            if (options_.auditionMidi && readsMidi)
-                midiSources.push_back(emitLiveMidiInput(track.id));
             break;
     }
     if (!midiSources.empty()) {

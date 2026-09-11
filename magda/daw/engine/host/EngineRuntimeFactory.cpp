@@ -40,12 +40,22 @@ class TrackMidiInput final : public engine::EngineMidiSource {
             feed_.appendEvents(
                 routed_->sources[static_cast<std::size_t>(i)].load(std::memory_order_relaxed), out,
                 engine::kMaxMidiBytesPerPort);
+
+        // A source that has gone will never send the note-off for what it is
+        // still holding, and a route change publishes no topology, so this is
+        // the only panic the instrument gets (#2418).
+        dropped_ = routed_->dropped.exchange(false, std::memory_order_acq_rel);
+    }
+
+    bool raisedAllNotesOff() const override {
+        return dropped_;
     }
 
   private:
     const engine::LiveInputFeed& feed_;
     engine::LiveMidiSourceId audition_ = engine::kAnyLiveMidiSource;
     std::shared_ptr<const EngineRuntimeFactory::MidiRouteTable> routed_;
+    bool dropped_ = false;
 };
 
 }  // namespace
@@ -196,6 +206,19 @@ std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(
 
 void EngineRuntimeFactory::MidiRouteTable::set(const std::vector<engine::LiveMidiSourceId>& ids) {
     const auto n = std::min(static_cast<int>(ids.size()), kMaxSources);
+
+    // Only what is leaving: a source added beside the ones already routed
+    // takes nothing away, and a panic raised for it would cut a chord that is
+    // still being held down.
+    const auto was = count.load(std::memory_order_relaxed);
+    for (auto i = 0; i < was; ++i) {
+        const auto source = sources[static_cast<std::size_t>(i)].load(std::memory_order_relaxed);
+        if (std::ranges::find(ids, source) == ids.end()) {
+            dropped.store(true, std::memory_order_relaxed);
+            break;
+        }
+    }
+
     for (auto i = 0; i < n; ++i)
         sources[static_cast<std::size_t>(i)].store(ids[static_cast<std::size_t>(i)],
                                                    std::memory_order_relaxed);
@@ -213,11 +236,11 @@ std::shared_ptr<EngineRuntimeFactory::MidiRouteTable> EngineRuntimeFactory::rout
 void EngineRuntimeFactory::refreshMidiRoutes(const std::vector<TrackInfo>& tracks) {
     midiRoutes_.clear();
 
-    // receivesLiveMidiInput rather than monitorsInput: the fork routes a track
-    // in Auto too (MidiInputRouter::updateMidiInputRouting).
+    // monitorsInput, which is what the compiler gates a routed input on: the
+    // fork assigns a device to a track in Auto too, but TE's monitor mode
+    // still decides whether it is heard, and this table is heard directly.
     for (const auto& track : tracks)
-        midiRoutes_.emplace(track.id,
-                            MidiRoute{track.midiInputDevice, track.receivesLiveMidiInput()});
+        midiRoutes_.emplace(track.id, MidiRoute{track.midiInputDevice, track.monitorsInput()});
 
     resolveRouteTables();
 }

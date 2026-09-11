@@ -302,6 +302,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         factory_.refreshMidiRoutes(tracks);
     }
 
+    /// A device plugged in or unplugged since the last structural publish.
+    /// Without this the snapshot a route resolves against is the one the last
+    /// plan was compiled with, and a track selecting a newly connected device
+    /// would resolve to a source nothing pushes under.
+    void refreshLiveMidiDevices() {
+        sources_.registerAvailableDevices();
+        factory_.refreshMidiRoutes(TrackManager::getInstance().getTracks());
+    }
+
     /// What every track plays, resolved against the tempo the transport is
     /// published with: a snapshot compiled against a different map would place
     /// every clip at the seconds that map gave it.
@@ -733,6 +742,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Where the levels go. Null until a caller asks (#2570).
     EngineHost::MeterSink meters_;
+
+    /// Hot-plug, on the message thread. Last, so it is destroyed first and
+    /// nothing calls back into a host that is already unwinding.
+    juce::MidiDeviceListConnection deviceList_ =
+        juce::MidiDeviceListConnection::make([this] { refreshLiveMidiDevices(); });
 };
 
 EngineHost::EngineHost() : impl_(std::make_unique<Impl>()) {}

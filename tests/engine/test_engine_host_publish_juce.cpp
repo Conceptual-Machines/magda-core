@@ -168,6 +168,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMetersReadWhatWasRendered(); });
         magda::test::runWithCleanJuceState([this] { testAuditionReachesAnIdleTrack(); });
         magda::test::runWithCleanJuceState([this] { testDeviceMidiReachesOnlyItsOwnTrack(); });
+        magda::test::runWithCleanJuceState([this] { testRouteRemovalPanicsTheInput(); });
+        magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
     }
 
@@ -600,12 +602,18 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // Monitoring with no device named, which the fork routes to every
         // input (MidiInputRouter::updateMidiInputRouting) and so must this.
         const auto unnamed = synthTrack("Unnamed", 3, magda::InputMonitorMode::In, {});
+        // Auto and unarmed: routed on the fork, where TE's monitor mode still
+        // decides what is heard, and audible here the moment it is in a route
+        // table.
+        const auto automatic = synthTrack("Auto", 4, magda::InputMonitorMode::Auto, "all");
         const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
         expect(routed != magda::INVALID_TRACK_ID && idle != magda::INVALID_TRACK_ID &&
-                   unnamed != magda::INVALID_TRACK_ID && master != nullptr,
+                   unnamed != magda::INVALID_TRACK_ID && automatic != magda::INVALID_TRACK_ID &&
+                   master != nullptr,
                "The tracks and the master exist");
         if (routed == magda::INVALID_TRACK_ID || idle == magda::INVALID_TRACK_ID ||
-            unnamed == magda::INVALID_TRACK_ID || master == nullptr)
+            unnamed == magda::INVALID_TRACK_ID || automatic == magda::INVALID_TRACK_ID ||
+            master == nullptr)
             return;
 
         const auto& tracks = trackManager.getTracks();
@@ -651,9 +659,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         auto* routedTap = session.meterTap(magda::engine::trackMeterKey(routed));
         auto* idleTap = session.meterTap(magda::engine::trackMeterKey(idle));
         auto* unnamedTap = session.meterTap(magda::engine::trackMeterKey(unnamed));
-        expect(routedTap != nullptr && idleTap != nullptr && unnamedTap != nullptr,
+        auto* autoTap = session.meterTap(magda::engine::trackMeterKey(automatic));
+        expect(routedTap != nullptr && idleTap != nullptr && unnamedTap != nullptr &&
+                   autoTap != nullptr,
                "The meters are bound");
-        if (routedTap == nullptr || idleTap == nullptr || unnamedTap == nullptr)
+        if (routedTap == nullptr || idleTap == nullptr || unnamedTap == nullptr ||
+            autoTap == nullptr)
             return;
 
         expect(routedTap->read().loudest() > 0.0f, "The track routed to the device heard it");
@@ -663,6 +674,10 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // The audition op every track now carries reads its own source alone;
         // kAnyLiveMidiSource here would have merged the two.
         expect(idleTap->read().loudest() == 0.0f, "The track monitoring nothing did not");
+
+        // What monitorsInput() gates and receivesLiveMidiInput() does not: Auto
+        // without an arm is the UI's activity light, not an audible input.
+        expect(autoTap->read().loudest() == 0.0f, "Nor did the unarmed Auto track");
 
         // The store keeps the input it built, so a monitor switched on after
         // the publish reaches it through the route table, not a new source.
@@ -676,6 +691,96 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         expect(idleTap->read().loudest() > 0.0f,
                "Switched to monitor In after the publish, the track hears the device");
+    }
+
+    void testRouteRemovalPanicsTheInput() {
+        beginTest("A source leaving a route table panics the input that read it");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Monitoring", 1, magda::InputMonitorMode::In, "all");
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(trackId != magda::INVALID_TRACK_ID && master != nullptr,
+               "The track and the master exist");
+        if (trackId == magda::INVALID_TRACK_ID || master == nullptr)
+            return;
+
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+        host::LiveMidiSources sources;
+        sources.sourceFor("test-device");
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs(), sources);
+        session.liveInputs().prepare(0, context.maxBlockSize);
+
+        // The input the store would bind, over the same route table the
+        // publisher rewrites.
+        auto input = factory.createMidiInput(trackId);
+        expect(input != nullptr, "The track has a live MIDI input");
+        if (input == nullptr)
+            return;
+
+        const magda::engine::BlockInfo block{};
+        juce::MidiBuffer events;
+
+        input->render(block, events);
+        expect(!input->raisedAllNotesOff(), "A block with the route unchanged raises nothing");
+
+        // A note-off for whatever the device is holding will never arrive
+        // through a route that has gone, and the mutation publishes no
+        // topology, so nothing else can panic the instrument.
+        if (auto* track = trackManager.getTrack(trackId))
+            track->inputMonitor = magda::InputMonitorMode::Off;
+        factory.refreshMidiRoutes(trackManager.getTracks());
+
+        events.clear();
+        input->render(block, events);
+        expect(input->raisedAllNotesOff(), "Losing the route panics the block that follows it");
+
+        events.clear();
+        input->render(block, events);
+        expect(!input->raisedAllNotesOff(), "Once, and not on every block after it");
+
+        // Adding one back takes nothing away, so a chord held on another
+        // source keeps sounding.
+        if (auto* track = trackManager.getTrack(trackId))
+            track->inputMonitor = magda::InputMonitorMode::In;
+        factory.refreshMidiRoutes(trackManager.getTracks());
+
+        events.clear();
+        input->render(block, events);
+        expect(!input->raisedAllNotesOff(), "A source arriving raises no panic");
+    }
+
+    void testDeviceConnectedAfterAPublishResolves() {
+        beginTest("A device plugged in after the publish resolves to the source it pushes under");
+
+        host::LiveMidiSources sources;
+        sources.registerAvailableDevices({});
+
+        const juce::MidiDeviceInfo keystep{"Keystep", "juce-identifier-42"};
+
+        // What the fork's selectors store for a hardware input, which is what
+        // a project holds and what a route names.
+        const auto forkId = "midiin_" + juce::String::toHexString(keystep.identifier.hashCode());
+
+        // Against the empty snapshot the route is unresolvable, so it falls
+        // through to a source of its own -- and events from the device arrive
+        // under its JUCE identifier, which is a different one.
+        expect(sources.resolveRoute(forkId) != sources.sourceFor(keystep.identifier),
+               "Before the refresh the route and the device are two sources");
+
+        sources.registerAvailableDevices({keystep});
+
+        expect(sources.resolveRoute(forkId) == sources.sourceFor(keystep.identifier),
+               "Refreshed, the route resolves to the source its notes arrive under");
     }
 
     void testOnlyTrackMetersAreTapped() {

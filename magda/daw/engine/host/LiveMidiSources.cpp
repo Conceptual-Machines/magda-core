@@ -5,7 +5,10 @@
 namespace magda::daw::engine_host {
 
 void LiveMidiSources::registerAvailableDevices() {
-    auto available = juce::MidiInput::getAvailableDevices();
+    registerAvailableDevices(juce::MidiInput::getAvailableDevices());
+}
+
+void LiveMidiSources::registerAvailableDevices(juce::Array<juce::MidiDeviceInfo> available) {
     for (const auto& device : available)
         sourceFor(device.identifier);
 

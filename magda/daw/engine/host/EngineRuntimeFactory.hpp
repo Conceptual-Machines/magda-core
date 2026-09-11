@@ -130,6 +130,13 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         std::array<std::atomic<engine::LiveMidiSourceId>, kMaxSources> sources{};
         std::atomic<int> count{0};
 
+        /// A source has left the table since the last block. Read and cleared
+        /// by the input, which turns it into the panic its instrument needs to
+        /// release the notes that source will never send an off for. Mutable
+        /// because the input holds the table as const and consuming this is
+        /// the one thing it writes.
+        mutable std::atomic<bool> dropped{false};
+
         void set(const std::vector<engine::LiveMidiSourceId>& ids);
     };
 

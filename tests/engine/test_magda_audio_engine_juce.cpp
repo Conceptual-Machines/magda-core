@@ -2,6 +2,7 @@
 
 #include <cmath>
 
+#include "AssertionWatch.hpp"
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/api/magda_api.hpp"
 #include "magda/daw/api/project_api.hpp"
@@ -30,6 +31,7 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testAnswersWithoutAnEdit(); });
+        magda::test::runWithCleanJuceState([this] { testDestructionRunsTheShutdown(); });
     }
 
   private:
@@ -64,6 +66,31 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
                "The engine's own MagdaApi answers");
 
         engine.shutdown();
+
+        expect(engine.getMidiBridge() == nullptr, "Shut down, the fork's services are gone");
+        engine.shutdown();
+    }
+
+    void testDestructionRunsTheShutdown() {
+        beginTest("Destroying the engine runs the shutdown the app never calls");
+
+        auto& watch = magda::test::AssertionWatch::instance();
+        watch.take();
+
+        {
+            magda::MagdaAudioEngine engine{magda::AudioEngineOptions{.headless = true}};
+            expect(engine.initialize(), "The engine comes up headless");
+            expect(engine.getMidiBridge() != nullptr, "with the fork's MidiBridge under it");
+
+            // Destroyed with no shutdown() call, which is what the app does
+            // (magda_daw_main.cpp: a plain daw_engine_.reset()).
+        }
+
+        // ~MidiBridge asserts that its live sink was cleared first, and the
+        // sink is the engine: still installed, it is a destroyed object the
+        // MIDI callback thread can still push a note through.
+        for (const auto& fired : watch.take())
+            expect(!fired.contains("MidiBridge.cpp"), fired);
     }
 };
 

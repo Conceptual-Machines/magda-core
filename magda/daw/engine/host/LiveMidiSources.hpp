@@ -32,6 +32,10 @@ class LiveMidiSources {
     /// resolves to them before any of them has played a note.
     void registerAvailableDevices();
 
+    /// The same against a list the caller already holds, which is the
+    /// snapshot every route then resolves against.
+    void registerAvailableDevices(juce::Array<juce::MidiDeviceInfo> available);
+
     /// The id @p deviceId pushes under, assigned on first use.
     int sourceFor(const juce::String& deviceId);
 

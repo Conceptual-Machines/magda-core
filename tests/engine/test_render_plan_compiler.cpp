@@ -71,6 +71,14 @@ int countRole(const RenderPlan& plan, OpRole role) {
     return static_cast<int>(opsWithRole(plan, role).size());
 }
 
+/// Live MIDI input ops on one track, which is what a preview reaches (#2579).
+int liveInputsOn(const RenderPlan& plan, magda::TrackId trackId) {
+    const auto ops = opsWithRole(plan, OpRole::LiveMidiInput);
+    return static_cast<int>(std::ranges::count_if(ops, [&](magda::engine::OpId op) {
+        return plan.ops[static_cast<std::size_t>(op)].key.trackId == trackId;
+    }));
+}
+
 /// The op an input slot reads, or -1 when the slot is unconnected. The two ops
 /// every slot carries whatever the model says are looked through: a delay
 /// stands for the op behind it, so does the subtract that would take a delta on
@@ -1765,6 +1773,26 @@ TEST_CASE("Audition gives every track that reads MIDI something to preview throu
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
         requireWellFormed(plan);
         CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
+    }
+
+    SECTION("a track taking MIDI from another track has one of its own") {
+        auto destination = makeTrack(2);
+        destination.chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+        destination.inputMonitor = InputMonitorMode::In;
+        destination.midiInputDevice = "track:1";
+
+        std::vector<TrackInfo> tracks{makeTrack(1), destination};
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), auditioning);
+        requireWellFormed(plan);
+
+        // A preview is queued under the destination's own audition source, so
+        // the routed source track is not where it would arrive.
+        CHECK(liveInputsOn(plan, 2) == 1);
+
+        // And the source track keeps its own, which reaches the same
+        // instrument through the route.
+        CHECK(liveInputsOn(plan, 1) == 1);
     }
 }
 

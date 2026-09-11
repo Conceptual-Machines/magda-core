@@ -68,7 +68,13 @@ void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) cons
                              " is not wired on magda::engine yet (" + issue + ")");
 }
 
-MagdaAudioEngine::~MagdaAudioEngine() = default;
+MagdaAudioEngine::~MagdaAudioEngine() {
+    // The app destroys the engine with a plain reset() and no shutdown() call
+    // (magda_daw_main.cpp), which would leave the MidiBridge pushing live
+    // notes through a destroyed sink and the host rendering from a device it
+    // never came off. Safe twice: every step below is.
+    shutdown();
+}
 
 // --- what magda::engine answers ----------------------------------------------
 //
@@ -115,13 +121,20 @@ bool MagdaAudioEngine::initialize() {
 }
 void MagdaAudioEngine::shutdown() {
     // The host is destroyed before the fork (member order), so the sink has to
-    // be gone before the queue behind it is.
-    if (auto* midi = fork_->getMidiBridge())
+    // be gone before the queue behind it is. setLiveSink(nullptr) returns only
+    // once any in-flight MIDI callback has left.
+    if (auto* midi = fork_->getMidiBridge()) {
         midi->setLiveSink(nullptr);
+        midi->setMeters(nullptr);
+    }
+
+    // The bridge goes with the fork below, and the API outlives this call.
+    api_->setMidiBridge(nullptr);
 
     // Before the fork's, which closes the device this is rendering into.
     host_->stop();
     tracktion_->shutdown();
+    initialised_ = false;
 }
 bool MagdaAudioEngine::hasActiveEdit() const {
     return initialised_;

@@ -28,6 +28,10 @@ void MidiBridge::setLiveSink(LiveMidiSink* sink) {
 }
 
 MidiBridge::~MidiBridge() {
+    // A sink still installed here is an owner that went first, leaving the
+    // MIDI callback thread a dangling pushMidi (#2579).
+    jassert(liveSink_.load(std::memory_order_acquire) == nullptr);
+
     stopAllInputs();
 
     // Tear down outputs after inputs so any in-flight controller-feedback
