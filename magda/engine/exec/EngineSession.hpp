@@ -391,8 +391,12 @@ class EngineSession {
         return store_.meterTap(key);
     }
 
-    /// A lease on the device at @p key, for a host reaching one for something
-    /// that is not a block (#2581). On the publishing thread.
+    /**
+     * @brief The device at @p key, or null.
+     *
+     * Shared so a caller can hold it while a publish evicts it. Call on the
+     * publishing thread.
+     */
     std::shared_ptr<EngineDevice> device(DeviceKey key) const {
         return store_.device(key);
     }

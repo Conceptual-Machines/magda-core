@@ -624,4 +624,10 @@ std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState(
     return magda::captureExternalPluginState(*instance_);
 }
 
+magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInfo& saved) {
+    // The write itself, including the suspension, is shared with the fork in
+    // ExternalPluginState.hpp.
+    return magda::applySavedPluginState(*instance_, saved);
+}
+
 }  // namespace magda::daw::audio::engine_adapter

@@ -2027,38 +2027,10 @@ bool TrackManager::applyDevicePreset(const ChainNodePath& devicePath,
     live->gainValue = std::pow(10.0f, presetDevice.gainDb / 20.0f);
     live->pluginState = stripPresetRuntimePluginState(presetDevice.pluginState);
 
-    // Push the new pluginState into the running plugin.
-    if (audioEngine_) {
-        if (auto* bridge = audioEngine_->getAudioBridge()) {
-            if (auto plugin = bridge->getPlugin(devicePath)) {
-                if (dynamic_cast<tracktion::engine::ExternalPlugin*>(plugin.get()) != nullptr) {
-                    // Only when the preset carries a native state chunk: it is the
-                    // authoritative source for the entire voice. Re-assert it +
-                    // refresh TE's param cache, then re-derive live->parameters from
-                    // the plugin, so the preset's (possibly stale) saved parameter
-                    // array can't clobber the restored voice when the
-                    // devicePropertyChanged notification below drives
-                    // syncFromDeviceInfo. (Same hazard + helper as loadDeviceAsPlugin.)
-                    //
-                    // For a parameter-only preset (no chunk -- e.g. a plugin that
-                    // returns no state, or a legacy preset) we must NOT repopulate:
-                    // that would overwrite the preset's saved parameter values with
-                    // the plugin's current ones. Leave live->parameters as captured
-                    // and let the notification below apply them via syncFromDeviceInfo.
-                    if (live->pluginState.isNotEmpty()) {
-                        applyExternalPluginChunk(plugin.get(), live->pluginState);
-                        if (auto* proc = bridge->getDeviceProcessor(devicePath))
-                            proc->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
-                    }
-                } else {
-                    namespace ta = daw::audio::tracktion_adapter;
-                    auto savedState = ta::devicePluginTreeFromState(live->pluginState);
-                    if (savedState.isValid())
-                        plugin->restorePluginStateFromValueTree(savedState);
-                }
-            }
-        }
-    }
+    // The rendering engine, not the bridge: only the live instance has the
+    // state (#2573). It may rewrite live->parameters.
+    if (audioEngine_ != nullptr)
+        audioEngine_->applyPluginStateAt(devicePath);
 
     // Notify listeners — devicePropertyChanged covers gain/macros/mods refresh
     // via the AudioBridge sync path, then push each parameter individually so

@@ -105,9 +105,7 @@ class TracingDevice final : public magda::engine::EngineDevice {
 
     void process(magda::engine::DeviceBlock& block) override;
 
-    /// What this stands in front of. A control operation addresses the device
-    /// itself rather than the diagnostic around it, so a capture must not
-    /// answer differently with the trace on (#2581).
+    /** @brief The device this wraps, for callers that must reach past the trace. */
     EngineDevice& wrapped() const {
         return *device_;
     }

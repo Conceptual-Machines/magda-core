@@ -100,16 +100,15 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
         trace_ = &trace;
     }
 
-    /// The keys this publish's model calls external plugins, in key order.
-    /// Off the one reading of the model @ref setModel took, so a caller
-    /// walking them is walking the same project the devices were built for
-    /// (#2581).
+    /**
+     * @brief Every key in the model that names an external plugin, in key order.
+     *
+     * Read from the model @ref setModel was given, so it matches the devices
+     * this factory built (#2581).
+     */
     std::vector<engine::DeviceKey> externalKeys() const;
 
-    /// Whether @p key is one of those. For a caller holding a single path
-    /// rather than a list: everything else in a chain is a device this build
-    /// holds, which has no chunk to read and nothing to say about not having
-    /// one (#2581).
+    /** @brief Whether @p key names an external plugin in the model. */
     bool isExternalKey(engine::DeviceKey key) const;
 
     /// Nothing the store holds belongs to the model any more: the project was
