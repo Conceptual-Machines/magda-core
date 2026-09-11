@@ -95,8 +95,10 @@ bool MagdaAudioEngine::initialize() {
     meterInto();
 
     // Named before the first publish, so a track routed to "all" hears the
-    // keyboard from its first note rather than from the next republish.
-    host_->registerLiveMidiSource(qwertyMidiDeviceId());
+    // keyboard from its first note rather than from the next republish. The
+    // system's MIDI list never holds it, so it is registered as virtual or a
+    // device scan would take it back out of every "all" route.
+    host_->registerVirtualMidiSource(qwertyMidiDeviceId());
 
     // After the fork, because the device is its to open: the settings UI, the
     // channel lists and the driver choice are all still on that side, and two

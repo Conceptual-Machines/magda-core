@@ -365,8 +365,16 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
     }
 }
 
-void EngineExternalDevice::readMidiIn(const juce::MidiBuffer& in) {
+void EngineExternalDevice::readMidiIn(const juce::MidiBuffer& in, bool allNotesOff) {
     midi_.clear();
+
+    // The port carries the panic beside its events, since a juce::MidiBuffer
+    // has nowhere to put it (#2418), and a plugin can only be told in MIDI.
+    // Every channel: which ones it is holding notes on is its own business.
+    // Ahead of the block's own events, which may re-assert what it drops.
+    if (allNotesOff)
+        for (int channel = 1; channel <= 16; ++channel)
+            midi_.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
 
     for (const auto metadata : in)
         midi_.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
@@ -572,7 +580,7 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
     playHead_->setBlock(block.block, sampleRate_);
 
     if (block.midiIn != nullptr)
-        readMidiIn(*block.midiIn);
+        readMidiIn(*block.midiIn, block.midiInAllNotesOff);
     else
         midi_.clear();
 

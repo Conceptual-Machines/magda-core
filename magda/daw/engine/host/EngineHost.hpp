@@ -94,10 +94,10 @@ class EngineHost {
     /// A message from @p deviceId, for whichever tracks are routed to it.
     void pushMidi(const juce::String& deviceId, const juce::MidiMessage& message);
 
-    /// Name a source before it has played anything, so a track routed to "all"
-    /// is bound to it at the next publish rather than the one after its first
-    /// note. Message thread.
-    void registerLiveMidiSource(const juce::String& deviceId);
+    /// Name a device the system's MIDI list does not hold -- the QWERTY
+    /// keyboard -- so a track routed to "all" is bound to it at the next
+    /// publish and stays bound to it. Message thread.
+    void registerVirtualMidiSource(const juce::String& deviceId);
 
     // ===== What the plugins hold =====
     //

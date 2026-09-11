@@ -25,6 +25,14 @@ int LiveMidiSources::sourceFor(const juce::String& deviceId) {
     return devices_.emplace(deviceId, next_++).first->second;
 }
 
+int LiveMidiSources::registerVirtualDevice(const juce::String& deviceId) {
+    const auto source = sourceFor(deviceId);
+
+    const juce::ScopedLock held(lock_);
+    virtual_.insert(source);
+    return source;
+}
+
 int LiveMidiSources::auditionSourceFor(TrackId trackId) {
     const juce::ScopedLock held(lock_);
 
@@ -38,9 +46,13 @@ std::vector<int> LiveMidiSources::deviceSources() const {
     const juce::ScopedLock held(lock_);
 
     std::vector<int> sources;
-    sources.reserve(devices_.size());
-    for (const auto& [deviceId, source] : devices_)
-        sources.push_back(source);
+    sources.reserve(static_cast<std::size_t>(available_.size()) + virtual_.size());
+
+    for (const auto& device : available_)
+        if (const auto found = devices_.find(device.identifier); found != devices_.end())
+            sources.push_back(found->second);
+
+    sources.insert(sources.end(), virtual_.begin(), virtual_.end());
 
     return sources;
 }

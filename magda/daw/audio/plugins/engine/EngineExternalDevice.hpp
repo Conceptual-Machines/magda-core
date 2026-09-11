@@ -153,7 +153,7 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// whose width differs from the chain's or has a sidechain bus to fill.
     void processThroughScratch(magda::engine::DeviceBlock& block, int numSamples, int destChannels);
 
-    void readMidiIn(const juce::MidiBuffer& in);
+    void readMidiIn(const juce::MidiBuffer& in, bool allNotesOff);
     void writeMidiOut(juce::MidiBuffer& out, int numSamples) const;
 
     /// The plugin's further output pairs, onto the ports the plan opened for

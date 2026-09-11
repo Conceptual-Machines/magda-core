@@ -988,6 +988,51 @@ TEST_CASE("MIDI reaches the plugin and what it answers reaches the port", "[engi
         CHECK(event.getMessage().getNoteNumber() == 64);
 }
 
+TEST_CASE("A panic on the port reaches the plugin as MIDI", "[engine][external][2418]") {
+    // The executor carries a panic beside the port rather than in it, and a
+    // plugin can only be told in MIDI: without this an external synth sustains
+    // for ever on a route removal or a section hand-over.
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena arena({0.0f, 1.0f, 1.0f, 0.0f});
+    Block block(context, 2);
+
+    juce::MidiBuffer in;
+    in.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 0);
+    juce::MidiBuffer out;
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    deviceBlock.midiIn = &in;
+    deviceBlock.midiOut = &out;
+    deviceBlock.midiInAllNotesOff = true;
+    device.process(deviceBlock);
+
+    auto panics = 0;
+    auto notesAfterThePanic = 0;
+    for (const auto event : raw->midiSeen) {
+        const auto message = event.getMessage();
+        if (message.isAllNotesOff())
+            ++panics;
+        else if (message.isNoteOn() && panics > 0)
+            ++notesAfterThePanic;
+    }
+
+    CHECK(panics == 16);
+    CHECK(notesAfterThePanic == 1);
+
+    raw->midiSeen.clear();
+    deviceBlock.midiInAllNotesOff = false;
+    device.process(deviceBlock);
+
+    for (const auto event : raw->midiSeen)
+        CHECK(!event.getMessage().isAllNotesOff());
+}
+
 TEST_CASE("A plugin with no MIDI of its own hands none back", "[engine][external][2348]") {
     // JUCE's AU path only clears the shared buffer under wantsMidiMessages, so
     // a plugin that neither accepts nor produces MIDI leaves the input sitting

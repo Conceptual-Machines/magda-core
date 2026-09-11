@@ -12,6 +12,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/ClipManager.hpp"
@@ -172,6 +173,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testDeviceMidiReachesOnlyItsOwnTrack(); });
         magda::test::runWithCleanJuceState([this] { testRouteRemovalPanicsTheInput(); });
         magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
+        magda::test::runWithCleanJuceState([this] { testRouteChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
     }
 
@@ -708,10 +710,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         host::EngineFileReaders files;
         magda::engine::PrefetchThread reader(false);
 
-        // Registered before the publish, which is what an "all" route resolves
-        // against.
+        // The device list is what an "all" route resolves against, so a
+        // device a test plays has to be in one.
         host::LiveMidiSources sources;
-        const auto device = sources.sourceFor("test-device");
+        const juce::MidiDeviceInfo keyboard{"Test Device", "test-device"};
+        sources.registerAvailableDevices({keyboard});
+        const auto device = sources.sourceFor(keyboard.identifier);
 
         host::EngineRuntimeFactory factory;
         factory.setModel(tracks, *master);
@@ -795,7 +799,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         host::EngineFileReaders files;
         magda::engine::PrefetchThread reader(false);
         host::LiveMidiSources sources;
-        sources.sourceFor("test-device");
+        sources.registerAvailableDevices({juce::MidiDeviceInfo{"Test Device", "test-device"}});
 
         host::EngineRuntimeFactory factory;
         factory.setModel(trackManager.getTracks(), *master);
@@ -867,6 +871,54 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         expect(sources.resolveRoute(forkId) == sources.sourceFor(keystep.identifier),
                "Refreshed, the route resolves to the source its notes arrive under");
+
+        // The QWERTY keyboard is in no device list there is, so an "all" route
+        // holds it through every scan.
+        const auto qwerty = sources.registerVirtualDevice(magda::qwertyMidiDeviceId());
+        const auto connected = sources.deviceSources();
+        expect(std::ranges::find(connected, qwerty) != connected.end() && connected.size() == 2,
+               "An all route is the connected device and the virtual one");
+
+        sources.registerAvailableDevices({});
+        const auto unplugged = sources.deviceSources();
+
+        // What raises the panic: the source leaves the route table, and the
+        // note-off for whatever it was holding is never coming.
+        expect(unplugged.size() == 1 && unplugged.front() == qwerty,
+               "Unplugged, it leaves the all route and the keyboard stays");
+    }
+
+    void testRouteChangesAreAPlanChange() {
+        beginTest("What the compiler reads for a track's input is what a values publish watches");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
+        auto* track = trackManager.getTrack(trackId);
+        expect(track != nullptr, "The track exists");
+        if (track == nullptr)
+            return;
+
+        const auto compiledFrom = host::inputRoutingOf(trackManager.getTracks());
+
+        // A mixer move is what a values publish is for.
+        track->volume = 0.5f;
+        expect(host::inputRoutingOf(trackManager.getTracks()) == compiledFrom,
+               "A fader move is not a routing change");
+
+        // Each of these is an edge or an op the plan holds, so none of them can
+        // be carried by a values publish.
+        track->midiInputDevice = "track:2";
+        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom, "A MIDI route is");
+
+        track->midiInputDevice = "";
+        track->audioInputDevice = "Input 1";
+        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom,
+               "So is an audio input");
+
+        track->audioInputDevice = "";
+        track->inputMonitor = magda::InputMonitorMode::In;
+        expect(host::inputRoutingOf(trackManager.getTracks()) != compiledFrom,
+               "So is the monitor switch that decides whether either is read");
     }
 
     void testOnlyTrackMetersAreTapped() {

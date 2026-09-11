@@ -392,6 +392,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         livePlan_ = std::move(plan);
+        routing_ = inputRoutingOf(tracks);
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
@@ -405,6 +406,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || livePlan_ == nullptr || master == nullptr)
             return;
+
+        // An input route or a monitor switch arrives here, being a track
+        // property, and the route tables below cannot carry either: a
+        // "track:N" edge is compiled into the plan, and what a monitored
+        // audio input is at all is an op (#2579).
+        if (inputRoutingOf(tracks) != routing_) {
+            publishPlan();
+            return;
+        }
 
         engine::PlanValues values;
         report("values", resolveValues(*livePlan_, tracks, *master, values));
@@ -886,6 +896,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// values against it without compiling another.
     std::shared_ptr<const engine::RenderPlan> livePlan_;
 
+    /// The input routing that plan was compiled from. What a values publish
+    /// compares against to know it has to be a plan publish instead.
+    std::vector<InputRouting> routing_;
+
     double bpm_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
@@ -952,8 +966,8 @@ void EngineHost::pushMidi(const juce::String& deviceId, const juce::MidiMessage&
     impl_->queue_.push(impl_->sources_.sourceFor(deviceId), message);
 }
 
-void EngineHost::registerLiveMidiSource(const juce::String& deviceId) {
-    impl_->sources_.sourceFor(deviceId);
+void EngineHost::registerVirtualMidiSource(const juce::String& deviceId) {
+    impl_->sources_.registerVirtualDevice(deviceId);
 }
 
 void EngineHost::captureExternalPluginStates() {

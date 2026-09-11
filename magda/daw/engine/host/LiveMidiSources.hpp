@@ -3,6 +3,7 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 
 #include <map>
+#include <set>
 #include <vector>
 
 #include "core/TypeIds.hpp"
@@ -33,18 +34,26 @@ class LiveMidiSources {
     void registerAvailableDevices();
 
     /// The same against a list the caller already holds, which is the
-    /// snapshot every route then resolves against.
+    /// snapshot every route then resolves against. A device that has left it
+    /// leaves every "all" route too, which is what raises the panic for a note
+    /// it was holding.
     void registerAvailableDevices(juce::Array<juce::MidiDeviceInfo> available);
 
     /// The id @p deviceId pushes under, assigned on first use.
     int sourceFor(const juce::String& deviceId);
 
+    /// The id for a device the system's list will never hold -- the QWERTY
+    /// keyboard is one -- which stays in every "all" route for as long as this
+    /// lives, since no device list can say it is still there.
+    int registerVirtualDevice(const juce::String& deviceId);
+
     /// The id a track's own preview arrives under. Disjoint from every
     /// device's, so an audition on one track is not heard on another.
     int auditionSourceFor(TrackId trackId);
 
-    /// Every device id handed out so far, which is what an "all" route
-    /// resolves to. Never an audition id.
+    /// What an "all" route resolves to: the devices the last snapshot held,
+    /// plus the virtual ones. Never an audition id, and never a device that
+    /// has been unplugged since.
     std::vector<int> deviceSources() const;
 
     /**
@@ -61,6 +70,7 @@ class LiveMidiSources {
     juce::CriticalSection lock_;
     juce::Array<juce::MidiDeviceInfo> available_;
     std::map<juce::String, int> devices_;
+    std::set<int> virtual_;
     std::map<TrackId, int> auditions_;
     int next_ = 1;
 };
