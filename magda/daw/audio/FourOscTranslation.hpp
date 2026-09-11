@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+#include <memory>
 #include <vector>
 
 #include "../core/DeviceInfo.hpp"
@@ -27,6 +29,11 @@ struct FourOscGap {
 /** @brief A translated patch and everything Poly Synth has no place for. */
 struct FourOscTranslation {
     DeviceInfo device;
+
+    /// 4OSC's built-in effects, as MAGDA devices in one rack, in the order
+    /// 4OSC processes them. Null when the patch had none switched on.
+    std::unique_ptr<RackInfo> effects;
+
     std::vector<FourOscGap> gaps;
 };
 
@@ -41,10 +48,15 @@ bool isFourOscDevice(const DeviceInfo& device);
  * DeviceId, the same place in the chain, so links and automation still name
  * this device.
  *
+ * 4OSC's built-in effects become MAGDA devices in `effects`, so @p nextEffectId
+ * has to hand out ids the project is not already using. Passing nothing skips
+ * them, which is what a caller only asking what a patch would lose wants.
+ *
  * A control Poly Synth does not have is listed in `gaps` rather than
  * approximated. Unison is the loudest of those: a patch built on detuned
  * voices translates to a thinner sound and the caller has to say so.
  */
-FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc);
+FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
+                                    const std::function<DeviceId()>& nextEffectId = nullptr);
 
 }  // namespace magda::daw::audio

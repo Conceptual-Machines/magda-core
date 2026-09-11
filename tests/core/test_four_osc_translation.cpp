@@ -1,10 +1,12 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 
 #include "magda/daw/audio/FourOscMigration.hpp"
 #include "magda/daw/audio/FourOscTranslation.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
 
 /**
@@ -229,15 +231,6 @@ TEST_CASE("Unison is reported rather than translated into something thinner", "[
     CHECK(mentions(magda::daw::audio::translateFourOsc(patch).gaps, "Unison"));
 }
 
-TEST_CASE("The built-in effects are reported as devices to add", "[core][4osc]") {
-    const auto patch = FourOscPatch{}.property("reverbOn", 1).property("delayOn", 1).build();
-    const auto translated = magda::daw::audio::translateFourOsc(patch);
-
-    CHECK(mentions(translated.gaps, "Reverb"));
-    CHECK(mentions(translated.gaps, "Delay"));
-    CHECK_FALSE(mentions(translated.gaps, "Chorus"));
-}
-
 TEST_CASE("A patch using nothing Poly Synth lacks reports no gaps", "[core][4osc]") {
     const auto patch = FourOscPatch{}
                            .property("waveShape1", 3)
@@ -329,4 +322,74 @@ TEST_CASE("The backup sits beside the project and never overwrites", "[core][4os
 
 TEST_CASE("A project that was never saved has no backup to write", "[core][4osc]") {
     CHECK(magda::daw::audio::backupFileFor(juce::File{}) == juce::File{});
+}
+
+TEST_CASE("The built-in effects become a rack of MAGDA devices", "[core][4osc]") {
+    // 4OSC processes distortion, chorus, delay then reverb, and the rack has
+    // to keep that order: a reverb before a delay is a different sound.
+    const auto patch = FourOscPatch{}
+                           .property("distortionOn", 1)
+                           .property("chorusOn", 1)
+                           .property("delayOn", 1)
+                           .property("reverbOn", 1)
+                           .parameter("distortion", 0.5f)
+                           .parameter("chorusMix", 0.4f)
+                           .parameter("reverbSize", 0.8f)
+                           .build();
+
+    auto next = magda::DeviceId{100};
+    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+
+    REQUIRE(translated.effects != nullptr);
+    REQUIRE(translated.effects->chains.size() == 1);
+
+    const auto& elements = translated.effects->chains.front().elements;
+    REQUIRE(elements.size() == 4);
+    CHECK(magda::getDevice(elements[0]).name == "Clipper");
+    CHECK(magda::getDevice(elements[1]).name == "Chorus");
+    CHECK(magda::getDevice(elements[2]).name == "Delay");
+    CHECK(magda::getDevice(elements[3]).name == "Reverb");
+
+    // Each is a device of its own in the project, so none may share the
+    // synth's id or another effect's.
+    std::set<magda::DeviceId> ids{patch.id};
+    for (const auto& element : elements)
+        CHECK(ids.insert(magda::getDevice(element).id).second);
+}
+
+TEST_CASE("Only the effects that were switched on are built", "[core][4osc]") {
+    const auto patch = FourOscPatch{}.property("reverbOn", 1).build();
+
+    auto next = magda::DeviceId{100};
+    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+
+    REQUIRE(translated.effects != nullptr);
+    REQUIRE(translated.effects->chains.front().elements.size() == 1);
+    CHECK(magda::getDevice(translated.effects->chains.front().elements.front()).name == "Reverb");
+}
+
+TEST_CASE("A patch with no effects on builds no rack", "[core][4osc]") {
+    const auto patch = FourOscPatch{}.property("waveShape1", 3).build();
+
+    auto next = magda::DeviceId{100};
+    CHECK(magda::daw::audio::translateFourOsc(patch, [&next] { return next++; }).effects ==
+          nullptr);
+}
+
+TEST_CASE("The effects are no longer reported as losses", "[core][4osc]") {
+    // They were gaps until the rack carried them.
+    const auto patch = FourOscPatch{}.property("reverbOn", 1).property("delayOn", 1).build();
+
+    auto next = magda::DeviceId{100};
+    const auto translated = magda::daw::audio::translateFourOsc(patch, [&next] { return next++; });
+
+    CHECK_FALSE(mentions(translated.gaps, "Reverb"));
+    CHECK_FALSE(mentions(translated.gaps, "Delay"));
+}
+
+TEST_CASE("4OSC's master level becomes the synth's output gain", "[core][4osc]") {
+    const auto patch = FourOscPatch{}.parameter("masterLevel", -6.0f).build();
+
+    CHECK(slotValue(magda::daw::audio::translateFourOsc(patch).device,
+                    PolySynth::kOutputGainSlot) == Catch::Approx(-6.0f));
 }

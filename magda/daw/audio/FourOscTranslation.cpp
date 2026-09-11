@@ -6,7 +6,12 @@
 #include <tuple>
 
 #include "../core/DeviceState.hpp"
+#include "../core/RackInfo.hpp"
+#include "plugins/compiled/MagdaChorusCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaClipperCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaDelayCompiledPlugin.hpp"
 #include "plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "plugins/compiled/MagdaReverbCompiledPlugin.hpp"
 
 namespace magda::daw::audio {
 
@@ -262,14 +267,6 @@ void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::NamedValueSet
             break;
         }
 
-    for (const auto& [property, name] :
-         {std::pair{juce::String("distortionOn"), juce::String("Distortion")},
-          std::pair{juce::String("reverbOn"), juce::String("Reverb")},
-          std::pair{juce::String("delayOn"), juce::String("Delay")},
-          std::pair{juce::String("chorusOn"), juce::String("Chorus")}})
-        if (propertyOr(props, property, 0) != 0)
-            gaps.push_back({name, "dropped: add the device to the chain instead"});
-
     for (auto lfo = 1; lfo <= 2; ++lfo)
         if (const auto depth = parameterValue(fourOsc, "lfoDepth" + juce::String(lfo));
             depth.has_value() && *depth != 0.0f) {
@@ -285,16 +282,130 @@ void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::NamedValueSet
         }
 }
 
+/// A compiled device at its defaults, ready for the slots below to move.
+template <typename Device> DeviceInfo compiledDevice(DeviceId id) {
+    const Device metadata;
+
+    DeviceInfo device;
+    device.id = id;
+    device.name = metadata.deviceName();
+    device.pluginId = Device::xmlTypeName;
+    device.deviceType = DeviceType::Effect;
+    device.format = PluginFormat::Internal;
+    device.audioInputChannels = 2;
+    device.audioOutputChannels = 2;
+
+    for (auto index = 0; index < metadata.parameterCount(); ++index) {
+        auto info = metadata.parameterInfo(index);
+        info.currentValue = info.defaultValue;
+        device.parameters.push_back(std::move(info));
+    }
+
+    return device;
+}
+
+/// dB to a 0..1 gain, for the two 4OSC controls held in dB that reach a
+/// normalised slot.
+float gainFromDecibels(float decibels) {
+    return decibels <= -100.0f ? 0.0f : std::pow(10.0f, decibels / 20.0f);
+}
+
+/**
+ * @brief 4OSC's built-in effects as MAGDA devices, in one rack.
+ *
+ * Ordered as 4OSC processes them (FourOscPlugin.cpp): distortion, chorus,
+ * delay, reverb. Only the ones its `<fx>On` properties switched on.
+ *
+ * @p nextId hands out ids for the devices, which the caller owns: these are
+ * new devices in the project and cannot reuse the synth's.
+ */
+std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::NamedValueSet& props,
+                                       const std::function<DeviceId()>& nextId) {
+    ChainInfo chain;
+
+    const auto on = [&props](const juce::String& name) { return propertyOr(props, name, 0) != 0; };
+    const auto value = [&fourOsc](const juce::String& name, float fallback) {
+        return parameterValue(fourOsc, name).value_or(fallback);
+    };
+
+    if (on("distortionOn")) {
+        using Clipper = compiled::MagdaClipperCompiledPlugin;
+        auto device = compiledDevice<Clipper>(nextId());
+        // 4OSC multiplies by drive and clamps at 1/(2*drive), so its 0..1 is
+        // the whole range of the effect.
+        setSlot(device, Clipper::kDriveSlot,
+                clampToSlot(device, Clipper::kDriveSlot, value("distortion", 0.0f) * 24.0f));
+        chain.elements.push_back(ChainElement{std::move(device)});
+    }
+
+    if (on("chorusOn")) {
+        using Chorus = compiled::MagdaChorusCompiledPlugin;
+        auto device = compiledDevice<Chorus>(nextId());
+        setSlot(device, Chorus::kRateSlot,
+                clampToSlot(device, Chorus::kRateSlot, value("chorusSpeed", 1.0f)));
+        // 4OSC's depth is milliseconds of delay, up to 20; MAGDA's is a
+        // fraction of its own range.
+        setSlot(device, Chorus::kDepthSlot,
+                clampToSlot(device, Chorus::kDepthSlot, value("chorusDepth", 0.0f) / 20.0f));
+        setSlot(device, Chorus::kWidthSlot,
+                clampToSlot(device, Chorus::kWidthSlot, value("chorusWidth", 0.0f)));
+        setSlot(device, Chorus::kMixSlot,
+                clampToSlot(device, Chorus::kMixSlot, value("chorusMix", 0.5f)));
+        chain.elements.push_back(ChainElement{std::move(device)});
+    }
+
+    if (on("delayOn")) {
+        using Delay = compiled::MagdaDelayCompiledPlugin;
+        auto device = compiledDevice<Delay>(nextId());
+        setSlot(device, Delay::kFeedbackSlot,
+                clampToSlot(device, Delay::kFeedbackSlot,
+                            gainFromDecibels(value("delayFeedback", -100.0f))));
+        setSlot(device, Delay::kCrossSlot,
+                clampToSlot(device, Delay::kCrossSlot,
+                            gainFromDecibels(value("delayCrossfeed", -100.0f))));
+        setSlot(device, Delay::kMixSlot,
+                clampToSlot(device, Delay::kMixSlot, value("delayMix", 0.5f)));
+        chain.elements.push_back(ChainElement{std::move(device)});
+    }
+
+    if (on("reverbOn")) {
+        using Reverb = compiled::MagdaReverbCompiledPlugin;
+        auto device = compiledDevice<Reverb>(nextId());
+        // 4OSC holds all four as 0..1; MAGDA's decay, damping and width are
+        // percentages.
+        setSlot(device, Reverb::kDecaySlot,
+                clampToSlot(device, Reverb::kDecaySlot, value("reverbSize", 0.5f) * 100.0f));
+        setSlot(device, Reverb::kDampingSlot,
+                clampToSlot(device, Reverb::kDampingSlot, value("reverbDamping", 0.5f) * 100.0f));
+        setSlot(device, Reverb::kWidthSlot,
+                clampToSlot(device, Reverb::kWidthSlot, value("reverbWidth", 1.0f) * 100.0f));
+        setSlot(device, Reverb::kMixSlot,
+                clampToSlot(device, Reverb::kMixSlot, value("reverbMix", 0.3f)));
+        chain.elements.push_back(ChainElement{std::move(device)});
+    }
+
+    if (chain.elements.empty())
+        return nullptr;
+
+    auto rack = std::make_unique<RackInfo>();
+    rack->name = "4OSC FX";
+    chain.id = ChainId{1};
+    rack->chains.push_back(std::move(chain));
+
+    return rack;
+}
+
 }  // namespace
 
 bool isFourOscDevice(const DeviceInfo& device) {
     return device.pluginId.equalsIgnoreCase("4osc");
 }
 
-FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc) {
+FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
+                                    const std::function<DeviceId()>& nextEffectId) {
     const auto props = savedProperties(fourOsc);
 
-    FourOscTranslation translated{.device = polySynthDevice(fourOsc), .gaps = {}};
+    FourOscTranslation translated{.device = polySynthDevice(fourOsc)};
 
     translateOscillators(fourOsc, props, translated.device, translated.gaps);
     translateEnvelopes(fourOsc, translated.device);
@@ -308,6 +419,14 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc) {
             static_cast<float>(polyVoiceModeFor(propertyOr(props, "voiceMode", 2))));
 
     reportUnisonAndEffects(fourOsc, props, translated.gaps);
+
+    if (nextEffectId)
+        translated.effects = buildEffects(fourOsc, props, nextEffectId);
+
+    // 4OSC's master level is the synth's own output, not an effect.
+    if (const auto master = parameterValue(fourOsc, "masterLevel"))
+        setSlot(translated.device, PolySynth::kOutputGainSlot,
+                clampToSlot(translated.device, PolySynth::kOutputGainSlot, *master));
 
     return translated;
 }
