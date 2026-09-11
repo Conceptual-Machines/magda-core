@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <optional>
 #include <ranges>
 #include <set>
 #include <span>
@@ -126,10 +127,20 @@ DeviceInfo* modelDeviceAt(engine::DeviceKey key) {
  * path's own steps, so the two cannot come to disagree about which section a
  * device is in.
  */
-std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
-    auto& trackManager = TrackManager::getInstance();
+std::vector<engine::DeviceKey> keysOfDevices(const std::set<const DeviceInfo*>& wanted) {
+    std::vector<engine::DeviceKey> found;
 
-    const auto* target = trackManager.getDeviceInChainByPath(devicePath);
+    TrackManager::getInstance().forEachTrackIncludingMaster([&found, &wanted](TrackInfo& track) {
+        for (const auto& [key, device] : adapter::devicesIn(track))
+            if (wanted.contains(device))
+                found.push_back(key);
+    });
+
+    return found;
+}
+
+std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
+    const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
     if (target == nullptr)
         return {};
 
@@ -141,15 +152,22 @@ std::vector<engine::DeviceKey> keysOfDeviceAt(const ChainNodePath& devicePath) {
                                           subtree.insert(&device);
                                       });
 
-    std::vector<engine::DeviceKey> found;
+    return keysOfDevices(subtree);
+}
 
-    trackManager.forEachTrackIncludingMaster([&found, &subtree](TrackInfo& track) {
-        for (const auto& [key, device] : adapter::devicesIn(track))
-            if (subtree.contains(device))
-                found.push_back(key);
-    });
+/// The one device @p devicePath names, without the pads a capture also takes:
+/// a pad's patch rides along in the grid's state, but its editor is its own
+/// and is not what a click on the grid asked for (#2580).
+std::optional<engine::DeviceKey> keyOfDeviceAt(const ChainNodePath& devicePath) {
+    const auto* target = TrackManager::getInstance().getDeviceInChainByPath(devicePath);
+    if (target == nullptr)
+        return std::nullopt;
 
-    return found;
+    const auto keys = keysOfDevices({target});
+    if (keys.empty())
+        return std::nullopt;
+
+    return keys.front();
 }
 
 /// The external plugin behind whatever the store holds for a key, reached
@@ -787,6 +805,41 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         control_->drain();
     }
 
+    /**
+     * @brief The editor of the device at @p devicePath, and what it is now (#2580).
+     *
+     * Synchronous, because every caller is a click that has to know what it
+     * did: the slot's light reads the answer, and the drain is what makes the
+     * plane's answer arrive before this returns rather than on the next
+     * message. What it drains is the message thread's own queue, so the
+     * window is opened on the thread a window may be opened on.
+     */
+    bool deviceEditor(const ChainNodePath& devicePath, adapter::EditorAction action) {
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value() || !factory_.isExternalKey(*key))
+            return false;
+
+        auto showing = false;
+        const auto asked = plane_.editorWindow(*key, action, [&showing](adapter::EditorOutcome it) {
+            // Named rather than swallowed: a person clicking a plugin's slot
+            // and getting nothing has no other way to find out why.
+            if (!it.ok()) {
+                juce::Logger::writeToLog("[engine] editor: " + it.failure());
+                return;
+            }
+
+            showing = it.isShowing();
+        });
+
+        if (!asked)
+            return false;
+
+        // The completion above writes a local, so it must have run by the time
+        // this returns. drain() is what says it has.
+        control_->drain();
+        return showing;
+    }
+
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
         if (session_ == nullptr)
             return;
@@ -976,6 +1029,22 @@ void EngineHost::captureExternalPluginStates() {
 
 void EngineHost::captureExternalPluginStateAt(const ChainNodePath& devicePath) {
     impl_->captureExternalPluginStateAt(devicePath);
+}
+
+bool EngineHost::showDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Show);
+}
+
+bool EngineHost::hideDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Hide);
+}
+
+bool EngineHost::toggleDeviceEditor(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Toggle);
+}
+
+bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
+    return impl_->deviceEditor(devicePath, adapter::EditorAction::Query);
 }
 
 void EngineHost::play() {

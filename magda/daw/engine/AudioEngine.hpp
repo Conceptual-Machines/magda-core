@@ -286,6 +286,18 @@ class AudioEngine : public AudioEngineListener {
         otherwise be the state it was placed with. */
     virtual void capturePluginStateAt(const ChainNodePath& devicePath) = 0;
 
+    // ===== The plugins' own windows (#2580) =====
+    //
+    // A plugin's editor belongs to the instance that renders, so which engine
+    // is rendering decides whose window opens -- the same split as the state
+    // above. Message thread, and each answers whether the window is showing
+    // afterwards, which is what the slot draws.
+
+    virtual bool showDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool hideDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool toggleDeviceEditor(const ChainNodePath& devicePath) = 0;
+    virtual bool isDeviceEditorOpen(const ChainNodePath& devicePath) const = 0;
+
     // ===== MIDI Management =====
     virtual MidiBridge* getMidiBridge() = 0;
     virtual const MidiBridge* getMidiBridge() const = 0;

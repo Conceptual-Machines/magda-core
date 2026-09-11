@@ -294,9 +294,14 @@ class TracktionEngineWrapper : public AudioEngine,
     }
 
     /// What this engine renders through are the bridge's own synced plugins,
-    /// so a capture is a flush of those (#2581).
+    /// so a capture is a flush of those (#2581), and the window that opens is
+    /// onto one of them (#2580).
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
+    bool showDeviceEditor(const ChainNodePath& devicePath) override;
+    bool hideDeviceEditor(const ChainNodePath& devicePath) override;
+    bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
+    bool isDeviceEditorOpen(const ChainNodePath& devicePath) const override;
 
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)

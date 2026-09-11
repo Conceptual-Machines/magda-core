@@ -59,11 +59,9 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         uiButton_->onClick = [this]() {
             if (engine_ == nullptr)
                 return;
-            if (auto* bridge = engine_->getAudioBridge()) {
-                const bool isOpen = bridge->togglePluginWindow(devicePath_);
-                uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-                uiButton_->setActive(isOpen);
-            }
+            const bool isOpen = engine_->toggleDeviceEditor(devicePath_);
+            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
+            uiButton_->setActive(isOpen);
         };
         addAndMakeVisible(*uiButton_);
     }

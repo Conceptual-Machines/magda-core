@@ -85,6 +85,52 @@ class CaptureOutcome {
 };
 
 /**
+ * @brief What an editor request came back with: its window, or why not (#2580).
+ *
+ * "Showing" rather than "shown", because the answer is the same question the
+ * caller would ask next: a toggle reports what the slot's light should read,
+ * and a plugin with no editor of its own reports not showing rather than a
+ * failure -- there is nothing wrong, there is just nothing to open.
+ */
+class EditorOutcome {
+  public:
+    /// Whether the plugin's window is on screen now.
+    static EditorOutcome showing(bool isShowing);
+
+    /// Why there is no answer: the device, its runtime, or the plane has gone.
+    static EditorOutcome failed(juce::String reason);
+
+    bool ok() const {
+        return failure_.isEmpty();
+    }
+
+    bool isShowing() const {
+        return showing_;
+    }
+
+    /// Why nothing was asked. Empty when ok().
+    const juce::String& failure() const {
+        return failure_;
+    }
+
+  private:
+    EditorOutcome() = default;
+
+    bool showing_ = false;
+    juce::String failure_;
+};
+
+/// What to do with a device's editor window (#2580).
+enum class EditorAction {
+    Show,
+    Hide,
+    Toggle,
+
+    /// Ask without touching it, which is what a slot redrawing wants.
+    Query,
+};
+
+/**
  * @brief Where a host asks a device for anything that is not a block.
  *
  * One implementation runs the plugin in this process; another asks a process
@@ -127,6 +173,23 @@ class DeviceControlPlane {
      * there when it runs, or held weakly and checked.
      */
     virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
+
+    /// What an editor request is answered with, on this plane's executor.
+    using EditorCallback = std::function<void(EditorOutcome)>;
+
+    /**
+     * @brief Show, hide, toggle or ask after the editor of the device at @p key.
+     *
+     * The same contract @ref captureState has, for the same reasons: asked
+     * from any thread, answered on the executor, and serialised against every
+     * other operation on that plugin -- an editor being built is one more
+     * thing that must not overlap a state read.
+     *
+     * The executor is the message thread's, which is where a window may be
+     * opened at all.
+     */
+    virtual bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                              EditorCallback completed) = 0;
 
     /// Where this plane's work runs, for a host that has something else to
     /// put on the same thread.
@@ -185,6 +248,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                             std::weak_ptr<const DeviceRegistry> devices);
 
     bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
+                      EditorCallback completed) override;
 
   private:
     std::weak_ptr<const DeviceRegistry> devices_;

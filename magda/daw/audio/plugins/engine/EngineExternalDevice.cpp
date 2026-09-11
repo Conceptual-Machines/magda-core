@@ -1,8 +1,11 @@
 #include "plugins/engine/EngineExternalDevice.hpp"
 
+#include <juce_gui_basics/juce_gui_basics.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <functional>
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
@@ -78,6 +81,46 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
  * block that produced the answer, and some do. The worst that can do here is
  * report a stale position, which is what the fork does too.
  */
+/**
+ * @brief The plugin's editor in a window of its own (#2580).
+ *
+ * A DocumentWindow rather than the fork's `te::PluginWindowState`, which is
+ * built around a te::Plugin this side does not have. What it owes the device
+ * is the close button: JUCE deletes nothing itself, so the window tells its
+ * owner and the owner destroys it, which is also what makes "is it open" a
+ * question about a pointer rather than about a flag somebody has to maintain.
+ */
+class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
+  public:
+    EditorWindow(juce::AudioPluginInstance& plugin, std::function<void()> closed)
+        : juce::DocumentWindow(plugin.getName(), juce::Colours::black,
+                               juce::DocumentWindow::closeButton),
+          closed_(std::move(closed)) {
+        setUsingNativeTitleBar(true);
+        setContentOwned(plugin.createEditorIfNeeded(), true);
+        setResizable(plugin.getActiveEditor() != nullptr && plugin.getActiveEditor()->isResizable(),
+                     false);
+        centreWithSize(getWidth(), getHeight());
+        setVisible(true);
+    }
+
+    /// The editor goes before the window it sits in, and while the plugin is
+    /// still there to be told it has gone.
+    ~EditorWindow() override {
+        clearContentComponent();
+    }
+
+    void closeButtonPressed() override {
+        // Not delete-this: the owner holds this by unique_ptr, and a window
+        // that freed itself would leave it dangling until the next question.
+        if (closed_)
+            closed_();
+    }
+
+  private:
+    std::function<void()> closed_;
+};
+
 class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
   public:
     void setBlock(const magda::engine::BlockInfo& block, double sampleRate) {
@@ -212,6 +255,13 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
+    // Before anything else: the editor is the plugin's own component, and it
+    // has to go while the plugin is still there to take it back (#2580). A
+    // window open here means this device is being destroyed on the thread its
+    // window was opened from, which is the message thread or nothing.
+    jassert(editor_ == nullptr || juce::MessageManager::existsAndIsCurrentThread());
+    editor_.reset();
+
     // The playhead outlives nothing: the instance is told to forget it before
     // either is destroyed, because JUCE leaves the pointer where it was and a
     // plugin asking after the fact would read freed memory. The fork does the
@@ -612,6 +662,27 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
 
     if (block.midiOut != nullptr)
         writeMidiOut(*block.midiOut, numSamples);
+}
+
+bool EngineExternalDevice::showEditor() {
+    if (editor_ != nullptr) {
+        editor_->toFront(true);
+        return true;
+    }
+
+    if (!instance_->hasEditor())
+        return false;
+
+    editor_ = std::make_unique<EditorWindow>(*instance_, [this] { hideEditor(); });
+    return true;
+}
+
+void EngineExternalDevice::hideEditor() {
+    editor_.reset();
+}
+
+bool EngineExternalDevice::isEditorOpen() const {
+    return editor_ != nullptr;
 }
 
 std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState() {

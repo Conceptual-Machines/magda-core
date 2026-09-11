@@ -247,6 +247,22 @@ class ProjectBoundaryResetEngine : public AudioEngine {
 
     void capturePluginStateAt(const ChainNodePath&) override {}
 
+    bool showDeviceEditor(const ChainNodePath&) override {
+        return false;
+    }
+
+    bool hideDeviceEditor(const ChainNodePath&) override {
+        return false;
+    }
+
+    bool toggleDeviceEditor(const ChainNodePath&) override {
+        return false;
+    }
+
+    bool isDeviceEditorOpen(const ChainNodePath&) const override {
+        return false;
+    }
+
     MidiBridge* getMidiBridge() override {
         return nullptr;
     }

@@ -823,4 +823,32 @@ void TracktionEngineWrapper::capturePluginStateAt(const ChainNodePath& devicePat
         audioBridge_->getPluginManager().capturePluginState(devicePath);
 }
 
+bool TracktionEngineWrapper::showDeviceEditor(const ChainNodePath& devicePath) {
+    if (audioBridge_ == nullptr)
+        return false;
+
+    audioBridge_->showPluginWindow(devicePath);
+    return audioBridge_->isPluginWindowOpen(devicePath);
+}
+
+bool TracktionEngineWrapper::hideDeviceEditor(const ChainNodePath& devicePath) {
+    if (audioBridge_ == nullptr)
+        return false;
+
+    // The bridge has no hide of its own: a toggle on a window that is open is
+    // what closes it, and a window that is not open needs nothing.
+    if (audioBridge_->isPluginWindowOpen(devicePath))
+        audioBridge_->togglePluginWindow(devicePath);
+
+    return audioBridge_->isPluginWindowOpen(devicePath);
+}
+
+bool TracktionEngineWrapper::toggleDeviceEditor(const ChainNodePath& devicePath) {
+    return audioBridge_ != nullptr && audioBridge_->togglePluginWindow(devicePath);
+}
+
+bool TracktionEngineWrapper::isDeviceEditorOpen(const ChainNodePath& devicePath) const {
+    return audioBridge_ != nullptr && audioBridge_->isPluginWindowOpen(devicePath);
+}
+
 }  // namespace magda
