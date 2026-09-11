@@ -200,6 +200,82 @@ std::optional<Doc> decode(const juce::String& text) {
     return doc;
 }
 
+namespace {
+
+/// The engine's own, on a v1 tree: the object id it stamps on every node, and
+/// the assignments MAGDA rebuilds from its own modifier list after a restore.
+void dropEngineOwned(juce::ValueTree tree) {
+    static const juce::Identifier kObjectId("id");
+    static const juce::Identifier kModifierAssignments("MODIFIERASSIGNMENTS");
+
+    tree.removeProperty(kObjectId, nullptr);
+
+    for (auto index = tree.getNumChildren() - 1; index >= 0; --index) {
+        auto child = tree.getChild(index);
+        if (child.hasType(kModifierAssignments))
+            tree.removeChild(index, nullptr);
+        else
+            dropEngineOwned(child);
+    }
+}
+
+}  // namespace
+
+namespace {
+
+Node nodeFrom(const juce::ValueTree& tree) {
+    Node node;
+    node.type = tree.getType().toString();
+
+    for (int i = 0; i < tree.getNumProperties(); ++i) {
+        const auto name = tree.getPropertyName(i);
+        node.props.set(name, tree.getProperty(name));
+    }
+
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+        node.children.push_back(nodeFrom(tree.getChild(i)));
+
+    return node;
+}
+
+}  // namespace
+
+std::optional<Doc> decodeSavedState(const juce::String& text) {
+    if (!looksLikeLegacyEngineState(text))
+        return decode(text);
+
+    const auto tree = legacyEngineStateTree(text);
+    if (!tree.isValid())
+        return std::nullopt;
+
+    static const juce::Identifier kType("type");
+
+    Doc doc;
+    doc.version = 1;
+    doc.deviceType = tree.getProperty(kType).toString();
+    doc.root = nodeFrom(tree);
+    // The root element name is the engine's, not the device's, which is what
+    // v2 records in deviceType.
+    doc.root.type = {};
+    return doc;
+}
+
+juce::ValueTree legacyEngineStateTree(const juce::String& text) {
+    if (!looksLikeLegacyEngineState(text))
+        return {};
+
+    const auto xml = juce::parseXML(text);
+    if (xml == nullptr)
+        return {};
+
+    auto tree = juce::ValueTree::fromXml(*xml);
+    if (!tree.isValid())
+        return {};
+
+    dropEngineOwned(tree);
+    return tree;
+}
+
 bool looksLikeLegacyEngineState(const juce::String& text) {
     return text.trimStart().startsWithChar('<');
 }

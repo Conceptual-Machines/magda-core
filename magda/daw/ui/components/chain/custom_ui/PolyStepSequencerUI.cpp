@@ -1233,14 +1233,19 @@ void PolyStepSequencerUI::updateFromParameters(const std::vector<magda::Paramete
 }
 
 void PolyStepSequencerUI::setPattern(const step_pattern::PolyPattern& pattern) {
-    if (pattern == pattern_)
-        return;
+    // See StepSequencerUI::setPattern: the controls are written whether or not
+    // the pattern moved, and only the redraw is skipped.
+    const bool changed = !(pattern == pattern_);
 
     pattern_ = pattern;
     const int steps = pattern_.playingLength();
     stepsSlider_.setValue(static_cast<double>(steps), juce::dontSendNotification);
     rampCurveDisplay_.setNumTicks(steps);
     cyclesSlider_.setRange(1.0, static_cast<double>(steps), 1.0);
+
+    if (!changed)
+        return;
+
     pushViewContext();
     patternView_->patternChanged();
     repaint();

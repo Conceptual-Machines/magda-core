@@ -833,6 +833,14 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
     if (arpeggiatorUI_ &&
         device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
         arpeggiatorUI_->updateFromParameters(device.parameters);
+    refreshSequencerState(device);
+    if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
+        impulseResponseUI_->updateFromParameters(device.parameters);
+    if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
+        fourOscUI_->updateFromParameters(device.parameters);
+}
+
+void DeviceCustomUIManager::refreshSequencerState(const magda::DeviceInfo& device) {
     if (stepSequencerUI_ &&
         device.pluginId.equalsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName)) {
         stepSequencerUI_->setPattern(magda::step_pattern::monoPatternOf(device.pluginState));
@@ -843,10 +851,6 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
         polyStepSequencerUI_->setPattern(magda::step_pattern::polyPatternOf(device.pluginState));
         polyStepSequencerUI_->updateFromParameters(device.parameters);
     }
-    if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
-        impulseResponseUI_->updateFromParameters(device.parameters);
-    if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))
-        fourOscUI_->updateFromParameters(device.parameters);
 }
 
 // =============================================================================
@@ -2363,6 +2367,10 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
 // =============================================================================
 
 void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
+    // Native-engine faceplates have no Tracktion plugin to poll. Populate the
+    // saved pattern on creation/full updates, not only after a parameter edit.
+    refreshSequencerState(device);
+
     if (deviceUiContext_ != nullptr) {
         if (auto* controller =
                 dynamic_cast<CallbackDeviceParameterController*>(deviceUiContext_->parameters())) {
