@@ -349,18 +349,6 @@ class Rig {
         std::this_thread::sleep_for(how_long);
     }
 
-    /// Wait until @p recorder has taken something, for a case about what a
-    /// take gained across an edit: the callbacks are a thread, and a loaded
-    /// machine can let the edit land before any of them finished a block.
-    static bool waitUntilCapturing(const TakeRecorder& recorder) {
-        for (auto waited = 0; waited < 2000; ++waited) {
-            if (recorder.capturedSamples() > 0)
-                return true;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        return false;
-    }
-
     void stopCallbacks() {
         // Parking first, always: a callback stopped inside the device is a
         // callback that never returns to see the flag, and a case that failed
@@ -802,12 +790,13 @@ TEST_CASE("A callback inside the window between the plan and the takes it ended"
     auto& continuing = rig.startTakeOn(kOther);
     auto& parking = rig.parking();
 
+    // One callback on this thread, before the callbacks thread exists: both
+    // takes then have something in them by construction. A loaded machine can
+    // otherwise let the edit land before the first background block, and "the
+    // ended take gained nothing" is measured from a take that never had
+    // anything.
+    rig.run(kBlockSize);
     rig.runInBackground(true);
-
-    // Both takes are rolling before the edit, or "the ended one gained
-    // nothing" is measured from a take that never had anything.
-    REQUIRE(Rig::waitUntilCapturing(ended));
-    REQUIRE(Rig::waitUntilCapturing(continuing));
 
     // Read from inside the publish, with a callback parked: the plan is live
     // and the recording set is still the one from before the edit, which is
