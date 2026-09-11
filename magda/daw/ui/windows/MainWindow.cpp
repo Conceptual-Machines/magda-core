@@ -14,6 +14,7 @@
 #include "../dialogs/AudioSettingsDialog.hpp"
 #include "../dialogs/ControllersDialog.hpp"
 #include "../dialogs/ExportAudioDialog.hpp"
+#include "../dialogs/FourOscConversionPrompt.hpp"
 #include "../dialogs/PreferencesDialog.hpp"
 #include "../dialogs/TrackManagerDialog.hpp"
 #include "../layout/LayoutConfig.hpp"
@@ -518,6 +519,7 @@ void MainWindow::updateWindowTitle() {
 
 void MainWindow::projectOpened(const ProjectInfo&) {
     updateWindowTitle();
+    daw::ui::offerFourOscConversion();
 }
 
 void MainWindow::projectSaved(const ProjectInfo&) {

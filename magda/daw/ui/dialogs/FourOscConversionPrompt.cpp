@@ -1,0 +1,88 @@
+#include "FourOscConversionPrompt.hpp"
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include <memory>
+
+#include "audio/FourOscMigration.hpp"
+#include "core/Config.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngineChoice.hpp"
+#include "project/ProjectManager.hpp"
+
+namespace magda::daw::ui {
+
+namespace {
+
+namespace audio = magda::daw::audio;
+
+/// The alert and the tickbox it carries. AlertWindow does not own a custom
+/// component, so the two are held together and read in the callback.
+struct Prompt {
+    juce::AlertWindow alert;
+    juce::ToggleButton dontAskAgain{"Don't ask again"};
+
+    Prompt(const juce::String& title, const juce::String& message)
+        : alert(title, message, juce::MessageBoxIconType::QuestionIcon) {}
+};
+
+void writeBackup() {
+    const auto project = ProjectManager::getInstance().getCurrentProjectFile();
+    const auto backup = audio::backupFileFor(project);
+
+    if (project.existsAsFile() && backup != juce::File{})
+        project.copyFileTo(backup);
+}
+
+void convertAndSave() {
+    // Before the conversion, so the copy is the project as it was opened.
+    writeBackup();
+
+    if (audio::convertFourOscDevices(TrackManager::getInstance()) > 0)
+        ProjectManager::getInstance().saveProject();
+}
+
+}  // namespace
+
+void offerFourOscConversion() {
+    if (chosenAudioEngine() != AudioEngineChoice::Magda)
+        return;
+
+    if (Config::getInstance().getSkipFourOscConversionPrompt())
+        return;
+
+    auto& tracks = TrackManager::getInstance();
+    const auto* master = tracks.getTrack(MASTER_TRACK_ID);
+    if (master == nullptr)
+        return;
+
+    const auto candidates = audio::findFourOscDevices(tracks.getTracks(), *master);
+    if (candidates.empty())
+        return;
+
+    auto prompt = std::make_shared<Prompt>("Convert 4OSC?", audio::describeConversion(candidates));
+
+    prompt->dontAskAgain.setSize(200, 24);
+    prompt->alert.addCustomComponent(&prompt->dontAskAgain);
+    prompt->alert.addButton("Convert", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    prompt->alert.addButton("Leave as it is", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+
+    prompt->alert.enterModalState(true, juce::ModalCallbackFunction::create([prompt](int result) {
+                                      // Remembered whichever button was pressed: somebody who ticks
+                                      // it and converts this project does not want asking about the
+                                      // next.
+                                      if (prompt->dontAskAgain.getToggleState())
+                                          Config::getInstance().setSkipFourOscConversionPrompt(
+                                              true);
+
+                                      if (result != 1)
+                                          return;
+
+                                      // Off the modal callback, so the alert is gone before a save
+                                      // dialog or an error of its own can appear behind it.
+                                      juce::MessageManager::callAsync([] { convertAndSave(); });
+                                  }),
+                                  false);
+}
+
+}  // namespace magda::daw::ui

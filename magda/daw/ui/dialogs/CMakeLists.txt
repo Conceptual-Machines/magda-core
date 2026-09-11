@@ -1,5 +1,6 @@
 target_sources(magda_daw_app PRIVATE
     ControllersDialog.cpp
+    FourOscConversionPrompt.cpp
     ConnectionsDialog.cpp
     AISettingsDialog.cpp
     AudioSettingsDialog.cpp

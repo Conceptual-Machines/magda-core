@@ -64,6 +64,7 @@
 #include "custom_ui/ToneGeneratorUI.hpp"
 #include "drum_grid/DrumGridUI.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "media_db/ClapAudioEncoder.hpp"
 #include "media_db/ClapTextEncoder.hpp"
 #include "media_db/MediaDbContext.hpp"
@@ -1081,6 +1082,12 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
 bool DeviceCustomUIManager::createFourOscUI(const magda::DeviceInfo& device,
                                             juce::Component& parent, const Callbacks& callbacks) {
     if (!device.pluginId.containsIgnoreCase("4osc"))
+        return false;
+
+    // Every control here writes through a te::FourOscPlugin, which the MAGDA
+    // engine never builds. The slot shows the device and nothing to turn
+    // (#2437).
+    if (chosenAudioEngine() == AudioEngineChoice::Magda)
         return false;
 
     fourOscUI_ = std::make_unique<FourOscUI>();

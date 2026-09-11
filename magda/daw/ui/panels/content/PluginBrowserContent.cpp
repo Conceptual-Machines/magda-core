@@ -23,6 +23,7 @@
 #include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "audio/plugins/StepSequencerPlugin.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
+#include "audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/DeviceInfo.hpp"
@@ -31,6 +32,7 @@
 #include "core/PluginPreferences.hpp"
 #include "core/TrackManager.hpp"
 #include "engine/AudioEngine.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "engine/PluginMetadataStore.hpp"
 
 namespace magda::daw::ui {
@@ -560,8 +562,12 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Native + TE internal devices: the registry is the single source of truth.
     // A device appears here by setting showInBrowser on its InternalPluginSpec -
     // no separate hand-maintained list to keep in sync.
-    const auto listedInBrowser = [](const audio::InternalPluginSpec* spec) {
-        return spec->showInBrowser;
+    // Under the MAGDA engine a device with no native factory cannot be built
+    // at all, so listing it would offer something that arrives silent (#2437).
+    const auto runnable = chosenAudioEngine() != AudioEngineChoice::Magda;
+    const auto listedInBrowser = [runnable](const audio::InternalPluginSpec* spec) {
+        return spec->showInBrowser &&
+               (runnable || audio::engine_adapter::canCreateEngineDevice(spec->pluginId));
     };
     const auto asBrowserEntry = [](const audio::InternalPluginSpec* spec) {
         return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
