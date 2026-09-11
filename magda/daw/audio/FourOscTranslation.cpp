@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <optional>
 #include <tuple>
 
@@ -29,12 +30,62 @@ constexpr int kPolySaw = 1;
 constexpr int kPolySquare = 2;
 constexpr int kPolyTriangle = 3;
 
-/// The value @p name holds, or nothing. 4OSC's parameters are addressed by the
-/// id TE gave them ("tune1", "filterFreq"), which is what a project saves.
-std::optional<float> parameterValue(const DeviceInfo& device, const juce::String& name) {
-    for (const auto& parameter : device.parameters)
-        if (parameter.name.equalsIgnoreCase(name))
-            return parameter.currentValue;
+/// 4OSC's parameters in the order it declares them, which is the order a
+/// project's paramIndex counts in (tests/device_param_schema.txt). The names
+/// a project saves are display names ("Tune 1"), so the id cannot be matched
+/// against them and the index is what addresses a parameter.
+constexpr const char* kFourOscParameterIds[] = {
+    "tune1",          "fineTune1",   "level1",
+    "pulseWidth1",    "detune1",     "spread1",
+    "pan1",           "tune2",       "fineTune2",
+    "level2",         "pulseWidth2", "detune2",
+    "spread2",        "pan2",        "tune3",
+    "fineTune3",      "level3",      "pulseWidth3",
+    "detune3",        "spread3",     "pan3",
+    "tune4",          "fineTune4",   "level4",
+    "pulseWidth4",    "detune4",     "spread4",
+    "pan4",           "lfoRate1",    "lfoDepth1",
+    "lfoRate2",       "lfoDepth2",   "modAttack1",
+    "modDecay1",      "modSustain1", "modRelease1",
+    "modAttack2",     "modDecay2",   "modSustain2",
+    "modRelease2",    "ampAttack",   "ampDecay",
+    "ampSustain",     "ampRelease",  "ampVelocity",
+    "filterAttack",   "filterDecay", "filterSustain",
+    "filterRelease",  "filterFreq",  "filterResonance",
+    "filterAmount",   "filterKey",   "filterVelocity",
+    "distortion",     "reverbSize",  "reverbDamping",
+    "reverbWidth",    "reverbMix",   "delayFeedback",
+    "delayCrossfeed", "delayMix",    "chorusSpeed",
+    "chorusDepth",    "chorusWidth", "chorusMix",
+    "legato",         "masterLevel",
+};
+
+/// Where @p id sits in the list above, or -1.
+int fourOscParameterIndex(const juce::String& id) {
+    for (auto index = 0; index < static_cast<int>(std::size(kFourOscParameterIds)); ++index)
+        if (id == kFourOscParameterIds[index])
+            return index;
+
+    return -1;
+}
+
+/**
+ * @brief The value 4OSC's @p id holds, or nothing.
+ *
+ * The model first, addressed by index. A legacy project also writes the
+ * non-default values into its plugin XML, and that is the fallback: a project
+ * saved before the model became the authority for parameters (#2317) can have
+ * the value in only one of the two.
+ */
+std::optional<float> parameterValue(const DeviceInfo& device, const juce::ValueTree& props,
+                                    const juce::String& id) {
+    if (const auto index = fourOscParameterIndex(id); index >= 0)
+        for (const auto& parameter : device.parameters)
+            if (parameter.paramIndex == index)
+                return parameter.currentValue;
+
+    if (const auto saved = props.getProperty(juce::Identifier(id)); !saved.isVoid())
+        return static_cast<float>(saved);
 
     return std::nullopt;
 }
@@ -161,8 +212,14 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
     for (auto osc = 1; osc <= PolySynth::kNumOscillators; ++osc) {
         const auto number = juce::String(osc);
         const auto base = PolySynth::kOscBaseSlot + (osc - 1) * PolySynth::kOscSlotCount;
-        const auto shape = static_cast<FourOscWave>(
-            propertyOr(props, "waveShape" + number, static_cast<int>(FourOscWave::none)));
+        // TE writes only what differs from a property's default, so a patch
+        // left on 4OSC's own defaults has no waveShape at all. Osc 1 defaults
+        // to sine and the rest to none (FourOscPlugin.cpp): defaulting all
+        // four to none silenced every such patch.
+        const auto fallback =
+            osc == 1 ? static_cast<int>(FourOscWave::sine) : static_cast<int>(FourOscWave::none);
+        const auto shape =
+            static_cast<FourOscWave>(propertyOr(props, "waveShape" + number, fallback));
 
         const auto wave = polyWaveFor(shape);
         setSlot(poly, PolySynth::kOscEnableBaseSlot + (osc - 1), wave.has_value() ? 1.0f : 0.0f);
@@ -179,15 +236,15 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
         if (shape == FourOscWave::sawDown)
             gaps.push_back({"Osc " + number + " saw down", "translated as saw up"});
 
-        if (const auto tune = parameterValue(fourOsc, "tune" + number))
+        if (const auto tune = parameterValue(fourOsc, props, "tune" + number))
             setSlot(poly, base + 2, clampToSlot(poly, base + 2, *tune));
 
-        if (const auto fine = parameterValue(fourOsc, "fineTune" + number))
+        if (const auto fine = parameterValue(fourOsc, props, "fineTune" + number))
             setSlot(poly, base + 3, clampToSlot(poly, base + 3, *fine));
 
         // Both are already dB. 4OSC reaches -100 where Poly Synth stops at
         // -60, and both are silence.
-        if (const auto level = parameterValue(fourOsc, "level" + number))
+        if (const auto level = parameterValue(fourOsc, props, "level" + number))
             setSlot(poly, base + 1, clampToSlot(poly, base + 1, *level));
 
         // Addressed by 4OSC's own parameter ids, which are what a project
@@ -197,21 +254,21 @@ void translateOscillators(const DeviceInfo& fourOsc, const juce::ValueTree& prop
               std::tuple{"detune", "Detune", "no unison"},
               std::tuple{"spread", "Spread", "no unison"},
               std::tuple{"pan", "Pan", "no per-oscillator pan"}})
-            if (const auto value = parameterValue(fourOsc, juce::String(id) + number);
+            if (const auto value = parameterValue(fourOsc, props, juce::String(id) + number);
                 value.has_value() && *value != 0.0f)
                 gaps.push_back({"Osc " + number + " " + label, juce::String("dropped: ") + reason});
     }
 }
 
-void translateEnvelopes(const DeviceInfo& fourOsc, DeviceInfo& poly) {
+void translateEnvelopes(const DeviceInfo& fourOsc, const juce::ValueTree& props, DeviceInfo& poly) {
     // 4OSC holds envelope times in seconds and sustain as a percentage; Poly
     // Synth uses milliseconds and a 0..1 fraction.
     const auto seconds = [&](const juce::String& name, int slot) {
-        if (const auto value = parameterValue(fourOsc, name))
+        if (const auto value = parameterValue(fourOsc, props, name))
             setSlot(poly, slot, clampToSlot(poly, slot, *value * 1000.0f));
     };
     const auto percent = [&](const juce::String& name, int slot) {
-        if (const auto value = parameterValue(fourOsc, name))
+        if (const auto value = parameterValue(fourOsc, props, name))
             setSlot(poly, slot, clampToSlot(poly, slot, *value / 100.0f));
     };
 
@@ -240,17 +297,17 @@ void translateFilter(const DeviceInfo& fourOsc, const juce::ValueTree& props, De
         setSlot(poly, PolySynth::kCutoffSlot, slotMaximum(poly, PolySynth::kCutoffSlot));
 
     if (type.has_value())
-        if (const auto note = parameterValue(fourOsc, "filterFreq"))
+        if (const auto note = parameterValue(fourOsc, props, "filterFreq"))
             setSlot(poly, PolySynth::kCutoffSlot,
                     clampToSlot(poly, PolySynth::kCutoffSlot, cutoffHzFromMidiNote(*note)));
 
-    if (const auto resonance = parameterValue(fourOsc, "filterResonance"))
+    if (const auto resonance = parameterValue(fourOsc, props, "filterResonance"))
         setSlot(poly, PolySynth::kResonanceSlot,
                 clampToSlot(poly, PolySynth::kResonanceSlot,
                             *resonance / 100.0f * slotMaximum(poly, PolySynth::kResonanceSlot)));
 
     // 4OSC's amount is -1..1 of its own sweep; Poly Synth's is octaves.
-    if (const auto amount = parameterValue(fourOsc, "filterAmount"))
+    if (const auto amount = parameterValue(fourOsc, props, "filterAmount"))
         setSlot(poly, PolySynth::kFilterEnvAmtSlot,
                 clampToSlot(poly, PolySynth::kFilterEnvAmtSlot,
                             *amount * slotMaximum(poly, PolySynth::kFilterEnvAmtSlot)));
@@ -258,7 +315,8 @@ void translateFilter(const DeviceInfo& fourOsc, const juce::ValueTree& props, De
     setSlot(poly, PolySynth::kFilterSlopeSlot,
             propertyOr(props, "filterSlope", 12) >= 24 ? 1.0f : 0.0f);
 
-    if (const auto key = parameterValue(fourOsc, "filterKey"); key.has_value() && *key != 0.0f)
+    if (const auto key = parameterValue(fourOsc, props, "filterKey");
+        key.has_value() && *key != 0.0f)
         gaps.push_back({"Filter Key", "dropped: no keyboard tracking"});
 }
 
@@ -271,14 +329,14 @@ void reportUnisonAndEffects(const DeviceInfo& fourOsc, const juce::ValueTree& pr
         }
 
     for (auto lfo = 1; lfo <= 2; ++lfo)
-        if (const auto depth = parameterValue(fourOsc, "lfoDepth" + juce::String(lfo));
+        if (const auto depth = parameterValue(fourOsc, props, "lfoDepth" + juce::String(lfo));
             depth.has_value() && *depth != 0.0f) {
             gaps.push_back({"LFO", "dropped: use a modifier on the parameter"});
             break;
         }
 
     for (auto env = 1; env <= 2; ++env)
-        if (const auto sustain = parameterValue(fourOsc, "modSustain" + juce::String(env));
+        if (const auto sustain = parameterValue(fourOsc, props, "modSustain" + juce::String(env));
             sustain.has_value() && *sustain != 0.0f) {
             gaps.push_back({"Mod envelope", "dropped: use a modifier on the parameter"});
             break;
@@ -327,8 +385,8 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
     ChainInfo chain;
 
     const auto on = [&props](const juce::String& name) { return propertyOr(props, name, 0) != 0; };
-    const auto value = [&fourOsc](const juce::String& name, float fallback) {
-        return parameterValue(fourOsc, name).value_or(fallback);
+    const auto value = [&fourOsc, &props](const juce::String& name, float fallback) {
+        return parameterValue(fourOsc, props, name).value_or(fallback);
     };
 
     if (on("distortionOn")) {
@@ -411,10 +469,10 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
     FourOscTranslation translated{.device = polySynthDevice(fourOsc)};
 
     translateOscillators(fourOsc, props, translated.device, translated.gaps);
-    translateEnvelopes(fourOsc, translated.device);
+    translateEnvelopes(fourOsc, props, translated.device);
     translateFilter(fourOsc, props, translated.device, translated.gaps);
 
-    if (const auto legato = parameterValue(fourOsc, "legato"))
+    if (const auto legato = parameterValue(fourOsc, props, "legato"))
         setSlot(translated.device, PolySynth::kGlideSlot,
                 clampToSlot(translated.device, PolySynth::kGlideSlot, *legato));
 
@@ -427,7 +485,7 @@ FourOscTranslation translateFourOsc(const DeviceInfo& fourOsc,
         translated.effects = buildEffects(fourOsc, props, nextEffectId);
 
     // 4OSC's master level is the synth's own output, not an effect.
-    if (const auto master = parameterValue(fourOsc, "masterLevel"))
+    if (const auto master = parameterValue(fourOsc, props, "masterLevel"))
         setSlot(translated.device, PolySynth::kOutputGainSlot,
                 clampToSlot(translated.device, PolySynth::kOutputGainSlot, *master));
 

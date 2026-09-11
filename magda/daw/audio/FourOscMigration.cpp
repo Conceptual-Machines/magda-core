@@ -114,10 +114,15 @@ juce::File convertedProjectFileFor(const juce::File& project) {
     if (!projects.isDirectory())
         return {};
 
-    const auto name = project.getFileNameWithoutExtension() + " (Poly Synth)";
-    const auto folder = projects.getChildFile(name).getNonexistentSibling();
+    // Unwrapped, and deliberately: saveProjectAs() builds the folder itself,
+    // and only when the file is not already sitting in one of its own name.
+    // Handing it the wrapped path meant it created nothing and wrote into a
+    // directory that was not there.
+    const auto folder =
+        projects.getChildFile(project.getFileNameWithoutExtension() + " (Poly Synth)")
+            .getNonexistentSibling();
 
-    return folder.getChildFile(folder.getFileName() + project.getFileExtension());
+    return projects.getChildFile(folder.getFileName() + project.getFileExtension());
 }
 
 juce::String describeConversion(const std::vector<FourOscCandidate>& candidates) {

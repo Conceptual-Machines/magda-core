@@ -36,10 +36,41 @@ class FourOscPatch {
         device_.format = magda::PluginFormat::Internal;
     }
 
-    FourOscPatch& parameter(const juce::String& name, float value) {
+    /// @p id is 4OSC's own parameter id. A project stores the display name
+    /// ("Tune 1") and addresses the parameter by index, so the fixture does
+    /// the same: matching on the id would pass against code no real project
+    /// exercises.
+    FourOscPatch& parameter(const juce::String& id, float value) {
+        static const juce::StringArray order{"tune1",          "fineTune1",   "level1",
+                                             "pulseWidth1",    "detune1",     "spread1",
+                                             "pan1",           "tune2",       "fineTune2",
+                                             "level2",         "pulseWidth2", "detune2",
+                                             "spread2",        "pan2",        "tune3",
+                                             "fineTune3",      "level3",      "pulseWidth3",
+                                             "detune3",        "spread3",     "pan3",
+                                             "tune4",          "fineTune4",   "level4",
+                                             "pulseWidth4",    "detune4",     "spread4",
+                                             "pan4",           "lfoRate1",    "lfoDepth1",
+                                             "lfoRate2",       "lfoDepth2",   "modAttack1",
+                                             "modDecay1",      "modSustain1", "modRelease1",
+                                             "modAttack2",     "modDecay2",   "modSustain2",
+                                             "modRelease2",    "ampAttack",   "ampDecay",
+                                             "ampSustain",     "ampRelease",  "ampVelocity",
+                                             "filterAttack",   "filterDecay", "filterSustain",
+                                             "filterRelease",  "filterFreq",  "filterResonance",
+                                             "filterAmount",   "filterKey",   "filterVelocity",
+                                             "distortion",     "reverbSize",  "reverbDamping",
+                                             "reverbWidth",    "reverbMix",   "delayFeedback",
+                                             "delayCrossfeed", "delayMix",    "chorusSpeed",
+                                             "chorusDepth",    "chorusWidth", "chorusMix",
+                                             "legato",         "masterLevel"};
+
+        const auto index = order.indexOf(id);
+        REQUIRE(index >= 0);
+
         ParameterInfo info;
-        info.paramIndex = static_cast<int>(device_.parameters.size());
-        info.name = name;
+        info.paramIndex = index;
+        info.name = id;  // a project stores a display name; nothing reads it
         info.currentValue = value;
         device_.parameters.push_back(std::move(info));
         return *this;
@@ -311,10 +342,11 @@ TEST_CASE("The converted project is a new project beside the old one", "[core][4
     const auto project = root.getChildFile("Song").getChildFile("Song.mgd");
     project.getParentDirectory().createDirectory();
 
+    // Unwrapped: saveProjectAs() makes the folder, and skips making it when
+    // the file already looks wrapped.
     const auto converted = magda::daw::audio::convertedProjectFileFor(project);
     CHECK(converted.getFileName() == "Song (Poly Synth).mgd");
-    CHECK(converted.getParentDirectory().getFileName() == "Song (Poly Synth)");
-    CHECK(converted.getParentDirectory().getParentDirectory() == root);
+    CHECK(converted.getParentDirectory() == root);
 
     root.deleteRecursively();
 }
@@ -457,5 +489,24 @@ TEST_CASE("A patch whose oscillators are all off is not silently enabled", "[cor
 
     const auto translated = magda::daw::audio::translateFourOsc(device);
     for (auto osc = 0; osc < 4; ++osc)
+        CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot + osc) == 0.0f);
+}
+
+TEST_CASE("A patch left on 4OSC's defaults still makes a sound", "[core][4osc]") {
+    // TE writes only what differs from a property's default, so a patch
+    // nobody changed carries no waveShape at all. Ten of the 4OSC devices in
+    // a real project folder look like this, and defaulting them to "none"
+    // converted every one of them to silence.
+    magda::DeviceInfo device;
+    device.pluginId = "4osc";
+    device.pluginState = R"(<PLUGIN type="4osc" ampSustain="80.5"/>)";
+
+    const auto translated = magda::daw::audio::translateFourOsc(device);
+
+    CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot) == 1.0f);
+    CHECK(slotValue(translated.device, oscSlot(1, 0)) == 0.0f);  // 4OSC's default sine
+
+    // And the other three stay off, which is also 4OSC's default.
+    for (auto osc = 1; osc < 4; ++osc)
         CHECK(slotValue(translated.device, PolySynth::kOscEnableBaseSlot + osc) == 0.0f);
 }
