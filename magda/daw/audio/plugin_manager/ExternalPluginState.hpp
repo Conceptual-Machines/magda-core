@@ -94,9 +94,11 @@ struct HostParameters {
  * hosted plugin's parameters, and everything that addresses one reads the model
  * (#2595).
  *
- * Names, ids, ranges and defaults are the fork's
+ * Names, ranges and defaults are the fork's
  * (ExternalPlugin::buildParameterList), de-duplicating suffix included, so a
  * project moved between engines finds the same parameter under the same name.
+ * The id is the one the plugin's own format declares, which the fork does not
+ * reach -- see hostParameterId().
  * The range is normalised because that is the space the fork wraps an external
  * parameter in, and the plan converts through it (ParameterUtils::domainOf).
  *

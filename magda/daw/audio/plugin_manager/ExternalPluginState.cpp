@@ -144,13 +144,25 @@ juce::String hostParameterName(const juce::AudioProcessorParameter& parameter,
     return seen > 1 ? declared + " (" + juce::String(seen) + ")" : declared;
 }
 
-/// The fork's id for @p parameter: the plugin's own where it declares one, and
-/// its index otherwise.
+/// The id @p parameter declares, or empty.
+///
+/// juce::HostedAudioProcessorParameter is the interface every hosted format
+/// answers this through -- a VST3 returns its Steinberg ParamID, an AU its
+/// AudioUnitParameterID -- and it is the only identity that survives the plugin
+/// renumbering its parameters in an update. Not
+/// AudioProcessorParameterWithID, which the formats' own parameters do not
+/// derive from: the fork casts to that and so ends up with the index for every
+/// real plugin (ExternalPlugin::buildParameterList), which is an identity that
+/// matches whatever moved into the slot.
+///
+/// Empty rather than the index for a parameter that declares nothing, so a
+/// caller can tell "this is its id" from "it has none" instead of being handed
+/// a number that looks like one.
 juce::String hostParameterId(const juce::AudioProcessorParameter& parameter) {
-    if (const auto* withId = dynamic_cast<const juce::AudioProcessorParameterWithID*>(&parameter))
-        return withId->paramID;
+    if (const auto* hosted = dynamic_cast<const juce::HostedAudioProcessorParameter*>(&parameter))
+        return hosted->getParameterID();
 
-    return juce::String(parameter.getParameterIndex());
+    return {};
 }
 
 /// One of the wrapper pair, at the value @p device holds for it.

@@ -79,6 +79,31 @@ ParameterScale scaleFromString(const juce::String& name) {
     return ParameterScale::Linear;
 }
 
+std::vector<int> entryPositions(const PluginParameterConfig& config,
+                                const std::vector<juce::String>& currentIds) {
+    std::unordered_map<std::string, int> byId;
+    for (int at = 0; at < static_cast<int>(currentIds.size()); ++at)
+        if (const auto& id = currentIds[static_cast<size_t>(at)]; id.isNotEmpty())
+            byId.emplace(id.toStdString(), at);
+
+    const auto matchable = !byId.empty();
+
+    std::vector<int> positions;
+    positions.reserve(config.entries.size());
+
+    for (const auto& entry : config.entries) {
+        if (entry.id.isEmpty() || !matchable) {
+            positions.push_back(entry.index);
+            continue;
+        }
+
+        const auto found = byId.find(entry.id.toStdString());
+        positions.push_back(found != byId.end() ? found->second : -1);
+    }
+
+    return positions;
+}
+
 juce::File configFileFor(const juce::String& uniqueId) {
     return paths::pluginConfigsDir().getChildFile(uniqueId.replaceCharacters(":/\\,; ", "______") +
                                                   ".xml");
@@ -247,31 +272,16 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     // to be re-saved.)
     const auto count = static_cast<int>(device.parameters.size());
 
-    std::unordered_map<std::string, int> byId;
-    for (int at = 0; at < count; ++at)
-        if (const auto& id = device.parameters[static_cast<size_t>(at)].stableId; id.isNotEmpty())
-            byId.emplace(id.toStdString(), at);
+    std::vector<juce::String> currentIds;
+    currentIds.reserve(device.parameters.size());
+    for (const auto& parameter : device.parameters)
+        currentIds.push_back(parameter.stableId);
 
-    // The id where there is one to match on, so a plugin that gained or lost a
-    // parameter since the config was written still finds the ones it kept. A
-    // miss is then a parameter the plugin no longer has, and is dropped rather
-    // than falling back: the position it used to hold belongs to something else
-    // now, and that something else has an entry of its own.
-    //
-    // The position is the answer only when nothing can be matched -- a file
-    // written before ids were stored, or a plugin whose parameters declare
-    // none.
-    const auto matchable = !byId.empty();
-    const auto positionOf = [&byId, matchable](const PluginParameterConfigEntry& entry) {
-        if (entry.id.isEmpty() || !matchable)
-            return entry.index;
+    const auto positions = entryPositions(*config, currentIds);
 
-        const auto found = byId.find(entry.id.toStdString());
-        return found != byId.end() ? found->second : -1;
-    };
-
-    for (const auto& entry : config->entries) {
-        const auto index = positionOf(entry);
+    for (size_t at = 0; at < config->entries.size(); ++at) {
+        const auto& entry = config->entries[at];
+        const auto index = positions[at];
         if (index < 0 || index >= count)
             continue;
         if (entry.visible)

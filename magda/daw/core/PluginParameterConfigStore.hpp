@@ -68,6 +68,23 @@ namespace PluginParameterConfigStore {
 juce::String scaleToString(ParameterScale scale);
 ParameterScale scaleFromString(const juce::String& name);
 
+/**
+ * @brief Where each of @p config's entries lands among @p currentIds.
+ *
+ * One answer for every reader of a config file, because a stored entry and a
+ * live parameter list can disagree: a plugin update inserts a parameter and
+ * everything after it moves. Parallel to `config.entries`; -1 for an entry
+ * whose parameter the plugin no longer has.
+ *
+ * The id decides where it can. A miss is a parameter that is gone, and is
+ * dropped rather than falling back -- the position it held belongs to
+ * something else now, and that something else has an entry of its own.
+ * Position is the answer only when nothing can be matched: a file written
+ * before ids were stored, or a plugin whose parameters declare none.
+ */
+std::vector<int> entryPositions(const PluginParameterConfig& config,
+                                const std::vector<juce::String>& currentIds);
+
 /// The config file for `uniqueId`, whether or not it exists yet.
 juce::File configFileFor(const juce::String& uniqueId);
 

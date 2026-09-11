@@ -102,6 +102,54 @@ class StubParameter final : public juce::AudioProcessorParameterWithID {
     float value_ = 0.0f;
 };
 
+/**
+ * @brief A parameter shaped the way a real hosted plugin's is.
+ *
+ * JUCE's own VST3 and AU parameters derive from HostedAudioProcessorParameter
+ * and answer getParameterID(); they are not AudioProcessorParameterWithID,
+ * which is the class a plugin written against JUCE uses for parameters of its
+ * own. A stub built from the latter would let an id read through the wrong
+ * interface look like it worked.
+ */
+class HostedStubParameter final : public juce::HostedAudioProcessorParameter {
+  public:
+    HostedStubParameter(juce::String id, juce::String name)
+        : id_(std::move(id)), name_(std::move(name)) {}
+
+    juce::String getParameterID() const override {
+        return id_;
+    }
+
+    float getValue() const override {
+        return value_;
+    }
+
+    void setValue(float newValue) override {
+        value_ = newValue;
+    }
+
+    float getDefaultValue() const override {
+        return 0.0f;
+    }
+
+    juce::String getName(int) const override {
+        return name_;
+    }
+
+    juce::String getLabel() const override {
+        return {};
+    }
+
+    float getValueForText(const juce::String& text) const override {
+        return text.getFloatValue();
+    }
+
+  private:
+    juce::String id_;
+    juce::String name_;
+    float value_ = 0.0f;
+};
+
 /// The class id a stub VST3's preset header carries, which is the identity
 /// another host matches on and the one thing MAGDA reads out of the header.
 constexpr const char* kStubVst3ClassId = "0123456789ABCDEF0123456789ABCDEF";
@@ -2055,6 +2103,23 @@ TEST_CASE("The answer does not depend on a provider no project carries",
 
     magda::applyRestoredParameters(model, result.restoredParameters);
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
+}
+
+TEST_CASE("A parameter's id is the one its format declares", "[engine][external][2601]") {
+    // What a saved parameter config is matched by, so a plugin that renumbers
+    // its parameters in an update does not hand every override to whatever
+    // moved into the slot. The formats answer this through
+    // HostedAudioProcessorParameter, which their parameters derive from and
+    // AudioProcessorParameterWithID is only one implementation of.
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    plugin->addHostedParameter(std::make_unique<HostedStubParameter>("1701", "Cutoff"));
+
+    const auto result = adapter::adaptExternalPluginInstance(std::move(plugin), externalDevice());
+
+    const auto* cutoff = resolvedParameterAt(result, 4);
+    REQUIRE(cutoff != nullptr);
+    CHECK(cutoff->name == "Cutoff");
+    CHECK(cutoff->stableId == "1701");
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {
