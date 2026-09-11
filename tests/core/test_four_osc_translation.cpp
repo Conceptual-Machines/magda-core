@@ -8,6 +8,7 @@
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
+#include "magda/daw/core/TrackManager.hpp"
 
 /**
  * 4OSC to Poly Synth (#2437).
@@ -284,7 +285,8 @@ TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
 
     CHECK(text.contains("Poly Synth"));
     CHECK(text.contains("Unison"));
-    CHECK(text.contains("saved alongside"));
+    CHECK(text.contains("saved as a new file"));
+    CHECK(text.contains("cannot be turned"));
 }
 
 TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
@@ -392,4 +394,37 @@ TEST_CASE("4OSC's master level becomes the synth's output gain", "[core][4osc]")
 
     CHECK(slotValue(magda::daw::audio::translateFourOsc(patch).device,
                     PolySynth::kOutputGainSlot) == Catch::Approx(-6.0f));
+}
+
+TEST_CASE("Converting a project replaces the synth and adds its effects",
+          "[core][4osc][.singleton]") {
+    auto& tracks = magda::TrackManager::getInstance();
+    const auto trackId = tracks.createTrack("Synth");
+
+    tracks.addDeviceToTrack(
+        trackId, FourOscPatch{}.property("waveShape1", 3).property("reverbOn", 1).build());
+
+    // addDeviceToTrack hands out the id, so read it back rather than assume.
+    const auto* placed = tracks.getTrack(trackId);
+    REQUIRE(placed != nullptr);
+    REQUIRE(placed->chain.fxChainElements.size() == 1);
+    const auto synthId = magda::getDevice(placed->chain.fxChainElements.front()).id;
+
+    CHECK(magda::daw::audio::convertFourOscDevices(tracks) == 1);
+
+    const auto* track = tracks.getTrack(trackId);
+    REQUIRE(track != nullptr);
+
+    const auto& elements = track->chain.fxChainElements;
+    REQUIRE(elements.size() == 2);
+
+    // The synth keeps its place and its id; the rack goes directly after it,
+    // so it reaches the same signal 4OSC's own effects did.
+    CHECK(magda::getDevice(elements[0]).pluginId == juce::String(PolySynth::xmlTypeName));
+    CHECK(magda::getDevice(elements[0]).id == synthId);
+    REQUIRE(magda::isRack(elements[1]));
+    CHECK(magda::getRack(elements[1]).name == "4OSC FX");
+
+    // And a second pass finds nothing left to do.
+    CHECK(magda::daw::audio::convertFourOscDevices(tracks) == 0);
 }

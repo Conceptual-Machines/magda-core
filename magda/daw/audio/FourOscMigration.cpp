@@ -4,6 +4,7 @@
 
 #include "../core/ChainWalk.hpp"
 #include "../core/TrackInfo.hpp"
+#include "../core/TrackManager.hpp"
 
 namespace magda::daw::audio {
 
@@ -34,6 +35,54 @@ std::vector<juce::String> distinctGaps(const std::vector<FourOscCandidate>& cand
                 ordered.push_back(gap.control);
 
     return ordered;
+}
+
+/**
+ * @brief Replace every 4OSC in @p elements, and in any rack or pad under it.
+ *
+ * The rack of effects goes in directly after the synth it came from, so it
+ * reaches the same signal 4OSC's own effects did.
+ */
+int convertIn(std::vector<ChainElement>& elements, TrackManager& tracks) {
+    auto converted = 0;
+
+    for (auto index = 0; index < static_cast<int>(elements.size()); ++index) {
+        auto& element = elements[static_cast<std::size_t>(index)];
+
+        if (isRack(element)) {
+            for (auto& chain : getRack(element).chains)
+                converted += convertIn(chain.elements, tracks);
+
+            continue;
+        }
+
+        if (!isDevice(element))
+            continue;
+
+        auto& device = getDevice(element);
+
+        if (device.pads)
+            for (auto& pad : device.pads->chains)
+                converted += convertIn(pad.elements, tracks);
+
+        if (!isFourOscDevice(device))
+            continue;
+
+        auto translated = translateFourOsc(device, [&tracks] { return tracks.allocateDeviceId(); });
+        device = std::move(translated.device);
+        ++converted;
+
+        if (translated.effects == nullptr)
+            continue;
+
+        translated.effects->id = tracks.allocateRackId();
+        translated.effects->chains.front().id = tracks.allocateChainId();
+
+        elements.insert(elements.begin() + index + 1, ChainElement{std::move(translated.effects)});
+        ++index;
+    }
+
+    return converted;
 }
 
 }  // namespace
@@ -94,9 +143,25 @@ juce::String describeConversion(const std::vector<FourOscCandidate>& candidates)
         text += ".";
     }
 
-    text += " The project as it is now is saved alongside first, so nothing is overwritten.";
+    text += " Your project is saved as a new file first. The converted one cannot be turned "
+            "back into a 4OSC project.";
 
     return text;
+}
+
+int convertFourOscDevices(TrackManager& tracks) {
+    auto converted = 0;
+
+    tracks.forEachTrackIncludingMaster([&tracks, &converted](TrackInfo& track) {
+        const auto onThisTrack = convertIn(track.chain.fxChainElements, tracks);
+        if (onThisTrack == 0)
+            return;
+
+        converted += onThisTrack;
+        tracks.notifyTrackDevicesChanged(track.id);
+    });
+
+    return converted;
 }
 
 }  // namespace magda::daw::audio
