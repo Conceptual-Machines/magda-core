@@ -790,6 +790,12 @@ TEST_CASE("A callback inside the window between the plan and the takes it ended"
     auto& continuing = rig.startTakeOn(kOther);
     auto& parking = rig.parking();
 
+    // One callback on this thread, before the callbacks thread exists: both
+    // takes then have something in them by construction. A loaded machine can
+    // otherwise let the edit land before the first background block, and "the
+    // ended take gained nothing" is measured from a take that never had
+    // anything.
+    rig.run(kBlockSize);
     rig.runInBackground(true);
 
     // Read from inside the publish, with a callback parked: the plan is live
