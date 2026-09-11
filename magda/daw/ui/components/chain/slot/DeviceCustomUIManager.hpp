@@ -244,6 +244,7 @@ class DeviceCustomUIManager {
     }
 
   private:
+    void refreshSequencerState(const magda::DeviceInfo& device);
     // (Re-)resolve the live plugin for the oscilloscope / spectrum analyzer UIs
     // from the current devicePath_ and hand it to them. Safe to call before the
     // path or plugin exists (it simply binds nothing).
