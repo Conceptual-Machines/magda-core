@@ -120,6 +120,11 @@ struct ProjectInfo {
     int timelineLengthBars = 256;
 
     // Render / bounce settings (per-project)
+    /// The engine that last wrote this project, by its setting word
+    /// (AudioEngineChoice.hpp). Empty in every project saved before the field
+    /// existed, which is a Tracktion project by definition (#2437).
+    juce::String savedWithEngine;
+
     int renderBitDepth = 24;  // 16, 24, 32
     int bounceBitDepth = 32;  // 16, 24, 32 (default 32-bit float for internal bounces)
 

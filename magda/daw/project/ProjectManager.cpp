@@ -16,6 +16,7 @@
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "engine/AudioEngineChoice.hpp"
 #include "serialization/ProjectSerializer.hpp"
 #include "version.hpp"
 
@@ -130,10 +131,11 @@ enum class OnCollision {
     Skip,
 };
 
-// Move every file under srcDir into dstDir, nested structure intact, recording
-// where each one landed so the references to it can follow.
+// Move or copy every file under srcDir into dstDir, nested structure intact,
+// recording where each one landed so the references to it can follow.
 void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
-                   std::map<juce::String, juce::String>& moves, OnCollision onCollision) {
+                   std::map<juce::String, juce::String>& moves, OnCollision onCollision,
+                   ProjectManager::MediaTransfer transfer) {
     if (!srcDir.isDirectory() || srcDir == dstDir)
         return;
 
@@ -149,9 +151,15 @@ void moveMediaTree(const juce::File& srcDir, const juce::File& dstDir,
                 continue;
             dstFile = dstFile.getNonexistentSibling();
         }
-        if (srcFile.moveFileTo(dstFile))
+        const auto landed = transfer == ProjectManager::MediaTransfer::Copy
+                                ? srcFile.copyFileTo(dstFile)
+                                : srcFile.moveFileTo(dstFile);
+        if (landed)
             moves[srcFile.getFullPathName()] = dstFile.getFullPathName();
     }
+
+    if (transfer == ProjectManager::MediaTransfer::Copy)
+        return;
 
     // Only the empty skeleton is left once every file has moved out. A skipped
     // collision keeps the directory alive, and the next load tries it again.
@@ -354,7 +362,7 @@ bool ProjectManager::saveProject() {
     return saveProjectAs(currentFile_);
 }
 
-bool ProjectManager::saveProjectAs(const juce::File& file) {
+bool ProjectManager::saveProjectAs(const juce::File& file, MediaTransfer transfer) {
     // Ensure the .mgd file lives inside a wrapper folder named after the project.
     // If the user picked /path/to/MyProject.mgd, wrap it as /path/to/MyProject/MyProject.mgd.
     // If it's already inside a matching folder, use it as-is.
@@ -380,7 +388,7 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     ensureMediaSubdirectories(targetMediaDir);
 
     if (oldMediaDir != juce::File() && oldMediaDir != targetMediaDir && oldMediaDir.isDirectory()) {
-        migrateMediaFiles(oldMediaDir, targetMediaDir);
+        migrateMediaFiles(oldMediaDir, targetMediaDir, transfer);
     }
 
     // Capture live plugin state before serializing. Runs after the migration
@@ -395,6 +403,10 @@ bool ProjectManager::saveProjectAs(const juce::File& file) {
     ProjectInfo newProject = currentProject_;
     newProject.filePath = actualFile.getFullPathName();
     newProject.name = projectName;
+
+    // Which engine wrote it, so opening it under the other one knows whether
+    // this project has been through that engine's migration (#2437).
+    newProject.savedWithEngine = settingWordFor(chosenAudioEngine());
     newProject.touch();
 
     // Save to file
@@ -937,7 +949,8 @@ void ProjectManager::ensureMediaSubdirectories(const juce::File& mediaRoot) {
     }
 }
 
-void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir) {
+void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir,
+                                       MediaTransfer transfer) {
     if (!oldDir.isDirectory() || oldDir == newDir)
         return;
 
@@ -948,23 +961,24 @@ void ProjectManager::migrateMediaFiles(const juce::File& oldDir, const juce::Fil
     std::map<juce::String, juce::String> moves;
     for (const auto* subdir : kMediaSubdirs)
         moveMediaTree(oldDir.getChildFile(subdir), newDir.getChildFile(subdir), moves,
-                      OnCollision::Uniquify);
+                      OnCollision::Uniquify, transfer);
 
     // A Save-As from a project opened before #2170 can still be carrying the
     // retired roots, so fold them on the way across rather than stranding them.
     for (const auto& legacy : kLegacyMediaSubdirs)
         moveMediaTree(oldDir.getChildFile(legacy.from), newDir.getChildFile(legacy.to), moves,
-                      OnCollision::Uniquify);
+                      OnCollision::Uniquify, transfer);
 
     relinkMediaPaths([&moves](const juce::String& path) -> juce::String {
         const auto it = moves.find(path);
         return it == moves.end() ? juce::String() : it->second;
     });
 
-    // Remove old temp directory if it's empty or under the temp root
+    // Remove old temp directory if it's empty or under the temp root. A copy
+    // leaves everything it read where it was.
     auto tempRoot =
         juce::File::getSpecialLocation(juce::File::tempDirectory).getChildFile(kTempRootDir);
-    if (oldDir.isAChildOf(tempRoot)) {
+    if (transfer == MediaTransfer::Move && oldDir.isAChildOf(tempRoot)) {
         oldDir.deleteRecursively();
     }
 }
@@ -978,7 +992,7 @@ void ProjectManager::foldLegacyMediaDirectories(const juce::File& mediaRoot) {
     std::map<juce::String, juce::String> moves;
     for (const auto& legacy : kLegacyMediaSubdirs)
         moveMediaTree(mediaRoot.getChildFile(legacy.from), mediaRoot.getChildFile(legacy.to), moves,
-                      OnCollision::Skip);
+                      OnCollision::Skip, MediaTransfer::Move);
 
     // Record what moved before relinking. The new paths only reach the .mgd
     // when the user next saves, so without this the next load would have

@@ -46,9 +46,16 @@ ResolveResult TargetResolver::resolve(const Target& target) const {
                 };
                 if (const auto found = std::ranges::find_if(devices, matchesPluginType);
                     found != devices.end()) {
-                    int paramIdx = findParamByKey(*found->device, normalizeParamName(t.name));
+                    // By name only. The device was matched on its name, and
+                    // the stored index counts positions in whatever plugin the
+                    // alias was made against: lending it to this one moves the
+                    // alias onto a neighbouring control, which is the silent
+                    // corruption DeviceParamMigrations.hpp exists to stop.
+                    const int paramIdx = findParamByKey(*found->device, normalizeParamName(t.name));
                     if (paramIdx < 0)
-                        paramIdx = stored->paramIndex;  // fallback to stored index
+                        return ResolveResult::failure("Alias materialised on " +
+                                                      found->device->name +
+                                                      " but it has no parameter named: " + t.name);
 
                     ResolveResult r;
                     r.target.devicePath = found->path;
@@ -205,9 +212,13 @@ ResolveResult TargetResolver::resolveAt(const ParsedSigil& sigil) const {
     };
     if (const auto found = std::ranges::find_if(devices, matchesPluginType);
         found != devices.end()) {
-        int paramIdx = findParamByKey(*found->device, normalizeParamName(sigil.paramKey));
+        // By name only, as above: the device was matched on its name, which
+        // says nothing about its parameter order.
+        const int paramIdx = findParamByKey(*found->device, normalizeParamName(sigil.paramKey));
         if (paramIdx < 0)
-            paramIdx = stored->paramIndex;
+            return ResolveResult::failure("@" + sigil.pluginKey + "." + sigil.paramKey +
+                                          ": materialised on " + found->device->name +
+                                          ", which has no parameter of that name");
 
         ResolveResult r;
         r.target.devicePath = found->path;

@@ -92,12 +92,23 @@ class ProjectManager {
      */
     bool saveProject();
 
+    /// What a Save As does with the media the project is carrying.
+    enum class MediaTransfer {
+        /// The project is moving, so its recordings, renders and imports go
+        /// with it and the old media folder is left empty.
+        Move,
+        /// Both projects stay playable: the new one gets copies and the one
+        /// being saved from keeps the files its .mgd still names (#2437).
+        Copy,
+    };
+
     /**
      * @brief Save project to a new file
      * @param file Target file path
+     * @param transfer What happens to the media folder
      * @return true on success
      */
-    bool saveProjectAs(const juce::File& file);
+    bool saveProjectAs(const juce::File& file, MediaTransfer transfer = MediaTransfer::Move);
 
     /**
      * @brief Load project from file (synchronous)
@@ -396,7 +407,8 @@ class ProjectManager {
     /**
      * @brief Migrate media files from old directory to new, updating clip paths
      */
-    static void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir);
+    static void migrateMediaFiles(const juce::File& oldDir, const juce::File& newDir,
+                                  MediaTransfer transfer);
 
     /**
      * @brief Fold the media roots retired by #2170 into the surviving three.

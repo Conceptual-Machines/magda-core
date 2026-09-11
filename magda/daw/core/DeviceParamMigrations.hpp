@@ -3,11 +3,13 @@
 #include <juce_core/juce_core.h>
 
 #include <optional>
+#include <set>
 #include <span>
 #include <vector>
 
 #include "DeviceInfo.hpp"
 #include "RackInfo.hpp"
+#include "TypeIds.hpp"
 
 namespace magda {
 
@@ -136,6 +138,22 @@ inline void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo*
                                       std::vector<AutomationClipInfo>& automationClips) {
     applyParamIndexMigrations(tracks, masterTrack, lanes, automationClips, shippedMigrations());
 }
+
+/**
+ * Drop every plugin-parameter link addressing a device at one of @p paths,
+ * whose parameter order was replaced wholesale rather than renumbered (#2437).
+ *
+ * There is no mapping to make: the two devices' parameters are different
+ * controls in different units, and a normalised curve or link amount written
+ * for one says nothing about the other. The path still resolves after the
+ * replacement, so a link left behind drives whatever now sits at that index.
+ */
+void dropParamLinksInTrack(TrackInfo& track, const std::set<ChainNodePath>& paths);
+
+/// The lanes among @p lanes driving a plugin parameter on one of @p paths, for
+/// the caller to delete through whatever owns them.
+std::vector<AutomationLaneId> lanesAddressing(const std::vector<AutomationLaneInfo>& lanes,
+                                              const std::set<ChainNodePath>& paths);
 
 // --- Fragments -------------------------------------------------------------
 //

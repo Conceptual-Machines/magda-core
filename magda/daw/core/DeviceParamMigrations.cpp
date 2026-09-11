@@ -373,6 +373,36 @@ void applyParamIndexMigrations(std::vector<TrackInfo>& tracks, TrackInfo* master
     });
 }
 
+void dropParamLinksInTrack(TrackInfo& track, const std::set<ChainNodePath>& paths) {
+    const auto addressed = [&paths](const ControlTarget& target) {
+        return target.kind == ControlTarget::Kind::PluginParam &&
+               paths.count(target.devicePath) > 0;
+    };
+
+    const auto dropFromOwner = [&addressed](MacroArray& macros, ModArray& mods) {
+        const auto isAddressed = [&addressed](const auto& link) { return addressed(link.target); };
+
+        for (auto& macro : macros)
+            std::erase_if(macro.links, isAddressed);
+        for (auto& mod : mods)
+            std::erase_if(mod.links, isAddressed);
+    };
+
+    forEachLinkOwnerInTrack(track, dropFromOwner);
+}
+
+std::vector<AutomationLaneId> lanesAddressing(const std::vector<AutomationLaneInfo>& lanes,
+                                              const std::set<ChainNodePath>& paths) {
+    std::vector<AutomationLaneId> found;
+
+    for (const auto& lane : lanes)
+        if (lane.target.kind == ControlTarget::Kind::PluginParam &&
+            paths.count(lane.target.devicePath) > 0)
+            found.push_back(lane.id);
+
+    return found;
+}
+
 namespace {
 
 /// Migrate a preset fragment: its devices, then the links its own macros and

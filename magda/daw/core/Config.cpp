@@ -76,6 +76,7 @@ void Config::save() {
 
     // Transport
     root->setProperty("openPluginWindowOnDrop", openPluginWindowOnDrop);
+    root->setProperty("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
     root->setProperty("transportShowBothFormats", transportShowBothFormats);
     root->setProperty("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
@@ -483,6 +484,8 @@ void Config::load() {
     zoomOutSensitivityShift = getDouble("zoomOutSensitivityShift", zoomOutSensitivityShift);
 
     openPluginWindowOnDrop = getBool("openPluginWindowOnDrop", openPluginWindowOnDrop);
+    skipFourOscConversionPrompt =
+        getBool("skipFourOscConversionPrompt", skipFourOscConversionPrompt);
     transportShowBothFormats = getBool("transportShowBothFormats", transportShowBothFormats);
     transportDefaultBarsBeats = getBool("transportDefaultBarsBeats", transportDefaultBarsBeats);
 
