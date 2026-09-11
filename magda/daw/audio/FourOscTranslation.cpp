@@ -173,6 +173,11 @@ int propertyOr(const juce::ValueTree& props, const juce::String& name, int fallb
     return value.isVoid() ? fallback : static_cast<int>(value);
 }
 
+float floatPropertyOr(const juce::ValueTree& props, const juce::String& name, float fallback) {
+    const auto value = props.getProperty(juce::Identifier(name));
+    return value.isVoid() ? fallback : static_cast<float>(value);
+}
+
 void setSlot(DeviceInfo& device, int slot, float value) {
     for (auto& parameter : device.parameters)
         if (parameter.paramIndex == slot) {
@@ -434,6 +439,21 @@ float gainFromDecibels(float decibels) {
     return decibels <= -100.0f ? 0.0f : std::pow(10.0f, decibels / 20.0f);
 }
 
+/// The Division entry nearest @p beats (magda_delay.dsp). Both scales count
+/// quarter notes, so the number carries straight across and only has to land
+/// on a menu entry.
+float nearestDelayDivision(float beats) {
+    constexpr float kDivisions[] = {0.125f,   0.16667f, 0.25f, 0.375f,   0.33333f, 0.5f, 0.75f,
+                                    0.66667f, 1.0f,     1.5f,  1.33333f, 2.0f,     3.0f, 4.0f};
+
+    auto nearest = kDivisions[0];
+    for (const auto division : kDivisions)
+        if (std::abs(division - beats) < std::abs(nearest - beats))
+            nearest = division;
+
+    return nearest;
+}
+
 /**
  * @brief 4OSC's built-in effects as MAGDA devices, in one rack.
  *
@@ -481,6 +501,13 @@ std::unique_ptr<RackInfo> buildEffects(const DeviceInfo& fourOsc, const juce::Va
     if (on("delayOn")) {
         using Delay = compiled::MagdaDelayCompiledPlugin;
         auto device = compiledDevice<Delay>(nextId());
+        // 4OSC holds its delay in beats and divides by the tempo at render
+        // time (FourOscPlugin.cpp), so the synced division is the same number
+        // and the free-time slot would be the wrong home for it.
+        setSlot(device, Delay::kSyncSlot, 1.0f);
+        setSlot(device, Delay::kDivisionSlot,
+                clampToSlot(device, Delay::kDivisionSlot,
+                            nearestDelayDivision(floatPropertyOr(props, "delay", 1.0f))));
         setSlot(
             device, Delay::kFeedbackSlot,
             clampToSlot(device, Delay::kFeedbackSlot, gainFromDecibels(value("delayFeedback"))));

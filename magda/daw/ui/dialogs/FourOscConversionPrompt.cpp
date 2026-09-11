@@ -35,12 +35,19 @@ void convertAndSave() {
 
     audio::convertFourOscDevices(TrackManager::getInstance());
 
+    // The conversion writes the model directly. Without this a failed save
+    // below leaves it in the session with nothing to say it is unsaved, and
+    // the window closes without asking.
+    projects.markDirty();
+
     // An unsaved project has nowhere to sit beside, so it keeps whatever the
     // conversion did and the user names it at their next save.
     if (destination == juce::File{})
         return;
 
-    if (!projects.saveProjectAs(destination))
+    // Copies rather than moves the media: the project being converted stays
+    // where it is and its .mgd still names the files it always did.
+    if (!projects.saveProjectAs(destination, ProjectManager::MediaTransfer::Copy))
         juce::AlertWindow::showAsync(juce::MessageBoxOptions()
                                          .withIconType(juce::MessageBoxIconType::WarningIcon)
                                          .withTitle("Could not save the converted project")

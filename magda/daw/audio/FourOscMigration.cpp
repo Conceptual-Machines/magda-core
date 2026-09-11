@@ -2,7 +2,9 @@
 
 #include <set>
 
+#include "../core/AutomationManager.hpp"
 #include "../core/ChainWalk.hpp"
+#include "../core/DeviceParamMigrations.hpp"
 #include "../core/TrackInfo.hpp"
 #include "../core/TrackManager.hpp"
 
@@ -42,16 +44,23 @@ std::vector<juce::String> distinctGaps(const std::vector<FourOscCandidate>& cand
  *
  * The rack of effects goes in directly after the synth it came from, so it
  * reaches the same signal 4OSC's own effects did.
+ *
+ * @p replaced collects the path of every device converted, which is what the
+ * links and lanes still addressing 4OSC's parameters are found by.
  */
-int convertIn(std::vector<ChainElement>& elements, TrackManager& tracks) {
+int convertIn(std::vector<ChainElement>& elements, const ChainNodePath& parentPath,
+              TrackManager& tracks, std::set<ChainNodePath>& replaced) {
     auto converted = 0;
 
     for (auto index = 0; index < static_cast<int>(elements.size()); ++index) {
         auto& element = elements[static_cast<std::size_t>(index)];
 
         if (isRack(element)) {
-            for (auto& chain : getRack(element).chains)
-                converted += convertIn(chain.elements, tracks);
+            auto& rack = getRack(element);
+            const auto rackPath = chain_walk::rackIn(parentPath, rack.id);
+            for (auto& chain : rack.chains)
+                converted +=
+                    convertIn(chain.elements, rackPath.withChain(chain.id), tracks, replaced);
 
             continue;
         }
@@ -60,10 +69,13 @@ int convertIn(std::vector<ChainElement>& elements, TrackManager& tracks) {
             continue;
 
         auto& device = getDevice(element);
+        const auto devicePath = chain_walk::deviceIn(parentPath, device.id);
 
         if (device.pads)
             for (auto& pad : device.pads->chains)
-                converted += convertIn(pad.elements, tracks);
+                converted += convertIn(
+                    pad.elements, ChainNodePath::padChain(parentPath.trackId, device.id, pad.id),
+                    tracks, replaced);
 
         if (!isFourOscDevice(device))
             continue;
@@ -71,6 +83,7 @@ int convertIn(std::vector<ChainElement>& elements, TrackManager& tracks) {
         auto translated = translateFourOsc(device, [&tracks] { return tracks.allocateDeviceId(); });
         device = std::move(translated.device);
         ++converted;
+        replaced.insert(devicePath);
 
         if (translated.effects == nullptr)
             continue;
@@ -154,15 +167,32 @@ juce::String describeMigration(const std::vector<FourOscCandidate>& candidates) 
 
 int convertFourOscDevices(TrackManager& tracks) {
     auto converted = 0;
+    std::set<ChainNodePath> replaced;
 
-    tracks.forEachTrackIncludingMaster([&tracks, &converted](TrackInfo& track) {
-        const auto onThisTrack = convertIn(track.chain.fxChainElements, tracks);
+    tracks.forEachTrackIncludingMaster([&tracks, &converted, &replaced](TrackInfo& track) {
+        const auto onThisTrack = convertIn(track.chain.fxChainElements,
+                                           ChainNodePath::trackLevel(track.id), tracks, replaced);
         if (onThisTrack == 0)
             return;
 
         converted += onThisTrack;
         tracks.notifyTrackDevicesChanged(track.id);
     });
+
+    if (replaced.empty())
+        return converted;
+
+    // Poly Synth's parameters are different controls in different units at the
+    // same indices, and the path a link names still resolves. A macro left
+    // pointing at 4OSC's Tune 1 would drive Poly Synth's Osc 1 Wave.
+    tracks.forEachTrackIncludingMaster([&replaced](TrackInfo& track) {
+        device_param_migrations::dropParamLinksInTrack(track, replaced);
+    });
+
+    auto& automation = AutomationManager::getInstance();
+    for (const auto lane :
+         device_param_migrations::lanesAddressing(automation.getLanes(), replaced))
+        automation.deleteLane(lane);
 
     return converted;
 }

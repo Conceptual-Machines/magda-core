@@ -5,6 +5,7 @@
 #include "magda/daw/audio/FourOscMigration.hpp"
 #include "magda/daw/audio/FourOscTranslation.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/RackInfo.hpp"
 #include "magda/daw/core/TrackInfo.hpp"
@@ -474,6 +475,48 @@ TEST_CASE("Converting a project replaces the synth and adds its effects",
 
     // And a second pass finds nothing left to do.
     CHECK(magda::daw::audio::convertFourOscDevices(tracks) == 0);
+}
+
+TEST_CASE("A link into the 4OSC's parameters goes with the 4OSC", "[core][4osc][.singleton]") {
+    // Poly Synth's parameters are different controls at the same indices, so a
+    // link the conversion left behind would drive the wrong one: 4OSC's Tune 1
+    // is Poly Synth's Osc 1 Wave.
+    auto& tracks = magda::TrackManager::getInstance();
+    const auto trackId = tracks.createTrack("Synth");
+
+    tracks.addDeviceToTrack(trackId, FourOscPatch{}.property("waveShape1", 3).build());
+
+    magda::DeviceInfo other;
+    other.name = "Utility";
+    other.pluginId = "magda_utility";
+    other.format = magda::PluginFormat::Internal;
+    tracks.addDeviceToTrack(trackId, other);
+
+    auto* placed = tracks.getTrack(trackId);
+    REQUIRE(placed != nullptr);
+    REQUIRE(placed->chain.fxChainElements.size() == 2);
+
+    const auto synthPath =
+        magda::chain_walk::deviceIn(magda::ChainNodePath::trackLevel(trackId),
+                                    magda::getDevice(placed->chain.fxChainElements[0]).id);
+    const auto otherPath =
+        magda::chain_walk::deviceIn(magda::ChainNodePath::trackLevel(trackId),
+                                    magda::getDevice(placed->chain.fxChainElements[1]).id);
+
+    placed->macros[0].links.push_back({magda::ControlTarget::pluginParam(synthPath, 0), 1.0f});
+    placed->macros[0].links.push_back({magda::ControlTarget::pluginParam(otherPath, 0), 1.0f});
+    placed->macros[1].links.push_back({magda::ControlTarget::deviceMacro(synthPath, 0), 1.0f});
+
+    CHECK(magda::daw::audio::convertFourOscDevices(tracks) == 1);
+
+    const auto* track = tracks.getTrack(trackId);
+    REQUIRE(track != nullptr);
+
+    REQUIRE(track->macros[0].links.size() == 1);
+    CHECK(track->macros[0].links.front().target.devicePath == otherPath);
+
+    // A macro knob is a macro knob on either device, so that link stays.
+    CHECK(track->macros[1].links.size() == 1);
 }
 
 TEST_CASE("A 4OSC saved as legacy engine XML still translates", "[core][4osc]") {
