@@ -1,9 +1,11 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "magda/daw/audio/FourOscMigration.hpp"
 #include "magda/daw/audio/FourOscTranslation.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/TrackInfo.hpp"
 
 /**
  * 4OSC to Poly Synth (#2437).
@@ -245,4 +247,86 @@ TEST_CASE("A patch using nothing Poly Synth lacks reports no gaps", "[core][4osc
                            .build();
 
     CHECK(magda::daw::audio::translateFourOsc(patch).gaps.empty());
+}
+
+TEST_CASE("Every 4OSC in a project is found, pads included", "[core][4osc]") {
+    magda::TrackInfo track;
+    track.id = magda::TrackId{1};
+    track.chain.fxChainElements.emplace_back(FourOscPatch{}.property("waveShape1", 3).build());
+
+    magda::DeviceInfo other;
+    other.id = magda::DeviceId{9};
+    other.pluginId = PolySynth::xmlTypeName;
+    track.chain.fxChainElements.emplace_back(std::move(other));
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+
+    const auto found = magda::daw::audio::findFourOscDevices({track}, master);
+    REQUIRE(found.size() == 1);
+    CHECK(found.front().deviceName == "4OSC");
+}
+
+TEST_CASE("A project with no 4OSC has nothing to ask about", "[core][4osc]") {
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+
+    CHECK(magda::daw::audio::findFourOscDevices({}, master).empty());
+    CHECK(magda::daw::audio::describeConversion({}).isEmpty());
+}
+
+TEST_CASE("The conversion prompt names what will be lost", "[core][4osc]") {
+    // "Some settings may change" tells somebody to expect a difference
+    // without telling them what to listen for.
+    magda::TrackInfo track;
+    track.id = magda::TrackId{1};
+    track.chain.fxChainElements.emplace_back(
+        FourOscPatch{}.property("waveShape1", 3).property("voices1", 4).build());
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+
+    const auto text = magda::daw::audio::describeConversion(
+        magda::daw::audio::findFourOscDevices({track}, master));
+
+    CHECK(text.contains("Poly Synth"));
+    CHECK(text.contains("Unison"));
+    CHECK(text.contains("saved alongside"));
+}
+
+TEST_CASE("A patch losing nothing is not warned about", "[core][4osc]") {
+    magda::TrackInfo track;
+    track.id = magda::TrackId{1};
+    track.chain.fxChainElements.emplace_back(FourOscPatch{}.property("waveShape1", 3).build());
+
+    magda::TrackInfo master;
+    master.id = magda::MASTER_TRACK_ID;
+
+    const auto text = magda::daw::audio::describeConversion(
+        magda::daw::audio::findFourOscDevices({track}, master));
+
+    CHECK(text.contains("somewhere to go"));
+    CHECK_FALSE(text.contains("will be lost"));
+}
+
+TEST_CASE("The backup sits beside the project and never overwrites", "[core][4osc]") {
+    const auto project = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                             .getChildFile("FourOscMigration")
+                             .getChildFile("Song.mgd");
+    project.getParentDirectory().createDirectory();
+
+    const auto backup = magda::daw::audio::backupFileFor(project);
+    CHECK(backup.getParentDirectory() == project.getParentDirectory());
+    CHECK(backup.getFileName() == "Song (4OSC).mgd");
+
+    // Converting twice must not take the first copy with it.
+    backup.replaceWithText("first");
+    CHECK(magda::daw::audio::backupFileFor(project).getFileName() != backup.getFileName());
+
+    backup.deleteFile();
+    project.getParentDirectory().deleteRecursively();
+}
+
+TEST_CASE("A project that was never saved has no backup to write", "[core][4osc]") {
+    CHECK(magda::daw::audio::backupFileFor(juce::File{}) == juce::File{});
 }
