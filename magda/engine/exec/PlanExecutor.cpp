@@ -5,11 +5,60 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <utility>
 
 #include "core/BlockMath.hpp"
 
 namespace magda::engine {
 namespace {
+
+/**
+ * @brief Every MIDI op behind each device, by key.
+ *
+ * A device is retained across a publish while the plan behind it is rebuilt,
+ * so what it is being fed can change without the device knowing. The keys of
+ * the ops feeding it are what says whether it did: a track's merge keeps its
+ * own key when the track it reads changes underneath it, so comparing one
+ * level would see nothing.
+ */
+std::map<OpKey, std::set<OpKey>> midiBehindDevices(const RenderPlan& plan) {
+    std::map<OpKey, std::set<OpKey>> behind;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& device = plan.ops[i];
+        if (device.kind != OpKind::Device || device.inputs.size() < 2)
+            continue;
+
+        std::set<OpKey> sources;
+        std::vector<char> seen(plan.ops.size(), 0);
+        std::vector<PortRef> pending{device.inputs[1]};
+
+        while (!pending.empty()) {
+            const auto port = pending.back();
+            pending.pop_back();
+
+            if (!port.valid())
+                continue;
+
+            const auto id = static_cast<std::size_t>(port.op);
+            if (std::exchange(seen[id], static_cast<char>(1)) != 0)
+                continue;
+
+            const auto& op = plan.ops[id];
+            sources.insert(op.key);
+
+            for (const auto& input : op.inputs)
+                if (input.valid() &&
+                    plan.ops[static_cast<std::size_t>(input.op)]
+                            .outputs[static_cast<std::size_t>(input.port)] == SignalKind::Midi)
+                    pending.push_back(input);
+        }
+
+        behind[device.key] = std::move(sources);
+    }
+
+    return behind;
+}
 
 /// Per-channel gain for a stereo pair. Anything wider alternates, which keeps
 /// the pairs correct if a device ever reports more than two channels; the model
@@ -236,6 +285,7 @@ void PlanExecutor::reset() {
     audioDelays_.clear();
     midiDelays_.clear();
     deviceForOp_.clear();
+    reroutedMidi_.clear();
     audioSourceForOp_.clear();
     midiSourceForOp_.clear();
     meterForOp_.clear();
@@ -319,6 +369,32 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             ++carriedTriggerDetectors_;
         } else {
             triggerForOp_[i] = std::make_shared<TriggerDetector>();
+        }
+    }
+
+    // A device the store keeps across the swap whose MIDI is now coming from
+    // somewhere else: the note-off for what it is holding is going to the old
+    // source's new destination, or nowhere. Only sources that left, because
+    // one arriving beside the others takes nothing away (#2418).
+    reroutedMidi_.assign(numOps, 0);
+    if (previous != nullptr && previous != this && previous->plan_ != nullptr) {
+        const auto was = midiBehindDevices(*previous->plan_);
+        const auto now = midiBehindDevices(plan);
+
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+            if (op.kind != OpKind::Device)
+                continue;
+
+            const auto before = was.find(op.key);
+            const auto after = now.find(op.key);
+            if (before == was.end() || after == now.end())
+                continue;
+
+            const auto lost = std::ranges::any_of(before->second, [&after](const OpKey& source) {
+                return !after->second.contains(source);
+            });
+            reroutedMidi_[i] = lost ? 1 : 0;
         }
     }
 
@@ -1530,7 +1606,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                     // nothing is withheld and nothing would come
                                     // back (#2418).
                                     .midiInAllNotesOff =
-                                        !block.continuous || midiInPanic(op.inputs[1]),
+                                        !block.continuous || midiInPanic(op.inputs[1]) ||
+                                        std::exchange(reroutedMidi_[static_cast<std::size_t>(i)],
+                                                      static_cast<char>(0)) != 0,
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
                                     .params = paramValues_.device(window.first, window.count),

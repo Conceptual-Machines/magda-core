@@ -506,6 +506,11 @@ class PlanExecutor {
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 
+    /// Devices owed a panic on their first block of this plan: the swap took a
+    /// MIDI source away from them, and a note-off they are waiting for is not
+    /// coming. Cleared by the block that spends it.
+    std::vector<char> reroutedMidi_;
+
     /// The panic flag beside a MIDI slot (#2418). False for a port the plan
     /// left unconnected, the way midiIn hands back an empty buffer for one.
     bool midiInPanic(const PortRef& ref) const;

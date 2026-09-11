@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <utility>
 #include <vector>
 
 #include "EngineSessionScaffold.hpp"
@@ -49,6 +50,18 @@ class LaunchingSource final : public EngineMidiSource {
     bool launched = false;
 };
 
+/// Plays one note and then holds it, which is what a key held down is: the
+/// note-off arrives from wherever the source is routed when the finger lifts.
+class HeldNote final : public EngineMidiSource {
+  public:
+    void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override {
+        if (std::exchange(pending, false))
+            out.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 0);
+    }
+
+    bool pending = true;
+};
+
 /// Renders silence, so a compiled plan's audio slot has a source bound.
 class SilentAudio final : public magda::engine::EngineAudioSource {
   public:
@@ -64,6 +77,11 @@ class PanicProbe final : public EngineDevice {
     void process(DeviceBlock& block) override {
         block.audio.clear();
         heard.push_back(block.midiInAllNotesOff);
+
+        if (block.midiIn != nullptr)
+            for (const auto event : *block.midiIn)
+                notesSeen += event.getMessage().isNoteOn() ? 1 : 0;
+
         if (forwards)
             block.midiOutAllNotesOff = block.midiInAllNotesOff;
         else if (raises)
@@ -76,6 +94,7 @@ class PanicProbe final : public EngineDevice {
     }
 
     std::vector<bool> heard;
+    int notesSeen = 0;
     bool forwards = false;
     bool raises = false;
 };
@@ -225,7 +244,118 @@ struct MergeHarness {
     }
 };
 
+/// One live MIDI input feeding one instrument, which is the shape a track's
+/// MIDI input route compiles to at the destination. The source's track id is
+/// what a "track:N" route change moves.
+struct RouteHarness {
+    RenderPlan plan;
+    PlanBindings bindings;
+    HeldNote source;
+    PanicProbe device;
+    PlanValues values;
+    juce::AudioBuffer<float> output{2, kBlockSize};
+
+    explicit RouteHarness(TrackId sourceTrack) {
+        magda::engine::PlanOp input;
+        input.kind = OpKind::MidiInput;
+        input.key.trackId = sourceTrack;
+        input.key.role = OpRole::LiveMidiInput;
+        input.outputs = {SignalKind::Midi};
+        plan.ops.push_back(input);
+
+        magda::engine::PlanOp merge;
+        merge.kind = OpKind::MergeMidi;
+        merge.key.trackId = 7;
+        merge.key.role = OpRole::TrackMidiInput;
+        merge.inputs = {PortRef{0, 0}};
+        merge.outputs = {SignalKind::Midi};
+        plan.ops.push_back(merge);
+
+        // The same device on both sides of the swap: what the store retains,
+        // and what is left holding the note.
+        magda::engine::PlanOp instrument;
+        instrument.kind = OpKind::Device;
+        instrument.key.trackId = 7;
+        instrument.key.deviceId = 9;
+        instrument.key.role = OpRole::DeviceProcess;
+        instrument.inputs = {PortRef{}, PortRef{1, 0}, PortRef{}};
+        instrument.outputs = {SignalKind::Audio};
+        plan.ops.push_back(instrument);
+
+        magda::engine::PlanOp out;
+        out.kind = OpKind::Output;
+        out.key.trackId = 7;
+        out.key.role = OpRole::HardwareOutput;
+        out.inputs = {PortRef{2, 0}};
+        plan.ops.push_back(out);
+
+        plan.outputOps = {3};
+        magda::engine::bakeScheduling(plan);
+
+        bindings.midiInputs[sourceTrack] = &source;
+        bindings.devices[DeviceKey{9}] = &device;
+
+        values.planFingerprint = magda::engine::planFingerprint(plan);
+        values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    }
+
+    void render(PlanExecutor& executor) {
+        output.clear();
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.playing = true;
+        block.continuous = true;
+        executor.process(values, block, output);
+    }
+};
+
 }  // namespace
+
+TEST_CASE("a device whose MIDI source was taken away is panicked once",
+          "[engine][exec][2418][2579]") {
+    // A "track:N" route is compiled into the plan, so changing it republishes
+    // rather than rewriting a route table -- and the instrument on the
+    // destination is retained across that swap, still holding whatever the old
+    // source played. Its note-off now goes somewhere else.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+
+    playing.render(first);
+    CHECK(playing.device.notesSeen == 1);
+    CHECK_FALSE(playing.device.lastHeard());
+
+    RouteHarness rerouted{2};
+    PlanExecutor second;
+    REQUIRE(second.prepare(rerouted.plan, rerouted.bindings, context, &first).empty());
+
+    rerouted.render(second);
+    CHECK(rerouted.device.lastHeard());
+
+    rerouted.render(second);
+    CHECK_FALSE(rerouted.device.lastHeard());
+}
+
+TEST_CASE("a republish that did not move the MIDI leaves the notes alone",
+          "[engine][exec][2418][2579]") {
+    // The other half: a panic raised on every swap would cut a chord that is
+    // still being held down, which is most republishes.
+    const RenderContext context{44100.0, kBlockSize, 2};
+
+    RouteHarness playing{1};
+    PlanExecutor first;
+    REQUIRE(first.prepare(playing.plan, playing.bindings, context).empty());
+    playing.render(first);
+
+    RouteHarness same{1};
+    PlanExecutor second;
+    REQUIRE(second.prepare(same.plan, same.bindings, context, &first).empty());
+
+    same.render(second);
+    CHECK_FALSE(same.device.lastHeard());
+}
 
 TEST_CASE("a locate raises the panic on every device it reaches", "[engine][exec][2418]") {
     // BlockInfo::continuous is the engine's playhead jump: false on the first
