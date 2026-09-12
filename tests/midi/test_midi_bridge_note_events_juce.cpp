@@ -51,8 +51,7 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
         };
     }
 
-    /// A sink that records nothing: installing one is what tells MidiBridge the
-    /// native engine is the one rendering.
+    /// Installing a sink tells MidiBridge the native engine is rendering.
     struct NullSink final : magda::LiveMidiSink {
         void pushMidi(const juce::String&, const juce::MidiMessage&) override {}
         void audition(magda::TrackId, const juce::MidiMessage&) override {}
@@ -64,8 +63,6 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
         auto& engine = *magda::test::getSharedEngine().getEngine();
         auto& devices = engine.getDeviceManager();
 
-        // The fork's own merge of every input, which is what the selector
-        // offered and what nothing feeds here.
         const juce::String merged("All MIDI Ins");
         const auto created = devices.createVirtualMidiDevice(merged);
         expect(created.wasOk(), "The virtual device is created");

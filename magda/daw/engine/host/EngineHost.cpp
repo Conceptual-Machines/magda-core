@@ -458,8 +458,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         report("values", resolveValues(*livePlan_, tracks, *master, values));
         report("values", session_->publishValues(std::move(values)).messages);
 
-        // A monitor or route change is a track property, so it arrives here
-        // rather than as a plan, off the same reading as the values above.
+        // A monitor or route change arrives as a track property, off the same
+        // reading of the model as the values above.
         publishRouting(tracks);
     }
 

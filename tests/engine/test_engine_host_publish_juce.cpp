@@ -649,8 +649,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
                        session.liveInputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
 
-        // The audition id is the routing's answer too, so a session published
-        // to with none hears nothing (#2592).
+        // The routing carries the audition id as well (#2592).
         host::LiveMidiRouting routing(sources);
         session.liveInputs().publishRouting(routing.resolve(tracks));
 
@@ -830,7 +829,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const magda::engine::BlockInfo block{};
         juce::MidiBuffer events;
 
-        // A callback around each render, since that is what pins the routing.
+        // A callback around each render pins the routing.
         const auto renderBlock = [&] {
             events.clear();
             session.liveInputs().beginCallback({}, 0);
@@ -841,9 +840,6 @@ class EngineHostPublishTest final : public juce::UnitTest {
         renderBlock();
         expect(!input->raisedAllNotesOff(), "A block with the routing unchanged raises nothing");
 
-        // A note-off for whatever the device is holding will never arrive
-        // through a route that has gone, and the change publishes no topology,
-        // so nothing else can panic the instrument.
         if (auto* track = trackManager.getTrack(trackId))
             track->inputMonitor = magda::InputMonitorMode::Off;
         session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
@@ -854,8 +850,6 @@ class EngineHostPublishTest final : public juce::UnitTest {
         renderBlock();
         expect(!input->raisedAllNotesOff(), "Once, and not on every block after it");
 
-        // Adding one back takes nothing away, so a chord held on another
-        // source keeps sounding.
         if (auto* track = trackManager.getTrack(trackId))
             track->inputMonitor = magda::InputMonitorMode::In;
         session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
@@ -863,8 +857,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         renderBlock();
         expect(!input->raisedAllNotesOff(), "A source arriving raises no panic");
 
-        // An input bound after the loss reads the routing it finds, not the
-        // history behind it.
+        // A fresh input adopts the routing identity it first reads.
         if (auto* track = trackManager.getTrack(trackId))
             track->inputMonitor = magda::InputMonitorMode::Off;
         session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
