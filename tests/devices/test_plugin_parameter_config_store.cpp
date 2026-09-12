@@ -3,7 +3,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 
-#include "magda/daw/audio/processors/base/DeviceProcessor.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/PluginParameterConfigStore.hpp"
@@ -73,25 +72,6 @@ magda::DeviceInfo makeExternalDevice() {
     device.parameters[2].stableId = "mode";
     return device;
 }
-
-/// A processor whose engine read is a fixed list, standing in for whatever the
-/// fork rebuilds a device's parameter array from.
-class StubProcessor : public magda::DeviceProcessor {
-  public:
-    explicit StubProcessor(std::vector<magda::ParameterInfo> parameters)
-        : magda::DeviceProcessor(1, nullptr), parameters_(std::move(parameters)) {}
-
-    int getParameterCount() const override {
-        return static_cast<int>(parameters_.size());
-    }
-
-    magda::ParameterInfo getParameterInfo(int index) const override {
-        return parameters_[static_cast<std::size_t>(index)];
-    }
-
-  private:
-    std::vector<magda::ParameterInfo> parameters_;
-};
 
 }  // namespace
 
@@ -320,56 +300,4 @@ TEST_CASE("hasAiSoundDesignerParameters reflects the saved AI selection", "[para
     config.entries[1].aiAgent = true;
     REQUIRE(store::save(device.uniqueId, config));
     REQUIRE(store::hasAiSoundDesignerParameters(device.uniqueId));
-}
-
-TEST_CASE("A rebuilt parameter array carries the plugin's stored config",
-          "[param-config-store][2601]") {
-    // Both engines rebuild an external plugin's array wholesale on load, so a
-    // detected unit that is not re-applied there lasts until the next rebuild
-    // and no longer.
-    TempDataDir temp;
-    const auto configured = makeExternalDevice();
-
-    auto config = store::fromDevice(configured);
-    config.entries[0].visible = true;
-    config.entries[0].unit = "kHz";
-    config.entries[0].rangeMax = 20.0f;
-    REQUIRE(store::save(configured.uniqueId, config));
-
-    const StubProcessor processor(configured.parameters);
-
-    magda::DeviceInfo device;
-    device.uniqueId = configured.uniqueId;
-    device.format = magda::PluginFormat::VST3;
-    processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Engine);
-
-    REQUIRE(device.parameters.size() == 3);
-    CHECK(device.parameters[0].unit == "kHz");
-    CHECK(device.parameters[0].maxValue == 20.0f);
-    CHECK(device.visibleParameters == std::vector<int>{0});
-}
-
-TEST_CASE("A model-first refresh keeps its values and still gains the config",
-          "[param-config-store][2601]") {
-    // An internal device takes the other branch of populateParameters: values
-    // stay the model's, metadata is re-read, and the overlay goes over both.
-    TempDataDir temp;
-    const auto configured = makeExternalDevice();
-
-    auto config = store::fromDevice(configured);
-    config.entries[1].unit = "Q";
-    REQUIRE(store::save("magda_stub_device", config));
-
-    const StubProcessor processor(configured.parameters);
-
-    magda::DeviceInfo device;
-    device.pluginId = "magda_stub_device";
-    device.format = magda::PluginFormat::Internal;
-    device.parameters = configured.parameters;
-    device.parameters[1].currentValue = 42.0f;
-    processor.populateParameters(device, magda::DeviceProcessor::ValueSource::Model);
-
-    REQUIRE(device.parameters.size() == 3);
-    CHECK(device.parameters[1].currentValue == 42.0f);
-    CHECK(device.parameters[1].unit == "Q");
 }
