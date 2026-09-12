@@ -17,11 +17,8 @@ namespace magda::daw::audio::engine_adapter {
 
 namespace {
 
-/// One track's descent, written once, over whichever constness the caller has.
-///
-/// A flat stage's elements are devices rather than a tree, so it is walked
-/// directly; flat does not mean padless, and a device carrying pads is
-/// descended into the same way a tree device is.
+/// One track's descent over whichever constness the caller has. A flat stage
+/// is walked directly, but a device carrying pads is still descended into.
 template <typename Track, typename Devices>
 void collectTrackDevices(Track& track, Devices& devices) {
     const auto collectTree = [&devices](auto& elements, const magda::ChainNodePath& parentPath,
@@ -65,8 +62,7 @@ template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, 
     return devices;
 }
 
-/// Say out loud when a project's state could not be read. #2602 went unnoticed
-/// for as long as it did because this path dropped one without a word.
+/// Log an unreadable saved state rather than drop it silently (#2602).
 void reportUnreadableState(const juce::String& pluginId, const juce::String& savedState) {
     if (savedState.isNotEmpty() && !deviceStateTree(savedState).isValid())
         juce::Logger::writeToLog("EngineDeviceFactory: unreadable saved state for " + pluginId +
@@ -95,71 +91,47 @@ bool isExternalDevice(const magda::DeviceInfo& device) {
     return device.format != magda::PluginFormat::Internal;
 }
 
-/// enableAllBuses first, at the same point the fork does it
-/// (completePluginInstanceCreation) and for the same reason: a plugin whose
-/// sidechain or second output bus is disabled reports channels it does not
-/// have, and everything downstream -- the adapter's own channel adaptation, the
-/// plan's declared widths -- is read off those numbers.
+/// enableAllBuses first: a plugin with a disabled sidechain or second output
+/// bus reports channels it does not have, and the plan's widths are read off it.
 ExternalDeviceResult adaptExternalPluginInstance(
     std::unique_ptr<juce::AudioPluginInstance> instance, const magda::DeviceInfo& device,
     bool offlineRender) {
     instance->enableAllBuses();
 
-    // The saved array, then the overlay over it, then what that left behind. The
-    // order and the reasons are ExternalPluginState.hpp's; what matters here is
-    // that all three happen before the adapter exists, so the adapter never has
-    // to reason about which of a project's records it is looking at.
+    // Array, then preset, then chunk (ExternalPluginState.hpp), all before the
+    // adapter exists.
     const auto restoredFrom = magda::applySavedPluginState(*instance, device);
     if (restoredFrom == magda::SavedStateOutcome::Failed)
         return {.device = {},
                 .failure = "external plugin \"" + device.name +
                            "\" failed while restoring its own saved state"};
 
-    // Buses again, and the widths only now. setStateInformation is free to
-    // change a plugin's bus layout -- an instrument the patch switches to
-    // multi-out, a compressor whose sidechain the patch turns on -- so widths
-    // read before the chunk was applied describe a layout the instance no
-    // longer has, while EngineExternalDevice::prepare() goes on to process the
-    // one it does. Re-enabling keeps the all-buses policy the first call
-    // establishes: a chunk that disabled one would otherwise leave the device
-    // reporting channels the rest of the chain is wired for.
+    // Buses again: setStateInformation may change the bus layout, and a chunk
+    // that disabled one would leave the device narrower than the chain is wired.
     instance->enableAllBuses();
 
-    // Scan descriptions report the format's default buses, not the instance
-    // after the host has enabled its sidechains and extra outputs. These are
-    // the only channel counts safe to compile a live plan from.
+    // Scan descriptions report the format's default buses, not the enabled ones.
     auto resolvedDevice = device;
     resolvedDevice.audioInputChannels = instance->getTotalNumInputChannels();
     resolvedDevice.audioOutputChannels = instance->getTotalNumOutputChannels();
 
-    // An imported .vstpreset is spent by the load that applies it. The patch is
-    // now the instance's, the next save writes it out as a chunk, and a project
-    // that kept the preset would apply it again over whatever was saved in
-    // between. Only a published resolvedDevice clears it, so a load that failed
-    // leaves the project still holding the one thing that describes its plugin.
+    // An imported .vstpreset is spent by the load that applies it; kept, it
+    // would be applied again over whatever the next save wrote.
     if (restoredFrom == magda::SavedStateOutcome::RestoredFromPreset)
         resolvedDevice.vst3Preset = {};
 
-    // Promote only, the rule the model's other two writers follow
-    // (PluginManagerSync::updateDeviceCapabilityFlags,
-    // applyCachedCapabilitiesToDevice). A raw AudioProcessor::acceptsMidi() is
-    // narrower than what the incumbent engine asks -- it takes MIDI input for
-    // plugins whose processor does not advertise it -- so assigning it here
-    // clears a saved true and PlanCompiler stops routing MIDI to the device.
+    // Promote only, like the model's other writers: AudioProcessor::acceptsMidi()
+    // is narrower than what a saved true may have come from.
     if (!resolvedDevice.isInstrument && (instance->acceptsMidi() || instance->isMidiEffect()))
         resolvedDevice.canReceiveMidi = true;
     resolvedDevice.producesMidi = instance->producesMidi() || instance->isMidiEffect();
 
-    // After the chunk, which is free to rename a parameter or move its default.
-    // Nothing but the instance can enumerate a hosted plugin's parameters, and
-    // the model is what every reader downstream has (#2595).
+    // After the chunk, which may rename a parameter or move its default (#2595).
     auto described = magda::describeHostParameters(*instance, device);
     resolvedDevice.parameters = std::move(described.parameters);
     resolvedDevice.wrapperParameters = std::move(described.wrapperParameters);
 
-    // Before the device is built, because it copies these records and converts
-    // every block's value through them. The plan converts through the model's,
-    // and a config applied only to the model puts the two in different units.
+    // Before the device is built, which copies these records.
     magda::PluginParameterConfigStore::applyToDevice(resolvedDevice);
 
     auto restored = magda::snapshotHostParameters(*instance);
@@ -173,16 +145,13 @@ ExternalDeviceResult adaptExternalPluginInstance(
 
 namespace {
 
-/// Why a plugin nobody could find is missing, said once so both entry points
-/// say it the same way.
+/// The missing-plugin failure, worded once for both entry points.
 juce::String describeMissingPlugin(const magda::DeviceInfo& device) {
     return "external plugin \"" + device.name + "\" (" + device.getFormatString() +
            ") is not installed on this machine";
 }
 
-/// Apply only a role JUCE's installed description can author. MIDI and Analysis
-/// are explicit MAGDA roles, and replacing either with Effect/Instrument would
-/// change the plan rather than enrich it.
+/// Apply the installed role, except over MAGDA's own MIDI and Analysis roles.
 void applyInstalledRole(magda::DeviceInfo& device, bool isInstrument) {
     if (device.deviceType == magda::DeviceType::MIDI ||
         device.deviceType == magda::DeviceType::Analysis)
@@ -196,12 +165,8 @@ void applyInstalledRole(magda::DeviceInfo& device, bool isInstrument) {
 
 std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::DeviceInfo& device,
                                                                 bool offlineRender) {
-    // Built with its state already in it, not restored after: EngineMagdaDevice
-    // snapshots the device's parameter metadata when it is constructed, so a
-    // device that restored later would be mapped against the parameters it had
-    // before. Parameters themselves do not travel this way -- the plan's value
-    // layer resolves each one per block -- but everything else does: the runtime
-    // Faust device's dsp source, an EQ's collapsed curve.
+    // Built with its state in it: EngineMagdaDevice snapshots the parameter
+    // metadata at construction, and the runtime Faust device's slots come from it.
     auto sdkDevice = createDetachedDevice(device.pluginId, device.pluginState);
     if (sdkDevice == nullptr)
         return {};
@@ -231,10 +196,7 @@ ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& de
     ExternalPluginResolution resolved{.planDevice = device};
 
     if (services.formats == nullptr || services.knownPlugins == nullptr) {
-        // Named, like every other failure here. A caller collecting these has a
-        // project's worth of devices and needs to know which one it is holding,
-        // and "no plugin formats" on its own reads as one global complaint
-        // rather than one per plugin the render went without.
+        // Named per device, so a project's worth of these stays attributable.
         resolved.failure = "external plugin \"" + device.name +
                            "\" cannot be resolved: no plugin formats or scan results were given "
                            "to the engine";
@@ -243,11 +205,8 @@ ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& de
 
     const auto match = magda::matchInstalledPlugin(device, *services.knownPlugins);
 
-    // Unfound is refused rather than attempted. The app tries the saved
-    // description anyway and lets the format's own lookup have a go, which is
-    // right for a session where a user is watching and can be told; a render is
-    // not that, and a plugin resolved by a route nothing recorded is the kind
-    // of difference a null-diff corpus cannot attribute afterwards.
+    // Unfound is refused rather than attempted, so a render never resolves a
+    // plugin by a route nothing recorded.
     if (!match.found) {
         resolved.failure = describeMissingPlugin(device);
         return resolved;
@@ -256,8 +215,8 @@ ExternalPluginResolution resolveEngineExternalPlugin(const magda::DeviceInfo& de
     resolved.description = match.description;
     applyInstalledRole(resolved.planDevice, match.description.isInstrument);
 
-    // Keep the project's identity and preference key. The capability cache is
-    // nevertheless queried with the exact installed identity resolution found.
+    // The project keeps its identity; the capability cache is keyed by the
+    // installed one.
     const auto resolvedIdentifier = match.description.createIdentifierString();
     magda::applyCachedCapabilitiesToDevice(resolved.planDevice, resolvedIdentifier);
     return resolved;
@@ -294,18 +253,9 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
                                                 bool offlineRender) {
     const auto& requestedName = requested.displayName;
 
-    // The identity boundary, and the first thing asked. Scan metadata may have
-    // changed in every field while the plugin loaded, including the role the
-    // plan compiles from; those are facts learned about this assignment, not
-    // about another one, so none of them is consulted here. What decides is
-    // whether the runtime still holds the very assignment the load was started
-    // against, which no copy of the model can carry and no unregistered device
-    // can claim.
+    // Whether the runtime still holds the assignment the load was started
+    // against; no copy of the model can answer that.
     if (!requested.assignment.isStillWanted()) {
-        // Which of the two it was, for a person reading the log: a key held
-        // under a different assignment is a slot now asking for something else,
-        // and anything else -- a released key, a runtime that is gone, a
-        // registration nobody made -- is a device there is no longer one of.
         return {.device = {},
                 .failure =
                     requested.assignment.keyWasReassigned()
@@ -313,9 +263,7 @@ ExternalDeviceResult completeExternalPluginLoad(std::unique_ptr<juce::AudioPlugi
                         : "the device was removed while \"" + requestedName + "\" was loading"};
     }
 
-    // Then the model, before anything is done with the instance. Everything
-    // below restores from it, and it is a different object from the one the
-    // load was requested with: seconds have passed.
+    // The model as it is now, not as it was when the load was requested.
     const auto* device = currentDevice ? currentDevice(requested.assignment.key) : nullptr;
 
     if (device == nullptr)
@@ -353,16 +301,9 @@ ExternalPluginResolution createEngineExternalDeviceAsync(
                                      .resolvedIsInstrument = resolved.description.isInstrument},
          currentDevice = std::move(currentDevice), offlineRender, completed = std::move(completed)](
             std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) {
-            // The lifetime gate, before anything is called rather than after.
-            // This lambda is stored by JUCE and run a turn or more later, and
-            // `completed` is the runtime's own: it publishes the device into the
-            // project and reports the failures. A runtime that is gone has
-            // nowhere to publish and nobody to tell, so calling it at all is the
-            // use-after-free -- refusing inside it would already be too late.
-            //
-            // Deliberately not isStillWanted(): a device deleted while its
-            // runtime lives is a load to refuse *and say so about*, because
-            // something is still waiting to hear it.
+            // JUCE runs this a turn or more later; `completed` belongs to the
+            // runtime, so a dead runtime must not be called at all. Not
+            // isStillWanted(): a deleted device is a load to refuse and report.
             if (!requested.assignment.runtimeIsAlive())
                 return;
 

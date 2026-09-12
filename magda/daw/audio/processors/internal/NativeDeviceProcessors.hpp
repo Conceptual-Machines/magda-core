@@ -9,12 +9,7 @@ namespace magda {
 
 namespace te = tracktion;
 
-/**
- * @brief Non-automatable plugin state for the 4OSC synth.
- *
- * These are CachedValues that are not exposed as AutomatableParameters, so
- * the FourOscProcessor captures them from the live plugin for the custom UI.
- */
+/// 4OSC's non-automatable CachedValues, captured from the live plugin for the custom UI.
 struct FourOscPluginState {
     int oscWaveShape[4] = {0, 0, 0, 0};
     int oscVoices[4] = {1, 1, 1, 1};
@@ -31,83 +26,45 @@ struct FourOscPluginState {
     int globalVoices = 32;  // Max polyphony
 };
 
-/**
- * @brief Processor for the built-in Magda Sampler device.
- *
- * The sampler is a MagdaDevice (#2271), so the chain holds the host's wrapper
- * and the display metadata comes from the device's own slots.
- */
+/// Processor for the built-in Magda Sampler, a MagdaDevice (#2271).
 class MagdaSamplerProcessor : public MagdaDeviceProcessor {
   public:
     MagdaSamplerProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the native Mutable Instruments Elements synth.
- *
- * Elements is a MagdaDevice (#2299), so the chain holds the host's wrapper
- * and the display metadata comes from the device's own slots.
- */
+/// Processor for the native Mutable Instruments Elements synth, a MagdaDevice (#2299).
 class MutableElementsProcessor : public MagdaDeviceProcessor {
   public:
     MutableElementsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the native Mutable Instruments Rings resonator.
- *
- * Rings is a MagdaDevice (#2299), so the chain holds the host's wrapper and
- * the display metadata comes from the device's own slots.
- */
+/// Processor for the native Mutable Instruments Rings resonator, a MagdaDevice (#2299).
 class MutableRingsProcessor : public MagdaDeviceProcessor {
   public:
     MutableRingsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the native Mutable Instruments Clouds granular FX.
- *
- * Clouds is a MagdaDevice (#2299), so the chain holds the host's wrapper and
- * the display metadata comes from the device's own slots.
- */
+/// Processor for the native Mutable Instruments Clouds granular FX, a MagdaDevice (#2299).
 class MutableCloudsProcessor : public MagdaDeviceProcessor {
   public:
     MutableCloudsProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the native convolution device (IR Reverb).
- *
- * The device is a MagdaDevice (#2299): gain, low cut, high cut, mix and
- * filter Q come from its slots. The impulse response itself is not a
- * parameter - it lives in the device's state and is loaded through the
- * `impulseResponseLoadFile` device command.
- */
+/// Processor for the native convolution device, a MagdaDevice (#2299). The
+/// impulse response is device state, loaded via the `impulseResponseLoadFile` command.
 class MagdaConvolutionProcessor : public MagdaDeviceProcessor {
   public:
     MagdaConvolutionProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the Sidechain volume-shaper insert.
- *
- * A MagdaDevice behind the host wrapper, so its parameters are read through
- * the device rather than off the wrapper's normalised slots: attack and
- * release are milliseconds, and a plain AutomatablePluginProcessor wrote the
- * model's milliseconds straight into a 0-to-1 slot, where anything past 1 ms
- * clamped to the top of the range (#2613).
- */
+/// Processor for the Sidechain volume-shaper. Reads through the device, not the
+/// wrapper's normalised slots: attack and release are milliseconds (#2613).
 class SidechainProcessor : public MagdaDeviceProcessor {
   public:
     SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
 
-/**
- * @brief Processor for the built-in 4OSC synthesizer
- *
- * Enumerates parameters generically from plugin->getAutomatableParameters().
- * The UI maps each control to its param index.
- */
+/// Processor for the built-in 4OSC synthesizer.
 class FourOscProcessor : public AutomatablePluginProcessor {
   public:
     FourOscProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
@@ -121,11 +78,8 @@ class FourOscProcessor : public AutomatablePluginProcessor {
 /**
  * @brief Processor for the MAGDA-native Faust DSP host.
  *
- * Faust's parameters live in a fixed pool of 64 lifetime-stable
- * AutomatableParameters managed by FaustPlugin. ParameterInfo per
- * slot comes from `paramInfoFromSlot(slot)`; inactive slots return a
- * placeholder so paramIndex (== slot index) stays addressable for
- * automation lane lookups.
+ * Parameters are FaustPlugin's fixed pool of 64 stable slots; paramIndex is the
+ * slot index, and an inactive slot returns a placeholder so it stays addressable.
  */
 class FaustProcessor : public DeviceProcessor {
   public:
@@ -139,12 +93,8 @@ class FaustProcessor : public DeviceProcessor {
     float getParameterByIndex(int paramIndex) const;
 };
 
-/**
- * @brief Processor for the MAGDA-native Faust polyphonic instrument.
- *
- * Identical pool-backed parameter model to FaustProcessor, but bound to
- * FaustInstrumentPlugin (the synth sibling of the Faust effect host).
- */
+/// Processor for the MAGDA-native Faust polyphonic instrument. Same pool model
+/// as FaustProcessor, bound to FaustInstrumentPlugin.
 class FaustInstrumentProcessor : public DeviceProcessor {
   public:
     FaustInstrumentProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
