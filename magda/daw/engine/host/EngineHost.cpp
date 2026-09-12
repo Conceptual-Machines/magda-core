@@ -463,8 +463,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishRouting(tracks);
     }
 
-    /// What every track hears of the live MIDI: one snapshot per reading of the
-    /// model, which the inputs the store keeps across a recompile read (#2592).
+    /**
+     * @brief What every track hears of the live MIDI (#2592).
+     *
+     * One snapshot per reading of the model, which the inputs the store keeps
+     * across a recompile read.
+     */
     void publishRouting(const std::vector<TrackInfo>& tracks) {
         if (session_ == nullptr)
             return;

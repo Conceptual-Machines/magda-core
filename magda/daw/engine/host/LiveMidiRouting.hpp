@@ -17,6 +17,7 @@
 
 namespace magda::daw::engine_host {
 
+/** @brief Resolves the model's MIDI input routing into engine snapshots. */
 class LiveMidiRouting {
   public:
     explicit LiveMidiRouting(LiveMidiSources& sources) : sources_(sources) {}
@@ -25,9 +26,10 @@ class LiveMidiRouting {
      * @brief @p tracks as the routing the engine renders, or null when it
      *        matches the snapshot before.
      *
-     * Every track gets an entry, since an entry naming no devices is what makes
-     * a monitor switched off silence. Null for an unchanged reading because a
-     * fader drag publishes values, and this, on every frame.
+     * Every track gets an entry: without one, a track whose monitor was
+     * switched off keeps the sources the previous snapshot gave it. Null when
+     * unchanged, because a fader drag publishes values, and this with them, on
+     * every frame.
      */
     std::shared_ptr<const engine::LiveRouting> resolve(const std::vector<TrackInfo>& tracks);
 
@@ -38,8 +40,12 @@ class LiveMidiRouting {
     }
 
   private:
-    /// The device sources @p track names. Empty for a track that is not
-    /// monitoring and for a "track:" route, which the plan carries as an edge.
+    /**
+     * @brief The device sources @p track names.
+     *
+     * Empty for a track that is not monitoring and for a "track:" route, which
+     * the plan carries as an edge.
+     */
     std::vector<engine::LiveMidiSourceId> devicesFor(const TrackInfo& track);
 
     LiveMidiSources& sources_;

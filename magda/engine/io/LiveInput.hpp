@@ -76,8 +76,11 @@ struct LiveInputBlock {
  */
 class LiveInputFeed {
   public:
-    /// Gives back a routing snapshot still pinned, so a feed destroyed inside a
-    /// callback leaves nothing acquired.
+    /**
+     * @brief Gives back a routing snapshot still pinned.
+     *
+     * So a feed destroyed inside a callback leaves nothing acquired.
+     */
     ~LiveInputFeed();
 
     /**
@@ -104,12 +107,19 @@ class LiveInputFeed {
     /// a callback reads nothing rather than the previous callback's samples.
     void endCallback();
 
-    /// Which live MIDI each track hears, replaced whole (#2592). On the
-    /// publishing thread; the snapshot it replaces is destroyed there.
+    /**
+     * @brief Which live MIDI each track hears, replaced whole (#2592).
+     *
+     * On the publishing thread; the snapshot it replaces is destroyed there.
+     */
     void publishRouting(std::shared_ptr<const LiveRouting> routing);
 
-    /// @p trackId's routing for this callback. Null before the first publish
-    /// and outside a callback, which is a track hearing nothing.
+    /**
+     * @brief @p trackId's routing for this callback.
+     *
+     * Null before the first publish and outside a callback, which is a track
+     * hearing nothing.
+     */
     const TrackLiveMidi* routingFor(TrackId trackId) const {
         return routing_ != nullptr ? routing_->find(trackId) : nullptr;
     }
@@ -262,12 +272,15 @@ class TrackLiveMidiInput final : public EngineMidiSource {
 
     void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override;
 
+    /** @brief Whether a source left the routing since the block before. */
     bool raisedAllNotesOff() const override {
         return panicked_;
     }
 
-    /// Events dropped for want of room in the port's byte budget
-    /// (kMaxMidiBytesPerPort). Read from any thread.
+    /**
+     * @brief Events dropped for want of room in the port's byte budget
+     *        (kMaxMidiBytesPerPort). Read from any thread.
+     */
     std::uint32_t droppedEvents() const {
         return dropped_.load(std::memory_order_relaxed);
     }
