@@ -1122,19 +1122,22 @@ TEST_CASE("An executor takes over the modifiers of the one it replaces",
     // The device op has no binding here, which prepare reports and carries on
     // from: what is being pinned is the carry, not the render.
     magda::engine::PlanExecutor first;
-    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    first.prepare(plan, bindings, context, nullptr, &values);
     CHECK(first.carriedModifiers() == 0);
 
     magda::engine::PlanExecutor second;
-    second.prepare(plan, bindings, context, &first, values.params.get());
+    second.prepare(plan, bindings, context, &first, &values);
     CHECK(second.carriedModifiers() == 1);
 
     SECTION("but not one that has become something else") {
-        auto changed = *values.params;
-        changed.modifiers[0].kind = ModKind::Random;
+        auto changed = std::make_shared<magda::engine::ParamTable>(*values.params);
+        changed->modifiers[0].kind = ModKind::Random;
+
+        auto edited = values;
+        edited.params = std::move(changed);
 
         magda::engine::PlanExecutor third;
-        third.prepare(plan, bindings, context, &first, &changed);
+        third.prepare(plan, bindings, context, &first, &edited);
         CHECK(third.carriedModifiers() == 0);
     }
 }

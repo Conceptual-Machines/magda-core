@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -185,6 +187,11 @@ class LiveInputFactory final : public RuntimeStateFactory {
     magda::engine::LevelTap* inputMeter = nullptr;
 };
 
+/// Binds nothing at all, which is what the app's factory does for live audio
+/// today: EngineRuntimeFactory leaves createAudioInput unoverridden, because
+/// live audio input is #2553's.
+class UnboundInputFactory final : public RuntimeStateFactory {};
+
 RenderContext context() {
     return RenderContext{44100.0, kBlockSize, 2};
 }
@@ -225,6 +232,38 @@ TEST_CASE("A hardware audio input is compiled for every track that names one",
     CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 0);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::MidiInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::MidiInput) == 1);
+}
+
+TEST_CASE("An input nobody is listening to is not a missing binding",
+          "[engine][live-input][2612]") {
+    // The host path, not a test factory: with the input op compiled for every
+    // track that names a device, a report per unmonitored track would be a line
+    // about an input the user is not asking to hear -- and in the app, which
+    // binds no live audio at all yet, one per configured track on every
+    // structural publish.
+    const auto messagesFor = [](InputMonitorMode monitor) {
+        UnboundInputFactory factory;
+        EngineSession session(factory);
+        session.liveInputs().prepare(2, kBlockSize);
+
+        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, false)};
+        const auto result = publish(session, compile(tracks), tracks);
+        REQUIRE(result.published);
+        return result.messages;
+    };
+
+    const auto reportsUnboundAudio = [](const std::vector<std::string>& messages) {
+        return std::ranges::any_of(messages, [](const std::string& message) {
+            return message.find("no live audio input bound") != std::string::npos;
+        });
+    };
+
+    CHECK_FALSE(reportsUnboundAudio(messagesFor(InputMonitorMode::Off)));
+    CHECK_FALSE(reportsUnboundAudio(messagesFor(InputMonitorMode::Auto)));
+
+    // Still said where the track is asking for it, which is what the report is
+    // for: the host meant to bind one and did not.
+    CHECK(reportsUnboundAudio(messagesFor(InputMonitorMode::In)));
 }
 
 TEST_CASE("What the monitor switch moves is the input gate's silence",

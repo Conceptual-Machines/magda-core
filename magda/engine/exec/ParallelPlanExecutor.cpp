@@ -49,7 +49,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
                                                        const PlanBindings& bindings,
                                                        const RenderContext& context,
                                                        const ParallelPlanExecutor* previous,
-                                                       const ParamTable* params) {
+                                                       const PlanValues* values) {
     // Everything below reallocates what a worker still finishing the last block
     // would read, so this comes first, the same as at destruction.
     letGoOfPool();
@@ -59,7 +59,7 @@ std::vector<std::string> ParallelPlanExecutor::prepare(const RenderPlan& plan,
     modSourceOps_.clear();
 
     auto messages = core_.prepare(plan, bindings, context,
-                                  previous != nullptr ? &previous->core_ : nullptr, params);
+                                  previous != nullptr ? &previous->core_ : nullptr, values);
     if (!core_.isPrepared())
         return messages;
 

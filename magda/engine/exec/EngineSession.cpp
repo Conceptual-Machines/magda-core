@@ -69,7 +69,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // resolved from one model against one plan.
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
                                                live_ == nullptr ? nullptr : &live_->executor,
-                                               prepared->values.params.get());
+                                               &prepared->values);
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 

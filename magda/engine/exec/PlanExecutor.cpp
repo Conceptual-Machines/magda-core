@@ -309,11 +309,33 @@ void PlanExecutor::reset() {
     paramLayout_ = 0;
 }
 
+namespace {
+
+/// Whether @p trackId is listening to its live audio input, which is the value
+/// on the gate the input reaches its chain through (#2612). True where the
+/// caller published no values, and where the plan has no gate: an input nobody
+/// can silence is one the track hears.
+bool hearsLiveInput(const RenderPlan& plan, const PlanValues* values, TrackId trackId) {
+    if (values == nullptr)
+        return true;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.role == OpRole::LiveInputGate && key.trackId == trackId)
+            return i < values->ops.size() ? !values->ops[i].silent : true;
+    }
+    return true;
+}
+
+}  // namespace
+
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                                const RenderContext& context,
                                                const PlanExecutor* previous,
-                                               const ParamTable* params) {
+                                               const PlanValues* values) {
     reset();
+
+    const auto* params = values == nullptr ? nullptr : values->params.get();
 
     std::vector<std::string> messages;
 
@@ -569,9 +591,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
+            // Reported only where the track is asking to hear the input. Its op
+            // is compiled whether or not the track is monitoring, so that the
+            // meter on it keeps reading (#2612); an input nobody is listening
+            // to is not a binding the host failed to make.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                if (audioSourceForOp_[i] == nullptr)
+                if (audioSourceForOp_[i] == nullptr && hearsLiveInput(plan, values, trackId))
                     messages.push_back(describe(i) + "no live audio input bound for track " +
                                        std::to_string(trackId) + ", it renders silence");
                 break;

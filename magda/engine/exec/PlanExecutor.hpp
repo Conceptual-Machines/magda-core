@@ -192,10 +192,14 @@ class PlanExecutor {
      * which is why the session holds its own handle on the rendering epoch
      * rather than reaching for whatever is currently published.
      */
+    /// @p values is what the plan will render with. The parameter table inside
+    /// it sizes the per-op windows, and the op values say which inputs the
+    /// model is asking to hear, which is what makes an unbound one worth
+    /// reporting (#2612). Null where a caller has neither.
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
                                      const PlanExecutor* previous = nullptr,
-                                     const ParamTable* params = nullptr);
+                                     const PlanValues* values = nullptr);
 
     /**
      * @brief Publish the panics this plan owes devices it rerouted (#2418).

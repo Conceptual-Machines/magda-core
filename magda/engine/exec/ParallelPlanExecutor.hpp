@@ -69,7 +69,7 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
                                      const ParallelPlanExecutor* previous = nullptr,
-                                     const ParamTable* params = nullptr);
+                                     const PlanValues* values = nullptr);
 
     /**
      * @brief Render one block into @p output. On the audio thread.
