@@ -5,6 +5,7 @@
 
 #include "magda/daw/audio/processors/base/DeviceProcessor.hpp"
 #include "magda/daw/core/AppPaths.hpp"
+#include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/DeviceInfo.hpp"
 #include "magda/daw/core/PluginParameterConfigStore.hpp"
 #include "magda/daw/core/RackInfo.hpp"
@@ -404,6 +405,53 @@ TEST_CASE("A saved config reaches a live device without a rebuild", "[param-conf
     CHECK(device.parameters[0].unit == "kHz");
     CHECK(device.visibleParameters == std::vector<int>{0});
     CHECK(device.miniMixerParameters == std::vector<int>{1});
+
+    tm.clearAllTracks();
+}
+
+TEST_CASE("A saved config reaches a device on a Drum Grid pad", "[param-config-store][2601]") {
+    // A pad device is configured from the same dialog as any other, and a
+    // device is not a leaf when it owns pads (#2204).
+    TempDataDir temp;
+    auto& tm = magda::TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+
+    magda::DeviceInfo grid;
+    grid.name = "Grid";
+    grid.pluginId = "drumgrid";
+    grid.format = magda::PluginFormat::Internal;
+    grid.isInstrument = true;
+    grid.deviceType = magda::DeviceType::Instrument;
+    const auto gridId = tm.addDeviceToTrack(trackId, grid);
+
+    const auto gridPath = magda::ChainNodePath::topLevelDevice(trackId, gridId);
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != magda::INVALID_CHAIN_ID);
+    REQUIRE(tm.addDeviceToPad(gridPath, padChainId, makeExternalDevice()) !=
+            magda::INVALID_DEVICE_ID);
+
+    auto config = store::fromDevice(makeExternalDevice());
+    config.entries[0].visible = true;
+    config.entries[0].unit = "kHz";
+    REQUIRE(store::save("VST3-Surge-XT-1a2b3c4d", config));
+
+    store::refreshLiveDevices("VST3-Surge-XT-1a2b3c4d");
+
+    const auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+
+    const magda::DeviceInfo* onPad = magda::chain_walk::findDevice(
+        track->chain.fxChainElements, magda::ChainNodePath::trackLevel(trackId),
+        magda::chain_walk::Pads::Enter,
+        [](const magda::DeviceInfo& device, const magda::ChainNodePath&) {
+            return device.uniqueId == "VST3-Surge-XT-1a2b3c4d";
+        });
+    REQUIRE(onPad != nullptr);
+
+    CHECK(onPad->parameters[0].unit == "kHz");
+    CHECK(onPad->visibleParameters == std::vector<int>{0});
 
     tm.clearAllTracks();
 }
