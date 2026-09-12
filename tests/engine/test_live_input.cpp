@@ -208,31 +208,31 @@ magda::engine::TransportSnapshot rolling(double fromBeat) {
 
 }  // namespace
 
-TEST_CASE("An input op is compiled for every track that names an input",
+TEST_CASE("A hardware audio input is compiled for every track that names one",
           "[engine][live-input][2612]") {
-    // Whether the track is listening is monitorsInput(): armed, or monitoring
-    // set to In. That is a value on the input gate, so the ops it decides
-    // nothing about are compiled for every switch position.
+    // monitorsInput(): armed, or monitoring set to In. Auto lights the activity
+    // indicator (receivesLiveMidiInput) but is not audible until the track is
+    // armed, which is what ships. For the audio input that decides the gate's
+    // value rather than whether the op exists, so the op is there either way.
     CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Auto, true, OpKind::AudioInput) == 1);
 
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 1);
+    // Live MIDI still comes and goes with the switch. #2612 is the audio half.
+    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 0);
+    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 0);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::MidiInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::MidiInput) == 1);
 }
 
-TEST_CASE("What the monitor switch moves is the gate's silence", "[engine][live-input][2612]") {
-    // The switch reaches the engine as values now, which is a publish that
-    // prepares nothing: the plan a monitoring track compiles is the plan an
-    // idle one compiles.
-    const auto silenceOf = [](InputMonitorMode monitor, OpRole role) {
-        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, false)};
+TEST_CASE("What the monitor switch moves is the input gate's silence",
+          "[engine][live-input][2612]") {
+    const auto gateSilence = [](InputMonitorMode monitor, bool armed) {
+        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, armed)};
         const auto plan = compile(tracks);
-        const auto gate = findRole(*plan, tracks.front().id, role);
+        const auto gate = findRole(*plan, tracks.front().id, OpRole::LiveInputGate);
         REQUIRE(gate >= 0);
 
         magda::engine::PlanValues values;
@@ -240,17 +240,21 @@ TEST_CASE("What the monitor switch moves is the gate's silence", "[engine][live-
         return values.ops[static_cast<std::size_t>(gate)].silent;
     };
 
-    CHECK(silenceOf(InputMonitorMode::Off, OpRole::AudioInputGate));
-    CHECK_FALSE(silenceOf(InputMonitorMode::In, OpRole::AudioInputGate));
+    CHECK(gateSilence(InputMonitorMode::Off, false));
+    CHECK(gateSilence(InputMonitorMode::Auto, false));
+    CHECK_FALSE(gateSilence(InputMonitorMode::In, false));
+    CHECK_FALSE(gateSilence(InputMonitorMode::Off, true));
+    CHECK_FALSE(gateSilence(InputMonitorMode::Auto, true));
 
-    // The hardware MIDI route has no gate: what a track hears of the live MIDI
-    // is the published routing, and the audition shares the op (#2592).
-    const std::vector<TrackInfo> idle{monitoringTrack(InputMonitorMode::Off, false)};
-    CHECK(findRole(*compile(idle), idle.front().id, OpRole::MidiInputGate) < 0);
-
-    const auto monitoring = std::vector<TrackInfo>{monitoringTrack(InputMonitorMode::In, false)};
-    CHECK(magda::engine::planFingerprint(*compile(idle)) ==
-          magda::engine::planFingerprint(*compile(monitoring)));
+    // The input reaches the chain through the gate and nowhere else, so a
+    // silent gate is the whole of what an unmonitored track hears of it.
+    const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::Off, false)};
+    const auto plan = compile(tracks);
+    const auto meter = findRole(*plan, tracks.front().id, OpRole::LiveInputMeter);
+    const auto gate = findRole(*plan, tracks.front().id, OpRole::LiveInputGate);
+    REQUIRE(meter >= 0);
+    REQUIRE(gate >= 0);
+    CHECK(consumersOf(*plan, meter) == std::vector<int>{gate});
 }
 
 TEST_CASE("A live audio input reads the callback's own samples", "[engine][live-input]") {
@@ -579,8 +583,8 @@ TEST_CASE("An input meter reads the input a monitoring track is hearing",
     // The incumbent reads this off the input device (WaveInputDevice's level
     // measurer); here it is a meter on the input op, so it exists exactly while
     // the op does and sits in the signal rather than beside it. Ahead of the
-    // gate, so a track recording without monitoring still meters what it
-    // records (#2612).
+    // monitor gate, so a track that is not listening still meters its input
+    // (#2612).
     CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::Meter) ==
           inputOpsFor(InputMonitorMode::In, false, OpKind::Meter));
 

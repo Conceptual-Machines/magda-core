@@ -335,8 +335,9 @@ std::vector<MgdFixture> build() {
 
     {
         // A Faust device on an audio track, and a Poly Synth on a track whose
-        // input monitoring is on: a device whose DSP was compiled from a .dsp
-        // file, which no code-built case has.
+        // input monitoring is on. Two things no code-built case has: a device
+        // whose DSP was compiled from a .dsp file, and a track that is listening
+        // to an input nothing is bound to.
         //
         // The clip is warped, and its markers are what a real transient pass
         // produced rather than what somebody would write down: one of them
@@ -358,6 +359,7 @@ std::vector<MgdFixture> build() {
 
         fixture.declaration.expectedDiagnostics = {
             "warp marker(s) that do not run forwards",
+            "no live MIDI input bound for track 2",
         };
 
         fixture.sources = {

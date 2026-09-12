@@ -189,24 +189,26 @@ class Compiler {
     bool carriesClips(const TrackInfo& track) const;
 
     /**
-     * @brief What each input field routes to, whether or not the track listens.
+     * @brief The routing each input field resolves to.
      *
-     * Ordering discovery and emission both go through these, so a route can
-     * never be a dependency without also being a connection: an edge that is
-     * not a connection can invent a cycle, and breaking that cycle costs a real
-     * connection elsewhere. Monitoring is a value on the gate below (#2612).
+     * A hardware input resolves whether or not the track is monitoring: the
+     * switch is a value on the gate it arrives through (#2612). A route from
+     * another track still comes and goes with the switch, because it is an
+     * ordering dependency as well as a connection -- ordering discovery and
+     * emission both go through here, so a route can never be a dependency
+     * without also being a connection, and a dormant one that closed a cycle
+     * would cost a real connection elsewhere.
      */
     TrackRoute activeAudioInputRoute(const TrackInfo& track) const;
     TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
 
     /**
-     * @brief The op @p source reaches @p trackId's input through.
+     * @brief The op the live audio input reaches @p trackId's chain through.
      *
-     * Where the monitor switch lands: the gate is silent while the track is not
-     * listening, so flipping it publishes values and rebuilds nothing (#2612).
+     * Where the monitor switch lands: silent while the track is not listening,
+     * so flipping it publishes values and rebuilds nothing (#2612).
      */
-    PortRef emitAudioInputGate(TrackId trackId, PortRef source);
-    PortRef emitMidiInputGate(TrackId trackId, PortRef source);
+    PortRef emitLiveInputGate(TrackId trackId, PortRef source);
 
     /// The track this track's audio output feeds; the master by default.
     static TrackId resolveAudioDestination(const TrackInfo& track);
@@ -393,11 +395,15 @@ bool Compiler::carriesClips(const TrackInfo& track) const {
 TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
     if (!carriesClips(track) || track.audioInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
-    return parseTrackRoute(track.audioInputDevice);
+
+    const auto route = parseTrackRoute(track.audioInputDevice);
+    if (route.namesTrack() && !track.monitorsInput())
+        return {RouteKind::None, INVALID_TRACK_ID};
+    return route;
 }
 
 TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || track.midiInputDevice.isEmpty())
+    if (!carriesClips(track) || !track.monitorsInput() || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
 }
@@ -550,18 +556,10 @@ PortRef Compiler::emitMix(const OpKey& key, const std::vector<PortRef>& sources)
                    0};
 }
 
-PortRef Compiler::emitAudioInputGate(TrackId trackId, PortRef source) {
-    const OpKey key{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
-                    INVALID_DEVICE_ID, OpRole::AudioInputGate, 0};
-    return PortRef{addOp(OpKind::Gain, key, {source}, {SignalKind::Audio}), 0};
-}
-
-PortRef Compiler::emitMidiInputGate(TrackId trackId, PortRef source) {
-    // A merge of one. There is no gain on a MIDI stream, so silence is the only
-    // thing a value can say about it, and a merge is what already reads that.
+PortRef Compiler::emitLiveInputGate(TrackId trackId, PortRef source) {
     const OpKey key{trackId,           INVALID_RACK_ID,       INVALID_CHAIN_ID,
-                    INVALID_DEVICE_ID, OpRole::MidiInputGate, 0};
-    return PortRef{addOp(OpKind::MergeMidi, key, {source}, {SignalKind::Midi}), 0};
+                    INVALID_DEVICE_ID, OpRole::LiveInputGate, 0};
+    return PortRef{addOp(OpKind::Gain, key, {source}, {SignalKind::Audio}), 0};
 }
 
 PortRef Compiler::emitDelta(const OpKey& key, PortRef wet, PortRef dry) {
@@ -1326,10 +1324,11 @@ void Compiler::emitTrack(const TrackInfo& track) {
             PortRef{addOp(OpKind::SessionAudio, sessionKey, {}, {SignalKind::Audio}), 0});
     }
 
-    // Input reaches a track whenever the track names one, from hardware or from
-    // another track. Whether the track is listening is the monitor switch, and
-    // that is a value on the gate each route arrives through rather than a
-    // shape: a switch flip publishes values and rebuilds nothing (#2612).
+    // A hardware input is compiled for every track that names one, and the
+    // monitor switch is a value on the gate below rather than a shape: flipping
+    // it publishes values and rebuilds nothing (#2612). A route from another
+    // track is still gated in activeAudioInputRoute, so ordering agrees with
+    // what is connected.
     switch (const auto route = activeAudioInputRoute(track); route.kind) {
         case RouteKind::Track: {
             // An internal route carries the source track's post-mute output.
@@ -1337,7 +1336,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // the source rather than asserted here.
             if (const auto source = trackRoutedOutput_.find(route.trackId);
                 source != trackRoutedOutput_.end())
-                audioSources.push_back(emitAudioInputGate(track.id, source->second));
+                audioSources.push_back(source->second);
             else
                 diagnose("track " + std::to_string(track.id) + ": audio input track " +
                          std::to_string(route.trackId) + " is not compiled, input not connected");
@@ -1364,7 +1363,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
                 addOp(OpKind::Meter, meterKey, {PortRef{op, 0}}, {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(meter)].liveness = LivenessDomain::Live;
 
-            audioSources.push_back(emitAudioInputGate(track.id, PortRef{meter, 0}));
+            audioSources.push_back(emitLiveInputGate(track.id, PortRef{meter, 0}));
             break;
         }
         case RouteKind::None:
@@ -1404,9 +1403,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // One live input op per track, whatever else is routed to it: a preview is
     // queued under the track's own audition source, and the store keys live
     // inputs by TrackId, so a second op here would be a second binding to one
-    // object (CompileOptions::auditionMidi, #2579). No monitor gate on it and
-    // none wanted: the published routing decides which sources it hears, and
-    // the audition is not one of them (#2592).
+    // object (CompileOptions::auditionMidi, #2579).
     const auto route = activeMidiInputRoute(track);
     if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
         midiSources.push_back(emitLiveMidiInput(track.id));
@@ -1417,7 +1414,7 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // not what its own chain made of it.
             if (const auto source = trackMidiInput_.find(route.trackId);
                 source != trackMidiInput_.end())
-                midiSources.push_back(emitMidiInputGate(track.id, source->second));
+                midiSources.push_back(source->second);
             else
                 diagnose("track " + std::to_string(track.id) + ": MIDI input track " +
                          std::to_string(route.trackId) + " produces no MIDI, input not connected");
@@ -1627,9 +1624,9 @@ RenderPlan Compiler::run() {
     // nothing in its own chain consumes it, so this is collected up front.
     for (const auto& track : tracks_) {
         collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSourceTracks_);
-        // Whether the destination is listening this second does not come into
-        // it: one track's monitor button would otherwise decide another track's
-        // op set (#2612). The same rule a MIDI sidechain already follows.
+        // Gated the same way the route itself is: an unmonitored route reads
+        // nothing, so making its source compile MIDI ops would leave ops in the
+        // plan that no one reads.
         if (const auto route = activeMidiInputRoute(track); route.namesTrack())
             midiSourceTracks_.insert(route.trackId);
     }

@@ -109,10 +109,8 @@ const char* toString(OpRole role) {
             return "liveInputMeter";
         case OpRole::LiveMidiInput:
             return "liveMidiInput";
-        case OpRole::AudioInputGate:
-            return "audioInputGate";
-        case OpRole::MidiInputGate:
-            return "midiInputGate";
+        case OpRole::LiveInputGate:
+            return "liveInputGate";
         case OpRole::SessionAudio:
             return "sessionAudio";
         case OpRole::SessionMidi:
