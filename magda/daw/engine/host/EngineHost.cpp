@@ -464,10 +464,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /**
-     * @brief What every track hears of the live MIDI (#2592).
+     * @brief Publish what every track hears of the live MIDI (#2592).
      *
-     * One snapshot per reading of the model, which the inputs the store keeps
-     * across a recompile read.
+     * One snapshot per reading of the model. The store keeps its inputs across
+     * a recompile, and they read this.
      */
     void publishRouting(const std::vector<TrackInfo>& tracks) {
         if (session_ == nullptr)
@@ -1014,9 +1014,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     EngineFileReaders files_;
     engine::PrefetchThread reader_;
 
-    /// Who is playing, what they played, and which track hears it. The
-    /// registry is the message and MIDI threads'; the queue is how one reaches
-    /// the other side.
+    /// Who is playing, what they played, and which track hears it. The message
+    /// thread and the MIDI threads share the registry; the queue carries
+    /// messages between them.
     LiveMidiSources sources_;
     LiveMidiRouting routing_{sources_};
     LiveMidiQueue queue_;

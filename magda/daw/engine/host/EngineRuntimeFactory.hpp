@@ -54,8 +54,12 @@ class EngineFileReaders final : public engine::AudioFileReaderFactory {
  */
 class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
   public:
-    /// The feeds every source it makes will read. Once, before the first
-    /// publish; all of them outlive every source bound into any plan.
+    /**
+     * @brief Store the feeds that sources created here read from.
+     *
+     * Call once, before the first publish. Each feed outlives every source
+     * bound into a plan.
+     */
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
                 engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs);
 

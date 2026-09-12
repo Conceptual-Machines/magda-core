@@ -23,7 +23,7 @@ class LiveMidiRouting {
     explicit LiveMidiRouting(LiveMidiSources& sources) : sources_(sources) {}
 
     /**
-     * @brief @p tracks as the routing the engine renders.
+     * @brief Resolve @p tracks into the routing the engine renders.
      *
      * Every track gets an entry, so each one carries its own sources. Returns
      * null when the result equals the last snapshot.

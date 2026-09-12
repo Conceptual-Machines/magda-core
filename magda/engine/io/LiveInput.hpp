@@ -104,9 +104,10 @@ class LiveInputFeed {
     void endCallback();
 
     /**
-     * @brief Which live MIDI each track hears, replaced whole (#2592).
+     * @brief Replace the routing every track's MIDI input reads (#2592).
      *
-     * On the publishing thread; the snapshot it replaces is destroyed there.
+     * On the publishing thread, which is also where the old snapshot is
+     * destroyed.
      */
     void publishRouting(std::shared_ptr<const LiveRouting> routing);
 
