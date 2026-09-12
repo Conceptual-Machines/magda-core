@@ -174,15 +174,13 @@ void MiniChainRow::resolveParams() {
     };
 
     // 1) Explicit user selection from the parameter config dialog's "Mini"
-    //    column (indices into devInfo->parameters), in the order chosen.
-    for (int idx : devInfo->miniMixerParameters) {
+    //    column (slots, #2638), in the order chosen.
+    for (const int slot : devInfo->miniMixerParameters) {
         if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
             break;
-        if (idx >= 0 && idx < static_cast<int>(devInfo->parameters.size())) {
-            const auto& paramInfo = devInfo->parameters[static_cast<size_t>(idx)];
-            if (!paramInfo.hidden)
-                addParamSlider(paramInfo);
-        }
+        if (const auto* paramInfo = devInfo->findParameterByIndex(slot);
+            paramInfo != nullptr && !paramInfo->hidden)
+            addParamSlider(*paramInfo);
     }
 
     // 2) Fallback (no explicit selection): first N non-hidden parameters in

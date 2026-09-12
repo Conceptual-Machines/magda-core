@@ -66,26 +66,32 @@ void applyDeviceSlotAutomationValueChange(magda::DeviceInfo& device, ParamHostCo
 
     if (paramGrid != nullptr) {
         const int paramsPerPage = paramGrid->getSlotCount();
-        const int currentPage = paramGrid->getCurrentPage();
-        const int pageOffset = currentPage * paramsPerPage;
-        const bool useVisibilityFilter = !device.visibleParameters.empty();
+        const int pageOffset = paramGrid->getCurrentPage() * paramsPerPage;
+
+        // Which slot the grid draws in each cell: the user's selection where
+        // there is one (#2638), the array in order otherwise.
+        const auto slotInCell = [&device](int cell) {
+            const auto at = [](const auto& list, int index) {
+                return index >= 0 && index < static_cast<int>(list.size());
+            };
+
+            if (!device.visibleParameters.empty())
+                return at(device.visibleParameters, cell)
+                           ? device.visibleParameters[static_cast<size_t>(cell)]
+                           : -1;
+
+            return at(device.parameters, cell)
+                       ? device.parameters[static_cast<size_t>(cell)].paramIndex
+                       : -1;
+        };
 
         for (int slotIndex = 0; slotIndex < paramsPerPage; ++slotIndex) {
-            const int visibleParamIndex = pageOffset + slotIndex;
-            int actualParamIndex = 0;
-            if (useVisibilityFilter) {
-                if (visibleParamIndex >= static_cast<int>(device.visibleParameters.size()))
-                    continue;
-                actualParamIndex = device.visibleParameters[static_cast<size_t>(visibleParamIndex)];
-            } else {
-                actualParamIndex = visibleParamIndex;
-            }
+            if (slotInCell(pageOffset + slotIndex) != paramIndex)
+                continue;
 
-            if (actualParamIndex == paramIndex) {
-                if (auto* slot = paramGrid->getSlot(slotIndex))
-                    slot->setParamValue(modelValue);
-                break;
-            }
+            if (auto* slot = paramGrid->getSlot(slotIndex))
+                slot->setParamValue(modelValue);
+            break;
         }
     }
 

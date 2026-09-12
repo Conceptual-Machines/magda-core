@@ -628,8 +628,7 @@ HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
                                    "their parameters already accept agent writes");
 
     // The wire indices are the ones devices.listParameters reports, which are
-    // paramIndex when set; the customization lists key on position. Translate
-    // so the two operations speak the same addresses.
+    // slots; a config entry is addressed by its position in the described list.
     const auto parameters = deviceParameterList(*device, *path);
     std::unordered_map<int, int> positionByWireIndex;
     for (size_t i = 0; i < parameters.size(); ++i) {

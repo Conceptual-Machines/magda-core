@@ -249,10 +249,11 @@ TEST_CASE("A config follows its parameter when the plugin renumbers",
 
     REQUIRE(store::applyToDevice(updated));
 
-    // Mode is at three now, and that is where its override landed.
+    // Mode is at three now, and that is where its override landed. The
+    // selection names its slot, which the renumber did not move (#2638).
     CHECK(updated.parameters[3].name == "Mode");
     CHECK(updated.parameters[3].unit == "shape");
-    CHECK(updated.visibleParameters == std::vector<int>{3});
+    CHECK(updated.visibleParameters == std::vector<int>{2});
 
     // The parameter that took the old position is untouched.
     CHECK(updated.parameters[2].unit == "%");
