@@ -925,7 +925,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return held != nullptr ? externalIn(*held) : nullptr;
     }
 
-    /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const {
         auto* external = externalDeviceAt(devicePath);
         return external != nullptr ? external->describeParameters() : HostParameters{};

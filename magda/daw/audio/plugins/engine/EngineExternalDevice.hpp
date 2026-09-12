@@ -173,6 +173,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      *
      * Message thread, on the same terms as parameterText(): a query that
      * suspends nothing. What the model mirrors is a subset of this (#2629).
+     * The wrapper pair carries its defaults, since the model owns those values
+     * and this device's own copies are written on the audio thread.
      */
     magda::HostParameters describeParameters() const;
 

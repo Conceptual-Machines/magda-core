@@ -474,6 +474,41 @@ TEST_CASE("Bypass is applied and reported through the facade", "[device-api][mut
     TrackManager::getInstance().clearAllTracks();
 }
 
+TEST_CASE("The AI opt-in gate names slots", "[device-api][mutation][2638]") {
+    auto& tracks = TrackManager::getInstance();
+    const auto trackId = freshTrack("Synth");
+
+    // A hosted plugin's own parameters start at slot 2, past the wrapper pair,
+    // so a selection of the first one is {2} rather than {0}.
+    DeviceInfo device;
+    device.name = "Plugin";
+    device.pluginId = "com.example.plugin";
+    device.format = PluginFormat::VST3;
+    for (int slot = 2; slot < 5; ++slot) {
+        ParameterInfo info;
+        info.paramIndex = slot;
+        info.name = "P" + juce::String(slot);
+        info.minValue = 0.0f;
+        info.maxValue = 1.0f;
+        info.currentValue = 0.0f;
+        device.parameters.push_back(info);
+    }
+    device.aiSoundDesignerParameters = {2};
+
+    const auto deviceId = tracks.addDeviceToTrack(trackId, device);
+    const auto path = tracks.findDevicePath(deviceId);
+
+    DeviceApiLive devices;
+
+    CHECK(devices.setDeviceParameter(path, 2, 0.5f));
+
+    // Slot 4 sits where the selection's own number would land if this counted
+    // positions, and nobody opted it in.
+    CHECK_FALSE(devices.setDeviceParameter(path, 4, 0.5f));
+
+    tracks.clearAllTracks();
+}
+
 TEST_CASE("Parameter writes are range-checked rather than clamped", "[device-api][mutation]") {
     auto& tracks = TrackManager::getInstance();
     const auto trackId = freshTrack("Synth");

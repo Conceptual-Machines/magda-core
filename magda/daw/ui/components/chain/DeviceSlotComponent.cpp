@@ -758,7 +758,6 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
     }
 }
 
-/** @brief Draw from what the plugin has, which for a hosted one is its instance. */
 void DeviceSlotComponent::adoptParameterList() {
     device_.parameters = magda::deviceParameterList(device_, nodePath_);
 }
@@ -766,8 +765,7 @@ void DeviceSlotComponent::adoptParameterList() {
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
 
-    // The path is what reaches the plugin, so the list can only be taken once
-    // it is known (#2634).
+    // The path is what reaches the plugin (#2634).
     adoptParameterList();
 
     customUI_.setDevicePath(path);

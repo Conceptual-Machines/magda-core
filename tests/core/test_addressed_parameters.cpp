@@ -168,9 +168,8 @@ TEST_CASE("A place in the device UI addresses a parameter", "[core][parameters][
 }
 
 TEST_CASE("A UI list names slots", "[core][parameters][addressed]") {
-    // A hosted plugin's own parameters start at slot 2, past the wrapper pair.
-    // The selections name those slots (#2638), so nothing has to translate a
-    // position through an array that #2635 shortens.
+    // A hosted plugin's own parameters start at slot 2, past the wrapper pair,
+    // and the selections name those slots (#2638).
     auto device = makeDevice(7, 0);
     for (int slot = 2; slot < 6; ++slot)
         device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);

@@ -313,8 +313,7 @@ class AudioEngine : public AudioEngineListener {
     /**
      * @brief Every parameter the plugin at @p devicePath reports (#2629).
      *
-     * Message thread. Empty where the engine holds no instance for the path,
-     * which leaves the reader on the model's own array.
+     * Message thread. Empty for a path this engine holds no instance for.
      */
     virtual HostParameters describeDeviceParameters(const ChainNodePath& /*devicePath*/) const {
         return {};

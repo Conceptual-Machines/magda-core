@@ -17,12 +17,7 @@ HostParameters reportedAt(const ChainNodePath& devicePath) {
     return engine != nullptr ? engine->describeDeviceParameters(devicePath) : HostParameters{};
 }
 
-/**
- * @brief @p reported in a device, shaped for the config store and the providers.
- *
- * Both work on a DeviceInfo, and the fields they read are the plugin's identity
- * and its lists.
- */
+/** @brief @p reported in a device, which is what the config store works on. */
 DeviceInfo asDevice(const DeviceInfo& device, HostParameters&& reported) {
     DeviceInfo described;
     described.id = device.id;
@@ -30,7 +25,10 @@ DeviceInfo asDevice(const DeviceInfo& device, HostParameters&& reported) {
     described.pluginId = device.pluginId;
     described.format = device.format;
     described.parameters = std::move(reported.parameters);
-    described.wrapperParameters = std::move(reported.wrapperParameters);
+
+    // The model owns the wrapper pair: no chunk carries it and the instance has
+    // never heard of it.
+    described.wrapperParameters = device.wrapperParameters;
     return described;
 }
 

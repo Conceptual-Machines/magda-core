@@ -701,18 +701,7 @@ magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInf
 }
 
 magda::HostParameters EngineExternalDevice::describeParameters() const {
-    auto described = magda::describeHostParameters(*instance_, magda::DeviceInfo{});
-
-    // The wrapper pair is the host's own, so its live values are these rather
-    // than anything the instance holds.
-    for (auto& parameter : described.wrapperParameters) {
-        if (parameter.wrapperRole == magda::WrapperRole::DryGain)
-            parameter.currentValue = dryGain_;
-        else if (parameter.wrapperRole == magda::WrapperRole::WetGain)
-            parameter.currentValue = wetGain_;
-    }
-
-    return described;
+    return magda::describeHostParameters(*instance_, magda::DeviceInfo{});
 }
 
 juce::String EngineExternalDevice::parameterText(int slot, float normalised) const {

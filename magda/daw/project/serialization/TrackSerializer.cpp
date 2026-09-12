@@ -54,9 +54,8 @@ std::vector<int> readInts(const juce::DynamicObject& obj, const char* key) {
 /**
  * @brief The three parameter selections, whichever way the project holds them.
  *
- * They are slots from #2638 on. A project written before that holds positions
- * in the device's parameter array, which still carries every slot at load, so
- * the position is translated through it.
+ * Slots from #2638 on. An older project holds positions, translated through
+ * the saved array, which still carries every slot at load.
  */
 void readParameterSelections(const juce::DynamicObject& obj, DeviceInfo& device) {
     const auto selection = [&obj, &device](const char* slotsKey, const char* positionsKey) {
@@ -502,8 +501,8 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
     obj->setProperty("parameters", juce::var(paramsArray));
 
-    // The selections, as parameter slots (#2638). Written under their own keys
-    // so a reader can tell them from the positions older projects hold.
+    // Slots (#2638), under their own keys so a reader can tell them from the
+    // positions older projects hold.
     const auto writeSlots = [&obj](const char* key, const std::vector<int>& slots) {
         juce::Array<juce::var> array;
         for (const auto slot : slots)

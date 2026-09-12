@@ -176,8 +176,7 @@ void MiniChainRow::resolveParams() {
         paramSliders_.push_back(std::move(slider));
     };
 
-    // What the plugin has, which for a hosted one comes from its instance
-    // (#2634).
+    // What the plugin has (#2634).
     const auto parameters = deviceParameterList(*devInfo, devicePath_);
 
     const auto parameterAt = [&parameters](int slot) -> const ParameterInfo* {

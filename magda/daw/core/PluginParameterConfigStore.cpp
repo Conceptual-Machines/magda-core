@@ -281,9 +281,8 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     device.aiSoundDesignerParameters.clear();
     device.aiSoundDesignerPrompt = config->aiPrompt;
 
-    // An entry is matched to a parameter by stable id and the selection is
-    // stored as that parameter's slot (#2638), so a list survives the array it
-    // was resolved against changing shape.
+    // An entry is matched by stable id, and its selection stored as the slot
+    // of the parameter it lands on (#2638).
     const auto count = static_cast<int>(device.parameters.size());
 
     std::vector<juce::String> currentIds;
