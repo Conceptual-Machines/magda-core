@@ -1,11 +1,20 @@
 #include "LiveMidiRouting.hpp"
 
 #include <algorithm>
+#include <set>
 
 namespace magda::daw::engine_host {
 
 std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
     const std::vector<TrackInfo>& tracks) {
+    // Before anything is allocated: a project that swaps one set of tracks for
+    // another would otherwise ask for the new slots while the old ones are
+    // still held, and every track past the room would go without (#2590).
+    std::set<TrackId> live;
+    for (const auto& track : tracks)
+        live.insert(track.id);
+    sources_.retainAuditions(live);
+
     auto routing = std::make_shared<engine::LiveRouting>();
     routing->tracks.reserve(tracks.size());
 

@@ -28,9 +28,11 @@ namespace magda::daw::engine_host {
 
 class LiveMidiQueue {
   public:
-    /// One short message, already resolved to the source it belongs to.
+    /// One short message, already resolved to the source it belongs to and the
+    /// buffer that source was holding when it was resolved.
     struct Event {
         int source = 0;
+        int slot = -1;
         juce::uint8 bytes[3]{};
         int size = 0;
     };
@@ -41,8 +43,13 @@ class LiveMidiQueue {
      * SysEx and anything longer than three bytes is dropped and counted: a
      * live note fits, and carrying a variable-length message would mean
      * allocating for it.
+     *
+     * @p slot travels with it because a queued event outlives the model: by
+     * the time the callback reads this, @p source may be a track nobody has
+     * any more and @p slot may belong to another. Carrying both is what lets
+     * the callback see that they no longer agree (LiveMidiSources.hpp).
      */
-    void push(int source, const juce::MidiMessage& message);
+    void push(int source, int slot, const juce::MidiMessage& message);
 
     /// Everything pushed since the last call, in order. Audio thread.
     template <typename Fn> void drain(Fn&& consume) {

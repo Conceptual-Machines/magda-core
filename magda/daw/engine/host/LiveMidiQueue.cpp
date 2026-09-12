@@ -4,7 +4,7 @@
 
 namespace magda::daw::engine_host {
 
-void LiveMidiQueue::push(int source, const juce::MidiMessage& message) {
+void LiveMidiQueue::push(int source, int slot, const juce::MidiMessage& message) {
     const auto size = message.getRawDataSize();
 
     if (size <= 0 || size > 3 || message.isSysEx()) {
@@ -14,6 +14,7 @@ void LiveMidiQueue::push(int source, const juce::MidiMessage& message) {
 
     Event event;
     event.source = source;
+    event.slot = slot;
     event.size = size;
     std::memcpy(event.bytes, message.getRawData(), static_cast<std::size_t>(size));
 

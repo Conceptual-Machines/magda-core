@@ -56,6 +56,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineRuntimeFactory.cpp
         host/EngineTrace.cpp
         host/ExternalPluginLoader.cpp
+        host/LiveMidiCollector.cpp
         host/LiveMidiQueue.cpp
         host/LiveMidiRouting.cpp
         host/LiveMidiSources.cpp
@@ -64,6 +65,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineRuntimeFactory.hpp
         host/EngineTrace.hpp
         host/ExternalPluginLoader.hpp
+        host/LiveMidiCollector.hpp
         host/LiveMidiQueue.hpp
         host/LiveMidiRouting.hpp
         host/LiveMidiSources.hpp
