@@ -830,8 +830,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // would find the wrong device (#2600).
         attachParameterTextProviders(*device, path);
 
-        if (path.isValid())
+        if (path.isValid()) {
             TrackManager::getInstance().notifyDevicePropertyChanged(path);
+
+            // The chain rebuilds its slots on this one, and a slot built
+            // before its plugin loaded holds an empty array until it does
+            // (#2617).
+            TrackManager::getInstance().notifyTrackDevicesChanged(path.trackId);
+        }
 
         // Last, so the plan that binds the loader's instance is compiled from
         // the model as corrected above.
