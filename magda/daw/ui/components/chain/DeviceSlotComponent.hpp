@@ -320,6 +320,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     void updateParameterSlots();   // Reload parameter data for current page
     void updateParameterValues();  // Update only parameter values (for polling)
+    bool applySavedParameterConfig();
     void updateParameterPagination();
     void goToPrevPage();
     void goToNextPage();

@@ -10,6 +10,7 @@
 #include "../common/SvgButton.hpp"
 #include "../common/TextSlider.hpp"
 #include "core/ChainNodePath.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 
@@ -136,6 +137,8 @@ void MiniChainRow::resolveParams() {
     auto* devInfo = TrackManager::getInstance().getDeviceInChainByPath(devicePath_);
     if (devInfo == nullptr)
         return;
+    if (devInfo->uniqueId.isNotEmpty())
+        magda::PluginParameterConfigStore::applyToDevice(devInfo->uniqueId, *devInfo);
     const auto path = devicePath_;
 
     auto addParamSlider = [&](const ParameterInfo& paramInfo) {

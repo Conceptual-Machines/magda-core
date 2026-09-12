@@ -4,7 +4,6 @@
 #include <unordered_map>
 
 #include "AppPaths.hpp"
-#include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
 #include "RackInfo.hpp"
 #include "TrackManager.hpp"
@@ -27,15 +26,14 @@ bool applyConfigToMatchingDevice(const juce::String& uniqueId, DeviceInfo& devic
 bool refreshElementParameterConfig(const juce::String& uniqueId,
                                    std::vector<ChainElement>& elements) {
     bool changed = false;
-    // Pads entered: a device on a Drum Grid pad is configured from the same
-    // dialog as any other, and the walk is shared so that adding a container to
-    // the model does not leave this one behind (#2204).
-    chain_walk::forEachDevice(elements, {}, chain_walk::Pads::Enter,
-                              [&changed, &uniqueId](DeviceInfo& device, const ChainNodePath&) {
-                                  changed =
-                                      applyConfigToMatchingDevice(uniqueId, device) || changed;
-                                  return true;
-                              });
+    for (auto& element : elements) {
+        if (isDevice(element)) {
+            changed = applyConfigToMatchingDevice(uniqueId, getDevice(element)) || changed;
+        } else if (isRack(element)) {
+            for (auto& chain : getRack(element).chains)
+                changed = refreshElementParameterConfig(uniqueId, chain.elements) || changed;
+        }
+    }
     return changed;
 }
 
