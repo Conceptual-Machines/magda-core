@@ -7,6 +7,7 @@
 
 #include "ai/AIPanelComponent.hpp"
 #include "audio/AudioBridge.hpp"
+#include "audio/DeviceParameterList.hpp"
 #include "audio/plugin_manager/PluginManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
@@ -757,8 +758,18 @@ void DeviceSlotComponent::syncModMacroControlsAvailability() {
     }
 }
 
+/** @brief Draw from what the plugin has, which for a hosted one is its instance. */
+void DeviceSlotComponent::adoptParameterList() {
+    device_.parameters = magda::deviceParameterList(device_, nodePath_);
+}
+
 void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     NodeComponent::setNodePath(path);
+
+    // The path is what reaches the plugin, so the list can only be taken once
+    // it is known (#2634).
+    adoptParameterList();
+
     customUI_.setDevicePath(path);
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), customUI_);
 
@@ -915,6 +926,7 @@ void DeviceSlotComponent::updateFromDevice(const magda::DeviceInfo& device) {
     }
 
     device_ = device;
+    adoptParameterList();
     refreshDeviceTraits(device);
     syncModMacroControlsAvailability();
     drum_grid_slot::applySlotName(*this, traits_.isDrumGrid, device.name);
