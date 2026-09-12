@@ -208,21 +208,49 @@ magda::engine::TransportSnapshot rolling(double fromBeat) {
 
 }  // namespace
 
-TEST_CASE("An input op is compiled for a track that is armed or monitoring in",
-          "[engine][live-input]") {
-    // monitorsInput(): armed, or monitoring set to In. Auto lights the activity
-    // indicator (receivesLiveMidiInput) but is not audible until the track is
-    // armed, which is what ships and what the compiler gates on.
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 0);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 0);
+TEST_CASE("An input op is compiled for every track that names an input",
+          "[engine][live-input][2612]") {
+    // Whether the track is listening is monitorsInput(): armed, or monitoring
+    // set to In. That is a value on the input gate, so the ops it decides
+    // nothing about are compiled for every switch position.
+    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 1);
+    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Auto, true, OpKind::AudioInput) == 1);
 
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 0);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 0);
+    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 1);
+    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::MidiInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::MidiInput) == 1);
+}
+
+TEST_CASE("What the monitor switch moves is the gate's silence", "[engine][live-input][2612]") {
+    // The switch reaches the engine as values now, which is a publish that
+    // prepares nothing: the plan a monitoring track compiles is the plan an
+    // idle one compiles.
+    const auto silenceOf = [](InputMonitorMode monitor, OpRole role) {
+        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, false)};
+        const auto plan = compile(tracks);
+        const auto gate = findRole(*plan, tracks.front().id, role);
+        REQUIRE(gate >= 0);
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+        return values.ops[static_cast<std::size_t>(gate)].silent;
+    };
+
+    CHECK(silenceOf(InputMonitorMode::Off, OpRole::AudioInputGate));
+    CHECK_FALSE(silenceOf(InputMonitorMode::In, OpRole::AudioInputGate));
+
+    // The hardware MIDI route has no gate: what a track hears of the live MIDI
+    // is the published routing, and the audition shares the op (#2592).
+    const std::vector<TrackInfo> idle{monitoringTrack(InputMonitorMode::Off, false)};
+    CHECK(findRole(*compile(idle), idle.front().id, OpRole::MidiInputGate) < 0);
+
+    const auto monitoring = std::vector<TrackInfo>{monitoringTrack(InputMonitorMode::In, false)};
+    CHECK(magda::engine::planFingerprint(*compile(idle)) ==
+          magda::engine::planFingerprint(*compile(monitoring)));
 }
 
 TEST_CASE("A live audio input reads the callback's own samples", "[engine][live-input]") {
@@ -550,9 +578,11 @@ TEST_CASE("An input meter reads the input a monitoring track is hearing",
           "[engine][live-input][2463]") {
     // The incumbent reads this off the input device (WaveInputDevice's level
     // measurer); here it is a meter on the input op, so it exists exactly while
-    // the op does and sits in the signal rather than beside it.
+    // the op does and sits in the signal rather than beside it. Ahead of the
+    // gate, so a track recording without monitoring still meters what it
+    // records (#2612).
     CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::Meter) ==
-          inputOpsFor(InputMonitorMode::In, false, OpKind::Meter) - 1);
+          inputOpsFor(InputMonitorMode::In, false, OpKind::Meter));
 
     {
         const std::vector<TrackInfo> monitoring{monitoringTrack(InputMonitorMode::In, false)};

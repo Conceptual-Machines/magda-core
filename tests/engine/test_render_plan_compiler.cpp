@@ -1,11 +1,14 @@
 #include <algorithm>
 #include <catch2/catch_test_macros.hpp>
+#include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "exec/PlanValues.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
 #include "plan/RenderPlan.hpp"
@@ -1021,9 +1024,12 @@ TEST_CASE("An internal MIDI route reads the source track's MIDI", "[engine][plan
     REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
 
     // Own clips first, arrangement then session, and the routed source behind
-    // them.
+    // them, through the gate the monitor switch lands on (#2612).
     REQUIRE(plan.ops[static_cast<std::size_t>(destMidi)].inputs.size() == 3);
-    CHECK(inputOp(plan, destMidi, 2) == sourceMidi);
+    const auto midiGate = inputOp(plan, destMidi, 2);
+    REQUIRE(midiGate != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(midiGate)].key.role == OpRole::MidiInputGate);
+    CHECK(inputOp(plan, midiGate, 0) == sourceMidi);
 }
 
 TEST_CASE("An internal audio route reads the source track's post-mute output",
@@ -1050,7 +1056,10 @@ TEST_CASE("An internal audio route reads the source track's post-mute output",
     REQUIRE(destInput != magda::engine::INVALID_OP_ID);
 
     REQUIRE(plan.ops[static_cast<std::size_t>(destInput)].inputs.size() == 3);
-    CHECK(inputOp(plan, destInput, 2) == sourceMute);
+    const auto audioGate = inputOp(plan, destInput, 2);
+    REQUIRE(audioGate != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(audioGate)].key.role == OpRole::AudioInputGate);
+    CHECK(inputOp(plan, audioGate, 0) == sourceMute);
 }
 
 TEST_CASE("Mute is applied after the meter and the sidechain tap", "[engine][plan][compiler]") {
@@ -1179,48 +1188,53 @@ TEST_CASE("A malformed track route is reported, not reinterpreted", "[engine][pl
     }
 }
 
-TEST_CASE("An inactive internal route is not an ordering dependency", "[engine][plan][compiler]") {
-    // Track 2 has an input from track 1 but is neither armed nor monitoring, so
-    // it reads nothing. Track 1 sidechains from track 2. Counting the dead
-    // route as a dependency would close a cycle and cost the live sidechain.
-    auto compressor = makeEffect(7);
-    compressor.sidechainPort = magda::monoAudioSidechain;
-    compressor.sidechain.type = SidechainConfig::Type::Audio;
-    compressor.sidechain.sourceTrackId = 2;
+TEST_CASE("An internal route is an ordering dependency however the track monitors",
+          "[engine][plan][compiler][2612]") {
+    // Track 2 takes its input from track 1, and track 1 sidechains from track
+    // 2: a cycle, which the breaker resolves by dropping a connection. The
+    // monitor switch decides whether track 2 hears the route, not whether the
+    // route is there, so both switch positions compile the same plan.
+    const auto planFor = [](InputMonitorMode monitor) {
+        auto compressor = makeEffect(7);
+        compressor.sidechainPort = magda::monoAudioSidechain;
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
 
-    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
-    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
-    tracks[1].audioInputDevice = "track:1";
-    tracks[1].recordArmed = false;
-    tracks[1].inputMonitor = InputMonitorMode::Off;
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+        tracks[1].audioInputDevice = "track:1";
+        tracks[1].inputMonitor = monitor;
+        return magda::engine::compileRenderPlan(tracks, makeMaster());
+    };
 
-    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-    requireWellFormed(plan);
-    CHECK(plan.diagnostics.empty());
+    const auto idle = planFor(InputMonitorMode::Off);
+    const auto monitoring = planFor(InputMonitorMode::In);
+    requireWellFormed(idle);
+    requireWellFormed(monitoring);
 
-    // Track 2 is compiled first and its output reaches the sidechain slot.
-    const auto device = opsWithRole(plan, OpRole::DeviceProcess).front();
-    magda::engine::OpId sourceMeter = magda::engine::INVALID_OP_ID;
-    for (const auto op : opsWithRole(plan, OpRole::TrackMeter))
-        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
-            sourceMeter = op;
-    REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
-    CHECK(inputOp(plan, device, 2) == sourceMeter);
+    CHECK(magda::engine::planFingerprint(idle) == magda::engine::planFingerprint(monitoring));
+    CHECK(idle.diagnostics == monitoring.diagnostics);
 }
 
-TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
-          "[engine][plan][compiler]") {
-    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
-    tracks[1].midiInputDevice = "track:1";
-    tracks[1].inputMonitor = InputMonitorMode::Off;
+TEST_CASE("A MIDI route makes its source compile MIDI however the destination monitors",
+          "[engine][plan][compiler][2612]") {
+    // One track's monitor button deciding another track's op set is what this
+    // is not: track 1 has no MIDI consumer of its own, and the route is what
+    // gives it one.
+    const auto planFor = [](InputMonitorMode monitor) {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        tracks[1].midiInputDevice = "track:1";
+        tracks[1].inputMonitor = monitor;
+        return magda::engine::compileRenderPlan(tracks, makeMaster());
+    };
 
-    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-    requireWellFormed(plan);
+    const auto idle = planFor(InputMonitorMode::Off);
+    const auto monitoring = planFor(InputMonitorMode::In);
+    requireWellFormed(idle);
 
-    // Track 1 has no MIDI consumer of its own and nothing reads its MIDI, so
-    // compiling clip MIDI for it would leave ops no one consumes.
-    CHECK(countRole(plan, OpRole::ClipMidi) == 0);
-    CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
+    CHECK(countRole(idle, OpRole::ClipMidi) == 1);
+    CHECK(countRole(idle, OpRole::TrackMidiInput) == 2);
+    CHECK(magda::engine::planFingerprint(idle) == magda::engine::planFingerprint(monitoring));
 }
 
 TEST_CASE("A rack-level sidechain is an edge to the modulation system",
@@ -1685,45 +1699,49 @@ TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][p
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
 
-TEST_CASE("Auto input monitoring only counts while the track is armed",
-          "[engine][plan][compiler]") {
-    // Automatic monitoring passes input only while
-    // armed. Emitting a live op for an unarmed Auto track would both add a op
-    // the engine keeps silent and mark the whole chain downstream Live.
-    SECTION("unarmed Auto emits no live input") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::Auto;
-        tracks[0].audioInputDevice = "Input 1";
-        tracks[0].midiInputDevice = "Keyboard";
+TEST_CASE("Monitoring is a value on the input gate, not a shape",
+          "[engine][plan][compiler][2612]") {
+    // Auto passes input only while armed, In without arming, Off never. All
+    // four compile the same ops: what the switch moves is the gate's silence,
+    // so flipping it publishes values and rebuilds nothing.
+    const auto trackWith = [](InputMonitorMode monitor, bool armed) {
+        auto track = makeTrack(1);
+        track.inputMonitor = monitor;
+        track.recordArmed = armed;
+        track.audioInputDevice = "Input 1";
+        track.midiInputDevice = "Keyboard";
+        return track;
+    };
 
+    const auto gateIsSilent = [](const std::vector<TrackInfo>& tracks, const RenderPlan& plan) {
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
+        const auto gates = opsWithRole(plan, OpRole::AudioInputGate);
+        REQUIRE(gates.size() == 1);
+        return values.ops[static_cast<std::size_t>(gates.front())].silent;
+    };
+
+    const std::vector<std::pair<InputMonitorMode, bool>> switches{{InputMonitorMode::Off, false},
+                                                                  {InputMonitorMode::Auto, false},
+                                                                  {InputMonitorMode::Auto, true},
+                                                                  {InputMonitorMode::In, false}};
+
+    std::optional<std::uint64_t> shape;
+    for (const auto& [monitor, armed] : switches) {
+        const std::vector<TrackInfo> tracks{trackWith(monitor, armed)};
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
 
-        CHECK(countRole(plan, OpRole::LiveAudioInput) == 0);
-        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
-        for (const auto& op : plan.ops)
-            CHECK(op.liveness == magda::engine::LivenessDomain::Deterministic);
-    }
-
-    SECTION("armed Auto emits it") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::Auto;
-        tracks[0].recordArmed = true;
-        tracks[0].audioInputDevice = "Input 1";
-
-        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-        requireWellFormed(plan);
         CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
-    }
+        CHECK(countRole(plan, OpRole::LiveInputMeter) == 1);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
 
-    SECTION("In emits it without arming") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::In;
-        tracks[0].audioInputDevice = "Input 1";
+        const auto fingerprint = magda::engine::planFingerprint(plan);
+        if (shape)
+            CHECK(*shape == fingerprint);
+        shape = fingerprint;
 
-        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
-        requireWellFormed(plan);
-        CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+        CHECK(gateIsSilent(tracks, plan) == !tracks.front().monitorsInput());
     }
 }
 

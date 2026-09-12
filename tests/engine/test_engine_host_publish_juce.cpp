@@ -943,15 +943,20 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(shapeNow() != compiledFrom, "Bypassing a device is");
         device.bypassed = false;
 
-        // Monitoring is what the compiler gates an input route on, so the
-        // switch and the route are one edit here.
-        track->inputMonitor = magda::InputMonitorMode::In;
+        // A route is an op and an edge the plan holds whatever the monitor
+        // switch says.
         track->midiInputDevice = "track:" + juce::String(sourceId);
         expect(shapeNow() != compiledFrom, "So is taking MIDI from another track");
         track->midiInputDevice = "";
 
         track->audioInputDevice = "Input 1";
-        expect(shapeNow() != compiledFrom, "So is a monitored audio input");
+        const auto withInput = shapeNow();
+        expect(withInput != compiledFrom, "So is naming an audio input");
+
+        // The switch itself is not: it lands on the gate the route arrives
+        // through, which a values publish carries (#2612).
+        track->inputMonitor = magda::InputMonitorMode::In;
+        expect(shapeNow() == withInput, "Monitoring that input is not a shape change");
     }
 
     void testOnlyTrackMetersAreTapped() {

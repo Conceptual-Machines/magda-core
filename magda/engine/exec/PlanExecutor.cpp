@@ -569,9 +569,15 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
+            // Reported only by a host that binds live inputs at all, the way a
+            // session op is below. An input op is emitted for every track that
+            // names an input device whether or not the track is monitoring
+            // (#2612), so an offline render binds none of them and says
+            // nothing. Binding some and not others is a track that lost its
+            // input.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                if (audioSourceForOp_[i] == nullptr)
+                if (audioSourceForOp_[i] == nullptr && !bindings.audioInputs.empty())
                     messages.push_back(describe(i) + "no live audio input bound for track " +
                                        std::to_string(trackId) + ", it renders silence");
                 break;
@@ -604,7 +610,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
             case OpKind::MidiInput:
                 midiSourceForOp_[i] = findMidiSource(bindings.midiInputs, trackId);
-                if (midiSourceForOp_[i] == nullptr)
+                if (midiSourceForOp_[i] == nullptr && !bindings.midiInputs.empty())
                     messages.push_back(describe(i) + "no live MIDI input bound for track " +
                                        std::to_string(trackId) + ", it renders nothing");
                 break;
