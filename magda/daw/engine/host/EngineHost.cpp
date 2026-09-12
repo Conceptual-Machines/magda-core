@@ -20,7 +20,6 @@
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
-#include "../../core/PluginParameterConfigStore.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -817,12 +816,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Asked with the segment, because a DeviceId is section-local and on
         // its own names up to three devices (#1899).
         const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
-
-        // What the plugin's parameters were detected to mean, over the bare
-        // normalised records the adapter builds from the instance. Here because
-        // the array is rebuilt on every load, and a unit that only survived
-        // until the next one is a unit nobody configured twice (#2601).
-        PluginParameterConfigStore::applyToDevice(*device);
 
         // Here rather than where the parameters were described, because this is
         // where the device's address is known: a DeviceInfo does not say which

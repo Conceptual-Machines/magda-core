@@ -4,6 +4,7 @@
 
 #include "core/ChainWalk.hpp"
 #include "core/PluginCapabilities.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 #include "plugins/DeviceCatalogParameters.hpp"
@@ -155,6 +156,11 @@ ExternalDeviceResult adaptExternalPluginInstance(
     auto described = magda::describeHostParameters(*instance, device);
     resolvedDevice.parameters = std::move(described.parameters);
     resolvedDevice.wrapperParameters = std::move(described.wrapperParameters);
+
+    // Before the device is built, because it copies these records and converts
+    // every block's value through them. The plan converts through the model's,
+    // and a config applied only to the model puts the two in different units.
+    magda::PluginParameterConfigStore::applyToDevice(resolvedDevice);
 
     auto restored = magda::snapshotHostParameters(*instance);
 
