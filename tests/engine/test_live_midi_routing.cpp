@@ -243,6 +243,48 @@ TEST_CASE("A track that stays keeps the slot it had", "[live-routing][2590]") {
     CHECK(sources.slotFor(first) == slot);
 }
 
+TEST_CASE("An id that waited for room gets a slot when one comes back", "[live-routing][2590]") {
+    // A project bigger than the room, cut down to one that fits: the tracks
+    // that went without must not be the ones that stay silent.
+    host::LiveMidiSources sources;
+    host::LiveMidiRouting routing(sources);
+
+    std::vector<magda::TrackInfo> crowded;
+    for (auto i = 0; i < host::LiveMidiSources::kSlots + 4; ++i)
+        crowded.push_back(monitoring(static_cast<magda::TrackId>(i + 1), "all"));
+
+    REQUIRE(routing.resolve(crowded) != nullptr);
+    const auto last = sources.auditionSourceFor(host::LiveMidiSources::kSlots + 4);
+    CHECK(sources.slotFor(last) == host::LiveMidiSources::kNoSlot);
+
+    REQUIRE(routing.resolve({monitoring(host::LiveMidiSources::kSlots + 4, "all")}) != nullptr);
+    CHECK(sources.slotFor(last) != host::LiveMidiSources::kNoSlot);
+    CHECK(sources.ownerOfSlot(sources.slotFor(last)) == last);
+}
+
+TEST_CASE("A track swap does not leave the tracks that stay without room", "[live-routing][2590]") {
+    // resolve() gives the room back before it asks for any, so replacing a
+    // project's tracks wholesale is not a project twice the size.
+    host::LiveMidiSources sources;
+    host::LiveMidiRouting routing(sources);
+
+    const auto half = host::LiveMidiSources::kSlots * 3 / 4;
+    const auto projectOf = [half](int from) {
+        std::vector<magda::TrackInfo> tracks;
+        for (auto i = 0; i < half; ++i)
+            tracks.push_back(monitoring(static_cast<magda::TrackId>(from + i), "all"));
+        return tracks;
+    };
+
+    REQUIRE(routing.resolve(projectOf(1)) != nullptr);
+    REQUIRE(routing.resolve(projectOf(1000)) != nullptr);
+
+    for (auto i = 0; i < half; ++i) {
+        const auto source = sources.auditionSourceFor(static_cast<magda::TrackId>(1000 + i));
+        CHECK(sources.slotFor(source) != host::LiveMidiSources::kNoSlot);
+    }
+}
+
 TEST_CASE("A project past the room gets ids with nowhere to put them", "[live-routing][2590]") {
     // Not silence the callback cannot explain: the id is still the model's, so
     // the route resolves and the drop is counted where the trace prints it.

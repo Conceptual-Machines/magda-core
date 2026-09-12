@@ -28,6 +28,7 @@
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
+#include "LiveMidiCollector.hpp"
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
@@ -51,15 +52,6 @@ constexpr int kChannels = 2;
 
 /// 30 fps, which is what the fork's own metering timer runs at.
 constexpr int kMeterIntervalMs = 33;
-
-/// Room for the sources a project can be heard through at once, which the
-/// registry hands out and takes back (LiveMidiSources.hpp). A source with no
-/// slot is dropped here rather than allocated for on the audio thread.
-constexpr int kLiveMidiSlots = LiveMidiSources::kSlots;
-
-/// What one queued event costs a MidiBuffer: a sample position and a length in
-/// front of its three bytes.
-constexpr int kQueuedEventBytes = 9;
 
 /// Anything a publish could not honour, named by the half that reported it.
 void report(const juce::String& what, const std::vector<std::string>& messages) {
@@ -275,16 +267,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Live MIDI that never reached the callback. Only when the count moved,
     /// since a line per tick would bury the notes that did arrive.
     void traceDroppedLiveMidi() {
-        const auto dropped = queue_.oversized() + queue_.overflowed() +
-                             droppedEvents_.load(std::memory_order_relaxed);
+        const auto dropped = queue_.oversized() + queue_.overflowed() + collector_.dropped();
         if (!EngineTrace::enabled() || dropped == tracedDrops_)
             return;
 
         tracedDrops_ = dropped;
         EngineTrace::print("live midi dropped: " + juce::String(queue_.oversized()) +
                            " too long, " + juce::String(queue_.overflowed()) + " overflowed, " +
-                           juce::String(droppedEvents_.load(std::memory_order_relaxed)) +
-                           " in the callback");
+                           juce::String(collector_.dropped()) + " in the callback");
     }
 
     /// What every track's output tap has held since the last tick (#2570).
@@ -727,62 +717,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Room for every source the callback may see. Off the device, from
     /// rebuild(), because it allocates.
     void prepareLiveMidi() {
-        midiBySlot_.resize(kLiveMidiSlots);
-        for (auto& buffer : midiBySlot_)
-            buffer.ensureSize(static_cast<std::size_t>(engine::kMaxMidiBytesPerPort));
-
-        streams_.reserve(kLiveMidiSlots);
-        written_.reserve(kLiveMidiSlots);
+        collector_.prepare();
     }
 
-    /**
-     * @brief The queue's events, per source, as the span the session reads.
-     *
-     * Audio thread, once per callback. Every event lands at offset 0: placing
-     * one where it was played is part of #2553's monitor round trip, and until
-     * then this is up to a block of jitter.
-     */
+    /// The queue's events as the streams the session renders. Audio thread.
     std::span<const engine::LiveMidiStream> collectLiveMidi() {
-        // Only what last block wrote, so the room for a whole project's worth
-        // of sources costs a callback nothing while they are quiet.
-        // Only what last block wrote, so the room for a whole project's worth
-        // of sources costs a callback nothing while they are quiet.
-        for (const auto slot : written_)
-            midiBySlot_[static_cast<std::size_t>(slot)].clear();
-
-        written_.clear();
-        streams_.clear();
-
-        queue_.drain([this](const LiveMidiQueue::Event& event) {
-            // The event names both, and the registry is asked whether they
-            // still agree: a track deleted while this was queued has left its
-            // slot to somebody else, and its last note is not theirs (#2590).
-            if (event.slot < 0 || sources_.ownerOfSlot(event.slot) != event.source) {
-                droppedEvents_.fetch_add(1, std::memory_order_relaxed);
-                return;
-            }
-
-            auto& buffer = midiBySlot_[static_cast<std::size_t>(event.slot)];
-            if (static_cast<int>(buffer.data.size()) + kQueuedEventBytes >
-                engine::kMaxMidiBytesPerPort) {
-                droppedEvents_.fetch_add(1, std::memory_order_relaxed);
-                return;
-            }
-
-            if (buffer.isEmpty())
-                written_.push_back(event.slot);
-            buffer.addEvent(event.bytes, event.size, 0);
-        });
-
-        // In slot order, so one block's streams read like another's for the
-        // same notes rather than in whatever order they were played.
-        std::ranges::sort(written_);
-
-        for (const auto slot : written_)
-            streams_.push_back({static_cast<engine::LiveMidiSourceId>(sources_.ownerOfSlot(slot)),
-                                &midiBySlot_[static_cast<std::size_t>(slot)]});
-
-        return streams_;
+        return collector_.collect(queue_, sources_);
     }
 
     // ===== Odds and ends =====
@@ -1040,19 +980,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     LiveMidiRouting routing_{sources_};
     LiveMidiQueue queue_;
 
-    /// One buffer per slot the registry hands out, and the streams over the
-    /// ones a callback found anything in. Both sized in rebuild().
-    std::vector<juce::MidiBuffer> midiBySlot_;
-    std::vector<engine::LiveMidiStream> streams_;
+    /// The queue's events as per-slot streams, sized in rebuild().
+    LiveMidiCollector collector_;
 
-    /// Which of them the last callback wrote to, so the next one clears those
-    /// and not all of them. Audio thread; sized in rebuild().
-    std::vector<int> written_;
-
-    /// Events the callback could not place: a source the room had no slot for,
-    /// one whose track went while it was queued, or a port already holding its
-    /// whole budget.
-    std::atomic<std::uint32_t> droppedEvents_{0};
     std::uint32_t tracedDrops_ = 0;
 
     EngineRuntimeFactory factory_;

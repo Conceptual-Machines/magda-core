@@ -117,8 +117,17 @@ class LiveMidiSources {
     /// held.
     int take();
 
+    /// Take a free slot for @p source. Call with @ref lock_ held and a slot
+    /// free.
+    void bind(int source);
+
     /// Give @p source's slot back. Call with @ref lock_ held.
     void release(int source);
+
+    /// Bind the ids the room had no slot for when they were taken, oldest
+    /// first. Room comes back when a track goes, and an id that waited through
+    /// that is one the model still names. Call with @ref lock_ held.
+    void bindWaiting();
 
     juce::CriticalSection lock_;
     juce::Array<juce::MidiDeviceInfo> available_;

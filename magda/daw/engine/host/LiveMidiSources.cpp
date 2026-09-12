@@ -45,11 +45,15 @@ int LiveMidiSources::take() {
     if (freeSlots_.empty())
         return source;
 
+    bind(source);
+    return source;
+}
+
+void LiveMidiSources::bind(int source) {
     const auto slot = freeSlots_.back();
     freeSlots_.pop_back();
     slotForSource_.emplace(source, slot);
     slotOwner_[static_cast<std::size_t>(slot)].store(source, std::memory_order_release);
-    return source;
 }
 
 void LiveMidiSources::release(int source) {
@@ -64,6 +68,30 @@ void LiveMidiSources::release(int source) {
     slotOwner_[static_cast<std::size_t>(slot)].store(kNoSource, std::memory_order_release);
     slotForSource_.erase(found);
     freeSlots_.push_back(slot);
+}
+
+void LiveMidiSources::bindWaiting() {
+    if (freeSlots_.empty())
+        return;
+
+    std::set<int> waiting;
+    const auto wants = [&](int source) {
+        if (source != kNoSource && !slotForSource_.contains(source))
+            waiting.insert(source);
+    };
+
+    for (const auto& [deviceId, source] : devices_)
+        wants(source);
+    for (const auto& [trackId, source] : auditions_)
+        wants(source);
+
+    // Oldest first, so what has been waiting longest is heard first.
+    for (const auto source : waiting) {
+        if (freeSlots_.empty())
+            return;
+
+        bind(source);
+    }
 }
 
 int LiveMidiSources::slotFor(int source) const {
@@ -114,6 +142,8 @@ void LiveMidiSources::retainAuditions(const std::set<TrackId>& live) {
         release(entry->second);
         entry = auditions_.erase(entry);
     }
+
+    bindWaiting();
 }
 
 std::vector<int> LiveMidiSources::deviceSources() const {
