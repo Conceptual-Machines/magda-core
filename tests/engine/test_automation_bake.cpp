@@ -62,6 +62,9 @@ DeviceInfo makeDevice(DeviceId id, int numParameters = 1) {
     device.id = id;
     device.name = "Effect " + juce::String(id);
     device.deviceType = DeviceType::Effect;
+    // An internal device: its stored value is the display one, which is what
+    // the ranges below describe. A hosted plugin's would be normalised.
+    device.format = PluginFormat::Internal;
     device.macros = createDefaultMacros(1);
     device.mods = createDefaultMods(0);
 

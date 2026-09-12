@@ -95,6 +95,17 @@ class ParamValues {
     }
 
     /**
+     * @brief The parameter's normalised position for the block, in 0..1.
+     *
+     * For a device whose parameter is normalised by definition, a hosted
+     * plugin's: its display range is a reading of the position, not a unit the
+     * position has to pass through and back.
+     */
+    float position() const {
+        return segments_.empty() ? 0.0f : juce::jlimit(0.0f, 1.0f, segments_.front().startValue);
+    }
+
+    /**
      * @brief The parameter's value at one sample of the block.
      *
      * For a device that asked for segment accuracy. Offsets outside the block

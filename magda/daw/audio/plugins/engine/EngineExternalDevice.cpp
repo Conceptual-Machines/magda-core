@@ -366,14 +366,12 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
         if (values.empty())
             continue;
 
-        // Through the model's own inverse rather than as a raw number. An
-        // external parameter's units are already normalised, so this is the
-        // identity for almost all of them, and the almost is the point: it is
-        // the same conversion the value went into the table through, and
-        // ParameterUtils is the only thing that knows where it is not.
-        const auto normalised =
-            mapping.info ? magda::ParameterUtils::realToNormalized(values.value(), *mapping.info)
-                         : std::clamp(values.value(), 0.0f, 1.0f);
+        // The table's position, not its value: a hosted parameter is normalised
+        // by definition, and its configured display range is a reading of that
+        // position. Converting out through the range and back in is the identity
+        // only while the range is finite and agrees with the plugin's steps, and
+        // a detected dB range starts at minus infinity.
+        const auto normalised = values.position();
 
         switch (mapping.role) {
             case magda::WrapperRole::DryGain:
