@@ -202,6 +202,20 @@ class PlanExecutor {
                                      const PlanValues* values = nullptr);
 
     /**
+     * @brief What @p values make audible with nothing bound to it.
+     *
+     * An input op is compiled whether or not the track is monitoring, so an
+     * unbound one is only worth reporting once the model asks to hear it --
+     * and that can arrive as values, long after the prepare that bound
+     * nothing (#2612). So the session asks again for every set it publishes.
+     *
+     * Each op is reported once per prepared plan: the switch is flipped once,
+     * while values arrive for every fader move. On the publishing thread,
+     * like prepare; the audio thread reads none of this.
+     */
+    std::vector<std::string> reportUnboundInputs(const PlanValues* values);
+
+    /**
      * @brief Publish the panics this plan owes devices it rerouted (#2418).
      *
      * At the swap and nowhere earlier: a plan can still be refused after it
@@ -560,6 +574,10 @@ class PlanExecutor {
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
 
     const RenderPlan* plan_ = nullptr;
+
+    /// The unbound inputs reportUnboundInputs has already answered for, so a
+    /// fader move does not say it again. Publishing thread only.
+    std::set<OpId> reportedUnboundInputs_;
     RenderContext context_;
 
     /// The arena. Ports share these where no schedule can want both at

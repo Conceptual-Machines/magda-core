@@ -264,6 +264,31 @@ TEST_CASE("An input nobody is listening to is not a missing binding",
     // Still said where the track is asking for it, which is what the report is
     // for: the host meant to bind one and did not.
     CHECK(reportsUnboundAudio(messagesFor(InputMonitorMode::In)));
+
+    // And said when the switch arrives as values, which is the publish this
+    // change makes possible: the plan does not move, so nothing re-prepares and
+    // nothing would otherwise look at the bindings again.
+    UnboundInputFactory factory;
+    EngineSession session(factory);
+    session.liveInputs().prepare(2, kBlockSize);
+
+    const std::vector<TrackInfo> idle{monitoringTrack(InputMonitorMode::Off, false)};
+    const auto plan = compile(idle);
+    REQUIRE(publish(session, plan, idle).published);
+
+    const std::vector<TrackInfo> listening{monitoringTrack(InputMonitorMode::In, false)};
+    const auto valuesFor = [&plan](const std::vector<TrackInfo>& tracks) {
+        PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+        return values;
+    };
+
+    const auto switched = session.publishValues(valuesFor(listening));
+    REQUIRE(switched.published);
+    CHECK(reportsUnboundAudio(switched.messages));
+
+    // Once per plan, not once per fader move.
+    CHECK_FALSE(reportsUnboundAudio(session.publishValues(valuesFor(listening)).messages));
 }
 
 TEST_CASE("What the monitor switch moves is the input gate's silence",

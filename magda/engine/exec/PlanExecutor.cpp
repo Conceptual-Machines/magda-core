@@ -271,6 +271,7 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
     carriedCrossfades_ = 0;
@@ -325,6 +326,11 @@ bool hearsLiveInput(const RenderPlan& plan, const PlanValues* values, TrackId tr
             return i < values->ops.size() ? !values->ops[i].silent : true;
     }
     return true;
+}
+
+std::string describeOp(const RenderPlan& plan, std::size_t index) {
+    return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
+           toString(plan.ops[index].key) + "): ";
 }
 
 }  // namespace
@@ -565,10 +571,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     detectMono_.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
 
-    const auto describe = [&plan](std::size_t index) {
-        return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
-               toString(plan.ops[index].key) + "): ";
-    };
+    const auto describe = [&plan](std::size_t index) { return describeOp(plan, index); };
 
     const auto findAudioSource = [](const auto& map, TrackId trackId) -> EngineAudioSource* {
         const auto found = map.find(trackId);
@@ -591,15 +594,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
-            // Reported only where the track is asking to hear the input. Its op
-            // is compiled whether or not the track is monitoring, so that the
-            // meter on it keeps reading (#2612); an input nobody is listening
-            // to is not a binding the host failed to make.
+            // Not reported here: an input op is compiled whether or not the
+            // track is monitoring, so what makes an unbound one worth saying is
+            // the values, and those arrive again without a prepare (#2612).
+            // reportUnboundInputs below answers for the values this plan is
+            // published with, and publishValues asks again for every set after.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                if (audioSourceForOp_[i] == nullptr && hearsLiveInput(plan, values, trackId))
-                    messages.push_back(describe(i) + "no live audio input bound for track " +
-                                       std::to_string(trackId) + ", it renders silence");
                 break;
 
             // Reported only by a host that has a launcher at all, which is what
@@ -1016,6 +1017,30 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
+
+    for (auto& report : reportUnboundInputs(values))
+        messages.push_back(std::move(report));
+
+    return messages;
+}
+
+std::vector<std::string> PlanExecutor::reportUnboundInputs(const PlanValues* values) {
+    std::vector<std::string> messages;
+    if (plan_ == nullptr)
+        return messages;
+
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        const auto& op = plan_->ops[i];
+        if (op.kind != OpKind::AudioInput || audioSourceForOp_[i] != nullptr)
+            continue;
+        if (!hearsLiveInput(*plan_, values, op.key.trackId))
+            continue;
+        if (!reportedUnboundInputs_.insert(static_cast<OpId>(i)).second)
+            continue;
+
+        messages.push_back(describeOp(*plan_, i) + "no live audio input bound for track " +
+                           std::to_string(op.key.trackId) + ", it renders silence");
+    }
     return messages;
 }
 

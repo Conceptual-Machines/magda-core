@@ -71,6 +71,11 @@ class ParallelPlanExecutor final : private RenderThreadPool::Job {
                                      const ParallelPlanExecutor* previous = nullptr,
                                      const PlanValues* values = nullptr);
 
+    /// @copydoc PlanExecutor::reportUnboundInputs
+    std::vector<std::string> reportUnboundInputs(const PlanValues* values) {
+        return core_.reportUnboundInputs(values);
+    }
+
     /**
      * @brief Render one block into @p output. On the audio thread.
      *
