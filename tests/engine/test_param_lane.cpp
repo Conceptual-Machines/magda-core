@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cstdint>
 #include <vector>
 
 #include "core/ParameterInfo.hpp"
@@ -414,11 +415,16 @@ TEST_CASE("A table hands a device its own parameters and no others", "[engine][p
         resolveParam(params, i, spec, sources);
     }
 
-    const auto device = params.device(/*firstParam=*/1, /*count=*/2);
+    // Table entries 1 and 2, standing for the device's slots 0 and 1.
+    const std::vector<int> slots{0, 1};
+    const std::vector<std::uint8_t> driven{0, 0};
+    const auto device = params.device(/*firstParam=*/1, /*count=*/2, slots, driven);
 
     REQUIRE(device.size() == 2);
     CHECK(device[0].value() == approx(25.0f));
     CHECK(device[1].value() == approx(50.0f));
+    CHECK(device.slotAt(0) == 0);
+    CHECK_FALSE(device.drivenAt(0));
 
     // A device asking for a parameter it never declared gets nothing rather
     // than its neighbour's value.

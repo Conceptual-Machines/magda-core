@@ -743,6 +743,16 @@ class PlanExecutor {
     /// const and the prefix needs the answer before the resolve does.
     void settleBlockTable(const PlanValues& values);
 
+    /// What the device behind @p window reads this block: one (slot, value)
+    /// pair per parameter the table carries for it.
+    DeviceParams deviceParams(const ParamTable::DeviceWindow& window) const {
+        if (blockTable_ == nullptr)
+            return {};
+
+        return paramValues_.device(window.first, window.count, blockTable_->slotsIn(window),
+                                   blockTable_->drivenIn(window));
+    }
+
     /// Read one modulation tap: hand the source's level to the followers
     /// listening to it, and its rises and falls to the triggered ones.
     void renderModSource(OpId id, const BlockInfo& block);
