@@ -811,9 +811,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (path.isValid()) {
             TrackManager::getInstance().notifyDevicePropertyChanged(path);
 
-            // The chain UI listens for this and not for the property change,
-            // and a slot built before its plugin loaded holds an empty
-            // parameter array until something tells it to rebuild (#2617).
+            // The chain rebuilds its slots on this one, and a slot built
+            // before its plugin loaded holds an empty array until it does
+            // (#2617).
             TrackManager::getInstance().notifyTrackDevicesChanged(path.trackId);
         }
 
