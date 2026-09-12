@@ -98,6 +98,15 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     auto devices =
         midiInputs | std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
+    // Nothing feeds a fork virtual input under the native engine -- "All MIDI
+    // Ins" among them -- so listing one offers a route that is silence. The
+    // keyboard goes in here instead, under the id it pushes under.
+    if (liveSink_.load(std::memory_order_acquire) != nullptr) {
+        if (qwertyEnabled_)
+            devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
+        return devices;
+    }
+
     // Include TE virtual MIDI devices only when enabled. The routing
     // selectors refresh via onMidiDeviceListChanged when the device
     // state changes, so the filter is effective.
@@ -117,13 +126,6 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     std::ranges::copy(teDevices | std::views::filter(isEnabledVirtualInput) |
                           std::views::transform(asVirtualDevice),
                       std::back_inserter(devices));
-
-    // No fork virtual device under magda: list the keyboard itself, under the
-    // same visibility rule the fork's device has above.
-    const bool forkDeviceListed = std::ranges::any_of(
-        devices, [id = qwertyMidiDeviceId()](const MidiDeviceInfo& d) { return d.id == id; });
-    if (liveSink_.load(std::memory_order_acquire) && !forkDeviceListed && qwertyEnabled_)
-        devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
 
     return devices;
 }
