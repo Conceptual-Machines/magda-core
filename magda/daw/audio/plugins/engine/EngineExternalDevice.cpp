@@ -384,15 +384,8 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 break;
 
             default: {
-                if (mapping.parameter == nullptr)
+                if (mapping.parameter == nullptr || !hostValueMoved(slot, normalised))
                     break;
-
-                // Only when the host's value moved. Comparing against the
-                // plugin's own value would revert every edit made in its editor.
-                auto& last = lastTable_[static_cast<std::size_t>(slot)];
-                if (last == normalised)
-                    break;
-                last = normalised;
 
                 writing_.store(true, std::memory_order_relaxed);
                 mapping.parameter->setValue(normalised);

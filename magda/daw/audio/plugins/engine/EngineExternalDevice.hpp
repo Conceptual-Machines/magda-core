@@ -124,6 +124,21 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         return slot >= 0 && slot < static_cast<int>(parameters_.size());
     }
 
+    /**
+     * @brief Whether the table's value for @p slot moved, recording it if so.
+     *
+     * Comparing against the plugin's own value instead would revert every edit
+     * made in its editor.
+     */
+    bool hostValueMoved(int slot, float normalised) {
+        auto& last = lastTable_[static_cast<std::size_t>(slot)];
+        if (last == normalised)
+            return false;
+
+        last = normalised;
+        return true;
+    }
+
     /// The plugin over one buffer in place, wet/dry mixed.
     void processPluginBlock(juce::AudioBuffer<float>& audio);
 
