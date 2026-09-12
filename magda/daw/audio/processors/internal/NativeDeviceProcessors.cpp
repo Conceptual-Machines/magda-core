@@ -32,7 +32,7 @@ MagdaConvolutionProcessor::MagdaConvolutionProcessor(DeviceId deviceId, te::Plug
     : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 SidechainProcessor::SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // FourOscProcessor

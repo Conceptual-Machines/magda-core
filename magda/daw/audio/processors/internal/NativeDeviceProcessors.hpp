@@ -91,10 +91,13 @@ class MagdaConvolutionProcessor : public MagdaDeviceProcessor {
 /**
  * @brief Processor for the Sidechain volume-shaper insert.
  *
- * Parameters (gain / attack / release) are addressed by index off the
- * plugin's automatable parameters.
+ * A MagdaDevice behind the host wrapper, so its parameters are read through
+ * the device rather than off the wrapper's normalised slots: attack and
+ * release are milliseconds, and a plain AutomatablePluginProcessor wrote the
+ * model's milliseconds straight into a 0-to-1 slot, where anything past 1 ms
+ * clamped to the top of the range (#2613).
  */
-class SidechainProcessor : public AutomatablePluginProcessor {
+class SidechainProcessor : public MagdaDeviceProcessor {
   public:
     SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin);
 };
