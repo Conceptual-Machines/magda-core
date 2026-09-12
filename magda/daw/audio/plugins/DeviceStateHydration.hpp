@@ -55,6 +55,11 @@ Provenance provenanceFromMagdaVersion(const juce::String& version);
 /// carries. Returns true when the device was changed.
 bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& provenance = {});
 
+/// Hydrate as above, then give the model every parameter the device declares
+/// but neither the array nor the saved record carries (#2613). In that order:
+/// seeding first would make a saved value look like one the model already had.
+void completeDeviceParameters(DeviceInfo& device, const Provenance& provenance = {});
+
 /// Every internal device in a chain-element list (racks and pad chains
 /// included), for presets and imported chains. RackInfo overload for rack
 /// presets.

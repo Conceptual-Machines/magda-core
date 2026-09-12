@@ -4,38 +4,14 @@
 #include <memory>
 #include <utility>
 
-#include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/MagdaDevice.hpp"
-#include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/ParameterUtils.hpp"
 
 namespace magda {
 namespace {
 
 namespace audio = daw::audio;
-
-/// A device built to be asked questions and dropped. No session key: the
-/// services behind one are a running engine's, and nothing here may reach them.
-/// EngineDeviceFactory does the same for a device it is about to run, but that
-/// lives in the native engine's own target and the fork cannot link it.
-std::unique_ptr<audio::MagdaDevice> createDetachedDevice(const juce::String& pluginId) {
-    juce::ValueTree state(juce::Identifier("PLUGIN"));
-    state.setProperty(juce::Identifier("type"), pluginId, nullptr);
-    const audio::DevicePluginCreationContext context{
-        .sessionKey = {}, .state = std::move(state), .isNewPlugin = true};
-
-    // The internal registry first, because that is the catalog an id is
-    // canonicalised against; a compiled device is not in it.
-    if (const auto* spec = audio::findInternalPluginSpec(pluginId); spec != nullptr)
-        if (spec->createDevice != nullptr)
-            return spec->createDevice(context);
-
-    if (const auto* spec = audio::compiled::findCompiledPluginSpec(pluginId); spec != nullptr)
-        if (spec->createDevice != nullptr)
-            return spec->createDevice(context);
-
-    return {};
-}
 
 /// One scan record off one parameter's own description. `position` is where the
 /// record lands in the result rather than the slot it was read from: a skipped
@@ -86,7 +62,7 @@ ScannedPluginParameter scanRecord(const ParameterInfo& info, int position) {
 std::vector<ScannedPluginParameter> scanDeviceParameters(const juce::String& pluginId) {
     std::vector<ScannedPluginParameter> result;
 
-    const auto device = createDetachedDevice(pluginId);
+    const auto device = audio::createDetachedDevice(pluginId);
     if (device == nullptr)
         return result;
 

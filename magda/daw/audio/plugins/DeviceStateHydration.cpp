@@ -9,8 +9,8 @@
 #include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/TrackInfo.hpp"
+#include "plugins/DeviceCatalogParameters.hpp"
 #include "plugins/DevicePluginHandle.hpp"
-#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaDevice.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
@@ -78,21 +78,7 @@ ParamDomain resolveDomain(const DeviceInfo& device, const ds::Doc& doc,
 /// reads its slots out of its dsp source). Null for a device that has not
 /// crossed to MagdaDevice, whose documents were never normalised.
 std::unique_ptr<MagdaDevice> metadataDevice(const juce::String& pluginId, const ds::Doc& doc) {
-    auto create = [&pluginId]() -> std::unique_ptr<MagdaDevice> {
-        juce::ValueTree state{juce::Identifier("PLUGIN")};
-        state.setProperty(juce::Identifier("type"), pluginId, nullptr);
-        const DevicePluginCreationContext context{
-            .sessionKey = {}, .state = std::move(state), .isNewPlugin = true};
-        if (const auto* spec = findInternalPluginSpec(pluginId);
-            spec != nullptr && spec->createDevice != nullptr)
-            return spec->createDevice(context);
-        if (const auto* spec = compiled::findCompiledPluginSpec(pluginId);
-            spec != nullptr && spec->createDevice != nullptr)
-            return spec->createDevice(context);
-        return {};
-    };
-
-    auto device = create();
+    auto device = createDetachedDevice(pluginId);
     if (device != nullptr) {
         auto tree = ds::toValueTree(doc.root);
         tree.setProperty(juce::Identifier("type"), doc.deviceType, nullptr);
@@ -250,10 +236,15 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
     return added;
 }
 
+void completeDeviceParameters(DeviceInfo& device, const Provenance& provenance) {
+    hydrateParametersFromDeviceState(device, provenance);
+    seedDeclaredParameters(device);
+}
+
 void hydrateChainElements(std::vector<ChainElement>& elements, const Provenance& provenance) {
     chain_walk::forEachDevice(elements, ChainNodePath{}, chain_walk::Pads::Enter,
                               [&provenance](DeviceInfo& device, const ChainNodePath&) {
-                                  hydrateParametersFromDeviceState(device, provenance);
+                                  completeDeviceParameters(device, provenance);
                                   return true;
                               });
 }
@@ -270,9 +261,9 @@ void hydrateStagedProject(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack
     auto hydrateTrack = [&provenance](TrackInfo& track) {
         hydrateChainElements(track.chain.fxChainElements, provenance);
         for (auto& element : track.chain.postFxChainElements)
-            hydrateParametersFromDeviceState(element.device, provenance);
+            completeDeviceParameters(element.device, provenance);
         for (auto& element : track.chain.mixerAnalysisElements)
-            hydrateParametersFromDeviceState(element.device, provenance);
+            completeDeviceParameters(element.device, provenance);
     };
 
     for (auto& track : tracks)

@@ -3,10 +3,10 @@
 #include <utility>
 
 #include "core/ChainWalk.hpp"
-#include "core/DeviceState.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
+#include "plugins/DeviceCatalogParameters.hpp"
 #include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 #include "plugins/engine/EngineExternalDevice.hpp"
@@ -64,88 +64,12 @@ template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, 
     return devices;
 }
 
-/// The property a spec is looked up by, which is what a plugin state tree
-/// carries and what both catalogs match their ids and aliases against.
-const juce::Identifier& typeProperty() {
-    static const juce::Identifier type("type");
-    return type;
-}
-
-/// The creation context a catalog's factory takes.
-///
-/// A tree with the type in it and nothing else. The device's own state does not
-/// travel this way yet (see the header), and the session key is empty because a
-/// device built for a render belongs to no host session: the services behind
-/// that key are the current engine's, and nothing the engine runs may reach
-/// them.
-DevicePluginCreationContext creationContext(const juce::String& pluginId) {
-    juce::ValueTree state(juce::Identifier("PLUGIN"));
-    state.setProperty(typeProperty(), pluginId, nullptr);
-
-    return {.sessionKey = {}, .state = std::move(state), .isNewPlugin = true};
-}
-
-/// The SDK factory registered for @p pluginId, from whichever catalog has it.
-///
-/// The internal registry first, because that is the one an id is canonicalised
-/// against and the one an alias resolves through. A compiled device is not in
-/// it -- only its parameter aliases are (BaseDevicePack) -- so the compiled
-/// catalog is asked second rather than instead.
-std::unique_ptr<MagdaDevice> createSdkDevice(const juce::String& pluginId) {
-    if (const auto* spec = findInternalPluginSpec(pluginId); spec != nullptr)
-        if (spec->createDevice != nullptr)
-            return spec->createDevice(creationContext(pluginId));
-
-    if (const auto* spec = compiled::findCompiledPluginSpec(pluginId); spec != nullptr)
-        if (spec->createDevice != nullptr)
-            return spec->createDevice(creationContext(pluginId));
-
-    return {};
-}
-
-/// The device's own state as a tree, in whichever format the project holds it.
-///
-/// Most internal devices in a project folder are still saved as the engine's
-/// v1 XML, which `decode()` refuses by design, so reading only v2 took every
-/// one of them and ran its defaults (#2602).
-juce::ValueTree savedStateTree(const juce::String& savedState) {
-    if (magda::device_state::looksLikeLegacyEngineState(savedState)) {
-        auto tree = magda::device_state::legacyEngineStateTree(savedState);
-        adoptCanonicalPluginType(tree);
-        return tree;
-    }
-
-    const auto doc = magda::device_state::decode(savedState);
-    if (!doc)
-        return {};
-
-    auto tree = magda::device_state::toValueTree(doc->root);
-    tree.setProperty(typeProperty(), doc->deviceType, nullptr);
-    return tree;
-}
-
-/// Hand the device whatever the project saved for it.
-///
-/// Parameters are not this: the plan's value layer resolves every one of them
-/// per block and the adapter writes them before each process() call. What this
-/// carries is everything else -- the runtime Faust device's dsp source, an EQ's
-/// collapsed curve -- without which a device built here runs its defaults and
-/// renders a project nobody saved.
-void restoreSavedState(MagdaDevice& device, const juce::String& pluginId,
-                       const juce::String& savedState) {
-    if (savedState.isEmpty())
-        return;
-
-    const auto tree = savedStateTree(savedState);
-    if (!tree.isValid()) {
-        // Said out loud. #2602 went unnoticed for as long as it did because
-        // this path dropped a project's state without a word.
+/// Say out loud when a project's state could not be read. #2602 went unnoticed
+/// for as long as it did because this path dropped one without a word.
+void reportUnreadableState(const juce::String& pluginId, const juce::String& savedState) {
+    if (savedState.isNotEmpty() && !deviceStateTree(savedState).isValid())
         juce::Logger::writeToLog("EngineDeviceFactory: unreadable saved state for " + pluginId +
                                  ", running its defaults");
-        return;
-    }
-
-    device.restoreState(tree);
 }
 
 }  // namespace
@@ -266,14 +190,17 @@ void applyInstalledRole(magda::DeviceInfo& device, bool isInstrument) {
 
 std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::DeviceInfo& device,
                                                                 bool offlineRender) {
-    auto sdkDevice = createSdkDevice(device.pluginId);
+    // Built with its state already in it, not restored after: EngineMagdaDevice
+    // snapshots the device's parameter metadata when it is constructed, so a
+    // device that restored later would be mapped against the parameters it had
+    // before. Parameters themselves do not travel this way -- the plan's value
+    // layer resolves each one per block -- but everything else does: the runtime
+    // Faust device's dsp source, an EQ's collapsed curve.
+    auto sdkDevice = createDetachedDevice(device.pluginId, device.pluginState);
     if (sdkDevice == nullptr)
         return {};
 
-    // Before the adapter, not after. EngineMagdaDevice snapshots the device's
-    // parameter metadata when it is constructed, so a device that restores its
-    // state later would be mapped against the parameters it had before.
-    restoreSavedState(*sdkDevice, device.pluginId, device.pluginState);
+    reportUnreadableState(device.pluginId, device.pluginState);
 
     return std::make_unique<EngineMagdaDevice>(std::move(sdkDevice), offlineRender);
 }

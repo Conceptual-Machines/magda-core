@@ -519,6 +519,7 @@ void PolySynthUI::updateFromParameters(const std::vector<magda::ParameterInfo>& 
         }
         c.slider->setValue(info.currentValue, juce::dontSendNotification);
 
+        syncGraphFromParam(idx, info.currentValue);
         syncFilterCurveFromParam(idx, info.currentValue);
         if (idx < kNumOscillators * kOscSlotCount && (idx % kOscSlotCount) == 0)
             updateWaveSelectors();  // wave slot -> dropdown

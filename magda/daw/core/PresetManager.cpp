@@ -431,8 +431,8 @@ bool PresetManager::loadDevicePreset(const juce::String& pluginFolder,
     legacy_devices::migrateRetiredDevice(outDevice);
     device_param_migrations::migrateDevicePreset(outDevice);
     namespace hydration = daw::audio::device_state_hydration;
-    hydration::hydrateParametersFromDeviceState(
-        outDevice, hydration::provenanceFromMagdaVersion(savedVersion));
+    hydration::completeDeviceParameters(outDevice,
+                                        hydration::provenanceFromMagdaVersion(savedVersion));
     return true;
 }
 
