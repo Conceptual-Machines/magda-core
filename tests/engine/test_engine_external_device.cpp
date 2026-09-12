@@ -2105,6 +2105,44 @@ TEST_CASE("The answer does not depend on a provider no project carries",
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.7f));
 }
 
+TEST_CASE("A detected display range does not re-scale what the table already holds",
+          "[engine][external][2601]") {
+    // The two ends of one trip: ParamTableCompiler fills a slot through
+    // modelToNormalizedValue, and writeParameters reads it back out. They agree
+    // because the device the renderer holds carries describeHostParameters'
+    // records, which are normalised whatever the model was configured with, so
+    // the conversion out is the identity. Pinned here because the failure is
+    // silent and total -- a 20 Hz-20 kHz parameter would take the bottom of its
+    // range for every position the user ever set.
+    // Seated somewhere else, so the value below is one the plugin does not
+    // already hold and the check cannot pass on the seat alone.
+    auto model = externalDeviceWithDetectedRange(0.2f);
+
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto* raw = plugin.get();
+
+    auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    REQUIRE(result.device != nullptr);
+    REQUIRE(raw->tone->getValue() == Catch::Approx(0.2f));
+
+    const auto context = contextFor();
+    result.device->prepare(context);
+
+    // Dry, wet, Gain, Tone -- the slots in the order the table allocates them.
+    ParamArena arena({0.0f, 1.0f, 0.3f, 0.7f});
+    Block block(context, 2);
+    block.fill(0.0f);
+
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    result.device->process(deviceBlock);
+
+    CHECK(raw->tone->getValue() == Catch::Approx(0.7f));
+
+    // The parameter with no configured range comes through either way, which is
+    // why this went unnoticed: the conversion is the identity for all of them.
+    CHECK(raw->gain->getValue() == Catch::Approx(0.3f));
+}
+
 TEST_CASE("A parameter's id is the one its format declares", "[engine][external][2601]") {
     // What a saved parameter config is matched by, so a plugin that renumbers
     // its parameters in an update does not hand every override to whatever
