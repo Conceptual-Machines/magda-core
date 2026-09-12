@@ -52,10 +52,16 @@ constexpr int kChannels = 2;
 /// 30 fps, which is what the fork's own metering timer runs at.
 constexpr int kMeterIntervalMs = 33;
 
-/// Live MIDI sources the callback has room for. One per enabled input plus one
-/// per track ever auditioned; a project past this loses the sources beyond it
-/// rather than allocating for them on the audio thread.
-constexpr int kMaxLiveMidiSources = 64;
+/// Live MIDI sources the callback has room for: one per enabled input, one per
+/// virtual device, one per track that reads MIDI. A project past this loses the
+/// sources beyond it rather than allocating for them on the audio thread.
+///
+/// A project size rather than a session's history, which is what makes a
+/// constant defensible here: an id goes back when its track does (#2590), so
+/// this bounds how much of one project can be heard at once, not how long the
+/// app has been open. The room costs kMaxMidiBytesPerPort each, so it is a
+/// megabyte of mostly empty buffers.
+constexpr int kMaxLiveMidiSources = 256;
 
 /// What one queued event costs a MidiBuffer: a sample position and a length in
 /// front of its three bytes.
@@ -242,6 +248,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                       applyLoadedDevice(key, resolved, restored);
                   }) {
         factory_.loadExternalsWith(loader_);
+
+        // What the registry waits on before handing an id out a second time.
+        sources_.observeDrains(drains_);
 
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
@@ -732,6 +741,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             buffer.ensureSize(static_cast<std::size_t>(engine::kMaxMidiBytesPerPort));
 
         streams_.reserve(kMaxLiveMidiSources);
+        written_.reserve(kMaxLiveMidiSources);
     }
 
     /**
@@ -742,9 +752,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
      * then this is up to a block of jitter.
      */
     std::span<const engine::LiveMidiStream> collectLiveMidi() {
-        for (auto& buffer : midiBySource_)
-            buffer.clear();
+        // Only what last block wrote, so the room for a whole project's worth
+        // of sources costs a callback nothing while they are quiet.
+        for (const auto index : written_)
+            midiBySource_[index].clear();
 
+        written_.clear();
         streams_.clear();
 
         queue_.drain([this](const LiveMidiQueue::Event& event) {
@@ -761,13 +774,24 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 return;
             }
 
+            if (buffer.isEmpty())
+                written_.push_back(index);
             buffer.addEvent(event.bytes, event.size, 0);
         });
 
-        for (std::size_t i = 0; i < midiBySource_.size(); ++i)
-            if (!midiBySource_[i].isEmpty())
-                streams_.push_back(
-                    {static_cast<engine::LiveMidiSourceId>(i + 1), &midiBySource_[i]});
+        // In source order, which is the order this handed over when it walked
+        // every buffer: arrival order would make one block's streams differ
+        // from another's for the same notes.
+        std::ranges::sort(written_);
+
+        for (const auto index : written_)
+            streams_.push_back(
+                {static_cast<engine::LiveMidiSourceId>(index + 1), &midiBySource_[index]});
+
+        // Counted after the drain, and read by whoever is waiting to reuse an
+        // id: what was queued under it has been consumed by the time this
+        // moves (#2590).
+        drains_.fetch_add(1, std::memory_order_relaxed);
 
         return streams_;
     }
@@ -1031,6 +1055,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// ones a callback found anything in. Both sized in rebuild().
     std::vector<juce::MidiBuffer> midiBySource_;
     std::vector<engine::LiveMidiStream> streams_;
+
+    /// Which of them the last callback wrote to, so the next one clears those
+    /// and not all of them. Audio thread; sized in rebuild().
+    std::vector<std::size_t> written_;
+
+    /// Callbacks that have consumed the queue, which is what says an id the
+    /// model let go is safe to hand out again (#2590).
+    std::atomic<std::uint64_t> drains_{0};
 
     /// Events the callback could not place: a source past kMaxLiveMidiSources,
     /// or a port already holding its whole budget.

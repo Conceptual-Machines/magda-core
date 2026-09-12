@@ -22,7 +22,28 @@ int LiveMidiSources::sourceFor(const juce::String& deviceId) {
     if (const auto found = devices_.find(deviceId); found != devices_.end())
         return found->second;
 
-    return devices_.emplace(deviceId, next_++).first->second;
+    return devices_.emplace(deviceId, takeSource()).first->second;
+}
+
+int LiveMidiSources::takeSource() {
+    // A device is keyed by its identifier, so unplugging one and plugging it
+    // back in is the id it had. What grows without the model growing is the
+    // auditions, and this is where what they give back comes from.
+    if (drains_ != nullptr && !released_.empty()) {
+        // Two callbacks, not one: a push that was in flight when the drain
+        // emptied the queue lands behind it, and a callback is milliseconds.
+        const auto drained = drains_->load(std::memory_order_relaxed);
+        const auto ready = std::ranges::find_if(
+            released_, [drained](const Released& entry) { return entry.drains + 2 <= drained; });
+
+        if (ready != released_.end()) {
+            const auto source = ready->source;
+            released_.erase(ready);
+            return source;
+        }
+    }
+
+    return next_++;
 }
 
 int LiveMidiSources::registerVirtualDevice(const juce::String& deviceId) {
@@ -39,7 +60,28 @@ int LiveMidiSources::auditionSourceFor(TrackId trackId) {
     if (const auto found = auditions_.find(trackId); found != auditions_.end())
         return found->second;
 
-    return auditions_.emplace(trackId, next_++).first->second;
+    return auditions_.emplace(trackId, takeSource()).first->second;
+}
+
+void LiveMidiSources::retainAuditions(const std::set<TrackId>& live) {
+    const juce::ScopedLock held(lock_);
+
+    const auto drains = drains_ == nullptr ? 0 : drains_->load(std::memory_order_relaxed);
+
+    for (auto entry = auditions_.begin(); entry != auditions_.end();) {
+        if (live.contains(entry->first)) {
+            ++entry;
+            continue;
+        }
+
+        released_.push_back({entry->second, drains});
+        entry = auditions_.erase(entry);
+    }
+}
+
+std::size_t LiveMidiSources::waitingToBeReused() const {
+    const juce::ScopedLock held(lock_);
+    return released_.size();
 }
 
 std::vector<int> LiveMidiSources::deviceSources() const {

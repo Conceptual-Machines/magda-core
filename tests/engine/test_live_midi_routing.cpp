@@ -1,4 +1,6 @@
+#include <atomic>
 #include <catch2/catch_test_macros.hpp>
+#include <cstdint>
 
 #include "magda/daw/engine/host/LiveMidiRouting.hpp"
 
@@ -178,4 +180,62 @@ TEST_CASE("A source a track loses is counted, so the input can panic for it", "[
 
         CHECK(entryFor(*after, 1).sourcesLost == 0);
     }
+}
+
+TEST_CASE("A track that is gone gives its audition id back", "[live-routing][2590]") {
+    // The callback has room for a project's worth of sources, not a session's:
+    // one is taken for every track that reads MIDI, so a counter that only
+    // climbs turns an evening of editing into silence it cannot explain.
+    std::atomic<std::uint64_t> drains{0};
+    host::LiveMidiSources sources;
+    sources.observeDrains(drains);
+    host::LiveMidiRouting routing(sources);
+
+    REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all"), monitoring(3, "all")}) !=
+            nullptr);
+    const auto second = sources.auditionSourceFor(2);
+    const auto third = sources.auditionSourceFor(3);
+
+    REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
+    CHECK(sources.waitingToBeReused() == 2);
+
+    // Not before the callback has consumed whatever was queued under them.
+    const auto waiting = sources.auditionSourceFor(4);
+    CHECK(waiting != second);
+    CHECK(waiting != third);
+
+    drains.fetch_add(2, std::memory_order_relaxed);
+
+    const auto reused = sources.auditionSourceFor(5);
+    CHECK((reused == second || reused == third));
+    CHECK(sources.waitingToBeReused() == 1);
+}
+
+TEST_CASE("A host with no callback to wait on reuses nothing", "[live-routing][2590]") {
+    // The default, and what a test or a headless tool gets: no counter to
+    // watch means no way to know an id is spent, so it is not handed out.
+    host::LiveMidiSources sources;
+    host::LiveMidiRouting routing(sources);
+
+    REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all")}) != nullptr);
+    const auto second = sources.auditionSourceFor(2);
+
+    REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
+    CHECK(sources.waitingToBeReused() == 1);
+    CHECK(sources.auditionSourceFor(3) != second);
+}
+
+TEST_CASE("A track that stays keeps the id it had", "[live-routing][2590]") {
+    std::atomic<std::uint64_t> drains{0};
+    host::LiveMidiSources sources;
+    sources.observeDrains(drains);
+    host::LiveMidiRouting routing(sources);
+
+    REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all")}) != nullptr);
+    const auto first = sources.auditionSourceFor(1);
+
+    drains.fetch_add(4, std::memory_order_relaxed);
+    REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
+
+    CHECK(sources.auditionSourceFor(1) == first);
 }
