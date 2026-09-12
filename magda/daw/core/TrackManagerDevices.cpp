@@ -6,6 +6,7 @@
 #include "../audio/AudioBridge.hpp"
 #include "../audio/TracktionHelpers.hpp"
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
+#include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
@@ -2081,6 +2082,7 @@ DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& dev
     retargetPadLinks(newDevice, trackId, ids);
 
     applyCachedCapabilitiesToDevice(newDevice);
+    daw::audio::seedDeclaredParameters(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;

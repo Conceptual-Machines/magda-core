@@ -63,10 +63,15 @@ struct MigrationFixture {
     }
 };
 
+/// MagdaUtilityCompiledPlugin::kWidthSlot. The device declares seven more
+/// parameters the model seeds around this one (#2613), so Width is addressed by
+/// its index rather than by where it sits in the array.
+constexpr int kWidthSlot = 2;
+
 ParameterInfo makeWidthParam(float minValue, float maxValue, float defaultValue,
                              float currentValue) {
     ParameterInfo param;
-    param.paramIndex = 2;  // MagdaUtilityCompiledPlugin::kWidthSlot
+    param.paramIndex = kWidthSlot;
     param.name = "Width";
     param.minValue = minValue;
     param.maxValue = maxValue;
@@ -109,13 +114,13 @@ TEST_CASE("Old-scale Utility Width migrates to percent on load",
     REQUIRE(isDevice(track->chain.fxChainElements[0]));
 
     const auto& device = getDevice(track->chain.fxChainElements[0]);
-    REQUIRE(device.parameters.size() == 1);
-    const auto& width = device.parameters[0];
-    CHECK(width.currentValue == 150.0f);
-    CHECK(width.minValue == 0.0f);
-    CHECK(width.maxValue == 200.0f);
-    CHECK(width.defaultValue == 100.0f);
-    CHECK(width.unit == "%");
+    const auto* width = device.findParameterByIndex(kWidthSlot);
+    REQUIRE(width != nullptr);
+    CHECK(width->currentValue == 150.0f);
+    CHECK(width->minValue == 0.0f);
+    CHECK(width->maxValue == 200.0f);
+    CHECK(width->defaultValue == 100.0f);
+    CHECK(width->unit == "%");
 }
 
 TEST_CASE("Percent-scale Utility Width passes through load unchanged",
@@ -146,7 +151,8 @@ TEST_CASE("Percent-scale Utility Width passes through load unchanged",
     REQUIRE(track->chain.fxChainElements.size() == 1);
 
     const auto& device = getDevice(track->chain.fxChainElements[0]);
-    REQUIRE(device.parameters.size() == 1);
-    CHECK(device.parameters[0].currentValue == 150.0f);
-    CHECK(device.parameters[0].maxValue == 200.0f);
+    const auto* width = device.findParameterByIndex(kWidthSlot);
+    REQUIRE(width != nullptr);
+    CHECK(width->currentValue == 150.0f);
+    CHECK(width->maxValue == 200.0f);
 }

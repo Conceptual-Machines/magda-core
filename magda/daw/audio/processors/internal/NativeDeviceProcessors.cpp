@@ -32,7 +32,7 @@ MagdaConvolutionProcessor::MagdaConvolutionProcessor(DeviceId deviceId, te::Plug
     : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 SidechainProcessor::SidechainProcessor(DeviceId deviceId, te::Plugin::Ptr plugin)
-    : AutomatablePluginProcessor(deviceId, std::move(plugin)) {}
+    : MagdaDeviceProcessor(deviceId, std::move(plugin)) {}
 
 // =============================================================================
 // FourOscProcessor
@@ -68,28 +68,15 @@ std::optional<FourOscPluginState> FourOscProcessor::capturePluginState(te::Plugi
 }
 
 void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) const {
-    // filterFreq stores a MIDI note in 0..135.076 that TE turns into Hz via
-    // valueToString. The custom UI pins A4 (note 69, 440 Hz) to the visual
-    // centre with setSkewForCentre(69.0); mirror that on the shared
-    // ParameterInfo so the automation lane, generic slot slider, and curve
-    // playback all agree with the plugin UI's skew. Without this, visual
-    // centre lands on note 67.5 / ~404 Hz, which doesn't match what a user
-    // dragging the FREQ knob sees.
+    // filterFreq is a MIDI note in 0..135.076; the custom UI skews it with
+    // setSkewForCentre(69.0), and the shared ParameterInfo has to match.
     if (auto params = getAutomatableParameters(); index >= 0 && index < params.size() &&
                                                   params[index] &&
                                                   params[index]->paramID == "filterFreq")
         info.scaleAnchor = 69.0f;
 
-    // 4OSC exposes raw values (note number for filter freq, 0..100 for
-    // percentage-shaped params, etc.) and relies on TE's valueToString to
-    // convert them to the correct display text (e.g. "440 Hz" for note 69).
-    // Without a DisplayTextProvider the custom-UI sliders fall through
-    // DeviceSlotComponent::updateSliders -> TextSlider::setParameterInfo,
-    // which replaces the hand-written Hz formatter with the generic
-    // ParameterUtils::formatValue one - and for a linear-scale, empty-unit
-    // parameter that just prints the raw note number. Routing the formatter
-    // through TE keeps the custom UI label correct and matches what users
-    // see in the plugin's native UI.
+    // 4OSC exposes raw values and relies on TE's valueToString for display
+    // text, so the generic formatter would print a note number instead of Hz.
     if (info.scale != ParameterScale::Boolean && info.scale != ParameterScale::Discrete &&
         info.valueTable.empty()) {
         info.displayText = makeDeviceParameterDisplayTextProvider({}, getDeviceId(), index);
@@ -102,9 +89,8 @@ void FourOscProcessor::customiseParameterInfo(int index, ParameterInfo& info) co
 
 namespace {
 
-// Shared by the effect and the instrument: both pool the same way, and both
-// filter `[hidden:1]` here rather than in meterInfoFromOutput, so "which
-// outputs get a cell" stays a display decision.
+// Shared by the effect and the instrument. `[hidden:1]` is filtered here so
+// which outputs get a cell stays a display decision.
 void populateFaustMeters(const daw::audio::FaustParamPool& pool, DeviceInfo& info) {
     info.meters.clear();
     for (int i = 0; i < daw::audio::FaustParamPool::kOutputSize; ++i) {
@@ -148,15 +134,9 @@ void FaustProcessor::populateParametersFromEngine(DeviceInfo& info) const {
         return;
     }
     info.sidechainPort = faust->properties().sidechain;
-    // Only push active, non-hidden slots so the standard ParamGridComponent
-    // shows populated cells only. Each ParameterInfo carries its real slot
-    // index in `paramIndex`, so links / automation / MIDI Learn still
-    // bind to the stable pool slot; display order is not slot identity.
-    //
-    // `[hidden:1]` slots are active - the host still writes their zone every
-    // block (that is the whole point of [role:projecttempo]) - they just get
-    // no cell. Filtering here rather than in paramInfoFromSlot keeps "which
-    // params are displayed" a display decision.
+    // Active, non-hidden slots only; `paramIndex` keeps the real slot index so
+    // links and automation bind to the stable slot. A `[hidden:1]` slot is still
+    // written every block, it just gets no cell.
     int active = 0;
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
@@ -239,10 +219,7 @@ void FaustInstrumentProcessor::populateParametersFromEngine(DeviceInfo& info) co
             plugin_.get());
     if (faust == nullptr)
         return;
-    // Only push active, non-hidden slots; each ParameterInfo carries its real
-    // slot index in `paramIndex` so links / automation / MIDI Learn bind to
-    // the stable slot. See the effect processor above for why `[hidden:1]`
-    // is filtered here rather than in paramInfoFromSlot.
+    // Same slot rule as FaustProcessor::populateParametersFromEngine.
     auto params = plugin_->getAutomatableParameters();
     for (int i = 0; i < daw::audio::FaustParamPool::kSize; ++i) {
         const auto& slot = faust->getPool().slot(i);
@@ -256,9 +233,7 @@ void FaustInstrumentProcessor::populateParametersFromEngine(DeviceInfo& info) co
         }
     }
 
-    // Host-owned voice allocation, appended after the patch's own controls so
-    // they read as device settings rather than as part of the patch. Present
-    // for every runtime Faust instrument, whatever the .dsp declares.
+    // Host-owned voice settings, appended after the patch's own controls.
     for (int hostIndex = 0; hostIndex < daw::audio::FaustInstrumentPlugin::kHostParamCount;
          ++hostIndex) {
         auto hostInfo = daw::audio::faustInstrumentHostParamInfo(hostIndex);

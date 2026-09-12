@@ -20,7 +20,6 @@
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
-#include "../../core/PluginParameterConfigStore.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
@@ -234,6 +233,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                       applyLoadedDevice(key, resolved, restored);
                   }) {
         factory_.loadExternalsWith(loader_);
+
+        // Captures nothing: the model is a singleton and the request guards
+        // the key, so a project that closed first is a no-op.
+        loader_.onPluginEdit([](engine::DeviceKey key, int slot, float normalised) {
+            auto& tracks = TrackManager::getInstance();
+            const auto path = tracks.findDevicePath(key.deviceId, key.segment);
+            if (path.isValid())
+                tracks.setDeviceParameterValueFromPlugin(path, slot, normalised);
+        });
 
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
@@ -770,12 +778,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Asked with the segment, because a DeviceId is section-local and on
         // its own names up to three devices (#1899).
         const auto path = TrackManager::getInstance().findDevicePath(key.deviceId, key.segment);
-
-        // What the plugin's parameters were detected to mean, over the bare
-        // normalised records the adapter builds from the instance. Here because
-        // the array is rebuilt on every load, and a unit that only survived
-        // until the next one is a unit nobody configured twice (#2601).
-        PluginParameterConfigStore::applyToDevice(*device);
 
         // Here rather than where the parameters were described, because this is
         // where the device's address is known: a DeviceInfo does not say which

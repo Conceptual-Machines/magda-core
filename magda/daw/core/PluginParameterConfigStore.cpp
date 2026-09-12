@@ -1,6 +1,8 @@
 #include "PluginParameterConfigStore.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <optional>
 #include <ranges>
 #include <unordered_map>
 
@@ -172,12 +174,17 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
                 entry.unit = paramElem->getStringAttribute("unit");
             if (paramElem->hasAttribute("scale"))
                 entry.scale = scaleFromString(paramElem->getStringAttribute("scale"));
-            if (paramElem->hasAttribute("min"))
-                entry.rangeMin = static_cast<float>(paramElem->getDoubleAttribute("min"));
-            if (paramElem->hasAttribute("max"))
-                entry.rangeMax = static_cast<float>(paramElem->getDoubleAttribute("max"));
-            if (paramElem->hasAttribute("center"))
-                entry.rangeCenter = static_cast<float>(paramElem->getDoubleAttribute("center"));
+            // A detected dB range can start at minus infinity; nothing converts
+            // through that, so the plugin's own range stands instead.
+            const auto finiteAttribute = [&](const char* name) -> std::optional<float> {
+                if (!paramElem->hasAttribute(name))
+                    return std::nullopt;
+                const auto value = static_cast<float>(paramElem->getDoubleAttribute(name));
+                return std::isfinite(value) ? std::optional<float>(value) : std::nullopt;
+            };
+            entry.rangeMin = finiteAttribute("min");
+            entry.rangeMax = finiteAttribute("max");
+            entry.rangeCenter = finiteAttribute("center");
             if (auto* choicesElem = paramElem->getChildByName("Choices")) {
                 std::vector<juce::String> choices;
                 for (auto* choice : choicesElem->getChildIterator())

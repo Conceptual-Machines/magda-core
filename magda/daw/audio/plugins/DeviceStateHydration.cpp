@@ -9,8 +9,8 @@
 #include "core/DeviceState.hpp"
 #include "core/ParameterUtils.hpp"
 #include "core/TrackInfo.hpp"
+#include "plugins/DeviceCatalogParameters.hpp"
 #include "plugins/DevicePluginHandle.hpp"
-#include "plugins/InternalPluginRegistry.hpp"
 #include "plugins/MagdaDevice.hpp"
 #include "plugins/compiled/CompiledPluginRegistry.hpp"
 
@@ -23,12 +23,8 @@ namespace ds = magda::device_state;
 /// The domain a pre-#2317 document's parameter record used.
 enum class ParamDomain { Display, Normalized };
 
-/// Devices that were already behind `TracktionMagdaDevicePlugin` before the
-/// `paramsAreDisplayDomain` marker existed. Their unmarked documents have TWO
-/// eras: 0.19 captures from the retired host-native plugins hold display
-/// values, later captures from the wrapper hold normalised slots. Everything
-/// wrapped since the marker always writes it, so an unmarked document for any
-/// other device predates its wrapper and can only be display-domain.
+/// Devices wrapped before the `paramsAreDisplayDomain` marker existed: their
+/// unmarked documents may hold display values (0.19) or normalised slots (later).
 bool wrappedBeforeDomainMarker(const juce::String& deviceType) {
     static constexpr std::array<const char*, 5> kPreMarkerWrapped{
         "toneGenerator", "sidechain", "faust-fx", "oscilloscope", "spectrumanalyzer",
@@ -37,12 +33,8 @@ bool wrappedBeforeDomainMarker(const juce::String& deviceType) {
                        [&deviceType](const char* id) { return deviceType == id; });
 }
 
-/// Released-state-first fallback for a two-era document with no provenance:
-/// any value outside [0, 1] can only be display-domain (a 0.19 sidechain
-/// document always carries one - its release defaults to 15 ms). The residue -
-/// every value inside the unit interval - is read as normalised, which is
-/// exact for slots whose display range IS the unit interval and correct for
-/// wrapper-era captures of the rest.
+/// A two-era document with no provenance: a value outside [0, 1] can only be
+/// display-domain; all inside is read as normalised.
 bool anyValueOutsideUnitInterval(const ds::Doc& doc) {
     return std::any_of(doc.params.begin(), doc.params.end(), [](const ds::ParamValue& saved) {
         return saved.value < -1.0e-4f || saved.value > 1.0f + 1.0e-4f;
@@ -54,8 +46,7 @@ ParamDomain resolveDomain(const DeviceInfo& device, const ds::Doc& doc,
     if (doc.paramsAreDisplayDomain)
         return ParamDomain::Display;
 
-    // The compiled Faust pack's parameters were always normalised slots, and
-    // so were its documents, in every era.
+    // The compiled Faust pack's documents were normalised slots in every era.
     if (compiled::findCompiledPluginSpec(device.pluginId) != nullptr)
         return ParamDomain::Normalized;
 
@@ -65,34 +56,15 @@ ParamDomain resolveDomain(const DeviceInfo& device, const ds::Doc& doc,
         return anyValueOutsideUnitInterval(doc) ? ParamDomain::Display : ParamDomain::Normalized;
     }
 
-    // Every other unmarked document was captured from a plugin whose
-    // parameters ran in their own display range: either the device has never
-    // been wrapped, or it crossed after the marker existed and the document
-    // predates the crossing.
+    // Every other unmarked document predates its device's wrapper.
     return ParamDomain::Display;
 }
 
-/// A throwaway SDK device for the parameter metadata a normalised value needs
-/// to become a display one. Restored from the document's own root first, for
-/// the devices whose parameter set depends on it (the runtime Faust device
-/// reads its slots out of its dsp source). Null for a device that has not
-/// crossed to MagdaDevice, whose documents were never normalised.
+/// A throwaway SDK device for the parameter metadata, restored from the
+/// document's root for devices whose parameter set depends on it. Null for a
+/// device that is not a MagdaDevice.
 std::unique_ptr<MagdaDevice> metadataDevice(const juce::String& pluginId, const ds::Doc& doc) {
-    auto create = [&pluginId]() -> std::unique_ptr<MagdaDevice> {
-        juce::ValueTree state{juce::Identifier("PLUGIN")};
-        state.setProperty(juce::Identifier("type"), pluginId, nullptr);
-        const DevicePluginCreationContext context{
-            .sessionKey = {}, .state = std::move(state), .isNewPlugin = true};
-        if (const auto* spec = findInternalPluginSpec(pluginId);
-            spec != nullptr && spec->createDevice != nullptr)
-            return spec->createDevice(context);
-        if (const auto* spec = compiled::findCompiledPluginSpec(pluginId);
-            spec != nullptr && spec->createDevice != nullptr)
-            return spec->createDevice(context);
-        return {};
-    };
-
-    auto device = create();
+    auto device = createDetachedDevice(pluginId);
     if (device != nullptr) {
         auto tree = ds::toValueTree(doc.root);
         tree.setProperty(juce::Identifier("type"), doc.deviceType, nullptr);
@@ -112,9 +84,8 @@ bool modelCarries(const DeviceInfo& device, const ds::ParamValue& saved) {
                        [&saved](const ParameterInfo& p) { return p.stableId == saved.id; });
 }
 
-/// A hydrated entry for a device without SDK metadata: value and identity only,
-/// with a range wide enough to hold the value. The device's processor fills in
-/// the real metadata at registration, preserving this value.
+/// An entry for a device without SDK metadata: value and identity, with a range
+/// wide enough to hold the value. The processor fills in the rest at registration.
 ParameterInfo minimalEntry(const ds::ParamValue& saved) {
     ParameterInfo info;
     info.paramIndex = saved.index;
@@ -135,8 +106,7 @@ Provenance provenanceFromMagdaVersion(const juce::String& version) {
     const auto rest = trimmed.fromFirstOccurrenceOf(".", false, false);
     const int minor = rest.upToFirstOccurrenceOf(".", false, false).getIntValue();
 
-    // Unparseable reads as 0.0: no build old enough to write no version at all
-    // postdates the cutover.
+    // Unparseable reads as 0.0, which is old.
     return {.savedBeforeWrapperCutover = major == 0 && minor < 20};
 }
 
@@ -148,13 +118,9 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
     if (!doc || doc->params.empty())
         return false;
 
-    // A record saved against a parameter order this build has since renumbered
-    // is identified by ITS length, not the model array's - the model array is
-    // exactly what an old preset or imported chain does not have. Remap the
-    // frozen indices first, or every old index would be read as a current one
-    // and land on the wrong slot (the pre-Enabled EQ, the 7-slot limiter).
-    // Dropped indices are dropped for the same reason the project-level pass
-    // drops them: re-pointing a value at a neighbour is corruption.
+    // A renumbered parameter order is identified by the record's own length,
+    // since an old preset has no model array. Remap before matching, or an old
+    // index lands on the wrong slot. Dropped indices stay dropped.
     auto savedParams = doc->params;
     const auto* migration = device_param_migrations::findMigrationForSavedCount(
         device.pluginId, static_cast<int>(savedParams.size()));
@@ -182,12 +148,9 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
     const bool arrayWasEmpty = device.parameters.empty();
     const auto domain = resolveDomain(device, *doc, provenance);
 
-    // Real slot metadata whenever the device has an SDK factory, whatever the
-    // domain: the plan's value layer converts through the MODEL's ParameterInfo
-    // ranges, so a made-up range would corrupt a headless native render before
-    // any live processor could refresh it. The minimal fallback is reserved for
-    // devices without a factory - exactly the ones the native engine refuses to
-    // build, so nothing downstream converts through the placeholder.
+    // Real slot metadata whenever the device has an SDK factory: the plan
+    // converts through the model's ranges, so a placeholder range would corrupt
+    // a headless native render. Devices without a factory never reach one.
     const auto metadata = metadataDevice(device.pluginId, *doc);
 
     bool added = false;
@@ -207,14 +170,11 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
             device.parameters.push_back(minimalEntry(*saved));
             added = true;
         }
-        // A normalised value without slot metadata is meaningless and is
-        // dropped: there is no device to run it on either.
+        // A normalised value without slot metadata is dropped.
     }
 
-    // Parameters the migrated order ADDED, seeded so the device keeps doing
-    // what the old one did (an old EQ's bands were always running; today they
-    // default off). Seed values are display-domain by contract
-    // (DeviceParamMigrations.hpp), whatever domain the record itself used.
+    // Parameters the migrated order added, seeded so the device keeps doing
+    // what the old one did. Seed values are display-domain (DeviceParamMigrations.hpp).
     if (migration != nullptr) {
         for (const auto& seed : migration->seeded) {
             if (device.findParameterByIndex(seed.index) != nullptr)
@@ -238,9 +198,7 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
         }
     }
 
-    // A fully hydrated array keeps the device's own display order; entries
-    // appended to a partial one land at the end, which only affects display
-    // order and only until the processor next refreshes the metadata.
+    // A fully hydrated array keeps the device's own display order.
     if (added && arrayWasEmpty)
         std::stable_sort(device.parameters.begin(), device.parameters.end(),
                          [](const ParameterInfo& a, const ParameterInfo& b) {
@@ -250,10 +208,15 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
     return added;
 }
 
+void completeDeviceParameters(DeviceInfo& device, const Provenance& provenance) {
+    hydrateParametersFromDeviceState(device, provenance);
+    seedDeclaredParameters(device);
+}
+
 void hydrateChainElements(std::vector<ChainElement>& elements, const Provenance& provenance) {
     chain_walk::forEachDevice(elements, ChainNodePath{}, chain_walk::Pads::Enter,
                               [&provenance](DeviceInfo& device, const ChainNodePath&) {
-                                  hydrateParametersFromDeviceState(device, provenance);
+                                  completeDeviceParameters(device, provenance);
                                   return true;
                               });
 }
@@ -270,9 +233,9 @@ void hydrateStagedProject(std::vector<TrackInfo>& tracks, TrackInfo* masterTrack
     auto hydrateTrack = [&provenance](TrackInfo& track) {
         hydrateChainElements(track.chain.fxChainElements, provenance);
         for (auto& element : track.chain.postFxChainElements)
-            hydrateParametersFromDeviceState(element.device, provenance);
+            completeDeviceParameters(element.device, provenance);
         for (auto& element : track.chain.mixerAnalysisElements)
-            hydrateParametersFromDeviceState(element.device, provenance);
+            completeDeviceParameters(element.device, provenance);
     };
 
     for (auto& track : tracks)

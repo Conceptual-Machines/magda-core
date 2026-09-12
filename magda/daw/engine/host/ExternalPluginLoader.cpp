@@ -3,6 +3,8 @@
 #include <set>
 #include <utility>
 
+#include "../../audio/plugins/engine/EngineExternalDevice.hpp"
+
 namespace magda::daw::engine_host {
 
 namespace adapter = magda::daw::audio::engine_adapter;
@@ -30,6 +32,10 @@ void ExternalPluginLoader::setServices(juce::AudioPluginFormatManager* formats,
                                        const juce::KnownPluginList* knownPlugins) {
     services_.formats = formats;
     services_.knownPlugins = knownPlugins;
+}
+
+void ExternalPluginLoader::onPluginEdit(PluginEdit sink) {
+    pluginEdit_ = std::move(sink);
 }
 
 void ExternalPluginLoader::setContext(const engine::RenderContext& context) {
@@ -166,6 +172,13 @@ void ExternalPluginLoader::complete(engine::DeviceKey key, std::uint64_t generat
 
         return;
     }
+
+    if (auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get()))
+        external->listenForPluginEdits(
+            [sink = pluginEdit_, request = assignments_.request(key), key](int at, float value) {
+                if (sink && request.isStillWanted())
+                    sink(key, at, value);
+            });
 
     slot.instance = std::move(result.device);
     juce::Logger::writeToLog("[engine] loaded \"" + result.resolvedDevice->name + "\"");

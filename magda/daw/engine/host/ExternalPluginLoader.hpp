@@ -74,6 +74,12 @@ class ExternalPluginLoader final {
      */
     void syncAssignments(const std::map<engine::DeviceKey, DeviceInfo>& devices);
 
+    using PluginEdit = std::function<void(engine::DeviceKey key, int slot, float normalised)>;
+
+    /// Where a parameter the plugin moved itself is reported, on the message
+    /// thread, for as long as the key still names that plugin.
+    void onPluginEdit(PluginEdit sink);
+
     /**
      * @brief The instance for @p key, or nothing yet.
      *
@@ -131,6 +137,7 @@ class ExternalPluginLoader final {
 
     audio::engine_adapter::CurrentDeviceLookup currentDevice_;
     Loaded loaded_;
+    PluginEdit pluginEdit_;
 
     audio::engine_adapter::ExternalPluginServices services_;
     audio::engine_adapter::PluginAssignments assignments_;
