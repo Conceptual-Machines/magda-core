@@ -6,6 +6,7 @@
 
 #include "core/RackInfo.hpp"
 #include "core/TrackInfo.hpp"
+#include "exec/PlanValues.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "plan/PlanDump.hpp"
 #include "plan/RenderPlan.hpp"
@@ -1685,46 +1686,87 @@ TEST_CASE("Sidechain discovery reaches every section emission does", "[engine][p
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
 
+namespace {
+
+/// Whether the track hears its live audio input this publish.
+bool inputGateIsSilent(const std::vector<TrackInfo>& tracks, const RenderPlan& plan) {
+    magda::engine::PlanValues values;
+    magda::engine::resolvePlanValues(plan, tracks, makeMaster(), values);
+
+    const auto gates = opsWithRole(plan, OpRole::LiveInputGate);
+    REQUIRE(gates.size() == 1);
+    return values.ops[static_cast<std::size_t>(gates.front())].silent;
+}
+
+}  // namespace
+
 TEST_CASE("Auto input monitoring only counts while the track is armed",
           "[engine][plan][compiler]") {
-    // Automatic monitoring passes input only while
-    // armed. Emitting a live op for an unarmed Auto track would both add a op
-    // the engine keeps silent and mark the whole chain downstream Live.
-    SECTION("unarmed Auto emits no live input") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::Auto;
-        tracks[0].audioInputDevice = "Input 1";
-        tracks[0].midiInputDevice = "Keyboard";
+    // Automatic monitoring passes input only while armed. For the hardware
+    // audio input that is the gate's value, since the op and its meter are
+    // compiled either way (#2612). For live MIDI it still decides whether the
+    // op exists at all.
+    const auto trackWith = [](InputMonitorMode monitor, bool armed) {
+        auto track = makeTrack(1);
+        track.inputMonitor = monitor;
+        track.recordArmed = armed;
+        track.audioInputDevice = "Input 1";
+        track.midiInputDevice = "Keyboard";
+        return track;
+    };
 
+    SECTION("unarmed Auto hears neither") {
+        const std::vector<TrackInfo> tracks{trackWith(InputMonitorMode::Auto, false)};
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
 
-        CHECK(countRole(plan, OpRole::LiveAudioInput) == 0);
+        CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+        CHECK(inputGateIsSilent(tracks, plan));
         CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
-        for (const auto& op : plan.ops)
-            CHECK(op.liveness == magda::engine::LivenessDomain::Deterministic);
     }
 
-    SECTION("armed Auto emits it") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::Auto;
-        tracks[0].recordArmed = true;
-        tracks[0].audioInputDevice = "Input 1";
-
+    SECTION("armed Auto hears both") {
+        const std::vector<TrackInfo> tracks{trackWith(InputMonitorMode::Auto, true)};
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
+
         CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+        CHECK_FALSE(inputGateIsSilent(tracks, plan));
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
     }
 
-    SECTION("In emits it without arming") {
-        std::vector<TrackInfo> tracks{makeTrack(1)};
-        tracks[0].inputMonitor = InputMonitorMode::In;
-        tracks[0].audioInputDevice = "Input 1";
-
+    SECTION("In hears both without arming") {
+        const std::vector<TrackInfo> tracks{trackWith(InputMonitorMode::In, false)};
         const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
         requireWellFormed(plan);
+
         CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
+        CHECK_FALSE(inputGateIsSilent(tracks, plan));
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
     }
+}
+
+TEST_CASE("The monitor switch does not move the plan's shape for a hardware input",
+          "[engine][plan][compiler][2612]") {
+    // The whole point of the gate: every switch position compiles one plan, so
+    // the host publishes values and prepares nothing. A hardware input only --
+    // a route from another track is an ordering dependency, and still comes and
+    // goes with the switch.
+    const auto planFor = [](InputMonitorMode monitor, bool armed) {
+        auto track = makeTrack(1);
+        track.inputMonitor = monitor;
+        track.recordArmed = armed;
+        track.audioInputDevice = "Input 1";
+        return magda::engine::compileRenderPlan({track}, makeMaster());
+    };
+
+    const auto idle = planFor(InputMonitorMode::Off, false);
+    requireWellFormed(idle);
+    const auto shape = magda::engine::planFingerprint(idle);
+
+    CHECK(magda::engine::planFingerprint(planFor(InputMonitorMode::Auto, false)) == shape);
+    CHECK(magda::engine::planFingerprint(planFor(InputMonitorMode::Auto, true)) == shape);
+    CHECK(magda::engine::planFingerprint(planFor(InputMonitorMode::In, false)) == shape);
 }
 
 TEST_CASE("Audition gives every track that reads MIDI something to preview through",

@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <array>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -185,6 +187,11 @@ class LiveInputFactory final : public RuntimeStateFactory {
     magda::engine::LevelTap* inputMeter = nullptr;
 };
 
+/// Binds nothing at all, which is what the app's factory does for live audio
+/// today: EngineRuntimeFactory leaves createAudioInput unoverridden, because
+/// live audio input is #2553's.
+class UnboundInputFactory final : public RuntimeStateFactory {};
+
 RenderContext context() {
     return RenderContext{44100.0, kBlockSize, 2};
 }
@@ -208,21 +215,110 @@ magda::engine::TransportSnapshot rolling(double fromBeat) {
 
 }  // namespace
 
-TEST_CASE("An input op is compiled for a track that is armed or monitoring in",
-          "[engine][live-input]") {
+TEST_CASE("A hardware audio input is compiled for every track that names one",
+          "[engine][live-input][2612]") {
     // monitorsInput(): armed, or monitoring set to In. Auto lights the activity
     // indicator (receivesLiveMidiInput) but is not audible until the track is
-    // armed, which is what ships and what the compiler gates on.
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 0);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 0);
+    // armed, which is what ships. For the audio input that decides the gate's
+    // value rather than whether the op exists, so the op is there either way.
+    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 1);
+    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::AudioInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Auto, true, OpKind::AudioInput) == 1);
 
+    // Live MIDI still comes and goes with the switch. #2612 is the audio half.
     CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 0);
     CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 0);
     CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::MidiInput) == 1);
     CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::MidiInput) == 1);
+}
+
+TEST_CASE("An input nobody is listening to is not a missing binding",
+          "[engine][live-input][2612]") {
+    // The host path, not a test factory: with the input op compiled for every
+    // track that names a device, a report per unmonitored track would be a line
+    // about an input the user is not asking to hear -- and in the app, which
+    // binds no live audio at all yet, one per configured track on every
+    // structural publish.
+    const auto messagesFor = [](InputMonitorMode monitor) {
+        UnboundInputFactory factory;
+        EngineSession session(factory);
+        session.liveInputs().prepare(2, kBlockSize);
+
+        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, false)};
+        const auto result = publish(session, compile(tracks), tracks);
+        REQUIRE(result.published);
+        return result.messages;
+    };
+
+    const auto reportsUnboundAudio = [](const std::vector<std::string>& messages) {
+        return std::ranges::any_of(messages, [](const std::string& message) {
+            return message.find("no live audio input bound") != std::string::npos;
+        });
+    };
+
+    CHECK_FALSE(reportsUnboundAudio(messagesFor(InputMonitorMode::Off)));
+    CHECK_FALSE(reportsUnboundAudio(messagesFor(InputMonitorMode::Auto)));
+
+    // Still said where the track is asking for it, which is what the report is
+    // for: the host meant to bind one and did not.
+    CHECK(reportsUnboundAudio(messagesFor(InputMonitorMode::In)));
+
+    // And said when the switch arrives as values, which is the publish this
+    // change makes possible: the plan does not move, so nothing re-prepares and
+    // nothing would otherwise look at the bindings again.
+    UnboundInputFactory factory;
+    EngineSession session(factory);
+    session.liveInputs().prepare(2, kBlockSize);
+
+    const std::vector<TrackInfo> idle{monitoringTrack(InputMonitorMode::Off, false)};
+    const auto plan = compile(idle);
+    REQUIRE(publish(session, plan, idle).published);
+
+    const std::vector<TrackInfo> listening{monitoringTrack(InputMonitorMode::In, false)};
+    const auto valuesFor = [&plan](const std::vector<TrackInfo>& tracks) {
+        PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+        return values;
+    };
+
+    const auto switched = session.publishValues(valuesFor(listening));
+    REQUIRE(switched.published);
+    CHECK(reportsUnboundAudio(switched.messages));
+
+    // Once per plan, not once per fader move.
+    CHECK_FALSE(reportsUnboundAudio(session.publishValues(valuesFor(listening)).messages));
+}
+
+TEST_CASE("What the monitor switch moves is the input gate's silence",
+          "[engine][live-input][2612]") {
+    const auto gateSilence = [](InputMonitorMode monitor, bool armed) {
+        const std::vector<TrackInfo> tracks{monitoringTrack(monitor, armed)};
+        const auto plan = compile(tracks);
+        const auto gate = findRole(*plan, tracks.front().id, OpRole::LiveInputGate);
+        REQUIRE(gate >= 0);
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+        return values.ops[static_cast<std::size_t>(gate)].silent;
+    };
+
+    CHECK(gateSilence(InputMonitorMode::Off, false));
+    CHECK(gateSilence(InputMonitorMode::Auto, false));
+    CHECK_FALSE(gateSilence(InputMonitorMode::In, false));
+    CHECK_FALSE(gateSilence(InputMonitorMode::Off, true));
+    CHECK_FALSE(gateSilence(InputMonitorMode::Auto, true));
+
+    // The input reaches the chain through the gate and nowhere else, so a
+    // silent gate is the whole of what an unmonitored track hears of it.
+    const std::vector<TrackInfo> tracks{monitoringTrack(InputMonitorMode::Off, false)};
+    const auto plan = compile(tracks);
+    const auto meter = findRole(*plan, tracks.front().id, OpRole::LiveInputMeter);
+    const auto gate = findRole(*plan, tracks.front().id, OpRole::LiveInputGate);
+    REQUIRE(meter >= 0);
+    REQUIRE(gate >= 0);
+    CHECK(consumersOf(*plan, meter) == std::vector<int>{gate});
 }
 
 TEST_CASE("A live audio input reads the callback's own samples", "[engine][live-input]") {
@@ -550,9 +646,11 @@ TEST_CASE("An input meter reads the input a monitoring track is hearing",
           "[engine][live-input][2463]") {
     // The incumbent reads this off the input device (WaveInputDevice's level
     // measurer); here it is a meter on the input op, so it exists exactly while
-    // the op does and sits in the signal rather than beside it.
+    // the op does and sits in the signal rather than beside it. Ahead of the
+    // monitor gate, so a track that is not listening still meters its input
+    // (#2612).
     CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::Meter) ==
-          inputOpsFor(InputMonitorMode::In, false, OpKind::Meter) - 1);
+          inputOpsFor(InputMonitorMode::In, false, OpKind::Meter));
 
     {
         const std::vector<TrackInfo> monitoring{monitoringTrack(InputMonitorMode::In, false)};

@@ -720,8 +720,7 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
     // device is handed an empty window, and the gain device reads that as
     // unity, so the project would sound plausible and assert nothing.
     PlanExecutor executor;
-    for (const auto& diagnostic :
-         executor.prepare(plan, bindings, context, nullptr, values.params.get()))
+    for (const auto& diagnostic : executor.prepare(plan, bindings, context, nullptr, &values))
         result.diagnostics.push_back("prepare: " + diagnostic);
 
     if (!executor.isPrepared()) {

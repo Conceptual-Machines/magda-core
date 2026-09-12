@@ -150,8 +150,9 @@ enum class OpRole : std::uint8_t {
     ClipAudio,            ///< the track's audio clip source
     ClipMidi,             ///< the track's MIDI clip source
     LiveAudioInput,       ///< the track's live audio input
-    LiveInputMeter,       ///< the live audio input's level tap, read while monitoring
+    LiveInputMeter,       ///< the live audio input's level tap, ahead of the monitor gate
     LiveMidiInput,        ///< the track's live MIDI input
+    LiveInputGate,        ///< whether the track hears its live audio input
     SessionAudio,         ///< the track's session audio, whichever slot is playing
     SessionMidi,          ///< the track's session MIDI
     TrackAudioInput,      ///< sum of everything feeding the track's chain head

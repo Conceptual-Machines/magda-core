@@ -69,7 +69,7 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
     // resolved from one model against one plan.
     auto messages = prepared->executor.prepare(*prepared->plan, bindings, context,
                                                live_ == nullptr ? nullptr : &live_->executor,
-                                               prepared->values.params.get());
+                                               &prepared->values);
     if (!prepared->executor.isPrepared())
         return {false, std::move(messages)};
 
@@ -204,8 +204,12 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
                  "published: the plan they belong to has to be published with them"}};
 
     if (live_->executor.fitsParameters(values)) {
+        // Asked before the swap and of the values themselves: a switch that
+        // makes an input audible arrives here, with no prepare to notice that
+        // nothing is bound to it (#2612).
+        auto messages = live_->executor.reportUnboundInputs(&values);
         values_.nonRealtimeReplace(std::move(values));
-        return {true, {}};
+        return {true, std::move(messages)};
     }
 
     // The parameter set changed without the plan changing. See the header: this
