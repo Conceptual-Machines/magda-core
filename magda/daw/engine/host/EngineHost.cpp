@@ -242,6 +242,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                   }) {
         factory_.loadExternalsWith(loader_);
 
+        // Captures nothing: the model is a singleton and the request guards
+        // the key, so a project that closed first is a no-op.
+        loader_.onPluginEdit([](engine::DeviceKey key, int slot, float normalised) {
+            auto& tracks = TrackManager::getInstance();
+            const auto path = tracks.findDevicePath(key.deviceId, key.segment);
+            if (path.isValid())
+                tracks.setDeviceParameterValueFromPlugin(path, slot, normalised);
+        });
+
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
         startTimer(kMeterIntervalMs);

@@ -6,6 +6,7 @@
 #include <atomic>
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <utility>
 
 #include "core/ParameterUtils.hpp"
@@ -15,28 +16,22 @@ namespace magda::daw::audio::engine_adapter {
 
 namespace {
 
-/// What an encoded event costs before its own bytes. Derived from the engine's
-/// own cost model, the same way EngineMagdaDevice derives it, so the two cannot
-/// drift apart.
+/// What an encoded event costs before its own bytes, as EngineMagdaDevice
+/// derives it.
 constexpr int kMidiEventOverheadBytes =
     magda::engine::kMidiShortMessageBytes - 3;  // a short message is three bytes of data
 
-/// Below this the fork treats the dry level as off and skips the mix entirely,
-/// which is what makes the common case one processBlock and no copy.
+/// Below this the dry level is off and the mix is skipped.
 constexpr float kDryLevelFloor = 0.00004f;
 
-/// Above this the fork treats the wet level as unity and skips the gain pass.
+/// Above this the wet level is unity and the gain pass is skipped.
 constexpr float kWetLevelCeiling = 0.999f;
 
-/// The parameter slots the fork puts in front of a plugin's own: dry, then wet.
+/// The slots in front of a plugin's own: dry, then wet.
 constexpr int kWrapperParameterCount = 2;
 
 /// The model's description of the parameter at plan slot @p index, or none.
-///
-/// Both buckets, because MAGDA splits the fork's one list in two: the plugin's
-/// parameters and the wrapper pair it never declared. Both carry the fork's
-/// index in paramIndex, which is what the plan addresses them by, so the split
-/// is a UI concern and this is the one place that has to put them back together.
+/// Both buckets, since the wrapper pair shares the plugin's index space.
 std::optional<magda::ParameterInfo> modelParameterAt(const magda::DeviceInfo& device, int index) {
     for (const auto* bucket : {&device.parameters, &device.wrapperParameters})
         for (const auto& info : *bucket)
@@ -49,16 +44,7 @@ std::optional<magda::ParameterInfo> modelParameterAt(const magda::DeviceInfo& de
 /**
  * @brief Replace anything that is not a number with silence (#2240).
  *
- * A NaN is not a loud sound, it is a permanent one: it survives every gain,
- * poisons every sum it reaches, and the track stays silent-but-broken after the
- * plugin that made it has been bypassed. An infinity does the same on the first
- * multiply by zero. Neither is a level to be managed, so neither is clamped:
- * they are cleared.
- *
- * Deliberately not the fork's rule, which clamps to a magnitude of 100 and only
- * looks at all when the CPU raised its denormal flag during the call, on Intel.
- * That gate is for denormals and says nothing about a NaN, and the magnitude is
- * a number nothing derives: +40 dBFS protects no speaker.
+ * Cleared rather than clamped: a NaN survives every gain and poisons every sum.
  */
 void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
     for (int channel = 0; channel < audio.getNumChannels(); ++channel) {
@@ -73,21 +59,9 @@ void clearNonFinite(juce::AudioBuffer<float>& audio, int numSamples) {
 }  // namespace
 
 /**
- * @brief Where the transport is, as a plugin asks for it.
- *
- * A block's own description, published for the plugin to read during the call.
- * Held in atomics rather than as a pointer to the block, for the fork's own
- * reason: a plugin is entitled to ask on the message thread, hours after the
- * block that produced the answer, and some do. The worst that can do here is
- * report a stale position, which is what the fork does too.
- */
-/**
  * @brief The plugin's editor in a window of its own (#2580).
  *
- * A DocumentWindow rather than the fork's te::PluginWindowState, which is built
- * around a te::Plugin this side does not have. Its close button tells the
- * owner rather than deleting itself, so the owner's pointer is also the answer
- * to whether it is open.
+ * Its close button tells the owner rather than deleting itself.
  */
 class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
   public:
@@ -103,8 +77,7 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
         setVisible(true);
     }
 
-    /// The editor goes before the window it sits in, and while the plugin is
-    /// still there to be told it has gone.
+    /// The editor goes while the plugin is still there to be told.
     ~EditorWindow() override {
         clearContentComponent();
     }
@@ -119,6 +92,65 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
     std::function<void()> closed_;
 };
 
+/**
+ * @brief Where the transport is, as a plugin asks for it.
+ *
+ * Atomics rather than a pointer to the block: a plugin may ask on the message
+ * thread long after the block, and a stale position is the accepted answer.
+ */
+/// Records a parameter the plugin moved itself and queues one flush. JUCE
+/// calls this on whatever thread made the change, the audio thread included.
+class EngineExternalDevice::PluginListener final : public juce::AudioProcessorListener {
+  public:
+    PluginListener(std::shared_ptr<PluginEdits> edits, const std::vector<int>& slotOfParameter,
+                   const std::atomic<bool>& writing)
+        : edits_(std::move(edits)), slotOfParameter_(slotOfParameter), writing_(writing) {}
+
+    void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex,
+                                        float newValue) override {
+        if (writing_.load(std::memory_order_relaxed))
+            return;
+
+        if (parameterIndex < 0 || parameterIndex >= static_cast<int>(slotOfParameter_.size()))
+            return;
+
+        const auto slot = slotOfParameter_[static_cast<std::size_t>(parameterIndex)];
+        if (slot < 0)
+            return;
+
+        auto& edits = *edits_;
+        edits.pending[static_cast<std::size_t>(slot)].store(newValue, std::memory_order_relaxed);
+        edits.dirty[static_cast<std::size_t>(slot)].store(true, std::memory_order_release);
+
+        if (edits.flushQueued.exchange(true, std::memory_order_acq_rel))
+            return;
+
+        juce::MessageManager::callAsync([weak = std::weak_ptr<PluginEdits>(edits_)] {
+            const auto edits = weak.lock();
+            if (edits == nullptr)
+                return;
+
+            edits->flushQueued.store(false, std::memory_order_release);
+
+            for (std::size_t slot = 0; slot < edits->dirty.size(); ++slot) {
+                if (!edits->dirty[slot].exchange(false, std::memory_order_acq_rel))
+                    continue;
+
+                if (edits->sink)
+                    edits->sink(static_cast<int>(slot),
+                                edits->pending[slot].load(std::memory_order_relaxed));
+            }
+        });
+    }
+
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {}
+
+  private:
+    std::shared_ptr<PluginEdits> edits_;
+    const std::vector<int>& slotOfParameter_;
+    const std::atomic<bool>& writing_;
+};
+
 class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
   public:
     void setBlock(const magda::engine::BlockInfo& block, double sampleRate) {
@@ -130,9 +162,7 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
         ppqPosition_.store(block.beats.start, std::memory_order_relaxed);
 
         if (block.tempo == nullptr) {
-            // A caller assembling a block by hand: the defaults are what the
-            // transport would have published, and the bar grid is the one the
-            // engine's own default map has.
+            // A block assembled by hand: the engine's default map.
             bpm_.store(kDefaultBpm, std::memory_order_relaxed);
             numerator_.store(4, std::memory_order_relaxed);
             denominator_.store(4, std::memory_order_relaxed);
@@ -141,19 +171,10 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
             return;
         }
 
-        // The tempo and the bar grid the block's first sample sounds under, not
-        // the ones its first beat sits in: a block can open a hundredth of a
-        // sample before a boundary it is otherwise entirely past
-        // (BlockInfo::openingBeat), and taking them from there would run the
-        // call on the section it had already left.
-        //
-        // One bpm and one signature for the whole call is all this interface
-        // has to give, so a block spanning a tempo change reports what its
-        // first sample is in for all of it. That is what every host does and
-        // what plugins are built to tolerate (#2340).
-        //
-        // Where the block is stays its own: the time and the PPQ position above
-        // are its first sample's, which is what the plugin is being handed.
+        // Read at the beat the first sample sounds under
+        // (BlockInfo::openingBeat). One bpm and one signature per call is all
+        // the interface gives, so a block spanning a change reports its first
+        // sample's for all of it (#2340).
         const auto opening = block.openingBeat();
 
         bpm_.store(block.tempo->bpmAt(opening), std::memory_order_relaxed);
@@ -162,20 +183,11 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
         numerator_.store(position.numerator, std::memory_order_relaxed);
         denominator_.store(position.denominator, std::memory_order_relaxed);
 
-        // PPQ counts quarter notes and the position inside a bar is counted in
-        // the signature's own beats, so the two part company anywhere the
-        // denominator is not four: three eighths into a 6/8 bar is one and a
-        // half quarter notes, not three.
+        // PPQ counts quarter notes; the position in the bar is in the
+        // signature's own beats.
         const auto quartersPerBeat = 4.0 / std::max(1, position.denominator);
 
-        // The bar the block's first sample is in, under the signature it
-        // renders in. Not the bar its middle is in: a block is not cut at bar
-        // lines, so a long one straddles one, and taking the middle's bar would
-        // make what the plugin is told depend on how the host happened to size
-        // the callback.
-        //
-        // Straight back from where the grid was read, because the opening beat
-        // already carries the tolerance a sample's question is answered to.
+        // The bar the first sample is in, back from where the grid was read.
         ppqOfBarStart_.store(opening - (position.beat * quartersPerBeat),
                              std::memory_order_relaxed);
     }
@@ -218,12 +230,8 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
       offlineRender_(offlineRender) {
     jassert(instance_ != nullptr);
 
-    // The fork's list, rebuilt: the wrapper pair first, then the plugin's own
-    // automatable parameters in plugin order. A parameter the plugin says is
-    // not automatable is not in the list at all, which is why this cannot be
-    // the plugin's parameter array with two added -- it is a filtered view of
-    // it, and the filter is what decides which slot a project's saved value
-    // lands on.
+    // The wrapper pair first, then the plugin's automatable parameters in
+    // plugin order; non-automatable ones are not in the list at all.
     const auto mappingFor = [](juce::AudioProcessorParameter* parameter, magda::WrapperRole role,
                                std::optional<magda::ParameterInfo> info) {
         return ParameterMapping{.parameter = parameter, .role = role, .info = std::move(info)};
@@ -234,11 +242,8 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     parameters_.push_back(
         mappingFor(nullptr, magda::WrapperRole::WetGain, modelParameterAt(device, 1)));
 
-    // The pairs past the main one, in the plan's own order: extraOutputs[k] is
-    // pair k + 1. Read from the model rather than from the instance's bus
-    // layout, because it is the model the plan compiled its ports from -- the
-    // two agree, and where they do not it is the plan that decided how many
-    // ports there are.
+    // The pairs past the main one, from the model the plan compiled its ports
+    // from: extraOutputs[k] is pair k + 1.
     const auto& pairs = device.multiOut.outputPairs;
     for (std::size_t pair = 1; pair < pairs.size(); ++pair) {
         const auto& declared = pairs[pair];
@@ -250,19 +255,32 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     for (int slot = kWrapperParameterCount; slot < static_cast<int>(order.size()); ++slot)
         parameters_.push_back(mappingFor(order[static_cast<std::size_t>(slot)],
                                          magda::WrapperRole::None, modelParameterAt(device, slot)));
+
+    lastTable_.assign(parameters_.size(), std::numeric_limits<float>::quiet_NaN());
+
+    slotOfParameter_.assign(static_cast<std::size_t>(instance_->getParameters().size()), -1);
+    for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot)
+        if (const auto* parameter = parameters_[static_cast<std::size_t>(slot)].parameter)
+            slotOfParameter_[static_cast<std::size_t>(parameter->getParameterIndex())] = slot;
+
+    edits_ = std::make_shared<PluginEdits>(parameters_.size());
+    listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_, writing_);
+    instance_->addListener(listener_.get());
+}
+
+void EngineExternalDevice::listenForPluginEdits(std::function<void(int, float)> sink) {
+    edits_->sink = std::move(sink);
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
-    // First: the editor is the plugin's own component and has to go while the
-    // plugin is still there to take it back (#2580). A window open here means
-    // this is being destroyed on the thread that opened it.
+    // First: the editor is the plugin's own component (#2580).
     jassert(editor_ == nullptr || juce::MessageManager::existsAndIsCurrentThread());
     editor_.reset();
 
-    // The playhead outlives nothing: the instance is told to forget it before
-    // either is destroyed, because JUCE leaves the pointer where it was and a
-    // plugin asking after the fact would read freed memory. The fork does the
-    // same thing in the same order (deinitialise: "must be done first").
+    instance_->removeListener(listener_.get());
+
+    // JUCE leaves the playhead pointer in place, so the instance is told to
+    // forget it before either is destroyed.
     instance_->setPlayHead(nullptr);
 
     if (prepared_)
@@ -270,20 +288,14 @@ EngineExternalDevice::~EngineExternalDevice() {
 }
 
 void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) {
-    // Before prepareToPlay, because it is what a plugin reads when it decides
-    // how much work a block is worth: an oversampling saturator sizes its
-    // filters here.
+    // Before prepareToPlay, which is where a plugin reads it.
     instance_->setNonRealtime(offlineRender_);
     instance_->setPlayHead(playHead_.get());
 
     instance_->setRateAndBufferSizeDetails(context.sampleRate, context.maxBlockSize);
 
-    // Prepared once, and again only when the rate or the block size actually
-    // moved. This is the fork's rule and its comment is worth carrying with it:
-    // it used to call releaseResources() before re-preparing, and with VST3
-    // that shuts down the MIDI input buses with no way to get them back, which
-    // breaks every synth. So a device the store retains across a re-prepare at
-    // the same settings is left alone rather than torn down and rebuilt.
+    // Re-prepared only when the rate or block size moved, and never through
+    // releaseResources(): on VST3 that shuts down the MIDI input buses for good.
     if (!prepared_ || context.sampleRate != sampleRate_ ||
         context.maxBlockSize != preparedBlockSize_) {
         instance_->prepareToPlay(context.sampleRate, context.maxBlockSize);
@@ -298,28 +310,20 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     const auto totalInputs = instance_->getTotalNumInputChannels();
     const auto totalOutputs = instance_->getTotalNumOutputChannels();
 
-    // The main bus is what the chain feeds; anything after it is where a
-    // sidechain key goes, which is how every dynamics plugin takes one. A
-    // plugin with no bus layout at all reports its channels only in total, and
-    // then all of them are the main bus.
+    // The chain feeds the main bus; a sidechain key goes to whatever follows.
+    // A plugin with no bus layout reports only a total, all of it main.
     const auto* mainBus = instance_->getBus(true, 0);
     mainInputChannels_ = mainBus != nullptr ? mainBus->getNumberOfChannels() : totalInputs;
     sidechainInputChannels_ = std::max(0, totalInputs - mainInputChannels_);
 
-    // The fork's width, verbatim: a plugin is processed at its own channel
-    // count whatever the chain around it is, and never at none.
+    // Processed at its own width, never at none.
     processChannels_ = std::max({1, totalInputs, totalOutputs});
 
-    // What the plugin actually writes, which is not the same number and is the
-    // one the chain has to be filled from. A plugin with more inputs than
-    // outputs -- a stereo-in mono-out utility, anything with a sidechain -- is
-    // processed at the wider count, and the channels past its outputs still
-    // hold what was copied in. Reading those back as output hands the chain its
-    // own input, or a sidechain key, in place of the second half of a signal.
+    // What the plugin writes. Channels past this still hold what was copied
+    // in, so the chain is filled from this count and not the processed width.
     outputChannels_ = std::max(1, totalOutputs);
 
-    // Wide enough for either path: the block's channels when the plugin's width
-    // already matches, the plugin's when it does not.
+    // Wide enough for either path.
     channels_.assign(static_cast<std::size_t>(std::max(processChannels_, context.numChannels)),
                      nullptr);
 
@@ -327,9 +331,7 @@ void EngineExternalDevice::prepare(const magda::engine::RenderContext& context) 
     dryScratch_.setSize(std::max(processChannels_, context.numChannels), context.maxBlockSize,
                         false, true, false);
 
-    // What comes in, plus room for a plugin that answers with more than it was
-    // given. Both are the port's own budget, which is the only figure either
-    // side of this is sized from.
+    // What comes in, plus room for a plugin that answers with more.
     midi_.ensureSize(static_cast<std::size_t>(midiInputBoundBytes_) +
                      magda::engine::kMaxMidiBytesPerPort);
 }
@@ -359,24 +361,17 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
         const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params[slot];
 
-        // A slot the table does not carry is one nothing resolved: a project
-        // that saved fewer parameters than this build of the plugin has, or a
-        // wrapper pair a project never wrote. The plugin keeps whatever its own
-        // state put there, which for the pair is fully wet.
+        // A slot nothing resolved: the plugin keeps its own state, which for
+        // the wrapper pair is fully wet.
         if (values.empty())
             continue;
 
-        // The table's position, not its value: a hosted parameter is normalised
-        // by definition, and its configured display range is a reading of that
-        // position. Converting out through the range and back in is the identity
-        // only while the range is finite and agrees with the plugin's steps, and
-        // a detected dB range starts at minus infinity.
+        // The position, not the value: a hosted parameter is normalised by
+        // definition, and a configured range can be degenerate (-inf dB).
         const auto normalised = values.position();
 
         switch (mapping.role) {
             case magda::WrapperRole::DryGain:
-                // The wrapper pair is the host's own number and no chunk can
-                // carry it, so it is always taken from the model.
                 dryGain_ = normalised;
                 break;
 
@@ -384,28 +379,22 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 wetGain_ = normalised;
                 break;
 
-            default:
+            default: {
                 if (mapping.parameter == nullptr)
                     break;
 
-                // What the plan resolved, with nothing read into it. Whether
-                // this value came from the project's array, a lane, a macro or
-                // a knob somebody just turned is the model's business, and the
-                // one case where the model could hold something the plugin has
-                // already corrected -- a stale array beside a good chunk -- is
-                // settled before this device exists, by the restoration handing
-                // the corrected values back to whoever owns the model
-                // (ExternalPluginState.hpp). A device that tried to work that
-                // out from the numbers could not: no comparison tells a stale
-                // value apart from a lane passing through the same one.
+                // Only when the host's value moved. Comparing against the
+                // plugin's own value would revert every edit made in its editor.
+                auto& last = lastTable_[static_cast<std::size_t>(slot)];
+                if (last == normalised)
+                    break;
+                last = normalised;
 
-                // Only on a change, which is the fork's rule rather than a
-                // saving: a plugin is entitled to treat every write as a
-                // gesture, and one that rebuilds a filter or repaints an editor
-                // on each would do it every block on a parameter nobody moved.
-                if (mapping.parameter->getValue() != normalised)
-                    mapping.parameter->setValue(normalised);
+                writing_.store(true, std::memory_order_relaxed);
+                mapping.parameter->setValue(normalised);
+                writing_.store(false, std::memory_order_relaxed);
                 break;
+            }
         }
     }
 }
@@ -413,10 +402,8 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
 void EngineExternalDevice::readMidiIn(const juce::MidiBuffer& in, bool allNotesOff) {
     midi_.clear();
 
-    // The port carries the panic beside its events, since a juce::MidiBuffer
-    // has nowhere to put it (#2418), and a plugin can only be told in MIDI.
-    // Every channel: which ones it is holding notes on is its own business.
-    // Ahead of the block's own events, which may re-assert what it drops.
+    // The panic travels beside the buffer (#2418); every channel, ahead of
+    // the block's own events.
     if (allNotesOff)
         for (int channel = 1; channel <= 16; ++channel)
             midi_.addEvent(juce::MidiMessage::allNotesOff(channel), 0);
@@ -426,19 +413,13 @@ void EngineExternalDevice::readMidiIn(const juce::MidiBuffer& in, bool allNotesO
 }
 
 void EngineExternalDevice::writeMidiOut(juce::MidiBuffer& out, int numSamples) const {
-    // The plugin's own output: JUCE hands it one buffer for both directions and
-    // refills it before returning. A chain that wants the raw input asks the
-    // plan for it (DeviceInfo::midiInThru) rather than asking the plugin.
-    //
-    // JUCE's AU path refills only under wantsMidiMessages, so for a plugin with
-    // no MIDI of its own the buffer is still the input, and writing that back
-    // doubles it behind a ChainMidiMerge (#2348).
+    // JUCE's AU path refills the buffer only under wantsMidiMessages, so for a
+    // plugin with no MIDI of its own it is still the input (#2348).
     const bool pluginHasMidiOfItsOwn = instance_->acceptsMidi() || instance_->producesMidi();
     if (!pluginHasMidiOfItsOwn)
         return;
 
-    // Counted in bytes against what the executor reserved for this port, rather
-    // than the flat constant (#2341).
+    // In bytes, against what the executor reserved for this port (#2341).
     int bytesWritten = 0;
 
     for (const auto metadata : midi_) {
@@ -468,11 +449,7 @@ void EngineExternalDevice::writeExtraOutputs(magda::engine::DeviceBlock& block,
         for (int channel = 0; channel < channels; ++channel) {
             const auto from = source.firstChannel + channel;
 
-            // A pair whose channels the plugin does not have is left as it
-            // arrived, which is cleared. That is a model that recorded more
-            // pairs than this build of the plugin reports, and silence is the
-            // honest answer: the alternative is handing a track whatever
-            // happened to be in the buffer at that index.
+            // A pair this build of the plugin does not have stays cleared.
             if (from >= outputChannels_ || from >= processed.getNumChannels())
                 break;
 
@@ -503,8 +480,7 @@ void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
 
     instance_->processBlock(audio, midi_);
 
-    // Before the dry is added back, so a plugin that produced nothing usable
-    // leaves the dry signal rather than poisoning it.
+    // Before the dry is added back, so a NaN cannot poison it.
     clearNonFinite(audio, numSamples);
 
     if (wetGain_ < kWetLevelCeiling)
@@ -515,11 +491,6 @@ void EngineExternalDevice::processPluginBlock(juce::AudioBuffer<float>& audio) {
 }
 
 /// The plugin's own buffer, filled from the block, processed, and copied back.
-///
-/// The path taken whenever the plugin's width and the chain's differ, or the
-/// plugin has a sidechain bus to fill: both need a buffer that is not the
-/// executor's, since the executor's is exactly the chain's width and carries no
-/// key.
 void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& block, int numSamples,
                                                  int destChannels) {
     juce::AudioBuffer<float> audio(scratch_.getArrayOfWritePointers(), processChannels_, 0,
@@ -534,18 +505,13 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
             audio.clear(channel, 0, numSamples);
     }
 
-    // The fork's two bridging rules, against the plugin's main bus rather than
-    // against its total input count. They mean the same thing: the fork's
-    // buffer already has the sidechain channels appended by the rack around it,
-    // so its total is this main count wherever these two cases can fire, and
-    // naming the main bus is what keeps a mono plugin with a mono key out of
-    // the stereo branch.
+    // Bridged against the main bus, so a mono plugin with a mono key stays out
+    // of the stereo branch.
     if (destChannels == 1 && mainInputChannels_ == 2) {
-        // Mono in, stereo wanted: duplicate rather than leave a silent side.
+        // Mono in, stereo wanted: duplicate.
         audio.copyFrom(1, 0, audio, 0, 0, numSamples);
     } else if (destChannels == 2 && mainInputChannels_ == 1) {
-        // Stereo in, mono wanted: the average, which is the sum at half gain
-        // and not the left channel.
+        // Stereo in, mono wanted: the average.
         audio.addFrom(0, 0, block.audio.getChannelPointer(1), numSamples);
         audio.applyGain(0, 0, numSamples, 0.5f);
     }
@@ -576,15 +542,7 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
             juce::FloatVectorOperations::copy(destination, audio.getReadPointer(channel),
                                               numSamples);
         else if (channel < 2)
-            // A mono plugin in a stereo chain: its one output goes to both
-            // sides, so what follows it has two channels to read rather than a
-            // silent right.
-            //
-            // Bounded by the plugin's output count and not by the width it was
-            // processed at. Those differ for anything with more inputs than
-            // outputs, and there the channels between the two hold input rather
-            // than answer: a sidechain key, or the right half of a signal the
-            // plugin summed to mono.
+            // A mono plugin in a stereo chain: its one output goes to both sides.
             juce::FloatVectorOperations::copy(destination, audio.getReadPointer(0), numSamples);
         else
             juce::FloatVectorOperations::clear(destination, numSamples);
@@ -592,27 +550,10 @@ void EngineExternalDevice::processThroughScratch(magda::engine::DeviceBlock& blo
 }
 
 void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
-    // The plugin's own callback lock, and its own suspended flag. A host reading
-    // or writing this plugin's state holds one and sets the other
-    // (ExternalPluginState.hpp), and what a block may not do is touch the plugin
-    // at all while that is happening: it is entitled to be halfway through
-    // swapping a sample or a program, and neither its DSP nor its parameters are
-    // safe to reach into meanwhile.
-    //
-    // Everything plugin-facing is inside this, parameter writes included. They
-    // are the reason the gate is here rather than around the processBlock call:
-    // a capture reads the plugin's chunk and then its parameter values, and a
-    // block that moved a parameter between those two reads would produce a
-    // saved pair that disagrees with itself.
-    //
-    // Tried rather than waited on, because this is the audio thread. A block
-    // that arrives mid-transaction leaves the buffer as it was handed over,
-    // which is the passthrough the plan already gives a Device op with no
-    // instance bound.
-    //
-    // The lock is the half that makes suspension mean anything. Holding it here
-    // is what makes suspendProcessing() wait for a block already in progress
-    // rather than set a flag and return while the plugin is still running.
+    // A state read or write holds the callback lock and sets suspended
+    // (ExternalPluginState.hpp). Tried, not waited on: a block that arrives
+    // mid-transaction passes through. Parameter writes are inside the gate so
+    // a capture's chunk and parameter values agree.
     const juce::ScopedTryLock guard(instance_->getCallbackLock());
     if (!guard.isLocked() || instance_->isSuspended())
         return;
@@ -631,20 +572,9 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
 
     if (destChannels == processChannels_ && sidechainInputChannels_ == 0 &&
         outputChannels_ >= destChannels && block.extraOutputs.empty()) {
-        // The plugin's width and the block's already agree and it writes every
-        // channel the slot will be read at, so it processes the executor's own
-        // buffer and nothing is copied. The fork's fast path, and the one
-        // almost every plugin in a stereo chain takes.
-        //
-        // The output count is part of the test rather than a detail: a
-        // stereo-in mono-out plugin matches the first half of it and leaves the
-        // right channel holding the input it was handed, which is not silence
-        // and is not its answer.
-        //
-        // A multi-out instrument is out of it entirely: its further pairs live
-        // in the channels past the ones the chain reads, and processing in
-        // place into the chain's own two would leave nowhere for them to be
-        // written.
+        // In place: the widths agree and the plugin writes every channel the
+        // slot is read at. A multi-out instrument needs the scratch path for
+        // its further pairs.
         for (int channel = 0; channel < destChannels; ++channel)
             channels_[static_cast<std::size_t>(channel)] =
                 block.audio.getChannelPointer(static_cast<std::size_t>(channel));
@@ -681,18 +611,12 @@ bool EngineExternalDevice::isEditorOpen() const {
 }
 
 std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState() {
-    // The read itself is engine-agnostic and stated once: what a plugin holds,
-    // in the encoding a project keeps it in, with the plugin suspended across
-    // the whole of it (ExternalPluginState.hpp). What this adds is the only
-    // thing that could not live there -- that nothing else can reach the
-    // instance to do it, so the suspension the read asks for is a suspension
-    // this device's own process() is already honouring.
+    // Shared with the fork in ExternalPluginState.hpp; process() honours the
+    // suspension it asks for.
     return magda::captureExternalPluginState(*instance_);
 }
 
 magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInfo& saved) {
-    // The write itself, including the suspension, is shared with the fork in
-    // ExternalPluginState.hpp.
     return magda::applySavedPluginState(*instance_, saved);
 }
 
@@ -700,13 +624,11 @@ juce::String EngineExternalDevice::parameterText(int slot, float normalised) con
     if (slot < 0 || slot >= static_cast<int>(parameters_.size()))
         return {};
 
-    // Null for the wrapper pair, and for a slot whose parameter this build of
-    // the plugin no longer has.
+    // Null for the wrapper pair and for a parameter this build no longer has.
     const auto* parameter = parameters_[static_cast<std::size_t>(slot)].parameter;
     if (parameter == nullptr)
         return {};
 
-    // The length the fork asks for (ExternalAutomatableParameter::valueToString).
     constexpr int kMaxTextLength = 16;
     return parameter->getText(std::clamp(normalised, 0.0f, 1.0f), kMaxTextLength);
 }

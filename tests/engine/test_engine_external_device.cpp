@@ -1327,11 +1327,8 @@ TEST_CASE("A parameter that did not move is not written again", "[engine][extern
         device.process(deviceBlock);
     }
 
-    // Once, on the block that moved it. The fork writes a plugin parameter only
-    // when the value differs from what the plugin already reports, because a
-    // plugin is entitled to treat every write as a gesture: one that rebuilds a
-    // filter or repaints an editor on each would do it every block on a
-    // parameter nobody touched.
+    // Once, on the block that moved it: a plugin is entitled to treat every
+    // write as a gesture.
     CHECK(raw->gain->writes == writesAfterConstruction + 1);
 
     ParamArena moved({0.0f, 1.0f, 0.7f, 0.0f});
@@ -1339,6 +1336,38 @@ TEST_CASE("A parameter that did not move is not written again", "[engine][extern
     device.process(movedBlock);
 
     CHECK(raw->gain->writes == writesAfterConstruction + 2);
+}
+
+TEST_CASE("An edit made in the plugin's own editor is not reverted", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    ParamArena held({0.0f, 1.0f, 0.6f, 0.0f});
+    Block block(context, 2);
+
+    auto first = block.deviceBlock(held.params(context.maxBlockSize));
+    device.process(first);
+    REQUIRE(raw->gain->getValue() == Catch::Approx(0.6f));
+
+    // The plugin moves its own knob. The table still says 0.6, and the host did
+    // not move it, so the next block must leave the plugin's value alone.
+    raw->gain->setValue(0.8f);
+    const auto writesBefore = raw->gain->writes;
+
+    auto second = block.deviceBlock(held.params(context.maxBlockSize));
+    device.process(second);
+    CHECK(raw->gain->getValue() == Catch::Approx(0.8f));
+    CHECK(raw->gain->writes == writesBefore);
+
+    // A value the host did move still lands.
+    ParamArena moved({0.0f, 1.0f, 0.3f, 0.0f});
+    auto third = block.deviceBlock(moved.params(context.maxBlockSize));
+    device.process(third);
+    CHECK(raw->gain->getValue() == Catch::Approx(0.3f));
 }
 
 TEST_CASE("A parameter the table does not carry is left where it was", "[engine][external]") {
