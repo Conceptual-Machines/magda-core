@@ -769,23 +769,42 @@ adapter::RequestedPlugin requestFor(
  */
 class ParamArena {
   public:
+    /// @p values are the device's slots 0 upwards, all of them carried.
     explicit ParamArena(const std::vector<float>& values) {
         for (const auto value : values) {
             segments_.push_back({.startSample = 0, .startValue = value, .endValue = value});
             counts_.push_back(1);
             domains_.push_back(
                 {.scale = magda::ParameterScale::Linear, .minValue = 0.0f, .maxValue = 1.0f});
+            slots_.push_back(static_cast<int>(slots_.size()));
+            driven_.push_back(0);
         }
     }
 
+    /// Drop @p slot from the window, as a table not carrying it would (#2629).
+    void omit(int slot) {
+        const auto at = std::ranges::find(slots_, slot);
+        if (at == slots_.end())
+            return;
+
+        const auto index = static_cast<std::size_t>(std::distance(slots_.begin(), at));
+        segments_.erase(segments_.begin() + static_cast<std::ptrdiff_t>(index));
+        counts_.erase(counts_.begin() + static_cast<std::ptrdiff_t>(index));
+        domains_.erase(domains_.begin() + static_cast<std::ptrdiff_t>(index));
+        driven_.erase(driven_.begin() + static_cast<std::ptrdiff_t>(index));
+        slots_.erase(at);
+    }
+
     magda::engine::DeviceParams params(int numSamples) const {
-        return {segments_, counts_, domains_, 1, numSamples};
+        return {segments_, counts_, domains_, slots_, driven_, 1, numSamples};
     }
 
   private:
     std::vector<magda::engine::ParamSegment> segments_;
     std::vector<int> counts_;
     std::vector<magda::ParameterUtils::ParameterDomain> domains_;
+    std::vector<int> slots_;
+    std::vector<std::uint8_t> driven_;
 };
 
 /// A block of audio, its MIDI ports, and the description of where it is.
@@ -900,6 +919,29 @@ TEST_CASE("A plan slot addresses the fork's parameter, not the plugin's", "[engi
 
     CHECK(raw->gain->getValue() == Catch::Approx(0.75f));
     CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
+}
+
+TEST_CASE("A slot the table does not carry is left to the plugin", "[engine][external]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    raw->tone->setValue(0.25f);
+
+    // Slot three is addressed by nothing, so the window has no entry for it and
+    // the plugin keeps what its own state put there (#2629).
+    ParamArena arena({0.0f, 1.0f, 0.75f, 0.5f});
+    arena.omit(3);
+
+    Block block(context, 2);
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    CHECK(raw->gain->getValue() == Catch::Approx(0.75f));
+    CHECK(raw->tone->getValue() == Catch::Approx(0.25f));
 }
 
 TEST_CASE("A stereo plugin processes the block in place", "[engine][external]") {

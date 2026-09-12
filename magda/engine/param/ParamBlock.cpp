@@ -33,14 +33,36 @@ float ParamValues::valueAt(int sampleOffset) const {
     return magda::ParameterUtils::normalizedToReal(position, domain_);
 }
 
-ParamValues DeviceParams::operator[](int paramIndex) const {
-    if (paramIndex < 0 || paramIndex >= size())
+int DeviceParams::slotAt(int entry) const {
+    if (entry < 0 || entry >= static_cast<int>(slots_.size()))
+        return -1;
+
+    return slots_[static_cast<std::size_t>(entry)];
+}
+
+ParamValues DeviceParams::valuesAt(int entry) const {
+    if (entry < 0 || entry >= size())
         return {};
 
-    const auto index = static_cast<std::size_t>(paramIndex);
+    const auto index = static_cast<std::size_t>(entry);
     const auto offset = index * static_cast<std::size_t>(stride_);
     const auto count = static_cast<std::size_t>(counts_[index]);
     return ParamValues{segments_.subspan(offset, count), domains_[index], numSamples_};
+}
+
+bool DeviceParams::drivenAt(int entry) const {
+    if (entry < 0 || entry >= static_cast<int>(driven_.size()))
+        return false;
+
+    return driven_[static_cast<std::size_t>(entry)] != 0;
+}
+
+ParamValues DeviceParams::operator[](int paramIndex) const {
+    const auto found = std::ranges::lower_bound(slots_, paramIndex);
+    if (found == slots_.end() || *found != paramIndex)
+        return {};
+
+    return valuesAt(static_cast<int>(std::distance(slots_.begin(), found)));
 }
 
 void ResolvedParams::prepare(int numParams, int segmentCapacity) {
@@ -80,8 +102,13 @@ float ResolvedParams::sourceValue(int param) const {
                         segments_[index * static_cast<std::size_t>(stride_)].startValue);
 }
 
-DeviceParams ResolvedParams::device(int firstParam, int count) const {
+DeviceParams ResolvedParams::device(int firstParam, int count, std::span<const int> slots,
+                                    std::span<const std::uint8_t> driven) const {
     if (firstParam < 0 || count <= 0 || firstParam + count > size())
+        return {};
+
+    // Without the slots the entries are values nothing can be matched to.
+    if (static_cast<int>(slots.size()) != count)
         return {};
 
     const auto first = static_cast<std::size_t>(firstParam);
@@ -92,7 +119,10 @@ DeviceParams ResolvedParams::device(int firstParam, int count) const {
         std::span<const ParamSegment>{segments_}.subspan(offset, width),
         std::span<const int>{counts_}.subspan(first, span),
         std::span<const magda::ParameterUtils::ParameterDomain>{domains_}.subspan(first, span),
-        stride_, numSamples_};
+        slots,
+        driven,
+        stride_,
+        numSamples_};
 }
 
 ParamSegment* ResolvedParams::slotFor(int param) {

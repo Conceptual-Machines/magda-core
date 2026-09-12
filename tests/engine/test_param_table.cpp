@@ -109,6 +109,13 @@ ResolvedParams resolved(const ParamTable& table, magda::engine::BlockInfo block 
     return values;
 }
 
+/// The window @p device reads, as the executor assembles it.
+magda::engine::DeviceParams deviceWindow(const ParamTable& table, const ResolvedParams& values,
+                                         DeviceId device, ChainSegment segment = ChainSegment::Fx) {
+    const auto window = table.windowFor(magda::engine::DeviceKey{segment, device});
+    return values.device(window.first, window.count, table.slotsIn(window), table.drivenIn(window));
+}
+
 ParamKey deviceParam(TrackId track, DeviceId device, int index,
                      ChainSegment segment = ChainSegment::Fx) {
     ParamKey key;
@@ -150,21 +157,19 @@ TEST_CASE("A device's parameters are a window indexed from zero", "[engine][para
     CHECK(table.find(deviceParam(1, 7, 2)) == window.first + 2);
 
     const auto values = resolved(table);
-    const auto device = values.device(window.first, window.count);
+    const auto device = deviceWindow(table, values, 7);
     REQUIRE(device.size() == 3);
     CHECK(device[0].value() == approx(0.0f));
+    CHECK(device.slotAt(2) == 2);
 }
 
-TEST_CASE("A sparse device window publishes nothing in its holes", "[engine][param][table]") {
+TEST_CASE("A sparse device window carries only what the device declared",
+          "[engine][param][table]") {
     // The shape the first real project hosting a plugin arrived in (#2175). A
     // project saved before the wet/dry pair was persisted has no parameters at
     // indices 0 and 1, and the fork's list is a filtered view of the instance's
     // anyway, so a sparse array is the normal shape of a hosted plugin rather
     // than a model to correct.
-    //
-    // The window still covers the holes, because a window is contiguous and
-    // indexed from zero: that is what lets a device read its own parameters by
-    // the index it declared them at.
     auto device = makeDevice(7, 0);
     device.format = magda::PluginFormat::VST3;
 
@@ -179,20 +184,22 @@ TEST_CASE("A sparse device window publishes nothing in its holes", "[engine][par
 
     const auto table = tableFor({track});
     const auto window = table.windowFor(magda::engine::DeviceKey{ChainSegment::Fx, 7});
-    REQUIRE(window.count == 5);
+    REQUIRE(window.count == 3);
 
     const auto values = resolved(table);
-    const auto params = values.device(window.first, window.count);
-    REQUIRE(params.size() == 5);
+    const auto params = deviceWindow(table, values, 7);
+    REQUIRE(params.size() == 3);
 
-    // The holes: empty, which is the one answer a device can read as "not
-    // mine". A value here would be indistinguishable from a real one, and the
-    // project that found this rendered silent because 0.0 at slots zero and one
-    // is a wet/dry pair set fully dry and fully attenuated.
+    // Each entry says which slot it stands for.
+    CHECK(params.slotAt(0) == 2);
+    CHECK(params.slotAt(2) == 4);
+
+    // An index nothing declared: empty rather than a fabricated zero, which at
+    // slots zero and one is a wet/dry pair set fully dry (#2175).
     CHECK(params[0].empty());
     CHECK(params[1].empty());
 
-    // And the declared ones, which are unaffected.
+    // And the declared ones, read by slot.
     CHECK_FALSE(params[2].empty());
     CHECK(params[2].value() == approx(100.0f));
     CHECK_FALSE(params[4].empty());
@@ -206,7 +213,7 @@ TEST_CASE("A sparse device window publishes nothing in its holes", "[engine][par
 TEST_CASE("An internal device with a gap in its indices is reported", "[engine][param][table]") {
     // The mirror, and the reason the check is scoped rather than removed. An
     // internal device declares its own parameters, so a gap is a device that
-    // skipped an index and the slot it left is one nothing will ever read.
+    // skipped an index, and nothing can address what it skipped.
     auto device = makeDevice(7, 0);
     device.format = magda::PluginFormat::Internal;
 
@@ -223,12 +230,49 @@ TEST_CASE("An internal device with a gap in its indices is reported", "[engine][
     CHECK(mentions(table, "not contiguous"));
 
     // Reported and still carried the same way: the diagnostic says the model is
-    // wrong, and the hole is silent either way.
-    const auto window = table.windowFor(magda::engine::DeviceKey{ChainSegment::Fx, 7});
+    // wrong, and the index nobody declared is silent either way.
     const auto values = resolved(table);
-    const auto params = values.device(window.first, window.count);
-    REQUIRE(params.size() == 3);
+    const auto params = deviceWindow(table, values, 7);
+    REQUIRE(params.size() == 2);
     CHECK(params[1].empty());
+}
+
+TEST_CASE("A device's entries say which of them the host drives", "[engine][param][table]") {
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeDevice(7, 4)));
+    track.mods = createDefaultMods(1);
+
+    const auto path = ChainNodePath::topLevelDevice(1, 7);
+    track.macros[0].links.push_back(MacroLink{ControlTarget::pluginParam(path, 0), 0.5f, false});
+    track.mods[0].links.push_back(ModLink{ControlTarget::pluginParam(path, 1), 1.0f, false, true});
+
+    AutomationPoint point;
+    point.id = 1;
+    point.beatPosition = 0.0;
+    point.value = 0.5f;
+
+    AutomationLaneInfo lane;
+    lane.id = 1;
+    lane.target = ControlTarget::pluginParam(path, 2);
+    lane.type = AutomationLaneType::Absolute;
+    lane.authorityState = AutomationAuthorityState::Reading;
+    lane.absolutePoints = {point};
+
+    const std::vector<TrackInfo> tracks{track};
+    const auto master = makeMaster();
+    const std::vector<AutomationLaneInfo> lanes{lane};
+    const auto table = compileParamTable(compileRenderPlan(tracks, master), tracks, master, lanes);
+
+    const auto values = resolved(table);
+    const auto params = deviceWindow(table, values, 7);
+    REQUIRE(params.size() == 4);
+
+    CHECK(params.drivenAt(0));
+    CHECK(params.drivenAt(1));
+    CHECK(params.drivenAt(2));
+
+    // Slot 3, which only ever reads its stored value.
+    CHECK_FALSE(params.drivenAt(3));
 }
 
 TEST_CASE("One device id in two sections is two parameters", "[engine][param][table]") {

@@ -23,8 +23,7 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
             record(control.devicePath, control.paramIndex);
     };
 
-    // A track, a rack and a device all hold macros and modifiers, and a link
-    // from any of them can name any device in the project.
+    // A link from a track, rack or device scope can name any device.
     const auto links = [&target](const auto& owner) {
         for (const auto& macro : owner.macros)
             for (const auto& link : macro.links)
@@ -38,8 +37,8 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
     const auto device = [&links, &record](const DeviceInfo& info, const ChainNodePath& path) {
         links(info);
 
-        // An empty list is the UI's "show what the device has", which reads the
-        // instance (#2634) rather than addressing every slot.
+        // An empty list is the UI's "show what the device has" (#2634), which
+        // addresses nothing.
         for (const auto* list :
              {&info.visibleParameters, &info.miniMixerParameters, &info.aiSoundDesignerParameters})
             for (const auto paramIndex : *list)

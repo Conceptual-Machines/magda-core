@@ -355,14 +355,16 @@ int EngineExternalDevice::latencySamples() const {
 }
 
 void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& params) {
-    for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
-        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
-        const auto values = params[slot];
+    // The entries the table carries, not every slot the plugin has (#2629).
+    for (int entry = 0; entry < params.size(); ++entry) {
+        const auto slot = params.slotAt(entry);
+        if (slot < 0 || slot >= static_cast<int>(parameters_.size()))
+            continue;
 
-        // A slot the table does not carry is one nothing resolved: a project
-        // that saved fewer parameters than this build of the plugin has, or a
-        // wrapper pair a project never wrote. The plugin keeps whatever its own
-        // state put there, which for the pair is fully wet.
+        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        const auto values = params.valuesAt(entry);
+
+        // Nothing resolved it, so the plugin keeps what its own state put there.
         if (values.empty())
             continue;
 

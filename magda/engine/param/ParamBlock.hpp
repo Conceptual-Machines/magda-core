@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -140,40 +141,54 @@ class ParamValues {
 };
 
 /**
- * @brief The parameters of one device, in the order the device declared them.
+ * @brief The parameters of one device, as (slot, value) pairs.
  *
- * A device indexes its own parameters from zero, the way ParameterInfo's
- * paramIndex does, and never learns where in the table they sit. The window is
- * contiguous because a device's parameters are allocated together, which is what
- * makes this a pair of integers rather than a map.
+ * One entry per parameter of this device the table carries, ascending by slot.
+ * An entry's position is not the slot it stands for (#2629): walk the entries
+ * for what the table has, ask by slot for one parameter.
  */
 class DeviceParams {
   public:
     DeviceParams() = default;
 
     DeviceParams(std::span<const ParamSegment> segments, std::span<const int> counts,
-                 std::span<const magda::ParameterUtils::ParameterDomain> domains, int stride,
+                 std::span<const magda::ParameterUtils::ParameterDomain> domains,
+                 std::span<const int> slots, std::span<const std::uint8_t> driven, int stride,
                  int numSamples)
         : segments_(segments),
           counts_(counts),
           domains_(domains),
+          slots_(slots),
+          driven_(driven),
           stride_(stride),
           numSamples_(numSamples) {}
 
+    /// How many of the device's parameters the table carries, not how many it
+    /// has.
     int size() const {
         return static_cast<int>(counts_.size());
     }
 
-    /// The device's parameter @p paramIndex. An index the device does not have
-    /// is an empty view: the table is sized from the device's own specs when the
-    /// plan is prepared, so this is a device asking for a parameter it never
-    /// declared.
+    /// The device's own parameter index at @p entry, or -1.
+    int slotAt(int entry) const;
+
+    /// The values at @p entry.
+    ParamValues valuesAt(int entry) const;
+
+    /// Whether the host is driving @p entry this block: a lane playing over it,
+    /// or a macro or modifier linked to it.
+    bool drivenAt(int entry) const;
+
+    /// The device's parameter @p paramIndex. Empty for one the table does not
+    /// carry: a fabricated zero is indistinguishable from a real value.
     ParamValues operator[](int paramIndex) const;
 
   private:
     std::span<const ParamSegment> segments_;
     std::span<const int> counts_;
     std::span<const magda::ParameterUtils::ParameterDomain> domains_;
+    std::span<const int> slots_;
+    std::span<const std::uint8_t> driven_;
     int stride_ = 0;
     int numSamples_ = 0;
 };
@@ -243,8 +258,10 @@ class ResolvedParams {
      */
     float sourceValue(int param) const;
 
-    /// The window a device reads: @p count parameters from @p firstParam.
-    DeviceParams device(int firstParam, int count) const;
+    /// The window a device reads: @p count parameters from @p firstParam, with
+    /// the slot each stands for (ParamTable::slotsIn, ParamTable::drivenIn).
+    DeviceParams device(int firstParam, int count, std::span<const int> slots,
+                        std::span<const std::uint8_t> driven) const;
 
     /// Where the resolver writes @p param's segments. Never null for a
     /// parameter the table has; @ref segmentCapacity() wide.

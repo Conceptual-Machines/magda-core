@@ -457,17 +457,11 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                        op.padLevelParam >= 0) {
                 // The exception to the line above: a Drum Grid's pad level and
                 // pan are real parameters of the device that owns the pad, so a
-                // lane over them has to reach this fader. Read through the
-                // owner's window, which is indexed by the device's own
-                // parameter index.
-                const auto window = params->windowFor(op.key.deviceKey());
-                const auto slot = [&](int index) {
-                    return index >= 0 && index < window.count
-                               ? static_cast<ParamId>(window.first + index)
-                               : INVALID_PARAM_ID;
-                };
-                mixerParamForOp_[i].gain = slot(op.padLevelParam);
-                mixerParamForOp_[i].pan = slot(op.padPanParam);
+                // lane over them has to reach this fader. Asked by slot, since
+                // the owner's window carries only the parameters it declared.
+                mixerParamForOp_[i].gain =
+                    params->deviceParam(op.key.deviceKey(), op.padLevelParam);
+                mixerParamForOp_[i].pan = params->deviceParam(op.key.deviceKey(), op.padPanParam);
             } else if (op.kind == OpKind::SendTap) {
                 key.kind = ParamKey::Kind::SendLevel;
                 key.index = op.key.index;
@@ -1655,7 +1649,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                         !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
-                                    .params = paramValues_.device(window.first, window.count),
+                                    .params = deviceParams(window),
                                     .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);

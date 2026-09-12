@@ -13,9 +13,8 @@
  * @file AddressedParameters.hpp
  * @brief Which of a device's parameters something addresses (#2630).
  *
- * A hosted plugin's value is mirrored in the model only for a slot something
- * addresses; the chunk carries the rest (#2629). The table compiler, the
- * plugin-edit filter and the save path read one answer rather than three.
+ * A hosted plugin's value is mirrored only for a slot something addresses; the
+ * chunk carries the rest (#2629).
  */
 
 namespace magda {
@@ -28,20 +27,16 @@ struct AddressingSources {
     std::span<const TrackInfo> tracks;
     const TrackInfo* master = nullptr;
 
-    /// Every lane the project holds, whatever its authority state: a lane that
-    /// is not playing still holds the value the user drew against.
+    /// Every lane the project holds, playing or not: one that is not playing
+    /// still holds the value the user drew against.
     std::span<const AutomationLaneInfo> lanes;
 
-    /// Controller bindings, MIDI learn and the aliases the AI writes through,
-    /// resolved to concrete targets by the registries that own them.
+    /// Controller bindings, MIDI learn and the AI's aliases, resolved to
+    /// targets by the registries that own them.
     std::span<const ControlTarget> bound;
 };
 
-/**
- * @brief The addressed slots of every device in one project.
- *
- * Built once over the model and asked per device.
- */
+/** @brief The addressed slots of every device in one project. */
 class AddressedParameters {
   public:
     static AddressedParameters from(const AddressingSources& sources);

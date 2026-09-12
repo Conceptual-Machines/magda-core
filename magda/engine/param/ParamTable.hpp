@@ -178,6 +178,14 @@ struct ParamTable {
     /// covers it.
     std::vector<float> base;
 
+    /// The device parameter index each entry carries, or -1. A window is read
+    /// through these: an entry's position is not the slot it stands for (#2629).
+    std::vector<int> slots;
+
+    /// Whether a lane, macro or modifier writes the parameter over its stored
+    /// value.
+    std::vector<std::uint8_t> driven;
+
     /// Links reaching parameter i: links[linkOffsets[i], linkOffsets[i + 1]).
     /// One vector rather than one per parameter, since almost no parameter
     /// has a link and a vector each would be an allocation each.
@@ -266,8 +274,8 @@ struct ParamTable {
         int count = 0;
     };
 
-    /// Contiguous per device and indexed from zero by the device's own
-    /// parameter index, which is what lets a device be handed a window.
+    /// Contiguous per device, one entry per parameter it declared, ascending by
+    /// slot. Which slot an entry carries is @ref slots.
     std::unordered_map<DeviceKey, DeviceWindow, DeviceKeyHash> deviceWindows;
 
     /// What the model asked for that this could not express, in the order
@@ -304,6 +312,16 @@ struct ParamTable {
         const auto found = deviceWindows.find(device);
         return found == deviceWindows.end() ? DeviceWindow{} : found->second;
     }
+
+    /// The slots @p window carries, one per entry, ascending.
+    std::span<const int> slotsIn(const DeviceWindow& window) const;
+
+    /// Whether each of @p window's entries is driven, one per entry.
+    std::span<const std::uint8_t> drivenIn(const DeviceWindow& window) const;
+
+    /// The parameter at @p slot of @p device, or INVALID_PARAM_ID for a slot
+    /// the window does not carry.
+    ParamId deviceParam(const DeviceKey& device, int slot) const;
 };
 
 /**
