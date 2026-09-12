@@ -344,6 +344,7 @@ set(TEST_SOURCES
     audio/test_demucs_separator.cpp
     audio/test_spleeter_separator.cpp
     core/test_addressed_parameters.cpp
+    core/test_device_parameter_list.cpp
     core/test_device_info_predicates.cpp
     core/test_four_osc_translation.cpp
     core/test_ranges_helpers.cpp

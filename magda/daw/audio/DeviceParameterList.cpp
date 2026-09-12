@@ -46,7 +46,16 @@ std::vector<ParameterInfo> deviceParameterList(const DeviceInfo& device,
     auto described = asDevice(device, std::move(reported));
     PluginParameterConfigStore::applyToDevice(described);
     attachParameterTextProviders(described, devicePath);
-    return std::move(described.parameters);
+    return withModelValues(std::move(described.parameters), device);
+}
+
+std::vector<ParameterInfo> withModelValues(std::vector<ParameterInfo> described,
+                                           const DeviceInfo& device) {
+    for (auto& parameter : described)
+        if (const auto* mirrored = device.findParameterByIndex(parameter.paramIndex))
+            parameter.currentValue = mirrored->currentValue;
+
+    return described;
 }
 
 }  // namespace magda

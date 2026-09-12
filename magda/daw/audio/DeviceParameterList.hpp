@@ -26,4 +26,14 @@ struct DeviceInfo;
 std::vector<ParameterInfo> deviceParameterList(const DeviceInfo& device,
                                                const ChainNodePath& devicePath);
 
+/**
+ * @brief @p described at the values @p device holds for the slots it carries.
+ *
+ * A write reaches the model at once and the plugin a block later, so the model
+ * is what a reader is shown for a slot it mirrors. The rest keep the values the
+ * instance reported.
+ */
+std::vector<ParameterInfo> withModelValues(std::vector<ParameterInfo> described,
+                                           const DeviceInfo& device);
+
 }  // namespace magda
