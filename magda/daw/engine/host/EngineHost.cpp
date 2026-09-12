@@ -907,20 +907,27 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
      */
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const {
+        auto* external = externalDeviceAt(devicePath);
+        return external != nullptr ? external->parameterText(paramIndex, normalised)
+                                   : juce::String{};
+    }
+
+    /** @brief The plugin rendering at @p devicePath, or null. Message thread. */
+    adapter::EngineExternalDevice* externalDeviceAt(const ChainNodePath& devicePath) const {
         if (session_ == nullptr)
-            return {};
+            return nullptr;
 
         const auto key = keyOfDeviceAt(devicePath);
         if (!key.has_value())
-            return {};
+            return nullptr;
 
         auto held = session_->device(*key);
-        if (held == nullptr)
-            return {};
+        return held != nullptr ? externalIn(*held) : nullptr;
+    }
 
-        auto* external = externalIn(*held);
-        return external != nullptr ? external->parameterText(paramIndex, normalised)
-                                   : juce::String{};
+    HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const {
+        auto* external = externalDeviceAt(devicePath);
+        return external != nullptr ? external->describeParameters() : HostParameters{};
     }
 
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
@@ -1178,6 +1185,10 @@ bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
 juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                                float normalised) const {
     return impl_->formatDeviceParameter(devicePath, paramIndex, normalised);
+}
+
+HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
+    return impl_->describeDeviceParameters(devicePath);
 }
 
 void EngineHost::play() {

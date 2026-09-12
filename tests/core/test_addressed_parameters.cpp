@@ -167,24 +167,22 @@ TEST_CASE("A place in the device UI addresses a parameter", "[core][parameters][
     CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{0, 1, 2, 3});
 }
 
-TEST_CASE("A UI list holds array positions, not slots", "[core][parameters][addressed]") {
+TEST_CASE("A UI list names slots", "[core][parameters][addressed]") {
     // A hosted plugin's own parameters start at slot 2, past the wrapper pair,
-    // so position 0 in the array addresses slot 2.
+    // and the selections name those slots (#2638).
     auto device = makeDevice(7, 0);
     for (int slot = 2; slot < 6; ++slot)
         device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
 
-    device.visibleParameters = {0, 3};
-
-    // Past the end of the array: a stale config addresses nothing.
-    device.miniMixerParameters = {9};
+    device.visibleParameters = {2, 5};
+    device.miniMixerParameters = {3};
 
     const auto project = oneDevice(std::move(device));
     const auto addressed = addressedIn({project.track});
 
     const auto slots = addressed.forDevice(project.path);
-    REQUIRE(slots.size() == 2);
-    CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{2, 5});
+    REQUIRE(slots.size() == 3);
+    CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{2, 3, 5});
 }
 
 TEST_CASE("An empty visible list addresses nothing", "[core][parameters][addressed]") {

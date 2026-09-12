@@ -516,7 +516,7 @@ TEST_CASE("devices.listParameters projects real units and customization flags",
     device.miniMixerParameters = {1};
     device.aiSoundDesignerParameters = {1};
 
-    const auto parameters = makeDeviceParameterDtos(device);
+    const auto parameters = makeDeviceParameterDtos(device, {});
     REQUIRE(parameters.size() == 3);
 
     REQUIRE(parameters[0].index == 0);
@@ -564,7 +564,7 @@ TEST_CASE("configured external parameters project model values into display unit
     gain.defaultValue = 0.5f;   // model / TE domain
     device.parameters.push_back(gain);
 
-    const auto parameters = makeDeviceParameterDtos(device);
+    const auto parameters = makeDeviceParameterDtos(device, {});
     REQUIRE(parameters.size() == 1);
     // 0.75 of a -24..24 dB range reads +12 dB, not 0.75 dB.
     REQUIRE(std::abs(parameters[0].currentValue - 12.0) < 1e-4);
@@ -580,7 +580,7 @@ TEST_CASE("internal devices accept agent writes on every parameter", "[remote-ap
     device.parameters.emplace_back(0, "Drive", "", 0.0f, 1.0f, 0.5f);
     device.parameters.emplace_back(1, "Tone", "", 0.0f, 1.0f, 0.5f);
 
-    const auto parameters = makeDeviceParameterDtos(device);
+    const auto parameters = makeDeviceParameterDtos(device, {});
     REQUIRE(parameters.size() == 2);
     for (const auto& parameter : parameters)
         REQUIRE(parameter.aiAgentEnabled);

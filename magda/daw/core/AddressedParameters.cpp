@@ -37,19 +37,11 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
     const auto device = [&links, &record](const DeviceInfo& info, const ChainNodePath& path) {
         links(info);
 
-        // Positions in DeviceInfo::parameters, not slots: a hosted plugin's
-        // array starts at slot 2, past the wrapper pair.
-        const auto slotAt = [&info](int position) {
-            return position >= 0 && position < static_cast<int>(info.parameters.size())
-                       ? info.parameters[static_cast<std::size_t>(position)].paramIndex
-                       : -1;
-        };
-
         // An empty list is the UI's "show everything" (#2634): it addresses none.
         for (const auto* list :
              {&info.visibleParameters, &info.miniMixerParameters, &info.aiSoundDesignerParameters})
-            for (const auto position : *list)
-                record(path, slotAt(position));
+            for (const auto slot : *list)
+                record(path, slot);
     };
 
     const auto track = [&links, &device](const TrackInfo& info) {

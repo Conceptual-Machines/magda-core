@@ -700,6 +700,10 @@ magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInf
     return magda::applySavedPluginState(*instance_, saved);
 }
 
+magda::HostParameters EngineExternalDevice::describeParameters() const {
+    return magda::describeHostParameters(*instance_, magda::DeviceInfo{});
+}
+
 juce::String EngineExternalDevice::parameterText(int slot, float normalised) const {
     if (slot < 0 || slot >= static_cast<int>(parameters_.size()))
         return {};

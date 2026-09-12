@@ -2,7 +2,10 @@
 
 #include <BinaryData.h>
 
+#include <algorithm>
+
 #include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/DeviceParameterList.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -173,22 +176,27 @@ void MiniChainRow::resolveParams() {
         paramSliders_.push_back(std::move(slider));
     };
 
+    // What the plugin has (#2634).
+    const auto parameters = deviceParameterList(*devInfo, devicePath_);
+
+    const auto parameterAt = [&parameters](int slot) -> const ParameterInfo* {
+        const auto found = std::ranges::find(parameters, slot, &ParameterInfo::paramIndex);
+        return found == parameters.end() ? nullptr : &*found;
+    };
+
     // 1) Explicit user selection from the parameter config dialog's "Mini"
-    //    column (indices into devInfo->parameters), in the order chosen.
-    for (int idx : devInfo->miniMixerParameters) {
+    //    column (slots, #2638), in the order chosen.
+    for (const int slot : devInfo->miniMixerParameters) {
         if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
             break;
-        if (idx >= 0 && idx < static_cast<int>(devInfo->parameters.size())) {
-            const auto& paramInfo = devInfo->parameters[static_cast<size_t>(idx)];
-            if (!paramInfo.hidden)
-                addParamSlider(paramInfo);
-        }
+        if (const auto* paramInfo = parameterAt(slot); paramInfo != nullptr && !paramInfo->hidden)
+            addParamSlider(*paramInfo);
     }
 
     // 2) Fallback (no explicit selection): first N non-hidden parameters in
     //    device order.
     if (trackedParamIndices_.empty()) {
-        for (const auto& paramInfo : devInfo->parameters) {
+        for (const auto& paramInfo : parameters) {
             if (static_cast<int>(trackedParamIndices_.size()) >= kMaxExpandedParams)
                 break;
             if (paramInfo.hidden)

@@ -168,6 +168,16 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     juce::String parameterText(int slot, float normalised) const;
 
+    /**
+     * @brief Every parameter the instance reports, at the values it holds now.
+     *
+     * Message thread, on the same terms as parameterText(): a query that
+     * suspends nothing. What the model mirrors is a subset of this (#2629).
+     * The wrapper pair carries its defaults, since the model owns those values
+     * and this device's own copies are written on the audio thread.
+     */
+    magda::HostParameters describeParameters() const;
+
     // ===== The plugin's own window (#2580) =====
     //
     // Here for the same reason again: the instance has no accessor, and the

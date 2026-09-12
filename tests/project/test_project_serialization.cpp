@@ -907,6 +907,68 @@ TEST_CASE("Project Serialization Basics", "[project][serialization]") {
     }
 }
 
+TEST_CASE("A device's parameter selections are saved as slots", "[project][serialization]") {
+    using magda::DeviceInfo;
+    using magda::ParameterInfo;
+    using magda::ProjectSerializer;
+
+    // A hosted plugin's own parameters start at slot 2, past the wrapper pair.
+    DeviceInfo device;
+    device.id = 1;
+    device.name = "Plugin";
+    device.pluginId = "com.example.plugin";
+    device.format = magda::PluginFormat::VST3;
+    for (int slot = 2; slot < 6; ++slot)
+        device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
+
+    device.visibleParameters = {3, 5};
+    device.miniMixerParameters = {2};
+    device.aiSoundDesignerParameters = {5};
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(ProjectSerializer::serializeDeviceInfo(device),
+                                                     restored));
+
+    CHECK(restored.visibleParameters == std::vector<int>{3, 5});
+    CHECK(restored.miniMixerParameters == std::vector<int>{2});
+    CHECK(restored.aiSoundDesignerParameters == std::vector<int>{5});
+}
+
+TEST_CASE("An older project's parameter selections are read as positions",
+          "[project][serialization]") {
+    using magda::DeviceInfo;
+    using magda::ProjectSerializer;
+
+    // Written before #2638: the lists hold positions in the parameter array,
+    // which still carries every slot at load.
+    auto json = std::make_unique<juce::DynamicObject>();
+    json->setProperty("id", 1);
+    json->setProperty("name", "Plugin");
+    json->setProperty("pluginId", "com.example.plugin");
+    json->setProperty("format", static_cast<int>(magda::PluginFormat::VST3));
+
+    juce::Array<juce::var> parameters;
+    for (int slot = 2; slot < 6; ++slot) {
+        auto param = std::make_unique<juce::DynamicObject>();
+        param->setProperty("paramIndex", slot);
+        param->setProperty("name", "P" + juce::String(slot));
+        param->setProperty("minValue", 0.0);
+        param->setProperty("maxValue", 1.0);
+        parameters.add(juce::var(param.release()));
+    }
+    json->setProperty("parameters", juce::var(parameters));
+
+    json->setProperty("visibleParameters", juce::var(juce::Array<juce::var>{1, 3}));
+    json->setProperty("miniMixerParameters", juce::var(juce::Array<juce::var>{0}));
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(juce::var(json.release()), restored));
+
+    CHECK(restored.visibleParameters == std::vector<int>{3, 5});
+    CHECK(restored.miniMixerParameters == std::vector<int>{2});
+    CHECK(restored.aiSoundDesignerParameters.empty());
+}
+
 TEST_CASE("Audio clip serialization separates source facts from interpretation",
           "[project][serialization][audio]") {
     ProjectTestFixture fixture;

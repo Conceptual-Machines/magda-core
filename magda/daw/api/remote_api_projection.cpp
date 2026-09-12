@@ -2,6 +2,7 @@
 #include <atomic>
 #include <tuple>
 
+#include "../audio/DeviceParameterList.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
@@ -379,17 +380,17 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
     return dto;
 }
 
-std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device) {
-    const auto contains = [](const std::vector<int>& positions, int position) {
-        return std::ranges::contains(positions, position);
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
+                                                        const ChainNodePath& devicePath) {
+    const auto contains = [](const std::vector<int>& slots, int slot) {
+        return std::ranges::contains(slots, slot);
     };
-    // The customization lists key on position in `parameters`, while the wire
-    // `index` is `paramIndex` — the address parameter writes take. The two are
-    // normally equal, but only the position indexes the user's selections.
+    // The selections and the wire `index` are both slots (#2638).
+    const auto parameters = deviceParameterList(device, devicePath);
     std::vector<DeviceParameterDto> dtos;
-    dtos.reserve(device.parameters.size());
-    for (size_t i = 0; i < device.parameters.size(); ++i) {
-        const auto& info = device.parameters[i];
+    dtos.reserve(parameters.size());
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        const auto& info = parameters[i];
         const auto position = static_cast<int>(i);
         DeviceParameterDto dto;
         dto.index = info.paramIndex >= 0 ? info.paramIndex : position;
@@ -408,12 +409,12 @@ std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device
         dto.normalizedValue = normalized.value;
         dto.scale = info.scale;
         dto.choices = info.choices;
-        dto.visible = contains(device.visibleParameters, position);
-        dto.miniMixer = contains(device.miniMixerParameters, position);
+        dto.visible = contains(device.visibleParameters, dto.index);
+        dto.miniMixer = contains(device.miniMixerParameters, dto.index);
         // Configure Parameters offers the AI opt-in only for external plugins;
         // internal devices accept agent writes on every parameter.
         dto.aiAgentEnabled = device.format == PluginFormat::Internal ||
-                             contains(device.aiSoundDesignerParameters, position);
+                             contains(device.aiSoundDesignerParameters, dto.index);
         dtos.push_back(std::move(dto));
     }
     return dtos;
