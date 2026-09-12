@@ -12,6 +12,11 @@ constexpr int kEventOverheadBytes = 6;
 
 }  // namespace
 
+LiveInputFeed::~LiveInputFeed() {
+    if (holdsRouting_)
+        published_.realtimeRelease();
+}
+
 void LiveInputFeed::prepare(int maxChannels, int maxBlockSize) {
     const auto channels = std::max(scratch_.getNumChannels(), std::max(0, maxChannels));
     const auto samples = std::max(scratch_.getNumSamples(), std::max(0, maxBlockSize));
@@ -21,6 +26,13 @@ void LiveInputFeed::prepare(int maxChannels, int maxBlockSize) {
 }
 
 void LiveInputFeed::beginCallback(const LiveInputBlock& input, int numSamples) {
+    // One acquisition for the whole callback (#2592). Guarded because the
+    // acquire and its release have to pair exactly.
+    if (!holdsRouting_) {
+        routing_ = published_.realtimeAcquire().get();
+        holdsRouting_ = true;
+    }
+
     midi_ = input.midi;
 
     const auto delivered = static_cast<int>(input.audio.getNumSamples());
@@ -70,12 +82,22 @@ void LiveInputFeed::beginSegment(int startSample, int numSamples) {
 }
 
 void LiveInputFeed::endCallback() {
+    if (holdsRouting_) {
+        routing_ = nullptr;
+        holdsRouting_ = false;
+        published_.realtimeRelease();
+    }
+
     audio_ = {};
     midi_ = {};
     callbackChannels_ = 0;
     callbackSamples_ = 0;
     segmentStart_ = 0;
     segmentSamples_ = 0;
+}
+
+void LiveInputFeed::publishRouting(std::shared_ptr<const LiveRouting> routing) {
+    published_.nonRealtimeReplace(std::move(routing));
 }
 
 int LiveInputFeed::appendEvents(LiveMidiSourceId source, juce::MidiBuffer& out,
@@ -152,6 +174,27 @@ LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source,
 void LiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& out) {
     if (const auto dropped = feed_.appendEvents(source_, out, kMaxMidiBytesPerPort); dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
+}
+
+void TrackLiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& out) {
+    const auto* routing = feed_.routingFor(trackId_);
+    if (routing == nullptr) {
+        panicked_ = false;
+        return;
+    }
+
+    auto dropped = feed_.appendEvents(routing->audition, out, kMaxMidiBytesPerPort);
+    for (const auto source : routing->sources)
+        dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort);
+
+    if (dropped > 0)
+        dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
+
+    // Only a loss panics: a source arriving takes nothing away, and a panic for
+    // it would cut a chord still being held down.
+    panicked_ = started_ && routing->sourcesLost != lost_;
+    lost_ = routing->sourcesLost;
+    started_ = true;
 }
 
 }  // namespace magda::engine

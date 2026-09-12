@@ -33,7 +33,9 @@ using magda::engine::kMaxMidiBytesPerPort;
 using magda::engine::LiveAudioInput;
 using magda::engine::LiveInputFeed;
 using magda::engine::LiveMidiInput;
+using magda::engine::LiveMidiSourceId;
 using magda::engine::LiveMidiStream;
+using magda::engine::LiveRouting;
 using magda::engine::OpKey;
 using magda::engine::OpKind;
 using magda::engine::OpRole;
@@ -41,6 +43,7 @@ using magda::engine::PlanValues;
 using magda::engine::RenderContext;
 using magda::engine::RenderPlan;
 using magda::engine::RuntimeStateFactory;
+using magda::engine::TrackLiveMidiInput;
 
 namespace {
 
@@ -361,6 +364,107 @@ TEST_CASE("A live MIDI input keeps the offsets the host stamped", "[engine][live
         for (const auto metadata : out)
             CHECK(metadata.samplePosition == 1);
     }
+}
+
+TEST_CASE("A track's live MIDI is what the published routing says it is", "[engine][live-input]") {
+    juce::MidiBuffer keyboard;
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 0);
+    juce::MidiBuffer pads;
+    pads.addEvent(juce::MidiMessage::noteOn(1, 36, 1.0f), 8);
+    juce::MidiBuffer preview;
+    preview.addEvent(juce::MidiMessage::noteOn(1, 72, 1.0f), 16);
+
+    const std::array<LiveMidiStream, 3> streams{
+        LiveMidiStream{1, &keyboard}, LiveMidiStream{2, &pads}, LiveMidiStream{9, &preview}};
+
+    LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
+
+    const auto routing = [](std::vector<LiveMidiSourceId> sources, std::uint32_t lost = 0) {
+        auto snapshot = std::make_shared<LiveRouting>();
+        snapshot->tracks.push_back(
+            {.trackId = 1, .audition = 9, .sources = std::move(sources), .sourcesLost = lost});
+        return snapshot;
+    };
+
+    TrackLiveMidiInput input(feed, 1);
+    juce::MidiBuffer out;
+
+    const auto renderBlock = [&] {
+        out.clear();
+        feed.beginCallback({{}, streams}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+        input.render(blockInfo(kBlockSize), out);
+        feed.endCallback();
+    };
+
+    SECTION("Its own preview reaches it whatever its input routing is") {
+        feed.publishRouting(routing({}));
+        renderBlock();
+
+        REQUIRE(out.getNumEvents() == 1);
+        for (const auto metadata : out)
+            CHECK(metadata.getMessage().getNoteNumber() == 72);
+    }
+
+    SECTION("Beside the devices routed to it") {
+        feed.publishRouting(routing({1, 2}));
+        renderBlock();
+
+        CHECK(out.getNumEvents() == 3);
+    }
+
+    SECTION("A session published to with no routing hears nothing") {
+        renderBlock();
+
+        CHECK(out.getNumEvents() == 0);
+    }
+
+    SECTION("A route change reaches an input the store built for an earlier plan") {
+        feed.publishRouting(routing({}));
+        renderBlock();
+        CHECK(out.getNumEvents() == 1);
+
+        feed.publishRouting(routing({1}));
+        renderBlock();
+        CHECK(out.getNumEvents() == 2);
+    }
+}
+
+TEST_CASE("A source a track has lost panics the block that follows it", "[engine][live-input]") {
+    LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
+
+    const auto routing = [](std::uint32_t lost) {
+        auto snapshot = std::make_shared<LiveRouting>();
+        snapshot->tracks.push_back(
+            {.trackId = 1, .audition = 9, .sources = {}, .sourcesLost = lost});
+        return snapshot;
+    };
+
+    TrackLiveMidiInput input(feed, 1);
+    juce::MidiBuffer out;
+
+    const auto renderBlock = [&] {
+        out.clear();
+        feed.beginCallback({}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+        input.render(blockInfo(kBlockSize), out);
+        feed.endCallback();
+    };
+
+    // An input bound after a loss reads the identity it finds.
+    feed.publishRouting(routing(4));
+    renderBlock();
+    CHECK(!input.raisedAllNotesOff());
+
+    // A route change publishes no topology, so this is the only panic (#2418).
+    feed.publishRouting(routing(5));
+    renderBlock();
+    CHECK(input.raisedAllNotesOff());
+
+    renderBlock();
+    CHECK(!input.raisedAllNotesOff());
 }
 
 TEST_CASE("A live MIDI burst past the port's budget is dropped and counted",

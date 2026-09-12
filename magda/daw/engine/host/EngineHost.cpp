@@ -29,6 +29,7 @@
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
 #include "LiveMidiQueue.hpp"
+#include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
@@ -407,6 +408,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         sources_.registerAvailableDevices();
         factory_.setModel(tracks, *master);
 
+        // Before the swap, so the new plan's first block renders against
+        // routing resolved from the same reading of the model (#2592).
+        publishRouting(tracks);
+
         if (plan == nullptr)
             plan = compilePlan(tracks, *master);
         report("plan", plan->diagnostics);
@@ -454,9 +459,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         report("values", session_->publishValues(std::move(values)).messages);
 
         // A monitor or route change is a track property, so it arrives here
-        // rather than as a plan, and the input the store already holds reads
-        // the table this rewrites.
-        factory_.refreshMidiRoutes(tracks);
+        // rather than as a plan, off the same reading as the values above.
+        publishRouting(tracks);
+    }
+
+    /// What every track hears of the live MIDI: one snapshot per reading of the
+    /// model, which the inputs the store keeps across a recompile read (#2592).
+    void publishRouting(const std::vector<TrackInfo>& tracks) {
+        if (session_ == nullptr)
+            return;
+
+        if (auto routing = routing_.resolve(tracks))
+            session_->liveInputs().publishRouting(std::move(routing));
     }
 
     /// A device plugged in or unplugged since the last structural publish.
@@ -465,7 +479,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// would resolve to a source nothing pushes under.
     void refreshLiveMidiDevices() {
         sources_.registerAvailableDevices();
-        factory_.refreshMidiRoutes(TrackManager::getInstance().getTracks());
+        publishRouting(TrackManager::getInstance().getTracks());
     }
 
     /// What every track plays, resolved against the tempo the transport is
@@ -508,6 +522,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// with devices that are already gone (#2572).
     void projectTeardown() override {
         factory_.forgetBuiltDevices();
+        routing_.reset();
     }
 
     void tracksChanged() override {
@@ -625,7 +640,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // and not one to answer in the same change that first made a sound.
         session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
-                        session_->liveInputs(), sources_);
+                        session_->liveInputs());
+
+        // The new feed has never been published to, so the publish below has to
+        // answer in full even for a model that has not moved.
+        routing_.reset();
 
         session_->liveInputs().prepare(inputChannels_.load(std::memory_order_relaxed),
                                        context.maxBlockSize);
@@ -992,10 +1011,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     EngineFileReaders files_;
     engine::PrefetchThread reader_;
 
-    /// Who is playing, and what they played. The registry is the message and
-    /// MIDI threads'; the queue is how one reaches the other side. Before the
-    /// factory, which holds the registry for the length of a publish.
+    /// Who is playing, what they played, and which track hears it. The
+    /// registry is the message and MIDI threads'; the queue is how one reaches
+    /// the other side.
     LiveMidiSources sources_;
+    LiveMidiRouting routing_{sources_};
     LiveMidiQueue queue_;
 
     /// One buffer per source id, indexed by id - 1, and the streams over the
