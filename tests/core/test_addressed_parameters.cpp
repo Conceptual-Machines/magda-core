@@ -168,6 +168,29 @@ TEST_CASE("A place in the device UI addresses a parameter", "[core][parameters][
     CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{0, 1, 2, 3});
 }
 
+TEST_CASE("A UI list holds array positions, not slots", "[core][parameters][addressed]") {
+    // A hosted plugin's own parameters start at slot 2: the wrapper pair holds
+    // 0 and 1 and lives in its own array (ExternalPluginState.hpp). The config
+    // dialog writes positions in DeviceInfo::parameters, so position 0 is the
+    // plugin's first automatable parameter and the slot it addresses is 2.
+    auto device = makeDevice(7, 0);
+    for (int slot = 2; slot < 6; ++slot)
+        device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
+
+    device.visibleParameters = {0, 3};
+
+    // Past the end of the array: a stale config, which addresses nothing rather
+    // than a slot that is not there.
+    device.miniMixerParameters = {9};
+
+    const auto project = oneDevice(std::move(device));
+    const auto addressed = addressedIn({project.track});
+
+    const auto slots = addressed.forDevice(project.path);
+    REQUIRE(slots.size() == 2);
+    CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{2, 5});
+}
+
 TEST_CASE("An empty visible list addresses nothing", "[core][parameters][addressed]") {
     // The UI reads "show what the device has" off the instance (#2634). Taking
     // it as addressing every slot would mirror the whole array again for any

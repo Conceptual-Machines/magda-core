@@ -358,7 +358,7 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
     // The entries the table carries, not every slot the plugin has (#2629).
     for (int entry = 0; entry < params.size(); ++entry) {
         const auto slot = params.slotAt(entry);
-        if (slot < 0 || slot >= static_cast<int>(parameters_.size()))
+        if (!mapsSlot(slot))
             continue;
 
         const auto& mapping = parameters_[static_cast<std::size_t>(slot)];

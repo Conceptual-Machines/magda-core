@@ -189,6 +189,12 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     void writeParameters(const magda::engine::DeviceParams& params);
 
+    /// Whether @p slot is one of this plugin's, i.e. @ref parameters_ has a row
+    /// for it.
+    bool mapsSlot(int slot) const {
+        return slot >= 0 && slot < static_cast<int>(parameters_.size());
+    }
+
     /// The plugin over one buffer, wet/dry mixed. @p audio is the buffer the
     /// plugin processes in place, at the width it asked for.
     void processPluginBlock(juce::AudioBuffer<float>& audio);
