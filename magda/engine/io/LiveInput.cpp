@@ -190,8 +190,8 @@ void TrackLiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& ou
     if (dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
 
-    // Only a loss raises all-notes-off. A source arriving removes nothing, and
-    // a panic would cut notes that are still held.
+    // Only a loss raises all-notes-off, which keeps held notes sounding when a
+    // source arrives.
     panicked_ = started_ && routing->sourcesLost != lost_;
     lost_ = routing->sourcesLost;
     started_ = true;

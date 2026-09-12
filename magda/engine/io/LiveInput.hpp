@@ -70,17 +70,13 @@ struct LiveInputBlock {
  * The room for the copy is taken by @ref prepare, so the copy itself cannot
  * allocate. Written and read on the audio thread only, within one callback.
  *
- * The routing every live MIDI input reads travels with it (#2592): a callback
- * pins one snapshot in @ref beginCallback and reads it throughout, so two
- * tracks cannot render against two readings of the model.
+ * The routing every live MIDI input reads travels with it (#2592). A callback
+ * pins one snapshot in @ref beginCallback and reads it throughout, so every
+ * track renders against one reading of the model.
  */
 class LiveInputFeed {
   public:
-    /**
-     * @brief Gives back a routing snapshot still pinned.
-     *
-     * So a feed destroyed inside a callback leaves nothing acquired.
-     */
+    /** @brief Releases a routing snapshot this still holds pinned. */
     ~LiveInputFeed();
 
     /**
@@ -117,8 +113,7 @@ class LiveInputFeed {
     /**
      * @brief @p trackId's routing for this callback.
      *
-     * Null before the first publish and outside a callback, which is a track
-     * hearing nothing.
+     * Null until the first publish, and null outside a callback.
      */
     const TrackLiveMidi* routingFor(TrackId trackId) const {
         return routing_ != nullptr ? routing_->find(trackId) : nullptr;
@@ -262,8 +257,8 @@ class LiveMidiInput final : public EngineMidiSource {
 /**
  * @brief A track's live MIDI: its own audition, and the devices routed to it.
  *
- * Which ids those are is the published routing's (LiveRouting.hpp), read fresh
- * each block, so a route change reaches an input built for an earlier plan.
+ * The published routing supplies those ids (LiveRouting.hpp), read fresh each
+ * block, so a route change reaches an input built for an earlier plan.
  */
 class TrackLiveMidiInput final : public EngineMidiSource {
   public:
@@ -289,8 +284,8 @@ class TrackLiveMidiInput final : public EngineMidiSource {
     const LiveInputFeed& feed_;
     TrackId trackId_ = INVALID_TRACK_ID;
 
-    /// The routing identity last rendered against. An input starts from what it
-    /// finds, so a recompile does not panic for a source it never heard.
+    /// The routing identity last rendered against. A new input adopts whatever
+    /// it first reads, so it panics only for a source it has heard.
     std::uint32_t lost_ = 0;
     bool started_ = false;
 

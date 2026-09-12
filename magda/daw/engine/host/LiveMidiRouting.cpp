@@ -26,7 +26,6 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
         routing->tracks.push_back(std::move(entry));
     }
 
-    // The model holds its tracks in arrangement order; find() binary-searches.
     std::ranges::sort(routing->tracks,
                       [](const auto& a, const auto& b) { return a.trackId < b.trackId; });
 
@@ -38,11 +37,9 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
 }
 
 std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInfo& track) {
-    // "track:<id>" names a track, not a MIDI device.
     if (!track.monitorsInput() || track.midiInputDevice.startsWith("track:"))
         return {};
 
-    // An empty field means no device.
     if (track.midiInputDevice.isEmpty())
         return {};
 

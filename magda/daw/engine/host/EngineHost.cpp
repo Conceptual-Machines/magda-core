@@ -646,8 +646,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs());
 
-        // The new feed has never been published to, so the publish below has to
-        // answer in full even for a model that has not moved.
+        // The publish below fills the new feed with a full snapshot.
         routing_.reset();
 
         session_->liveInputs().prepare(inputChannels_.load(std::memory_order_relaxed),

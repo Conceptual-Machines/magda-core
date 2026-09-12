@@ -98,9 +98,8 @@ std::vector<MidiDeviceInfo> MidiBridge::getAvailableMidiInputs() const {
     auto devices =
         midiInputs | std::views::transform(asPhysicalDevice) | toStd<std::vector<MidiDeviceInfo>>();
 
-    // The fork's virtual inputs ("All MIDI Ins" and any user-created one) get
-    // no messages under the native engine, so a track routed to one hears
-    // nothing. The QWERTY keyboard is listed under qwertyMidiDeviceId().
+    // Under the native engine, messages arrive under a physical device's
+    // identifier or under qwertyMidiDeviceId(). Those are the ids to offer.
     if (liveSink_.load(std::memory_order_acquire) != nullptr) {
         if (qwertyEnabled_)
             devices.emplace_back(qwertyMidiDeviceId(), kQwertyMidiDeviceName, /*enabled=*/true);
