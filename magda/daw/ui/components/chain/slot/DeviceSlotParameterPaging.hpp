@@ -26,10 +26,6 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
 void updateDeviceSlotParameterValues(const magda::DeviceInfo& device,
                                      ParamHostComponent& paramGrid);
 
-bool applyDeviceSlotSavedParameterConfig(magda::DeviceInfo& device,
-                                         const magda::ChainNodePath& nodePath,
-                                         ParamHostComponent* paramGrid);
-
 void updateDeviceSlotParameterPagination(const magda::DeviceInfo& device,
                                          ParamHostComponent* paramGrid);
 
