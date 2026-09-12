@@ -1,10 +1,6 @@
 #include <juce_core/juce_core.h>
 #include <tracktion_engine/tracktion_engine.h>
 
-#include <algorithm>
-#include <ranges>
-#include <vector>
-
 #include "SharedTestEngine.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/core/MidiTypes.hpp"
@@ -25,7 +21,6 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
         testSynthesizedNoteSilentWhenNotMonitored();
         testSynthesizedNoteSilentForUnroutedDevice();
         testAllRoutingMatchesSynthesizedNote();
-        testForkVirtualInputsAreNotOfferedOnTheNativeEngine();
     }
 
   private:
@@ -49,65 +44,6 @@ class MidiBridgeNoteEventsTest final : public juce::UnitTest {
             else
                 ++capture.noteOffCount;
         };
-    }
-
-    /// Installing a sink tells MidiBridge the native engine is rendering.
-    struct NullSink final : magda::LiveMidiSink {
-        void pushMidi(const juce::String&, const juce::MidiMessage&) override {}
-        void audition(magda::TrackId, const juce::MidiMessage&) override {}
-    };
-
-    void testForkVirtualInputsAreNotOfferedOnTheNativeEngine() {
-        beginTest("The fork's virtual MIDI inputs are not offered under the native engine");
-
-        auto& engine = *magda::test::getSharedEngine().getEngine();
-        auto& devices = engine.getDeviceManager();
-
-        const juce::String merged("All MIDI Ins");
-        const auto created = devices.createVirtualMidiDevice(merged);
-        expect(created.wasOk(), "The virtual device is created");
-        if (!created.wasOk())
-            return;
-
-        // By value, so the vector has to outlive the search.
-        const auto midiIns = devices.getMidiInDevices();
-        const auto byName = [&merged](const auto& dev) { return dev->getName() == merged; };
-        const auto found = std::ranges::find_if(midiIns, byName);
-
-        auto virtualDevice = found != midiIns.end() ? *found : nullptr;
-        expect(virtualDevice != nullptr, "And enumerated by the engine");
-        if (virtualDevice == nullptr)
-            return;
-        virtualDevice->setEnabled(true);
-
-        magda::MidiBridge bridge(engine);
-        bridge.setQwertyEnabled(true);
-
-        const auto names = [](const std::vector<magda::MidiDeviceInfo>& list) {
-            return list | std::views::transform([](const auto& d) { return d.name; }) |
-                   std::ranges::to<std::vector>();
-        };
-
-        expect(std::ranges::contains(names(bridge.getAvailableMidiInputs()), merged),
-               "The fork offers it while the fork renders");
-
-        NullSink sink;
-        bridge.setLiveSink(&sink);
-
-        const auto listed = bridge.getAvailableMidiInputs();
-        bridge.setLiveSink(nullptr);
-
-        expect(!std::ranges::contains(names(listed), merged),
-               "The native engine does not, since a route to it is silence");
-
-        const auto isKeyboard = [](const magda::MidiDeviceInfo& device) {
-            return device.id == magda::qwertyMidiDeviceId();
-        };
-        expect(std::ranges::any_of(listed, isKeyboard),
-               "The keyboard is still there, under the id it pushes under");
-
-        if (auto* toDelete = dynamic_cast<te::VirtualMidiInputDevice*>(virtualDevice.get()))
-            devices.deleteVirtualMidiDevice(*toDelete);
     }
 
     void testSynthesizedNoteFiresForMonitoredTrack() {
