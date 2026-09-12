@@ -26,8 +26,8 @@ void LiveInputFeed::prepare(int maxChannels, int maxBlockSize) {
 }
 
 void LiveInputFeed::beginCallback(const LiveInputBlock& input, int numSamples) {
-    // One acquisition for the whole callback (#2592). Guarded because the
-    // acquire and its release have to pair exactly.
+    // One acquisition for the whole callback (#2592). The guard keeps acquire
+    // and release paired.
     if (!holdsRouting_) {
         routing_ = published_.realtimeAcquire().get();
         holdsRouting_ = true;

@@ -38,8 +38,7 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
 }
 
 std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInfo& track) {
-    // monitorsInput, not receivesLiveMidiInput: Auto without an arm is the UI's
-    // activity light.
+    // A "track:" route is an edge in the plan, not a device.
     if (!track.monitorsInput() || track.midiInputDevice.startsWith("track:"))
         return {};
 

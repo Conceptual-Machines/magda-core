@@ -22,14 +22,14 @@ using LiveMidiSourceId = int;
 /// The "all" a route also accepts: every stream in the callback.
 constexpr LiveMidiSourceId kAnyLiveMidiSource = -1;
 
-/// No source. Never an id a stream arrives under, so it matches nothing.
+/// No source. Host ids start at 1, so this matches no stream.
 constexpr LiveMidiSourceId kNoLiveMidiSource = 0;
 
 /**
  * @brief What one track hears of the live MIDI.
  *
- * Monitor mode, arm, the device the route names and whether it is still
- * connected are all already answered.
+ * The host has already applied the track's monitor mode, its arm, the device
+ * its route names, and whether that device is connected.
  */
 struct TrackLiveMidi {
     TrackId trackId = INVALID_TRACK_ID;
