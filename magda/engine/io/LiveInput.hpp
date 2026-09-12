@@ -5,11 +5,14 @@
 
 #include <atomic>
 #include <cstdint>
+#include <farbot/RealtimeObject.hpp>
+#include <memory>
 #include <span>
 #include <vector>
 
 #include "exec/EngineDevice.hpp"
 #include "exec/RenderContext.hpp"
+#include "io/LiveRouting.hpp"
 
 /**
  * @file LiveInput.hpp
@@ -27,17 +30,6 @@
  */
 
 namespace magda::engine {
-
-/**
- * @brief Which MIDI input a stream came from.
- *
- * Opaque to the engine. The host assigns one per enabled device and resolves
- * a track's model string to it; kAnyLiveMidiSource is the "all" that string
- * also accepts, and merges every stream in the callback.
- */
-using LiveMidiSourceId = int;
-
-constexpr LiveMidiSourceId kAnyLiveMidiSource = -1;
 
 /** @brief One MIDI input's events for a callback, stamped from its first sample. */
 struct LiveMidiStream {
@@ -77,9 +69,16 @@ struct LiveInputBlock {
  *
  * The room for the copy is taken by @ref prepare, so the copy itself cannot
  * allocate. Written and read on the audio thread only, within one callback.
+ *
+ * The routing every live MIDI input reads travels with it (#2592). A callback
+ * pins one snapshot in @ref beginCallback and reads it throughout, so every
+ * track renders against one reading of the model.
  */
 class LiveInputFeed {
   public:
+    /** @brief Releases a routing snapshot this still holds pinned. */
+    ~LiveInputFeed();
+
     /**
      * @brief Room for what a callback may deliver. Off the audio thread.
      *
@@ -103,6 +102,23 @@ class LiveInputFeed {
     /// Audio thread, after the last block. A source reaching the feed outside
     /// a callback reads nothing rather than the previous callback's samples.
     void endCallback();
+
+    /**
+     * @brief Replace the routing every track's MIDI input reads (#2592).
+     *
+     * On the publishing thread, which is also where the old snapshot is
+     * destroyed.
+     */
+    void publishRouting(std::shared_ptr<const LiveRouting> routing);
+
+    /**
+     * @brief @p trackId's routing for this callback.
+     *
+     * Null until the first publish, and null outside a callback.
+     */
+    const TrackLiveMidi* routingFor(TrackId trackId) const {
+        return routing_ != nullptr ? routing_->find(trackId) : nullptr;
+    }
 
     /// The current block's input audio, empty when the host supplied none.
     juce::dsp::AudioBlock<const float> audio() const {
@@ -135,6 +151,16 @@ class LiveInputFeed {
     }
 
   private:
+    using PublishedRouting =
+        farbot::RealtimeObject<std::shared_ptr<const LiveRouting>,
+                               farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
+
+    PublishedRouting published_;
+
+    /// What beginCallback pinned, released by endCallback.
+    const LiveRouting* routing_ = nullptr;
+    bool holdsRouting_ = false;
+
     juce::AudioBuffer<float> scratch_;
     juce::dsp::AudioBlock<const float> audio_;
     std::span<const LiveMidiStream> midi_;
@@ -226,6 +252,45 @@ class LiveMidiInput final : public EngineMidiSource {
     const LiveInputFeed& feed_;
     LiveMidiSourceId source_ = kAnyLiveMidiSource;
     int latencySamples_ = 0;
+    std::atomic<std::uint32_t> dropped_{0};
+};
+
+/**
+ * @brief A track's live MIDI: its own audition, and the devices routed to it.
+ *
+ * The published routing supplies those ids (LiveRouting.hpp), read fresh each
+ * block, so a route change reaches an input built for an earlier plan.
+ */
+class TrackLiveMidiInput final : public EngineMidiSource {
+  public:
+    TrackLiveMidiInput(const LiveInputFeed& feed, TrackId trackId)
+        : feed_(feed), trackId_(trackId) {}
+
+    void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override;
+
+    /** @brief Whether a source left the routing since the block before. */
+    bool raisedAllNotesOff() const override {
+        return panicked_;
+    }
+
+    /**
+     * @brief Events dropped for want of room in the port's byte budget
+     *        (kMaxMidiBytesPerPort). Read from any thread.
+     */
+    std::uint32_t droppedEvents() const {
+        return dropped_.load(std::memory_order_relaxed);
+    }
+
+  private:
+    const LiveInputFeed& feed_;
+    TrackId trackId_ = INVALID_TRACK_ID;
+
+    /// The routing identity last rendered against. A new input adopts whatever
+    /// it first reads, so it panics only for a source it has heard.
+    std::uint32_t lost_ = 0;
+    bool started_ = false;
+
+    bool panicked_ = false;
     std::atomic<std::uint32_t> dropped_{0};
 };
 

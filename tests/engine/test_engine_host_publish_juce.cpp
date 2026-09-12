@@ -20,6 +20,7 @@
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
 #include "magda/daw/engine/host/EngineTrace.hpp"
+#include "magda/daw/engine/host/LiveMidiRouting.hpp"
 #include "magda/daw/engine/host/LiveMidiSources.hpp"
 #include "plan/PlanCompiler.hpp"
 
@@ -117,9 +118,8 @@ class NoteCapture final : public engine::EngineDevice {
 class CapturingFactory final : public engine::RuntimeStateFactory {
   public:
     void attach(engine::ClipSnapshotFeed& clips, engine::ClipStreamFeed& streams,
-                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs,
-                host::LiveMidiSources& sources) {
-        inner_.attach(clips, streams, handles, liveInputs, sources);
+                engine::LaunchHandleFeed& handles, const engine::LiveInputFeed& liveInputs) {
+        inner_.attach(clips, streams, handles, liveInputs);
     }
 
     void setModel(const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
@@ -246,7 +246,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -318,7 +318,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         engine::ClipVoicePool voices(files, reader, context);
         engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
 
         const auto plan =
             std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
@@ -561,7 +561,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master));
@@ -646,8 +646,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
+
+        // The routing carries the audition id as well (#2592).
+        host::LiveMidiRouting routing(sources);
+        session.liveInputs().publishRouting(routing.resolve(tracks));
 
         // Without the option the track is neither armed nor monitoring, so
         // there is no input op for the preview to reach (#2579).
@@ -686,9 +690,9 @@ class EngineHostPublishTest final : public juce::UnitTest {
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto routed = synthTrack("Monitoring", 1, magda::InputMonitorMode::In, "all");
-        const auto idle = synthTrack("Idle", 2, magda::InputMonitorMode::Off, {});
-        // Monitoring with no device named, which the fork routes to every
-        // input (MidiInputRouter::updateMidiInputRouting) and so must this.
+        const auto idle = synthTrack("Idle", 2, magda::InputMonitorMode::Off, "all");
+        // Monitoring with the input selector on None, which is an empty field.
+        // Read as "all", it played every keyboard attached.
         const auto unnamed = synthTrack("Unnamed", 3, magda::InputMonitorMode::In, {});
         // Auto and unarmed: routed on the fork, where TE's monitor mode still
         // decides what is heard, and audible here the moment it is in a route
@@ -723,8 +727,11 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
+
+        host::LiveMidiRouting routing(sources);
+        session.liveInputs().publishRouting(routing.resolve(tracks));
 
         const auto plan = std::make_shared<const magda::engine::RenderPlan>(
             magda::engine::compileRenderPlan(tracks, *master, {.auditionMidi = true}));
@@ -758,22 +765,23 @@ class EngineHostPublishTest final : public juce::UnitTest {
             return;
 
         expect(routedTap->read().loudest() > 0.0f, "The track routed to the device heard it");
-        expect(unnamedTap->read().loudest() > 0.0f,
-               "So did the track monitoring with no device named");
+        expect(unnamedTap->read().loudest() == 0.0f,
+               "The track whose input is None did not, though it is monitoring");
 
         // The audition op every track now carries reads its own source alone;
         // kAnyLiveMidiSource here would have merged the two.
-        expect(idleTap->read().loudest() == 0.0f, "The track monitoring nothing did not");
+        expect(idleTap->read().loudest() == 0.0f,
+               "Nor did the track routed to it but monitoring nothing");
 
         // What monitorsInput() gates and receivesLiveMidiInput() does not: Auto
         // without an arm is the UI's activity light, not an audible input.
         expect(autoTap->read().loudest() == 0.0f, "Nor did the unarmed Auto track");
 
-        // The store keeps the input it built, so a monitor switched on after
-        // the publish reaches it through the route table, not a new source.
+        // The store keeps the input it built, so a monitor switched on after the
+        // publish reaches it through a republished routing.
         if (auto* track = trackManager.getTrack(idle))
             track->inputMonitor = magda::InputMonitorMode::In;
-        factory.refreshMidiRoutes(trackManager.getTracks());
+        session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
 
         session.process(context.maxBlockSize, output, {{}, streams});
         for (auto block = 0; block < 43; ++block)
@@ -784,7 +792,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
     }
 
     void testRouteRemovalPanicsTheInput() {
-        beginTest("A source leaving a route table panics the input that read it");
+        beginTest("A source leaving a track's routing panics the input that read it");
 
         auto& trackManager = magda::TrackManager::getInstance();
         const auto trackId = synthTrack("Monitoring", 1, magda::InputMonitorMode::In, "all");
@@ -807,11 +815,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::engine::ClipVoicePool voices(files, reader, context);
         magda::engine::EngineSession session(factory, nullptr, &voices);
         factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
-                       session.liveInputs(), sources);
+                       session.liveInputs());
         session.liveInputs().prepare(0, context.maxBlockSize);
 
-        // The input the store would bind, over the same route table the
-        // publisher rewrites.
+        host::LiveMidiRouting routing(sources);
+        session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
+
         auto input = factory.createMidiInput(trackId);
         expect(input != nullptr, "The track has a live MIDI input");
         if (input == nullptr)
@@ -820,33 +829,49 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const magda::engine::BlockInfo block{};
         juce::MidiBuffer events;
 
-        input->render(block, events);
-        expect(!input->raisedAllNotesOff(), "A block with the route unchanged raises nothing");
+        // A callback around each render pins the routing.
+        const auto renderBlock = [&] {
+            events.clear();
+            session.liveInputs().beginCallback({}, 0);
+            input->render(block, events);
+            session.liveInputs().endCallback();
+        };
 
-        // A note-off for whatever the device is holding will never arrive
-        // through a route that has gone, and the mutation publishes no
-        // topology, so nothing else can panic the instrument.
+        renderBlock();
+        expect(!input->raisedAllNotesOff(), "A block with the routing unchanged raises nothing");
+
         if (auto* track = trackManager.getTrack(trackId))
             track->inputMonitor = magda::InputMonitorMode::Off;
-        factory.refreshMidiRoutes(trackManager.getTracks());
+        session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
 
-        events.clear();
-        input->render(block, events);
+        renderBlock();
         expect(input->raisedAllNotesOff(), "Losing the route panics the block that follows it");
 
-        events.clear();
-        input->render(block, events);
+        renderBlock();
         expect(!input->raisedAllNotesOff(), "Once, and not on every block after it");
 
-        // Adding one back takes nothing away, so a chord held on another
-        // source keeps sounding.
         if (auto* track = trackManager.getTrack(trackId))
             track->inputMonitor = magda::InputMonitorMode::In;
-        factory.refreshMidiRoutes(trackManager.getTracks());
+        session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
+
+        renderBlock();
+        expect(!input->raisedAllNotesOff(), "A source arriving raises no panic");
+
+        // A fresh input adopts the routing identity it first reads.
+        if (auto* track = trackManager.getTrack(trackId))
+            track->inputMonitor = magda::InputMonitorMode::Off;
+        session.liveInputs().publishRouting(routing.resolve(trackManager.getTracks()));
+
+        auto rebuilt = factory.createMidiInput(trackId);
+        expect(rebuilt != nullptr, "The input is rebuilt");
+        if (rebuilt == nullptr)
+            return;
 
         events.clear();
-        input->render(block, events);
-        expect(!input->raisedAllNotesOff(), "A source arriving raises no panic");
+        session.liveInputs().beginCallback({}, 0);
+        rebuilt->render(block, events);
+        session.liveInputs().endCallback();
+        expect(!rebuilt->raisedAllNotesOff(), "A freshly bound input raises no panic of its own");
     }
 
     void testDeviceConnectedAfterAPublishResolves() {

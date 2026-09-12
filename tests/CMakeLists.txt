@@ -379,6 +379,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES PlanEditHarness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_edit_properties.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_session.cpp)
+    list(APPEND TEST_SOURCES engine/test_live_midi_routing.cpp)
     # The parameter lane (#2116). The lanes are fed by hand, so the precedence
     # rules are testable before anything writes them.
     list(APPEND TEST_SOURCES engine/test_param_lane.cpp)

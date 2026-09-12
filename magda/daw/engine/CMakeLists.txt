@@ -57,6 +57,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineTrace.cpp
         host/ExternalPluginLoader.cpp
         host/LiveMidiQueue.cpp
+        host/LiveMidiRouting.cpp
         host/LiveMidiSources.cpp
         host/EngineHost.hpp
         host/EngineProject.hpp
@@ -64,6 +65,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/EngineTrace.hpp
         host/ExternalPluginLoader.hpp
         host/LiveMidiQueue.hpp
+        host/LiveMidiRouting.hpp
         host/LiveMidiSources.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)
