@@ -182,60 +182,79 @@ TEST_CASE("A source a track loses is counted, so the input can panic for it", "[
     }
 }
 
-TEST_CASE("A track that is gone gives its audition id back", "[live-routing][2590]") {
-    // The callback has room for a project's worth of sources, not a session's:
-    // one is taken for every track that reads MIDI, so a counter that only
-    // climbs turns an evening of editing into silence it cannot explain.
-    std::atomic<std::uint64_t> drains{0};
+TEST_CASE("A track that is gone gives its callback slot back", "[live-routing][2590]") {
+    // The room the callback has is a project size, not a session's history:
+    // one slot is taken for every track that reads MIDI, so without this an
+    // evening of building and deleting tracks runs it out and the callback
+    // drops what it cannot place.
     host::LiveMidiSources sources;
-    sources.observeDrains(drains);
     host::LiveMidiRouting routing(sources);
+    const auto room = sources.freeSlots();
 
     REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all"), monitoring(3, "all")}) !=
             nullptr);
     const auto second = sources.auditionSourceFor(2);
-    const auto third = sources.auditionSourceFor(3);
+    CHECK(sources.freeSlots() == room - 3);
 
     REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
-    CHECK(sources.waitingToBeReused() == 2);
+    CHECK(sources.freeSlots() == room - 1);
+    CHECK(sources.slotFor(second) == host::LiveMidiSources::kNoSlot);
 
-    // Not before the callback has consumed whatever was queued under them.
-    const auto waiting = sources.auditionSourceFor(4);
-    CHECK(waiting != second);
-    CHECK(waiting != third);
-
-    drains.fetch_add(2, std::memory_order_relaxed);
-
-    const auto reused = sources.auditionSourceFor(5);
-    CHECK((reused == second || reused == third));
-    CHECK(sources.waitingToBeReused() == 1);
+    // A slot comes back; the id never does, so nothing a producer resolved
+    // before the track went can be mistaken for the track that follows it.
+    const auto next = sources.auditionSourceFor(4);
+    CHECK(next != second);
+    CHECK(sources.slotFor(next) != host::LiveMidiSources::kNoSlot);
+    CHECK(sources.freeSlots() == room - 2);
 }
 
-TEST_CASE("A host with no callback to wait on reuses nothing", "[live-routing][2590]") {
-    // The default, and what a test or a headless tool gets: no counter to
-    // watch means no way to know an id is spent, so it is not handed out.
+TEST_CASE("A slot answers to the id that holds it now", "[live-routing][2590]") {
+    // What the callback asks of an event that outlived its track: the id and
+    // the slot have to agree, or the note belongs to nobody.
     host::LiveMidiSources sources;
     host::LiveMidiRouting routing(sources);
 
-    REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all")}) != nullptr);
-    const auto second = sources.auditionSourceFor(2);
-
     REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
-    CHECK(sources.waitingToBeReused() == 1);
-    CHECK(sources.auditionSourceFor(3) != second);
+    const auto gone = sources.auditionSourceFor(1);
+    const auto slot = sources.slotFor(gone);
+    REQUIRE(slot != host::LiveMidiSources::kNoSlot);
+    CHECK(sources.ownerOfSlot(slot) == gone);
+
+    REQUIRE(routing.resolve({}) != nullptr);
+    CHECK(sources.ownerOfSlot(slot) == host::LiveMidiSources::kNoSource);
+
+    const auto taken = sources.auditionSourceFor(2);
+    REQUIRE(sources.slotFor(taken) == slot);
+    CHECK(sources.ownerOfSlot(slot) == taken);
+    CHECK(sources.ownerOfSlot(slot) != gone);
 }
 
-TEST_CASE("A track that stays keeps the id it had", "[live-routing][2590]") {
-    std::atomic<std::uint64_t> drains{0};
+TEST_CASE("A track that stays keeps the slot it had", "[live-routing][2590]") {
     host::LiveMidiSources sources;
-    sources.observeDrains(drains);
     host::LiveMidiRouting routing(sources);
 
     REQUIRE(routing.resolve({monitoring(1, "all"), monitoring(2, "all")}) != nullptr);
     const auto first = sources.auditionSourceFor(1);
+    const auto slot = sources.slotFor(first);
 
-    drains.fetch_add(4, std::memory_order_relaxed);
     REQUIRE(routing.resolve({monitoring(1, "all")}) != nullptr);
 
     CHECK(sources.auditionSourceFor(1) == first);
+    CHECK(sources.slotFor(first) == slot);
+}
+
+TEST_CASE("A project past the room gets ids with nowhere to put them", "[live-routing][2590]") {
+    // Not silence the callback cannot explain: the id is still the model's, so
+    // the route resolves and the drop is counted where the trace prints it.
+    host::LiveMidiSources sources;
+
+    std::vector<int> taken;
+    for (auto i = 0; i < host::LiveMidiSources::kSlots; ++i)
+        taken.push_back(sources.auditionSourceFor(static_cast<magda::TrackId>(i + 1)));
+
+    CHECK(sources.freeSlots() == 0);
+
+    const auto crowded = sources.auditionSourceFor(host::LiveMidiSources::kSlots + 1);
+    CHECK(crowded != host::LiveMidiSources::kNoSource);
+    CHECK(sources.slotFor(crowded) == host::LiveMidiSources::kNoSlot);
 }
