@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <utility>
 
+#include "../audio/DeviceParameterList.hpp"
 #include "../core/AutomationCommands.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/AutomationTypes.hpp"
@@ -560,7 +561,7 @@ HandlerResult devicesListParameters(MagdaApi& api, const juce::var& input, const
         return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
 
     std::vector<juce::var> items;
-    for (const auto& parameter : makeDeviceParameterDtos(*device))
+    for (const auto& parameter : makeDeviceParameterDtos(*device, *path))
         items.push_back(toJson(parameter));
     return HandlerResult::ok(toJsonArray(items));
 }
@@ -574,7 +575,7 @@ HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const R
         return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
 
     const auto parameterIndex = readInt(input, "parameterIndex", -1);
-    const auto parameters = makeDeviceParameterDtos(*device);
+    const auto parameters = makeDeviceParameterDtos(*device, *path);
     const auto named = std::ranges::find(parameters, parameterIndex, &DeviceParameterDto::index);
     if (named == parameters.end())
         return notFound("parameter", parameterIndex);
@@ -605,7 +606,7 @@ HandlerResult devicesSetParameter(MagdaApi& api, const juce::var& input, const R
     // the caller sees what the model now holds rather than what was sent.
     const auto* updated = api.devices().getDevice(*path);
     if (updated != nullptr) {
-        for (const auto& parameter : makeDeviceParameterDtos(*updated)) {
+        for (const auto& parameter : makeDeviceParameterDtos(*updated, *path)) {
             if (parameter.index == parameterIndex)
                 return HandlerResult::ok(toJson(parameter));
         }
@@ -629,9 +630,10 @@ HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
     // The wire indices are the ones devices.listParameters reports, which are
     // paramIndex when set; the customization lists key on position. Translate
     // so the two operations speak the same addresses.
+    const auto parameters = deviceParameterList(*device, *path);
     std::unordered_map<int, int> positionByWireIndex;
-    for (size_t i = 0; i < device->parameters.size(); ++i) {
-        const auto& info = device->parameters[i];
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        const auto& info = parameters[i];
         const auto position = static_cast<int>(i);
         positionByWireIndex.emplace(info.paramIndex >= 0 ? info.paramIndex : position, position);
     }
@@ -723,7 +725,7 @@ HandlerResult devicesSetParameterConfig(MagdaApi& api, const juce::var& input,
     if (updated == nullptr)
         return HandlerResult::fail(ErrorCode::NotFound, "no device at devicePath");
     std::vector<juce::var> items;
-    for (const auto& parameter : makeDeviceParameterDtos(*updated))
+    for (const auto& parameter : makeDeviceParameterDtos(*updated, *path))
         items.push_back(toJson(parameter));
     return HandlerResult::ok(toJsonArray(items));
 }

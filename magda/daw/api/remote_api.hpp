@@ -634,7 +634,14 @@ TrackDto makeTrackDto(const TrackInfo& track);
 ClipDto makeClipDto(const ClipInfo& clip);
 DeviceGraphDto makeDeviceGraphDto(const std::vector<TrackInfo>& tracks);
 DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry);
-std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device);
+/**
+ * @brief One DTO per parameter of the device at @p devicePath.
+ *
+ * The list comes from DeviceParameterList.hpp, so a hosted plugin reports what
+ * its instance has (#2634); the flags come from @p device's own selections.
+ */
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
+                                                        const ChainNodePath& devicePath);
 SelectionDto makeSelectionDto(MagdaApi& api);
 TransportDto makeTransportDto(MagdaApi& api);
 SessionDto makeSessionDto(MagdaApi& api);

@@ -365,6 +365,11 @@ juce::String MagdaAudioEngine::formatDeviceParameter(const ChainNodePath& device
 
     return tracktion_->formatDeviceParameter(devicePath, paramIndex, normalised);
 }
+/** @brief Only the host holds instances; the fork's readers keep the model's array. */
+HostParameters MagdaAudioEngine::describeDeviceParameters(const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->describeDeviceParameters(devicePath) : HostParameters{};
+}
+
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

@@ -2,6 +2,7 @@
 #include <atomic>
 #include <tuple>
 
+#include "../audio/DeviceParameterList.hpp"
 #include "../core/AutomationInfo.hpp"
 #include "../core/ClipInfo.hpp"
 #include "../core/DeviceInfo.hpp"
@@ -379,17 +380,19 @@ DeviceCatalogEntryDto makeDeviceCatalogEntryDto(const DeviceCatalogEntry& entry)
     return dto;
 }
 
-std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device) {
+std::vector<DeviceParameterDto> makeDeviceParameterDtos(const DeviceInfo& device,
+                                                        const ChainNodePath& devicePath) {
     const auto contains = [](const std::vector<int>& positions, int position) {
         return std::ranges::contains(positions, position);
     };
     // The customization lists key on position in `parameters`, while the wire
     // `index` is `paramIndex` — the address parameter writes take. The two are
     // normally equal, but only the position indexes the user's selections.
+    const auto parameters = deviceParameterList(device, devicePath);
     std::vector<DeviceParameterDto> dtos;
-    dtos.reserve(device.parameters.size());
-    for (size_t i = 0; i < device.parameters.size(); ++i) {
-        const auto& info = device.parameters[i];
+    dtos.reserve(parameters.size());
+    for (size_t i = 0; i < parameters.size(); ++i) {
+        const auto& info = parameters[i];
         const auto position = static_cast<int>(i);
         DeviceParameterDto dto;
         dto.index = info.paramIndex >= 0 ? info.paramIndex : position;

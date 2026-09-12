@@ -16,7 +16,8 @@ class String;
 
 namespace magda {
 class TempoMap;
-}
+struct HostParameters;
+}  // namespace magda
 
 /**
  * @file EngineHost.hpp
@@ -138,6 +139,9 @@ class EngineHost {
      */
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const;
+
+    /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
+    HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
 
     // ===== The plugins' own windows (#2580) =====
     //
