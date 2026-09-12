@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../audio/midi/RecordingNoteQueue.hpp"
+#include "../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
 #include "../core/ParameterDetector.hpp"
@@ -306,6 +307,15 @@ class AudioEngine : public AudioEngineListener {
      */
     virtual juce::String formatDeviceParameter(const ChainNodePath& /*devicePath*/,
                                                int /*paramIndex*/, float /*normalised*/) const {
+        return {};
+    }
+
+    /**
+     * @brief Every parameter the plugin at @p devicePath reports (#2629).
+     *
+     * Message thread. Empty for a path this engine holds no instance for.
+     */
+    virtual HostParameters describeDeviceParameters(const ChainNodePath& /*devicePath*/) const {
         return {};
     }
 

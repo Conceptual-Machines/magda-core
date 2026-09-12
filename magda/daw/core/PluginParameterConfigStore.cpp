@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <optional>
+#include <ranges>
 #include <unordered_map>
 
 #include "AppPaths.hpp"
@@ -52,8 +53,8 @@ bool refreshFlatParameterConfig(const juce::String& uniqueId,
 /// The entry describing `device`'s parameter at `index` as it stands now.
 PluginParameterConfigEntry entryFor(const DeviceInfo& device, size_t index) {
     const auto& info = device.parameters[index];
-    const auto selected = [index](const std::vector<int>& indices) {
-        return std::find(indices.begin(), indices.end(), static_cast<int>(index)) != indices.end();
+    const auto selected = [slot = info.paramIndex](const std::vector<int>& slots) {
+        return std::ranges::contains(slots, slot);
     };
 
     PluginParameterConfigEntry entry;
@@ -287,11 +288,8 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
     device.aiSoundDesignerParameters.clear();
     device.aiSoundDesignerPrompt = config->aiPrompt;
 
-    // device.parameters holds only the plugin's own params — TE's slot dry/wet
-    // live in device.wrapperParameters — so a stored index maps 1:1 to the
-    // device array. (Configs saved before the wrapper-param split assumed
-    // indices 0/1 were dry/wet; those resolve to the wrong slots once and need
-    // to be re-saved.)
+    // An entry is matched by stable id, and its selection stored as the slot
+    // of the parameter it lands on (#2638).
     const auto count = static_cast<int>(device.parameters.size());
 
     std::vector<juce::String> currentIds;
@@ -306,14 +304,15 @@ bool applyToDevice(const juce::String& uniqueId, DeviceInfo& device) {
         const auto index = positions[at];
         if (index < 0 || index >= count)
             continue;
-        if (entry.visible)
-            device.visibleParameters.push_back(index);
-        if (entry.miniMixer)
-            device.miniMixerParameters.push_back(index);
-        if (entry.aiAgent)
-            device.aiSoundDesignerParameters.push_back(index);
-
         auto& parameter = device.parameters[static_cast<size_t>(index)];
+
+        if (entry.visible)
+            device.visibleParameters.push_back(parameter.paramIndex);
+        if (entry.miniMixer)
+            device.miniMixerParameters.push_back(parameter.paramIndex);
+        if (entry.aiAgent)
+            device.aiSoundDesignerParameters.push_back(parameter.paramIndex);
+
         if (entry.unit)
             parameter.unit = *entry.unit;
         if (entry.scale)

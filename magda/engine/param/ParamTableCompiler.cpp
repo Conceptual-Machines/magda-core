@@ -1,6 +1,7 @@
 #include "param/ParamTableCompiler.hpp"
 
 #include <algorithm>
+#include <map>
 #include <queue>
 #include <set>
 
@@ -283,6 +284,7 @@ class Builder {
     void resolveLinks();
     void orderAndBreakCycles();
     void flattenLinks();
+    void markDriven();
 
     void diagnose(const std::string& what) {
         table_.diagnostics.push_back(what);
@@ -330,6 +332,8 @@ ParamId Builder::add(const ParamKey& key, const ParamSpec& spec, float base) {
     table_.keys.push_back(key);
     table_.specs.push_back(spec);
     table_.base.push_back(base);
+    table_.slots.push_back(key.kind == ParamKey::Kind::DeviceParam ? key.index : -1);
+    table_.driven.push_back(0);
     perParam_.emplace_back();
     perParamCurve_.emplace_back();
     table_.byKey.emplace(key, id);
@@ -466,8 +470,8 @@ void Builder::allocateDevice(const Node& node) {
     const auto& scope = node.scope;
 
     // A device's parameters are one index space: its own, plus whatever its
-    // wrapper injected, which addresses the same slots.
-    int highest = -1;
+    // wrapper injected. Ascending, because the window is searched by slot.
+    std::map<int, const magda::ParameterInfo*> declared;
     const auto scan = [&](const std::vector<magda::ParameterInfo>& list) {
         for (const auto& info : list) {
             if (info.paramIndex < 0 || info.paramIndex > kMaxDeviceParamIndex) {
@@ -475,47 +479,24 @@ void Builder::allocateDevice(const Node& node) {
                          " is out of range and is ignored");
                 continue;
             }
-            highest = std::max(highest, info.paramIndex);
+            declared.emplace(info.paramIndex, &info);
         }
     };
     scan(device.parameters);
     scan(device.wrapperParameters);
 
-    const auto find = [&](int index) -> const magda::ParameterInfo* {
-        for (const auto* list : {&device.parameters, &device.wrapperParameters})
-            for (const auto& info : *list)
-                if (info.paramIndex == index)
-                    return &info;
-        return nullptr;
-    };
-
-    // Every index from zero, so a device reads its own parameters by the index
-    // it declared them at rather than by where they landed in the table. A gap
-    // is a slot nothing declared and nothing reads.
+    // One entry per parameter the device declared, and none for an index it did
+    // not: a device reads its parameters by slot (ParamTable::slots).
     const auto first = static_cast<ParamId>(table_.keys.size());
-    int gaps = 0;
-    for (int index = 0; index <= highest; ++index) {
+    for (const auto& [index, info] : declared) {
         ParamKey key = scope;
         key.kind = ParamKey::Kind::DeviceParam;
         key.index = index;
 
-        const auto* info = find(index);
-        if (info == nullptr) {
-            ++gaps;
-
-            // A slot, because the window is contiguous, and no value, because
-            // nothing declared one. See ParamSpec::declared: a fabricated zero
-            // is indistinguishable from a real one to the device reading it.
-            ParamSpec hole;
-            hole.declared = false;
-            add(key, hole, 0.0f);
-            continue;
-        }
-
         // A hosted plugin's stored value is the normalised one, whatever range
         // a config gave it to display through. Only an internal device's is
-        // read through the model's inverse, which guesses from the ranges and
-        // guesses wrong for a configured external parameter.
+        // read through the model's inverse, which guesses wrong for a
+        // configured external parameter.
         const auto normalised = device.format == magda::PluginFormat::Internal
                                     ? magda::ParameterUtils::modelToNormalizedValue(
                                           magda::ParameterModelValue{info->currentValue}, *info)
@@ -524,23 +505,18 @@ void Builder::allocateDevice(const Node& node) {
         add(key, paramSpecFrom(*info), normalised);
     }
 
-    // Reported for a device MAGDA ships and not for one it hosts, because it is
-    // a mistake in the first case and the normal shape of the second.
-    //
-    // An internal device declares its own parameters, so a gap is a device that
-    // skipped an index and the slot it left is one nothing will ever read. A
-    // hosted plugin's array is a filtered view of the instance's -- the
-    // non-automatable ones are not in it at all -- and a project saves whatever
-    // it had when it was saved, which for anything written before the wet/dry
-    // pair was persisted is an array starting at index two. Diagnosing that
-    // would make every real project hosting a plugin unmeasurable for having
-    // been saved by an older build (#2175).
-    if (gaps > 0 && device.format == magda::PluginFormat::Internal)
-        diagnose(toString(scope) + ": parameter indices are not contiguous, so " +
-                 std::to_string(gaps) + " slot(s) of the window belong to no parameter");
+    if (declared.empty())
+        return;
 
-    if (highest >= 0)
-        table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, highest + 1});
+    // Internal devices only: a hosted plugin's array skips its non-automatable
+    // parameters, so gaps in it are normal (#2175).
+    const auto count = static_cast<int>(declared.size());
+    if (const auto gaps = declared.rbegin()->first + 1 - count;
+        gaps > 0 && device.format == magda::PluginFormat::Internal)
+        diagnose(toString(scope) + ": parameter indices are not contiguous, so " +
+                 std::to_string(gaps) + " index(es) below the highest stand for no parameter");
+
+    table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, count});
 }
 
 void Builder::walkFlat(const std::vector<magda::PostFxChainElement>& elements,
@@ -1046,6 +1022,13 @@ void Builder::flattenLinks() {
     }
 }
 
+/// After the lanes and links are flattened, since it is read off both (#2629).
+void Builder::markDriven() {
+    for (ParamId param = 0; param < static_cast<ParamId>(table_.keys.size()); ++param)
+        table_.driven[static_cast<std::size_t>(param)] = static_cast<std::uint8_t>(
+            !table_.curveFor(param).empty() || !table_.linksFor(param).empty());
+}
+
 ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackInfo>& tracks,
                         const magda::TrackInfo& master,
                         std::span<const magda::AutomationLaneInfo> lanes,
@@ -1066,6 +1049,7 @@ ParamTable Builder::run(const RenderPlan& plan, const std::vector<magda::TrackIn
     orderAndBreakCycles();
     flattenLinks();
     flattenCurves();
+    markDriven();
 
     table_.layoutFingerprint = paramLayoutFingerprint(table_.keys);
     table_.modifierFingerprint = paramModifierFingerprint(table_.modifiers);

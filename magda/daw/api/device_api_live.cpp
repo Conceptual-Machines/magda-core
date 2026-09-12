@@ -247,13 +247,10 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     // writes to external plugins; internal devices accept writes on every
     // parameter. Enforced here so every facade consumer — agents, remote, Lua,
     // OSC, CLI — sees the same policy, not just the MCP handler (#2296). The
-    // opt-in list keys on position in `parameters`, not on paramIndex.
-    if (device->format != PluginFormat::Internal) {
-        const auto position = static_cast<int>(match - device->parameters.begin());
-        const auto& allowed = device->aiSoundDesignerParameters;
-        if (!std::ranges::contains(allowed, position))
-            return false;
-    }
+    // opt-in names slots (#2638).
+    if (device->format != PluginFormat::Internal &&
+        !std::ranges::contains(device->aiSoundDesignerParameters, match->paramIndex))
+        return false;
 
     // The caller speaks display units; the model may store TE-native values
     // (external plugin with a config display range), so convert before writing.

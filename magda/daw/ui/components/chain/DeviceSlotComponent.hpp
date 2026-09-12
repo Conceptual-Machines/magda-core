@@ -224,6 +224,10 @@ class DeviceSlotComponent : public NodeComponent,
     void aiSoundDesignerPreferenceChanged(const juce::String& pluginIdentifier) override;
 
   private:
+    /// Take the parameter list from whatever holds it: a hosted plugin's own
+    /// instance, or the model (#2634).
+    void adoptParameterList();
+
     magda::DeviceInfo device_;
     DeviceSlotTraits traits_;
     DeviceSlotModMacroCommandCallbacks modMacroCommandCallbacks();

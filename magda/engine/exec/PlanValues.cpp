@@ -484,6 +484,14 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
             break;
         }
 
+        // Silent while the track is not listening to its live audio input. The
+        // input op and its meter are compiled either way, so this flag is the
+        // whole of what the monitor switch moves (#2612).
+        case OpRole::LiveInputGate:
+            if (!track->monitorsInput())
+                value.silent = true;
+            break;
+
         // Sources, sums, merges, differences, meters and the output carry no
         // value of their own: what they render comes from their bindings, and
         // what they pass on is whatever reached them.

@@ -85,6 +85,16 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     juce::String parameterText(int slot, float normalised) const;
 
+    /**
+     * @brief Every parameter the instance reports, at the values it holds now.
+     *
+     * Message thread, on the same terms as parameterText(): a query that
+     * suspends nothing. What the model mirrors is a subset of this (#2629).
+     * The wrapper pair carries its defaults, since the model owns those values
+     * and this device's own copies are written on the audio thread.
+     */
+    magda::HostParameters describeParameters() const;
+
     // ===== The plugin's own window (#2580). Call on the control executor. =====
 
     /// False for a plugin with no editor of its own.
@@ -108,6 +118,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     class PluginListener;
 
     void writeParameters(const magda::engine::DeviceParams& params);
+
+    /// Whether @ref parameters_ has a row for @p slot.
+    bool mapsSlot(int slot) const {
+        return slot >= 0 && slot < static_cast<int>(parameters_.size());
+    }
 
     /// The plugin over one buffer in place, wet/dry mixed.
     void processPluginBlock(juce::AudioBuffer<float>& audio);

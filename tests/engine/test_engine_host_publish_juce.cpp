@@ -951,7 +951,13 @@ class EngineHostPublishTest final : public juce::UnitTest {
         track->midiInputDevice = "";
 
         track->audioInputDevice = "Input 1";
-        expect(shapeNow() != compiledFrom, "So is a monitored audio input");
+        const auto withInput = shapeNow();
+        expect(withInput != compiledFrom, "So is naming an audio input");
+
+        // But not the switch over it: that lands on the input's gate, which a
+        // values publish carries (#2612).
+        track->inputMonitor = magda::InputMonitorMode::Off;
+        expect(shapeNow() == withInput, "Monitoring that input is not a shape change");
     }
 
     void testOnlyTrackMetersAreTapped() {

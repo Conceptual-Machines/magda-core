@@ -33,6 +33,50 @@ void migrateUtilityWidthToPercent(DeviceInfo& device) {
     }
 }
 
+/// The slot at @p position of @p device's parameter array, or -1.
+int slotAtPosition(const DeviceInfo& device, int position) {
+    if (position < 0 || position >= static_cast<int>(device.parameters.size()))
+        return -1;
+
+    return device.parameters[static_cast<std::size_t>(position)].paramIndex;
+}
+
+std::vector<int> readInts(const juce::DynamicObject& obj, const char* key) {
+    std::vector<int> values;
+    const auto var = obj.getProperty(key);
+    if (const auto* array = var.getArray())
+        for (const auto& value : *array)
+            values.push_back(static_cast<int>(value));
+
+    return values;
+}
+
+/**
+ * @brief The three parameter selections, whichever way the project holds them.
+ *
+ * Slots from #2638 on. An older project holds positions, translated through
+ * the saved array, which still carries every slot at load.
+ */
+void readParameterSelections(const juce::DynamicObject& obj, DeviceInfo& device) {
+    const auto selection = [&obj, &device](const char* slotsKey, const char* positionsKey) {
+        auto slots = readInts(obj, slotsKey);
+        if (!slots.empty() || obj.hasProperty(slotsKey))
+            return slots;
+
+        std::vector<int> translated;
+        for (const auto position : readInts(obj, positionsKey))
+            if (const auto slot = slotAtPosition(device, position); slot >= 0)
+                translated.push_back(slot);
+
+        return translated;
+    };
+
+    device.visibleParameters = selection("visibleParameterSlots", "visibleParameters");
+    device.miniMixerParameters = selection("miniMixerParameterSlots", "miniMixerParameters");
+    device.aiSoundDesignerParameters =
+        selection("aiSoundDesignerParameterSlots", "aiSoundDesignerParameters");
+}
+
 void enforcePostFxAnalysisDeviceOrder(std::vector<PostFxChainElement>& elements) {
     const auto analysisOrderOf = [](const PostFxChainElement& element) {
         return daw::audio::internalPostFxAnalysisOrder(element.device.pluginId);
@@ -457,26 +501,18 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     }
     obj->setProperty("parameters", juce::var(paramsArray));
 
-    // Visible parameters
-    juce::Array<juce::var> visibleParamsArray;
-    for (auto index : device.visibleParameters) {
-        visibleParamsArray.add(index);
-    }
-    obj->setProperty("visibleParameters", juce::var(visibleParamsArray));
+    // Slots (#2638), under their own keys so a reader can tell them from the
+    // positions older projects hold.
+    const auto writeSlots = [&obj](const char* key, const std::vector<int>& slots) {
+        juce::Array<juce::var> array;
+        for (const auto slot : slots)
+            array.add(slot);
+        obj->setProperty(key, juce::var(array));
+    };
 
-    // Mini mixer parameters
-    juce::Array<juce::var> miniMixerParamsArray;
-    for (auto index : device.miniMixerParameters) {
-        miniMixerParamsArray.add(index);
-    }
-    obj->setProperty("miniMixerParameters", juce::var(miniMixerParamsArray));
-
-    // AI sound-designer parameters
-    juce::Array<juce::var> aiSoundDesignerParamsArray;
-    for (auto index : device.aiSoundDesignerParameters) {
-        aiSoundDesignerParamsArray.add(index);
-    }
-    obj->setProperty("aiSoundDesignerParameters", juce::var(aiSoundDesignerParamsArray));
+    writeSlots("visibleParameterSlots", device.visibleParameters);
+    writeSlots("miniMixerParameterSlots", device.miniMixerParameters);
+    writeSlots("aiSoundDesignerParameterSlots", device.aiSoundDesignerParameters);
     obj->setProperty("aiSoundDesignerPrompt", device.aiSoundDesignerPrompt);
 
     // Device volume
@@ -661,32 +697,7 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
 
     migrateUtilityWidthToPercent(outDevice);
 
-    // Visible parameters
-    auto visibleParamsVar = obj->getProperty("visibleParameters");
-    if (visibleParamsVar.isArray()) {
-        auto* arr = visibleParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.visibleParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
-
-    // Mini mixer parameters
-    auto miniMixerParamsVar = obj->getProperty("miniMixerParameters");
-    if (miniMixerParamsVar.isArray()) {
-        auto* arr = miniMixerParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.miniMixerParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
-
-    // AI sound-designer parameters
-    auto aiSoundDesignerParamsVar = obj->getProperty("aiSoundDesignerParameters");
-    if (aiSoundDesignerParamsVar.isArray()) {
-        auto* arr = aiSoundDesignerParamsVar.getArray();
-        for (const auto& indexVar : *arr) {
-            outDevice.aiSoundDesignerParameters.push_back(static_cast<int>(indexVar));
-        }
-    }
+    readParameterSelections(*obj, outDevice);
     outDevice.aiSoundDesignerPrompt = obj->getProperty("aiSoundDesignerPrompt").toString();
 
     // Device volume

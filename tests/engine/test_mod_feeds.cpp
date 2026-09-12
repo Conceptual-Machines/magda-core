@@ -394,13 +394,13 @@ TEST_CASE("A track's two taps never share a detector", "[engine][mod][feeds]") {
     magda::engine::PlanBindings bindings;
 
     magda::engine::PlanExecutor first;
-    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    first.prepare(plan, bindings, context, nullptr, &values);
     REQUIRE(first.distinctTriggerDetectors() == 2);
 
     // And still two after taking the previous epoch's over, which is where a
     // carry keyed by the track alone would collapse them onto one.
     magda::engine::PlanExecutor second;
-    second.prepare(plan, bindings, context, &first, values.params.get());
+    second.prepare(plan, bindings, context, &first, &values);
     CHECK(second.carriedTriggerDetectors() == 2);
     CHECK(second.distinctTriggerDetectors() == 2);
 }
@@ -425,11 +425,11 @@ TEST_CASE("A modulation tap keeps its detector across a prepare", "[engine][mod]
     magda::engine::PlanBindings bindings;
 
     magda::engine::PlanExecutor first;
-    first.prepare(plan, bindings, context, nullptr, values.params.get());
+    first.prepare(plan, bindings, context, nullptr, &values);
     CHECK(first.carriedTriggerDetectors() == 0);
 
     magda::engine::PlanExecutor second;
-    second.prepare(plan, bindings, context, &first, values.params.get());
+    second.prepare(plan, bindings, context, &first, &values);
     CHECK(second.carriedTriggerDetectors() == 1);
 }
 

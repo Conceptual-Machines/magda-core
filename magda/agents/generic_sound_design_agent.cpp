@@ -223,11 +223,15 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
                                                includedParameterIndices_.end());
         params.reserve(included.empty() ? device->parameters.size() : included.size());
         for (size_t i = 0; i < device->parameters.size(); ++i) {
-            if (!included.empty() && included.find(static_cast<int>(i)) == included.end())
-                continue;
             const auto& info = device->parameters[i];
+            const auto slot = info.paramIndex >= 0 ? info.paramIndex : static_cast<int>(i);
+
+            // The opt-in names slots (#2638).
+            if (!included.empty() && !included.contains(slot))
+                continue;
+
             ParamSnapshot snap;
-            snap.index = info.paramIndex >= 0 ? info.paramIndex : static_cast<int>(i);
+            snap.index = slot;
             snap.name = info.name;
             snap.normalized = normalizeParamName(info.name);
             snap.unit = info.unit;

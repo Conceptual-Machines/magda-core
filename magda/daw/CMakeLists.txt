@@ -276,12 +276,16 @@ add_library(magda_types STATIC
     # the engine links a leaf instead of the whole DAW.
     core/ClipOcclusion.cpp
     core/ClipFades.cpp
+    # Which of a device's parameters something addresses (#2630). Model-only,
+    # so the table compiler and the save path ask the same question.
+    core/AddressedParameters.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
     core/ClipInfo.hpp
     core/ClipOcclusion.hpp
     core/ClipFades.hpp
     core/TechnicalText.hpp
+    core/AddressedParameters.hpp
     core/ChainNodePath.hpp
     core/ControlTarget.hpp
     core/ParameterInfo.hpp

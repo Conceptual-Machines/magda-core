@@ -192,10 +192,28 @@ class PlanExecutor {
      * which is why the session holds its own handle on the rendering epoch
      * rather than reaching for whatever is currently published.
      */
+    /// @p values is what the plan will render with. The parameter table inside
+    /// it sizes the per-op windows, and the op values say which inputs the
+    /// model is asking to hear, which is what makes an unbound one worth
+    /// reporting (#2612). Null where a caller has neither.
     std::vector<std::string> prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                      const RenderContext& context,
                                      const PlanExecutor* previous = nullptr,
-                                     const ParamTable* params = nullptr);
+                                     const PlanValues* values = nullptr);
+
+    /**
+     * @brief What @p values make audible with nothing bound to it.
+     *
+     * An input op is compiled whether or not the track is monitoring, so an
+     * unbound one is only worth reporting once the model asks to hear it --
+     * and that can arrive as values, long after the prepare that bound
+     * nothing (#2612). So the session asks again for every set it publishes.
+     *
+     * Each op is reported once per prepared plan: the switch is flipped once,
+     * while values arrive for every fader move. On the publishing thread,
+     * like prepare; the audio thread reads none of this.
+     */
+    std::vector<std::string> reportUnboundInputs(const PlanValues* values);
 
     /**
      * @brief Publish the panics this plan owes devices it rerouted (#2418).
@@ -556,6 +574,10 @@ class PlanExecutor {
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
 
     const RenderPlan* plan_ = nullptr;
+
+    /// The unbound inputs reportUnboundInputs has already answered for, so a
+    /// fader move does not say it again. Publishing thread only.
+    std::set<OpId> reportedUnboundInputs_;
     RenderContext context_;
 
     /// The arena. Ports share these where no schedule can want both at
@@ -742,6 +764,16 @@ class PlanExecutor {
     /// two entry points runs first, and idempotent, since beginBlock is
     /// const and the prefix needs the answer before the resolve does.
     void settleBlockTable(const PlanValues& values);
+
+    /// What the device behind @p window reads this block: one (slot, value)
+    /// pair per parameter the table carries for it.
+    DeviceParams deviceParams(const ParamTable::DeviceWindow& window) const {
+        if (blockTable_ == nullptr)
+            return {};
+
+        return paramValues_.device(window.first, window.count, blockTable_->slotsIn(window),
+                                   blockTable_->drivenIn(window));
+    }
 
     /// Read one modulation tap: hand the source's level to the followers
     /// listening to it, and its rises and falls to the triggered ones.

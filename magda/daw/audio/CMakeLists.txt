@@ -466,6 +466,8 @@ target_sources(magda_daw PRIVATE
     AudioBridge.cpp
     DeviceParameterDisplayTextProvider.cpp
     DeviceParameterDisplayTextProvider.hpp
+    DeviceParameterList.cpp
+    DeviceParameterList.hpp
     ClipCommands.cpp
     FourOscMigration.cpp
     FourOscTranslation.cpp

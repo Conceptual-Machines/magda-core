@@ -357,12 +357,16 @@ int EngineExternalDevice::latencySamples() const {
 }
 
 void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& params) {
-    for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
-        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
-        const auto values = params[slot];
+    // The entries the table carries, not every slot the plugin has (#2629).
+    for (int entry = 0; entry < params.size(); ++entry) {
+        const auto slot = params.slotAt(entry);
+        if (!mapsSlot(slot))
+            continue;
 
-        // A slot nothing resolved: the plugin keeps its own state, which for
-        // the wrapper pair is fully wet.
+        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        const auto values = params.valuesAt(entry);
+
+        // Nothing resolved it, so the plugin keeps what its own state put there.
         if (values.empty())
             continue;
 
@@ -618,6 +622,10 @@ std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState(
 
 magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInfo& saved) {
     return magda::applySavedPluginState(*instance_, saved);
+}
+
+magda::HostParameters EngineExternalDevice::describeParameters() const {
+    return magda::describeHostParameters(*instance_, magda::DeviceInfo{});
 }
 
 juce::String EngineExternalDevice::parameterText(int slot, float normalised) const {

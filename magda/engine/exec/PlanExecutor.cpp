@@ -271,6 +271,7 @@ int PlanExecutor::activeCrossfades() const {
 void PlanExecutor::reset() {
     plan_ = nullptr;
     planFingerprint_ = 0;
+    reportedUnboundInputs_.clear();
     latencySamples_ = 0;
     carriedDelayLines_ = 0;
     carriedCrossfades_ = 0;
@@ -309,11 +310,38 @@ void PlanExecutor::reset() {
     paramLayout_ = 0;
 }
 
+namespace {
+
+/// Whether @p trackId is listening to its live audio input, which is the value
+/// on the gate the input reaches its chain through (#2612). True where the
+/// caller published no values, and where the plan has no gate: an input nobody
+/// can silence is one the track hears.
+bool hearsLiveInput(const RenderPlan& plan, const PlanValues* values, TrackId trackId) {
+    if (values == nullptr)
+        return true;
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i) {
+        const auto& key = plan.ops[i].key;
+        if (key.role == OpRole::LiveInputGate && key.trackId == trackId)
+            return i < values->ops.size() ? !values->ops[i].silent : true;
+    }
+    return true;
+}
+
+std::string describeOp(const RenderPlan& plan, std::size_t index) {
+    return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
+           toString(plan.ops[index].key) + "): ";
+}
+
+}  // namespace
+
 std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const PlanBindings& bindings,
                                                const RenderContext& context,
                                                const PlanExecutor* previous,
-                                               const ParamTable* params) {
+                                               const PlanValues* values) {
     reset();
+
+    const auto* params = values == nullptr ? nullptr : values->params.get();
 
     std::vector<std::string> messages;
 
@@ -457,17 +485,11 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                        op.padLevelParam >= 0) {
                 // The exception to the line above: a Drum Grid's pad level and
                 // pan are real parameters of the device that owns the pad, so a
-                // lane over them has to reach this fader. Read through the
-                // owner's window, which is indexed by the device's own
-                // parameter index.
-                const auto window = params->windowFor(op.key.deviceKey());
-                const auto slot = [&](int index) {
-                    return index >= 0 && index < window.count
-                               ? static_cast<ParamId>(window.first + index)
-                               : INVALID_PARAM_ID;
-                };
-                mixerParamForOp_[i].gain = slot(op.padLevelParam);
-                mixerParamForOp_[i].pan = slot(op.padPanParam);
+                // lane over them has to reach this fader. Asked by slot, since
+                // the owner's window carries only the parameters it declared.
+                mixerParamForOp_[i].gain =
+                    params->deviceParam(op.key.deviceKey(), op.padLevelParam);
+                mixerParamForOp_[i].pan = params->deviceParam(op.key.deviceKey(), op.padPanParam);
             } else if (op.kind == OpKind::SendTap) {
                 key.kind = ParamKey::Kind::SendLevel;
                 key.index = op.key.index;
@@ -543,10 +565,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     detectMono_.assign(static_cast<std::size_t>(std::max(context.maxBlockSize, 0)), 0.0f);
 
-    const auto describe = [&plan](std::size_t index) {
-        return "op " + std::to_string(index) + " (" + toString(plan.ops[index].kind) + " " +
-               toString(plan.ops[index].key) + "): ";
-    };
+    const auto describe = [&plan](std::size_t index) { return describeOp(plan, index); };
 
     const auto findAudioSource = [](const auto& map, TrackId trackId) -> EngineAudioSource* {
         const auto found = map.find(trackId);
@@ -569,11 +588,13 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders silence");
                 break;
 
+            // Not reported here: an input op is compiled whether or not the
+            // track is monitoring, so what makes an unbound one worth saying is
+            // the values, and those arrive again without a prepare (#2612).
+            // reportUnboundInputs below answers for the values this plan is
+            // published with, and publishValues asks again for every set after.
             case OpKind::AudioInput:
                 audioSourceForOp_[i] = findAudioSource(bindings.audioInputs, trackId);
-                if (audioSourceForOp_[i] == nullptr)
-                    messages.push_back(describe(i) + "no live audio input bound for track " +
-                                       std::to_string(trackId) + ", it renders silence");
                 break;
 
             // Reported only by a host that has a launcher at all, which is what
@@ -990,6 +1011,30 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
     planFingerprint_ = magda::engine::planFingerprint(plan);
     plan_ = &plan;
+
+    for (auto& report : reportUnboundInputs(values))
+        messages.push_back(std::move(report));
+
+    return messages;
+}
+
+std::vector<std::string> PlanExecutor::reportUnboundInputs(const PlanValues* values) {
+    std::vector<std::string> messages;
+    if (plan_ == nullptr)
+        return messages;
+
+    for (std::size_t i = 0; i < plan_->ops.size(); ++i) {
+        const auto& op = plan_->ops[i];
+        if (op.kind != OpKind::AudioInput || audioSourceForOp_[i] != nullptr)
+            continue;
+        if (!hearsLiveInput(*plan_, values, op.key.trackId))
+            continue;
+        if (!reportedUnboundInputs_.insert(static_cast<OpId>(i)).second)
+            continue;
+
+        messages.push_back(describeOp(*plan_, i) + "no live audio input bound for track " +
+                           std::to_string(op.key.trackId) + ", it renders silence");
+    }
     return messages;
 }
 
@@ -1655,7 +1700,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                                         !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
                                     .midiOut = deviceMidiOut,
                                     .sidechain = {},
-                                    .params = paramValues_.device(window.first, window.count),
+                                    .params = deviceParams(window),
                                     .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);

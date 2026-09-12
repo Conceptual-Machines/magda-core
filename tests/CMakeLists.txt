@@ -344,6 +344,8 @@ set(TEST_SOURCES
     audio/test_demucs_chunking.cpp
     audio/test_demucs_separator.cpp
     audio/test_spleeter_separator.cpp
+    core/test_addressed_parameters.cpp
+    core/test_device_parameter_list.cpp
     core/test_device_info_predicates.cpp
     core/test_four_osc_translation.cpp
     core/test_ranges_helpers.cpp
@@ -380,6 +382,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES PlanEditHarness.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_edit_properties.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_session.cpp)
+    list(APPEND TEST_SOURCES engine/test_live_midi_collector.cpp)
     list(APPEND TEST_SOURCES engine/test_live_midi_routing.cpp)
     # The parameter lane (#2116). The lanes are fed by hand, so the precedence
     # rules are testable before anything writes them.

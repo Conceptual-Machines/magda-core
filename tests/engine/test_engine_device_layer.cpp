@@ -375,7 +375,9 @@ TEST_CASE("the plan's resolved values reach the device's parameters", "[engine][
 
     Block block(context);
     auto deviceBlock = block.deviceBlock();
-    deviceBlock.params = table.device(0, 1);
+    const std::vector<int> slots{0};
+    const std::vector<std::uint8_t> driven{0};
+    deviceBlock.params = table.device(0, 1, slots, driven);
     device->process(deviceBlock);
 
     CHECK(hosted->device().parameterValue(0) == Catch::Approx(position).margin(1.0e-5));
