@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
 
+#include "magda/daw/api/device_api_live.hpp"
 #include "magda/daw/audio/processors/base/DeviceProcessor.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
@@ -133,7 +134,8 @@ TEST_CASE("parameter config save and load round-trip", "[param-config-store]") {
     REQUIRE(*loaded->entries[2].choices == std::vector<juce::String>{"LP", "BP", "HP"});
 }
 
-TEST_CASE("fromDevice describes every parameter with everything off", "[param-config-store]") {
+TEST_CASE("fromDevice describes every parameter, unselected device ticks nothing",
+          "[param-config-store]") {
     const auto device = makeExternalDevice();
     const auto config = store::fromDevice(device);
 
@@ -146,6 +148,26 @@ TEST_CASE("fromDevice describes every parameter with everything off", "[param-co
         REQUIRE_FALSE(config.entries[i].miniMixer);
         REQUIRE_FALSE(config.entries[i].aiAgent);
     }
+}
+
+TEST_CASE("fromDevice takes the flags off the device's own selections", "[param-config-store]") {
+    auto device = makeExternalDevice();
+    device.visibleParameters = {0, 2};
+    device.miniMixerParameters = {1};
+    device.aiSoundDesignerParameters = {0};
+    device.aiSoundDesignerPrompt = "Warm analog pads";
+
+    const auto config = store::fromDevice(device);
+
+    REQUIRE(config.aiPrompt == "Warm analog pads");
+    REQUIRE(config.entries[0].visible);
+    REQUIRE_FALSE(config.entries[1].visible);
+    REQUIRE(config.entries[2].visible);
+    REQUIRE_FALSE(config.entries[0].miniMixer);
+    REQUIRE(config.entries[1].miniMixer);
+    REQUIRE(config.entries[0].aiAgent);
+    REQUIRE_FALSE(config.entries[1].aiAgent);
+    REQUIRE_FALSE(config.entries[2].aiAgent);
 }
 
 TEST_CASE("applyToDevice rebuilds selections and applies overrides", "[param-config-store]") {
@@ -452,6 +474,47 @@ TEST_CASE("A saved config reaches a device on a Drum Grid pad", "[param-config-s
 
     CHECK(onPad->parameters[0].unit == "kHz");
     CHECK(onPad->visibleParameters == std::vector<int>{0});
+
+    tm.clearAllTracks();
+}
+
+TEST_CASE("A partial config update keeps the selections of a device with no config file",
+          "[param-config-store][2620]") {
+    // devices.setParameterConfig with a prompt and nothing else: it starts
+    // from fromDevice, and there is no file to overlay.
+    TempDataDir temp;
+    auto& tm = magda::TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+    auto device = makeExternalDevice();
+    device.visibleParameters = {0, 1};
+    device.miniMixerParameters = {2};
+    device.aiSoundDesignerParameters = {0};
+    const auto deviceId = tm.addDeviceToTrack(trackId, device);
+    const auto path = tm.findDevicePath(deviceId);
+
+    magda::DeviceApiLive devices;
+    magda::DeviceParameterConfigUpdate update;
+    update.aiPrompt = "Warm analog pads";
+    REQUIRE(devices.setDeviceParameterConfig(path, update));
+
+    const auto saved = store::load(device.uniqueId);
+    REQUIRE(saved.has_value());
+    CHECK(saved->aiPrompt == "Warm analog pads");
+    CHECK(saved->entries[0].visible);
+    CHECK(saved->entries[1].visible);
+    CHECK(saved->entries[2].miniMixer);
+    CHECK(saved->entries[0].aiAgent);
+
+    // And the config that reaches the live device leaves it as it was.
+    const auto* track = tm.getTrack(trackId);
+    REQUIRE(track != nullptr);
+    REQUIRE(track->chain.fxChainElements.size() == 1);
+    const auto& live = magda::getDevice(track->chain.fxChainElements[0]);
+    CHECK(live.visibleParameters == std::vector<int>{0, 1});
+    CHECK(live.miniMixerParameters == std::vector<int>{2});
+    CHECK(live.aiSoundDesignerParameters == std::vector<int>{0});
 
     tm.clearAllTracks();
 }

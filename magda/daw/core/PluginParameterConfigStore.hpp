@@ -95,8 +95,9 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId);
 
 bool save(const juce::String& uniqueId, const PluginParameterConfig& config);
 
-/// A fresh, everything-off config describing `device`'s parameters — the
-/// starting point when a plugin has never been configured.
+/// A config describing `device` as it stands: its parameters, its visible /
+/// mini-mixer / AI selections and its prompt. The starting point when a plugin
+/// has no config file yet.
 PluginParameterConfig fromDevice(const DeviceInfo& device);
 
 /// Load `uniqueId`'s config onto `device`: rebuilds the visible / mini-mixer /

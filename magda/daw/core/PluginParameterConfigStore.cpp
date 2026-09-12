@@ -47,6 +47,34 @@ bool refreshFlatParameterConfig(const juce::String& uniqueId,
     return changed;
 }
 
+/// The entry describing `device`'s parameter at `index` as it stands now.
+PluginParameterConfigEntry entryFor(const DeviceInfo& device, size_t index) {
+    const auto& info = device.parameters[index];
+    const auto selected = [index](const std::vector<int>& indices) {
+        return std::find(indices.begin(), indices.end(), static_cast<int>(index)) != indices.end();
+    };
+
+    PluginParameterConfigEntry entry;
+    entry.index = static_cast<int>(index);
+    entry.id = info.stableId;
+    entry.name = info.name;
+    // Off the device, like the prompt: a caller with no saved file to overlay
+    // then starts from the truth (#2620).
+    entry.visible = selected(device.visibleParameters);
+    entry.miniMixer = selected(device.miniMixerParameters);
+    entry.aiAgent = selected(device.aiSoundDesignerParameters);
+    entry.unit = info.unit;
+    entry.scale = info.scale;
+    entry.rangeMin = info.minValue;
+    entry.rangeMax = info.maxValue;
+    entry.rangeCenter = (info.minValue + info.maxValue) * 0.5f;
+    if (!info.choices.empty())
+        entry.choices = info.choices;
+    if (!info.valueTable.empty())
+        entry.valueTable = info.valueTable;
+    return entry;
+}
+
 }  // namespace
 
 juce::String scaleToString(ParameterScale scale) {
@@ -237,23 +265,8 @@ PluginParameterConfig fromDevice(const DeviceInfo& device) {
     config.pluginId = configIdFor(device);
     config.aiPrompt = device.aiSoundDesignerPrompt;
     config.entries.reserve(device.parameters.size());
-    for (size_t i = 0; i < device.parameters.size(); ++i) {
-        const auto& info = device.parameters[i];
-        PluginParameterConfigEntry entry;
-        entry.index = static_cast<int>(i);
-        entry.id = info.stableId;
-        entry.name = info.name;
-        entry.unit = info.unit;
-        entry.scale = info.scale;
-        entry.rangeMin = info.minValue;
-        entry.rangeMax = info.maxValue;
-        entry.rangeCenter = (info.minValue + info.maxValue) * 0.5f;
-        if (!info.choices.empty())
-            entry.choices = info.choices;
-        if (!info.valueTable.empty())
-            entry.valueTable = info.valueTable;
-        config.entries.push_back(std::move(entry));
-    }
+    for (size_t i = 0; i < device.parameters.size(); ++i)
+        config.entries.push_back(entryFor(device, i));
     return config;
 }
 
