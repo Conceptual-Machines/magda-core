@@ -48,8 +48,8 @@ class LiveMidiRouting {
     /**
      * @brief The device sources @p track names.
      *
-     * Empty for a track that is not monitoring and for a "track:" route, which
-     * the plan carries as an edge.
+     * Empty for a track that is not monitoring, and for a field that names no
+     * MIDI device.
      */
     std::vector<engine::LiveMidiSourceId> devicesFor(const TrackInfo& track);
 

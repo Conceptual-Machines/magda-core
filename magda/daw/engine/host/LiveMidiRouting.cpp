@@ -38,11 +38,11 @@ std::shared_ptr<const engine::LiveRouting> LiveMidiRouting::resolve(
 }
 
 std::vector<engine::LiveMidiSourceId> LiveMidiRouting::devicesFor(const TrackInfo& track) {
-    // A "track:" route is an edge in the plan, not a device.
+    // "track:<id>" names a track, not a MIDI device.
     if (!track.monitorsInput() || track.midiInputDevice.startsWith("track:"))
         return {};
 
-    // An empty field is the selector's None, not every input.
+    // An empty field means no device.
     if (track.midiInputDevice.isEmpty())
         return {};
 
