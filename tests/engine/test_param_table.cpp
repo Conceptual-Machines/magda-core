@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -144,6 +145,28 @@ bool mentions(const ParamTable& table, const std::string& fragment) {
 }
 
 }  // namespace
+
+TEST_CASE("A hosted plugin's stored value is seeded as its normalised position",
+          "[engine][param][table][2623]") {
+    auto device = makeDevice(7, 0);
+    device.format = magda::PluginFormat::VST3;
+
+    // A configured parameter: the model holds the normalised value and the
+    // range is what it displays through. Serum 2's detected Main Vol starts at
+    // minus infinity, which no read through the range survives.
+    ParameterInfo info(2, "Main Vol", "dB", -std::numeric_limits<float>::infinity(), 3.0f, 0.0f);
+    info.currentValue = 0.75f;
+    device.parameters.push_back(info);
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(device));
+
+    const auto table = tableFor({track});
+    const auto values = resolved(table);
+    const auto params = deviceWindow(table, values, 7);
+    REQUIRE(params.size() == 1);
+    CHECK(params[2].position() == approx(0.75f));
+}
 
 TEST_CASE("A device's parameters are a window indexed from zero", "[engine][param][table]") {
     auto track = makeTrack(1);

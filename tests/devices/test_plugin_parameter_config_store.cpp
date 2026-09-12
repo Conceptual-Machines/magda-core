@@ -2,6 +2,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
+#include <limits>
 
 #include "magda/daw/api/device_api_live.hpp"
 #include "magda/daw/audio/processors/base/DeviceProcessor.hpp"
@@ -98,6 +99,31 @@ class StubProcessor : public magda::DeviceProcessor {
 };
 
 }  // namespace
+
+TEST_CASE("A non-finite detected range is dropped on load", "[param-config-store][2623]") {
+    TempDataDir temp;
+    auto device = makeExternalDevice();
+
+    // A dB range detected from a plugin whose floor reads as minus infinity.
+    auto config = store::fromDevice(device);
+    config.entries[0].visible = true;
+    config.entries[0].rangeMin = -std::numeric_limits<float>::infinity();
+    config.entries[0].rangeMax = 3.0f;
+    config.entries[0].rangeCenter = -std::numeric_limits<float>::infinity();
+    REQUIRE(store::save(device.uniqueId, config));
+
+    const auto loaded = store::load(device.uniqueId);
+    REQUIRE(loaded.has_value());
+    CHECK_FALSE(loaded->entries[0].rangeMin.has_value());
+    CHECK_FALSE(loaded->entries[0].rangeCenter.has_value());
+    REQUIRE(loaded->entries[0].rangeMax.has_value());
+    CHECK(*loaded->entries[0].rangeMax == 3.0f);
+
+    // The plugin's own floor stands.
+    REQUIRE(store::applyToDevice(device.uniqueId, device));
+    CHECK(device.parameters[0].minValue == 20.0f);
+    CHECK(device.parameters[0].maxValue == 3.0f);
+}
 
 TEST_CASE("parameter config save and load round-trip", "[param-config-store]") {
     TempDataDir temp;
