@@ -87,8 +87,7 @@ TEST_CASE("A device nothing touches addresses nothing", "[core][parameters][addr
 TEST_CASE("An automation lane addresses its parameter", "[core][parameters][addressed]") {
     const auto project = oneDevice(makeDevice(7));
 
-    // A lane the model is not playing still holds the value the user drew
-    // against, so its slot is mirrored like any other.
+    // A lane that is not playing still holds the value the user drew against.
     const auto state =
         GENERATE(AutomationAuthorityState::Reading, AutomationAuthorityState::Disabled,
                  AutomationAuthorityState::Writing);
@@ -169,18 +168,15 @@ TEST_CASE("A place in the device UI addresses a parameter", "[core][parameters][
 }
 
 TEST_CASE("A UI list holds array positions, not slots", "[core][parameters][addressed]") {
-    // A hosted plugin's own parameters start at slot 2: the wrapper pair holds
-    // 0 and 1 and lives in its own array (ExternalPluginState.hpp). The config
-    // dialog writes positions in DeviceInfo::parameters, so position 0 is the
-    // plugin's first automatable parameter and the slot it addresses is 2.
+    // A hosted plugin's own parameters start at slot 2, past the wrapper pair,
+    // so position 0 in the array addresses slot 2.
     auto device = makeDevice(7, 0);
     for (int slot = 2; slot < 6; ++slot)
         device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
 
     device.visibleParameters = {0, 3};
 
-    // Past the end of the array: a stale config, which addresses nothing rather
-    // than a slot that is not there.
+    // Past the end of the array: a stale config addresses nothing.
     device.miniMixerParameters = {9};
 
     const auto project = oneDevice(std::move(device));
@@ -192,8 +188,7 @@ TEST_CASE("A UI list holds array positions, not slots", "[core][parameters][addr
 }
 
 TEST_CASE("An empty visible list addresses nothing", "[core][parameters][addressed]") {
-    // The UI reads "show what the device has" off the instance (#2634). Taking
-    // it as addressing every slot would mirror the whole array again for any
+    // Taking it as addressing every slot would mirror the whole array for any
     // plugin the user has not configured, which is every plugin by default.
     const auto project = oneDevice(makeDevice(7));
     const auto addressed = addressedIn({project.track});

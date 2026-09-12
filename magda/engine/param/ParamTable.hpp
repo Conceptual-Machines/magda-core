@@ -178,8 +178,8 @@ struct ParamTable {
     /// covers it.
     std::vector<float> base;
 
-    /// The device parameter index each entry carries, or -1. A window is read
-    /// through these: an entry's position is not the slot it stands for (#2629).
+    /// The device parameter index each entry carries, or -1. An entry's
+    /// position is not the slot it stands for (#2629).
     std::vector<int> slots;
 
     /// Whether a lane, macro or modifier writes the parameter over its stored

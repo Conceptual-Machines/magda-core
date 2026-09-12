@@ -505,17 +505,13 @@ void Builder::allocateDevice(const Node& node) {
     if (declared.empty())
         return;
 
-    // A mistake for a device MAGDA ships and the normal shape of one it hosts:
-    // a hosted plugin's array is a filtered view of the instance's, and a
-    // project saved before the wet/dry pair was persisted starts at index two
-    // (#2175).
+    // Internal devices only: a hosted plugin's array skips its non-automatable
+    // parameters, so gaps in it are normal (#2175).
     const auto count = static_cast<int>(declared.size());
     if (const auto gaps = declared.rbegin()->first + 1 - count;
         gaps > 0 && device.format == magda::PluginFormat::Internal)
         diagnose(toString(scope) + ": parameter indices are not contiguous, so " +
-                 std::to_string(gaps) +
-                 " index(es) below the highest declared stand for no parameter and nothing can "
-                 "address them");
+                 std::to_string(gaps) + " index(es) below the highest stand for no parameter");
 
     table_.deviceWindows.emplace(scope.device, ParamTable::DeviceWindow{first, count});
 }

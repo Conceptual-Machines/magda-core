@@ -27,12 +27,11 @@ struct AddressingSources {
     std::span<const TrackInfo> tracks;
     const TrackInfo* master = nullptr;
 
-    /// Every lane the project holds, playing or not: one that is not playing
-    /// still holds the value the user drew against.
+    /// Every lane the project holds, playing or not.
     std::span<const AutomationLaneInfo> lanes;
 
-    /// Controller bindings, MIDI learn and the AI's aliases, resolved to
-    /// targets by the registries that own them.
+    /// Controller bindings, MIDI learn and the AI's aliases, already resolved
+    /// to targets by the registries that own them.
     std::span<const ControlTarget> bound;
 };
 

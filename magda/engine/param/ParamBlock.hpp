@@ -143,9 +143,8 @@ class ParamValues {
 /**
  * @brief The parameters of one device, as (slot, value) pairs.
  *
- * One entry per parameter of this device the table carries, ascending by slot.
- * An entry's position is not the slot it stands for (#2629): walk the entries
- * for what the table has, ask by slot for one parameter.
+ * One entry per parameter the table carries, ascending by slot. An entry's
+ * position is not the slot it stands for (#2629).
  */
 class DeviceParams {
   public:
