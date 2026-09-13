@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -106,6 +107,10 @@ struct HostParameters {
  * number, no chunk carries it, and the model is the only place it lives.
  */
 HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
+                                      const DeviceInfo& device);
+
+/** @brief @overload Over an @p order the caller already holds, null wrapper slots included. */
+HostParameters describeHostParameters(std::span<juce::AudioProcessorParameter* const> order,
                                       const DeviceInfo& device);
 
 /** One parameter's live value, addressed the way a project addresses it. */

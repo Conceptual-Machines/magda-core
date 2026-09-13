@@ -67,10 +67,18 @@ std::vector<int> entryPositions(const PluginParameterConfig& config,
 /// The config file for `uniqueId`, whether or not it exists yet.
 juce::File configFileFor(const juce::String& uniqueId);
 
-/// Nullopt when no config exists or it does not parse.
+/**
+ * @brief @p uniqueId's config. Nullopt when none exists or it does not parse.
+ *
+ * Parsed again only when the file's modification time or size moved, or this
+ * store wrote it. Any thread.
+ */
 std::optional<PluginParameterConfig> load(const juce::String& uniqueId);
 
 bool save(const juce::String& uniqueId, const PluginParameterConfig& config);
+
+/// Delete @p uniqueId's config. True when none is left.
+bool remove(const juce::String& uniqueId);
 
 /// A config describing `device` as it stands.
 PluginParameterConfig fromDevice(const DeviceInfo& device);
