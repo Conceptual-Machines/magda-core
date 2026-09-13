@@ -227,6 +227,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::AsyncUpdater,
                                 private juce::Timer,
                                 private TrackManagerListener,
+                                private AutomationManagerListener,
                                 private ClipManagerListener,
                                 private ProjectManagerListener {
     Impl()
@@ -360,6 +361,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         devices_ = &devices;
         TrackManager::getInstance().addListener(this);
+        AutomationManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
         ProjectManager::getInstance().addListener(this);
         devices_->addAudioCallback(this);
@@ -375,6 +377,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_->removeAudioCallback(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
+        AutomationManager::getInstance().removeListener(this);
         TrackManager::getInstance().removeListener(this);
         devices_ = nullptr;
 
@@ -558,6 +561,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void deviceModifiersChanged(TrackId) override {
         wantValues(Shape::MayHaveMoved);
     }
+    /// A macro's value is a base the table carries.
+    void macroValueChanged(TrackId, ChainScope, int, int, float) override {
+        wantValues(Shape::Unchanged);
+    }
+    /// Lanes are read where the table is compiled, and drawing one is what
+    /// makes its parameter one the table carries.
+    void automationLanesChanged() override {
+        wantValues(Shape::MayHaveMoved);
+    }
+    void automationLanePropertyChanged(AutomationLaneId) override {
+        wantValues(Shape::MayHaveMoved);
+    }
+    void automationPointsChanged(AutomationLaneId) override {
+        wantValues(Shape::Unchanged);
+    }
+    void automationClipsChanged(AutomationLaneId) override {
+        wantValues(Shape::Unchanged);
+    }
+
     void clipsChanged() override {
         wantClips();
     }
@@ -566,16 +588,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void wantPlan() {
+        requests_.fetch_add(1, std::memory_order_relaxed);
         plan_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
     void wantValues(Shape shape) {
+        requests_.fetch_add(1, std::memory_order_relaxed);
         if (shape == Shape::MayHaveMoved)
             shape_.store(true, std::memory_order_relaxed);
 
         values_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
+    std::uint64_t publishRequests() const {
+        return requests_.load(std::memory_order_relaxed);
+    }
+
     void wantClips() {
         clips_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
@@ -1125,6 +1153,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<double> rate_{0.0};
     std::atomic<int> blockSize_{0};
     std::atomic<int> inputChannels_{0};
+    /// Every ask to republish, whether or not one followed.
+    std::atomic<std::uint64_t> requests_{0};
+
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
 
@@ -1163,6 +1194,10 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
 
 void EngineHost::meterInto(MeterSink sink) {
     impl_->meters_ = std::move(sink);
+}
+
+std::uint64_t EngineHost::publishRequests() const {
+    return impl_->publishRequests();
 }
 
 void EngineHost::stop() {
