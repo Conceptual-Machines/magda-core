@@ -665,7 +665,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         observed_[key][observation.slot] = observation.normalised;
-        tracks.notifyDeviceParameterObserved(path, observation.slot, observation.normalised);
+        tracks.notifyDeviceParameterObserved(path, observation.slot, observation.normalised,
+                                             observation.hostOwned);
 
         if (observation.hostOwned)
             return;

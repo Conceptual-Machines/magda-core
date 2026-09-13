@@ -79,9 +79,6 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
                      false);
         centreWithSize(getWidth(), getHeight());
         setVisible(true);
-
-        // Visible alone leaves it behind the main window, which had focus (#2645).
-        toFront(true);
     }
 
     /// The editor goes while the plugin is still there to be told.
@@ -643,21 +640,10 @@ bool EngineExternalDevice::showEditor() {
         return true;
     }
 
-    if (!instance_->hasEditor()) {
-        // #2645: a plugin answering this is the one silent exit on the path.
-        juce::Logger::writeToLog("[engine] editor: " + instance_->getName() +
-                                 " reports no editor of its own");
+    if (!instance_->hasEditor())
         return false;
-    }
 
     editor_ = std::make_unique<EditorWindow>(*instance_, [this] { hideEditor(); });
-
-    // #2645: a window built around an editor that has not sized itself yet is
-    // centred at nothing and never seen.
-    juce::Logger::writeToLog("[engine] editor: " + instance_->getName() + " opened at " +
-                             juce::String(editor_->getWidth()) + "x" +
-                             juce::String(editor_->getHeight()) + ", content " +
-                             (instance_->getActiveEditor() != nullptr ? "present" : "null"));
     return true;
 }
 
