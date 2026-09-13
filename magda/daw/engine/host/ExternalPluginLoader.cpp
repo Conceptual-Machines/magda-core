@@ -64,6 +64,13 @@ ExternalPluginLoader::~ExternalPluginLoader() {
 
 void ExternalPluginLoader::handleAsyncUpdate() {
     drainPluginEdits();
+
+    if (woken_)
+        woken_();
+}
+
+void ExternalPluginLoader::onWoken(std::function<void()> woken) {
+    woken_ = std::move(woken);
 }
 
 void ExternalPluginLoader::drainPluginEdits() {

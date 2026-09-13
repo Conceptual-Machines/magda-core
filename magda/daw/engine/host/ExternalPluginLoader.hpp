@@ -90,6 +90,10 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     /// plugin that has gone. What a wake runs; public for tests.
     void drainPluginEdits();
 
+    /// Called after each drain a wake ran, which is also how a device says it
+    /// applied edits (#2651). Message thread.
+    void onWoken(std::function<void()> woken);
+
     /**
      * @brief The instance for @p key, or nothing yet.
      *
@@ -159,6 +163,7 @@ class ExternalPluginLoader final : private juce::AsyncUpdater {
     audio::engine_adapter::CurrentDeviceLookup currentDevice_;
     Loaded loaded_;
     PluginEdit pluginEdit_;
+    std::function<void()> woken_;
 
     std::shared_ptr<Wake> wake_;
     std::map<engine::DeviceKey, EditSource> editSources_;

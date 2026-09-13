@@ -2,9 +2,13 @@
 
 #include <juce_core/juce_core.h>
 
+#include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <vector>
 
 #include "ControlExecutor.hpp"
 #include "PluginAssignments.hpp"
@@ -210,11 +214,15 @@ class DeviceControlPlane {
      * (docs/specs/hosted-plugin-parameter-control.md). Reaches the instance
      * through the endpoint, so a device with no render op still takes it.
      *
-     * Same contract as @ref captureState. Delivered says the adapter accepted
-     * the write, not that the plugin's DSP has consumed it.
+     * Same contract as @ref captureState, answered once the plugin has applied
+     * the edit at a block, or from the control side when nothing renders it.
+     * A later edit to the same slot applied first answers this one superseded.
+     *
+     * @return Accepted, or Busy when as many edits are outstanding as the plane
+     *         holds, or Closing; @p completed is called only for Accepted.
      */
-    virtual bool editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
-                               EditCallback completed) = 0;
+    virtual magda::EditStatus editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                                            EditCallback completed) = 0;
 
     /// What an editor request is answered with, on this plane's executor.
     using EditorCallback = std::function<void(EditorOutcome)>;
@@ -289,11 +297,78 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                     CaptureCallback completed) override;
     bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
                       EditorCallback completed) override;
-    bool editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
-                       EditCallback completed) override;
+    magda::EditStatus editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                                    EditCallback completed) override;
+
+    /// Answers whatever is still waiting, as not delivered.
+    ~LocalDeviceControlPlane() override;
+
+    /**
+     * @brief Complete the edits the devices have applied.
+     *
+     * For the host to call when a device has applied edits or stopped
+     * rendering. One run on the executor per burst, and none while nothing
+     * waits. Any thread.
+     */
+    void settleParameterEdits();
+
+    /// Edits submitted and not yet answered, past which a submission is Busy.
+    static constexpr int kMaxOutstandingEdits = 1024;
 
   private:
+    struct SubmittedEdit {
+        magda::engine::DeviceKey key;
+        ParameterEdit edit;
+        EditCallback completed;
+
+        /// Which pump takes it. A state operation closes the batch, so an edit
+        /// submitted after one is queued after it too.
+        std::uint64_t batch = 0;
+    };
+
+    struct WaitingEdit {
+        magda::engine::DeviceKey key;
+        int slot = -1;
+        std::uint32_t sequence = 0;
+        AssignmentRequest request;
+        EditCallback completed;
+
+        /// Set from the device's outcome record, answered on the same settle.
+        std::optional<bool> refused;
+    };
+
+    /// Shared with the work that outlives a call.
+    struct Waiting {
+        Waiting();
+
+        /// Any thread, under @ref submitLock. One pump job at most is queued
+        /// for them, and it takes the whole batch.
+        std::mutex submitLock;
+        std::vector<SubmittedEdit> submitted;
+        std::uint64_t openBatch = 0;
+        bool pumpQueued = false;
+
+        /// Executor only: the batch a pump took, and the edits waiting for a block.
+        std::vector<SubmittedEdit> taken;
+        std::vector<WaitingEdit> edits;
+
+        std::atomic<int> outstanding{0};
+        std::atomic<bool> settleQueued{false};
+    };
+
+    /// Queue batch @p batch of @p waiting's submitted edits into their devices. Executor.
+    static void pump(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
+                     std::uint64_t batch, bool closing);
+
+    /// Queue @p work behind every edit submitted before it, and ahead of every
+    /// edit submitted after.
+    bool runAtBatchBoundary(ControlExecutor::Work work);
+
+    static void settle(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
+                       bool closing);
+
     std::weak_ptr<const DeviceRegistry> devices_;
+    std::shared_ptr<Waiting> waiting_;
 };
 
 /**
