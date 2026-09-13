@@ -14,6 +14,8 @@ juce::String describeEditStatus(EditStatus status) {
             return "no plugin to deliver to";
         case EditStatus::Closing:
             return "the engine is closing";
+        case EditStatus::Busy:
+            return "too many edits are outstanding";
     }
 
     return "unknown";

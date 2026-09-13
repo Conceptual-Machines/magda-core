@@ -157,15 +157,61 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     PluginEditSource pluginEdits() const;
 
+    /// Where an accepted edit to a slot has got to (#2651).
+    enum class EditState {
+        Pending,
+        Applied,
+
+        /// A later edit to the slot was applied in its place.
+        Superseded,
+
+        /// The plugin's editor held the slot in a gesture when it came to apply.
+        Refused,
+    };
+
     /**
-     * @brief Write @p normalised into the plugin's slot @p slot now.
+     * @brief Accept @p normalised for slot @p slot, applied at the next block.
      *
-     * Straight to the instance rather than through the table, so a slot no
-     * plan carries still takes it. Control executor. False for the wrapper
-     * pair, a slot with no live parameter, a position outside [0, 1], and a
-     * slot the plugin's editor holds in a gesture.
+     * Into a mailbox of one entry per slot, so a burst keeps only its latest
+     * value. A device the host has not marked rendered is applied here, under
+     * the callback lock. Control executor. Absent for the wrapper pair, a slot
+     * with no live parameter, and a position outside [0, 1].
      */
-    bool writeParameter(int slot, float normalised);
+    std::optional<std::uint32_t> queueParameterEdit(int slot, float normalised);
+
+    /// Where the edit @p sequence to @p slot has got to. Any thread.
+    EditState parameterEditState(int slot, std::uint32_t sequence) const;
+
+    /**
+     * @brief Apply what the mailbox holds from the control side, under the callback lock.
+     *
+     * For a device no block reaches. A block arriving meanwhile passes through,
+     * as it does during a capture. Control executor.
+     */
+    void pumpParameterEdits();
+
+    /// Settle every queued edit as refused without applying it, for a state
+    /// about to replace the patch. Control executor.
+    void discardParameterEdits();
+
+    /// Whether a live plan renders this device and the audio device is running.
+    /// Set by the host; an unrendered device is pumped from the control side.
+    void setRendered(bool rendered);
+    bool isRendered() const;
+
+    /// Whether every accepted edit has been applied and processed. Any thread.
+    bool editsFenced() const;
+
+    /**
+     * @brief Make a capture carry every edit accepted before it.
+     *
+     * Applies what the mailbox holds and, if the plugin has not processed an
+     * applied edit, runs it over one silent block nobody hears: some formats
+     * hand a set value to their processor only on a process call. False when
+     * the plugin cannot be run, so the capture fails rather than saves stale
+     * state. Control executor.
+     */
+    bool fenceParameterEdits();
 
     /// What the live parameter at @p slot holds now. Absent for the wrapper
     /// pair and a slot with no live parameter.
@@ -185,6 +231,10 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     class PluginListener;
 
     void writeParameters(const magda::engine::DeviceParams& params);
+
+    /// Apply every slot the mailbox holds. Audio thread, or the control side
+    /// holding the callback lock. True if any was applied or refused.
+    bool applyParameterEdits();
 
     /// Whether @ref parameters_ has a row for @p slot.
     bool mapsSlot(int slot) const {
@@ -284,7 +334,31 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         std::function<void()> wake;
         std::atomic<bool> listening{false};
         std::atomic<bool> wakeQueued{false};
+
+        /// Once per burst until the next drain; nothing before listening. Any thread.
+        void wakeHost() {
+            if (listening.load(std::memory_order_acquire) &&
+                !wakeQueued.exchange(true, std::memory_order_acq_rel))
+                wake();
+        }
     };
+
+    /// Accepted one-off edits per slot: the value's bits and its sequence in one
+    /// word, so an apply never pairs one edit's value with another's sequence.
+    std::vector<std::atomic<std::uint64_t>> queuedEdits_;
+    std::vector<std::atomic<bool>> editQueued_;
+    std::atomic<bool> anyEditQueued_{false};
+
+    /// The last sequence per slot that an apply settled, and whether it was refused.
+    std::vector<std::atomic<std::uint64_t>> settledEdits_;
+
+    /// Control executor only.
+    std::uint32_t nextEditSequence_ = 0;
+
+    std::atomic<bool> rendered_{false};
+
+    /// An edit was applied and the plugin has not processed a block since.
+    std::atomic<bool> awaitingBlock_{false};
 
     /// What describeParameters() last read off the instance, values aside.
     mutable std::optional<magda::HostParameters> catalog_;

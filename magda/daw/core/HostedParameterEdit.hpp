@@ -21,7 +21,7 @@ enum class EditOrigin { Ui, Api, Controller, Undo };
 
 /// Whether an edit was taken, or why it was not.
 enum class EditStatus {
-    /// Taken, and delivered on the control executor after this returns.
+    /// Taken, and applied at the plugin's next block after this returns.
     Accepted,
 
     /// Not a finite normalised position. Refused rather than clamped.
@@ -35,13 +35,16 @@ enum class EditStatus {
 
     /// The engine is shutting down and accepted nothing.
     Closing,
+
+    /// As many edits are outstanding as the control plane holds (#2651).
+    Busy,
 };
 
 /**
  * @brief The immediate answer to an edit.
  *
- * Acceptance is not delivery: the value reaches the plugin on the control
- * executor, later.
+ * Acceptance is not delivery: the value reaches the plugin at its next block,
+ * or from the control executor when nothing renders it.
  */
 struct EditReceipt {
     EditStatus status = EditStatus::Unavailable;
@@ -63,6 +66,10 @@ struct EditReceipt {
  */
 struct EditCompletion {
     bool delivered = false;
+
+    /// A later edit to the same slot reached the plugin first, so this one never
+    /// did; its completion reads nothing, since the later one's will (#2651).
+    bool superseded = false;
 
     /// Absent when there was no parameter left to read.
     std::optional<float> observed;

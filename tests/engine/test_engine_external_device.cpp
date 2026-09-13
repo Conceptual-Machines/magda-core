@@ -2302,7 +2302,7 @@ TEST_CASE("A plugin re-flagging a parameter does not move the slots after it",
     CHECK(slot5->currentValue == Catch::Approx(0.8f));
 
     // What the slot is described as is what a write to it reaches.
-    REQUIRE(device.writeParameter(5, 0.5f));
+    REQUIRE(device.queueParameterEdit(5, 0.5f).has_value());
     CHECK(resonance->getValue() == Catch::Approx(0.5f));
     CHECK(cutoff->getValue() == Catch::Approx(0.2f));
 }
@@ -3361,6 +3361,158 @@ TEST_CASE("A capture through the control plane answers with what the plugin hold
 
     magda::applyCapturedPluginState(model, answered.snapshot());
     CHECK(model.parameters[1].currentValue == Catch::Approx(0.4f));
+}
+
+namespace {
+
+/// A plugin adapted into a device, prepared, with a plane over it and an
+/// assignment its edits are made against.
+struct EditRig {
+    EditRig() {
+        auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+        raw = plugin.get();
+
+        auto result = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+        external = ownedExternalDevice(result);
+        external->prepare(context);
+
+        assignments.ensureAssignment(key);
+    }
+
+    magda::engine::DeviceKey key{magda::ChainSegment::Fx, 7};
+    magda::DeviceInfo model = externalDevice();
+    magda::engine::RenderContext context = contextFor();
+    StubPlugin* raw = nullptr;
+    std::shared_ptr<adapter::EngineExternalDevice> external;
+    adapter::PluginAssignments assignments;
+    std::shared_ptr<const OneDeviceRegistry> registry;
+
+    adapter::LocalDeviceControlPlane& plane() {
+        registry = std::make_shared<const OneDeviceRegistry>(key, external);
+        plane_ = std::make_unique<adapter::LocalDeviceControlPlane>(
+            std::make_shared<adapter::SerialControlThread>(), registry);
+        return *plane_;
+    }
+
+    magda::EditStatus edit(int slot, float normalised,
+                           std::function<void(magda::EditCompletion)> completed) {
+        return plane_->editParameter(
+            key, {.slot = slot, .normalised = normalised, .request = assignments.request(key)},
+            std::move(completed));
+    }
+
+    /// Returns once every job queued on the plane before it has run.
+    void barrier() {
+        std::promise<void> reached;
+        REQUIRE(plane_->editorWindow(key, adapter::EditorAction::Query,
+                                     [&reached](adapter::EditorOutcome) { reached.set_value(); }));
+        reached.get_future().wait();
+    }
+
+    /// One block carrying only the wrapper pair, so no table value competes.
+    void render() {
+        ParamArena arena({0.0f, 1.0f});
+        Block block(context, 2);
+        auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+        external->process(deviceBlock);
+    }
+
+    std::unique_ptr<adapter::LocalDeviceControlPlane> plane_;
+};
+
+constexpr int kToneSlot = 3;
+
+}  // namespace
+
+TEST_CASE("An edit to a rendered device waits for its block", "[engine][external][control]") {
+    EditRig rig;
+    rig.external->setRendered(true);
+    auto& plane = rig.plane();
+
+    std::promise<magda::EditCompletion> edited;
+    REQUIRE(rig.edit(kToneSlot, 0.7f, [&edited](magda::EditCompletion done) {
+        edited.set_value(done);
+    }) == magda::EditStatus::Accepted);
+
+    rig.barrier();
+    auto answer = edited.get_future();
+    CHECK(answer.wait_for(std::chrono::milliseconds(0)) == std::future_status::timeout);
+    CHECK(rig.raw->tone->getValue() != Catch::Approx(0.7f));
+
+    rig.render();
+    CHECK(rig.raw->tone->getValue() == Catch::Approx(0.7f));
+
+    plane.settleParameterEdits();
+    const auto done = answer.get();
+    CHECK(done.delivered);
+    REQUIRE(done.observed.has_value());
+    CHECK(*done.observed == Catch::Approx(0.7f));
+}
+
+TEST_CASE("A capture runs the plugin over edits it has not processed",
+          "[engine][external][control]") {
+    EditRig rig;
+    rig.external->setRendered(true);
+    auto& plane = rig.plane();
+
+    std::promise<magda::EditCompletion> edited;
+    REQUIRE(rig.edit(kToneSlot, 0.8f, [&edited](magda::EditCompletion done) {
+        edited.set_value(done);
+    }) == magda::EditStatus::Accepted);
+
+    // Answered before any block, as a save that writes the file next needs.
+    rig.raw->samplesSeen = 0;
+    const auto answered = capture(plane, rig.key);
+    REQUIRE(answered.ok());
+    CHECK(rig.raw->samplesSeen == rig.context.maxBlockSize);
+
+    magda::applyCapturedPluginState(rig.model, answered.snapshot());
+    CHECK(rig.model.parameters[1].currentValue == Catch::Approx(0.8f));
+    CHECK(edited.get_future().get().delivered);
+}
+
+TEST_CASE("An edit to a device no block reaches is applied at once, and fenced by the capture",
+          "[engine][external][control]") {
+    EditRig rig;
+    auto& plane = rig.plane();
+
+    // Bypassed, or the audio device stopped: never marked rendered.
+    std::promise<magda::EditCompletion> edited;
+    REQUIRE(rig.edit(kToneSlot, 0.6f, [&edited](magda::EditCompletion done) {
+        edited.set_value(done);
+    }) == magda::EditStatus::Accepted);
+
+    CHECK(edited.get_future().get().delivered);
+    CHECK(rig.raw->tone->getValue() == Catch::Approx(0.6f));
+    CHECK_FALSE(rig.external->editsFenced());
+
+    rig.raw->samplesSeen = 0;
+    const auto answered = capture(plane, rig.key);
+    REQUIRE(answered.ok());
+    CHECK(rig.raw->samplesSeen == rig.context.maxBlockSize);
+    CHECK(rig.external->editsFenced());
+
+    magda::applyCapturedPluginState(rig.model, answered.snapshot());
+    CHECK(rig.model.parameters[1].currentValue == Catch::Approx(0.6f));
+}
+
+TEST_CASE("Edits past what the plane holds are refused as busy", "[engine][external][control]") {
+    std::atomic<int> answered{0};
+    {
+        EditRig rig;
+        rig.external->setRendered(true);
+        rig.plane();
+
+        const auto count = [&answered](magda::EditCompletion) { ++answered; };
+        for (int edit = 0; edit < adapter::LocalDeviceControlPlane::kMaxOutstandingEdits; ++edit)
+            REQUIRE(rig.edit(kToneSlot, 0.5f, count) == magda::EditStatus::Accepted);
+
+        // No block has run, so none of them has been answered to make room.
+        CHECK(rig.edit(kToneSlot, 0.5f, count) == magda::EditStatus::Busy);
+    }
+
+    // The plane going answers every one it accepted, and none it refused.
+    CHECK(answered == adapter::LocalDeviceControlPlane::kMaxOutstandingEdits);
 }
 
 TEST_CASE("A preset applied through the plane reaches the plugin", "[engine][external][control]") {

@@ -256,6 +256,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 observePluginParameter(key, observation);
             });
 
+        // A device that applied edits wakes the same drain (#2651).
+        loader_.onWoken([this] { plane_.settleParameterEdits(); });
+
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
         startTimer(kMeterIntervalMs);
@@ -444,6 +447,32 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
         forgetPluginDriverState();
+        markRenderedDevices();
+    }
+
+    /**
+     * @brief Tell each plugin whether a block will reach it (#2651).
+     *
+     * A bypassed device is not in the plan, and nothing is rendered while the
+     * audio device is stopped; the plane applies what those hold from the
+     * control side, so it is asked to settle after every change.
+     */
+    void markRenderedDevices() {
+        if (session_ == nullptr)
+            return;
+
+        std::set<engine::DeviceKey> planned;
+        if (livePlan_ != nullptr)
+            for (const auto& op : livePlan_->ops)
+                if (op.kind == engine::OpKind::Device)
+                    planned.insert(op.key.deviceKey());
+
+        const auto running = audioRunning_.load(std::memory_order_acquire);
+        for (const auto key : factory_.externalKeys())
+            if (auto* external = externalDeviceFor(key))
+                external->setRendered(running && planned.contains(key));
+
+        plane_.settleParameterEdits();
     }
 
     /// A mixer move: the same values against the plan already playing. It
@@ -657,6 +686,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (clips)
             publishClips();
+
+        if (renderedStale_.exchange(false, std::memory_order_acq_rel))
+            markRenderedDevices();
     }
 
     /**
@@ -823,6 +855,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         rate_.store(device->getCurrentSampleRate());
         blockSize_.store(device->getCurrentBufferSizeSamples());
         inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
+        audioRunning_.store(true, std::memory_order_release);
+        renderedStale_.store(true, std::memory_order_release);
         triggerAsyncUpdate();
 
         if (EngineTrace::enabled())
@@ -834,7 +868,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 " outputs");
     }
 
-    void audioDeviceStopped() override {}
+    /// Also called by removeAudioCallback, so a rebuild passes through here.
+    void audioDeviceStopped() override {
+        audioRunning_.store(false, std::memory_order_release);
+        renderedStale_.store(true, std::memory_order_release);
+        triggerAsyncUpdate();
+    }
 
     void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* output,
                                           int numOutputChannels, int numSamples,
@@ -1095,7 +1134,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const std::pair pendingKey{*key, paramIndex};
         ++(*pendingEdits_)[pendingKey];
 
-        const auto asked = plane_.editParameter(
+        const auto status = plane_.editParameter(
             *key, {.slot = paramIndex, .normalised = normalised, .request = request},
             [this, request, pending = pendingEdits_, pendingKey,
              completed = std::move(completed)](EditCompletion done) {
@@ -1112,12 +1151,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                     completed(done);
             });
 
-        if (!asked) {
+        if (status != EditStatus::Accepted)
             settlePendingEdit(*pendingEdits_, pendingKey);
-            return {.status = EditStatus::Closing, .requested = normalised};
-        }
 
-        return {.status = EditStatus::Accepted, .requested = normalised};
+        return {.status = status, .requested = normalised};
     }
 
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
@@ -1281,6 +1318,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::uint64_t generation_ = 0;
 
     std::atomic<double> rate_{0.0};
+
+    /// Whether the device is calling back, and whether the plugins have been told since it changed.
+    std::atomic<bool> audioRunning_{false};
+    std::atomic<bool> renderedStale_{false};
     std::atomic<int> blockSize_{0};
     std::atomic<int> inputChannels_{0};
     /// Every ask to republish, whether or not one followed.

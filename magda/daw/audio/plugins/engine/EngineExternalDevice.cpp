@@ -138,11 +138,7 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
         edits.dirty[at].store(true, std::memory_order_release);
 
         // Before listening, what is recorded waits for the wake that listening sends.
-        if (!edits.listening.load(std::memory_order_acquire))
-            return;
-
-        if (!edits.wakeQueued.exchange(true, std::memory_order_acq_rel))
-            edits.wake();
+        edits.wakeHost();
     }
 
     void audioProcessorParameterChangeGestureBegin(juce::AudioProcessor*,
@@ -304,6 +300,9 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
             slotOfParameter_[static_cast<std::size_t>(parameter->getParameterIndex())] = slot;
 
     edits_ = std::make_shared<PluginEdits>(parameters_.size());
+    queuedEdits_ = std::vector<std::atomic<std::uint64_t>>(parameters_.size());
+    editQueued_ = std::vector<std::atomic<bool>>(parameters_.size());
+    settledEdits_ = std::vector<std::atomic<std::uint64_t>>(parameters_.size());
     listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_, catalogStale_);
     instance_->addListener(listener_.get());
 }
@@ -357,23 +356,135 @@ void EngineExternalDevice::forgetDriverState() {
         driven.store(false, std::memory_order_relaxed);
 }
 
-bool EngineExternalDevice::writeParameter(int slot, float normalised) {
+std::optional<std::uint32_t> EngineExternalDevice::queueParameterEdit(int slot, float normalised) {
     if (!mapsSlot(slot) || !std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
-        return false;
+        return std::nullopt;
 
-    const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+    const auto at = static_cast<std::size_t>(slot);
 
     // The wrapper pair is the model's own, and nothing of it exists on the
     // plugin to write.
+    const auto& mapping = parameters_[at];
     if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
+        return std::nullopt;
+
+    const auto sequence = ++nextEditSequence_;
+    queuedEdits_[at].store((static_cast<std::uint64_t>(sequence) << 32) |
+                               std::bit_cast<std::uint32_t>(normalised),
+                           std::memory_order_release);
+
+    // Slot before device, so a block that clears the device's flag mid-write
+    // still finds the slot on its walk or on the next block.
+    editQueued_[at].store(true, std::memory_order_release);
+    anyEditQueued_.store(true, std::memory_order_release);
+
+    if (!isRendered())
+        pumpParameterEdits();
+
+    return sequence;
+}
+
+EngineExternalDevice::EditState EngineExternalDevice::parameterEditState(
+    int slot, std::uint32_t sequence) const {
+    if (!mapsSlot(slot))
+        return EditState::Refused;
+
+    const auto settled =
+        settledEdits_[static_cast<std::size_t>(slot)].load(std::memory_order_acquire);
+    const auto settledSequence = static_cast<std::uint32_t>(settled >> 1);
+
+    if (settledSequence < sequence)
+        return EditState::Pending;
+
+    if (settledSequence > sequence)
+        return EditState::Superseded;
+
+    return (settled & 1u) != 0 ? EditState::Refused : EditState::Applied;
+}
+
+void EngineExternalDevice::pumpParameterEdits() {
+    const juce::ScopedLock lock(instance_->getCallbackLock());
+    if (applyParameterEdits())
+        edits_->wakeHost();
+}
+
+void EngineExternalDevice::discardParameterEdits() {
+    const juce::ScopedLock lock(instance_->getCallbackLock());
+    anyEditQueued_.store(false, std::memory_order_release);
+
+    for (std::size_t at = 0; at < editQueued_.size(); ++at) {
+        if (!editQueued_[at].exchange(false, std::memory_order_acq_rel))
+            continue;
+
+        const auto sequence = queuedEdits_[at].load(std::memory_order_acquire) >> 32;
+        settledEdits_[at].store((sequence << 1) | 1u, std::memory_order_release);
+    }
+}
+
+void EngineExternalDevice::setRendered(bool rendered) {
+    rendered_.store(rendered, std::memory_order_release);
+}
+
+bool EngineExternalDevice::isRendered() const {
+    return rendered_.load(std::memory_order_acquire);
+}
+
+bool EngineExternalDevice::editsFenced() const {
+    const auto queued = std::ranges::any_of(
+        editQueued_, [](const auto& flag) { return flag.load(std::memory_order_acquire); });
+
+    return !queued && !awaitingBlock_.load(std::memory_order_acquire);
+}
+
+bool EngineExternalDevice::fenceParameterEdits() {
+    const juce::ScopedLock lock(instance_->getCallbackLock());
+    if (applyParameterEdits())
+        edits_->wakeHost();
+
+    if (!awaitingBlock_.load(std::memory_order_acquire))
+        return true;
+
+    if (!prepared_ || instance_->isSuspended())
         return false;
 
-    // A person holding it in the plugin's editor has it until they let go.
-    if (edits_->gesturing[static_cast<std::size_t>(slot)].load(std::memory_order_acquire))
+    // A block arriving meanwhile passes through, as it does during a capture.
+    scratch_.clear();
+    midi_.clear();
+    instance_->processBlock(scratch_, midi_);
+    midi_.clear();
+
+    awaitingBlock_.store(false, std::memory_order_release);
+    return true;
+}
+
+bool EngineExternalDevice::applyParameterEdits() {
+    if (!anyEditQueued_.exchange(false, std::memory_order_acq_rel))
         return false;
 
-    // Not recorded against lastTable_, which is what the table delivered.
-    mapping.parameter->setValue(normalised);
+    awaitingBlock_.store(true, std::memory_order_release);
+
+    for (std::size_t at = 0; at < editQueued_.size(); ++at) {
+        if (!editQueued_[at].exchange(false, std::memory_order_acq_rel))
+            continue;
+
+        const auto packed = queuedEdits_[at].load(std::memory_order_acquire);
+        const auto sequence = static_cast<std::uint32_t>(packed >> 32);
+
+        // A person holding it in the plugin's editor has it until they let go.
+        const auto refused = edits_->gesturing[at].load(std::memory_order_acquire);
+
+        // Forgotten from lastTable_, so a table carrying the slot delivers again
+        // even at the value it held. Both run under the callback lock.
+        if (!refused) {
+            parameters_[at].parameter->setValue(
+                std::bit_cast<float>(static_cast<std::uint32_t>(packed & 0xFFFFFFFFu)));
+            lastTable_[at] = std::numeric_limits<float>::quiet_NaN();
+        }
+
+        settledEdits_[at].store((static_cast<std::uint64_t>(sequence) << 1) | (refused ? 1u : 0u),
+                                std::memory_order_release);
+    }
+
     return true;
 }
 
@@ -685,6 +796,8 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
     if (!guard.isLocked() || instance_->isSuspended())
         return;
 
+    // One-off edits before the table, so a slot both carry ends on the table's value.
+    const auto editsApplied = applyParameterEdits();
     writeParameters(block.params);
 
     const auto numSamples = static_cast<int>(block.audio.getNumSamples());
@@ -714,6 +827,11 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
 
     if (block.midiOut != nullptr)
         writeMidiOut(*block.midiOut, numSamples);
+
+    // The plugin has now processed what this block applied, which a capture waits for.
+    awaitingBlock_.store(false, std::memory_order_release);
+    if (editsApplied)
+        edits_->wakeHost();
 }
 
 bool EngineExternalDevice::showEditor() {
