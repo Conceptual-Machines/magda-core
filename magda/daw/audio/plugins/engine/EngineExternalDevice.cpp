@@ -887,7 +887,39 @@ std::optional<magda::ExternalPluginSnapshot> EngineExternalDevice::captureState(
 }
 
 magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInfo& saved) {
-    return magda::applySavedPluginState(*instance_, saved);
+    const auto outcome = magda::applySavedPluginState(*instance_, saved);
+
+    // The table's last delivery says nothing about a patch written since, so a
+    // restored instance cannot skip a host-controlled write
+    // (docs/specs/hosted-plugin-parameter-control.md).
+    {
+        const juce::ScopedLock lock(instance_->getCallbackLock());
+        std::ranges::fill(lastTable_, std::numeric_limits<float>::quiet_NaN());
+    }
+
+    // A chunk can rename parameters as well as move them.
+    catalogStale_.store(true, std::memory_order_release);
+
+    // A plugin that threw partway holds half a patch, which is not worth showing.
+    if (outcome != magda::SavedStateOutcome::Failed)
+        reportEveryParameter();
+
+    return outcome;
+}
+
+void EngineExternalDevice::reportEveryParameter() {
+    for (std::size_t slot = 0; slot < parameters_.size(); ++slot) {
+        const auto& mapping = parameters_[slot];
+        if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
+            continue;
+
+        edits_->reported[slot].store(
+            PluginEdits::pack(mapping.parameter->getValue(), magda::ObservationSource::Readback),
+            std::memory_order_release);
+        edits_->dirty[slot].store(true, std::memory_order_release);
+    }
+
+    edits_->wakeHost();
 }
 
 magda::HostParameters EngineExternalDevice::describeParameters() const {
