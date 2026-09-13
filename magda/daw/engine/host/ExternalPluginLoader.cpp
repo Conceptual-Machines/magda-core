@@ -1,6 +1,8 @@
 #include "ExternalPluginLoader.hpp"
 
+#include <atomic>
 #include <set>
+#include <thread>
 #include <utility>
 
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
@@ -8,6 +10,31 @@
 namespace magda::daw::engine_host {
 
 namespace adapter = magda::daw::audio::engine_adapter;
+
+/// Triggers the loader's drain from any thread, and is safe to trigger or
+/// destroy on any thread once detached: an AsyncUpdater is not (juce_AsyncUpdater.cpp).
+class ExternalPluginLoader::Wake final {
+  public:
+    explicit Wake(juce::AsyncUpdater& drain) : drain_(&drain) {}
+
+    void trigger() {
+        inFlight_.fetch_add(1, std::memory_order_acq_rel);
+        if (auto* drain = drain_.load(std::memory_order_acquire))
+            drain->triggerAsyncUpdate();
+        inFlight_.fetch_sub(1, std::memory_order_acq_rel);
+    }
+
+    /// Waits out a trigger already running, so the updater can go straight after.
+    void detach() {
+        drain_.store(nullptr, std::memory_order_release);
+        while (inFlight_.load(std::memory_order_acquire) != 0)
+            std::this_thread::yield();
+    }
+
+  private:
+    std::atomic<juce::AsyncUpdater*> drain_;
+    std::atomic<int> inFlight_{0};
+};
 
 namespace {
 
@@ -26,7 +53,33 @@ juce::String pluginIdentityOf(const DeviceInfo& device) {
 
 ExternalPluginLoader::ExternalPluginLoader(adapter::CurrentDeviceLookup currentDevice,
                                            Loaded loaded)
-    : currentDevice_(std::move(currentDevice)), loaded_(std::move(loaded)) {}
+    : currentDevice_(std::move(currentDevice)),
+      loaded_(std::move(loaded)),
+      wake_(std::make_shared<Wake>(static_cast<juce::AsyncUpdater&>(*this))) {}
+
+ExternalPluginLoader::~ExternalPluginLoader() {
+    wake_->detach();
+    cancelPendingUpdate();
+}
+
+void ExternalPluginLoader::handleAsyncUpdate() {
+    drainPluginEdits();
+}
+
+void ExternalPluginLoader::drainPluginEdits() {
+    for (auto source = editSources_.begin(); source != editSources_.end();) {
+        const auto key = source->first;
+        const auto wanted = source->second.request.isStillWanted();
+
+        const auto alive = source->second.edits.drain(
+            [this, key, wanted](adapter::EngineExternalDevice::Observation observation) {
+                if (wanted && pluginEdit_)
+                    pluginEdit_(key, observation);
+            });
+
+        source = alive && wanted ? std::next(source) : editSources_.erase(source);
+    }
+}
 
 void ExternalPluginLoader::setServices(juce::AudioPluginFormatManager* formats,
                                        const juce::KnownPluginList* knownPlugins) {
@@ -93,6 +146,7 @@ audio::engine_adapter::AssignmentRequest ExternalPluginLoader::request(
 void ExternalPluginLoader::forgetSlots() {
     assignments_.releaseAll();
     slots_.clear();
+    editSources_.clear();
 }
 
 std::unique_ptr<engine::EngineDevice> ExternalPluginLoader::device(engine::DeviceKey key,
@@ -173,13 +227,11 @@ void ExternalPluginLoader::complete(engine::DeviceKey key, std::uint64_t generat
         return;
     }
 
-    if (auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get()))
-        external->listenForPluginEdits(
-            [sink = pluginEdit_, request = assignments_.request(key),
-             key](adapter::EngineExternalDevice::Observation observation) {
-                if (sink && request.isStillWanted())
-                    sink(key, observation);
-            });
+    if (auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get())) {
+        editSources_.insert_or_assign(key, EditSource{.edits = external->pluginEdits(),
+                                                      .request = assignments_.request(key)});
+        external->listenForPluginEdits([wake = wake_] { wake->trigger(); });
+    }
 
     slot.instance = std::move(result.device);
     juce::Logger::writeToLog("[engine] loaded \"" + result.resolvedDevice->name + "\"");

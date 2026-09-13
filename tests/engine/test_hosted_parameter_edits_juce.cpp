@@ -15,10 +15,6 @@
 /**
  * What a hosted plugin says its parameters hold, and what MAGDA may write to
  * them (docs/specs/hosted-plugin-parameter-control.md).
- *
- * Here rather than in magda_tests because the report is queued from the
- * callback and delivered on the message thread, and the assertion is about what
- * arrives there.
  */
 
 namespace {
@@ -168,6 +164,8 @@ class HostedParameterEditsTest final : public juce::UnitTest {
     HostedParameterEditsTest() : juce::UnitTest("Hosted Parameter Edits", "magda") {}
 
     void runTest() override {
+        testABurstOfReportsWakesTheHostOnce();
+        testADrainAfterTheDeviceIsGoneDoesNothing();
         testAMoveNothingDrivesIsReadback();
         testADrivenSlotIsReportedAsDriven();
         testAMoveInsideTheEditorsGestureIsMarkedAsOne();
@@ -190,7 +188,12 @@ class HostedParameterEditsTest final : public juce::UnitTest {
             device = std::make_unique<adapter::EngineExternalDevice>(std::move(instance),
                                                                      magda::DeviceInfo{}, false);
             device->prepare(contextFor());
-            device->listenForPluginEdits(
+            device->listenForPluginEdits([this] { ++wakes; });
+        }
+
+        /// What the host's drain does when a wake lands.
+        void drain() {
+            device->pluginEdits().drain(
                 [this](adapter::EngineExternalDevice::Observation observation) {
                     observed.push_back(observation);
                 });
@@ -215,17 +218,48 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         std::unique_ptr<adapter::EngineExternalDevice> device;
 
         std::vector<adapter::EngineExternalDevice::Observation> observed;
+        int wakes = 0;
     };
-
-    /// Lets the flush the callback queued run.
-    static void pumpMessageLoop() {
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
-    }
 
     void expectOneReport(const Rig& rig, magda::ObservationSource source, const juce::String& why) {
         expect(rig.observed.size() == 1, "One report");
         if (rig.observed.size() == 1)
             expect(rig.observed.front().source == source, why);
+    }
+
+    void testABurstOfReportsWakesTheHostOnce() {
+        beginTest("A burst of reports wakes the host once until it drains");
+
+        Rig rig;
+        expect(rig.wakes == 1, "Listening wakes once for anything already reported");
+        rig.drain();
+
+        for (const auto value : {0.2f, 0.3f, 0.4f})
+            rig.plugin->parameters[1]->setValueNotifyingHost(value);
+        expect(rig.wakes == 2, "One wake for the burst");
+
+        rig.drain();
+        expectOneReport(rig, magda::ObservationSource::Readback, "Coalesced to the latest");
+        if (rig.observed.size() == 1)
+            expectWithinAbsoluteError(rig.observed.front().normalised, 0.4f, 1.0e-6f);
+
+        rig.plugin->parameters[1]->setValueNotifyingHost(0.5f);
+        expect(rig.wakes == 3, "A report after the drain wakes again");
+    }
+
+    void testADrainAfterTheDeviceIsGoneDoesNothing() {
+        beginTest("A drain after the device is gone does nothing");
+
+        Rig rig;
+        const auto source = rig.device->pluginEdits();
+        rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
+        rig.device.reset();
+
+        const auto drained = source.drain([&rig](adapter::EngineExternalDevice::Observation seen) {
+            rig.observed.push_back(seen);
+        });
+        expect(!drained, "The source says the device has gone");
+        expect(rig.observed.empty(), "Nothing reported from it");
     }
 
     void testAMoveNothingDrivesIsReadback() {
@@ -236,7 +270,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         // Drive, at slot four. Nothing in any document knows about it, and the
         // knob drawing it still has to hear that it moved.
         rig.plugin->parameters[2]->setValueNotifyingHost(0.8f);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::Readback,
                         "No gesture around it, so nothing may take it as a base");
@@ -258,7 +292,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         // The plugin's own modulation of a slot the host is writing. Taken as
         // a base, it would move the value the lane is offsetting from.
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::Driven,
                         "Still reported, because a knob still draws it");
@@ -272,7 +306,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         auto& gain = *rig.plugin->parameters[0];
         gain.beginChangeGesture();
         gain.setValueNotifyingHost(0.6f);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::EditorGesture,
                         "A person moving it in the editor");
@@ -281,7 +315,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.observed.clear();
 
         gain.setValueNotifyingHost(0.4f);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::Readback,
                         "After the gesture ends, a move is readback again");
@@ -299,7 +333,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
 
         // A quantised answer to the same move, reported before the flush runs.
         gain.setValueNotifyingHost(0.61f);
-        pumpMessageLoop();
+        rig.drain();
 
         expect(rig.observed.size() == 2, "The gesture and the readback after it");
         if (rig.observed.size() == 2) {
@@ -324,7 +358,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         Window window;
         window.carry(2, 0.9f);
         rig.render(window);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::Readback,
                         "No gesture, so no base takes the plugin's answer");
@@ -345,7 +379,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.device->forgetDriverState();
 
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
-        pumpMessageLoop();
+        rig.drain();
 
         expectOneReport(rig, magda::ObservationSource::Readback,
                         "No longer driven, with the lane gone");

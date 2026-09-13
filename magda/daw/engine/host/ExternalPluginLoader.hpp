@@ -34,7 +34,7 @@
 
 namespace magda::daw::engine_host {
 
-class ExternalPluginLoader final {
+class ExternalPluginLoader final : private juce::AsyncUpdater {
   public:
     /**
      * @brief What an instance turned out to be, for the model to record.
@@ -50,6 +50,8 @@ class ExternalPluginLoader final {
     /// @p currentDevice is read at completion rather than captured at request
     /// time, so a slow load cannot clobber an edit made while it ran.
     ExternalPluginLoader(audio::engine_adapter::CurrentDeviceLookup currentDevice, Loaded loaded);
+
+    ~ExternalPluginLoader();
 
     ExternalPluginLoader(const ExternalPluginLoader&) = delete;
     ExternalPluginLoader& operator=(const ExternalPluginLoader&) = delete;
@@ -80,8 +82,13 @@ class ExternalPluginLoader final {
                            audio::engine_adapter::EngineExternalDevice::Observation observation)>;
 
     /// Where a parameter the plugin moved itself is reported, on the message
-    /// thread, for as long as the key still names that plugin.
+    /// thread, for as long as the key still names that plugin. Every loaded
+    /// plugin is drained in one pass (#2632).
     void onPluginEdit(PluginEdit sink);
+
+    /// Hand every loaded plugin's unread reports to the sink, forgetting a
+    /// plugin that has gone. What a wake runs; public for tests.
+    void drainPluginEdits();
 
     /**
      * @brief The instance for @p key, or nothing yet.
@@ -138,9 +145,23 @@ class ExternalPluginLoader final {
     void complete(engine::DeviceKey key, std::uint64_t generation,
                   audio::engine_adapter::ExternalDeviceResult result);
 
+    void handleAsyncUpdate() override;
+
+    /// Shared with every device's listener, which can outlive this loader.
+    class Wake;
+
+    /// A loaded plugin's reports, and the assignment they are wanted against.
+    struct EditSource {
+        audio::engine_adapter::EngineExternalDevice::PluginEditSource edits;
+        audio::engine_adapter::AssignmentRequest request;
+    };
+
     audio::engine_adapter::CurrentDeviceLookup currentDevice_;
     Loaded loaded_;
     PluginEdit pluginEdit_;
+
+    std::shared_ptr<Wake> wake_;
+    std::map<engine::DeviceKey, EditSource> editSources_;
 
     audio::engine_adapter::ExternalPluginServices services_;
     audio::engine_adapter::PluginAssignments assignments_;

@@ -120,13 +120,42 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         magda::ObservationSource source = magda::ObservationSource::Readback;
     };
 
+  private:
+    struct PluginEdits;
+
+  public:
+    /// A device's unread plugin reports, held weakly so a drain after the device
+    /// has gone does nothing (#2632).
+    class PluginEditSource {
+      public:
+        PluginEditSource() = default;
+
+        /**
+         * @brief Hand @p sink every slot reported since the last drain. Message thread.
+         *
+         * Coalesced per slot, a gesture ahead of any later report that overwrote
+         * it. Nothing is filtered; only the reader knows what may reach a
+         * document. False once the device is gone.
+         */
+        bool drain(const std::function<void(Observation)>& sink) const;
+
+      private:
+        friend class EngineExternalDevice;
+        explicit PluginEditSource(std::weak_ptr<PluginEdits> edits) : edits_(std::move(edits)) {}
+
+        std::weak_ptr<PluginEdits> edits_;
+    };
+
     /**
-     * @brief Report what the plugin says its parameters hold, on the message thread.
+     * @brief Call @p wake when the plugin reports, once per burst until the next drain.
      *
-     * Every slot it moves, coalesced per slot to one call per flush. Nothing
-     * is filtered here; only the reader knows which may reach a document.
+     * From whatever thread the plugin reports on, so @p wake must neither
+     * allocate nor lock. Set once; it is called straight away for anything
+     * reported before.
      */
-    void listenForPluginEdits(std::function<void(Observation)> sink);
+    void listenForPluginEdits(std::function<void()> wake);
+
+    PluginEditSource pluginEdits() const;
 
     /**
      * @brief Write @p normalised into the plugin's slot @p slot now.
@@ -218,9 +247,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// Plan slot per plugin parameter index, or -1.
     std::vector<int> slotOfParameter_;
 
-    /// The plugin's own edits, recorded on any thread and flushed on the
-    /// message thread. Shared so a flush queued before the device died is a
-    /// no-op rather than a use-after-free.
+    /// The plugin's own edits, recorded on any thread and drained on the
+    /// message thread. Shared so a drain after the device died is a no-op.
     struct PluginEdits {
         explicit PluginEdits(std::size_t slots)
             : reported(slots),
@@ -251,8 +279,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// Between the plugin's begin and end of a gesture in its own editor.
         std::vector<std::atomic<bool>> gesturing;
 
-        std::atomic<bool> flushQueued{false};
-        std::function<void(Observation)> sink;
+        /// Set before @ref listening and never again, so a reporting thread
+        /// reads it only once it is whole.
+        std::function<void()> wake;
+        std::atomic<bool> listening{false};
+        std::atomic<bool> wakeQueued{false};
     };
 
     /// What describeParameters() last read off the instance, values aside.
