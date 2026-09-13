@@ -311,6 +311,13 @@ void AudioBridge::projectTeardown() {
         pluginManager_.cleanupTrackPlugins(trackId);
         trackController_.removeAudioTrack(trackId);
     }
+
+    // Device and rack ids restart in the next project, so a slot that has not
+    // rendered yet would read what the last one left under its address
+    // (#2570). What deviceMetering_ still holds is not stale for long: an
+    // entry's level is taken from its client every tick, and a client with no
+    // graph behind it reports silence.
+    deviceMeters_.clear();
 }
 
 // =============================================================================

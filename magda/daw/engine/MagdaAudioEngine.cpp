@@ -43,8 +43,8 @@ MagdaAudioEngine::MagdaAudioEngine(AudioEngineOptions options) {
  * @brief Point the host's meters at meters_ and deviceMeters_ (#2579, #2570).
  *
  * Three rings on the track side because they are three readers of one
- * measurement; one map on the device side, since the chain UI is its only
- * reader.
+ * measurement; the device side is handed the store itself, since the host has
+ * nothing to translate and is what hears a project close.
  */
 void MagdaAudioEngine::meterInto() {
     host_->meterInto([this](TrackId trackId, float peakL, float peakR) {
@@ -60,9 +60,7 @@ void MagdaAudioEngine::meterInto() {
         meters_.remote.pushLevels(trackId, data);
     });
 
-    host_->deviceMeterInto([this](const ChainNodePath& devicePath, float peakL, float peakR) {
-        deviceMeters_.setDevicePeak(devicePath, {.peakL = peakL, .peakR = peakR});
-    });
+    host_->meterDevicesInto(deviceMeters_);
 }
 
 void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) const {

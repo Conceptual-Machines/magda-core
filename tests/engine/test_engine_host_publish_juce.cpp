@@ -12,6 +12,7 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
@@ -180,6 +181,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
         magda::test::runWithCleanJuceState([this] { testDevicePathsAreTheAddressesTheUIDraws(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTheMeterStoreIsEmptiedAtAProjectBoundary(); });
         magda::test::runWithCleanJuceState([this] { testMacroAndLaneEditsAskForAPublish(); });
     }
 
@@ -1036,6 +1039,40 @@ class EngineHostPublishTest final : public juce::UnitTest {
                "So is a device slot's, which the chain UI draws (#2570)");
         expect(factory.createMeter(inputMeter) == nullptr,
                "A monitored input's is still nobody's (#1895)");
+    }
+
+    /// A device id restarts at 1 in the next project, so a level left under a
+    /// slot's address outlives the device it measured.
+    void testTheMeterStoreIsEmptiedAtAProjectBoundary() {
+        beginTest("A project closing takes the per-slot levels with it");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
+        expect(trackId != magda::INVALID_TRACK_ID, "The track exists");
+
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, 1);
+
+        magda::DeviceMeters store;
+        store.setDevicePeak(devicePath, {.peakL = 0.5f, .peakR = 0.5f});
+
+        juce::AudioDeviceManager devices;
+        host::EngineHost engine;
+        engine.meterDevicesInto(store);
+        engine.start(devices);
+
+        magda::DeviceMeters::Levels levels;
+        expect(store.devicePeak(devicePath, levels), "The slot has a level to lose");
+
+        // What ProjectManager declares at the boundary. Driven directly, as
+        // the rest of this suite drives the teardown: closing a project for
+        // real raises a modal dialog over an unsaved one, which would hang the
+        // run rather than fail it.
+        engine.forgetProject();
+
+        expect(!store.devicePeak(devicePath, levels),
+               "And the teardown took it, before the next project claims that address");
+
+        engine.stop();
     }
 
     /// The mapping the per-slot meters hang on: the host reads a tap under the

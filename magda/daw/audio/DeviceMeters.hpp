@@ -63,9 +63,11 @@ class DeviceMeters {
         return true;
     }
 
-    /// For a project torn down: the next one's devices reuse these ids, and a
-    /// slot that has not rendered yet should read nothing rather than whatever
-    /// the last project left under its address.
+    /// Called at a project boundary by whichever engine feeds this
+    /// (EngineHost::projectTeardown, AudioBridge::projectTeardown): the next
+    /// project's devices reuse these ids, and a slot that has not rendered yet
+    /// should read nothing rather than whatever the last one left under its
+    /// address.
     void clear() {
         devices_.clear();
         racks_.clear();
