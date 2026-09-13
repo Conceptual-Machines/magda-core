@@ -1167,6 +1167,67 @@ TEST_CASE("A meter goes when the device it reads is deleted", "[engine][session]
     CHECK(session.runtimeObjectCount() == objectsWithEffect - 2);
 }
 
+TEST_CASE("A device or a rack that moves leaves no meter where it was", "[engine][session][tap]") {
+    // A meter's key says where it stands, so moving what it reads gives it a
+    // new one. The tap at the old location is written by nothing, and a host
+    // reading by device or rack id would find two and take whichever the map
+    // hands it last -- silence, if the thing moved to a lower-numbered track
+    // (#2649).
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    RackInfo rack;
+    rack.id = 3;
+    ChainInfo chain;
+    chain.id = 1;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto first = makeTrack(1);
+    auto second = makeTrack(2);
+    second.chain.fxChainElements.push_back(makeRackElement(rack));
+    const std::vector<TrackInfo> before{first, second};
+
+    REQUIRE(publish(session, compile(before), before).published);
+
+    auto movedFirst = makeTrack(1);
+    movedFirst.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+    const std::vector<TrackInfo> after{movedFirst, makeTrack(2)};
+
+    REQUIRE(publish(session, compile(after), after).published);
+
+    int racks = 0;
+    magda::engine::LevelTap* rackTap = nullptr;
+    session.forEachRackMeter([&](RackId rackId, magda::engine::LevelTap& tap) {
+        if (rackId != 3)
+            return;
+
+        ++racks;
+        rackTap = &tap;
+    });
+
+    int devices = 0;
+    magda::engine::LevelTap* deviceTap = nullptr;
+    session.forEachDeviceMeter([&](DeviceKey key, magda::engine::LevelTap& tap) {
+        if (key.deviceId != 7)
+            return;
+
+        ++devices;
+        deviceTap = &tap;
+    });
+
+    CHECK(racks == 1);
+    CHECK(devices == 1);
+
+    // And the one that is left is the live plan's, which is the only one
+    // anything renders into. Keys are the compiler's, so recompiling the same
+    // model names the same two ops.
+    const auto live = compile(after);
+    CHECK(rackTap == meterAt(factory, *live, magda::engine::OpRole::RackMeter, 1));
+    CHECK(deviceTap == meterAt(factory, *live, magda::engine::OpRole::DeviceMeter, 1, 7));
+}
+
 TEST_CASE("A host that wants no meters binds none and renders the same", "[engine][session][tap]") {
     Ledger ledger;
     TestFactory factory(ledger);

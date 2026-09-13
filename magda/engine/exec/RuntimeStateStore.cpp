@@ -274,8 +274,19 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
         eraseUnnamed(sessionMidi_, keep.tracks) + eraseUnnamed(audioInputs_, keep.tracks) +
         eraseUnnamed(midiInputs_, keep.tracks);
 
-    removed +=
-        std::erase_if(meters_, [&](const auto& entry) { return !isNamed(entry.first, keep); });
+    // A meter is retained by the live plan naming its op, not by the track or
+    // device the op reads: the key carries where the meter stands, so a rack or
+    // a device that moved leaves a tap at the location it came from, which
+    // nothing writes and a host reading by rack or device id would take for the
+    // live one (#2649). Everything the plan still emits keeps the tap it had,
+    // which is the promise a plan swap makes.
+    std::set<OpKey> liveMeters;
+    for (const auto& op : livePlan.ops)
+        if (op.kind == OpKind::Meter)
+            liveMeters.insert(op.key);
+
+    removed += std::erase_if(
+        meters_, [&liveMeters](const auto& entry) { return !liveMeters.contains(entry.first); });
 
     // The live table first and unconditionally, on the same reading the plan
     // gets above. A tap the table carries may be one the executor holds a
