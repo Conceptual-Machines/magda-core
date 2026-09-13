@@ -4,7 +4,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>
 #include <cmath>
+#include <cstdint>
 #include <functional>
 #include <limits>
 #include <utility>
@@ -29,10 +31,6 @@ constexpr float kWetLevelCeiling = 0.999f;
 
 /// The slots in front of a plugin's own: dry, then wet.
 constexpr int kWrapperParameterCount = 2;
-
-/// How many blocks a write of ours masks its slot for. A VST3 flushes its echo
-/// from outputParameterChanges after processor->process() returns.
-constexpr int kHostWriteEchoBlocks = 2;
 
 /// The model's description of the parameter at plan slot @p index, or none.
 /// Both buckets, since the wrapper pair shares the plugin's index space.
@@ -114,20 +112,29 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex,
                                         float newValue) override {
-        if (parameterIndex < 0 || parameterIndex >= static_cast<int>(slotOfParameter_.size()))
-            return;
-
-        const auto slot = slotOfParameter_[static_cast<std::size_t>(parameterIndex)];
+        const auto slot = slotFor(parameterIndex);
         if (slot < 0)
             return;
 
         auto& edits = *edits_;
         const auto at = static_cast<std::size_t>(slot);
 
-        // Recorded with the value rather than read at the flush: by then the
-        // block that owned the slot has been and gone.
-        edits.pending[at].store(newValue, std::memory_order_relaxed);
-        edits.hostOwned[at].store(edits.hostOwns(at), std::memory_order_relaxed);
+        // Classified now rather than at the flush: by then the block that
+        // drove the slot, or the gesture around the move, has been and gone.
+        const auto source = edits.driven[at].load(std::memory_order_relaxed)
+                                ? magda::ObservationSource::Driven
+                            : edits.gesturing[at].load(std::memory_order_relaxed)
+                                ? magda::ObservationSource::EditorGesture
+                                : magda::ObservationSource::Readback;
+
+        // A gesture's value is kept apart too, so readback landing before the
+        // flush cannot take the base update away from it.
+        if (source == magda::ObservationSource::EditorGesture) {
+            edits.gestured[at].store(newValue, std::memory_order_release);
+            edits.gestureDirty[at].store(true, std::memory_order_release);
+        }
+
+        edits.reported[at].store(PluginEdits::pack(newValue, source), std::memory_order_release);
         edits.dirty[at].store(true, std::memory_order_release);
 
         if (edits.flushQueued.exchange(true, std::memory_order_acq_rel))
@@ -141,16 +148,40 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
             edits->flushQueued.store(false, std::memory_order_release);
 
             for (std::size_t slot = 0; slot < edits->dirty.size(); ++slot) {
-                if (!edits->dirty[slot].exchange(false, std::memory_order_acq_rel))
+                const auto gestured =
+                    edits->gestureDirty[slot].exchange(false, std::memory_order_acq_rel);
+                if (!edits->dirty[slot].exchange(false, std::memory_order_acq_rel) && !gestured)
                     continue;
 
-                if (edits->sink)
+                if (!edits->sink)
+                    continue;
+
+                const auto latest = PluginEdits::unpack(
+                    static_cast<int>(slot), edits->reported[slot].load(std::memory_order_acquire));
+
+                if (gestured && latest.source != magda::ObservationSource::EditorGesture)
                     edits->sink(
-                        {.slot = static_cast<int>(slot),
-                         .normalised = edits->pending[slot].load(std::memory_order_relaxed),
-                         .hostOwned = edits->hostOwned[slot].load(std::memory_order_relaxed)});
+                        {.slot = latest.slot,
+                         .normalised = edits->gestured[slot].load(std::memory_order_acquire),
+                         .source = magda::ObservationSource::EditorGesture});
+
+                edits->sink(latest);
             }
         });
+    }
+
+    void audioProcessorParameterChangeGestureBegin(juce::AudioProcessor*,
+                                                   int parameterIndex) override {
+        if (const auto slot = slotFor(parameterIndex); slot >= 0)
+            edits_->gesturing[static_cast<std::size_t>(slot)].store(true,
+                                                                    std::memory_order_release);
+    }
+
+    void audioProcessorParameterChangeGestureEnd(juce::AudioProcessor*,
+                                                 int parameterIndex) override {
+        if (const auto slot = slotFor(parameterIndex); slot >= 0)
+            edits_->gesturing[static_cast<std::size_t>(slot)].store(false,
+                                                                    std::memory_order_release);
     }
 
     /// A VST3's kParamTitlesChanged arrives as parameterInfoChanged.
@@ -160,10 +191,30 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
     }
 
   private:
+    /// The plan slot for the plugin's parameter at @p parameterIndex, or -1.
+    int slotFor(int parameterIndex) const {
+        if (parameterIndex < 0 || parameterIndex >= static_cast<int>(slotOfParameter_.size()))
+            return -1;
+
+        return slotOfParameter_[static_cast<std::size_t>(parameterIndex)];
+    }
+
     std::shared_ptr<PluginEdits> edits_;
     const std::vector<int>& slotOfParameter_;
     std::atomic<bool>& catalogStale_;
 };
+
+std::uint64_t EngineExternalDevice::PluginEdits::pack(float normalised,
+                                                      magda::ObservationSource source) {
+    return (static_cast<std::uint64_t>(source) << 32) | std::bit_cast<std::uint32_t>(normalised);
+}
+
+EngineExternalDevice::Observation EngineExternalDevice::PluginEdits::unpack(int slot,
+                                                                            std::uint64_t packed) {
+    return {.slot = slot,
+            .normalised = std::bit_cast<float>(static_cast<std::uint32_t>(packed & 0xFFFFFFFFu)),
+            .source = static_cast<magda::ObservationSource>(packed >> 32)};
+}
 
 class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
   public:
@@ -287,10 +338,8 @@ void EngineExternalDevice::listenForPluginEdits(std::function<void(Observation)>
 }
 
 void EngineExternalDevice::forgetDriverState() {
-    for (std::size_t slot = 0; slot < edits_->driven.size(); ++slot) {
-        edits_->driven[slot].store(false, std::memory_order_relaxed);
-        edits_->hostWrote[slot].store(0, std::memory_order_relaxed);
-    }
+    for (auto& driven : edits_->driven)
+        driven.store(false, std::memory_order_relaxed);
 }
 
 bool EngineExternalDevice::writeParameter(int slot, float normalised) {
@@ -304,9 +353,24 @@ bool EngineExternalDevice::writeParameter(int slot, float normalised) {
     if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
         return false;
 
+    // A person holding it in the plugin's editor has it until they let go.
+    if (edits_->gesturing[static_cast<std::size_t>(slot)].load(std::memory_order_acquire))
+        return false;
+
     // Not recorded against lastTable_, which is what the table delivered.
     mapping.parameter->setValue(normalised);
     return true;
+}
+
+std::optional<float> EngineExternalDevice::readParameter(int slot) const {
+    if (!mapsSlot(slot))
+        return std::nullopt;
+
+    const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+    if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
+        return std::nullopt;
+
+    return mapping.parameter->getValue();
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
@@ -406,10 +470,6 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
         // is what makes the plugin's own report of it unwanted (#2633).
         edits_->driven[at].store(params.drivenAt(entry), std::memory_order_relaxed);
 
-        // Ages toward the block where a write of ours can no longer come back.
-        if (const auto left = edits_->hostWrote[at].load(std::memory_order_relaxed); left > 0)
-            edits_->hostWrote[at].store(left - 1, std::memory_order_relaxed);
-
         const auto& mapping = parameters_[at];
         const auto values = params.valuesAt(entry);
 
@@ -431,13 +491,20 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 break;
 
             default: {
-                if (mapping.parameter == nullptr || !hostValueMoved(slot, normalised))
+                if (mapping.parameter == nullptr)
                     break;
 
-                // Before the write, since a format that answers it synchronously
-                // reports from inside this call.
-                edits_->hostWrote[at].store(kHostWriteEchoBlocks, std::memory_order_relaxed);
-                mapping.parameter->setValue(normalised);
+                // Held in the editor: a driven value stays owed for the release,
+                // while a base is recorded so letting go does not restore a stale one.
+                if (edits_->gesturing[at].load(std::memory_order_relaxed)) {
+                    lastTable_[at] = params.drivenAt(entry)
+                                         ? std::numeric_limits<float>::quiet_NaN()
+                                         : normalised;
+                    break;
+                }
+
+                if (hostValueMoved(slot, normalised))
+                    mapping.parameter->setValue(normalised);
                 break;
             }
         }

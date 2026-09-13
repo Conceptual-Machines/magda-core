@@ -158,6 +158,9 @@ class EngineHost {
      */
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const;
 
+    /// Whether an edit to this parameter was accepted and has not completed.
+    bool hostedEditPending(const ChainNodePath& devicePath, int paramIndex) const;
+
     /**
      * @brief Deliver a one-off @p normalised position to a hosted parameter.
      *
@@ -169,7 +172,7 @@ class EngineHost {
      */
     EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float normalised, EditOrigin origin,
-                                    std::function<void(bool delivered)> completed = {});
+                                    std::function<void(EditCompletion)> completed = {});
 
     // ===== The plugins' own windows (#2580) =====
     //

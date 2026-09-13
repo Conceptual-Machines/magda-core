@@ -375,9 +375,13 @@ std::optional<float> MagdaAudioEngine::observedParameter(const ChainNodePath& de
     return host_ != nullptr ? host_->observedParameter(devicePath, paramIndex) : std::nullopt;
 }
 
+bool MagdaAudioEngine::hostedEditPending(const ChainNodePath& devicePath, int paramIndex) const {
+    return host_ != nullptr && host_->hostedEditPending(devicePath, paramIndex);
+}
+
 EditReceipt MagdaAudioEngine::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
                                                   float normalised, EditOrigin origin,
-                                                  std::function<void(bool delivered)> completed) {
+                                                  std::function<void(EditCompletion)> completed) {
     if (host_ == nullptr)
         return {.status = EditStatus::Unavailable, .requested = normalised};
 

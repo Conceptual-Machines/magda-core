@@ -206,7 +206,7 @@ class DeviceSlotComponent : public NodeComponent,
     // TrackManagerListener - only implement parameter change notification
     void tracksChanged() override {}
     void deviceParameterObserved(const magda::ChainNodePath& devicePath, int paramIndex,
-                                 float normalised, bool hostOwned) override;
+                                 float normalised, magda::ObservationSource source) override;
 
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
                                 float newValue) override;

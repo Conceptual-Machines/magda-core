@@ -168,12 +168,16 @@ class HostedParameterEditsTest final : public juce::UnitTest {
     HostedParameterEditsTest() : juce::UnitTest("Hosted Parameter Edits", "magda") {}
 
     void runTest() override {
-        testEveryMovedSlotIsReported();
-        testADrivenSlotIsReportedAsTheHostsOwn();
-        testAWriteOfOursComesBackAsTheHostsOwn();
+        testAMoveNothingDrivesIsReadback();
+        testADrivenSlotIsReportedAsDriven();
+        testAMoveInsideTheEditorsGestureIsMarkedAsOne();
+        testReadbackBeforeTheFlushKeepsTheGesture();
+        testAnEchoOfATableWriteIsReadback();
         testAPlanTheDeviceIsNotInDrivesNothing();
         testAOneOffWriteReachesThePluginWithoutTheTable();
         testAWriteTheDeviceCannotTakeIsRefused();
+        testASlotHeldInTheEditorIsNotWrittenOver();
+        testADrivenValueSkippedByAGestureLandsOnRelease();
     }
 
   private:
@@ -218,8 +222,14 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 
-    void testEveryMovedSlotIsReported() {
-        beginTest("A parameter nothing addresses is still reported");
+    void expectOneReport(const Rig& rig, magda::ObservationSource source, const juce::String& why) {
+        expect(rig.observed.size() == 1, "One report");
+        if (rig.observed.size() == 1)
+            expect(rig.observed.front().source == source, why);
+    }
+
+    void testAMoveNothingDrivesIsReadback() {
+        beginTest("A parameter nothing addresses is still reported, as readback");
 
         Rig rig;
 
@@ -228,16 +238,16 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.plugin->parameters[2]->setValueNotifyingHost(0.8f);
         pumpMessageLoop();
 
-        expect(rig.observed.size() == 1, "The move was reported");
+        expectOneReport(rig, magda::ObservationSource::Readback,
+                        "No gesture around it, so nothing may take it as a base");
         if (rig.observed.size() == 1) {
             expect(rig.observed.front().slot == 4, "At the plan slot, not the plugin's index");
             expectWithinAbsoluteError(rig.observed.front().normalised, 0.8f, 1.0e-6f);
-            expect(!rig.observed.front().hostOwned, "Nothing was driving it");
         }
     }
 
-    void testADrivenSlotIsReportedAsTheHostsOwn() {
-        beginTest("A slot a lane plays is reported as the host's own");
+    void testADrivenSlotIsReportedAsDriven() {
+        beginTest("A slot a lane plays is reported as driven");
 
         Rig rig;
 
@@ -250,17 +260,64 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
         pumpMessageLoop();
 
-        expect(rig.observed.size() == 1, "Still reported, because a knob still draws it");
-        if (rig.observed.size() == 1)
-            expect(rig.observed.front().hostOwned, "Marked as the host's, so no base takes it");
+        expectOneReport(rig, magda::ObservationSource::Driven,
+                        "Still reported, because a knob still draws it");
     }
 
-    void testAWriteOfOursComesBackAsTheHostsOwn() {
-        beginTest("The value the host wrote comes back marked as the host's own");
+    void testAMoveInsideTheEditorsGestureIsMarkedAsOne() {
+        beginTest("A move inside the plugin's editor gesture is marked as one");
 
         Rig rig;
 
-        // A knob drag: the table moves the slot, and the plugin answers with a
+        auto& gain = *rig.plugin->parameters[0];
+        gain.beginChangeGesture();
+        gain.setValueNotifyingHost(0.6f);
+        pumpMessageLoop();
+
+        expectOneReport(rig, magda::ObservationSource::EditorGesture,
+                        "A person moving it in the editor");
+
+        gain.endChangeGesture();
+        rig.observed.clear();
+
+        gain.setValueNotifyingHost(0.4f);
+        pumpMessageLoop();
+
+        expectOneReport(rig, magda::ObservationSource::Readback,
+                        "After the gesture ends, a move is readback again");
+    }
+
+    void testReadbackBeforeTheFlushKeepsTheGesture() {
+        beginTest("Readback landing before the flush does not erase an editor gesture");
+
+        Rig rig;
+
+        auto& gain = *rig.plugin->parameters[0];
+        gain.beginChangeGesture();
+        gain.setValueNotifyingHost(0.6f);
+        gain.endChangeGesture();
+
+        // A quantised answer to the same move, reported before the flush runs.
+        gain.setValueNotifyingHost(0.61f);
+        pumpMessageLoop();
+
+        expect(rig.observed.size() == 2, "The gesture and the readback after it");
+        if (rig.observed.size() == 2) {
+            expect(rig.observed[0].source == magda::ObservationSource::EditorGesture,
+                   "The gesture first, so a base still takes it");
+            expectWithinAbsoluteError(rig.observed[0].normalised, 0.6f, 1.0e-6f);
+            expect(rig.observed[1].source == magda::ObservationSource::Readback,
+                   "Then the latest value, for the knob");
+            expectWithinAbsoluteError(rig.observed[1].normalised, 0.61f, 1.0e-6f);
+        }
+    }
+
+    void testAnEchoOfATableWriteIsReadback() {
+        beginTest("A plugin answering a table write is readback, not an edit");
+
+        Rig rig;
+
+        // A knob drag on a slot the table carries: the plugin answers with a
         // value of its own, which is what a smoothed or quantised readback is.
         rig.plugin->echoesDuringProcess = 0.4f;
 
@@ -269,23 +326,8 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.render(window);
         pumpMessageLoop();
 
-        expect(rig.observed.size() == 1, "The readback was reported");
-        if (rig.observed.size() == 1)
-            expect(rig.observed.front().hostOwned, "As the host's own write coming back");
-
-        // The drag ends. Once no write is in flight the plugin has the slot
-        // back, and what it says of it is its own again.
-        rig.plugin->echoesDuringProcess.reset();
-        rig.observed.clear();
-        rig.render(window);
-        rig.render(window);
-
-        rig.plugin->parameters[0]->setValueNotifyingHost(0.2f);
-        pumpMessageLoop();
-
-        expect(rig.observed.size() == 1, "The edit after the write settled was reported");
-        if (rig.observed.size() == 1)
-            expect(!rig.observed.front().hostOwned, "And is the plugin's own");
+        expectOneReport(rig, magda::ObservationSource::Readback,
+                        "No gesture, so no base takes the plugin's answer");
     }
 
     void testAPlanTheDeviceIsNotInDrivesNothing() {
@@ -305,9 +347,8 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
         pumpMessageLoop();
 
-        expect(rig.observed.size() == 1, "Reported");
-        if (rig.observed.size() == 1)
-            expect(!rig.observed.front().hostOwned, "And no longer the host's, with the lane gone");
+        expectOneReport(rig, magda::ObservationSource::Readback,
+                        "No longer driven, with the lane gone");
     }
 
     void testAOneOffWriteReachesThePluginWithoutTheTable() {
@@ -319,6 +360,11 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         // ordinary parameter is the plugin's, and this is a command to it.
         expect(rig.device->writeParameter(2, 0.7f), "The device took the write");
         expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.7f, 1.0e-6f);
+
+        const auto read = rig.device->readParameter(2);
+        expect(read.has_value(), "And reads it back");
+        if (read.has_value())
+            expectWithinAbsoluteError(*read, 0.7f, 1.0e-6f);
     }
 
     void testAWriteTheDeviceCannotTakeIsRefused() {
@@ -329,7 +375,55 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         expect(!rig.device->writeParameter(0, 0.5f), "The wrapper pair is the model's own");
         expect(!rig.device->writeParameter(2, 1.5f), "A position outside [0, 1] is not one");
         expect(!rig.device->writeParameter(99, 0.5f), "A slot the plugin does not have");
+        expect(!rig.device->readParameter(0).has_value(), "Nothing of the wrapper pair to read");
         expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.0f, 1.0e-6f);
+    }
+
+    void testASlotHeldInTheEditorIsNotWrittenOver() {
+        beginTest("A slot held in the plugin's editor is not written over");
+
+        Rig rig;
+
+        auto& gain = *rig.plugin->parameters[0];
+        gain.setValue(0.5f);
+        gain.beginChangeGesture();
+
+        expect(!rig.device->writeParameter(2, 0.7f), "A one-off write waits for the gesture");
+
+        Window moved;
+        moved.carry(2, 0.9f);
+        rig.render(moved);
+        expectWithinAbsoluteError(gain.getValue(), 0.5f, 1.0e-6f);
+
+        // Letting go does not bring back a table value the gesture moved past.
+        gain.endChangeGesture();
+        rig.render(moved);
+        expectWithinAbsoluteError(gain.getValue(), 0.5f, 1.0e-6f);
+
+        Window movedAgain;
+        movedAgain.carry(2, 0.3f);
+        rig.render(movedAgain);
+        expectWithinAbsoluteError(gain.getValue(), 0.3f, 1.0e-6f);
+    }
+
+    void testADrivenValueSkippedByAGestureLandsOnRelease() {
+        beginTest("A driven value skipped during an editor gesture lands on release");
+
+        Rig rig;
+
+        auto& gain = *rig.plugin->parameters[0];
+        gain.setValue(0.5f);
+        gain.beginChangeGesture();
+
+        Window flat;
+        flat.carry(2, 0.9f, /*driven=*/true);
+        rig.render(flat);
+        expectWithinAbsoluteError(gain.getValue(), 0.5f, 1.0e-6f);
+
+        // The lane stays flat, so only an owed value would bring it back.
+        gain.endChangeGesture();
+        rig.render(flat);
+        expectWithinAbsoluteError(gain.getValue(), 0.9f, 1.0e-6f);
     }
 };
 
