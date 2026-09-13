@@ -1,5 +1,7 @@
 #include "DeviceControl.hpp"
 
+#include <algorithm>
+#include <iterator>
 #include <mutex>
 #include <utility>
 
@@ -107,13 +109,33 @@ void LocalDeviceControlPlane::settleParameterEdits() {
     });
 }
 
+bool LocalDeviceControlPlane::runAtBatchBoundary(ControlExecutor::Work work) {
+    // Under the lock an edit is submitted under, so nothing lands between the
+    // batch closing and this being queued.
+    const std::scoped_lock lock(waiting_->submitLock);
+    if (waiting_->pumpQueued) {
+        ++waiting_->openBatch;
+        waiting_->pumpQueued = false;
+    }
+
+    return executor()->run(std::move(work));
+}
+
 void LocalDeviceControlPlane::pump(Waiting& waiting,
                                    const std::weak_ptr<const DeviceRegistry>& devices,
-                                   bool closing) {
+                                   std::uint64_t batch, bool closing) {
     {
         const std::scoped_lock lock(waiting.submitLock);
-        std::swap(waiting.submitted, waiting.taken);
-        waiting.pumpQueued = false;
+
+        // Batches are submitted and pumped in order, so this one is at the front.
+        const auto end = std::ranges::find_if(
+            waiting.submitted, [batch](const SubmittedEdit& edit) { return edit.batch != batch; });
+        waiting.taken.assign(std::make_move_iterator(waiting.submitted.begin()),
+                             std::make_move_iterator(end));
+        waiting.submitted.erase(waiting.submitted.begin(), end);
+
+        if (waiting.openBatch == batch)
+            waiting.pumpQueued = false;
     }
 
     const auto registry = closing ? nullptr : devices.lock();
@@ -134,15 +156,27 @@ void LocalDeviceControlPlane::pump(Waiting& waiting,
         }
 
         const auto slot = submitted.edit.slot;
-        const auto sequence = device->queueParameterEdit(slot, submitted.edit.normalised);
-        if (!sequence.has_value()) {
+        const auto queued = device->queueParameterEdit(slot, submitted.edit.normalised);
+        if (!queued.has_value()) {
             answer(submitted.completed, {.observed = device->readParameter(slot)});
             continue;
         }
 
+        // Replaced in the mailbox before any block took it, so it never will be.
+        if (queued->superseded != 0) {
+            const auto replaced =
+                std::ranges::find_if(waiting.edits, [&submitted, &queued](const WaitingEdit& edit) {
+                    return edit.key == submitted.key && edit.sequence == queued->superseded;
+                });
+            if (replaced != waiting.edits.end()) {
+                answer(replaced->completed, {.superseded = true});
+                waiting.edits.erase(replaced);
+            }
+        }
+
         waiting.edits.push_back({.key = submitted.key,
                                  .slot = slot,
-                                 .sequence = *sequence,
+                                 .sequence = queued->sequence,
                                  .request = submitted.edit.request,
                                  .completed = std::move(submitted.completed)});
     }
@@ -156,34 +190,56 @@ void LocalDeviceControlPlane::settle(Waiting& waiting,
                                      bool closing) {
     const auto registry = closing ? nullptr : devices.lock();
 
-    std::erase_if(waiting.edits, [&registry, &waiting](WaitingEdit& edit) {
-        const auto answer = [&waiting, &edit](magda::EditCompletion done) {
-            waiting.outstanding.fetch_sub(1, std::memory_order_acq_rel);
-            edit.completed(done);
-            return true;
-        };
+    const auto answer = [&waiting](WaitingEdit& edit, magda::EditCompletion done) {
+        waiting.outstanding.fetch_sub(1, std::memory_order_acq_rel);
+        edit.completed(done);
+        return true;
+    };
 
-        const auto device = registry != nullptr ? registry->find(edit.key) : nullptr;
-        if (device == nullptr || !edit.request.isStillWanted())
-            return answer({});
+    std::vector<magda::engine::DeviceKey> keys;
+    for (const auto& edit : waiting.edits)
+        if (std::ranges::find(keys, edit.key) == keys.end())
+            keys.push_back(edit.key);
+
+    // One device at a time: read what its applies did, then answer its edits.
+    for (const auto key : keys) {
+        const auto device = registry != nullptr ? registry->find(key) : nullptr;
+        if (device == nullptr) {
+            std::erase_if(waiting.edits,
+                          [&](WaitingEdit& edit) { return edit.key == key && answer(edit, {}); });
+            continue;
+        }
 
         // Nothing renders it any more, so nothing else will apply what it holds.
         if (!device->isRendered())
             device->pumpParameterEdits();
 
-        switch (device->parameterEditState(edit.slot, edit.sequence)) {
-            case EngineExternalDevice::EditState::Pending:
-                return false;
-            case EngineExternalDevice::EditState::Superseded:
-                return answer({.superseded = true});
-            case EngineExternalDevice::EditState::Refused:
-                return answer({.observed = device->readParameter(edit.slot)});
-            case EngineExternalDevice::EditState::Applied:
-                return answer({.delivered = true, .observed = device->readParameter(edit.slot)});
-        }
+        const auto complete = device->takeEditOutcomes([&waiting, key](auto outcome) {
+            const auto edit = std::ranges::find_if(waiting.edits, [&](const WaitingEdit& held) {
+                return held.key == key && held.sequence == outcome.sequence;
+            });
+            if (edit != waiting.edits.end())
+                edit->refused = outcome.refused;
+        });
 
-        return false;
-    });
+        std::erase_if(waiting.edits, [&](WaitingEdit& edit) {
+            if (edit.key != key)
+                return false;
+
+            if (edit.refused.has_value())
+                return answer(edit, {.delivered = !*edit.refused,
+                                     .observed = device->readParameter(edit.slot)});
+
+            // Taken back if no block has it yet; an outcome that still arrives
+            // for it has nobody left to answer.
+            if (!edit.request.isStillWanted() || !complete) {
+                device->withdrawParameterEdit(edit.slot, edit.sequence);
+                return answer(edit, {});
+            }
+
+            return false;
+        });
+    }
 }
 
 bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
@@ -201,8 +257,8 @@ bool LocalDeviceControlPlane::captureState(magda::engine::DeviceKey key,
     // queued it, so it carries what it needs by value: the weak registry, which
     // is the devices and their owner in one reference rather than a token
     // standing beside them.
-    return executor()->run([devices = devices_, waiting = waiting_, key,
-                            completed](ExecutionState state) mutable {
+    return runAtBatchBoundary([devices = devices_, waiting = waiting_, key,
+                               completed](ExecutionState state) mutable {
         if (state == ExecutionState::Cancelled) {
             // Still on the executor, which is what a cancellation is worth: the
             // caller is told where it was expecting to be told, and the devices
@@ -272,8 +328,8 @@ bool LocalDeviceControlPlane::applyState(magda::engine::DeviceKey key, magda::De
         return false;
 
     // Same threading and lifetime rules as captureState().
-    return executor()->run([devices = devices_, waiting = waiting_, key, saved = std::move(saved),
-                            completed](ExecutionState state) mutable {
+    return runAtBatchBoundary([devices = devices_, waiting = waiting_, key,
+                               saved = std::move(saved), completed](ExecutionState state) mutable {
         if (state == ExecutionState::Cancelled) {
             completed(CaptureOutcome::failed("the control plane closed before this apply ran"));
             return;
@@ -327,37 +383,33 @@ magda::EditStatus LocalDeviceControlPlane::editParameter(magda::engine::DeviceKe
         return magda::EditStatus::Closing;
 
     // Into a bounded batch with one pump queued for it, so a drag queues one
-    // executor job however many moves it makes (#2651).
-    std::size_t position = 0;
-    {
-        const std::scoped_lock lock(waiting_->submitLock);
-        if (waiting_->outstanding.load(std::memory_order_acquire) >= kMaxOutstandingEdits)
-            return magda::EditStatus::Busy;
+    // executor job however many moves it makes (#2651). Queued under the lock,
+    // so a state operation cannot slip between the batch and its pump.
+    const std::scoped_lock lock(waiting_->submitLock);
+    if (waiting_->outstanding.load(std::memory_order_acquire) >= kMaxOutstandingEdits)
+        return magda::EditStatus::Busy;
 
-        position = waiting_->submitted.size();
-        waiting_->submitted.push_back(
-            {.key = key, .edit = edit, .completed = std::move(completed)});
-        waiting_->outstanding.fetch_add(1, std::memory_order_acq_rel);
+    const auto batch = waiting_->openBatch;
+    waiting_->submitted.push_back(
+        {.key = key, .edit = edit, .completed = std::move(completed), .batch = batch});
+    waiting_->outstanding.fetch_add(1, std::memory_order_acq_rel);
 
-        if (std::exchange(waiting_->pumpQueued, true))
-            return magda::EditStatus::Accepted;
-    }
+    if (std::exchange(waiting_->pumpQueued, true))
+        return magda::EditStatus::Accepted;
 
     // On the executor like everything else here: a write must not land inside
     // a state read, which suspends the plugin around a chunk (#2268).
     const auto queued =
-        executor()->run([waiting = waiting_, devices = devices_](ExecutionState state) {
-            pump(*waiting, devices, state == ExecutionState::Cancelled);
+        executor()->run([waiting = waiting_, devices = devices_, batch](ExecutionState state) {
+            pump(*waiting, devices, batch, state == ExecutionState::Cancelled);
         });
     if (queued)
         return magda::EditStatus::Accepted;
 
-    // A stopped executor: this call's own edit is taken back, and whatever was
-    // submitted behind it is answered by the destructor. No pump took the batch,
-    // since this call is the one that would have queued it.
-    const std::scoped_lock lock(waiting_->submitLock);
+    // A stopped executor: nothing else is in this batch, since this call would
+    // have queued its pump.
     waiting_->pumpQueued = false;
-    waiting_->submitted.erase(waiting_->submitted.begin() + static_cast<std::ptrdiff_t>(position));
+    waiting_->submitted.pop_back();
     waiting_->outstanding.fetch_sub(1, std::memory_order_acq_rel);
     return magda::EditStatus::Closing;
 }

@@ -178,6 +178,7 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         testAOneOffWriteReachesThePluginWithoutTheTable();
         testAWriteTheDeviceCannotTakeIsRefused();
         testABurstWaitsForTheBlockAndKeepsTheLatest();
+        testEveryAppliedEditKeepsItsOutcome();
         testAnEditAndTheTableInOneBlockEndOnTheTable();
         testAPatchAppliedOverQueuedEditsDropsThem();
         testAnUnchangedTableValueStillWinsAfterAnEdit();
@@ -393,7 +394,14 @@ class HostedParameterEditsTest final : public juce::UnitTest {
                         "No longer driven, with the lane gone");
     }
 
-    using EditState = adapter::EngineExternalDevice::EditState;
+    using Outcome = adapter::EngineExternalDevice::EditOutcome;
+
+    /// Every outcome the device has recorded since the last call.
+    static std::vector<Outcome> outcomesOf(adapter::EngineExternalDevice& device) {
+        std::vector<Outcome> outcomes;
+        device.takeEditOutcomes([&outcomes](Outcome outcome) { outcomes.push_back(outcome); });
+        return outcomes;
+    }
 
     void testAOneOffWriteReachesThePluginWithoutTheTable() {
         beginTest("A one-off edit to a device no block reaches is applied at once");
@@ -401,11 +409,14 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         Rig rig;
 
         // Never marked rendered, as a bypassed device is not.
-        const auto sequence = rig.device->queueParameterEdit(2, 0.7f);
-        expect(sequence.has_value(), "The device took the edit");
+        const auto queued = rig.device->queueParameterEdit(2, 0.7f);
+        expect(queued.has_value(), "The device took the edit");
         expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.7f, 1.0e-6f);
-        if (sequence.has_value())
-            expect(rig.device->parameterEditState(2, *sequence) == EditState::Applied, "Applied");
+
+        const auto outcomes = outcomesOf(*rig.device);
+        expect(outcomes.size() == 1 && queued.has_value() &&
+                   outcomes.front().sequence == queued->sequence && !outcomes.front().refused,
+               "Recorded as applied");
 
         // Set, but not processed: a capture runs the plugin over it first.
         expect(!rig.device->editsFenced(), "Not yet processed");
@@ -440,12 +451,17 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         rig.drain();
         const auto wakesBefore = rig.wakes;
 
-        std::vector<std::uint32_t> sequences;
+        std::vector<adapter::EngineExternalDevice::QueuedEdit> queued;
         for (const auto value : {0.2f, 0.3f, 0.4f})
-            if (const auto sequence = rig.device->queueParameterEdit(3, value))
-                sequences.push_back(*sequence);
+            if (const auto edit = rig.device->queueParameterEdit(3, value))
+                queued.push_back(*edit);
 
-        expect(sequences.size() == 3, "All three accepted");
+        expect(queued.size() == 3, "All three accepted");
+        if (queued.size() == 3) {
+            expect(queued[0].superseded == 0, "The first replaced nothing");
+            expect(queued[1].superseded == queued[0].sequence, "The second replaced the first");
+            expect(queued[2].superseded == queued[1].sequence, "The third, the second");
+        }
         expectWithinAbsoluteError(rig.plugin->parameters[1]->getValue(), 0.0f, 1.0e-6f);
         expect(!rig.device->editsFenced(), "A capture would wait");
 
@@ -454,13 +470,33 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         expect(rig.device->editsFenced(), "Applied and processed");
         expect(rig.wakes == wakesBefore + 1, "The block woke the host once");
 
-        if (sequences.size() == 3) {
-            expect(rig.device->parameterEditState(3, sequences[0]) == EditState::Superseded,
-                   "The first never reached the plugin");
-            expect(rig.device->parameterEditState(3, sequences[1]) == EditState::Superseded,
-                   "Nor the second");
-            expect(rig.device->parameterEditState(3, sequences[2]) == EditState::Applied,
-                   "The latest did");
+        const auto outcomes = outcomesOf(*rig.device);
+        expect(outcomes.size() == 1 && queued.size() == 3 &&
+                   outcomes.front().sequence == queued[2].sequence,
+               "Only the latest reached the plugin");
+    }
+
+    void testEveryAppliedEditKeepsItsOutcome() {
+        beginTest("Edits applied by separate blocks each keep their outcome until read");
+
+        Rig rig;
+        rig.device->setRendered(true);
+
+        const auto first = rig.device->queueParameterEdit(3, 0.2f);
+        rig.render(Window{});
+        const auto second = rig.device->queueParameterEdit(3, 0.3f);
+        rig.render(Window{});
+
+        expect(first.has_value() && second.has_value() && second->superseded == 0,
+               "The first was taken before the second arrived");
+
+        const auto outcomes = outcomesOf(*rig.device);
+        expect(outcomes.size() == 2, "Both recorded");
+        if (outcomes.size() == 2 && first.has_value() && second.has_value()) {
+            expect(outcomes[0].sequence == first->sequence && !outcomes[0].refused,
+                   "First applied");
+            expect(outcomes[1].sequence == second->sequence && !outcomes[1].refused,
+                   "Second applied");
         }
     }
 
@@ -509,14 +545,15 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         Rig rig;
         rig.device->setRendered(true);
 
-        const auto sequence = rig.device->queueParameterEdit(2, 0.6f);
+        const auto queued = rig.device->queueParameterEdit(2, 0.6f);
         rig.device->discardParameterEdits();
         rig.render(Window{});
 
         expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.0f, 1.0e-6f);
-        if (sequence.has_value())
-            expect(rig.device->parameterEditState(2, *sequence) == EditState::Refused,
-                   "Answered as not taken");
+        const auto outcomes = outcomesOf(*rig.device);
+        expect(outcomes.size() == 1 && queued.has_value() &&
+                   outcomes.front().sequence == queued->sequence && outcomes.front().refused,
+               "Recorded as not taken");
     }
 
     void testASlotHeldInTheEditorIsNotWrittenOver() {
@@ -528,8 +565,9 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         gain.setValue(0.5f);
         gain.beginChangeGesture();
 
-        const auto held = rig.device->queueParameterEdit(2, 0.7f);
-        expect(held.has_value() && rig.device->parameterEditState(2, *held) == EditState::Refused,
+        rig.device->queueParameterEdit(2, 0.7f);
+        const auto outcomes = outcomesOf(*rig.device);
+        expect(outcomes.size() == 1 && outcomes.front().refused,
                "A one-off edit is refused while the gesture holds the slot");
 
         Window moved;

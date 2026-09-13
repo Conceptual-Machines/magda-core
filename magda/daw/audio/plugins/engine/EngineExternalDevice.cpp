@@ -300,9 +300,8 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
             slotOfParameter_[static_cast<std::size_t>(parameter->getParameterIndex())] = slot;
 
     edits_ = std::make_shared<PluginEdits>(parameters_.size());
-    queuedEdits_ = std::vector<std::atomic<std::uint64_t>>(parameters_.size());
-    editQueued_ = std::vector<std::atomic<bool>>(parameters_.size());
-    settledEdits_ = std::vector<std::atomic<std::uint64_t>>(parameters_.size());
+    mailbox_ = std::vector<std::atomic<std::uint64_t>>(parameters_.size());
+    outcomes_.assign(kEditOutcomeCapacity, 0);
     listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_, catalogStale_);
     instance_->addListener(listener_.get());
 }
@@ -356,7 +355,21 @@ void EngineExternalDevice::forgetDriverState() {
         driven.store(false, std::memory_order_relaxed);
 }
 
-std::optional<std::uint32_t> EngineExternalDevice::queueParameterEdit(int slot, float normalised) {
+namespace {
+
+/// A mailbox word: the sequence high, the value's bits low.
+std::uint64_t packEdit(std::uint32_t sequence, float normalised) {
+    return (static_cast<std::uint64_t>(sequence) << 32) | std::bit_cast<std::uint32_t>(normalised);
+}
+
+std::uint32_t sequenceOf(std::uint64_t packed) {
+    return static_cast<std::uint32_t>(packed >> 32);
+}
+
+}  // namespace
+
+std::optional<EngineExternalDevice::QueuedEdit> EngineExternalDevice::queueParameterEdit(
+    int slot, float normalised) {
     if (!mapsSlot(slot) || !std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
         return std::nullopt;
 
@@ -368,38 +381,57 @@ std::optional<std::uint32_t> EngineExternalDevice::queueParameterEdit(int slot, 
     if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
         return std::nullopt;
 
-    const auto sequence = ++nextEditSequence_;
-    queuedEdits_[at].store((static_cast<std::uint64_t>(sequence) << 32) |
-                               std::bit_cast<std::uint32_t>(normalised),
-                           std::memory_order_release);
+    if (++nextEditSequence_ == 0)
+        ++nextEditSequence_;
 
-    // Slot before device, so a block that clears the device's flag mid-write
-    // still finds the slot on its walk or on the next block.
-    editQueued_[at].store(true, std::memory_order_release);
+    const auto sequence = nextEditSequence_;
+    const auto replaced =
+        mailbox_[at].exchange(packEdit(sequence, normalised), std::memory_order_acq_rel);
     anyEditQueued_.store(true, std::memory_order_release);
 
     if (!isRendered())
         pumpParameterEdits();
 
-    return sequence;
+    return QueuedEdit{.sequence = sequence, .superseded = sequenceOf(replaced)};
 }
 
-EngineExternalDevice::EditState EngineExternalDevice::parameterEditState(
-    int slot, std::uint32_t sequence) const {
+bool EngineExternalDevice::withdrawParameterEdit(int slot, std::uint32_t sequence) {
     if (!mapsSlot(slot))
-        return EditState::Refused;
+        return false;
 
-    const auto settled =
-        settledEdits_[static_cast<std::size_t>(slot)].load(std::memory_order_acquire);
-    const auto settledSequence = static_cast<std::uint32_t>(settled >> 1);
+    auto& entry = mailbox_[static_cast<std::size_t>(slot)];
+    auto held = entry.load(std::memory_order_acquire);
+    return sequenceOf(held) == sequence &&
+           entry.compare_exchange_strong(held, 0, std::memory_order_acq_rel);
+}
 
-    if (settledSequence < sequence)
-        return EditState::Pending;
+bool EngineExternalDevice::takeEditOutcomes(const std::function<void(EditOutcome)>& each) {
+    const auto written = outcomesWritten_.load(std::memory_order_acquire);
+    auto read = outcomesRead_.load(std::memory_order_relaxed);
 
-    if (settledSequence > sequence)
-        return EditState::Superseded;
+    for (; read != written; read = (read + 1) % kEditOutcomeCapacity) {
+        const auto packed = outcomes_[read];
+        each({.slot = static_cast<int>((packed >> 1) & 0x7FFFFFFFu),
+              .sequence = sequenceOf(packed),
+              .refused = (packed & 1u) != 0});
+    }
 
-    return (settled & 1u) != 0 ? EditState::Refused : EditState::Applied;
+    outcomesRead_.store(read, std::memory_order_release);
+    return !outcomesLost_.exchange(false, std::memory_order_acq_rel);
+}
+
+void EngineExternalDevice::recordEditOutcome(std::size_t slot, std::uint32_t sequence,
+                                             bool refused) {
+    const auto written = outcomesWritten_.load(std::memory_order_relaxed);
+    const auto next = (written + 1) % kEditOutcomeCapacity;
+    if (next == outcomesRead_.load(std::memory_order_acquire)) {
+        outcomesLost_.store(true, std::memory_order_release);
+        return;
+    }
+
+    outcomes_[written] = (static_cast<std::uint64_t>(sequence) << 32) |
+                         (static_cast<std::uint64_t>(slot) << 1) | (refused ? 1u : 0u);
+    outcomesWritten_.store(next, std::memory_order_release);
 }
 
 void EngineExternalDevice::pumpParameterEdits() {
@@ -412,13 +444,9 @@ void EngineExternalDevice::discardParameterEdits() {
     const juce::ScopedLock lock(instance_->getCallbackLock());
     anyEditQueued_.store(false, std::memory_order_release);
 
-    for (std::size_t at = 0; at < editQueued_.size(); ++at) {
-        if (!editQueued_[at].exchange(false, std::memory_order_acq_rel))
-            continue;
-
-        const auto sequence = queuedEdits_[at].load(std::memory_order_acquire) >> 32;
-        settledEdits_[at].store((sequence << 1) | 1u, std::memory_order_release);
-    }
+    for (std::size_t at = 0; at < mailbox_.size(); ++at)
+        if (const auto taken = mailbox_[at].exchange(0, std::memory_order_acq_rel); taken != 0)
+            recordEditOutcome(at, sequenceOf(taken), true);
 }
 
 void EngineExternalDevice::setRendered(bool rendered) {
@@ -431,7 +459,7 @@ bool EngineExternalDevice::isRendered() const {
 
 bool EngineExternalDevice::editsFenced() const {
     const auto queued = std::ranges::any_of(
-        editQueued_, [](const auto& flag) { return flag.load(std::memory_order_acquire); });
+        mailbox_, [](const auto& entry) { return entry.load(std::memory_order_acquire) != 0; });
 
     return !queued && !awaitingBlock_.load(std::memory_order_acquire);
 }
@@ -463,12 +491,10 @@ bool EngineExternalDevice::applyParameterEdits() {
 
     awaitingBlock_.store(true, std::memory_order_release);
 
-    for (std::size_t at = 0; at < editQueued_.size(); ++at) {
-        if (!editQueued_[at].exchange(false, std::memory_order_acq_rel))
+    for (std::size_t at = 0; at < mailbox_.size(); ++at) {
+        const auto taken = mailbox_[at].exchange(0, std::memory_order_acq_rel);
+        if (taken == 0)
             continue;
-
-        const auto packed = queuedEdits_[at].load(std::memory_order_acquire);
-        const auto sequence = static_cast<std::uint32_t>(packed >> 32);
 
         // A person holding it in the plugin's editor has it until they let go.
         const auto refused = edits_->gesturing[at].load(std::memory_order_acquire);
@@ -477,12 +503,11 @@ bool EngineExternalDevice::applyParameterEdits() {
         // even at the value it held. Both run under the callback lock.
         if (!refused) {
             parameters_[at].parameter->setValue(
-                std::bit_cast<float>(static_cast<std::uint32_t>(packed & 0xFFFFFFFFu)));
+                std::bit_cast<float>(static_cast<std::uint32_t>(taken & 0xFFFFFFFFu)));
             lastTable_[at] = std::numeric_limits<float>::quiet_NaN();
         }
 
-        settledEdits_[at].store((static_cast<std::uint64_t>(sequence) << 1) | (refused ? 1u : 0u),
-                                std::memory_order_release);
+        recordEditOutcome(at, sequenceOf(taken), refused);
     }
 
     return true;

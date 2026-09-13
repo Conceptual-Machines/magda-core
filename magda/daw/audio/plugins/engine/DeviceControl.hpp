@@ -320,6 +320,10 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
         magda::engine::DeviceKey key;
         ParameterEdit edit;
         EditCallback completed;
+
+        /// Which pump takes it. A state operation closes the batch, so an edit
+        /// submitted after one is queued after it too.
+        std::uint64_t batch = 0;
     };
 
     struct WaitingEdit {
@@ -328,6 +332,9 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
         std::uint32_t sequence = 0;
         AssignmentRequest request;
         EditCallback completed;
+
+        /// Set from the device's outcome record, answered on the same settle.
+        std::optional<bool> refused;
     };
 
     /// Shared with the work that outlives a call.
@@ -338,6 +345,7 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
         /// for them, and it takes the whole batch.
         std::mutex submitLock;
         std::vector<SubmittedEdit> submitted;
+        std::uint64_t openBatch = 0;
         bool pumpQueued = false;
 
         /// Executor only: the batch a pump took, and the edits waiting for a block.
@@ -348,9 +356,13 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
         std::atomic<bool> settleQueued{false};
     };
 
-    /// Queue @p waiting's submitted edits into their devices. Executor.
+    /// Queue batch @p batch of @p waiting's submitted edits into their devices. Executor.
     static void pump(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
-                     bool closing);
+                     std::uint64_t batch, bool closing);
+
+    /// Queue @p work behind every edit submitted before it, and ahead of every
+    /// edit submitted after.
+    bool runAtBatchBoundary(ControlExecutor::Work work);
 
     static void settle(Waiting& waiting, const std::weak_ptr<const DeviceRegistry>& devices,
                        bool closing);

@@ -157,16 +157,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     PluginEditSource pluginEdits() const;
 
-    /// Where an accepted edit to a slot has got to (#2651).
-    enum class EditState {
-        Pending,
-        Applied,
-
-        /// A later edit to the slot was applied in its place.
-        Superseded,
-
-        /// The plugin's editor held the slot in a gesture when it came to apply.
-        Refused,
+    /// What queueing an edit did: its sequence, and the sequence of an earlier
+    /// edit to the slot it replaced before any block took it, or zero (#2651).
+    struct QueuedEdit {
+        std::uint32_t sequence = 0;
+        std::uint32_t superseded = 0;
     };
 
     /**
@@ -177,10 +172,28 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * the callback lock. Control executor. Absent for the wrapper pair, a slot
      * with no live parameter, and a position outside [0, 1].
      */
-    std::optional<std::uint32_t> queueParameterEdit(int slot, float normalised);
+    std::optional<QueuedEdit> queueParameterEdit(int slot, float normalised);
 
-    /// Where the edit @p sequence to @p slot has got to. Any thread.
-    EditState parameterEditState(int slot, std::uint32_t sequence) const;
+    /// Take back edit @p sequence if no block has taken it yet. Control executor.
+    bool withdrawParameterEdit(int slot, std::uint32_t sequence);
+
+    /// What an apply did with the edit it took.
+    struct EditOutcome {
+        int slot = -1;
+        std::uint32_t sequence = 0;
+        bool refused = false;
+    };
+
+    /// Outcomes are kept until read, up to this many.
+    static constexpr std::size_t kEditOutcomeCapacity = 2048;
+
+    /**
+     * @brief Hand @p each every outcome recorded since the last call. Control executor.
+     *
+     * @return false if an outcome was dropped for want of room, so the reader
+     *         cannot tell every edit it waits on from one never taken.
+     */
+    bool takeEditOutcomes(const std::function<void(EditOutcome)>& each);
 
     /**
      * @brief Apply what the mailbox holds from the control side, under the callback lock.
@@ -190,8 +203,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      */
     void pumpParameterEdits();
 
-    /// Settle every queued edit as refused without applying it, for a state
-    /// about to replace the patch. Control executor.
+    /// Take every queued edit without applying it, recorded as refused, for a
+    /// state about to replace the patch. Control executor.
     void discardParameterEdits();
 
     /// Whether a live plan renders this device and the audio device is running.
@@ -343,16 +356,23 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         }
     };
 
-    /// Accepted one-off edits per slot: the value's bits and its sequence in one
-    /// word, so an apply never pairs one edit's value with another's sequence.
-    std::vector<std::atomic<std::uint64_t>> queuedEdits_;
-    std::vector<std::atomic<bool>> editQueued_;
+    /// One accepted edit per slot, its sequence and value's bits in one word, or
+    /// zero. Both sides take it by exchange, so an edit is applied or replaced,
+    /// never both.
+    std::vector<std::atomic<std::uint64_t>> mailbox_;
     std::atomic<bool> anyEditQueued_{false};
 
-    /// The last sequence per slot that an apply settled, and whether it was refused.
-    std::vector<std::atomic<std::uint64_t>> settledEdits_;
+    /// Record what an apply did. Only ever under the callback lock, which makes
+    /// its writer single.
+    void recordEditOutcome(std::size_t slot, std::uint32_t sequence, bool refused);
 
-    /// Control executor only.
+    /// Outcomes, written under the callback lock and read on the control executor.
+    std::vector<std::uint64_t> outcomes_;
+    std::atomic<std::size_t> outcomesWritten_{0};
+    std::atomic<std::size_t> outcomesRead_{0};
+    std::atomic<bool> outcomesLost_{false};
+
+    /// Control executor only. Never zero once used, which marks an empty slot.
     std::uint32_t nextEditSequence_ = 0;
 
     std::atomic<bool> rendered_{false};
