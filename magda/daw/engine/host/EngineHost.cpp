@@ -5,10 +5,13 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <map>
+#include <memory>
 #include <optional>
 #include <ranges>
 #include <set>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include "../../audio/DeviceParameterDisplayTextProvider.hpp"
@@ -208,6 +211,14 @@ class SessionDevices final : public adapter::DeviceRegistry {
   private:
     LiveSession session_;
 };
+
+/// One of @p key's outstanding edits has completed.
+void settlePendingEdit(std::map<std::pair<engine::DeviceKey, int>, int>& pending,
+                       const std::pair<engine::DeviceKey, int>& key) {
+    const auto at = pending.find(key);
+    if (at != pending.end() && --at->second <= 0)
+        pending.erase(at);
+}
 
 }  // namespace
 
@@ -651,38 +662,48 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /**
      * @brief What a plugin said one of its parameters holds, fanned out.
      *
-     * Two readers, on purpose: the cache and the knob take every observation,
-     * because a parameter the document knows nothing about still has to draw
-     * itself; the document takes only the base of a parameter it owns, and not
-     * while the host is driving it, since that value is the host's own output
-     * coming back (docs/specs/hosted-plugin-parameter-control.md).
+     * The cache and the knob take every observation, since a parameter the
+     * document knows nothing about still has to draw itself. The document
+     * takes only a gesture in the plugin's own editor, and only as the base of
+     * a parameter it holds (docs/specs/hosted-plugin-parameter-control.md).
      */
     void observePluginParameter(engine::DeviceKey key,
                                 adapter::EngineExternalDevice::Observation observation) {
+        const auto path = publishObservation(key, observation);
+        if (!path.isValid() || observation.source != ObservationSource::EditorGesture)
+            return;
+
+        // setDeviceParameterValueFromPlugin does nothing for a slot the
+        // document holds no value for, and that is the rule, not an accident.
+        auto* device = modelDevice(key);
+        if (device != nullptr && device->findParameterByIndex(observation.slot) != nullptr)
+            TrackManager::getInstance().setDeviceParameterValueFromPlugin(path, observation.slot,
+                                                                          observation.normalised);
+    }
+
+    /// Into the cache and out to the UI. The path it went to, invalid for a
+    /// device the model no longer has.
+    ChainNodePath publishObservation(
+        engine::DeviceKey key, const adapter::EngineExternalDevice::Observation& observation) {
         auto& tracks = TrackManager::getInstance();
         const auto path = tracks.findDevicePath(key.deviceId, key.segment);
         if (!path.isValid())
-            return;
+            return path;
 
         observed_[key][observation.slot] = observation.normalised;
         tracks.notifyDeviceParameterObserved(path, observation.slot, observation.normalised,
-                                             observation.hostOwned);
-
-        if (observation.hostOwned)
-            return;
-
-        // Only a slot the document holds a value for, which is the base a
-        // lane or a macro reads. setDeviceParameterValueFromPlugin does
-        // nothing for any other, and that is the rule rather than an accident.
-        auto* device = modelDevice(key);
-        if (device != nullptr && device->findParameterByIndex(observation.slot) != nullptr)
-            tracks.setDeviceParameterValueFromPlugin(path, observation.slot,
-                                                     observation.normalised);
+                                             observation.source);
+        return path;
     }
 
     /// The last value each plugin reported per slot. Runtime only: the plugin
     /// owns these, and its chunk carries them into a save.
     std::map<engine::DeviceKey, std::map<int, float>> observed_;
+
+    /// Accepted edits not yet completed, per slot. Shared with each completion,
+    /// which can outlive this.
+    std::shared_ptr<std::map<std::pair<engine::DeviceKey, int>, int>> pendingEdits_ =
+        std::make_shared<std::map<std::pair<engine::DeviceKey, int>, int>>();
 
     /// Every controller binding and MIDI learn, as the addresses they name.
     std::vector<ControlTarget> boundTargets() const {
@@ -1067,6 +1088,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return slot == device->second.end() ? std::nullopt : std::optional{slot->second};
     }
 
+    bool hostedEditPending(const ChainNodePath& devicePath, int paramIndex) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        return key.has_value() && pendingEdits_->contains({*key, paramIndex});
+    }
+
     /**
      * @brief Hand a hosted parameter a value of its own, through the plane.
      *
@@ -1076,7 +1102,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
      */
     EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
                                     float normalised, EditOrigin,
-                                    std::function<void(bool)> completed) {
+                                    std::function<void(EditCompletion)> completed) {
         const EditReceipt refused{.status = EditStatus::Unavailable, .requested = normalised};
 
         // Refused rather than clamped: a caller working in a configured
@@ -1093,15 +1119,35 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // The assignment as it is now, so a slot that changes plugin before
         // this runs refuses the edit rather than moving the new one.
+        // The reading goes out as an observation whether or not the write was
+        // taken, so a control that asked for a value it did not get drops it.
+        // `this` is read only while the request is wanted: the table it
+        // watches dies with the loader, which dies with this.
+        const auto request = loader_.request(*key);
+        const std::pair pendingKey{*key, paramIndex};
+        ++(*pendingEdits_)[pendingKey];
+
         const auto asked = plane_.editParameter(
-            *key, {.slot = paramIndex, .normalised = normalised, .request = loader_.request(*key)},
-            [completed = std::move(completed)](bool delivered) {
+            *key, {.slot = paramIndex, .normalised = normalised, .request = request},
+            [this, request, pending = pendingEdits_, pendingKey,
+             completed = std::move(completed)](EditCompletion done) {
+                // Settled first, so a control reading it from the observation
+                // below already sees nothing outstanding.
+                settlePendingEdit(*pending, pendingKey);
+
+                if (done.observed.has_value() && request.isStillWanted())
+                    publishObservation(pendingKey.first,
+                                       {.slot = pendingKey.second,
+                                        .normalised = *done.observed,
+                                        .source = ObservationSource::CommandReadback});
                 if (completed)
-                    completed(delivered);
+                    completed(done);
             });
 
-        if (!asked)
+        if (!asked) {
+            settlePendingEdit(*pendingEdits_, pendingKey);
             return {.status = EditStatus::Closing, .requested = normalised};
+        }
 
         return {.status = EditStatus::Accepted, .requested = normalised};
     }
@@ -1376,9 +1422,13 @@ std::optional<float> EngineHost::observedParameter(const ChainNodePath& devicePa
     return impl_->observedParameter(devicePath, paramIndex);
 }
 
+bool EngineHost::hostedEditPending(const ChainNodePath& devicePath, int paramIndex) const {
+    return impl_->hostedEditPending(devicePath, paramIndex);
+}
+
 EditReceipt EngineHost::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
                                             float normalised, EditOrigin origin,
-                                            std::function<void(bool delivered)> completed) {
+                                            std::function<void(EditCompletion)> completed) {
     return impl_->editHostedParameter(devicePath, paramIndex, normalised, origin,
                                       std::move(completed));
 }

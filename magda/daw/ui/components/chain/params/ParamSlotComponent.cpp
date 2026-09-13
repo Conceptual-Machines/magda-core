@@ -1,9 +1,13 @@
 #include "params/ParamSlotComponent.hpp"
 
 #include <cmath>
+#include <optional>
+#include <utility>
 
 #include "core/LinkModeManager.hpp"
 #include "core/ParameterUtils.hpp"
+#include "core/TrackManager.hpp"
+#include "engine/AudioEngine.hpp"
 #include "params/ParamLinkMenu.hpp"
 #include "params/ParamLinkResolver.hpp"
 #include "params/ParamModulationPainter.hpp"
@@ -44,6 +48,7 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
                     .value);
         }
     };
+    valueSlider_.onHoldEnd = [this]() { releaseHeldObservation(); };
     valueSlider_.onClicked = [this]() {
         if (devicePath_.isValid()) {
             magda::SelectionManager::getInstance().selectParam(devicePath_, paramIndex_);
@@ -526,6 +531,30 @@ bool ParamSlotComponent::isBeingDragged() const {
     return valueSlider_.isBeingDragged();
 }
 
+void ParamSlotComponent::setObservedValue(double modelValue) {
+    if (isBeingDragged()) {
+        heldObservation_ = modelValue;
+        return;
+    }
+
+    heldObservation_.reset();
+    setParamValue(modelValue);
+}
+
+void ParamSlotComponent::releaseHeldObservation() {
+    const auto held = std::exchange(heldObservation_, std::nullopt);
+    if (!held.has_value())
+        return;
+
+    // An edit still on its way publishes its own reading when it lands, and
+    // what was held is older than that.
+    auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+    if (engine != nullptr && engine->hostedEditPending(devicePath_, paramInfo_.paramIndex))
+        return;
+
+    setParamValue(*held);
+}
+
 void ParamSlotComponent::setOverlayOnly(bool overlayOnly) {
     overlayOnly_ = overlayOnly;
     if (overlayOnly && momentaryButton_)
@@ -550,6 +579,9 @@ void ParamSlotComponent::refreshLinkModeState() {
 }
 
 void ParamSlotComponent::cancelGesture() {
+    // Dropped, not shown: a cancelled slot is repopulated from the cache, which
+    // already holds the observation.
+    heldObservation_.reset();
     valueSlider_.cancelGesture();
     if (momentaryButton_)
         momentaryButton_->release();

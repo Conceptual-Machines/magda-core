@@ -130,6 +130,12 @@ void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostCompon
 void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
                                          ParamHostComponent& paramGrid, int paramIndex,
                                          float newValue) {
+    if (auto* slot = currentPageParameterSlot(device, paramGrid, paramIndex))
+        slot->setParamValue(newValue);
+}
+
+ParamSlotComponent* currentPageParameterSlot(const magda::DeviceInfo& device,
+                                             ParamHostComponent& paramGrid, int paramIndex) {
     const int paramsPerPage = paramGrid.getSlotCount();
     const int currentPage = paramGrid.getCurrentPage();
 
@@ -144,7 +150,7 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
     const auto findIt =
         std::ranges::find(device.parameters, paramIndex, &magda::ParameterInfo::paramIndex);
     if (findIt == device.parameters.end())
-        return;
+        return nullptr;
 
     const int paramArrayIndex =
         static_cast<int>(std::ranges::distance(device.parameters.begin(), findIt));
@@ -155,10 +161,10 @@ void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
             continue;
         if (cell.paramArrayIndex != paramArrayIndex)
             continue;
-        if (auto* slot = paramGrid.getSlot(slotIndex))
-            slot->setParamValue(newValue);
-        return;
+        return paramGrid.getSlot(slotIndex);
     }
+
+    return nullptr;
 }
 
 }  // namespace magda::daw::ui

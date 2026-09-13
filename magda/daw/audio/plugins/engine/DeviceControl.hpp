@@ -8,6 +8,7 @@
 
 #include "ControlExecutor.hpp"
 #include "PluginAssignments.hpp"
+#include "core/HostedParameterEdit.hpp"
 #include "plan/RenderPlan.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 
@@ -198,8 +199,9 @@ class DeviceControlPlane {
         AssignmentRequest request;
     };
 
-    /// What a delivery is answered with: whether the adapter took the write.
-    using EditCallback = std::function<void(bool delivered)>;
+    /// What a delivery is answered with: whether the adapter took the write,
+    /// and what the parameter read after it.
+    using EditCallback = std::function<void(magda::EditCompletion)>;
 
     /**
      * @brief Deliver @p edit to the plugin at @p key.

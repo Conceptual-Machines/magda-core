@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <optional>
+
 #include "core/LinkModeManager.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
@@ -40,6 +42,14 @@ class ParamSlotComponent : public juce::Component,
     void setParamName(const juce::String& name);
     /// @p modelValue in model units, which is what DeviceInfo carries.
     void setParamValue(double modelValue);
+
+    /**
+     * @brief Show what the parameter was observed to hold, in model units.
+     *
+     * Held while the slot is dragged, so readback cannot move a knob under the
+     * mouse, and shown when the drag ends unless an edit is still outstanding.
+     */
+    void setObservedValue(double modelValue);
     void setParameterInfo(const magda::ParameterInfo& info);  // Set full param info for formatting
     void cancelGesture();
     void setShowEmptyText(bool show);  // Show "-" instead of value for empty slots
@@ -266,6 +276,11 @@ class ParamSlotComponent : public juce::Component,
     // per choice. Empty when the cell renders a dropdown instead.
     std::vector<std::unique_ptr<juce::TextButton>> choiceButtons_;
     magda::ParameterInfo paramInfo_;  // Parameter metadata for formatting
+
+    /// The latest observation that arrived during a drag.
+    std::optional<double> heldObservation_;
+
+    void releaseHeldObservation();
 
     // Shift+drag state for mod amount editing
     bool isModAmountDrag_ = false;
