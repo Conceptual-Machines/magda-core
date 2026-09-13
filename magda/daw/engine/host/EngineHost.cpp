@@ -227,6 +227,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private juce::AsyncUpdater,
                                 private juce::Timer,
                                 private TrackManagerListener,
+                                private AutomationManagerListener,
                                 private ClipManagerListener,
                                 private ProjectManagerListener {
     Impl()
@@ -360,6 +361,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         devices_ = &devices;
         TrackManager::getInstance().addListener(this);
+        AutomationManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
         ProjectManager::getInstance().addListener(this);
         devices_->addAudioCallback(this);
@@ -375,6 +377,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_->removeAudioCallback(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
+        AutomationManager::getInstance().removeListener(this);
         TrackManager::getInstance().removeListener(this);
         devices_ = nullptr;
 
@@ -558,6 +561,29 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void deviceModifiersChanged(TrackId) override {
         wantValues(Shape::MayHaveMoved);
     }
+    /// A macro's value is a base the table carries, so turning one is a values
+    /// publish like any other. Without this the table keeps whatever the macro
+    /// held when its link was last edited, and the knob does nothing.
+    void macroValueChanged(TrackId, ChainScope, int, int, float) override {
+        wantValues(Shape::Unchanged);
+    }
+    /// A lane is read where the table is compiled, so an edit to one has to
+    /// publish or it reaches nothing until an unrelated edit happens to. The
+    /// shape can move with it: a lane drawn on a parameter is what makes that
+    /// parameter one the table carries.
+    void automationLanesChanged() override {
+        wantValues(Shape::MayHaveMoved);
+    }
+    void automationLanePropertyChanged(AutomationLaneId) override {
+        wantValues(Shape::MayHaveMoved);
+    }
+    void automationPointsChanged(AutomationLaneId) override {
+        wantValues(Shape::Unchanged);
+    }
+    void automationClipsChanged(AutomationLaneId) override {
+        wantValues(Shape::Unchanged);
+    }
+
     void clipsChanged() override {
         wantClips();
     }
