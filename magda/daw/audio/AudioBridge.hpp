@@ -14,6 +14,7 @@
 #include "../project/ProjectManager.hpp"
 #include "AudioBridgeMixer.hpp"
 #include "DeviceMeteringManager.hpp"
+#include "DeviceMeters.hpp"
 #include "ExternalInsertDeviceEnablement.hpp"
 #include "PluginWindowBridge.hpp"
 #include "TrackController.hpp"
@@ -65,8 +66,10 @@ class AudioBridge : public TrackManagerListener,
      * @param engine Reference to the Tracktion Engine instance
      * @param edit Reference to the current Edit (project)
      * @param meters The engine-neutral object to push levels and MIDI activity into
+     * @param deviceMeters The same, for the per-slot device and rack levels (#2570)
      */
-    AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters);
+    AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters,
+                DeviceMeters& deviceMeters);
     ~AudioBridge() override;
 
     void resetTestState();
@@ -787,6 +790,10 @@ class AudioBridge : public TrackManagerListener,
 
     // Where levels and MIDI activity go; owned by the wrapper (#2579).
     TrackMeters& meters_;
+
+    // Where the per-slot levels go, read by the chain UI whichever engine
+    // rendered them (#2570). Also the wrapper's.
+    DeviceMeters& deviceMeters_;
 
     // Bidirectional mappings
     std::map<TrackId, std::string> trackIdToEngineId_;  // MAGDA TrackId → Engine string ID

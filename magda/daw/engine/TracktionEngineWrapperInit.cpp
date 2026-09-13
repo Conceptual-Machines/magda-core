@@ -520,7 +520,7 @@ bool TracktionEngineWrapper::initialisePlayback() {
     }
 
     // Create AudioBridge for TrackManager synchronization
-    audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_);
+    audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
 
 #ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC

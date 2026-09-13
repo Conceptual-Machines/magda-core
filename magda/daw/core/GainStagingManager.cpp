@@ -6,8 +6,7 @@
 #include <cmath>
 #include <memory>
 
-#include "../audio/AudioBridge.hpp"
-#include "../audio/DeviceMeteringManager.hpp"
+#include "../audio/DeviceMeters.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceInfo.hpp"
@@ -387,15 +386,13 @@ bool GainStagingManager::readDevicePeakLinear(const ChainNodePath& devicePath,
     if (engine == nullptr)
         return false;
 
-    auto* bridge = engine->getAudioBridge();
-    if (bridge == nullptr)
+    // The engine's own meters, since the fork's bridge is null under the
+    // native engine (#2570).
+    DeviceMeters::Levels levels;
+    if (!engine->deviceMeters().devicePeak(devicePath, levels))
         return false;
 
-    DeviceMeteringManager::DeviceMeterData data;
-    if (!bridge->getDeviceMetering().getLatestLevels(devicePath, data))
-        return false;
-
-    peakLinearOut = std::max(data.peakL, data.peakR);
+    peakLinearOut = std::max(levels.peakL, levels.peakR);
     return true;
 }
 

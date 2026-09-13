@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include "../audio/DeviceMeters.hpp"
 #include "../audio/TrackMeters.hpp"
 #include "../audio/midi/RecordingNoteQueue.hpp"
 #include "../command.hpp"
@@ -291,6 +292,13 @@ class TracktionEngineWrapper : public AudioEngine,
     }
     const TrackMeters& meters() const override {
         return meters_;
+    }
+
+    DeviceMeters& deviceMeters() override {
+        return deviceMeters_;
+    }
+    const DeviceMeters& deviceMeters() const override {
+        return deviceMeters_;
     }
 
     /** @brief Read the bridge's plugins back into the model. They are what this renders. */
@@ -646,9 +654,10 @@ class TracktionEngineWrapper : public AudioEngine,
     // currentEdit_->tempoSequence (both directions). Recreated per Edit.
     std::unique_ptr<TempoLaneSync> tempoLaneSync_;
 
-    // Declared before audioBridge_ so it outlives it: AudioBridge holds a
-    // reference to this (#2579).
+    // Declared before audioBridge_ so they outlive it: AudioBridge holds a
+    // reference to both (#2579, #2570).
     TrackMeters meters_;
+    DeviceMeters deviceMeters_;
 
     // Audio bridge for TrackManager synchronization
     std::unique_ptr<AudioBridge> audioBridge_;

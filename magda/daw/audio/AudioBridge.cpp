@@ -114,10 +114,12 @@ void mergeMeterData(MeterData& dest, const MeterData& src) {
 
 }  // namespace
 
-AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters)
+AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters,
+                         DeviceMeters& deviceMeters)
     : engine_(engine),
       edit_(edit),
       meters_(meters),
+      deviceMeters_(deviceMeters),
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
                      TrackManager::getInstance()),
@@ -309,6 +311,17 @@ void AudioBridge::projectTeardown() {
         pluginManager_.cleanupTrackPlugins(trackId);
         trackController_.removeAudioTrack(trackId);
     }
+
+    // Device and rack ids restart in the next project, so a level left under
+    // one of those addresses outlives the device that made it (#2570). The
+    // producer as well as the store: an entry nothing polls -- a rack's, or a
+    // rack-inner device's, neither of which updateAllClients() touches --
+    // holds its last value until something overwrites it, and publishInto()
+    // would copy it back over the cleared store on the next tick. The next
+    // project's graph build re-acquires the taps it needs, and the rack
+    // metering map remakes its entries on the tick after that.
+    deviceMetering_.clear();
+    deviceMeters_.clear();
 }
 
 // =============================================================================
@@ -1370,6 +1383,9 @@ void AudioBridge::updateMetersFromGraph() {
             }
         }
     }
+
+    // Where the chain UI reads them from, whichever engine rendered (#2570).
+    deviceMetering_.publishInto(deviceMeters_);
 
     // Keep the master meter client registered on the CURRENT playback context.
     // The context is destroyed + rebuilt after an offline render frees it, so

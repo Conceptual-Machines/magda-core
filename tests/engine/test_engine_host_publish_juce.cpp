@@ -12,9 +12,11 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/PrefetchThread.hpp"
+#include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -43,6 +45,7 @@ namespace {
 
 namespace host = magda::daw::engine_host;
 namespace engine = magda::engine;
+namespace adapter = magda::daw::audio::engine_adapter;
 
 /// The Poly Synth as a project saves it. Every compiled synth MAGDA ships is
 /// one of these, and it is the shortest path from a note to a sound.
@@ -177,6 +180,9 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
         magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
+        magda::test::runWithCleanJuceState([this] { testDevicePathsAreTheAddressesTheUIDraws(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testTheMeterStoreIsEmptiedAtAProjectBoundary(); });
         magda::test::runWithCleanJuceState([this] { testMacroAndLaneEditsAskForAPublish(); });
     }
 
@@ -600,6 +606,22 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // Destructive, which is what stops the frame rate deciding how much of
         // the signal a meter ever sees.
         expect(trackTap->read().loudest() == 0.0f, "A second read takes nothing twice");
+
+        // The synth's own slot, which the host finds by the device rather than
+        // by the rack and chain the compiler keyed the op under (#2570).
+        int slots = 0;
+        float slotPeak = 0.0f;
+        magda::engine::DeviceKey metered;
+        session.forEachDeviceMeter([&](magda::engine::DeviceKey key, magda::engine::LevelTap& tap) {
+            ++slots;
+            metered = key;
+            slotPeak = std::max(slotPeak, tap.read().loudest());
+        });
+
+        expect(slots == 1, "The one device in the project has the one slot meter");
+        expect(metered == engine::DeviceKey{magda::ChainSegment::Fx, magda::DeviceId{1}},
+               "Keyed by the device it measures");
+        expect(slotPeak > 0.0f, "The slot's meter read the note too");
     }
 
     /// A track with a Poly Synth on it, which is the shortest path from a note
@@ -1007,10 +1029,134 @@ class EngineHostPublishTest final : public juce::UnitTest {
         deviceMeter.deviceId = 1;
         deviceMeter.role = magda::engine::OpRole::DeviceMeter;
 
+        magda::engine::OpKey inputMeter;
+        inputMeter.trackId = 1;
+        inputMeter.role = magda::engine::OpRole::LiveInputMeter;
+
         expect(factory.createMeter(magda::engine::trackMeterKey(1)) != nullptr,
                "A track's output level is read");
-        expect(factory.createMeter(deviceMeter) == nullptr,
-               "A device slot's is not: the chain UI reads DeviceMeteringManager");
+        expect(factory.createMeter(deviceMeter) != nullptr,
+               "So is a device slot's, which the chain UI draws (#2570)");
+        expect(factory.createMeter(inputMeter) == nullptr,
+               "A monitored input's is still nobody's (#1895)");
+    }
+
+    /// A device id restarts at 1 in the next project, so a level left under a
+    /// slot's address outlives the device it measured.
+    void testTheMeterStoreIsEmptiedAtAProjectBoundary() {
+        beginTest("A project closing takes the per-slot levels with it");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
+        expect(trackId != magda::INVALID_TRACK_ID, "The track exists");
+
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, 1);
+
+        magda::DeviceMeters store;
+        store.setDevicePeak(devicePath, {.peakL = 0.5f, .peakR = 0.5f});
+
+        juce::AudioDeviceManager devices;
+        host::EngineHost engine;
+        engine.meterDevicesInto(store);
+        engine.start(devices);
+
+        magda::DeviceMeters::Levels levels;
+        expect(store.devicePeak(devicePath, levels), "The slot has a level to lose");
+
+        // What ProjectManager declares at the boundary. Driven directly, as
+        // the rest of this suite drives the teardown: closing a project for
+        // real raises a modal dialog over an unsaved one, which would hang the
+        // run rather than fail it.
+        engine.forgetProject();
+
+        expect(!store.devicePeak(devicePath, levels),
+               "And the teardown took it, before the next project claims that address");
+
+        engine.stop();
+    }
+
+    /// The mapping the per-slot meters hang on: the host reads a tap under the
+    /// device's key and hands the level to the UI under the device's path, so a
+    /// path spelled any other way than the UI spells it reaches no meter.
+    void testDevicePathsAreTheAddressesTheUIDraws() {
+        beginTest("Every device's key answers the path the chain UI knows it by");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        auto rack = std::make_unique<magda::RackInfo>();
+        rack->id = 1;
+        {
+            magda::ChainInfo chain;
+            chain.id = 1;
+            chain.elements.emplace_back(polySynth(2));
+            rack->chains.push_back(std::move(chain));
+        }
+        track->chain.fxChainElements.emplace_back(std::move(rack));
+
+        auto grid = polySynth(magda::DeviceId{3});
+        auto pads = std::make_unique<magda::RackInfo>();
+        pads->id = 2;
+        {
+            magda::ChainInfo pad;
+            pad.id = 1;
+            pad.elements.emplace_back(polySynth(4));
+            pads->chains.push_back(std::move(pad));
+        }
+        grid.pads.reset(std::move(pads));
+        track->chain.fxChainElements.emplace_back(std::move(grid));
+
+        // A pad device in a flat section, which is the one place the descent
+        // has to build the pad root itself.
+        auto postFxGrid = polySynth(magda::DeviceId{5});
+        auto postFxPads = std::make_unique<magda::RackInfo>();
+        postFxPads->id = 3;
+        {
+            magda::ChainInfo pad;
+            pad.id = 1;
+            pad.elements.emplace_back(polySynth(7));
+            postFxPads->chains.push_back(std::move(pad));
+        }
+        postFxGrid.pads.reset(std::move(postFxPads));
+
+        track->chain.postFxChainElements.push_back({std::move(postFxGrid)});
+        track->chain.mixerAnalysisElements.push_back({polySynth(6)});
+
+        const auto paths = adapter::devicePathsIn(trackManager.getTracks(),
+                                                  *trackManager.getTrack(magda::MASTER_TRACK_ID));
+
+        const auto pathOf = [&paths](magda::ChainSegment segment, magda::DeviceId deviceId) {
+            const auto found = paths.find(engine::DeviceKey{segment, deviceId});
+            return found == paths.end() ? magda::ChainNodePath{} : found->second;
+        };
+
+        // A top-level device's id lives in its own field rather than in a step,
+        // which is the one spelling ChainWalk.hpp exists to keep single.
+        expect(pathOf(magda::ChainSegment::Fx, 1) ==
+                   magda::ChainNodePath::topLevelDevice(trackId, 1),
+               "A device on the track itself");
+        expect(pathOf(magda::ChainSegment::Fx, 2) ==
+                   magda::ChainNodePath::chainDevice(trackId, 1, 1, 2),
+               "One in a rack chain");
+        expect(pathOf(magda::ChainSegment::Fx, 4) ==
+                   magda::ChainNodePath::padChain(trackId, 3, 1).withDevice(4),
+               "One on a Drum Grid's pad, rooted at the grid rather than at the section");
+        expect(pathOf(magda::ChainSegment::PostFx, 5) ==
+                   magda::ChainNodePath::postFxDevice(trackId, 5),
+               "One in the post-FX stage");
+        expect(pathOf(magda::ChainSegment::PostFx, 7) ==
+                   magda::ChainNodePath::padChain(trackId, 5, 1).withDevice(7),
+               "And a pad of that one, which is rooted at its grid as well");
+        expect(pathOf(magda::ChainSegment::MixerAnalysis, 6) ==
+                   magda::ChainNodePath::mixerAnalysisDevice(trackId, 6),
+               "One in the mixer-analysis section");
     }
 
     void testDroppedKeyIsStillRebuilt() {

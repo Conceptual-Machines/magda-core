@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 
+#include "../../audio/DeviceMeters.hpp"
 #include "../../core/ChainNodePath.hpp"
 #include "../../core/HostedParameterEdit.hpp"
 #include "../../core/TypeIds.hpp"
@@ -82,9 +83,38 @@ class EngineHost {
     using MeterSink = std::function<void(TrackId trackId, float peakL, float peakR)>;
     void meterInto(MeterSink sink);
 
+    /**
+     * @brief Where the per-slot device levels go (#2570).
+     *
+     * The same rate and thread as @ref meterInto, addressed by the device's
+     * path because that is what the chain UI draws a slot under. A slot with
+     * nothing rendering behind it -- a bypassed device, a plugin still
+     * loading -- is reported as silence rather than left holding its last
+     * peak.
+     *
+     * The store itself rather than a sink, unlike @ref meterInto: nothing
+     * translates a level on the way, and this is the side that hears the
+     * project boundary the store has to be emptied at -- device ids restart
+     * at 1 in the next project, so a slot that has not rendered yet would
+     * otherwise read what the last project left under its address.
+     *
+     * @p devices outlives this host.
+     */
+    void meterDevicesInto(DeviceMeters& devices);
+
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.
     void stop();
+
+    /**
+     * @brief Drop everything built for the project that is going (#2572).
+     *
+     * Track and device ids restart at 1 in the next project, so what the store
+     * holds and what the meters last read belong to devices that are gone.
+     * Called when ProjectManager declares the teardown, while the outgoing
+     * project is still the model.
+     */
+    void forgetProject();
 
     /// How many times the model has asked this to republish. A count that
     /// stops moving under an edit is one nothing here is listening for.

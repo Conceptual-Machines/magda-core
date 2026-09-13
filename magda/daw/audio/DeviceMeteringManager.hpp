@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "../core/ChainNodePath.hpp"
+#include "DeviceMeters.hpp"
 #include "audio/plugins/DeviceServices.hpp"
 
 namespace magda {
@@ -175,6 +176,17 @@ class DeviceMeteringManager : public daw::audio::DeviceMeteringContext {
      * @brief Read latest level for a rack (called from UI thread)
      */
     bool getRackLatestLevels(RackId rackId, DeviceMeterData& out) const;
+
+    /**
+     * @brief Copy every level this holds into @p out (#2570).
+     *
+     * What the chain UI reads is the engine-neutral DeviceMeters, so what this
+     * collects from the graph has to land there: under the native engine the
+     * same object is fed from the LevelTap behind each slot's Meter op, and
+     * neither engine can reach the other's measurement. Called on the message
+     * thread, right after updateAllClients().
+     */
+    void publishInto(DeviceMeters& out) const;
 
     /**
      * @brief Clear all measurers (called during shutdown)
