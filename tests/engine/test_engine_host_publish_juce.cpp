@@ -15,8 +15,10 @@
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
 #include "magda/daw/engine/host/EngineTrace.hpp"
@@ -175,6 +177,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
         magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
+        magda::test::runWithCleanJuceState([this] { testMacroAndLaneEditsAskForAPublish(); });
     }
 
   private:
@@ -958,6 +961,40 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // values publish carries (#2612).
         track->inputMonitor = magda::InputMonitorMode::Off;
         expect(shapeNow() == withInput, "Monitoring that input is not a shape change");
+    }
+
+    /// A macro's value and a lane's points are the table's, so the host has to
+    /// hear about both or they reach nothing that renders.
+    void testMacroAndLaneEditsAskForAPublish() {
+        beginTest("Turning a macro and drawing a lane each ask the host to republish");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = synthTrack("Instrument", 1, magda::InputMonitorMode::Off, {});
+        auto* track = trackManager.getTrack(trackId);
+        expect(track != nullptr, "The track exists");
+        if (track == nullptr)
+            return;
+
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(
+            trackId, magda::getDevice(track->chain.fxChainElements[0]).id);
+
+        juce::AudioDeviceManager devices;
+        host::EngineHost engine;
+        engine.start(devices);
+
+        const auto asked = [&engine] { return engine.publishRequests(); };
+
+        const auto beforeMacro = asked();
+        trackManager.setMacroValue(devicePath, 0, 0.75f);
+        expect(asked() > beforeMacro, "Turning a macro asks for one");
+
+        const auto beforeLane = asked();
+        const auto laneId = magda::AutomationManager::getInstance().createLane(
+            magda::ControlTarget::pluginParam(devicePath, 2), magda::AutomationLaneType::Absolute);
+        expect(laneId != magda::INVALID_AUTOMATION_LANE_ID, "The lane was created");
+        expect(asked() > beforeLane, "Drawing a lane asks for one");
+
+        engine.stop();
     }
 
     void testOnlyTrackMetersAreTapped() {

@@ -588,16 +588,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void wantPlan() {
+        requests_.fetch_add(1, std::memory_order_relaxed);
         plan_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
     void wantValues(Shape shape) {
+        requests_.fetch_add(1, std::memory_order_relaxed);
         if (shape == Shape::MayHaveMoved)
             shape_.store(true, std::memory_order_relaxed);
 
         values_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
     }
+    std::uint64_t publishRequests() const {
+        return requests_.load(std::memory_order_relaxed);
+    }
+
     void wantClips() {
         clips_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
@@ -1147,6 +1153,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::atomic<double> rate_{0.0};
     std::atomic<int> blockSize_{0};
     std::atomic<int> inputChannels_{0};
+    /// Every ask to republish, whether or not one followed.
+    std::atomic<std::uint64_t> requests_{0};
+
     std::atomic<bool> plan_{false};
     std::atomic<bool> values_{false};
 
@@ -1185,6 +1194,10 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
 
 void EngineHost::meterInto(MeterSink sink) {
     impl_->meters_ = std::move(sink);
+}
+
+std::uint64_t EngineHost::publishRequests() const {
+    return impl_->publishRequests();
 }
 
 void EngineHost::stop() {

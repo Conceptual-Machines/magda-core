@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 
@@ -82,6 +83,10 @@ class EngineHost {
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.
     void stop();
+
+    /// How many times the model has asked this to republish. A count that
+    /// stops moving under an edit is one nothing here is listening for.
+    std::uint64_t publishRequests() const;
 
     // ===== Live MIDI (#2579) =====
     //
