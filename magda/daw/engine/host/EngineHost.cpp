@@ -12,16 +12,19 @@
 #include <vector>
 
 #include "../../audio/DeviceParameterDisplayTextProvider.hpp"
+#include "../../audio/DeviceParameterList.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
 #include "../../audio/plugins/engine/DeviceControl.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
+#include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
@@ -600,6 +603,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto values = values_.exchange(false);
         const auto clips = clips_.exchange(false);
 
+        // Before either publish reads the model, so the table it compiles
+        // carries whatever the edit just addressed (#2635).
+        if (plan || values)
+            syncMirroredParameters();
+
         if (plan)
             publishPlan();
         else if (values)
@@ -607,6 +615,71 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (clips)
             publishClips();
+    }
+
+    /// Every controller binding and MIDI learn, as the addresses they name.
+    std::vector<ControlTarget> boundTargets() const {
+        std::vector<ControlTarget> bound;
+        auto& bindings = BindingRegistry::getInstance();
+
+        for (const auto scope : {BindingScope::Global, BindingScope::Project})
+            for (const auto& binding : bindings.bindings(scope))
+                if (const auto* target = std::get_if<ControlTarget>(&binding.target))
+                    bound.push_back(*target);
+
+        return bound;
+    }
+
+    /**
+     * @brief Mirror the slots something addresses, for every plugin this renders.
+     *
+     * The model carries a hosted plugin's value only where something reaches it
+     * (#2629); the chunk carries the rest. The instance is asked to describe
+     * itself only for a device that has gained a slot, since describing one is
+     * a call per parameter.
+     */
+    void syncMirroredParameters() {
+        if (session_ == nullptr)
+            return;
+
+        auto& tracks = TrackManager::getInstance();
+        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
+        if (master == nullptr)
+            return;
+
+        const auto bound = boundTargets();
+
+        AddressingSources sources;
+        sources.tracks = tracks.getTracks();
+        sources.master = master;
+        sources.lanes = AutomationManager::getInstance().getLanes();
+        sources.bound = bound;
+
+        const auto addressed = AddressedParameters::from(sources);
+
+        for (const auto key : factory_.externalKeys()) {
+            auto* device = modelDevice(key);
+            if (device == nullptr)
+                continue;
+
+            const auto path = tracks.findDevicePath(key.deviceId, key.segment);
+            const auto slots = addressed.forDevice(path);
+
+            const auto gained = std::ranges::any_of(slots, [device](int slot) {
+                return device->findParameterByIndex(slot) == nullptr;
+            });
+
+            std::vector<ParameterInfo> described;
+            if (gained) {
+                auto* external = externalDeviceAt(path);
+                if (external == nullptr)
+                    continue;
+
+                described = external->describeParameters().parameters;
+            }
+
+            mirrorAddressedParameters(*device, described, slots);
+        }
     }
 
     /**
@@ -793,6 +866,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             // (#2617).
             TrackManager::getInstance().notifyTrackDevicesChanged(path.trackId);
         }
+
+        // The instance is here, so what it reports can be mirrored for the
+        // slots something addresses and dropped for the rest (#2635).
+        syncMirroredParameters();
 
         // Last, so the plan that binds the loader's instance is compiled from
         // the model as corrected above.

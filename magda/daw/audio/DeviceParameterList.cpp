@@ -58,4 +58,23 @@ std::vector<ParameterInfo> withModelValues(std::vector<ParameterInfo> described,
     return described;
 }
 
+void mirrorAddressedParameters(DeviceInfo& device, std::span<const ParameterInfo> described,
+                               std::span<const int> addressed) {
+    std::vector<ParameterInfo> mirrored;
+    mirrored.reserve(addressed.size());
+
+    for (const auto slot : addressed) {
+        if (const auto* held = device.findParameterByIndex(slot)) {
+            mirrored.push_back(*held);
+            continue;
+        }
+
+        const auto reported = std::ranges::find(described, slot, &ParameterInfo::paramIndex);
+        if (reported != described.end())
+            mirrored.push_back(*reported);
+    }
+
+    device.parameters = std::move(mirrored);
+}
+
 }  // namespace magda

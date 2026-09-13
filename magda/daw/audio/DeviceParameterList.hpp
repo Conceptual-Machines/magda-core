@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <vector>
 
 #include "core/ChainNodePath.hpp"
@@ -35,5 +36,14 @@ std::vector<ParameterInfo> deviceParameterList(const DeviceInfo& device,
  */
 std::vector<ParameterInfo> withModelValues(std::vector<ParameterInfo> described,
                                            const DeviceInfo& device);
+
+/**
+ * @brief Hold @p device's mirror to the slots @p addressed names (#2635).
+ *
+ * A slot new to the set is seeded from @p described, at the value the instance
+ * reported; one that leaves keeps its value in the plugin's own chunk.
+ */
+void mirrorAddressedParameters(DeviceInfo& device, std::span<const ParameterInfo> described,
+                               std::span<const int> addressed);
 
 }  // namespace magda

@@ -795,6 +795,14 @@ class ParamArena {
         slots_.erase(at);
     }
 
+    /// Display @p slot through @p domain, as a table compiled from a configured
+    /// parameter would.
+    void domain(int slot, const magda::ParameterUtils::ParameterDomain& domain) {
+        const auto at = std::ranges::find(slots_, slot);
+        REQUIRE(at != slots_.end());
+        domains_[static_cast<std::size_t>(std::distance(slots_.begin(), at))] = domain;
+    }
+
     magda::engine::DeviceParams params(int numSamples) const {
         return {segments_, counts_, domains_, slots_, driven_, 1, numSamples};
     }
@@ -913,6 +921,31 @@ TEST_CASE("A plan slot addresses the fork's parameter, not the plugin's", "[engi
     // its second: the non-automatable one between them is not in the fork's
     // list, so it takes no slot.
     ParamArena arena({0.0f, 1.0f, 0.75f, 0.5f});
+    Block block(context, 2);
+    auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
+    device.process(deviceBlock);
+
+    CHECK(raw->gain->getValue() == Catch::Approx(0.75f));
+    CHECK(raw->tone->getValue() == Catch::Approx(0.5f));
+}
+
+TEST_CASE("A configured display range does not change what the plugin is handed",
+          "[engine][external][2623]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    const auto context = contextFor();
+    device.prepare(context);
+
+    // Serum 2's detected Main Vol: a dB range from minus infinity. The plugin is
+    // handed the table's position, not a value read out through that range.
+    ParamArena arena({0.0f, 1.0f, 0.75f, 0.5f});
+    arena.domain(2, {.scale = magda::ParameterScale::Linear,
+                     .minValue = -std::numeric_limits<float>::infinity(),
+                     .maxValue = 3.0f});
+    arena.domain(3, {.scale = magda::ParameterScale::Linear, .minValue = 0.0f, .maxValue = 200.0f});
+
     Block block(context, 2);
     auto deviceBlock = block.deviceBlock(arena.params(context.maxBlockSize));
     device.process(deviceBlock);
