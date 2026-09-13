@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "../audio/DeviceMeters.hpp"
 #include "../audio/MidiBridge.hpp"
 #include "../audio/TrackMeters.hpp"
 #include "AudioEngine.hpp"
@@ -137,6 +138,12 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     const TrackMeters& meters() const override {
         return meters_;
     }
+    DeviceMeters& deviceMeters() override {
+        return deviceMeters_;
+    }
+    const DeviceMeters& deviceMeters() const override {
+        return deviceMeters_;
+    }
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
@@ -233,6 +240,10 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
 
     /// Track and master meters, fed by the host (#2579).
     TrackMeters meters_;
+
+    /// Per-slot device meters, fed by the host from the tap behind each
+    /// slot's Meter op (#2570).
+    DeviceMeters deviceMeters_;
 
     /// Whether initialize() brought the services up. What "there is a project"
     /// means with no Edit to ask.

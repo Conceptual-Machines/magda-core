@@ -391,6 +391,11 @@ class EngineSession {
         return store_.meterTap(key);
     }
 
+    /// Every device slot's meter, by the device it measures (#2570).
+    template <typename Visit> void forEachDeviceMeter(Visit&& visit) const {
+        store_.forEachDeviceMeter(std::forward<Visit>(visit));
+    }
+
     /**
      * @brief The device at @p key, or null.
      *

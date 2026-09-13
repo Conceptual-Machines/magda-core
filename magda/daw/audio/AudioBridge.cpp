@@ -114,10 +114,12 @@ void mergeMeterData(MeterData& dest, const MeterData& src) {
 
 }  // namespace
 
-AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters)
+AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters,
+                         DeviceMeters& deviceMeters)
     : engine_(engine),
       edit_(edit),
       meters_(meters),
+      deviceMeters_(deviceMeters),
       trackController_(engine, edit),
       pluginManager_(engine, edit, trackController_, pluginWindowBridge_, transportState_,
                      TrackManager::getInstance()),
@@ -1370,6 +1372,9 @@ void AudioBridge::updateMetersFromGraph() {
             }
         }
     }
+
+    // Where the chain UI reads them from, whichever engine rendered (#2570).
+    deviceMetering_.publishInto(deviceMeters_);
 
     // Keep the master meter client registered on the CURRENT playback context.
     // The context is destroyed + rebuilt after an offline render frees it, so

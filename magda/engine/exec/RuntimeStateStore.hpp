@@ -277,6 +277,24 @@ class RuntimeStateStore {
     LevelTap* meterTap(const OpKey& key) const;
 
     /**
+     * @brief Every device-slot meter the store holds, with the device each
+     *        measures (#2570).
+     *
+     * Enumerated rather than looked up by key, because a host knows which
+     * devices it draws and not whereabouts in a rack tree the compiler keyed
+     * their slots: a slot's OpKey carries the rack and chain it stands in, and
+     * a lookup one field out reads nothing.
+     *
+     * @p visit is called with `(DeviceKey, LevelTap&)` on the publishing
+     * thread. One visitor, since LevelTap::read is destructive.
+     */
+    template <typename Visit> void forEachDeviceMeter(Visit&& visit) const {
+        for (const auto& [key, tap] : meters_)
+            if (key.role == OpRole::DeviceMeter)
+                visit(key.deviceKey(), *tap);
+    }
+
+    /**
      * @brief Make a handle for every slot @p clips names, publish them, and
      *        retire the ones the snapshot has stopped naming.
      *

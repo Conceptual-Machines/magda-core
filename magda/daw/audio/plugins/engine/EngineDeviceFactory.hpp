@@ -61,6 +61,17 @@ std::map<magda::engine::DeviceKey, const magda::DeviceInfo*> devicesIn(
 std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInfo& track);
 
 /**
+ * @brief Where each of those devices sits, by the same key (#2570).
+ *
+ * The address the rest of the app knows a device by, answered off the descent
+ * above rather than off one of its own: a host reading something the plan
+ * bound -- a slot's meter -- has a DeviceKey and needs the path to hand it to
+ * the UI, and a second walk is how the two stop agreeing.
+ */
+std::map<magda::engine::DeviceKey, magda::ChainNodePath> devicePathsIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master);
+
+/**
  * @brief Whether @p device is a plugin somebody else shipped.
  *
  * The one kind neither catalog can build: it is a file on this machine, found

@@ -19,35 +19,53 @@ namespace {
 
 /// One track's descent over whichever constness the caller has. A flat stage
 /// is walked directly, but a device carrying pads is still descended into.
-template <typename Track, typename Devices>
-void collectTrackDevices(Track& track, Devices& devices) {
-    const auto collectTree = [&devices](auto& elements, const magda::ChainNodePath& parentPath,
-                                        magda::ChainSegment segment) {
+///
+/// @p record is called with `(key, device, devicePath)` for every device,
+/// because two of them are what a caller wants: the key a Device op carries,
+/// and the address the rest of the app knows the device by (#2570).
+template <typename Track, typename Record> void walkTrackDevices(Track& track, Record&& record) {
+    const auto walkTree = [&record](auto& elements, const magda::ChainNodePath& parentPath,
+                                    magda::ChainSegment segment) {
         magda::chain_walk::forEachDevice(
             elements, parentPath, magda::chain_walk::Pads::Enter,
-            [&devices, segment](auto& device, const magda::ChainNodePath&) {
-                devices[magda::engine::DeviceKey{segment, device.id}] = &device;
+            [&record, segment](auto& device, const magda::ChainNodePath& devicePath) {
+                record(magda::engine::DeviceKey{segment, device.id}, device, devicePath);
             });
     };
 
-    const auto collectFlat = [&devices, &collectTree](auto& elements,
-                                                      const magda::ChainNodePath& parentPath,
-                                                      magda::ChainSegment segment) {
+    const auto walkFlat = [&track, &record, &walkTree](auto& elements,
+                                                       const magda::ChainNodePath& sectionPath,
+                                                       magda::ChainSegment segment) {
         for (auto& element : elements) {
-            devices[magda::engine::DeviceKey{segment, element.device.id}] = &element.device;
+            auto& device = element.device;
+            record(magda::engine::DeviceKey{segment, device.id}, device,
+                   magda::chain_walk::deviceIn(sectionPath, device.id));
 
-            if (!element.device.pads)
+            if (!device.pads)
                 continue;
 
-            for (auto& pad : element.device.pads->chains)
-                collectTree(pad.elements, parentPath, segment);
+            // Rooted at the pad rack rather than at the section, which is how
+            // every pad address is spelled: a PadRack step names the grid by
+            // its DeviceId, so the route to the grid is not part of it.
+            for (auto& pad : device.pads->chains)
+                walkTree(pad.elements, magda::ChainNodePath::padChain(track.id, device.id, pad.id),
+                         segment);
         }
     };
 
-    const auto path = magda::ChainNodePath::trackLevel(track.id);
-    collectTree(track.chain.fxChainElements, path, magda::ChainSegment::Fx);
-    collectFlat(track.chain.postFxChainElements, path, magda::ChainSegment::PostFx);
-    collectFlat(track.chain.mixerAnalysisElements, path, magda::ChainSegment::MixerAnalysis);
+    walkTree(track.chain.fxChainElements, magda::ChainNodePath::trackLevel(track.id),
+             magda::ChainSegment::Fx);
+    walkFlat(track.chain.postFxChainElements, magda::ChainNodePath::postFxSection(track.id),
+             magda::ChainSegment::PostFx);
+    walkFlat(track.chain.mixerAnalysisElements,
+             magda::ChainNodePath::mixerAnalysisSection(track.id),
+             magda::ChainSegment::MixerAnalysis);
+}
+
+template <typename Track, typename Devices>
+void collectTrackDevices(Track& track, Devices& devices) {
+    walkTrackDevices(track, [&devices](magda::engine::DeviceKey key, auto& device,
+                                       const magda::ChainNodePath&) { devices[key] = &device; });
 }
 
 template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, Master& master) {
@@ -85,6 +103,22 @@ std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devicesIn(magda::TrackInf
     std::map<magda::engine::DeviceKey, magda::DeviceInfo*> devices;
     collectTrackDevices(track, devices);
     return devices;
+}
+
+std::map<magda::engine::DeviceKey, magda::ChainNodePath> devicePathsIn(
+    const std::vector<magda::TrackInfo>& tracks, const magda::TrackInfo& master) {
+    std::map<magda::engine::DeviceKey, magda::ChainNodePath> paths;
+
+    const auto record = [&paths](magda::engine::DeviceKey key, const magda::DeviceInfo&,
+                                 const magda::ChainNodePath& devicePath) {
+        paths[key] = devicePath;
+    };
+
+    for (const auto& track : tracks)
+        walkTrackDevices(track, record);
+
+    walkTrackDevices(master, record);
+    return paths;
 }
 
 bool isExternalDevice(const magda::DeviceInfo& device) {

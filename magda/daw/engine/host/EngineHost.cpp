@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <ranges>
 #include <set>
@@ -267,6 +268,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
         publishMeters();
+        publishDeviceMeters();
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
@@ -314,6 +316,30 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                juce::String(levels.loudest(), 4));
 
         meters_(trackId, levels.peak[0], levels.peak[1]);
+    }
+
+    /// What every device slot's tap has held since the last tick (#2570).
+    ///
+    /// Silence first, for every slot the model has: a slot the plan bound no
+    /// tap for -- a bypassed device, one whose plugin is still loading -- would
+    /// otherwise hold its last peak for as long as the project is open. Then
+    /// the taps that exist report over the top, in the same tick, so nothing
+    /// draws the zero.
+    void publishDeviceMeters() {
+        if (session_ == nullptr || deviceMeters_ == nullptr)
+            return;
+
+        for (const auto& slot : devicePaths_)
+            deviceMeters_(slot.second, 0.0f, 0.0f);
+
+        session_->forEachDeviceMeter([this](engine::DeviceKey key, engine::LevelTap& tap) {
+            const auto slot = devicePaths_.find(key);
+            if (slot == devicePaths_.end())
+                return;
+
+            const auto levels = tap.read();
+            deviceMeters_(slot->second, levels.peak[0], levels.peak[1]);
+        });
     }
 
     /// Where the transport was when the model moved, in the same stream as the
@@ -409,6 +435,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // played a note.
         sources_.registerAvailableDevices();
         factory_.setModel(tracks, *master);
+
+        // Off the same reading of the model as the devices the plan is about to
+        // bind, so a slot's meter and the slot the UI draws cannot come from
+        // two walks that disagree (#2570). Only a structural edit moves a
+        // device, which is what gets here.
+        devicePaths_ = adapter::devicePathsIn(tracks, *master);
 
         // Before the swap, so the new plan's first block renders against
         // routing resolved from the same reading of the model (#2592).
@@ -534,6 +566,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void projectTeardown() override {
         factory_.forgetBuiltDevices();
         routing_.reset();
+        devicePaths_.clear();
     }
 
     void tracksChanged() override {
@@ -1288,6 +1321,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// Where the levels go. Null until a caller asks (#2570).
     EngineHost::MeterSink meters_;
+    EngineHost::DeviceMeterSink deviceMeters_;
+
+    /// Where each device the model holds sits, by the key its ops carry.
+    /// Rebuilt with every plan, which is what a device moving is (#2570).
+    std::map<engine::DeviceKey, ChainNodePath> devicePaths_;
 
     /// Hot-plug, on the message thread. Last, so it is destroyed first and
     /// nothing calls back into a host that is already unwinding.
@@ -1310,6 +1348,10 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
 
 void EngineHost::meterInto(MeterSink sink) {
     impl_->meters_ = std::move(sink);
+}
+
+void EngineHost::deviceMeterInto(DeviceMeterSink sink) {
+    impl_->deviceMeters_ = std::move(sink);
 }
 
 std::uint64_t EngineHost::publishRequests() const {

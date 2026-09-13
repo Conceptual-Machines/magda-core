@@ -82,6 +82,19 @@ class EngineHost {
     using MeterSink = std::function<void(TrackId trackId, float peakL, float peakR)>;
     void meterInto(MeterSink sink);
 
+    /**
+     * @brief Where the per-slot device levels go (#2570).
+     *
+     * The same rate and thread as @ref meterInto, addressed by the device's
+     * path because that is what the chain UI draws a slot under. A slot with
+     * nothing rendering behind it -- a bypassed device, a plugin still
+     * loading -- is reported as silence rather than left holding its last
+     * peak.
+     */
+    using DeviceMeterSink =
+        std::function<void(const ChainNodePath& devicePath, float peakL, float peakR)>;
+    void deviceMeterInto(DeviceMeterSink sink);
+
     /// Take the callback back off the device and stop following the model.
     /// Safe to call twice, and called by the destructor.
     void stop();

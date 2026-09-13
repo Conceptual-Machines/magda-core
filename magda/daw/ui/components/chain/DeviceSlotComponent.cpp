@@ -640,10 +640,6 @@ void DeviceSlotComponent::timerCallback() {
     if (!engine)
         return;
 
-    // Null under the native engine, and only the slot meter below needs it
-    // (#2570): the editor's light is the engine's answer either way.
-    auto* bridge = engine->getAudioBridge();
-
     if (compiledPanel_ != nullptr || traits_.isAnalysis)
         refreshInlinePluginBindings();
 
@@ -686,11 +682,12 @@ void DeviceSlotComponent::timerCallback() {
             }
         }
     } else {
-        // Poll device peak levels for right-side meter strip
-        magda::DeviceMeteringManager::DeviceMeterData data;
-        if (bridge != nullptr && bridge->getDeviceMetering().getLatestLevels(nodePath_, data)) {
-            levelMeter_.setLevels(data.peakL, data.peakR);
-        }
+        // Poll device peak levels for right-side meter strip. Off the engine's
+        // own meters rather than the fork's, which is null under the native
+        // engine (#2570).
+        magda::DeviceMeters::Levels levels;
+        if (engine->deviceMeters().devicePeak(nodePath_, levels))
+            levelMeter_.setLevels(levels.peakL, levels.peakR);
     }
 }
 

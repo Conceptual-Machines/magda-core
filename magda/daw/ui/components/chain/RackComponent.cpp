@@ -8,7 +8,7 @@
 
 #include "ChainPanel.hpp"
 #include "ChainRowComponent.hpp"
-#include "audio/AudioBridge.hpp"
+#include "audio/DeviceMeters.hpp"
 #include "core/Config.hpp"
 #include "core/PresetManager.hpp"
 #include "core/RangesHelpers.hpp"
@@ -253,14 +253,12 @@ void RackComponent::timerCallback() {
     auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
     if (!audioEngine)
         return;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return;
 
-    magda::DeviceMeteringManager::DeviceMeterData data;
-    if (bridge->getDeviceMetering().getRackLatestLevels(rackId_, data)) {
-        levelMeter_.setLevels(data.peakL, data.peakR);
-    }
+    // The engine's own meters: the fork's bridge is null under the native
+    // engine, which reports no rack levels yet (#2570).
+    magda::DeviceMeters::Levels levels;
+    if (audioEngine->deviceMeters().rackPeak(rackId_, levels))
+        levelMeter_.setLevels(levels.peakL, levels.peakR);
 }
 
 void RackComponent::mouseDown(const juce::MouseEvent& e) {

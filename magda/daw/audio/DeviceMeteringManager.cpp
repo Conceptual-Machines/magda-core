@@ -290,6 +290,17 @@ bool DeviceMeteringManager::getRackLatestLevels(RackId rackId, DeviceMeterData& 
     return true;
 }
 
+void DeviceMeteringManager::publishInto(DeviceMeters& out) const {
+    juce::ScopedLock sl(lock_);
+    for (const auto& [devicePath, entry] : entries_)
+        out.setDevicePeak(devicePath, {entry->peakL.load(std::memory_order_relaxed),
+                                       entry->peakR.load(std::memory_order_relaxed)});
+
+    for (const auto& [rackId, entry] : rackEntries_)
+        out.setRackPeak(rackId, {entry->peakL.load(std::memory_order_relaxed),
+                                 entry->peakR.load(std::memory_order_relaxed)});
+}
+
 void DeviceMeteringManager::clear() {
     juce::ScopedLock sl(lock_);
     for (auto& [devicePath, entry] : entries_) {

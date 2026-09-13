@@ -29,7 +29,9 @@ class AudioDeviceManager;
 namespace magda {
 
 class AudioBridge;
+class DeviceMeters;
 class InsertRenderCaptureService;
+
 class MagdaApi;
 class MidiBridge;
 class PluginWindowManager;
@@ -278,6 +280,11 @@ class AudioEngine : public AudioEngineListener {
     /// object both engines feed (#2579).
     virtual TrackMeters& meters() = 0;
     virtual const TrackMeters& meters() const = 0;
+
+    /// Per-slot device and rack meters, from the same kind of neutral object
+    /// as the track meters above (#2570).
+    virtual DeviceMeters& deviceMeters() = 0;
+    virtual const DeviceMeters& deviceMeters() const = 0;
 
     // ===== Plugin state =====
     //
