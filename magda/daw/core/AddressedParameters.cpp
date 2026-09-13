@@ -34,15 +34,11 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
                 target(link.target);
     };
 
-    const auto device = [&links, &record](const DeviceInfo& info, const ChainNodePath& path) {
-        links(info);
-
-        // An empty list is the UI's "show everything" (#2634): it addresses none.
-        for (const auto* list :
-             {&info.visibleParameters, &info.miniMixerParameters, &info.aiSoundDesignerParameters})
-            for (const auto slot : *list)
-                record(path, slot);
-    };
+    // Only what needs a value of its own. Showing a parameter, putting it on the
+    // mini row or letting the agent write it are not that: the plugin owns those
+    // values and a reader takes them from the instance
+    // (docs/specs/hosted-plugin-parameter-control.md).
+    const auto device = [&links](const DeviceInfo& info, const ChainNodePath&) { links(info); };
 
     const auto track = [&links, &device](const TrackInfo& info) {
         links(info);

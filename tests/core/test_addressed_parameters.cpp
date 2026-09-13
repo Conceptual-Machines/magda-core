@@ -153,42 +153,16 @@ TEST_CASE("A controller binding addresses its parameter", "[core][parameters][ad
     CHECK(addressed.addresses(project.path, 0));
 }
 
-TEST_CASE("A place in the device UI addresses a parameter", "[core][parameters][addressed]") {
+TEST_CASE("A place in the device UI addresses nothing", "[core][parameters][addressed]") {
+    // Showing a parameter is not owning its value. The plugin owns it, a reader
+    // takes it from the instance, and an edit of it is a command rather than a
+    // document change (docs/specs/hosted-plugin-parameter-control.md).
     auto device = makeDevice(7);
     device.visibleParameters = {3, 1};
     device.miniMixerParameters = {0};
     device.aiSoundDesignerParameters = {2};
 
     const auto project = oneDevice(std::move(device));
-    const auto addressed = addressedIn({project.track});
-
-    const auto slots = addressed.forDevice(project.path);
-    REQUIRE(slots.size() == 4);
-    CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{0, 1, 2, 3});
-}
-
-TEST_CASE("A UI list names slots", "[core][parameters][addressed]") {
-    // A hosted plugin's own parameters start at slot 2, past the wrapper pair,
-    // and the selections name those slots (#2638).
-    auto device = makeDevice(7, 0);
-    for (int slot = 2; slot < 6; ++slot)
-        device.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
-
-    device.visibleParameters = {2, 5};
-    device.miniMixerParameters = {3};
-
-    const auto project = oneDevice(std::move(device));
-    const auto addressed = addressedIn({project.track});
-
-    const auto slots = addressed.forDevice(project.path);
-    REQUIRE(slots.size() == 3);
-    CHECK(std::vector<int>(slots.begin(), slots.end()) == std::vector<int>{2, 3, 5});
-}
-
-TEST_CASE("An empty visible list addresses nothing", "[core][parameters][addressed]") {
-    // Taking it as addressing every slot would mirror the whole array for any
-    // plugin the user has not configured, which is every plugin by default.
-    const auto project = oneDevice(makeDevice(7));
     const auto addressed = addressedIn({project.track});
 
     CHECK(addressed.forDevice(project.path).empty());
@@ -245,8 +219,8 @@ TEST_CASE("The master track's devices are addressed too", "[core][parameters][ad
     master.type = TrackType::Master;
 
     auto device = makeDevice(11);
-    device.visibleParameters = {1};
     const auto path = chain_walk::deviceIn(ChainNodePath::trackLevel(master.id), device.id);
+    device.macros[0].links.push_back({ControlTarget::pluginParam(path, 1), 1.0f});
     master.chain.fxChainElements.push_back(makeDeviceElement(std::move(device)));
 
     AddressingSources sources;

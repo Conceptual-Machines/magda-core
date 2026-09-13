@@ -6,6 +6,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/DeviceParameterList.hpp"
+#include "../../../core/ParameterUtils.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -165,10 +166,13 @@ void MiniChainRow::resolveParams() {
         slider->setValue(paramInfo.currentValue, juce::dontSendNotification);
         slider->setFont(FontManager::getInstance().getUIFont(10.0f));
         slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        const int paramIndex = paramInfo.paramIndex;
-        slider->onValueChanged = [path, paramIndex](double v) {
-            TrackManager::getInstance().setDeviceParameterValue(path, paramIndex,
-                                                                static_cast<float>(v));
+        // By value: this outlives the list it was described from, and a
+        // hosted plugin's ordinary parameter is not in the document to look up
+        // again (docs/specs/hosted-plugin-parameter-control.md).
+        slider->onValueChanged = [path, described = paramInfo](double v) {
+            TrackManager::getInstance().setDeviceParameterValue(
+                path, described,
+                ParameterUtils::realToModelValue(static_cast<float>(v), described));
         };
         slider->setAlpha(paramsAlpha_);
         slider->setVisible(isParamsLaidOut());

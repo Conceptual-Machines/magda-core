@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/DeviceParameterList.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/compiled/CompiledPluginRegistry.hpp"
 #include "../core/ParameterUtils.hpp"
@@ -233,9 +234,14 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (device == nullptr)
         return false;
 
-    const auto match =
-        std::ranges::find(device->parameters, paramIndex, &ParameterInfo::paramIndex);
-    if (match == device->parameters.end())
+    // Described rather than from the document: a hosted plugin's ordinary
+    // parameters are the plugin's and are not mirrored, and refusing to write
+    // one because the document has never heard of it is how every agent write
+    // to a plugin turns into a no-op
+    // (docs/specs/hosted-plugin-parameter-control.md).
+    const auto described = deviceParameterList(*device, devicePath);
+    const auto match = std::ranges::find(described, paramIndex, &ParameterInfo::paramIndex);
+    if (match == described.end())
         return false;
 
     // Reject rather than clamp: a clamped write reports success while setting a
@@ -255,7 +261,7 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     // The caller speaks display units; the model may store TE-native values
     // (external plugin with a config display range), so convert before writing.
     TrackManager::getInstance().setDeviceParameterValue(
-        devicePath, paramIndex, ParameterUtils::realToModelValue(value, *match));
+        devicePath, *match, ParameterUtils::realToModelValue(value, *match));
     return true;
 }
 
