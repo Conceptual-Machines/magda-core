@@ -5,8 +5,10 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
+#include "../../../core/ParameterInfo.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/TypeIds.hpp"
 
@@ -103,7 +105,13 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // Device parameter indices (ParameterInfo::paramIndex) surfaced as rows.
     // Values are read/written in display units through the device model so
     // Faust devices (whose live param is normalized) stay in sync.
+    std::optional<float> observedValue(int paramIndex) const;
+
     std::vector<int> trackedParamIndices_;
+
+    /// What each tracked slider is drawn against: a hosted plugin's ordinary
+    /// parameters are not in the document to be looked up again.
+    std::vector<magda::ParameterInfo> trackedParams_;
     bool paramsResolved_ = false;
 
     void resolveParams();

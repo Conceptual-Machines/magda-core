@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "core/ParameterUtils.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"

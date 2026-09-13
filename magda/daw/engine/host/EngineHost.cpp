@@ -240,12 +240,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // Captures nothing: the model is a singleton and the request guards
         // the key, so a project that closed first is a no-op.
-        loader_.onPluginEdit([](engine::DeviceKey key, int slot, float normalised) {
-            auto& tracks = TrackManager::getInstance();
-            const auto path = tracks.findDevicePath(key.deviceId, key.segment);
-            if (path.isValid())
-                tracks.setDeviceParameterValueFromPlugin(path, slot, normalised);
-        });
+        loader_.onPluginEdit(
+            [this](engine::DeviceKey key, adapter::EngineExternalDevice::Observation observation) {
+                observePluginParameter(key, observation);
+            });
 
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
@@ -434,6 +432,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
+        forgetPluginDriverState();
     }
 
     /// A mixer move: the same values against the plan already playing. It
@@ -465,6 +464,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // A monitor or route change arrives as a track property, off the same
         // reading of the model as the values above.
         publishRouting(tracks);
+
+        // A lane drawn on a parameter is a values publish, and it is what makes
+        // that slot addressed (#2633).
+        forgetPluginDriverState();
     }
 
     /**
@@ -645,6 +648,41 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             publishClips();
     }
 
+    /**
+     * @brief What a plugin said one of its parameters holds, fanned out.
+     *
+     * Two readers, on purpose: the cache and the knob take every observation,
+     * because a parameter the document knows nothing about still has to draw
+     * itself; the document takes only the base of a parameter it owns, and not
+     * while the host is driving it, since that value is the host's own output
+     * coming back (docs/specs/hosted-plugin-parameter-control.md).
+     */
+    void observePluginParameter(engine::DeviceKey key,
+                                adapter::EngineExternalDevice::Observation observation) {
+        auto& tracks = TrackManager::getInstance();
+        const auto path = tracks.findDevicePath(key.deviceId, key.segment);
+        if (!path.isValid())
+            return;
+
+        observed_[key][observation.slot] = observation.normalised;
+        tracks.notifyDeviceParameterObserved(path, observation.slot, observation.normalised);
+
+        if (observation.hostOwned)
+            return;
+
+        // Only a slot the document holds a value for, which is the base a
+        // lane or a macro reads. setDeviceParameterValueFromPlugin does
+        // nothing for any other, and that is the rule rather than an accident.
+        auto* device = modelDevice(key);
+        if (device != nullptr && device->findParameterByIndex(observation.slot) != nullptr)
+            tracks.setDeviceParameterValueFromPlugin(path, observation.slot,
+                                                     observation.normalised);
+    }
+
+    /// The last value each plugin reported per slot. Runtime only: the plugin
+    /// owns these, and its chunk carries them into a save.
+    std::map<engine::DeviceKey, std::map<int, float>> observed_;
+
     /// Every controller binding and MIDI learn, as the addresses they name.
     std::vector<ControlTarget> boundTargets() const {
         std::vector<ControlTarget> bound;
@@ -656,6 +694,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                     bound.push_back(*target);
 
         return bound;
+    }
+
+    /// Which slots something addresses, across the project. Empty with no
+    /// master track to read, which is a project that is not open.
+    AddressedParameters addressedParameters() const {
+        auto& tracks = TrackManager::getInstance();
+        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
+        if (master == nullptr)
+            return {};
+
+        const auto bound = boundTargets();
+
+        AddressingSources sources;
+        sources.tracks = tracks.getTracks();
+        sources.master = master;
+        sources.lanes = AutomationManager::getInstance().getLanes();
+        sources.bound = bound;
+
+        return AddressedParameters::from(sources);
     }
 
     /**
@@ -671,19 +728,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         auto& tracks = TrackManager::getInstance();
-        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
-        if (master == nullptr)
-            return;
-
-        const auto bound = boundTargets();
-
-        AddressingSources sources;
-        sources.tracks = tracks.getTracks();
-        sources.master = master;
-        sources.lanes = AutomationManager::getInstance().getLanes();
-        sources.bound = bound;
-
-        const auto addressed = AddressedParameters::from(sources);
+        const auto addressed = addressedParameters();
 
         for (const auto key : factory_.externalKeys()) {
             auto* device = modelDevice(key);
@@ -699,7 +744,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
             std::vector<ParameterInfo> described;
             if (gained) {
-                auto* external = externalDeviceAt(path);
+                auto* external = externalDeviceFor(key);
                 if (external == nullptr)
                     continue;
 
@@ -708,6 +753,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
             mirrorAddressedParameters(*device, described, slots);
         }
+    }
+
+    /**
+     * @brief Let each plugin forget what was driving it, which the plan decides.
+     *
+     * After a publish rather than before one: a device the new plan dropped
+     * renders no block, so nothing else would clear the driver state its last
+     * one left behind.
+     */
+    void forgetPluginDriverState() {
+        if (session_ == nullptr)
+            return;
+
+        for (const auto key : factory_.externalKeys())
+            if (auto* external = externalDeviceFor(key))
+                external->forgetDriverState();
     }
 
     /**
@@ -974,20 +1035,74 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /** @brief The plugin rendering at @p devicePath, or null. Message thread. */
     adapter::EngineExternalDevice* externalDeviceAt(const ChainNodePath& devicePath) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        return key.has_value() ? externalDeviceFor(*key) : nullptr;
+    }
+
+    /** @brief The plugin the live session renders for @p key, or null. */
+    adapter::EngineExternalDevice* externalDeviceFor(engine::DeviceKey key) const {
         if (session_ == nullptr)
             return nullptr;
 
-        const auto key = keyOfDeviceAt(devicePath);
-        if (!key.has_value())
-            return nullptr;
-
-        auto held = session_->device(*key);
+        auto held = session_->device(key);
         return held != nullptr ? externalIn(*held) : nullptr;
     }
 
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const {
         auto* external = externalDeviceAt(devicePath);
         return external != nullptr ? external->describeParameters() : HostParameters{};
+    }
+
+    std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value())
+            return std::nullopt;
+
+        const auto device = observed_.find(*key);
+        if (device == observed_.end())
+            return std::nullopt;
+
+        const auto slot = device->second.find(paramIndex);
+        return slot == device->second.end() ? std::nullopt : std::optional{slot->second};
+    }
+
+    /**
+     * @brief Hand a hosted parameter a value of its own, through the plane.
+     *
+     * Nothing is written here and nothing is published: the plugin owns this
+     * parameter's value, and the document is not involved
+     * (docs/specs/hosted-plugin-parameter-control.md).
+     */
+    EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                    float normalised, EditOrigin,
+                                    std::function<void(bool)> completed) {
+        const EditReceipt refused{.status = EditStatus::Unavailable, .requested = normalised};
+
+        // Refused rather than clamped: a caller working in a configured
+        // display range would otherwise silently move the wrong distance.
+        if (!std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
+            return {.status = EditStatus::InvalidValue, .requested = normalised};
+
+        if (paramIndex < 0)
+            return {.status = EditStatus::UnknownParameter, .requested = normalised};
+
+        const auto key = keyOfDeviceAt(devicePath);
+        if (session_ == nullptr || !key.has_value() || !factory_.isExternalKey(*key))
+            return refused;
+
+        // The assignment as it is now, so a slot that changes plugin before
+        // this runs refuses the edit rather than moving the new one.
+        const auto asked = plane_.editParameter(
+            *key, {.slot = paramIndex, .normalised = normalised, .request = loader_.request(*key)},
+            [completed = std::move(completed)](bool delivered) {
+                if (completed)
+                    completed(delivered);
+            });
+
+        if (!asked)
+            return {.status = EditStatus::Closing, .requested = normalised};
+
+        return {.status = EditStatus::Accepted, .requested = normalised};
     }
 
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
@@ -1253,6 +1368,18 @@ juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, 
 
 HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return impl_->describeDeviceParameters(devicePath);
+}
+
+std::optional<float> EngineHost::observedParameter(const ChainNodePath& devicePath,
+                                                   int paramIndex) const {
+    return impl_->observedParameter(devicePath, paramIndex);
+}
+
+EditReceipt EngineHost::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                            float normalised, EditOrigin origin,
+                                            std::function<void(bool delivered)> completed) {
+    return impl_->editHostedParameter(devicePath, paramIndex, normalised, origin,
+                                      std::move(completed));
 }
 
 void EngineHost::play() {

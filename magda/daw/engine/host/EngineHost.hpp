@@ -3,8 +3,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "../../core/ChainNodePath.hpp"
+#include "../../core/HostedParameterEdit.hpp"
 #include "../../core/TypeIds.hpp"
 
 namespace juce {
@@ -147,6 +149,27 @@ class EngineHost {
 
     /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief What the plugin last reported for @p paramIndex, if anything.
+     *
+     * The runtime value of a parameter the document holds nothing for, which
+     * is every ordinary parameter of a hosted plugin.
+     */
+    std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const;
+
+    /**
+     * @brief Deliver a one-off @p normalised position to a hosted parameter.
+     *
+     * The ordinary edit of a parameter the plugin owns
+     * (docs/specs/hosted-plugin-parameter-control.md): it changes no document
+     * state, adds no table entry and rebuilds no plan. Accepted from the
+     * message thread and delivered on the control executor, so a device with
+     * no render op takes it like any other.
+     */
+    EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                    float normalised, EditOrigin origin,
+                                    std::function<void(bool delivered)> completed = {});
 
     // ===== The plugins' own windows (#2580) =====
     //

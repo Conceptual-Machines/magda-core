@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "params/ParamHostComponent.hpp"
 #include "slot/DeviceParameterChangeHandler.hpp"
@@ -42,13 +43,24 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
             if (!nodePath.isValid())
                 return;
 
-            if (auto* param = device.findParameterByIndex(paramIndex))
-                param->currentValue = static_cast<float>(value);
+            // Model units: ParamSlotComponent converts its own display value
+            // before it reports one.
+            const auto model = magda::ParameterModelValue{static_cast<float>(value)};
+            auto* param = device.findParameterByIndex(paramIndex);
+            if (param != nullptr)
+                param->currentValue = model.value;
             if (compiledPanel != nullptr)
                 compiledPanel->updateFromDevice(device);
 
-            magda::TrackManager::getInstance().setDeviceParameterValue(nodePath, paramIndex,
-                                                                       static_cast<float>(value));
+            // Described from this slot's own list, which holds every parameter
+            // the plugin has: the model holds only the ones a host control
+            // drives, and the rest are the plugin's to be told
+            // (docs/specs/hosted-plugin-parameter-control.md).
+            if (param != nullptr)
+                magda::TrackManager::getInstance().setDeviceParameterValue(nodePath, *param, model);
+            else
+                magda::TrackManager::getInstance().setDeviceParameterValue(
+                    nodePath, paramIndex, static_cast<float>(value));
             if (traits.compiledPresentation &&
                 refreshEngineAwareCompiledSlots(device, nodePath, paramIndex, paramGrid)) {
                 if (callbacks.reloadParameterSlots)

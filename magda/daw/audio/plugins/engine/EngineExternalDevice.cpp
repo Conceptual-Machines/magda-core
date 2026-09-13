@@ -30,6 +30,10 @@ constexpr float kWetLevelCeiling = 0.999f;
 /// The slots in front of a plugin's own: dry, then wet.
 constexpr int kWrapperParameterCount = 2;
 
+/// How many blocks a write of ours masks its slot for. A VST3 flushes its echo
+/// from outputParameterChanges after processor->process() returns.
+constexpr int kHostWriteEchoBlocks = 2;
+
 /// The model's description of the parameter at plan slot @p index, or none.
 /// Both buckets, since the wrapper pair shares the plugin's index space.
 std::optional<magda::ParameterInfo> modelParameterAt(const magda::DeviceInfo& device, int index) {
@@ -102,15 +106,11 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
 /// calls this on whatever thread made the change, the audio thread included.
 class EngineExternalDevice::PluginListener final : public juce::AudioProcessorListener {
   public:
-    PluginListener(std::shared_ptr<PluginEdits> edits, const std::vector<int>& slotOfParameter,
-                   const std::atomic<bool>& writing)
-        : edits_(std::move(edits)), slotOfParameter_(slotOfParameter), writing_(writing) {}
+    PluginListener(std::shared_ptr<PluginEdits> edits, const std::vector<int>& slotOfParameter)
+        : edits_(std::move(edits)), slotOfParameter_(slotOfParameter) {}
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex,
                                         float newValue) override {
-        if (writing_.load(std::memory_order_relaxed))
-            return;
-
         if (parameterIndex < 0 || parameterIndex >= static_cast<int>(slotOfParameter_.size()))
             return;
 
@@ -119,8 +119,13 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
             return;
 
         auto& edits = *edits_;
-        edits.pending[static_cast<std::size_t>(slot)].store(newValue, std::memory_order_relaxed);
-        edits.dirty[static_cast<std::size_t>(slot)].store(true, std::memory_order_release);
+        const auto at = static_cast<std::size_t>(slot);
+
+        // Recorded with the value rather than read at the flush: by then the
+        // block that owned the slot has been and gone.
+        edits.pending[at].store(newValue, std::memory_order_relaxed);
+        edits.hostOwned[at].store(edits.hostOwns(at), std::memory_order_relaxed);
+        edits.dirty[at].store(true, std::memory_order_release);
 
         if (edits.flushQueued.exchange(true, std::memory_order_acq_rel))
             return;
@@ -137,8 +142,10 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
                     continue;
 
                 if (edits->sink)
-                    edits->sink(static_cast<int>(slot),
-                                edits->pending[slot].load(std::memory_order_relaxed));
+                    edits->sink(
+                        {.slot = static_cast<int>(slot),
+                         .normalised = edits->pending[slot].load(std::memory_order_relaxed),
+                         .hostOwned = edits->hostOwned[slot].load(std::memory_order_relaxed)});
             }
         });
     }
@@ -148,7 +155,6 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
   private:
     std::shared_ptr<PluginEdits> edits_;
     const std::vector<int>& slotOfParameter_;
-    const std::atomic<bool>& writing_;
 };
 
 class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
@@ -264,12 +270,35 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
             slotOfParameter_[static_cast<std::size_t>(parameter->getParameterIndex())] = slot;
 
     edits_ = std::make_shared<PluginEdits>(parameters_.size());
-    listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_, writing_);
+    listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_);
     instance_->addListener(listener_.get());
 }
 
-void EngineExternalDevice::listenForPluginEdits(std::function<void(int, float)> sink) {
+void EngineExternalDevice::listenForPluginEdits(std::function<void(Observation)> sink) {
     edits_->sink = std::move(sink);
+}
+
+void EngineExternalDevice::forgetDriverState() {
+    for (std::size_t slot = 0; slot < edits_->driven.size(); ++slot) {
+        edits_->driven[slot].store(false, std::memory_order_relaxed);
+        edits_->hostWrote[slot].store(0, std::memory_order_relaxed);
+    }
+}
+
+bool EngineExternalDevice::writeParameter(int slot, float normalised) {
+    if (!mapsSlot(slot) || !std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
+        return false;
+
+    const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+
+    // The wrapper pair is the model's own, and nothing of it exists on the
+    // plugin to write.
+    if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
+        return false;
+
+    // Not recorded against lastTable_, which is what the table delivered.
+    mapping.parameter->setValue(normalised);
+    return true;
 }
 
 EngineExternalDevice::~EngineExternalDevice() {
@@ -363,7 +392,17 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
         if (!mapsSlot(slot))
             continue;
 
-        const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+        const auto at = static_cast<std::size_t>(slot);
+
+        // Recorded whatever the entry resolved to: a lane playing over a slot
+        // is what makes the plugin's own report of it unwanted (#2633).
+        edits_->driven[at].store(params.drivenAt(entry), std::memory_order_relaxed);
+
+        // Ages toward the block where a write of ours can no longer come back.
+        if (const auto left = edits_->hostWrote[at].load(std::memory_order_relaxed); left > 0)
+            edits_->hostWrote[at].store(left - 1, std::memory_order_relaxed);
+
+        const auto& mapping = parameters_[at];
         const auto values = params.valuesAt(entry);
 
         // Nothing resolved it, so the plugin keeps what its own state put there.
@@ -387,9 +426,10 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
                 if (mapping.parameter == nullptr || !hostValueMoved(slot, normalised))
                     break;
 
-                writing_.store(true, std::memory_order_relaxed);
+                // Before the write, since a format that answers it synchronously
+                // reports from inside this call.
+                edits_->hostWrote[at].store(kHostWriteEchoBlocks, std::memory_order_relaxed);
                 mapping.parameter->setValue(normalised);
-                writing_.store(false, std::memory_order_relaxed);
                 break;
             }
         }

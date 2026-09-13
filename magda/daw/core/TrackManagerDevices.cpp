@@ -13,7 +13,9 @@
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
 #include "DrumGridPads.hpp"
+#include "HostedParameterEdit.hpp"
 #include "LegacyDeviceAliases.hpp"
+#include "ParameterUtils.hpp"
 #include "PluginCapabilities.hpp"
 #include "PluginPreferences.hpp"
 #include "RackInfo.hpp"
@@ -1918,6 +1920,52 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath, int 
             notifyDeviceParameterChanged(devicePath, paramIndex, value.value);
         }
     }
+}
+
+void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath,
+                                           const ParameterInfo& described,
+                                           ParameterModelValue value) {
+    auto* device = getDeviceInChainByPath(devicePath);
+    if (device == nullptr)
+        return;
+
+    // A slot the model mirrors is one a host control drives, and its value is
+    // the document's: the base a lane or a macro offsets from.
+    if (device->findParameterByIndex(described.paramIndex) != nullptr) {
+        setDeviceParameterValue(devicePath, described.paramIndex, value);
+        return;
+    }
+
+    // Everything else on a hosted plugin belongs to the plugin, so the edit is
+    // a command rather than a document change: no model entry, no table entry,
+    // no plan rebuild (docs/specs/hosted-plugin-parameter-control.md).
+    if (device->format == PluginFormat::Internal)
+        return;
+
+    auto* engine = getAudioEngine();
+    if (engine == nullptr)
+        return;
+
+    // Through the model convention, not the display range: an external
+    // parameter's model value is already a position even when its range reads
+    // in Hz or dB, and converting it again sends the plugin somewhere else.
+    const auto position = ParameterUtils::modelToNormalizedValue(value, described).value;
+    // A knob that did nothing is worth a line: every refusal here is something
+    // to tell a person rather than to branch on. What the plugin settles on is
+    // its own to report, and reconciling a display against it is the
+    // observation path's, not this one's.
+    const auto refused = [name = described.name](const juce::String& why) {
+        juce::Logger::writeToLog("[engine] " + name + ": " + why);
+    };
+
+    const auto receipt = engine->editHostedParameter(
+        devicePath, described.paramIndex, position, EditOrigin::Ui, [refused](bool delivered) {
+            if (!delivered)
+                refused("the plugin did not take the edit");
+        });
+
+    if (!receipt.accepted())
+        refused(describeEditStatus(receipt.status));
 }
 
 namespace {

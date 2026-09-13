@@ -102,6 +102,23 @@ class TrackManagerListener {
         juce::ignoreUnused(devicePath, paramIndex, newValue);
     }
 
+    /**
+     * @brief What a hosted plugin reports one of its parameters now holds.
+     *
+     * For drawing only, and deliberately not deviceParameterChanged: that one
+     * also commands the engine, and an observation answered with a write is
+     * how a knob ends up fighting the plugin
+     * (docs/specs/hosted-plugin-parameter-control.md). @p normalised is a
+     * position; a surface showing real units converts it.
+     *
+     * Carries no requirement that the document hold the parameter, which for
+     * a plugin's own parameters it does not.
+     */
+    virtual void deviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                         float normalised) {
+        juce::ignoreUnused(devicePath, paramIndex, normalised);
+    }
+
     // Called when a macro knob value changes (for audio engine sync).
     // `scope` tells the receiver how to interpret `ownerId`:
     //   ChainScope::Track  → ownerId is the TrackId
@@ -894,6 +911,19 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     }
 
     /**
+     * @brief Set the parameter @p described names, in model units.
+     *
+     * For a hosted plugin's ordinary parameter the model holds no value and
+     * this is a command to the plugin, converted to a position through
+     * @p described's own range
+     * (docs/specs/hosted-plugin-parameter-control.md). @p described is the
+     * caller's, which is what saves the engine being asked to enumerate the
+     * plugin again on every step of a drag.
+     */
+    void setDeviceParameterValue(const ChainNodePath& devicePath, const ParameterInfo& described,
+                                 ParameterModelValue value);
+
+    /**
      * @brief Apply a deserialized DeviceInfo (from a .mps preset) to a live device.
      *
      * Copies the state-y fields (parameters, macros, mods, gainDb, pluginState)
@@ -1364,6 +1394,18 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     void notifyAudioSidechainTriggered(TrackId sourceTrackId);
     void notifyDeviceParameterChanged(const ChainNodePath& devicePath, int paramIndex,
                                       float newValue);
+
+  public:
+    /**
+     * @brief Tell the UI what a plugin says its parameter now holds.
+     *
+     * Public because the engine host is what hears the plugin. Nothing is
+     * written and nothing is published: only a knob is redrawn.
+     */
+    void notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                       float normalised);
+
+  private:
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,
                                  float value);
     void notifyModParameterChanged(TrackId trackId, const ChainNodePath& devicePath, ModId modId,

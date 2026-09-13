@@ -14,6 +14,7 @@
 #include "../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../core/ChainNodePath.hpp"
 #include "../core/ClipTypes.hpp"
+#include "../core/HostedParameterEdit.hpp"
 #include "../core/ParameterDetector.hpp"
 #include "../core/TempoMap.hpp"
 #include "../core/TimeTypes.hpp"
@@ -317,6 +318,33 @@ class AudioEngine : public AudioEngineListener {
      */
     virtual HostParameters describeDeviceParameters(const ChainNodePath& /*devicePath*/) const {
         return {};
+    }
+
+    /// What the plugin last reported for this parameter, if anything. A value
+    /// the document holds nothing for still has to be drawable.
+    virtual std::optional<float> observedParameter(const ChainNodePath& /*devicePath*/,
+                                                   int /*paramIndex*/) const {
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Deliver a one-off @p normalised position to a hosted parameter.
+     *
+     * The plugin owns its ordinary parameters, so this is a command to it
+     * rather than a document edit: it needs no DeviceInfo entry, no table
+     * entry and no plan rebuild
+     * (docs/specs/hosted-plugin-parameter-control.md). Message thread.
+     *
+     * An engine that cannot deliver says so in the receipt, which is what
+     * keeps a knob from silently doing nothing.
+     */
+    /// @p completed says whether the adapter took the write, on the message
+    /// thread and later than this returns. A caller showing the value it asked
+    /// for is what needs it.
+    virtual EditReceipt editHostedParameter(
+        const ChainNodePath& /*devicePath*/, int /*paramIndex*/, float normalised,
+        EditOrigin /*origin*/, std::function<void(bool delivered)> /*completed*/ = {}) {
+        return {.status = EditStatus::Unavailable, .requested = normalised};
     }
 
     // ===== The plugins' own windows (#2580) =====

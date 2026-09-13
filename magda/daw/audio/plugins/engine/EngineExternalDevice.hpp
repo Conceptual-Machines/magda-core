@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -105,12 +106,44 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     bool isEditorOpen() const;
 
     /**
-     * @brief Report a parameter the plugin moved itself, on the message thread.
+     * @brief What the plugin reports one of its parameters now holds.
      *
-     * @p sink gets the plan slot and the normalised value, coalesced per slot
-     * to one call per flush. The host's own writes are not reported.
+     * An observation, not a command
+     * (docs/specs/hosted-plugin-parameter-control.md).
      */
-    void listenForPluginEdits(std::function<void(int slot, float normalised)> sink);
+    struct Observation {
+        int slot = -1;
+        float normalised = 0.0f;
+
+        /// Whether the host was driving the slot or had just written it. A
+        /// base must not be moved by its own output arriving back.
+        bool hostOwned = false;
+    };
+
+    /**
+     * @brief Report what the plugin says its parameters hold, on the message thread.
+     *
+     * Every slot it moves, coalesced per slot to one call per flush. Nothing
+     * is filtered here; only the reader knows which may reach a document.
+     */
+    void listenForPluginEdits(std::function<void(Observation)> sink);
+
+    /**
+     * @brief Write @p normalised into the plugin's slot @p slot now.
+     *
+     * Straight to the instance rather than through the table, so a slot no
+     * plan carries still takes it. Control executor. False for the wrapper
+     * pair, a slot with no live parameter, and a position outside [0, 1].
+     */
+    bool writeParameter(int slot, float normalised);
+
+    /**
+     * @brief Forget what was driving this device, which a new plan decides again.
+     *
+     * A device the plan dropped renders no block, so nothing would otherwise
+     * clear the driver state its last block left behind. Message thread.
+     */
+    void forgetDriverState();
 
   private:
     class PlayHead;
@@ -177,10 +210,6 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// this moves, so an edit made in the plugin's own editor is not reverted.
     std::vector<float> lastTable_;
 
-    /// Set around the host's own setValue, so the listener can tell its echo
-    /// from an edit the plugin made.
-    std::atomic<bool> writing_{false};
-
     /// Plan slot per plugin parameter index, or -1.
     std::vector<int> slotOfParameter_;
 
@@ -188,12 +217,34 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// message thread. Shared so a flush queued before the device died is a
     /// no-op rather than a use-after-free.
     struct PluginEdits {
-        explicit PluginEdits(std::size_t slots) : pending(slots), dirty(slots) {}
+        explicit PluginEdits(std::size_t slots)
+            : pending(slots), dirty(slots), hostOwned(slots), driven(slots), hostWrote(slots) {}
+
+        /// Whether the host owns @p slot's value at this moment: driving it, or
+        /// having just written it. Any thread.
+        bool hostOwns(std::size_t slot) const {
+            return driven[slot].load(std::memory_order_relaxed) ||
+                   hostWrote[slot].load(std::memory_order_relaxed) > 0;
+        }
 
         std::vector<std::atomic<float>> pending;
         std::vector<std::atomic<bool>> dirty;
+
+        /// What @ref hostOwns said when the value was recorded, since the
+        /// answer can have moved on by the time a flush reads it.
+        std::vector<std::atomic<bool>> hostOwned;
+
+        /// What the host is driving, as the last block's table said. Asserted
+        /// by a block and cleared by a plan, so a device that renders none is
+        /// driving nothing.
+        std::vector<std::atomic<bool>> driven;
+
+        /// Blocks left in which a report for this slot is our own write
+        /// coming back. Armed by the write, aged by the blocks after it.
+        std::vector<std::atomic<int>> hostWrote;
+
         std::atomic<bool> flushQueued{false};
-        std::function<void(int, float)> sink;
+        std::function<void(Observation)> sink;
     };
 
     std::shared_ptr<PluginEdits> edits_;

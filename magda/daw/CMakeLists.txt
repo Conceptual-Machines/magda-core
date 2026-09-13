@@ -279,6 +279,7 @@ add_library(magda_types STATIC
     # Which of a device's parameters something addresses (#2630). Model-only,
     # so the table compiler and the save path ask the same question.
     core/AddressedParameters.cpp
+    core/HostedParameterEdit.cpp
     # value-type headers (listed to document the leaf's surface)
     core/TypeIds.hpp
     core/ClipInfo.hpp

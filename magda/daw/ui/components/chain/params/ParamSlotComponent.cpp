@@ -37,7 +37,11 @@ ParamSlotComponent::ParamSlotComponent(int paramIndex) : paramIndex_(paramIndex)
     valueSlider_.setShowFillIndicator(false);
     valueSlider_.onValueChanged = [this](double value) {
         if (onValueChanged) {
-            onValueChanged(value);
+            // The slider reads in the parameter's display units and everything
+            // downstream speaks model ones, as the discrete widgets already do.
+            onValueChanged(
+                magda::ParameterUtils::realToModelValue(static_cast<float>(value), paramInfo_)
+                    .value);
         }
     };
     valueSlider_.onClicked = [this]() {
@@ -462,7 +466,12 @@ void ParamSlotComponent::setParamName(const juce::String& name) {
     nameLabel_.setText(name, juce::dontSendNotification);
 }
 
-void ParamSlotComponent::setParamValue(double value) {
+void ParamSlotComponent::setParamValue(double modelValue) {
+    // In, as out: model units. The slider is the only widget here drawn in
+    // display ones, and it is converted on the way to it.
+    const auto value = static_cast<double>(magda::ParameterUtils::modelToRealValue(
+        magda::ParameterModelValue{static_cast<float>(modelValue)}, paramInfo_));
+
     // Bypass the slider's configured step interval (0.01) — that interval is
     // there to give drags a pleasant coarse feel, but automation echoes push
     // arbitrary continuous values and snapping them visibly quantizes the
@@ -477,8 +486,8 @@ void ParamSlotComponent::setParamValue(double value) {
     // dropdown (or the segmented row, which cannot self-toggle because
     // selection is driven explicitly) showing a stale choice until the whole
     // parameter list is rebuilt.
-    syncDiscreteSelection(value);
-    syncBooleanToggle(value);
+    syncDiscreteSelection(modelValue);
+    syncBooleanToggle(modelValue);
 }
 
 void ParamSlotComponent::syncBooleanToggle(double value) {

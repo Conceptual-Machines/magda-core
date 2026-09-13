@@ -370,6 +370,21 @@ HostParameters MagdaAudioEngine::describeDeviceParameters(const ChainNodePath& d
     return host_ != nullptr ? host_->describeDeviceParameters(devicePath) : HostParameters{};
 }
 
+std::optional<float> MagdaAudioEngine::observedParameter(const ChainNodePath& devicePath,
+                                                         int paramIndex) const {
+    return host_ != nullptr ? host_->observedParameter(devicePath, paramIndex) : std::nullopt;
+}
+
+EditReceipt MagdaAudioEngine::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                                  float normalised, EditOrigin origin,
+                                                  std::function<void(bool delivered)> completed) {
+    if (host_ == nullptr)
+        return {.status = EditStatus::Unavailable, .requested = normalised};
+
+    return host_->editHostedParameter(devicePath, paramIndex, normalised, origin,
+                                      std::move(completed));
+}
+
 MidiBridge* MagdaAudioEngine::getMidiBridge() {
     return tracktion_->getMidiBridge();
 }

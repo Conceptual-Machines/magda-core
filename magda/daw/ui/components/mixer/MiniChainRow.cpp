@@ -6,6 +6,7 @@
 
 #include "../../../audio/AudioBridge.hpp"
 #include "../../../audio/DeviceParameterList.hpp"
+#include "../../../core/ParameterUtils.hpp"
 #include "../../../engine/AudioEngine.hpp"
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
@@ -22,6 +23,7 @@ MiniChainRow::MiniChainRow() {
     setInterceptsMouseClicks(true, true);
     paramSliders_.reserve(kMaxExpandedParams);
     trackedParamIndices_.reserve(kMaxExpandedParams);
+    trackedParams_.reserve(kMaxExpandedParams);
 }
 
 MiniChainRow::~MiniChainRow() {
@@ -40,6 +42,8 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         paramSliders_.clear();
         paramLabels_.clear();
         trackedParamIndices_.clear();
+        trackedParams_.clear();
+        trackedParams_.clear();
         retainExpandedForFadeOut_ = false;
         paramsFadeActive_ = false;
         paramsAlpha_ = 1.0f;
@@ -146,6 +150,7 @@ void MiniChainRow::resolveParams() {
             return;
 
         trackedParamIndices_.push_back(paramInfo.paramIndex);
+        trackedParams_.push_back(paramInfo);
 
         auto label = std::make_unique<juce::Label>();
         label->setText(paramInfo.name, juce::dontSendNotification);
@@ -165,10 +170,13 @@ void MiniChainRow::resolveParams() {
         slider->setValue(paramInfo.currentValue, juce::dontSendNotification);
         slider->setFont(FontManager::getInstance().getUIFont(10.0f));
         slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
-        const int paramIndex = paramInfo.paramIndex;
-        slider->onValueChanged = [path, paramIndex](double v) {
-            TrackManager::getInstance().setDeviceParameterValue(path, paramIndex,
-                                                                static_cast<float>(v));
+        // By value: this outlives the list it was described from, and a
+        // hosted plugin's ordinary parameter is not in the document to look up
+        // again (docs/specs/hosted-plugin-parameter-control.md).
+        slider->onValueChanged = [path, described = paramInfo](double v) {
+            TrackManager::getInstance().setDeviceParameterValue(
+                path, described,
+                ParameterUtils::realToModelValue(static_cast<float>(v), described));
         };
         slider->setAlpha(paramsAlpha_);
         slider->setVisible(isParamsLaidOut());
@@ -280,14 +288,29 @@ void MiniChainRow::timerCallback() {
         auto* slider = paramSliders_[i].get();
         if (slider == nullptr || slider->isBeingDragged())
             continue;
-        const int paramIndex = (i < trackedParamIndices_.size()) ? trackedParamIndices_[i] : -1;
-        const auto* pInfo = devInfo->findParameterByIndex(paramIndex);
-        if (pInfo == nullptr)
+        if (i >= trackedParams_.size())
             continue;
-        const auto v = static_cast<double>(pInfo->currentValue);
+        const auto& described = trackedParams_[i];
+
+        // The document holds a value only for what a host control drives; for
+        // everything else the plugin's own last report is the value.
+        const auto* held = devInfo->findParameterByIndex(described.paramIndex);
+        const auto model = held != nullptr ? std::optional{held->currentValue}
+                                           : observedValue(described.paramIndex);
+        if (!model.has_value())
+            continue;
+
+        const auto v = static_cast<double>(
+            ParameterUtils::modelToRealValue(ParameterModelValue{*model}, described));
         if (std::abs(slider->getValue() - v) > 1e-6)
             slider->setValue(v, juce::dontSendNotification);
     }
+}
+
+/// What the engine last saw the plugin report for @p paramIndex.
+std::optional<float> MiniChainRow::observedValue(int paramIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr ? engine->observedParameter(devicePath_, paramIndex) : std::nullopt;
 }
 
 void MiniChainRow::paint(juce::Graphics& g) {

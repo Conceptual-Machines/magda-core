@@ -176,6 +176,38 @@ bool LocalDeviceControlPlane::applyState(magda::engine::DeviceKey key, magda::De
     });
 }
 
+bool LocalDeviceControlPlane::editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                                            EditCallback completed) {
+    if (!completed || executor() == nullptr)
+        return false;
+
+    // On the executor like everything else here: a write must not land inside
+    // a state read, which suspends the plugin around a chunk (#2268).
+    return executor()->run(
+        [devices = devices_, key, edit, completed](ExecutionState state) mutable {
+            if (state == ExecutionState::Cancelled) {
+                completed(false);
+                return;
+            }
+
+            const auto registry = devices.lock();
+            if (!registry) {
+                completed(false);
+                return;
+            }
+
+            // Before the write rather than after: the same guard the loader puts
+            // between a completion and the model it would write (#2270).
+            if (!edit.request.isStillWanted()) {
+                completed(false);
+                return;
+            }
+
+            const auto device = registry->find(key);
+            completed(device != nullptr && device->writeParameter(edit.slot, edit.normalised));
+        });
+}
+
 bool LocalDeviceControlPlane::editorWindow(magda::engine::DeviceKey key, EditorAction action,
                                            EditorCallback completed) {
     if (!completed || executor() == nullptr)
