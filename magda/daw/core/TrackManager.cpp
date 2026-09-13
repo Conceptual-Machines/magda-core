@@ -3522,6 +3522,15 @@ void TrackManager::notifyDeviceParameterChanged(const ChainNodePath& devicePath,
     }
 }
 
+void TrackManager::notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
+                                                 float normalised) {
+    ScopedNotifyGuard guard(*this);
+    for (size_t i = 0; i < listeners_.size(); ++i) {
+        if (listeners_[i])
+            listeners_[i]->deviceParameterObserved(devicePath, paramIndex, normalised);
+    }
+}
+
 void TrackManager::notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId,
                                            int macroIndex, float value) {
     ScopedNotifyGuard guard(*this);

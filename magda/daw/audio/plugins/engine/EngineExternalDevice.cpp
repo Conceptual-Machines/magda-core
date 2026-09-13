@@ -120,14 +120,13 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
             return;
 
         auto& edits = *edits_;
+        const auto at = static_cast<std::size_t>(slot);
 
-        // Dropped here rather than drained and discarded: nothing downstream
-        // holds a value for this slot (#2633).
-        if (!edits.reports(static_cast<std::size_t>(slot)))
-            return;
-
-        edits.pending[static_cast<std::size_t>(slot)].store(newValue, std::memory_order_relaxed);
-        edits.dirty[static_cast<std::size_t>(slot)].store(true, std::memory_order_release);
+        // Recorded with the value rather than read at the flush: by then the
+        // block that owned the slot has been and gone.
+        edits.pending[at].store(newValue, std::memory_order_relaxed);
+        edits.hostOwned[at].store(edits.hostOwns(at), std::memory_order_relaxed);
+        edits.dirty[at].store(true, std::memory_order_release);
 
         if (edits.flushQueued.exchange(true, std::memory_order_acq_rel))
             return;
@@ -144,8 +143,10 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
                     continue;
 
                 if (edits->sink)
-                    edits->sink(static_cast<int>(slot),
-                                edits->pending[slot].load(std::memory_order_relaxed));
+                    edits->sink(
+                        {.slot = static_cast<int>(slot),
+                         .normalised = edits->pending[slot].load(std::memory_order_relaxed),
+                         .hostOwned = edits->hostOwned[slot].load(std::memory_order_relaxed)});
             }
         });
     }
@@ -274,25 +275,33 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     instance_->addListener(listener_.get());
 }
 
-void EngineExternalDevice::listenForPluginEdits(std::function<void(int, float)> sink) {
+void EngineExternalDevice::listenForPluginEdits(std::function<void(Observation)> sink) {
     edits_->sink = std::move(sink);
 }
 
-void EngineExternalDevice::setAddressedSlots(std::span<const int> slots) {
-    for (std::size_t slot = 0; slot < edits_->addressed.size(); ++slot) {
-        edits_->addressed[slot].store(std::ranges::binary_search(slots, static_cast<int>(slot)),
-                                      std::memory_order_relaxed);
-
-        // Every slot, not only the ones that left: the next block this device
-        // renders asserts what is driving it again, and a device the plan
-        // dropped renders none, drives nothing and has no write left in flight.
+void EngineExternalDevice::forgetDriverState() {
+    for (std::size_t slot = 0; slot < edits_->driven.size(); ++slot) {
         edits_->driven[slot].store(false, std::memory_order_relaxed);
         edits_->hostWrote[slot].store(0, std::memory_order_relaxed);
     }
 }
 
-void EngineExternalDevice::listenToEveryEdit(bool listening) {
-    edits_->everyEdit.store(listening, std::memory_order_relaxed);
+bool EngineExternalDevice::writeParameter(int slot, float normalised) {
+    if (!mapsSlot(slot) || !std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
+        return false;
+
+    const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
+
+    // The wrapper pair is the model's own, and nothing of it exists on the
+    // plugin to write.
+    if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
+        return false;
+
+    // Not recorded against lastTable_: that is what the table delivered, and a
+    // slot the table carries is one the host drives, whose edit is a change to
+    // its base rather than a write of its own.
+    mapping.parameter->setValue(normalised);
+    return true;
 }
 
 EngineExternalDevice::~EngineExternalDevice() {

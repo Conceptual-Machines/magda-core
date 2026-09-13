@@ -240,12 +240,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // Captures nothing: the model is a singleton and the request guards
         // the key, so a project that closed first is a no-op.
-        loader_.onPluginEdit([](engine::DeviceKey key, int slot, float normalised) {
-            auto& tracks = TrackManager::getInstance();
-            const auto path = tracks.findDevicePath(key.deviceId, key.segment);
-            if (path.isValid())
-                tracks.setDeviceParameterValueFromPlugin(path, slot, normalised);
-        });
+        loader_.onPluginEdit(
+            [this](engine::DeviceKey key, adapter::EngineExternalDevice::Observation observation) {
+                observePluginParameter(key, observation);
+            });
 
         // A tap read late loses nothing, since the peak is held until
         // something takes it, so this is how smooth a meter looks.
@@ -434,7 +432,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
-        handAddressedSlotsToPlugins();
+        forgetPluginDriverState();
     }
 
     /// A mixer move: the same values against the plan already playing. It
@@ -469,7 +467,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         // A lane drawn on a parameter is a values publish, and it is what makes
         // that slot addressed (#2633).
-        handAddressedSlotsToPlugins();
+        forgetPluginDriverState();
     }
 
     /**
@@ -650,6 +648,41 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             publishClips();
     }
 
+    /**
+     * @brief What a plugin said one of its parameters holds, fanned out.
+     *
+     * Two readers, on purpose: the cache and the knob take every observation,
+     * because a parameter the document knows nothing about still has to draw
+     * itself; the document takes only the base of a parameter it owns, and not
+     * while the host is driving it, since that value is the host's own output
+     * coming back (docs/specs/hosted-plugin-parameter-control.md).
+     */
+    void observePluginParameter(engine::DeviceKey key,
+                                adapter::EngineExternalDevice::Observation observation) {
+        auto& tracks = TrackManager::getInstance();
+        const auto path = tracks.findDevicePath(key.deviceId, key.segment);
+        if (!path.isValid())
+            return;
+
+        observed_[key][observation.slot] = observation.normalised;
+        tracks.notifyDeviceParameterObserved(path, observation.slot, observation.normalised);
+
+        if (observation.hostOwned)
+            return;
+
+        // Only a slot the document holds a value for, which is the base a
+        // lane or a macro reads. setDeviceParameterValueFromPlugin does
+        // nothing for any other, and that is the rule rather than an accident.
+        auto* device = modelDevice(key);
+        if (device != nullptr && device->findParameterByIndex(observation.slot) != nullptr)
+            tracks.setDeviceParameterValueFromPlugin(path, observation.slot,
+                                                     observation.normalised);
+    }
+
+    /// The last value each plugin reported per slot. Runtime only: the plugin
+    /// owns these, and its chunk carries them into a save.
+    std::map<engine::DeviceKey, std::map<int, float>> observed_;
+
     /// Every controller binding and MIDI learn, as the addresses they name.
     std::vector<ControlTarget> boundTargets() const {
         std::vector<ControlTarget> bound;
@@ -723,24 +756,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /**
-     * @brief Tell each plugin which of its slots something addresses (#2633).
+     * @brief Let each plugin forget what was driving it, which the plan decides.
      *
-     * It drops an edit to any other slot where the plugin reports it, rather
-     * than on the message thread where the model would find nothing to write
-     * it to. After a publish rather than before one: a plugin the publish just
-     * bound was not there to be told when the model was trimmed.
+     * After a publish rather than before one: a device the new plan dropped
+     * renders no block, so nothing else would clear the driver state its last
+     * one left behind.
      */
-    void handAddressedSlotsToPlugins() {
+    void forgetPluginDriverState() {
         if (session_ == nullptr)
             return;
 
-        auto& tracks = TrackManager::getInstance();
-        const auto addressed = addressedParameters();
-
         for (const auto key : factory_.externalKeys())
             if (auto* external = externalDeviceFor(key))
-                external->setAddressedSlots(
-                    addressed.forDevice(tracks.findDevicePath(key.deviceId, key.segment)));
+                external->forgetDriverState();
     }
 
     /**
@@ -1025,6 +1053,45 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return external != nullptr ? external->describeParameters() : HostParameters{};
     }
 
+    /**
+     * @brief Hand a hosted parameter a value of its own, through the plane.
+     *
+     * Nothing is written here and nothing is published: the plugin owns this
+     * parameter's value, and the document is not involved
+     * (docs/specs/hosted-plugin-parameter-control.md).
+     */
+    EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                    float normalised, EditOrigin,
+                                    std::function<void(bool)> completed) {
+        const EditReceipt refused{.status = EditStatus::Unavailable, .requested = normalised};
+
+        // Refused rather than clamped: a caller working in a configured
+        // display range would otherwise silently move the wrong distance.
+        if (!std::isfinite(normalised) || normalised < 0.0f || normalised > 1.0f)
+            return {.status = EditStatus::InvalidValue, .requested = normalised};
+
+        if (paramIndex < 0)
+            return {.status = EditStatus::UnknownParameter, .requested = normalised};
+
+        const auto key = keyOfDeviceAt(devicePath);
+        if (session_ == nullptr || !key.has_value() || !factory_.isExternalKey(*key))
+            return refused;
+
+        // The assignment as it is now, so a slot that changes plugin before
+        // this runs refuses the edit rather than moving the new one.
+        const auto asked = plane_.editParameter(
+            *key, {.slot = paramIndex, .normalised = normalised, .request = loader_.request(*key)},
+            [completed = std::move(completed)](bool delivered) {
+                if (completed)
+                    completed(delivered);
+            });
+
+        if (!asked)
+            return {.status = EditStatus::Closing, .requested = normalised};
+
+        return {.status = EditStatus::Accepted, .requested = normalised};
+    }
+
     void captureExternalPluginStateAt(const ChainNodePath& devicePath) {
         if (session_ == nullptr)
             return;
@@ -1288,6 +1355,13 @@ juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, 
 
 HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return impl_->describeDeviceParameters(devicePath);
+}
+
+EditReceipt EngineHost::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                            float normalised, EditOrigin origin,
+                                            std::function<void(bool delivered)> completed) {
+    return impl_->editHostedParameter(devicePath, paramIndex, normalised, origin,
+                                      std::move(completed));
 }
 
 void EngineHost::play() {

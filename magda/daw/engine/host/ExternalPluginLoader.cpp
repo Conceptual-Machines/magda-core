@@ -175,9 +175,10 @@ void ExternalPluginLoader::complete(engine::DeviceKey key, std::uint64_t generat
 
     if (auto* external = dynamic_cast<adapter::EngineExternalDevice*>(result.device.get()))
         external->listenForPluginEdits(
-            [sink = pluginEdit_, request = assignments_.request(key), key](int at, float value) {
+            [sink = pluginEdit_, request = assignments_.request(key),
+             key](adapter::EngineExternalDevice::Observation observation) {
                 if (sink && request.isStillWanted())
-                    sink(key, at, value);
+                    sink(key, observation);
             });
 
     slot.instance = std::move(result.device);

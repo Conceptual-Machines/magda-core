@@ -14,6 +14,7 @@
 #include "audio/plugins/PolyStepSequencerPlugin.hpp"
 #include "core/MacroInfo.hpp"
 #include "core/ModInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
@@ -693,6 +694,20 @@ void DeviceSlotComponent::timerCallback() {
     }
 }
 
+void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& devicePath,
+                                                  int paramIndex, float normalised) {
+    if (devicePath != nodePath_)
+        return;
+
+    // The plugin reports a position; this slot's list carries the range it is
+    // drawn against, which a configured parameter reads in its own units.
+    if (device_.findParameterByIndex(paramIndex) == nullptr)
+        return;
+
+    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex,
+                                        shownValueOf(paramIndex, normalised));
+}
+
 void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,
                                                  int paramIndex, float newValue) {
     if (devicePath != nodePath_)
@@ -714,8 +729,21 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
                                          updateParamModulation();
                                      });
 
-    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
+    // In the units the slot is drawn against, not the model's: a hosted
+    // plugin's value is a position whatever its range reads in, and a slider
+    // ranged in Hz clamps one to the bottom of the range.
+    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex,
+                                        shownValueOf(paramIndex, newValue));
     paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
+}
+
+double DeviceSlotComponent::shownValueOf(int paramIndex, float modelValue) const {
+    const auto* described = device_.findParameterByIndex(paramIndex);
+    if (described == nullptr)
+        return modelValue;
+
+    return magda::ParameterUtils::modelToRealValue(magda::ParameterModelValue{modelValue},
+                                                   *described);
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {

@@ -187,6 +187,36 @@ class DeviceControlPlane {
     virtual bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
                             CaptureCallback completed) = 0;
 
+    /// A one-off value for one of a device's parameters, and the assignment
+    /// it was accepted against.
+    struct ParameterEdit {
+        int slot = -1;
+        float normalised = 0.0f;
+
+        /// Checked before the write, since a key can be live again under a
+        /// different plugin by the time this runs: an edit must never reach
+        /// the instance that replaced the one it was meant for.
+        AssignmentRequest request;
+    };
+
+    /// What a delivery is answered with: whether the adapter took the write.
+    using EditCallback = std::function<void(bool delivered)>;
+
+    /**
+     * @brief Deliver @p edit to the plugin at @p key.
+     *
+     * The ordinary edit of a parameter the plugin owns, which is everything no
+     * host control drives (docs/specs/hosted-plugin-parameter-control.md). It
+     * reaches the instance through the endpoint, so a device the plan carries
+     * no render op for -- bypassed, or on a track that is not rendering --
+     * still takes it.
+     *
+     * Same contract as @ref captureState. Delivered says the adapter accepted
+     * the write, not that the plugin's DSP has consumed it.
+     */
+    virtual bool editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                               EditCallback completed) = 0;
+
     /// What an editor request is answered with, on this plane's executor.
     using EditorCallback = std::function<void(EditorOutcome)>;
 
@@ -260,6 +290,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                     CaptureCallback completed) override;
     bool editorWindow(magda::engine::DeviceKey key, EditorAction action,
                       EditorCallback completed) override;
+    bool editParameter(magda::engine::DeviceKey key, ParameterEdit edit,
+                       EditCallback completed) override;
 
   private:
     std::weak_ptr<const DeviceRegistry> devices_;

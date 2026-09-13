@@ -13,7 +13,8 @@
 #include "param/ParamBlock.hpp"
 
 /**
- * Which of a plugin's own edits reach the model (#2633).
+ * What a hosted plugin says its parameters hold, and what MAGDA may write to
+ * them (docs/specs/hosted-plugin-parameter-control.md).
  *
  * Here rather than in magda_tests because the report is queued from the
  * callback and delivered on the message thread, and the assertion is about what
@@ -162,21 +163,21 @@ engine::RenderContext contextFor() {
     return {.sampleRate = 48000.0, .maxBlockSize = kBlockSize, .numChannels = 2};
 }
 
-class PluginEditFilterTest final : public juce::UnitTest {
+class HostedParameterEditsTest final : public juce::UnitTest {
   public:
-    PluginEditFilterTest() : juce::UnitTest("Plugin Edit Filter", "magda") {}
+    HostedParameterEditsTest() : juce::UnitTest("Hosted Parameter Edits", "magda") {}
 
     void runTest() override {
-        testAnUnaddressedSlotReachesNothing();
-        testAnAddressedSlotReachesTheModel();
-        testADrivenSlotIsNotReported();
-        testAWriteOfOursIsNotAnEdit();
+        testEveryMovedSlotIsReported();
+        testADrivenSlotIsReportedAsTheHostsOwn();
+        testAWriteOfOursComesBackAsTheHostsOwn();
         testAPlanTheDeviceIsNotInDrivesNothing();
-        testALearnGestureHearsEverything();
+        testAOneOffWriteReachesThePluginWithoutTheTable();
+        testAWriteTheDeviceCannotTakeIsRefused();
     }
 
   private:
-    /// One device, its plugin, and what its edits reached.
+    /// One device, its plugin, and what it reported.
     struct Rig {
         Rig() {
             auto instance = std::make_unique<StubPlugin>();
@@ -186,7 +187,9 @@ class PluginEditFilterTest final : public juce::UnitTest {
                                                                      magda::DeviceInfo{}, false);
             device->prepare(contextFor());
             device->listenForPluginEdits(
-                [this](int slot, float value) { reported.emplace_back(slot, value); });
+                [this](adapter::EngineExternalDevice::Observation observation) {
+                    observed.push_back(observation);
+                });
         }
 
         /// One block at @p window, which is what tells the device what the
@@ -207,7 +210,7 @@ class PluginEditFilterTest final : public juce::UnitTest {
         StubPlugin* plugin = nullptr;
         std::unique_ptr<adapter::EngineExternalDevice> device;
 
-        std::vector<std::pair<int, float>> reported;
+        std::vector<adapter::EngineExternalDevice::Observation> observed;
     };
 
     /// Lets the flush the callback queued run.
@@ -215,75 +218,47 @@ class PluginEditFilterTest final : public juce::UnitTest {
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 
-    void testAnUnaddressedSlotReachesNothing() {
-        beginTest("A slot nothing addresses is dropped where the plugin reports it");
+    void testEveryMovedSlotIsReported() {
+        beginTest("A parameter nothing addresses is still reported");
 
         Rig rig;
-        const std::vector<int> addressed{2};
-        rig.device->setAddressedSlots(addressed);
 
-        // Drive, at slot four: the model mirrors no value for it, so its own
-        // movement has nowhere to go.
+        // Drive, at slot four. Nothing in any document knows about it, and the
+        // knob drawing it still has to hear that it moved.
         rig.plugin->parameters[2]->setValueNotifyingHost(0.8f);
         pumpMessageLoop();
 
-        expect(rig.reported.empty(), "Nothing was reported for an unaddressed slot");
-    }
-
-    void testAnAddressedSlotReachesTheModel() {
-        beginTest("The same slot reaches the model once something addresses it");
-
-        Rig rig;
-        const std::vector<int> addressed{2, 4};
-        rig.device->setAddressedSlots(addressed);
-
-        rig.plugin->parameters[2]->setValueNotifyingHost(0.8f);
-        pumpMessageLoop();
-
-        expect(rig.reported.size() == 1, "One report for the slot that is now addressed");
-        if (rig.reported.size() == 1) {
-            expect(rig.reported.front().first == 4, "At the plan slot, not the plugin's index");
-            expectWithinAbsoluteError(rig.reported.front().second, 0.8f, 1.0e-6f);
+        expect(rig.observed.size() == 1, "The move was reported");
+        if (rig.observed.size() == 1) {
+            expect(rig.observed.front().slot == 4, "At the plan slot, not the plugin's index");
+            expectWithinAbsoluteError(rig.observed.front().normalised, 0.8f, 1.0e-6f);
+            expect(!rig.observed.front().hostOwned, "Nothing was driving it");
         }
     }
 
-    void testADrivenSlotIsNotReported() {
-        beginTest("A slot a lane is playing does not report what the plugin does to it");
+    void testADrivenSlotIsReportedAsTheHostsOwn() {
+        beginTest("A slot a lane plays is reported as the host's own");
 
         Rig rig;
-        const std::vector<int> addressed{2};
-        rig.device->setAddressedSlots(addressed);
 
         Window window;
         window.carry(2, 0.25f, /*driven=*/true);
         rig.render(window);
 
-        // The plugin's own modulation of a slot the host is writing. Reported,
-        // it would be read back as the base value the lane is offsetting.
+        // The plugin's own modulation of a slot the host is writing. Taken as
+        // a base, it would move the value the lane is offsetting from.
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
         pumpMessageLoop();
 
-        expect(rig.reported.empty(), "Nothing was reported while the lane played");
-
-        // The lane stops and the same edit is the user's own again. Two blocks,
-        // because the write that came with the lane has to settle as well.
-        Window free;
-        free.carry(2, 0.25f);
-        rig.render(free);
-        rig.render(free);
-
-        rig.plugin->parameters[0]->setValueNotifyingHost(0.6f);
-        pumpMessageLoop();
-
-        expect(rig.reported.size() == 1, "The edit after the lane stopped was reported");
+        expect(rig.observed.size() == 1, "Still reported, because a knob still draws it");
+        if (rig.observed.size() == 1)
+            expect(rig.observed.front().hostOwned, "Marked as the host's, so no base takes it");
     }
 
-    void testAWriteOfOursIsNotAnEdit() {
-        beginTest("The value the host wrote does not come back as an edit");
+    void testAWriteOfOursComesBackAsTheHostsOwn() {
+        beginTest("The value the host wrote comes back marked as the host's own");
 
         Rig rig;
-        const std::vector<int> addressed{2};
-        rig.device->setAddressedSlots(addressed);
 
         // A knob drag: the table moves the slot, and the plugin answers with a
         // value of its own, which is what a smoothed or quantised readback is.
@@ -294,26 +269,29 @@ class PluginEditFilterTest final : public juce::UnitTest {
         rig.render(window);
         pumpMessageLoop();
 
-        expect(rig.reported.empty(), "The echo of our own write was not reported");
+        expect(rig.observed.size() == 1, "The readback was reported");
+        if (rig.observed.size() == 1)
+            expect(rig.observed.front().hostOwned, "As the host's own write coming back");
 
         // The drag ends. Once no write is in flight the plugin has the slot
-        // back, which is the editor-edit path the filter must not close.
+        // back, and what it says of it is its own again.
         rig.plugin->echoesDuringProcess.reset();
+        rig.observed.clear();
         rig.render(window);
         rig.render(window);
 
         rig.plugin->parameters[0]->setValueNotifyingHost(0.2f);
         pumpMessageLoop();
 
-        expect(rig.reported.size() == 1, "An edit after the write settled was reported");
+        expect(rig.observed.size() == 1, "The edit after the write settled was reported");
+        if (rig.observed.size() == 1)
+            expect(!rig.observed.front().hostOwned, "And is the plugin's own");
     }
 
     void testAPlanTheDeviceIsNotInDrivesNothing() {
         beginTest("A device the plan dropped is driving nothing");
 
         Rig rig;
-        const std::vector<int> addressed{2};
-        rig.device->setAddressedSlots(addressed);
 
         Window window;
         window.carry(2, 0.25f, /*driven=*/true);
@@ -322,35 +300,39 @@ class PluginEditFilterTest final : public juce::UnitTest {
         // Bypassed while the lane played, and then the lane switched off: the
         // device renders no block, so nothing here would clear what the last
         // block it did render left behind.
-        rig.device->setAddressedSlots(addressed);
+        rig.device->forgetDriverState();
 
         rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
         pumpMessageLoop();
 
-        expect(rig.reported.size() == 1, "The edit reached the model, with the lane gone");
+        expect(rig.observed.size() == 1, "Reported");
+        if (rig.observed.size() == 1)
+            expect(!rig.observed.front().hostOwned, "And no longer the host's, with the lane gone");
     }
 
-    void testALearnGestureHearsEverything() {
-        beginTest("A learn gesture hears a slot nothing addresses");
+    void testAOneOffWriteReachesThePluginWithoutTheTable() {
+        beginTest("A one-off write reaches the plugin with no table entry behind it");
 
         Rig rig;
-        const std::vector<int> addressed{2};
-        rig.device->setAddressedSlots(addressed);
 
-        rig.device->listenToEveryEdit(true);
-        rig.plugin->parameters[2]->setValueNotifyingHost(0.8f);
-        pumpMessageLoop();
+        // No block has been rendered and no window carries the slot: an
+        // ordinary parameter is the plugin's, and this is a command to it.
+        expect(rig.device->writeParameter(2, 0.7f), "The device took the write");
+        expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.7f, 1.0e-6f);
+    }
 
-        expect(rig.reported.size() == 1, "The gesture heard the unaddressed slot");
+    void testAWriteTheDeviceCannotTakeIsRefused() {
+        beginTest("A write the device cannot take is refused rather than clamped");
 
-        rig.device->listenToEveryEdit(false);
-        rig.plugin->parameters[2]->setValueNotifyingHost(0.3f);
-        pumpMessageLoop();
+        Rig rig;
 
-        expect(rig.reported.size() == 1, "And stopped hearing it when the gesture ended");
+        expect(!rig.device->writeParameter(0, 0.5f), "The wrapper pair is the model's own");
+        expect(!rig.device->writeParameter(2, 1.5f), "A position outside [0, 1] is not one");
+        expect(!rig.device->writeParameter(99, 0.5f), "A slot the plugin does not have");
+        expectWithinAbsoluteError(rig.plugin->parameters[0]->getValue(), 0.0f, 1.0e-6f);
     }
 };
 
-PluginEditFilterTest pluginEditFilterTest;
+HostedParameterEditsTest hostedParameterEditsTest;
 
 }  // namespace

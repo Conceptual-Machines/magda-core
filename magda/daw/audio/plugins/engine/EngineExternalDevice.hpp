@@ -106,34 +106,50 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     bool isEditorOpen() const;
 
     /**
-     * @brief Report a parameter the plugin moved itself, on the message thread.
+     * @brief What the plugin reports one of its parameters now holds.
      *
-     * @p sink gets the plan slot and the normalised value, coalesced per slot
-     * to one call per flush. The host's own writes are not reported, nor a slot
-     * nothing addresses (#2633).
+     * An observation, not a command: this says what the plugin said, and what
+     * to do with it is the reader's
+     * (docs/specs/hosted-plugin-parameter-control.md).
      */
-    void listenForPluginEdits(std::function<void(int slot, float normalised)> sink);
+    struct Observation {
+        int slot = -1;
+        float normalised = 0.0f;
+
+        /// Whether the host was driving the slot or had just written it when
+        /// the plugin reported. A base that a lane or a macro offsets from
+        /// must not be moved by its own output arriving back.
+        bool hostOwned = false;
+    };
 
     /**
-     * @brief The slots something addresses, as the plan was compiled from (#2633).
+     * @brief Report what the plugin says its parameters hold, on the message thread.
      *
-     * An edit the plugin makes to any other slot is dropped in the callback:
-     * the model mirrors only these, so it has nowhere to put it. Every slot
-     * until this is first called, since a plugin bound before a publish has
-     * nothing yet to compare against. Message thread.
-     *
-     * Also clears what was driving the device, which the plan the block
-     * carries is the authority on.
+     * Every slot it moves, coalesced per slot to one call per flush. Nothing
+     * is filtered here: a knob nothing addresses still has to draw itself, and
+     * only the reader knows which of these may reach a document.
      */
-    void setAddressedSlots(std::span<const int> slots);
+    void listenForPluginEdits(std::function<void(Observation)> sink);
 
     /**
-     * @brief Report every slot the plugin moves, addressed or not (#2633).
+     * @brief Write @p normalised into the plugin's slot @p slot now.
      *
-     * Lifts the filter for the length of a learn gesture, which is the one
-     * thing that asks the user to move a control nothing addresses yet.
+     * The one-off edit of an ordinary parameter, which the plugin owns: it
+     * goes straight to the instance rather than through the table, so a slot
+     * no plan carries and a device with no render op still take it. Control
+     * executor. False for a slot with no live parameter behind it, for the
+     * wrapper pair, which the model owns, and for a position that is not a
+     * finite [0, 1].
      */
-    void listenToEveryEdit(bool listening);
+    bool writeParameter(int slot, float normalised);
+
+    /**
+     * @brief Forget what was driving this device, which a new plan decides again.
+     *
+     * A device the plan dropped renders no block, so nothing would otherwise
+     * clear the driver state its last block left behind. Message thread.
+     */
+    void forgetDriverState();
 
   private:
     class PlayHead;
@@ -208,28 +224,21 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// no-op rather than a use-after-free.
     struct PluginEdits {
         explicit PluginEdits(std::size_t slots)
-            : pending(slots), dirty(slots), addressed(slots), driven(slots), hostWrote(slots) {
-            for (auto& slot : addressed)
-                slot.store(true, std::memory_order_relaxed);
-        }
+            : pending(slots), dirty(slots), hostOwned(slots), driven(slots), hostWrote(slots) {}
 
-        /// Whether an edit to @p slot has anywhere to go: the model mirrors it,
-        /// the host is not driving it, and it is not the host's own write
-        /// coming back. Any thread.
-        bool reports(std::size_t slot) const {
-            if (everyEdit.load(std::memory_order_relaxed))
-                return true;
-
-            return addressed[slot].load(std::memory_order_relaxed) &&
-                   !driven[slot].load(std::memory_order_relaxed) &&
-                   hostWrote[slot].load(std::memory_order_relaxed) == 0;
+        /// Whether the host owns @p slot's value at this moment: driving it, or
+        /// having just written it. Any thread.
+        bool hostOwns(std::size_t slot) const {
+            return driven[slot].load(std::memory_order_relaxed) ||
+                   hostWrote[slot].load(std::memory_order_relaxed) > 0;
         }
 
         std::vector<std::atomic<float>> pending;
         std::vector<std::atomic<bool>> dirty;
 
-        /// What the host last said something addresses, from the plan.
-        std::vector<std::atomic<bool>> addressed;
+        /// What @ref hostOwns said when the value was recorded, since the
+        /// answer can have moved on by the time a flush reads it.
+        std::vector<std::atomic<bool>> hostOwned;
 
         /// What the host is driving, as the last block's table said. Asserted
         /// by a block and cleared by a plan, so a device that renders none is
@@ -243,11 +252,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// blocks after it.
         std::vector<std::atomic<int>> hostWrote;
 
-        /// Lifts the filter for a learn gesture.
-        std::atomic<bool> everyEdit{false};
-
         std::atomic<bool> flushQueued{false};
-        std::function<void(int, float)> sink;
+        std::function<void(Observation)> sink;
     };
 
     std::shared_ptr<PluginEdits> edits_;

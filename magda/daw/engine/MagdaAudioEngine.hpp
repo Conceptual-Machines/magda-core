@@ -148,6 +148,9 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
                                        float normalised) const override;
 
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const override;
+    EditReceipt editHostedParameter(const ChainNodePath& devicePath, int paramIndex,
+                                    float normalised, EditOrigin origin,
+                                    std::function<void(bool delivered)> completed = {}) override;
     MidiBridge* getMidiBridge() override;
     const MidiBridge* getMidiBridge() const override;
     MagdaApi& getMagdaApi() override;

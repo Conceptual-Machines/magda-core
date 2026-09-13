@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "../../audio/plugins/engine/EngineExternalDevice.hpp"
 
 /**
  * @file ExternalPluginLoader.hpp
@@ -74,7 +75,9 @@ class ExternalPluginLoader final {
      */
     void syncAssignments(const std::map<engine::DeviceKey, DeviceInfo>& devices);
 
-    using PluginEdit = std::function<void(engine::DeviceKey key, int slot, float normalised)>;
+    using PluginEdit =
+        std::function<void(engine::DeviceKey key,
+                           audio::engine_adapter::EngineExternalDevice::Observation observation)>;
 
     /// Where a parameter the plugin moved itself is reported, on the message
     /// thread, for as long as the key still names that plugin.
