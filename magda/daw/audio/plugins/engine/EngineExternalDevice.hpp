@@ -200,10 +200,6 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// this moves, so an edit made in the plugin's own editor is not reverted.
     std::vector<float> lastTable_;
 
-    /// Set around the host's own setValue, so the listener can tell its echo
-    /// from an edit the plugin made.
-    std::atomic<bool> writing_{false};
-
     /// Plan slot per plugin parameter index, or -1.
     std::vector<int> slotOfParameter_;
 
@@ -212,19 +208,21 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// no-op rather than a use-after-free.
     struct PluginEdits {
         explicit PluginEdits(std::size_t slots)
-            : pending(slots), dirty(slots), addressed(slots), driven(slots) {
+            : pending(slots), dirty(slots), addressed(slots), driven(slots), hostWrote(slots) {
             for (auto& slot : addressed)
                 slot.store(true, std::memory_order_relaxed);
         }
 
-        /// Whether an edit to @p slot has anywhere to go: the model mirrors it
-        /// and the host is not driving it this block. Any thread.
+        /// Whether an edit to @p slot has anywhere to go: the model mirrors it,
+        /// the host is not driving it, and it is not the host's own write
+        /// coming back. Any thread.
         bool reports(std::size_t slot) const {
             if (everyEdit.load(std::memory_order_relaxed))
                 return true;
 
             return addressed[slot].load(std::memory_order_relaxed) &&
-                   !driven[slot].load(std::memory_order_relaxed);
+                   !driven[slot].load(std::memory_order_relaxed) &&
+                   hostWrote[slot].load(std::memory_order_relaxed) == 0;
         }
 
         std::vector<std::atomic<float>> pending;
@@ -239,6 +237,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// reports as an output parameter change, must not overwrite the base
         /// a lane is offsetting.
         std::vector<std::atomic<bool>> driven;
+
+        /// Blocks left in which a report for this slot is the host's own write
+        /// coming back rather than an edit. Armed by the write and aged by the
+        /// blocks after it.
+        std::vector<std::atomic<int>> hostWrote;
 
         /// Lifts the filter for a learn gesture.
         std::atomic<bool> everyEdit{false};

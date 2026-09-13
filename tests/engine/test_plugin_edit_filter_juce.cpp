@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -76,7 +77,12 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     void prepareToPlay(double, int) override {}
     void releaseResources() override {}
-    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {}
+    /// Where a VST3's echo of a host write lands: flushed from
+    /// outputParameterChanges once the plugin has run, on the audio thread.
+    void processBlock(juce::AudioBuffer<float>&, juce::MidiBuffer&) override {
+        if (echoesDuringProcess.has_value())
+            parameters[0]->setValueNotifyingHost(*echoesDuringProcess);
+    }
 
     double getTailLengthSeconds() const override {
         return 0.0;
@@ -119,6 +125,10 @@ class StubPlugin final : public juce::AudioPluginInstance {
     /// In plugin order, which is slots two upwards: the wrapper pair is in
     /// front of them.
     std::vector<StubParameter*> parameters;
+
+    /// What the plugin reports back for its first parameter every block, if
+    /// anything.
+    std::optional<float> echoesDuringProcess;
 };
 
 /// The plan's window for the device, built by hand: one segment per slot it
@@ -160,6 +170,7 @@ class PluginEditFilterTest final : public juce::UnitTest {
         testAnUnaddressedSlotReachesNothing();
         testAnAddressedSlotReachesTheModel();
         testADrivenSlotIsNotReported();
+        testAWriteOfOursIsNotAnEdit();
         testAPlanTheDeviceIsNotInDrivesNothing();
         testALearnGestureHearsEverything();
     }
@@ -254,15 +265,47 @@ class PluginEditFilterTest final : public juce::UnitTest {
 
         expect(rig.reported.empty(), "Nothing was reported while the lane played");
 
-        // The lane stops and the same edit is the user's own again.
+        // The lane stops and the same edit is the user's own again. Two blocks,
+        // because the write that came with the lane has to settle as well.
         Window free;
         free.carry(2, 0.25f);
+        rig.render(free);
         rig.render(free);
 
         rig.plugin->parameters[0]->setValueNotifyingHost(0.6f);
         pumpMessageLoop();
 
         expect(rig.reported.size() == 1, "The edit after the lane stopped was reported");
+    }
+
+    void testAWriteOfOursIsNotAnEdit() {
+        beginTest("The value the host wrote does not come back as an edit");
+
+        Rig rig;
+        const std::vector<int> addressed{2};
+        rig.device->setAddressedSlots(addressed);
+
+        // A knob drag: the table moves the slot, and the plugin answers with a
+        // value of its own, which is what a smoothed or quantised readback is.
+        rig.plugin->echoesDuringProcess = 0.4f;
+
+        Window window;
+        window.carry(2, 0.9f);
+        rig.render(window);
+        pumpMessageLoop();
+
+        expect(rig.reported.empty(), "The echo of our own write was not reported");
+
+        // The drag ends. Once no write is in flight the plugin has the slot
+        // back, which is the editor-edit path the filter must not close.
+        rig.plugin->echoesDuringProcess.reset();
+        rig.render(window);
+        rig.render(window);
+
+        rig.plugin->parameters[0]->setValueNotifyingHost(0.2f);
+        pumpMessageLoop();
+
+        expect(rig.reported.size() == 1, "An edit after the write settled was reported");
     }
 
     void testAPlanTheDeviceIsNotInDrivesNothing() {
