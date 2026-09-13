@@ -294,6 +294,14 @@ class RuntimeStateStore {
                 visit(key.deviceKey(), *tap);
     }
 
+    /// The same for a rack's own meter, by the rack it measures (#2649). A
+    /// rack id is the project's, so it is the whole address.
+    template <typename Visit> void forEachRackMeter(Visit&& visit) const {
+        for (const auto& [key, tap] : meters_)
+            if (key.role == OpRole::RackMeter)
+                visit(key.rackId, *tap);
+    }
+
     /**
      * @brief Make a handle for every slot @p clips names, publish them, and
      *        retire the ones the snapshot has stopped naming.

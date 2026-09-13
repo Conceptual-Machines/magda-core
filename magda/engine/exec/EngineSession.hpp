@@ -396,6 +396,11 @@ class EngineSession {
         store_.forEachDeviceMeter(std::forward<Visit>(visit));
     }
 
+    /// Every rack's meter, by the rack it measures (#2649).
+    template <typename Visit> void forEachRackMeter(Visit&& visit) const {
+        store_.forEachRackMeter(std::forward<Visit>(visit));
+    }
+
     /**
      * @brief The device at @p key, or null.
      *

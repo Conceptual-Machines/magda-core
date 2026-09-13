@@ -170,6 +170,7 @@ enum class OpRole : std::uint8_t {
     RackMidiMix,          ///< merge of a rack's chain MIDI outputs
     RackFader,            ///< the rack's output volume + pan
     RackDelta,            ///< the rack's output minus the dry input it was handed
+    RackMeter,            ///< the rack's own level tap, at what leaves it
     TrackFader,           ///< the track fader
     TrackMeter,           ///< the track's post-fader, pre-mute level tap
     TrackMute,            ///< mute and solo, applied after the meter and sidechain tap
@@ -349,6 +350,14 @@ struct OpKey {
 inline OpKey trackMeterKey(TrackId trackId) {
     return OpKey{trackId,           INVALID_RACK_ID,    INVALID_CHAIN_ID,
                  INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
+}
+
+/// The key of the Meter op at @p rackId's output, for the same reason (#2649).
+/// A rack id is the project's, so the segment is what the rack stands in
+/// rather than part of its identity -- one rack, one meter.
+inline OpKey rackMeterKey(TrackId trackId, RackId rackId, ChainSegment segment) {
+    return OpKey{trackId,           rackId, INVALID_CHAIN_ID, INVALID_DEVICE_ID,
+                 OpRole::RackMeter, 0,      segment};
 }
 
 /** A reference to one output port of an earlier op. */

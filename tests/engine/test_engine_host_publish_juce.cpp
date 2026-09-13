@@ -181,6 +181,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
         magda::test::runWithCleanJuceState([this] { testDevicePathsAreTheAddressesTheUIDraws(); });
+        magda::test::runWithCleanJuceState([this] { testRackMeterReadsWhatTheRackRendered(); });
         magda::test::runWithCleanJuceState(
             [this] { testTheMeterStoreIsEmptiedAtAProjectBoundary(); });
         magda::test::runWithCleanJuceState([this] { testMacroAndLaneEditsAskForAPublish(); });
@@ -1039,6 +1040,84 @@ class EngineHostPublishTest final : public juce::UnitTest {
                "So is a device slot's, which the chain UI draws (#2570)");
         expect(factory.createMeter(inputMeter) == nullptr,
                "A monitored input's is still nobody's (#1895)");
+    }
+
+    /// A rack's own level, which the fork answers with the track's (#2649).
+    void testRackMeterReadsWhatTheRackRendered() {
+        beginTest("A rack's meter reads what the rack put out");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Rack");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        auto rack = std::make_unique<magda::RackInfo>();
+        rack->id = 1;
+        {
+            magda::ChainInfo chain;
+            chain.id = 1;
+            chain.elements.emplace_back(polySynth(1));
+            rack->chains.push_back(std::move(chain));
+        }
+        track->chain.fxChainElements.emplace_back(std::move(rack));
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 4.0);
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
+                                                         .velocity = 100,
+                                                         .startBeat = 0.0,
+                                                         .lengthBeats = 2.0}),
+               "The clip holds a note");
+
+        const auto& tracks = trackManager.getTracks();
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs());
+
+        const auto plan = std::make_shared<const magda::engine::RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, *master));
+
+        magda::engine::PlanValues values;
+        magda::engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan is published");
+
+        session.publishClips(
+            std::make_shared<const magda::engine::ClipSnapshot>(magda::engine::compileClipSnapshot(
+                host::clipLanesFor(tracks), host::clipSources(), tempo)));
+        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        int racks = 0;
+        magda::RackId metered = magda::INVALID_RACK_ID;
+        float peak = 0.0f;
+        session.forEachRackMeter([&](magda::RackId rackId, magda::engine::LevelTap& tap) {
+            ++racks;
+            metered = rackId;
+            peak = std::max(peak, tap.read().loudest());
+        });
+
+        expect(racks == 1, "The one rack in the project has the one meter");
+        expect(metered == 1, "Keyed by the rack it measures");
+        expect(peak > 0.0f, "And it read the note the synth inside it played");
     }
 
     /// A device id restarts at 1 in the next project, so a level left under a

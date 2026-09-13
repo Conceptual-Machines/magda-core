@@ -145,6 +145,8 @@ const char* toString(OpRole role) {
             return "rackFader";
         case OpRole::RackDelta:
             return "rackDelta";
+        case OpRole::RackMeter:
+            return "rackMeter";
         case OpRole::TrackFader:
             return "trackFader";
         case OpRole::TrackMeter:

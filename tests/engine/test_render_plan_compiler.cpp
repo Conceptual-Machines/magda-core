@@ -910,7 +910,71 @@ TEST_CASE("An empty rack passes signal through its fader", "[engine][plan][compi
     const auto trackInput = opsWithRole(plan, OpRole::TrackAudioInput).front();
     const auto rackFader = opsWithRole(plan, OpRole::RackFader).front();
     CHECK(inputOp(plan, rackFader, 0) == trackInput);
-    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == rackFader);
+
+    // The rack's own meter stands where a device slot's does, at the end of
+    // what the rack contributes (#2649), so it is what the track fader reads.
+    const auto rackMeter = opsWithRole(plan, OpRole::RackMeter);
+    REQUIRE(rackMeter.size() == 1);
+    CHECK(inputOp(plan, rackMeter.front(), 0) == rackFader);
+    CHECK(inputOp(plan, opsWithRole(plan, OpRole::TrackFader).front(), 0) == rackMeter.front());
+}
+
+TEST_CASE("A rack compiles a meter at its output", "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack.chains.push_back(std::move(chain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    SECTION("with device meters") {
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto meter = opsWithRole(plan, OpRole::RackMeter);
+        REQUIRE(meter.size() == 1);
+
+        // Keyed by the rack it measures and nothing else: a rack id is the
+        // project's, which is the whole of the address the UI reads one by.
+        const auto& key = plan.ops[static_cast<std::size_t>(meter.front())].key;
+        CHECK(key.rackId == 4);
+        CHECK(key.trackId == 1);
+        CHECK(key.deviceId == magda::INVALID_DEVICE_ID);
+        CHECK(key.chainId == magda::INVALID_CHAIN_ID);
+
+        CHECK(inputOp(plan, meter.front(), 0) == opsWithRole(plan, OpRole::RackFader).front());
+    }
+
+    SECTION("without device meters") {
+        const auto plan =
+            magda::engine::compileRenderPlan(tracks, makeMaster(), withoutDeviceMeters());
+        requireWellFormed(plan);
+        CHECK(countRole(plan, OpRole::RackMeter) == 0);
+    }
+}
+
+TEST_CASE("A bypassed rack has no meter of its own", "[engine][plan][compiler]") {
+    RackInfo rack;
+    rack.id = 4;
+    rack.bypassed = true;
+    ChainInfo chain;
+    chain.id = 10;
+    chain.elements.push_back(makeDeviceElement(makeEffect(7)));
+    rack.chains.push_back(std::move(chain));
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // Bypass routes the dry path, so there is nothing of the rack's to measure
+    // -- which is why the host reports a rack with no tap as silence rather
+    // than leaving its strip on the last level it drew.
+    CHECK(countRole(plan, OpRole::RackMeter) == 0);
 }
 
 TEST_CASE("A bypassed rack is transparent", "[engine][plan][compiler]") {
