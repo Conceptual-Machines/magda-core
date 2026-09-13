@@ -561,16 +561,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void deviceModifiersChanged(TrackId) override {
         wantValues(Shape::MayHaveMoved);
     }
-    /// A macro's value is a base the table carries, so turning one is a values
-    /// publish like any other. Without this the table keeps whatever the macro
-    /// held when its link was last edited, and the knob does nothing.
+    /// A macro's value is a base the table carries.
     void macroValueChanged(TrackId, ChainScope, int, int, float) override {
         wantValues(Shape::Unchanged);
     }
-    /// A lane is read where the table is compiled, so an edit to one has to
-    /// publish or it reaches nothing until an unrelated edit happens to. The
-    /// shape can move with it: a lane drawn on a parameter is what makes that
-    /// parameter one the table carries.
+    /// Lanes are read where the table is compiled, and drawing one is what
+    /// makes its parameter one the table carries.
     void automationLanesChanged() override {
         wantValues(Shape::MayHaveMoved);
     }
