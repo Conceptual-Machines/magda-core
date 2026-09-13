@@ -312,11 +312,15 @@ void AudioBridge::projectTeardown() {
         trackController_.removeAudioTrack(trackId);
     }
 
-    // Device and rack ids restart in the next project, so a slot that has not
-    // rendered yet would read what the last one left under its address
-    // (#2570). What deviceMetering_ still holds is not stale for long: an
-    // entry's level is taken from its client every tick, and a client with no
-    // graph behind it reports silence.
+    // Device and rack ids restart in the next project, so a level left under
+    // one of those addresses outlives the device that made it (#2570). The
+    // producer as well as the store: an entry nothing polls -- a rack's, or a
+    // rack-inner device's, neither of which updateAllClients() touches --
+    // holds its last value until something overwrites it, and publishInto()
+    // would copy it back over the cleared store on the next tick. The next
+    // project's graph build re-acquires the taps it needs, and the rack
+    // metering map remakes its entries on the tick after that.
+    deviceMetering_.clear();
     deviceMeters_.clear();
 }
 

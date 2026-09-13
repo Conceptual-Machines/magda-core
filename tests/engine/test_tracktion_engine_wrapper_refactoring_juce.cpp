@@ -29,6 +29,7 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         testDeviceManagerAccess();
         testThreadSafety();
         testServicesWithoutPlayback();
+        testProjectTeardownTakesTheMetersWithIt();
     }
 
   private:
@@ -175,6 +176,44 @@ class TracktionEngineWrapperRefactoringTest final : public juce::UnitTest {
         wrapper.getEngine();
         wrapper.getEdit();
         expect(true, "All bridge accessors work");
+    }
+
+    /// A rack keeps its level in an entry nothing polls -- updateAllClients()
+    /// walks the devices -- so a project boundary is the only thing that can
+    /// drop it. The store is cleared there too, but the store is a copy: what
+    /// this asserts is that the next tick's copy brings nothing back (#2570).
+    void testProjectTeardownTakesTheMetersWithIt() {
+        beginTest("A project's teardown takes the fork's per-slot levels with it");
+
+        auto& wrapper = magda::test::getSharedEngine();
+        auto* bridge = wrapper.getAudioBridge();
+        expect(bridge != nullptr, "The bridge is there to tear down");
+        if (bridge == nullptr)
+            return;
+
+        constexpr magda::RackId rackId = 1;
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(1, 1);
+
+        auto& metering = bridge->getDeviceMetering();
+        metering.ensureEntry(devicePath);
+        metering.setDirectLevels(devicePath, 0.5f, 0.5f);
+        metering.ensureRackEntry(rackId);
+        metering.setRackDirectLevels(rackId, 0.5f, 0.5f);
+
+        // One metering tick's worth of publishing, which is what the UI reads.
+        auto& store = wrapper.deviceMeters();
+        metering.publishInto(store);
+
+        magda::DeviceMeters::Levels levels;
+        expect(store.devicePeak(devicePath, levels), "The slot has a level to lose");
+        expect(store.rackPeak(rackId, levels), "So has the rack");
+
+        bridge->projectTeardown();
+        metering.publishInto(store);
+
+        expect(!store.devicePeak(devicePath, levels), "The teardown took the slot's");
+        expect(!store.rackPeak(rackId, levels),
+               "And the rack's, which nothing else would have overwritten");
     }
 
     void testMetronomeOperations() {
