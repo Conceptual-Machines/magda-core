@@ -114,11 +114,7 @@ void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, co
     slot.setParamIndex(cell.targetParamIndex);
     slot.setParamName(param.name);
     slot.setParameterInfo(param);
-    // Through the model convention: an external parameter with a configured
-    // range holds a position, and a slider ranged in Hz would clamp it to the
-    // bottom of the range.
-    slot.setParamValue(magda::ParameterUtils::modelToRealValue(
-        magda::ParameterModelValue{param.currentValue}, param));
+    slot.setParamValue(param.currentValue);
     slot.setShowEmptyText(false);
     slot.setEnabled(cell.enabled);
     slot.setVisible(true);
@@ -242,8 +238,7 @@ void ParamHostComponent::updateParameterValues(const magda::DeviceInfo& device, 
             cell.paramArrayIndex >= static_cast<int>(device.parameters.size()))
             continue;
         const auto& param = device.parameters[static_cast<size_t>(cell.paramArrayIndex)];
-        paramSlots_[i]->setParamValue(magda::ParameterUtils::modelToRealValue(
-            magda::ParameterModelValue{param.currentValue}, param));
+        paramSlots_[i]->setParamValue(param.currentValue);
         paramSlots_[i]->setEnabled(cell.enabled);
     }
 }

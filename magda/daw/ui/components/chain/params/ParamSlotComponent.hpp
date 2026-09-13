@@ -38,7 +38,8 @@ class ParamSlotComponent : public juce::Component,
     ~ParamSlotComponent() override;
 
     void setParamName(const juce::String& name);
-    void setParamValue(double value);
+    /// @p modelValue in model units, which is what DeviceInfo carries.
+    void setParamValue(double modelValue);
     void setParameterInfo(const magda::ParameterInfo& info);  // Set full param info for formatting
     void cancelGesture();
     void setShowEmptyText(bool show);  // Show "-" instead of value for empty slots

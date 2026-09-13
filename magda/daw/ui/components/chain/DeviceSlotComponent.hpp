@@ -208,9 +208,6 @@ class DeviceSlotComponent : public NodeComponent,
     void deviceParameterObserved(const magda::ChainNodePath& devicePath, int paramIndex,
                                  float normalised) override;
 
-    /// @p modelValue in the units this slot's sliders are ranged in. A hosted
-    /// plugin's model value is a position; its range can read in anything.
-    double shownValueOf(int paramIndex, float modelValue) const;
     void deviceParameterChanged(const magda::ChainNodePath& devicePath, int paramIndex,
                                 float newValue) override;
 

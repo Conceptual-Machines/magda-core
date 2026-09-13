@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "../../core/ChainNodePath.hpp"
 #include "../../core/HostedParameterEdit.hpp"
@@ -148,6 +149,14 @@ class EngineHost {
 
     /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief What the plugin last reported for @p paramIndex, if anything.
+     *
+     * The runtime value of a parameter the document holds nothing for, which
+     * is every ordinary parameter of a hosted plugin.
+     */
+    std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const;
 
     /**
      * @brief Deliver a one-off @p normalised position to a hosted parameter.

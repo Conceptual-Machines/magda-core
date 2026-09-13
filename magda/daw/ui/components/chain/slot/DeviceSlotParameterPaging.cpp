@@ -43,13 +43,10 @@ void updateDeviceSlotParameterSlots(magda::DeviceInfo& device, const magda::Chai
             if (!nodePath.isValid())
                 return;
 
-            // The grid works in display units and this list is in model ones,
-            // which differ wherever a parameter carries a configured range.
+            // Model units: ParamSlotComponent converts its own display value
+            // before it reports one.
+            const auto model = magda::ParameterModelValue{static_cast<float>(value)};
             auto* param = device.findParameterByIndex(paramIndex);
-            const auto model =
-                param != nullptr
-                    ? magda::ParameterUtils::realToModelValue(static_cast<float>(value), *param)
-                    : magda::ParameterModelValue{static_cast<float>(value)};
             if (param != nullptr)
                 param->currentValue = model.value;
             if (compiledPanel != nullptr)

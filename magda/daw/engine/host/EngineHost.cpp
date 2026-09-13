@@ -1053,6 +1053,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return external != nullptr ? external->describeParameters() : HostParameters{};
     }
 
+    std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        if (!key.has_value())
+            return std::nullopt;
+
+        const auto device = observed_.find(*key);
+        if (device == observed_.end())
+            return std::nullopt;
+
+        const auto slot = device->second.find(paramIndex);
+        return slot == device->second.end() ? std::nullopt : std::optional{slot->second};
+    }
+
     /**
      * @brief Hand a hosted parameter a value of its own, through the plane.
      *
@@ -1355,6 +1368,11 @@ juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, 
 
 HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return impl_->describeDeviceParameters(devicePath);
+}
+
+std::optional<float> EngineHost::observedParameter(const ChainNodePath& devicePath,
+                                                   int paramIndex) const {
+    return impl_->observedParameter(devicePath, paramIndex);
 }
 
 EditReceipt EngineHost::editHostedParameter(const ChainNodePath& devicePath, int paramIndex,

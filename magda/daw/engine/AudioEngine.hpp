@@ -320,6 +320,13 @@ class AudioEngine : public AudioEngineListener {
         return {};
     }
 
+    /// What the plugin last reported for this parameter, if anything. A value
+    /// the document holds nothing for still has to be drawable.
+    virtual std::optional<float> observedParameter(const ChainNodePath& /*devicePath*/,
+                                                   int /*paramIndex*/) const {
+        return std::nullopt;
+    }
+
     /**
      * @brief Deliver a one-off @p normalised position to a hosted parameter.
      *

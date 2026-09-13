@@ -699,13 +699,11 @@ void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& de
     if (devicePath != nodePath_)
         return;
 
-    // The plugin reports a position; this slot's list carries the range it is
-    // drawn against, which a configured parameter reads in its own units.
-    if (device_.findParameterByIndex(paramIndex) == nullptr)
-        return;
-
-    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex,
-                                        shownValueOf(paramIndex, normalised));
+    // The cache first: the grid rebuilds from it on a page change, so a widget
+    // updated on its own loses the value as soon as the page turns, and a
+    // parameter on another page never records one at all.
+    updateCachedParameterValue(device_, paramIndex, normalised);
+    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, normalised);
 }
 
 void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,
@@ -732,18 +730,8 @@ void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& dev
     // In the units the slot is drawn against, not the model's: a hosted
     // plugin's value is a position whatever its range reads in, and a slider
     // ranged in Hz clamps one to the bottom of the range.
-    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex,
-                                        shownValueOf(paramIndex, newValue));
+    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, newValue);
     paramGrid_->refreshEnabledStates(device_, paramGrid_->getCurrentPage());
-}
-
-double DeviceSlotComponent::shownValueOf(int paramIndex, float modelValue) const {
-    const auto* described = device_.findParameterByIndex(paramIndex);
-    if (described == nullptr)
-        return modelValue;
-
-    return magda::ParameterUtils::modelToRealValue(magda::ParameterModelValue{modelValue},
-                                                   *described);
 }
 
 void DeviceSlotComponent::showAutomationLaneForParam(int paramIndex) {
