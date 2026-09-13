@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -108,9 +109,28 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * @brief Report a parameter the plugin moved itself, on the message thread.
      *
      * @p sink gets the plan slot and the normalised value, coalesced per slot
-     * to one call per flush. The host's own writes are not reported.
+     * to one call per flush. The host's own writes are not reported, nor a slot
+     * nothing addresses (#2633).
      */
     void listenForPluginEdits(std::function<void(int slot, float normalised)> sink);
+
+    /**
+     * @brief The slots something addresses, as the plan was compiled from (#2633).
+     *
+     * An edit the plugin makes to any other slot is dropped in the callback:
+     * the model mirrors only these, so it has nowhere to put it. Every slot
+     * until this is first called, since a plugin bound before a publish has
+     * nothing yet to compare against. Message thread.
+     */
+    void setAddressedSlots(std::span<const int> slots);
+
+    /**
+     * @brief Report every slot the plugin moves, addressed or not (#2633).
+     *
+     * Lifts the filter for the length of a learn gesture, which is the one
+     * thing that asks the user to move a control nothing addresses yet.
+     */
+    void listenToEveryEdit(bool listening);
 
   private:
     class PlayHead;
@@ -188,10 +208,36 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// message thread. Shared so a flush queued before the device died is a
     /// no-op rather than a use-after-free.
     struct PluginEdits {
-        explicit PluginEdits(std::size_t slots) : pending(slots), dirty(slots) {}
+        explicit PluginEdits(std::size_t slots)
+            : pending(slots), dirty(slots), addressed(slots), driven(slots) {
+            for (auto& slot : addressed)
+                slot.store(true, std::memory_order_relaxed);
+        }
+
+        /// Whether an edit to @p slot has anywhere to go: the model mirrors it
+        /// and the host is not driving it this block. Any thread.
+        bool reports(std::size_t slot) const {
+            if (everyEdit.load(std::memory_order_relaxed))
+                return true;
+
+            return addressed[slot].load(std::memory_order_relaxed) &&
+                   !driven[slot].load(std::memory_order_relaxed);
+        }
 
         std::vector<std::atomic<float>> pending;
         std::vector<std::atomic<bool>> dirty;
+
+        /// What the host last said something addresses, from the plan.
+        std::vector<std::atomic<bool>> addressed;
+
+        /// What the host is driving this block, from the table the last block
+        /// delivered. A plugin's own internal modulation, which VST3 reports as
+        /// an output parameter change, must not overwrite the model's base.
+        std::vector<std::atomic<bool>> driven;
+
+        /// Lifts the filter for a learn gesture.
+        std::atomic<bool> everyEdit{false};
+
         std::atomic<bool> flushQueued{false};
         std::function<void(int, float)> sink;
     };

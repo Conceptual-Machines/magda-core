@@ -434,6 +434,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
+        handAddressedSlotsToPlugins();
     }
 
     /// A mixer move: the same values against the plan already playing. It
@@ -465,6 +466,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // A monitor or route change arrives as a track property, off the same
         // reading of the model as the values above.
         publishRouting(tracks);
+
+        // A lane drawn on a parameter is a values publish, and it is what makes
+        // that slot addressed (#2633).
+        handAddressedSlotsToPlugins();
     }
 
     /**
@@ -658,6 +663,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return bound;
     }
 
+    /// Which slots something addresses, across the project. Empty with no
+    /// master track to read, which is a project that is not open.
+    AddressedParameters addressedParameters() const {
+        auto& tracks = TrackManager::getInstance();
+        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
+        if (master == nullptr)
+            return {};
+
+        const auto bound = boundTargets();
+
+        AddressingSources sources;
+        sources.tracks = tracks.getTracks();
+        sources.master = master;
+        sources.lanes = AutomationManager::getInstance().getLanes();
+        sources.bound = bound;
+
+        return AddressedParameters::from(sources);
+    }
+
     /**
      * @brief Mirror the slots something addresses, for every plugin this renders.
      *
@@ -671,19 +695,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         auto& tracks = TrackManager::getInstance();
-        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
-        if (master == nullptr)
-            return;
-
-        const auto bound = boundTargets();
-
-        AddressingSources sources;
-        sources.tracks = tracks.getTracks();
-        sources.master = master;
-        sources.lanes = AutomationManager::getInstance().getLanes();
-        sources.bound = bound;
-
-        const auto addressed = AddressedParameters::from(sources);
+        const auto addressed = addressedParameters();
 
         for (const auto key : factory_.externalKeys()) {
             auto* device = modelDevice(key);
@@ -699,7 +711,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
             std::vector<ParameterInfo> described;
             if (gained) {
-                auto* external = externalDeviceAt(path);
+                auto* external = externalDeviceFor(key);
                 if (external == nullptr)
                     continue;
 
@@ -708,6 +720,27 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
             mirrorAddressedParameters(*device, described, slots);
         }
+    }
+
+    /**
+     * @brief Tell each plugin which of its slots something addresses (#2633).
+     *
+     * It drops an edit to any other slot where the plugin reports it, rather
+     * than on the message thread where the model would find nothing to write
+     * it to. After a publish rather than before one: a plugin the publish just
+     * bound was not there to be told when the model was trimmed.
+     */
+    void handAddressedSlotsToPlugins() {
+        if (session_ == nullptr)
+            return;
+
+        auto& tracks = TrackManager::getInstance();
+        const auto addressed = addressedParameters();
+
+        for (const auto key : factory_.externalKeys())
+            if (auto* external = externalDeviceFor(key))
+                external->setAddressedSlots(
+                    addressed.forDevice(tracks.findDevicePath(key.deviceId, key.segment)));
     }
 
     /**
@@ -974,14 +1007,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /** @brief The plugin rendering at @p devicePath, or null. Message thread. */
     adapter::EngineExternalDevice* externalDeviceAt(const ChainNodePath& devicePath) const {
+        const auto key = keyOfDeviceAt(devicePath);
+        return key.has_value() ? externalDeviceFor(*key) : nullptr;
+    }
+
+    /** @brief The plugin the live session renders for @p key, or null. */
+    adapter::EngineExternalDevice* externalDeviceFor(engine::DeviceKey key) const {
         if (session_ == nullptr)
             return nullptr;
 
-        const auto key = keyOfDeviceAt(devicePath);
-        if (!key.has_value())
-            return nullptr;
-
-        auto held = session_->device(*key);
+        auto held = session_->device(key);
         return held != nullptr ? externalIn(*held) : nullptr;
     }
 

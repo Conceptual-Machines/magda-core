@@ -119,6 +119,12 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
             return;
 
         auto& edits = *edits_;
+
+        // Dropped here rather than drained and discarded: nothing downstream
+        // holds a value for this slot (#2633).
+        if (!edits.reports(static_cast<std::size_t>(slot)))
+            return;
+
         edits.pending[static_cast<std::size_t>(slot)].store(newValue, std::memory_order_relaxed);
         edits.dirty[static_cast<std::size_t>(slot)].store(true, std::memory_order_release);
 
@@ -272,6 +278,22 @@ void EngineExternalDevice::listenForPluginEdits(std::function<void(int, float)> 
     edits_->sink = std::move(sink);
 }
 
+void EngineExternalDevice::setAddressedSlots(std::span<const int> slots) {
+    for (std::size_t slot = 0; slot < edits_->addressed.size(); ++slot) {
+        const auto addressed = std::ranges::binary_search(slots, static_cast<int>(slot));
+        edits_->addressed[slot].store(addressed, std::memory_order_relaxed);
+
+        // A slot that left the window is no longer delivered, so nothing would
+        // clear the flag the table last gave it.
+        if (!addressed)
+            edits_->driven[slot].store(false, std::memory_order_relaxed);
+    }
+}
+
+void EngineExternalDevice::listenToEveryEdit(bool listening) {
+    edits_->everyEdit.store(listening, std::memory_order_relaxed);
+}
+
 EngineExternalDevice::~EngineExternalDevice() {
     // First: the editor is the plugin's own component (#2580).
     jassert(editor_ == nullptr || juce::MessageManager::existsAndIsCurrentThread());
@@ -362,6 +384,11 @@ void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& pa
         const auto slot = params.slotAt(entry);
         if (!mapsSlot(slot))
             continue;
+
+        // Recorded whatever the entry resolved to: a lane playing over a slot
+        // is what makes the plugin's own report of it unwanted (#2633).
+        edits_->driven[static_cast<std::size_t>(slot)].store(params.drivenAt(entry),
+                                                             std::memory_order_relaxed);
 
         const auto& mapping = parameters_[static_cast<std::size_t>(slot)];
         const auto values = params.valuesAt(entry);
