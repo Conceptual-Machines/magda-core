@@ -193,9 +193,8 @@ class DeviceControlPlane {
         int slot = -1;
         float normalised = 0.0f;
 
-        /// Checked before the write, since a key can be live again under a
-        /// different plugin by the time this runs: an edit must never reach
-        /// the instance that replaced the one it was meant for.
+        /// Checked before the write: a key can be live again under a
+        /// different plugin by the time this runs.
         AssignmentRequest request;
     };
 
@@ -205,11 +204,9 @@ class DeviceControlPlane {
     /**
      * @brief Deliver @p edit to the plugin at @p key.
      *
-     * The ordinary edit of a parameter the plugin owns, which is everything no
-     * host control drives (docs/specs/hosted-plugin-parameter-control.md). It
-     * reaches the instance through the endpoint, so a device the plan carries
-     * no render op for -- bypassed, or on a track that is not rendering --
-     * still takes it.
+     * The ordinary edit of a parameter the plugin owns
+     * (docs/specs/hosted-plugin-parameter-control.md). Reaches the instance
+     * through the endpoint, so a device with no render op still takes it.
      *
      * Same contract as @ref captureState. Delivered says the adapter accepted
      * the write, not that the plugin's DSP has consumed it.

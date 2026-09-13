@@ -108,17 +108,15 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /**
      * @brief What the plugin reports one of its parameters now holds.
      *
-     * An observation, not a command: this says what the plugin said, and what
-     * to do with it is the reader's
+     * An observation, not a command
      * (docs/specs/hosted-plugin-parameter-control.md).
      */
     struct Observation {
         int slot = -1;
         float normalised = 0.0f;
 
-        /// Whether the host was driving the slot or had just written it when
-        /// the plugin reported. A base that a lane or a macro offsets from
-        /// must not be moved by its own output arriving back.
+        /// Whether the host was driving the slot or had just written it. A
+        /// base must not be moved by its own output arriving back.
         bool hostOwned = false;
     };
 
@@ -126,20 +124,16 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * @brief Report what the plugin says its parameters hold, on the message thread.
      *
      * Every slot it moves, coalesced per slot to one call per flush. Nothing
-     * is filtered here: a knob nothing addresses still has to draw itself, and
-     * only the reader knows which of these may reach a document.
+     * is filtered here; only the reader knows which may reach a document.
      */
     void listenForPluginEdits(std::function<void(Observation)> sink);
 
     /**
      * @brief Write @p normalised into the plugin's slot @p slot now.
      *
-     * The one-off edit of an ordinary parameter, which the plugin owns: it
-     * goes straight to the instance rather than through the table, so a slot
-     * no plan carries and a device with no render op still take it. Control
-     * executor. False for a slot with no live parameter behind it, for the
-     * wrapper pair, which the model owns, and for a position that is not a
-     * finite [0, 1].
+     * Straight to the instance rather than through the table, so a slot no
+     * plan carries still takes it. Control executor. False for the wrapper
+     * pair, a slot with no live parameter, and a position outside [0, 1].
      */
     bool writeParameter(int slot, float normalised);
 
@@ -242,14 +236,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
         /// What the host is driving, as the last block's table said. Asserted
         /// by a block and cleared by a plan, so a device that renders none is
-        /// driving nothing. A plugin's own internal modulation, which VST3
-        /// reports as an output parameter change, must not overwrite the base
-        /// a lane is offsetting.
+        /// driving nothing.
         std::vector<std::atomic<bool>> driven;
 
-        /// Blocks left in which a report for this slot is the host's own write
-        /// coming back rather than an edit. Armed by the write and aged by the
-        /// blocks after it.
+        /// Blocks left in which a report for this slot is our own write
+        /// coming back. Armed by the write, aged by the blocks after it.
         std::vector<std::atomic<int>> hostWrote;
 
         std::atomic<bool> flushQueued{false};

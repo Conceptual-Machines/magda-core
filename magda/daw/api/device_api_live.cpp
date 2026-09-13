@@ -234,11 +234,8 @@ bool DeviceApiLive::setDeviceParameter(const ChainNodePath& devicePath, int para
     if (device == nullptr)
         return false;
 
-    // Described rather than from the document: a hosted plugin's ordinary
-    // parameters are the plugin's and are not mirrored, and refusing to write
-    // one because the document has never heard of it is how every agent write
-    // to a plugin turns into a no-op
-    // (docs/specs/hosted-plugin-parameter-control.md).
+    // Described, not from the document: a hosted plugin's ordinary parameters
+    // are not mirrored (docs/specs/hosted-plugin-parameter-control.md).
     const auto described = deviceParameterList(*device, devicePath);
     const auto match = std::ranges::find(described, paramIndex, &ParameterInfo::paramIndex);
     if (match == described.end())

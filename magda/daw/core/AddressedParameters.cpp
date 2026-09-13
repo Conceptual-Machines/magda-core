@@ -34,9 +34,7 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
                 target(link.target);
     };
 
-    // Only what needs a value of its own. Showing a parameter, putting it on the
-    // mini row or letting the agent write it are not that: the plugin owns those
-    // values and a reader takes them from the instance
+    // Only what needs a value of its own. A UI selection does not
     // (docs/specs/hosted-plugin-parameter-control.md).
     const auto device = [&links](const DeviceInfo& info, const ChainNodePath&) { links(info); };
 

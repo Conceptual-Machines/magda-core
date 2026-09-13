@@ -30,9 +30,8 @@ constexpr float kWetLevelCeiling = 0.999f;
 /// The slots in front of a plugin's own: dry, then wet.
 constexpr int kWrapperParameterCount = 2;
 
-/// How many blocks a write of ours masks its slot for. A VST3's echo of it is
-/// flushed from outputParameterChanges after processor->process() returns, so
-/// it lands in the block that carried the write or in the one after it.
+/// How many blocks a write of ours masks its slot for. A VST3 flushes its echo
+/// from outputParameterChanges after processor->process() returns.
 constexpr int kHostWriteEchoBlocks = 2;
 
 /// The model's description of the parameter at plan slot @p index, or none.
@@ -297,9 +296,7 @@ bool EngineExternalDevice::writeParameter(int slot, float normalised) {
     if (mapping.parameter == nullptr || mapping.role != magda::WrapperRole::None)
         return false;
 
-    // Not recorded against lastTable_: that is what the table delivered, and a
-    // slot the table carries is one the host drives, whose edit is a change to
-    // its base rather than a write of its own.
+    // Not recorded against lastTable_, which is what the table delivered.
     mapping.parameter->setValue(normalised);
     return true;
 }
