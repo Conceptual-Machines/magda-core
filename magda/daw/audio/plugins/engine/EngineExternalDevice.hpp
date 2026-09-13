@@ -92,7 +92,8 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * Message thread, on the same terms as parameterText(): a query that
      * suspends nothing. What the model mirrors is a subset of this (#2629).
      * The wrapper pair carries its defaults, since the model owns those values
-     * and this device's own copies are written on the audio thread.
+     * and this device's own copies are written on the audio thread. Names and
+     * ids are read once, and again only after the plugin reports they changed.
      */
     magda::HostParameters describeParameters() const;
 
@@ -246,6 +247,12 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         std::atomic<bool> flushQueued{false};
         std::function<void(Observation)> sink;
     };
+
+    /// What describeParameters() last read off the instance, values aside.
+    mutable std::optional<magda::HostParameters> catalog_;
+
+    /// Set from any thread when the plugin reports its parameter info changed.
+    mutable std::atomic<bool> catalogStale_{false};
 
     std::shared_ptr<PluginEdits> edits_;
     std::unique_ptr<PluginListener> listener_;

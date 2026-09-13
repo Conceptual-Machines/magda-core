@@ -10,7 +10,6 @@
 #include "../themes/FontManager.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
 #include "audio/plugins/compiled/CompiledPluginRegistry.hpp"
-#include "core/AppPaths.hpp"
 #include "core/Config.hpp"
 #include "core/PluginParameterConfigStore.hpp"
 #include "core/TechnicalText.hpp"
@@ -984,14 +983,8 @@ void ParameterConfigDialog::resetParameterConfiguration() {
     // Delete the persisted XML so next time the dialog opens (or a project
     // reloads this plugin) applyConfigToDevice finds nothing and the plugin
     // keeps its native metadata.
-    if (!pluginUniqueId_.isEmpty()) {
-        auto configFile = magda::paths::pluginConfigsDir().getChildFile(
-            pluginUniqueId_.replaceCharacters(":/\\,; ", "______") + ".xml");
-        if (configFile.existsAsFile()) {
-            configFile.deleteFile();
-            DBG("Deleted parameter config: " << configFile.getFullPathName());
-        }
-    }
+    if (!pluginUniqueId_.isEmpty())
+        magda::PluginParameterConfigStore::remove(pluginUniqueId_);
 
     // Restore scanInputs_ from the pristine cache so Detect / AI Detect can
     // be re-run later. The user-facing parameters_ list keeps names and

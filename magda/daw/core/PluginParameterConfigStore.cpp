@@ -2,8 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <mutex>
 #include <optional>
 #include <ranges>
+#include <string>
 #include <unordered_map>
 
 #include "AppPaths.hpp"
@@ -78,6 +81,157 @@ PluginParameterConfigEntry entryFor(const DeviceInfo& device, size_t index) {
     return entry;
 }
 
+/** @brief What tells a config file that has not changed since it was parsed. */
+struct FileStamp {
+    juce::Time modified;
+    juce::int64 size = 0;
+
+    bool operator==(const FileStamp&) const = default;
+};
+
+/** @brief One file as it was last parsed, which may have been as unreadable. */
+struct ParsedConfig {
+    juce::String uniqueId;
+    FileStamp stamp;
+    std::optional<PluginParameterConfig> config;
+};
+
+/** @brief Parsed configs by file path, so a changed data directory misses. */
+struct ConfigCache {
+    std::mutex mutex;
+    std::unordered_map<std::string, ParsedConfig> parsed;
+
+    /// Moved by every write this store finishes. A parse that saw it move may
+    /// have read the file the write replaced, so it is not kept.
+    std::uint64_t generation = 0;
+};
+
+ConfigCache& configCache() {
+    static ConfigCache cache;
+    return cache;
+}
+
+/** @brief Drop @p file's parse. Call after the write, never before it. */
+void forget(const juce::File& file) {
+    auto& cache = configCache();
+    const std::scoped_lock lock(cache.mutex);
+    cache.parsed.erase(file.getFullPathName().toStdString());
+    ++cache.generation;
+}
+
+/** @brief @p file's config, filed under @p uniqueId. Nullopt when it does not parse. */
+std::optional<PluginParameterConfig> parse(const juce::File& file, const juce::String& uniqueId) {
+    const auto xml = juce::parseXML(file);
+    if (xml == nullptr)
+        return std::nullopt;
+
+    PluginParameterConfig config;
+    config.pluginId = xml->getStringAttribute("pluginId", uniqueId);
+    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
+        config.aiPrompt = promptElem->getAllSubText().trim();
+
+    if (auto* paramsElem = xml->getChildByName("Parameters")) {
+        for (auto* paramElem : paramsElem->getChildIterator()) {
+            PluginParameterConfigEntry entry;
+            entry.index = paramElem->getIntAttribute("index", -1);
+            if (entry.index < 0)
+                continue;
+            entry.id = paramElem->getStringAttribute("id");
+            entry.name = paramElem->getStringAttribute("name");
+            entry.visible = paramElem->getBoolAttribute("visible", false);
+            entry.miniMixer = paramElem->getBoolAttribute("mini", false);
+            entry.aiAgent = paramElem->getBoolAttribute("ai", false);
+            if (paramElem->hasAttribute("unit"))
+                entry.unit = paramElem->getStringAttribute("unit");
+            if (paramElem->hasAttribute("scale"))
+                entry.scale = scaleFromString(paramElem->getStringAttribute("scale"));
+            // A detected dB range can start at minus infinity; nothing converts
+            // through that, so the plugin's own range stands instead.
+            const auto finiteAttribute = [&](const char* name) -> std::optional<float> {
+                if (!paramElem->hasAttribute(name))
+                    return std::nullopt;
+                const auto value = static_cast<float>(paramElem->getDoubleAttribute(name));
+                return std::isfinite(value) ? std::optional<float>(value) : std::nullopt;
+            };
+            entry.rangeMin = finiteAttribute("min");
+            entry.rangeMax = finiteAttribute("max");
+            entry.rangeCenter = finiteAttribute("center");
+            if (auto* choicesElem = paramElem->getChildByName("Choices")) {
+                std::vector<juce::String> choices;
+                for (auto* choice : choicesElem->getChildIterator())
+                    choices.push_back(choice->getStringAttribute("label"));
+                entry.choices = std::move(choices);
+            }
+            if (paramElem->hasAttribute("valueTable")) {
+                std::vector<juce::String> table;
+                for (const auto& token : juce::StringArray::fromTokens(
+                         paramElem->getStringAttribute("valueTable"), "|", ""))
+                    table.push_back(token);
+                entry.valueTable = std::move(table);
+            }
+            config.entries.push_back(std::move(entry));
+        }
+    } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
+        // Legacy format: a bare list of visible indices, nothing else.
+        for (auto* paramElem : visibleParams->getChildIterator()) {
+            const int index = paramElem->getIntAttribute("index", -1);
+            if (index < 0)
+                continue;
+            PluginParameterConfigEntry entry;
+            entry.index = index;
+            entry.visible = true;
+            config.entries.push_back(std::move(entry));
+        }
+    }
+    return config;
+}
+
+juce::XmlElement toXml(const juce::String& uniqueId, const PluginParameterConfig& config) {
+    juce::XmlElement root("ParameterConfig");
+    root.setAttribute("pluginId", config.pluginId.isNotEmpty() ? config.pluginId : uniqueId);
+
+    auto* paramsElem = root.createNewChildElement("Parameters");
+    for (const auto& entry : config.entries) {
+        auto* paramElem = paramsElem->createNewChildElement("Param");
+        paramElem->setAttribute("index", entry.index);
+        if (entry.id.isNotEmpty())
+            paramElem->setAttribute("id", entry.id);
+        paramElem->setAttribute("name", entry.name);
+        paramElem->setAttribute("visible", entry.visible);
+        paramElem->setAttribute("mini", entry.miniMixer);
+        paramElem->setAttribute("ai", entry.aiAgent);
+        if (entry.unit)
+            paramElem->setAttribute("unit", *entry.unit);
+        if (entry.scale)
+            paramElem->setAttribute("scale", scaleToString(*entry.scale));
+        if (entry.rangeMin)
+            paramElem->setAttribute("min", static_cast<double>(*entry.rangeMin));
+        if (entry.rangeMax)
+            paramElem->setAttribute("max", static_cast<double>(*entry.rangeMax));
+        if (entry.rangeCenter)
+            paramElem->setAttribute("center", static_cast<double>(*entry.rangeCenter));
+        if (entry.choices && !entry.choices->empty()) {
+            auto* choicesElem = paramElem->createNewChildElement("Choices");
+            for (const auto& choice : *entry.choices)
+                choicesElem->createNewChildElement("Choice")->setAttribute("label", choice);
+        }
+        if (entry.valueTable && !entry.valueTable->empty()) {
+            juce::String tableStr;
+            for (size_t j = 0; j < entry.valueTable->size(); ++j) {
+                if (j > 0)
+                    tableStr += "|";
+                tableStr += (*entry.valueTable)[j];
+            }
+            paramElem->setAttribute("valueTable", tableStr);
+        }
+    }
+
+    if (config.aiPrompt.isNotEmpty())
+        root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(config.aiPrompt);
+
+    return root;
+}
+
 }  // namespace
 
 juce::String scaleToString(ParameterScale scale) {
@@ -150,68 +304,28 @@ std::optional<PluginParameterConfig> load(const juce::String& uniqueId) {
     if (!file.existsAsFile())
         return std::nullopt;
 
-    const auto xml = juce::parseXML(file);
-    if (xml == nullptr)
-        return std::nullopt;
+    const FileStamp stamp{.modified = file.getLastModificationTime(), .size = file.getSize()};
+    const auto key = file.getFullPathName().toStdString();
 
-    PluginParameterConfig config;
-    config.pluginId = xml->getStringAttribute("pluginId", uniqueId);
-    if (auto* promptElem = xml->getChildByName("AISoundDesignerPrompt"))
-        config.aiPrompt = promptElem->getAllSubText().trim();
+    auto& cache = configCache();
+    std::uint64_t generation = 0;
 
-    if (auto* paramsElem = xml->getChildByName("Parameters")) {
-        for (auto* paramElem : paramsElem->getChildIterator()) {
-            PluginParameterConfigEntry entry;
-            entry.index = paramElem->getIntAttribute("index", -1);
-            if (entry.index < 0)
-                continue;
-            entry.id = paramElem->getStringAttribute("id");
-            entry.name = paramElem->getStringAttribute("name");
-            entry.visible = paramElem->getBoolAttribute("visible", false);
-            entry.miniMixer = paramElem->getBoolAttribute("mini", false);
-            entry.aiAgent = paramElem->getBoolAttribute("ai", false);
-            if (paramElem->hasAttribute("unit"))
-                entry.unit = paramElem->getStringAttribute("unit");
-            if (paramElem->hasAttribute("scale"))
-                entry.scale = scaleFromString(paramElem->getStringAttribute("scale"));
-            // A detected dB range can start at minus infinity; nothing converts
-            // through that, so the plugin's own range stands instead.
-            const auto finiteAttribute = [&](const char* name) -> std::optional<float> {
-                if (!paramElem->hasAttribute(name))
-                    return std::nullopt;
-                const auto value = static_cast<float>(paramElem->getDoubleAttribute(name));
-                return std::isfinite(value) ? std::optional<float>(value) : std::nullopt;
-            };
-            entry.rangeMin = finiteAttribute("min");
-            entry.rangeMax = finiteAttribute("max");
-            entry.rangeCenter = finiteAttribute("center");
-            if (auto* choicesElem = paramElem->getChildByName("Choices")) {
-                std::vector<juce::String> choices;
-                for (auto* choice : choicesElem->getChildIterator())
-                    choices.push_back(choice->getStringAttribute("label"));
-                entry.choices = std::move(choices);
-            }
-            if (paramElem->hasAttribute("valueTable")) {
-                std::vector<juce::String> table;
-                for (const auto& token : juce::StringArray::fromTokens(
-                         paramElem->getStringAttribute("valueTable"), "|", ""))
-                    table.push_back(token);
-                entry.valueTable = std::move(table);
-            }
-            config.entries.push_back(std::move(entry));
-        }
-    } else if (auto* visibleParams = xml->getChildByName("VisibleParameters")) {
-        // Legacy format: a bare list of visible indices, nothing else.
-        for (auto* paramElem : visibleParams->getChildIterator()) {
-            const int index = paramElem->getIntAttribute("index", -1);
-            if (index < 0)
-                continue;
-            PluginParameterConfigEntry entry;
-            entry.index = index;
-            entry.visible = true;
-            config.entries.push_back(std::move(entry));
-        }
+    {
+        const std::scoped_lock lock(cache.mutex);
+        const auto cached = cache.parsed.find(key);
+        if (cached != cache.parsed.end() && cached->second.uniqueId == uniqueId &&
+            cached->second.stamp == stamp)
+            return cached->second.config;
+
+        generation = cache.generation;
     }
+
+    auto config = parse(file, uniqueId);
+
+    const std::scoped_lock lock(cache.mutex);
+    if (cache.generation == generation)
+        cache.parsed.insert_or_assign(
+            key, ParsedConfig{.uniqueId = uniqueId, .stamp = stamp, .config = config});
     return config;
 }
 
@@ -223,49 +337,22 @@ bool save(const juce::String& uniqueId, const PluginParameterConfig& config) {
     if (!configDir.exists())
         configDir.createDirectory();
 
-    juce::XmlElement root("ParameterConfig");
-    root.setAttribute("pluginId", config.pluginId.isNotEmpty() ? config.pluginId : uniqueId);
+    // A rewrite can land in the same millisecond at the same size, which the
+    // stamp cannot tell apart.
+    const auto file = configFileFor(uniqueId);
+    const auto written = toXml(uniqueId, config).writeTo(file);
+    forget(file);
+    return written;
+}
 
-    auto* paramsElem = root.createNewChildElement("Parameters");
-    for (const auto& entry : config.entries) {
-        auto* paramElem = paramsElem->createNewChildElement("Param");
-        paramElem->setAttribute("index", entry.index);
-        if (entry.id.isNotEmpty())
-            paramElem->setAttribute("id", entry.id);
-        paramElem->setAttribute("name", entry.name);
-        paramElem->setAttribute("visible", entry.visible);
-        paramElem->setAttribute("mini", entry.miniMixer);
-        paramElem->setAttribute("ai", entry.aiAgent);
-        if (entry.unit)
-            paramElem->setAttribute("unit", *entry.unit);
-        if (entry.scale)
-            paramElem->setAttribute("scale", scaleToString(*entry.scale));
-        if (entry.rangeMin)
-            paramElem->setAttribute("min", static_cast<double>(*entry.rangeMin));
-        if (entry.rangeMax)
-            paramElem->setAttribute("max", static_cast<double>(*entry.rangeMax));
-        if (entry.rangeCenter)
-            paramElem->setAttribute("center", static_cast<double>(*entry.rangeCenter));
-        if (entry.choices && !entry.choices->empty()) {
-            auto* choicesElem = paramElem->createNewChildElement("Choices");
-            for (const auto& choice : *entry.choices)
-                choicesElem->createNewChildElement("Choice")->setAttribute("label", choice);
-        }
-        if (entry.valueTable && !entry.valueTable->empty()) {
-            juce::String tableStr;
-            for (size_t j = 0; j < entry.valueTable->size(); ++j) {
-                if (j > 0)
-                    tableStr += "|";
-                tableStr += (*entry.valueTable)[j];
-            }
-            paramElem->setAttribute("valueTable", tableStr);
-        }
-    }
+bool remove(const juce::String& uniqueId) {
+    if (uniqueId.isEmpty())
+        return false;
 
-    if (config.aiPrompt.isNotEmpty())
-        root.createNewChildElement("AISoundDesignerPrompt")->addTextElement(config.aiPrompt);
-
-    return root.writeTo(configFileFor(uniqueId));
+    const auto file = configFileFor(uniqueId);
+    const auto removed = !file.existsAsFile() || file.deleteFile();
+    forget(file);
+    return removed;
 }
 
 PluginParameterConfig fromDevice(const DeviceInfo& device) {

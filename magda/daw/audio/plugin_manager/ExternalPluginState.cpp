@@ -196,13 +196,17 @@ std::vector<juce::AudioProcessorParameter*> hostParameterOrder(
 
 HostParameters describeHostParameters(const juce::AudioPluginInstance& instance,
                                       const DeviceInfo& device) {
+    return describeHostParameters(hostParameterOrder(instance), device);
+}
+
+HostParameters describeHostParameters(std::span<juce::AudioProcessorParameter* const> order,
+                                      const DeviceInfo& device) {
     HostParameters described;
 
     described.wrapperParameters = {
         wrapperParameter(device, 0, "dry level", "Dry Level", WrapperRole::DryGain, 0.0f),
         wrapperParameter(device, 1, "wet level", "Wet Level", WrapperRole::WetGain, 1.0f)};
 
-    const auto order = hostParameterOrder(instance);
     std::map<juce::String, int> used;
 
     for (int index = kWrapperParameterCount; index < static_cast<int>(order.size()); ++index) {

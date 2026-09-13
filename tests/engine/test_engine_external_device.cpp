@@ -144,6 +144,17 @@ class HostedStubParameter final : public juce::HostedAudioProcessorParameter {
         return text.getFloatValue();
     }
 
+    bool isAutomatable() const override {
+        return automatable;
+    }
+
+    /// Without telling the host, which a plugin does until it reports the change.
+    void rename(juce::String name) {
+        name_ = std::move(name);
+    }
+
+    bool automatable = true;
+
   private:
     juce::String id_;
     juce::String name_;
@@ -2224,6 +2235,70 @@ TEST_CASE("A parameter's id is the one its format declares", "[engine][external]
     REQUIRE(cutoff != nullptr);
     CHECK(cutoff->name == "Cutoff");
     CHECK(cutoff->stableId == "1701");
+}
+
+TEST_CASE("A plugin's parameters are named once and valued on every ask",
+          "[engine][external][catalog]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto hosted = std::make_unique<HostedStubParameter>("1701", "Cutoff");
+    auto* cutoff = hosted.get();
+    plugin->addHostedParameter(std::move(hosted));
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+
+    const auto at = [](const magda::HostParameters& described, int slot) {
+        const auto found =
+            std::ranges::find(described.parameters, slot, &magda::ParameterInfo::paramIndex);
+        REQUIRE(found != described.parameters.end());
+        return *found;
+    };
+
+    REQUIRE(at(device.describeParameters(), 4).name == "Cutoff");
+
+    cutoff->rename("Filter");
+    raw->tone->setValue(0.6f);
+
+    const auto unreported = device.describeParameters();
+    CHECK(at(unreported, 4).name == "Cutoff");
+    CHECK(at(unreported, 3).currentValue == Catch::Approx(0.6f));
+
+    raw->updateHostDisplay(
+        juce::AudioProcessorListener::ChangeDetails{}.withParameterInfoChanged(true));
+    CHECK(at(device.describeParameters(), 4).name == "Filter");
+}
+
+TEST_CASE("A plugin re-flagging a parameter does not move the slots after it",
+          "[engine][external][catalog]") {
+    auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+    auto first = std::make_unique<HostedStubParameter>("1701", "Cutoff");
+    auto second = std::make_unique<HostedStubParameter>("1702", "Resonance");
+    auto* cutoff = first.get();
+    auto* resonance = second.get();
+    cutoff->setValue(0.2f);
+    resonance->setValue(0.8f);
+    plugin->addHostedParameter(std::move(first));
+    plugin->addHostedParameter(std::move(second));
+    auto* raw = plugin.get();
+
+    adapter::EngineExternalDevice device(std::move(plugin), externalDevice(), false);
+    REQUIRE(device.describeParameters().parameters.size() == 4);
+
+    cutoff->automatable = false;
+    raw->updateHostDisplay(
+        juce::AudioProcessorListener::ChangeDetails{}.withParameterInfoChanged(true));
+
+    const auto described = device.describeParameters();
+    const auto slot5 =
+        std::ranges::find(described.parameters, 5, &magda::ParameterInfo::paramIndex);
+    REQUIRE(slot5 != described.parameters.end());
+    CHECK(slot5->name == "Resonance");
+    CHECK(slot5->currentValue == Catch::Approx(0.8f));
+
+    // What the slot is described as is what a write to it reaches.
+    REQUIRE(device.writeParameter(5, 0.5f));
+    CHECK(resonance->getValue() == Catch::Approx(0.5f));
+    CHECK(cutoff->getValue() == Catch::Approx(0.2f));
 }
 
 TEST_CASE("Successful adaptation reports live buses and MIDI capabilities", "[engine][external]") {

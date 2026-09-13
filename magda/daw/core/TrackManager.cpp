@@ -3523,11 +3523,11 @@ void TrackManager::notifyDeviceParameterChanged(const ChainNodePath& devicePath,
 }
 
 void TrackManager::notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
-                                                 float normalised) {
+                                                 float normalised, bool hostOwned) {
     ScopedNotifyGuard guard(*this);
     for (size_t i = 0; i < listeners_.size(); ++i) {
         if (listeners_[i])
-            listeners_[i]->deviceParameterObserved(devicePath, paramIndex, normalised);
+            listeners_[i]->deviceParameterObserved(devicePath, paramIndex, normalised, hostOwned);
     }
 }
 

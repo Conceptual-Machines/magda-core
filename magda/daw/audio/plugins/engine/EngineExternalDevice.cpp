@@ -106,8 +106,11 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
 /// calls this on whatever thread made the change, the audio thread included.
 class EngineExternalDevice::PluginListener final : public juce::AudioProcessorListener {
   public:
-    PluginListener(std::shared_ptr<PluginEdits> edits, const std::vector<int>& slotOfParameter)
-        : edits_(std::move(edits)), slotOfParameter_(slotOfParameter) {}
+    PluginListener(std::shared_ptr<PluginEdits> edits, const std::vector<int>& slotOfParameter,
+                   std::atomic<bool>& catalogStale)
+        : edits_(std::move(edits)),
+          slotOfParameter_(slotOfParameter),
+          catalogStale_(catalogStale) {}
 
     void audioProcessorParameterChanged(juce::AudioProcessor*, int parameterIndex,
                                         float newValue) override {
@@ -150,11 +153,16 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
         });
     }
 
-    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails&) override {}
+    /// A VST3's kParamTitlesChanged arrives as parameterInfoChanged.
+    void audioProcessorChanged(juce::AudioProcessor*, const ChangeDetails& details) override {
+        if (details.parameterInfoChanged)
+            catalogStale_.store(true, std::memory_order_release);
+    }
 
   private:
     std::shared_ptr<PluginEdits> edits_;
     const std::vector<int>& slotOfParameter_;
+    std::atomic<bool>& catalogStale_;
 };
 
 class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
@@ -270,7 +278,7 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
             slotOfParameter_[static_cast<std::size_t>(parameter->getParameterIndex())] = slot;
 
     edits_ = std::make_shared<PluginEdits>(parameters_.size());
-    listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_);
+    listener_ = std::make_unique<PluginListener>(edits_, slotOfParameter_, catalogStale_);
     instance_->addListener(listener_.get());
 }
 
@@ -658,7 +666,29 @@ magda::SavedStateOutcome EngineExternalDevice::applyState(const magda::DeviceInf
 }
 
 magda::HostParameters EngineExternalDevice::describeParameters() const {
-    return magda::describeHostParameters(*instance_, magda::DeviceInfo{});
+    const auto stale = catalogStale_.exchange(false, std::memory_order_acq_rel);
+    if (stale || !catalog_.has_value()) {
+        // Over the slots writes go through, not a fresh hostParameterOrder():
+        // a plugin re-flagging what is automatable would shift every slot after it.
+        std::vector<juce::AudioProcessorParameter*> order;
+        order.reserve(parameters_.size());
+        for (const auto& mapping : parameters_)
+            order.push_back(mapping.parameter);
+
+        catalog_ = magda::describeHostParameters(order, magda::DeviceInfo{});
+    }
+
+    auto described = *catalog_;
+    for (auto& info : described.parameters) {
+        if (!mapsSlot(info.paramIndex))
+            continue;
+
+        if (const auto* parameter =
+                parameters_[static_cast<std::size_t>(info.paramIndex)].parameter)
+            info.currentValue = parameter->getValue();
+    }
+
+    return described;
 }
 
 juce::String EngineExternalDevice::parameterText(int slot, float normalised) const {

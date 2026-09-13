@@ -695,7 +695,8 @@ void DeviceSlotComponent::timerCallback() {
 }
 
 void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& devicePath,
-                                                  int paramIndex, float normalised) {
+                                                  int paramIndex, float normalised,
+                                                  bool hostOwned) {
     if (devicePath != nodePath_)
         return;
 
@@ -703,6 +704,15 @@ void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& de
     // updated on its own loses the value as soon as the page turns, and a
     // parameter on another page never records one at all.
     updateCachedParameterValue(device_, paramIndex, normalised);
+
+    // A lane or LFO echoing back would hold the lock and starve a real touch.
+    if (!hostOwned)
+        applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, normalised,
+                                         learnHighlight_, [this]() {
+                                             updateParameterSlots();
+                                             updateParamModulation();
+                                         });
+
     updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, normalised);
 }
 

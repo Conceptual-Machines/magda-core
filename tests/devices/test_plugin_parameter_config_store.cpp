@@ -374,6 +374,62 @@ TEST_CASE("hasAiSoundDesignerParameters reflects the saved AI selection", "[para
     REQUIRE(store::hasAiSoundDesignerParameters(device.uniqueId));
 }
 
+TEST_CASE("An unchanged config file is not parsed again", "[param-config-store][catalog]") {
+    TempDataDir temp;
+    const auto device = makeExternalDevice();
+
+    auto config = store::fromDevice(device);
+    config.aiPrompt = "first";
+    REQUIRE(store::save(device.uniqueId, config));
+    REQUIRE(store::load(device.uniqueId)->aiPrompt == "first");
+
+    // Rewritten behind the store at the same size and put back to the same
+    // time: nothing a reader can see says the file moved.
+    const auto file = store::configFileFor(device.uniqueId);
+    const auto modified = file.getLastModificationTime();
+    REQUIRE(file.replaceWithText(file.loadFileAsString().replace("first", "other"), false, false,
+                                 nullptr));
+    REQUIRE(file.setLastModificationTime(modified));
+
+    CHECK(store::load(device.uniqueId)->aiPrompt == "first");
+
+    REQUIRE(file.setLastModificationTime(modified + juce::RelativeTime::seconds(2.0)));
+    CHECK(store::load(device.uniqueId)->aiPrompt == "other");
+}
+
+TEST_CASE("A config the store writes is read back whatever its file stamp says",
+          "[param-config-store][catalog]") {
+    TempDataDir temp;
+    const auto device = makeExternalDevice();
+
+    auto config = store::fromDevice(device);
+    config.aiPrompt = "first";
+    REQUIRE(store::save(device.uniqueId, config));
+    REQUIRE(store::load(device.uniqueId)->aiPrompt == "first");
+
+    const auto file = store::configFileFor(device.uniqueId);
+    const auto modified = file.getLastModificationTime();
+
+    config.aiPrompt = "other";
+    REQUIRE(store::save(device.uniqueId, config));
+    REQUIRE(file.setLastModificationTime(modified));
+
+    CHECK(store::load(device.uniqueId)->aiPrompt == "other");
+}
+
+TEST_CASE("A removed config is not loaded again", "[param-config-store][catalog]") {
+    TempDataDir temp;
+    const auto device = makeExternalDevice();
+
+    REQUIRE(store::save(device.uniqueId, store::fromDevice(device)));
+    REQUIRE(store::load(device.uniqueId).has_value());
+
+    REQUIRE(store::remove(device.uniqueId));
+    CHECK_FALSE(store::configFileFor(device.uniqueId).existsAsFile());
+    CHECK_FALSE(store::load(device.uniqueId).has_value());
+    CHECK(store::remove(device.uniqueId));
+}
+
 TEST_CASE("A rebuilt parameter array carries the plugin's stored config",
           "[param-config-store][2601]") {
     // Both engines rebuild an external plugin's array wholesale on load, so a
