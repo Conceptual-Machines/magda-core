@@ -12,6 +12,7 @@
 #include "magda/daw/audio/TrackMeters.hpp"
 #include "magda/daw/core/AppPaths.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
+#include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/MidiFileWriter.hpp"
@@ -3291,4 +3292,44 @@ TEST_CASE("A device that is not an insert writes no insert block",
     REQUIRE(track != nullptr);
     REQUIRE(track->chain.fxChainElements.size() == 1);
     CHECK_FALSE(magda::getDevice(track->chain.fxChainElements.front()).insert.isActive());
+}
+
+TEST_CASE("A hosted device saves only the values something addresses", "[project][serialization]") {
+    ProjectTestFixture fixture;
+    auto& tracks = TrackManager::getInstance();
+
+    // As an older project loads: every slot the plugin has, beside its chunk.
+    DeviceInfo plugin;
+    plugin.name = "Plugin";
+    plugin.pluginId = "com.example.plugin";
+    plugin.format = PluginFormat::VST3;
+    for (int slot = 2; slot < 6; ++slot)
+        plugin.parameters.emplace_back(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.5f);
+
+    const auto trackId = tracks.createTrack("Synth", TrackType::Media);
+    const auto deviceId = tracks.addDeviceToTrack(trackId, plugin);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    const auto path = chain_walk::deviceIn(ChainNodePath::trackLevel(trackId), deviceId);
+    AutomationManager::getInstance().createLane(ControlTarget::pluginParam(path, 3),
+                                                AutomationLaneType::Absolute);
+
+    const auto json = ProjectSerializer::serializeProject(ProjectInfo{});
+
+    const juce::var* savedDevice = nullptr;
+    for (const auto& track : *json["tracks"].getArray())
+        if (static_cast<int>(track["id"]) == trackId)
+            savedDevice = &track["chainElements"].getArray()->getReference(0)["device"];
+    REQUIRE(savedDevice != nullptr);
+
+    DeviceInfo restored;
+    REQUIRE(ProjectSerializer::deserializeDeviceInfo(*savedDevice, restored));
+    REQUIRE(restored.parameters.size() == 1);
+    CHECK(restored.parameters[0].paramIndex == 3);
+    CHECK(restored.parameters[0].currentValue == Catch::Approx(0.5f));
+
+    // The save writes a copy; the open project keeps what it holds.
+    const auto* live = tracks.getDeviceInChainByPath(path);
+    REQUIRE(live != nullptr);
+    CHECK(live->parameters.size() == 4);
 }

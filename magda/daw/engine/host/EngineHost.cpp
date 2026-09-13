@@ -25,9 +25,9 @@
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
-#include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
@@ -705,38 +705,6 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::shared_ptr<std::map<std::pair<engine::DeviceKey, int>, int>> pendingEdits_ =
         std::make_shared<std::map<std::pair<engine::DeviceKey, int>, int>>();
 
-    /// Every controller binding and MIDI learn, as the addresses they name.
-    std::vector<ControlTarget> boundTargets() const {
-        std::vector<ControlTarget> bound;
-        auto& bindings = BindingRegistry::getInstance();
-
-        for (const auto scope : {BindingScope::Global, BindingScope::Project})
-            for (const auto& binding : bindings.bindings(scope))
-                if (const auto* target = std::get_if<ControlTarget>(&binding.target))
-                    bound.push_back(*target);
-
-        return bound;
-    }
-
-    /// Which slots something addresses, across the project. Empty with no
-    /// master track to read, which is a project that is not open.
-    AddressedParameters addressedParameters() const {
-        auto& tracks = TrackManager::getInstance();
-        const auto* master = tracks.getTrack(MASTER_TRACK_ID);
-        if (master == nullptr)
-            return {};
-
-        const auto bound = boundTargets();
-
-        AddressingSources sources;
-        sources.tracks = tracks.getTracks();
-        sources.master = master;
-        sources.lanes = AutomationManager::getInstance().getLanes();
-        sources.bound = bound;
-
-        return AddressedParameters::from(sources);
-    }
-
     /**
      * @brief Mirror the slots something addresses, for every plugin this renders.
      *
@@ -750,7 +718,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         auto& tracks = TrackManager::getInstance();
-        const auto addressed = addressedParameters();
+        const auto addressed = addressedInOpenProject();
 
         for (const auto key : factory_.externalKeys()) {
             auto* device = modelDevice(key);
