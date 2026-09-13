@@ -106,6 +106,7 @@ class MiniChainRow : public juce::Component, private juce::Timer {
     // Values are read/written in display units through the device model so
     // Faust devices (whose live param is normalized) stay in sync.
     std::optional<float> observedValue(int paramIndex) const;
+    bool hostedEditPending(int paramIndex) const;
 
     std::vector<int> trackedParamIndices_;
 

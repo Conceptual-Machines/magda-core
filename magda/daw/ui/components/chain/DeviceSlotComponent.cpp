@@ -693,8 +693,23 @@ void DeviceSlotComponent::timerCallback() {
 
 void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& devicePath,
                                                   int paramIndex, float normalised,
-                                                  bool hostOwned) {
+                                                  magda::ObservationSource source) {
     if (devicePath != nodePath_)
+        return;
+
+    // Only a confirmed editor gesture: readback includes echoes of host writes,
+    // which would hold the lock and starve a real touch.
+    if (source == magda::ObservationSource::EditorGesture)
+        applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, normalised,
+                                         learnHighlight_, [this]() {
+                                             updateParameterSlots();
+                                             updateParamModulation();
+                                         });
+
+    // A slot the document holds draws its base, which deviceParameterChanged
+    // carries; what the plugin reports there is the effective value.
+    const auto* held = magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_);
+    if (held != nullptr && held->findParameterByIndex(paramIndex) != nullptr)
         return;
 
     // The cache first: the grid rebuilds from it on a page change, so a widget
@@ -702,15 +717,8 @@ void DeviceSlotComponent::deviceParameterObserved(const magda::ChainNodePath& de
     // parameter on another page never records one at all.
     updateCachedParameterValue(device_, paramIndex, normalised);
 
-    // A lane or LFO echoing back would hold the lock and starve a real touch.
-    if (!hostOwned)
-        applyLearnModeParameterHighlight(device_, *paramGrid_, paramIndex, normalised,
-                                         learnHighlight_, [this]() {
-                                             updateParameterSlots();
-                                             updateParamModulation();
-                                         });
-
-    updateCurrentPageParameterSlotValue(device_, *paramGrid_, paramIndex, normalised);
+    if (auto* slot = currentPageParameterSlot(device_, *paramGrid_, paramIndex))
+        slot->setObservedValue(normalised);
 }
 
 void DeviceSlotComponent::deviceParameterChanged(const magda::ChainNodePath& devicePath,

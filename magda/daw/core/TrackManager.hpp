@@ -13,6 +13,7 @@
 #include "ChainNode.hpp"
 #include "ChainPlacement.hpp"
 #include "DeviceState.hpp"
+#include "HostedParameterEdit.hpp"
 #include "SelectionManager.hpp"
 #include "TrackInfo.hpp"
 #include "TrackTypes.hpp"
@@ -112,12 +113,11 @@ class TrackManagerListener {
      * position; a surface showing real units converts it.
      *
      * Carries no requirement that the document hold the parameter, which for
-     * a plugin's own parameters it does not. @p hostOwned marks the host's own
-     * write or drive coming back, which is not a touch in the plugin's editor.
+     * a plugin's own parameters it does not.
      */
     virtual void deviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
-                                         float normalised, bool hostOwned) {
-        juce::ignoreUnused(devicePath, paramIndex, normalised, hostOwned);
+                                         float normalised, ObservationSource source) {
+        juce::ignoreUnused(devicePath, paramIndex, normalised, source);
     }
 
     // Called when a macro knob value changes (for audio engine sync).
@@ -1404,7 +1404,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
      * written and nothing is published: only a knob is redrawn.
      */
     void notifyDeviceParameterObserved(const ChainNodePath& devicePath, int paramIndex,
-                                       float normalised, bool hostOwned);
+                                       float normalised, ObservationSource source);
 
   private:
     void notifyMacroValueChanged(TrackId trackId, ChainScope scope, int ownerId, int macroIndex,

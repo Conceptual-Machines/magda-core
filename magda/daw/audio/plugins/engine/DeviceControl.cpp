@@ -186,25 +186,31 @@ bool LocalDeviceControlPlane::editParameter(magda::engine::DeviceKey key, Parame
     return executor()->run(
         [devices = devices_, key, edit, completed](ExecutionState state) mutable {
             if (state == ExecutionState::Cancelled) {
-                completed(false);
+                completed({});
                 return;
             }
 
             const auto registry = devices.lock();
             if (!registry) {
-                completed(false);
+                completed({});
                 return;
             }
 
             // Before the write rather than after: the same guard the loader puts
             // between a completion and the model it would write (#2270).
             if (!edit.request.isStillWanted()) {
-                completed(false);
+                completed({});
                 return;
             }
 
             const auto device = registry->find(key);
-            completed(device != nullptr && device->writeParameter(edit.slot, edit.normalised));
+            if (device == nullptr) {
+                completed({});
+                return;
+            }
+
+            const auto delivered = device->writeParameter(edit.slot, edit.normalised);
+            completed({.delivered = delivered, .observed = device->readParameter(edit.slot)});
         });
 }
 

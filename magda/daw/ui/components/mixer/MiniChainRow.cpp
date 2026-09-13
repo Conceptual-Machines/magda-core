@@ -295,6 +295,9 @@ void MiniChainRow::timerCallback() {
         // The document holds a value only for what a host control drives; for
         // everything else the plugin's own last report is the value.
         const auto* held = devInfo->findParameterByIndex(described.paramIndex);
+        if (held == nullptr && hostedEditPending(described.paramIndex))
+            continue;  // Its completion reads the plugin; the cache is older.
+
         const auto model = held != nullptr ? std::optional{held->currentValue}
                                            : observedValue(described.paramIndex);
         if (!model.has_value())
@@ -311,6 +314,11 @@ void MiniChainRow::timerCallback() {
 std::optional<float> MiniChainRow::observedValue(int paramIndex) const {
     auto* engine = TrackManager::getInstance().getAudioEngine();
     return engine != nullptr ? engine->observedParameter(devicePath_, paramIndex) : std::nullopt;
+}
+
+bool MiniChainRow::hostedEditPending(int paramIndex) const {
+    auto* engine = TrackManager::getInstance().getAudioEngine();
+    return engine != nullptr && engine->hostedEditPending(devicePath_, paramIndex);
 }
 
 void MiniChainRow::paint(juce::Graphics& g) {

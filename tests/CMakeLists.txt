@@ -843,7 +843,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
 
         # Which of a plugin's own edits reach the model (#2633). Same reason:
         # the report is queued from the callback and delivered on the loop.
-        engine/test_plugin_edit_filter_juce.cpp
+        engine/test_hosted_parameter_edits_juce.cpp
     )
 endif()
 

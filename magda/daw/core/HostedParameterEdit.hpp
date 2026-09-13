@@ -2,6 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <cstdint>
+#include <optional>
+
 /**
  * @file HostedParameterEdit.hpp
  * @brief A one-off value for a hosted plugin's parameter
@@ -43,13 +46,42 @@ enum class EditStatus {
 struct EditReceipt {
     EditStatus status = EditStatus::Unavailable;
 
-    /// The position asked for, which a pending UI shows until an observation
-    /// replaces it.
+    /// The position asked for, which a dragged control shows until the drag
+    /// ends and an observation replaces it.
     float requested = 0.0f;
 
     bool accepted() const {
         return status == EditStatus::Accepted;
     }
+};
+
+/**
+ * @brief How an accepted edit ended, on the message thread.
+ *
+ * @ref observed is read off the parameter after the attempt, whether or not the
+ * write was taken, so a display can drop the value it asked for.
+ */
+struct EditCompletion {
+    bool delivered = false;
+
+    /// Absent when there was no parameter left to read.
+    std::optional<float> observed;
+};
+
+/** @brief What a reported parameter value is, as far as the host can tell. */
+enum class ObservationSource : std::uint8_t {
+    /// Inside the plugin's own begin/end gesture: a person moving it in its editor.
+    EditorGesture,
+
+    /// No gesture around it: readback of a host write, a program change, or
+    /// the plugin's own modulation. Never a base update.
+    Readback,
+
+    /// The host was driving the slot, so this is its own output coming back.
+    Driven,
+
+    /// Read by the host after delivering a command, not reported by the plugin.
+    CommandReadback,
 };
 
 /// @p status as something to put in a log or a message.

@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -10,6 +11,7 @@
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
+#include "core/HostedParameterEdit.hpp"
 #include "core/ParameterInfo.hpp"
 #include "exec/EngineDevice.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
@@ -115,10 +117,7 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     struct Observation {
         int slot = -1;
         float normalised = 0.0f;
-
-        /// Whether the host was driving the slot or had just written it. A
-        /// base must not be moved by its own output arriving back.
-        bool hostOwned = false;
+        magda::ObservationSource source = magda::ObservationSource::Readback;
     };
 
     /**
@@ -134,9 +133,14 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      *
      * Straight to the instance rather than through the table, so a slot no
      * plan carries still takes it. Control executor. False for the wrapper
-     * pair, a slot with no live parameter, and a position outside [0, 1].
+     * pair, a slot with no live parameter, a position outside [0, 1], and a
+     * slot the plugin's editor holds in a gesture.
      */
     bool writeParameter(int slot, float normalised);
+
+    /// What the live parameter at @p slot holds now. Absent for the wrapper
+    /// pair and a slot with no live parameter.
+    std::optional<float> readParameter(int slot) const;
 
     /**
      * @brief Forget what was driving this device, which a new plan decides again.
@@ -219,30 +223,33 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     /// no-op rather than a use-after-free.
     struct PluginEdits {
         explicit PluginEdits(std::size_t slots)
-            : pending(slots), dirty(slots), hostOwned(slots), driven(slots), hostWrote(slots) {}
+            : reported(slots),
+              dirty(slots),
+              gestured(slots),
+              gestureDirty(slots),
+              driven(slots),
+              gesturing(slots) {}
 
-        /// Whether the host owns @p slot's value at this moment: driving it, or
-        /// having just written it. Any thread.
-        bool hostOwns(std::size_t slot) const {
-            return driven[slot].load(std::memory_order_relaxed) ||
-                   hostWrote[slot].load(std::memory_order_relaxed) > 0;
-        }
+        /// The value's bits and its source in one word, so a flush never pairs
+        /// one report's value with another's source.
+        static std::uint64_t pack(float normalised, magda::ObservationSource source);
+        static Observation unpack(int slot, std::uint64_t packed);
 
-        std::vector<std::atomic<float>> pending;
+        std::vector<std::atomic<std::uint64_t>> reported;
         std::vector<std::atomic<bool>> dirty;
 
-        /// What @ref hostOwns said when the value was recorded, since the
-        /// answer can have moved on by the time a flush reads it.
-        std::vector<std::atomic<bool>> hostOwned;
+        /// The latest editor-gesture value, flushed ahead of any later report
+        /// that overwrote it in @ref reported.
+        std::vector<std::atomic<float>> gestured;
+        std::vector<std::atomic<bool>> gestureDirty;
 
         /// What the host is driving, as the last block's table said. Asserted
         /// by a block and cleared by a plan, so a device that renders none is
         /// driving nothing.
         std::vector<std::atomic<bool>> driven;
 
-        /// Blocks left in which a report for this slot is our own write
-        /// coming back. Armed by the write, aged by the blocks after it.
-        std::vector<std::atomic<int>> hostWrote;
+        /// Between the plugin's begin and end of a gesture in its own editor.
+        std::vector<std::atomic<bool>> gesturing;
 
         std::atomic<bool> flushQueued{false};
         std::function<void(Observation)> sink;

@@ -282,8 +282,11 @@ class TextSlider : public juce::Component,
         isShiftDrag_ = false;
         hasDragged_ = false;
         valueControl_.setDragging(false);
-        if (wasLeftDrag)
+        if (wasLeftDrag) {
             endAutomationGesture();
+            if (onHoldEnd)
+                onHoldEnd();
+        }
     }
 
     // Bind this slider to an automation target so mouseDown/mouseUp automatically
@@ -329,7 +332,9 @@ class TextSlider : public juce::Component,
     }
 
     std::function<void(double)> onValueChanged;
-    std::function<void()> onDragEnd;       // Called when a drag gesture ends (mouseUp after drag)
+    std::function<void()> onDragEnd;  // Called when a drag gesture ends (mouseUp after drag)
+    std::function<void()>
+        onHoldEnd;  // Called when a left-button hold ends: any mouseUp, or a cancel
     std::function<void()> onClicked;       // Called on single left-click (no drag)
     std::function<void()> onShiftClicked;  // Called on Shift+click (no drag)
     std::function<void(float)>
@@ -581,8 +586,11 @@ class TextSlider : public juce::Component,
             return;
         }
 
-        if (wasLeftDrag)
+        if (wasLeftDrag) {
             endAutomationGesture();
+            if (onHoldEnd)
+                onHoldEnd();
+        }
 
         // Handle Shift+drag end
         if (isShiftDrag_) {

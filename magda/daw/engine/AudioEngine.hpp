@@ -334,6 +334,12 @@ class AudioEngine : public AudioEngineListener {
         return std::nullopt;
     }
 
+    /// Whether an edit to this parameter was accepted and has not completed.
+    /// Its completion publishes a reading of its own.
+    virtual bool hostedEditPending(const ChainNodePath& /*devicePath*/, int /*paramIndex*/) const {
+        return false;
+    }
+
     /**
      * @brief Deliver a one-off @p normalised position to a hosted parameter.
      *
@@ -345,12 +351,11 @@ class AudioEngine : public AudioEngineListener {
      * An engine that cannot deliver says so in the receipt, which is what
      * keeps a knob from silently doing nothing.
      */
-    /// @p completed says whether the adapter took the write, on the message
-    /// thread and later than this returns. A caller showing the value it asked
-    /// for is what needs it.
+    /// @p completed says whether the adapter took the write and what the
+    /// parameter read after it, on the message thread and later than this returns.
     virtual EditReceipt editHostedParameter(
         const ChainNodePath& /*devicePath*/, int /*paramIndex*/, float normalised,
-        EditOrigin /*origin*/, std::function<void(bool delivered)> /*completed*/ = {}) {
+        EditOrigin /*origin*/, std::function<void(EditCompletion)> /*completed*/ = {}) {
         return {.status = EditStatus::Unavailable, .requested = normalised};
     }
 

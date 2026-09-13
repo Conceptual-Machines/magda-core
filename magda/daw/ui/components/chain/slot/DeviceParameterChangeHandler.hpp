@@ -15,6 +15,7 @@ struct ChainNodePath;
 namespace magda::daw::ui {
 
 class ParamHostComponent;
+class ParamSlotComponent;
 
 struct ParameterLearnHighlightState {
     int lockedParamIndex = -1;
@@ -34,6 +35,10 @@ void applyLearnModeParameterHighlight(magda::DeviceInfo& device, ParamHostCompon
                                       int paramIndex, float newValue,
                                       ParameterLearnHighlightState& state,
                                       const std::function<void()>& onPageChanged);
+
+/** @brief The slot on the grid's current page drawing @p paramIndex, or null. */
+ParamSlotComponent* currentPageParameterSlot(const magda::DeviceInfo& device,
+                                             ParamHostComponent& paramGrid, int paramIndex);
 
 void updateCurrentPageParameterSlotValue(const magda::DeviceInfo& device,
                                          ParamHostComponent& paramGrid, int paramIndex,

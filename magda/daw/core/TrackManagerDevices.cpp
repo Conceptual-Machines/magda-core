@@ -1959,8 +1959,8 @@ void TrackManager::setDeviceParameterValue(const ChainNodePath& devicePath,
     };
 
     const auto receipt = engine->editHostedParameter(
-        devicePath, described.paramIndex, position, EditOrigin::Ui, [refused](bool delivered) {
-            if (!delivered)
+        devicePath, described.paramIndex, position, EditOrigin::Ui, [refused](EditCompletion done) {
+            if (!done.delivered)
                 refused("the plugin did not take the edit");
         });
 
