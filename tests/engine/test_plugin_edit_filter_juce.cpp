@@ -160,6 +160,7 @@ class PluginEditFilterTest final : public juce::UnitTest {
         testAnUnaddressedSlotReachesNothing();
         testAnAddressedSlotReachesTheModel();
         testADrivenSlotIsNotReported();
+        testAPlanTheDeviceIsNotInDrivesNothing();
         testALearnGestureHearsEverything();
     }
 
@@ -262,6 +263,28 @@ class PluginEditFilterTest final : public juce::UnitTest {
         pumpMessageLoop();
 
         expect(rig.reported.size() == 1, "The edit after the lane stopped was reported");
+    }
+
+    void testAPlanTheDeviceIsNotInDrivesNothing() {
+        beginTest("A device the plan dropped is driving nothing");
+
+        Rig rig;
+        const std::vector<int> addressed{2};
+        rig.device->setAddressedSlots(addressed);
+
+        Window window;
+        window.carry(2, 0.25f, /*driven=*/true);
+        rig.render(window);
+
+        // Bypassed while the lane played, and then the lane switched off: the
+        // device renders no block, so nothing here would clear what the last
+        // block it did render left behind.
+        rig.device->setAddressedSlots(addressed);
+
+        rig.plugin->parameters[0]->setValueNotifyingHost(0.9f);
+        pumpMessageLoop();
+
+        expect(rig.reported.size() == 1, "The edit reached the model, with the lane gone");
     }
 
     void testALearnGestureHearsEverything() {

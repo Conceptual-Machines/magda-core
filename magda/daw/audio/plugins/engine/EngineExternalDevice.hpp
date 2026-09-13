@@ -121,6 +121,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * the model mirrors only these, so it has nowhere to put it. Every slot
      * until this is first called, since a plugin bound before a publish has
      * nothing yet to compare against. Message thread.
+     *
+     * Also clears what was driving the device, which the plan the block
+     * carries is the authority on.
      */
     void setAddressedSlots(std::span<const int> slots);
 
@@ -230,9 +233,11 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
         /// What the host last said something addresses, from the plan.
         std::vector<std::atomic<bool>> addressed;
 
-        /// What the host is driving this block, from the table the last block
-        /// delivered. A plugin's own internal modulation, which VST3 reports as
-        /// an output parameter change, must not overwrite the model's base.
+        /// What the host is driving, as the last block's table said. Asserted
+        /// by a block and cleared by a plan, so a device that renders none is
+        /// driving nothing. A plugin's own internal modulation, which VST3
+        /// reports as an output parameter change, must not overwrite the base
+        /// a lane is offsetting.
         std::vector<std::atomic<bool>> driven;
 
         /// Lifts the filter for a learn gesture.

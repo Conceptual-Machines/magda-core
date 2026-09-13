@@ -280,13 +280,13 @@ void EngineExternalDevice::listenForPluginEdits(std::function<void(int, float)> 
 
 void EngineExternalDevice::setAddressedSlots(std::span<const int> slots) {
     for (std::size_t slot = 0; slot < edits_->addressed.size(); ++slot) {
-        const auto addressed = std::ranges::binary_search(slots, static_cast<int>(slot));
-        edits_->addressed[slot].store(addressed, std::memory_order_relaxed);
+        edits_->addressed[slot].store(std::ranges::binary_search(slots, static_cast<int>(slot)),
+                                      std::memory_order_relaxed);
 
-        // A slot that left the window is no longer delivered, so nothing would
-        // clear the flag the table last gave it.
-        if (!addressed)
-            edits_->driven[slot].store(false, std::memory_order_relaxed);
+        // Every slot, not only the ones that left: the next block this device
+        // renders asserts what is driving it again, and a device the plan
+        // dropped renders none and is driving nothing.
+        edits_->driven[slot].store(false, std::memory_order_relaxed);
     }
 }
 
