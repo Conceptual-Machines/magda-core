@@ -10,6 +10,27 @@
 
 namespace magda {
 
+namespace {
+
+/// Every device on @p track with its path, through racks and pads, and every rack.
+template <typename Track, typename OnDevice, typename OnRack>
+void forEachNodeOn(Track& track, OnDevice&& onDevice, OnRack&& onRack) {
+    chain_walk::forEachNode(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                            chain_walk::Pads::Enter, onDevice,
+                            [&onRack](auto& rack, const ChainNodePath&) {
+                                onRack(rack);
+                                return chain_walk::Descend::Into;
+                            });
+
+    for (auto& element : track.chain.postFxChainElements)
+        onDevice(element.device, ChainNodePath::postFxDevice(track.id, element.device.id));
+
+    for (auto& element : track.chain.mixerAnalysisElements)
+        onDevice(element.device, ChainNodePath::mixerAnalysisDevice(track.id, element.device.id));
+}
+
+}  // namespace
+
 AddressedParameters AddressedParameters::from(const AddressingSources& sources) {
     AddressedParameters addressed;
 
@@ -40,19 +61,7 @@ AddressedParameters AddressedParameters::from(const AddressingSources& sources) 
 
     const auto track = [&links, &device](const TrackInfo& info) {
         links(info);
-
-        chain_walk::forEachNode(info.chain.fxChainElements, ChainNodePath::trackLevel(info.id),
-                                chain_walk::Pads::Enter, device,
-                                [&links](const RackInfo& rack, const ChainNodePath&) {
-                                    links(rack);
-                                    return chain_walk::Descend::Into;
-                                });
-
-        for (const auto& element : info.chain.postFxChainElements)
-            device(element.device, ChainNodePath::postFxDevice(info.id, element.device.id));
-
-        for (const auto& element : info.chain.mixerAnalysisElements)
-            device(element.device, ChainNodePath::mixerAnalysisDevice(info.id, element.device.id));
+        forEachNodeOn(info, device, [&links](const RackInfo& rack) { links(rack); });
     };
 
     for (const auto& info : sources.tracks)
@@ -83,6 +92,19 @@ std::span<const int> AddressedParameters::forDevice(const ChainNodePath& deviceP
 bool AddressedParameters::addresses(const ChainNodePath& devicePath, int paramIndex) const {
     const auto slots = forDevice(devicePath);
     return std::ranges::binary_search(slots, paramIndex);
+}
+
+void dropUnaddressedHostedParameters(TrackInfo& track, const AddressedParameters& addressed) {
+    const auto device = [&addressed](DeviceInfo& info, const ChainNodePath& path) {
+        if (info.format == PluginFormat::Internal)
+            return;
+
+        std::erase_if(info.parameters, [&](const ParameterInfo& parameter) {
+            return !addressed.addresses(path, parameter.paramIndex);
+        });
+    };
+
+    forEachNodeOn(track, device, [](RackInfo&) {});
 }
 
 }  // namespace magda

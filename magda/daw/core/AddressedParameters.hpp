@@ -54,4 +54,8 @@ class AddressedParameters {
     std::map<ChainNodePath, std::vector<int>> byDevice_;
 };
 
+/// Drop every hosted plugin value on @p track that @p addressed does not name,
+/// which the plugin's chunk already carries (#2636).
+void dropUnaddressedHostedParameters(TrackInfo& track, const AddressedParameters& addressed);
+
 }  // namespace magda

@@ -10,6 +10,8 @@
 
 namespace magda {
 
+class AddressedParameters;
+
 /**
  * @brief Holds deserialized project data before committing to singleton managers.
  *
@@ -135,7 +137,7 @@ class ProjectSerializer {
     /**
      * @brief Serialize all tracks to JSON array
      */
-    static juce::var serializeTracks();
+    static juce::var serializeTracks(const AddressedParameters& addressed);
 
     // ========================================================================
     // Clip serialization

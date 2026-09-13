@@ -574,8 +574,14 @@ class StubFormat final : public juce::AudioPluginFormat {
     void createPluginInstance(const juce::PluginDescription& description, double, int,
                               PluginCreationCallback callback) override {
         requested = description;
-        callback(std::make_unique<StubPlugin>(2, 2, 0), {});
+        auto plugin = std::make_unique<StubPlugin>(2, 2, 0);
+        created = plugin.get();
+        callback(std::move(plugin), {});
     }
+
+  public:
+    /// The last instance this format opened, owned by whoever it went to.
+    StubPlugin* created = nullptr;
 };
 
 magda::engine::RenderContext contextFor(int channels = 2, int blockSize = 64) {
@@ -3994,8 +4000,12 @@ struct LiveSlot {
 
     LiveSlot() {
         model.fileOrIdentifier = "stub.plugin";
-        formats.addFormat(std::make_unique<StubFormat>());
+        auto owned = std::make_unique<StubFormat>();
+        format = owned.get();
+        formats.addFormat(std::move(owned));
     }
+
+    StubFormat* format = nullptr;
 
     /// Put @p device's plugin in the scan's results, which is what the loader
     /// searches. Defaults to this slot's own.
@@ -4051,6 +4061,54 @@ TEST_CASE("An external plugin a live plan names is loaded and handed over",
 
     CHECK(loader.device(slot.key(), slot.model) != nullptr);
     CHECK(loader.held() == 0);
+}
+
+TEST_CASE("A loaded plugin's own edits reach the sink through the loader's drain",
+          "[engine][external][host]") {
+    juce::ScopedJuceInitialiser_GUI juce;
+
+    LiveSlot slot;
+    slot.install();
+
+    host::ExternalPluginLoader loader([&slot](magda::engine::DeviceKey) { return &slot.model; },
+                                      [](magda::engine::DeviceKey, const magda::DeviceInfo&,
+                                         const std::vector<magda::RestoredParameter>&) {});
+
+    std::vector<adapter::EngineExternalDevice::Observation> reported;
+    loader.onPluginEdit(
+        [&reported](magda::engine::DeviceKey, adapter::EngineExternalDevice::Observation seen) {
+            reported.push_back(seen);
+        });
+
+    loader.setServices(&slot.formats, &slot.known);
+    loader.setContext(contextFor());
+    loader.syncAssignments({{slot.key(), slot.model}});
+    CHECK(loader.device(slot.key(), slot.model) == nullptr);
+    dispatchPendingLoads();
+
+    auto device = loader.device(slot.key(), slot.model);
+    REQUIRE(device != nullptr);
+    REQUIRE(slot.format->created != nullptr);
+
+    // Three moves before the message loop runs: one wake, one drain, one report.
+    for (const auto value : {0.4f, 0.5f, 0.6f})
+        slot.format->created->tone->setValueNotifyingHost(value);
+    dispatchPendingLoads();
+
+    REQUIRE(reported.size() == 1);
+    CHECK(reported.front().normalised == Catch::Approx(0.6f));
+
+    // A slot no longer naming the plugin takes nothing from it.
+    reported.clear();
+    loader.syncAssignments({});
+    slot.format->created->tone->setValueNotifyingHost(0.7f);
+    dispatchPendingLoads();
+    CHECK(reported.empty());
+
+    // Nor does a drain once the instance has gone.
+    device.reset();
+    loader.drainPluginEdits();
+    CHECK(reported.empty());
 }
 
 TEST_CASE("A slot re-registered for the same plugin keeps the load it started",

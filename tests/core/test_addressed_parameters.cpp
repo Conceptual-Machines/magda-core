@@ -230,3 +230,46 @@ TEST_CASE("The master track's devices are addressed too", "[core][parameters][ad
 
     CHECK(addressed.addresses(path, 1));
 }
+
+TEST_CASE("Only the hosted values something addresses are kept for a save",
+          "[core][parameters][addressed]") {
+    RackInfo rack;
+    rack.id = 3;
+    rack.macros = createDefaultMacros(2);
+    rack.mods = createDefaultMods(0);
+
+    ChainInfo chain;
+    chain.id = 1;
+    chain.elements.push_back(makeDeviceElement(makeDevice(7)));
+    rack.chains.push_back(std::move(chain));
+
+    auto track = makeTrack();
+    const auto hostedPath =
+        ChainNodePath::trackLevel(track.id).withRack(rack.id).withChain(1).withDevice(7);
+    rack.macros[0].links.push_back({ControlTarget::pluginParam(hostedPath, 3), 1.0f});
+    track.chain.fxChainElements.push_back(makeRackElement(std::move(rack)));
+
+    auto internal = makeDevice(8);
+    internal.format = PluginFormat::Internal;
+    track.chain.fxChainElements.push_back(makeDeviceElement(std::move(internal)));
+
+    const std::vector<AutomationLaneInfo> lanes{
+        laneOver(ControlTarget::pluginParam(hostedPath, 1))};
+    const auto addressed = addressedIn({track}, lanes);
+
+    dropUnaddressedHostedParameters(track, addressed);
+
+    const auto* hosted = chain_walk::findDevice(
+        track.chain.fxChainElements, ChainNodePath::trackLevel(track.id), chain_walk::Pads::Skip,
+        [&hostedPath](const DeviceInfo&, const ChainNodePath& path) { return path == hostedPath; });
+    REQUIRE(hosted != nullptr);
+
+    std::vector<int> kept;
+    for (const auto& parameter : hosted->parameters)
+        kept.push_back(parameter.paramIndex);
+    CHECK(kept == std::vector<int>{1, 3});
+
+    // An internal device's values are its only record of them.
+    const auto& own = std::get<DeviceInfo>(track.chain.fxChainElements[1]);
+    CHECK(own.parameters.size() == 4);
+}

@@ -19,6 +19,7 @@ target_sources(magda_daw PRIVATE
     MixAnalysisService.cpp
     SessionViewState.cpp
     PluginParameterConfigStore.cpp
+    OpenProjectAddressing.cpp
     TrackManager.cpp
     TrackManagerModulation.cpp
     TrackManagerDevices.cpp
@@ -85,6 +86,7 @@ target_sources(magda_daw PRIVATE
     controllers/ControllerProfileRegistry.cpp
     controllers/MidiLearnCoordinator.cpp
     # Headers (listed for IDE visibility)
+    OpenProjectAddressing.hpp
     RangesHelpers.hpp
     Config.hpp
     GridDivision.hpp

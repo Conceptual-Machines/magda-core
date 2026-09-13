@@ -9,11 +9,13 @@
 #include <unordered_set>
 
 #include "../../audio/plugins/DeviceStateHydration.hpp"
+#include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ClipManager.hpp"
 #include "../../core/DeviceParamMigrations.hpp"
 #include "../../core/DrumGridPads.hpp"
 #include "../../core/LegacyDeviceAliases.hpp"
+#include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/PadPathMigration.hpp"
 #include "../../core/SelectionManager.hpp"
 #include "../../core/TrackManager.hpp"
@@ -553,7 +555,11 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
 
     // Serialize tracks, clips, and automation. Sources go before clips: a clip's
     // events reference them by id (#1901).
-    obj->setProperty("tracks", serializeTracks());
+    // Only what something addresses of a hosted plugin's values: its chunk
+    // carries the rest (#2636).
+    const auto addressed = addressedInOpenProject();
+
+    obj->setProperty("tracks", serializeTracks(addressed));
     obj->setProperty("sources", serializeSources());
     obj->setProperty("clips", serializeClips());
     obj->setProperty("automation", serializeAutomation());
@@ -563,7 +569,9 @@ juce::var ProjectSerializer::serializeProject(const ProjectInfo& info) {
     if (masterTrack && (!masterTrack->chain.fxChainElements.empty() ||
                         !masterTrack->chain.postFxChainElements.empty() ||
                         !masterTrack->chain.mixerAnalysisElements.empty())) {
-        obj->setProperty("masterTrack", serializeTrackInfo(*masterTrack));
+        auto saved = *masterTrack;
+        dropUnaddressedHostedParameters(saved, addressed);
+        obj->setProperty("masterTrack", serializeTrackInfo(saved));
     }
 
     // Parameter aliases (UserProject layer -- opaque pass-through)
@@ -864,12 +872,14 @@ void ProjectSerializer::commitStagedData(std::vector<TrackInfo>& stagedTracks,
 // Component-level serialization
 // ============================================================================
 
-juce::var ProjectSerializer::serializeTracks() {
+juce::var ProjectSerializer::serializeTracks(const AddressedParameters& addressed) {
     juce::Array<juce::var> tracksArray;
 
     auto& trackManager = TrackManager::getInstance();
     for (const auto& track : trackManager.getTracks()) {
-        tracksArray.add(serializeTrackInfo(track));
+        auto saved = track;
+        dropUnaddressedHostedParameters(saved, addressed);
+        tracksArray.add(serializeTrackInfo(saved));
     }
 
     return {tracksArray};

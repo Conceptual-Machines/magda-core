@@ -100,7 +100,7 @@ class EngineExternalDevice::EditorWindow final : public juce::DocumentWindow {
  * Atomics rather than a pointer to the block: a plugin may ask on the message
  * thread long after the block, and a stale position is the accepted answer.
  */
-/// Records a parameter the plugin moved itself and queues one flush. JUCE
+/// Records a parameter the plugin moved itself and wakes the host once. JUCE
 /// calls this on whatever thread made the change, the audio thread included.
 class EngineExternalDevice::PluginListener final : public juce::AudioProcessorListener {
   public:
@@ -137,37 +137,12 @@ class EngineExternalDevice::PluginListener final : public juce::AudioProcessorLi
         edits.reported[at].store(PluginEdits::pack(newValue, source), std::memory_order_release);
         edits.dirty[at].store(true, std::memory_order_release);
 
-        if (edits.flushQueued.exchange(true, std::memory_order_acq_rel))
+        // Before listening, what is recorded waits for the wake that listening sends.
+        if (!edits.listening.load(std::memory_order_acquire))
             return;
 
-        juce::MessageManager::callAsync([weak = std::weak_ptr<PluginEdits>(edits_)] {
-            const auto edits = weak.lock();
-            if (edits == nullptr)
-                return;
-
-            edits->flushQueued.store(false, std::memory_order_release);
-
-            for (std::size_t slot = 0; slot < edits->dirty.size(); ++slot) {
-                const auto gestured =
-                    edits->gestureDirty[slot].exchange(false, std::memory_order_acq_rel);
-                if (!edits->dirty[slot].exchange(false, std::memory_order_acq_rel) && !gestured)
-                    continue;
-
-                if (!edits->sink)
-                    continue;
-
-                const auto latest = PluginEdits::unpack(
-                    static_cast<int>(slot), edits->reported[slot].load(std::memory_order_acquire));
-
-                if (gestured && latest.source != magda::ObservationSource::EditorGesture)
-                    edits->sink(
-                        {.slot = latest.slot,
-                         .normalised = edits->gestured[slot].load(std::memory_order_acquire),
-                         .source = magda::ObservationSource::EditorGesture});
-
-                edits->sink(latest);
-            }
-        });
+        if (!edits.wakeQueued.exchange(true, std::memory_order_acq_rel))
+            edits.wake();
     }
 
     void audioProcessorParameterChangeGestureBegin(juce::AudioProcessor*,
@@ -333,8 +308,48 @@ EngineExternalDevice::EngineExternalDevice(std::unique_ptr<juce::AudioPluginInst
     instance_->addListener(listener_.get());
 }
 
-void EngineExternalDevice::listenForPluginEdits(std::function<void(Observation)> sink) {
-    edits_->sink = std::move(sink);
+void EngineExternalDevice::listenForPluginEdits(std::function<void()> wake) {
+    jassert(!edits_->listening.load());
+    if (wake == nullptr)
+        return;
+
+    edits_->wake = std::move(wake);
+    edits_->listening.store(true, std::memory_order_release);
+
+    edits_->wakeQueued.store(true, std::memory_order_release);
+    edits_->wake();
+}
+
+EngineExternalDevice::PluginEditSource EngineExternalDevice::pluginEdits() const {
+    return PluginEditSource{edits_};
+}
+
+bool EngineExternalDevice::PluginEditSource::drain(
+    const std::function<void(Observation)>& sink) const {
+    const auto edits = edits_.lock();
+    if (edits == nullptr)
+        return false;
+
+    // Cleared first, so a report landing during the walk wakes another drain.
+    edits->wakeQueued.store(false, std::memory_order_release);
+
+    for (std::size_t slot = 0; slot < edits->dirty.size(); ++slot) {
+        const auto gestured = edits->gestureDirty[slot].exchange(false, std::memory_order_acq_rel);
+        if (!edits->dirty[slot].exchange(false, std::memory_order_acq_rel) && !gestured)
+            continue;
+
+        const auto latest = PluginEdits::unpack(
+            static_cast<int>(slot), edits->reported[slot].load(std::memory_order_acquire));
+
+        if (gestured && latest.source != magda::ObservationSource::EditorGesture)
+            sink({.slot = latest.slot,
+                  .normalised = edits->gestured[slot].load(std::memory_order_acquire),
+                  .source = magda::ObservationSource::EditorGesture});
+
+        sink(latest);
+    }
+
+    return true;
 }
 
 void EngineExternalDevice::forgetDriverState() {
