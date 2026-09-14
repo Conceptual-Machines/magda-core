@@ -513,6 +513,7 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::DeviceInject:
         case OpRole::RackMix:
         case OpRole::RackMidiMix:
+        case OpRole::RackMeter:
         case OpRole::TrackMeter:
         // A modulation tap reads what reached it and has no value of its own.
         // Not even a mute: a modifier following a track is following what that

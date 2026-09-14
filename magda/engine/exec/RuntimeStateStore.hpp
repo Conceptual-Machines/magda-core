@@ -287,11 +287,23 @@ class RuntimeStateStore {
      *
      * @p visit is called with `(DeviceKey, LevelTap&)` on the publishing
      * thread. One visitor, since LevelTap::read is destructive.
+     *
+     * One entry per device, which is the retention rule below holding: a
+     * device that moved has no tap left where it used to be.
      */
     template <typename Visit> void forEachDeviceMeter(Visit&& visit) const {
         for (const auto& [key, tap] : meters_)
             if (key.role == OpRole::DeviceMeter)
                 visit(key.deviceKey(), *tap);
+    }
+
+    /// The same for a rack's own meter, by the rack it measures (#2649). A
+    /// rack id is the project's, so it is the whole address, and one entry
+    /// per rack for the same reason.
+    template <typename Visit> void forEachRackMeter(Visit&& visit) const {
+        for (const auto& [key, tap] : meters_)
+            if (key.role == OpRole::RackMeter)
+                visit(key.rackId, *tap);
     }
 
     /**
@@ -460,11 +472,12 @@ class RuntimeStateStore {
     std::unordered_map<TrackId, std::unique_ptr<EngineAudioSource>> audioInputs_;
     std::unordered_map<TrackId, std::unique_ptr<EngineMidiSource>> midiInputs_;
 
-    /// Keyed by the op's whole key and retained by the model IDs that key
-    /// names -- a meter is kept while the track or device it reads exists,
-    /// the same rule everything else here follows, read through the one
-    /// binding whose identity is the whole op rather than a DeviceKey or
-    /// TrackId.
+    /// Keyed by the op's whole key, and retained by the live plan naming that
+    /// op rather than by the model IDs the key mentions: the key says where
+    /// the meter stands, so a device or a rack that moved would otherwise
+    /// leave a tap behind at the location it came from (#2649). It is the one
+    /// binding whose identity is the whole op rather than a DeviceKey or a
+    /// TrackId, and the one whose retention therefore reads the plan.
     std::map<OpKey, std::unique_ptr<LevelTap>> meters_;
 
     /// The values the host has asked to read back, kept across publishes so

@@ -254,6 +254,7 @@ class Compiler {
     /// with no chains still has an output of its own to measure: its fader is
     /// applied on the wet path whether or not there are chains under it.
     PortRef emitRackDelta(const ChainSite& site, RackId rackId, PortRef wet, PortRef dry);
+    PortRef emitRackMeter(const ChainSite& site, RackId rackId, PortRef source);
 
     /// Sums `sources` into one audio port, always through an op so the op's
     /// identity survives sources appearing and disappearing.
@@ -564,6 +565,18 @@ PortRef Compiler::emitLiveInputGate(TrackId trackId, PortRef source) {
 
 PortRef Compiler::emitDelta(const OpKey& key, PortRef wet, PortRef dry) {
     return PortRef{addOp(OpKind::Subtract, key, alignInputs(key, OpKind::Subtract, {wet, dry}),
+                         {SignalKind::Audio}),
+                   0};
+}
+
+/// The level a rack strip draws: what leaves the rack, its own volume and pan
+/// applied and its delta taken, which is the same place a device slot's meter
+/// stands in its own chain of four (#2649).
+PortRef Compiler::emitRackMeter(const ChainSite& site, RackId rackId, PortRef source) {
+    if (!options_.deviceMeters)
+        return source;
+
+    return PortRef{addOp(OpKind::Meter, rackMeterKey(site.trackId, rackId, site.segment), {source},
                          {SignalKind::Audio}),
                    0};
 }
@@ -1015,7 +1028,8 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                              OpRole::RackFader, 0,       site.segment};
         const PortRef faded{
             addOp(OpKind::Fader, faderKey, {signal.audio, noInput()}, {SignalKind::Audio}), 0};
-        return {emitRackDelta(site, rack.id, faded, signal.audio), signal.midi};
+        return {emitRackMeter(site, rack.id, emitRackDelta(site, rack.id, faded, signal.audio)),
+                signal.midi};
     }
 
     std::vector<PortRef> chainAudio;
@@ -1080,6 +1094,7 @@ ChainSignal Compiler::emitRack(const RackInfo& rack, const ChainSite& site, Chai
                          OpRole::RackFader, 0,       site.segment};
     out.audio = PortRef{addOp(OpKind::Fader, faderKey, {mixed, noInput()}, {SignalKind::Audio}), 0};
     out.audio = emitRackDelta(site, rack.id, out.audio, signal.audio);
+    out.audio = emitRackMeter(site, rack.id, out.audio);
 
     if (chainMidi.empty()) {
         out.midi = signal.midi;

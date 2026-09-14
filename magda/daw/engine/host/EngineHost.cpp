@@ -177,6 +177,30 @@ adapter::EngineExternalDevice* externalIn(engine::EngineDevice& device) {
     return dynamic_cast<adapter::EngineExternalDevice*>(&device);
 }
 
+/// The racks a project holds, by the id a rack meter is keyed with (#2649).
+///
+/// A Drum Grid's pad rack is not one: it is addressed by the grid's own path
+/// rather than by a rack step, the compiler gives it no meter, and the grid
+/// meters its pads itself (#2211).
+std::set<RackId> modelRacks(const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
+    std::set<RackId> racks;
+
+    const auto collect = [&racks](const TrackInfo& track) {
+        chain_walk::forEachRack(track.chain.fxChainElements, ChainNodePath::trackLevel(track.id),
+                                chain_walk::Pads::Enter,
+                                [&racks](const RackInfo& rack, const ChainNodePath& rackPath) {
+                                    if (rackPath.getType() == ChainNodeType::Rack)
+                                        racks.insert(rack.id);
+                                });
+    };
+
+    for (const auto& track : tracks)
+        collect(track);
+
+    collect(master);
+    return racks;
+}
+
 /**
  * @brief The external devices the live session holds (#2581).
  *
@@ -282,6 +306,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void timerCallback() override {
         publishMeters();
         publishDeviceMeters();
+        publishRackMeters();
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
@@ -353,6 +378,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             const auto levels = tap.read();
             deviceMeters_->setDevicePeak(slot->second,
                                          {.peakL = levels.peak[0], .peakR = levels.peak[1]});
+        });
+    }
+
+    /// What every rack's own tap has held since the last tick (#2649). Silence
+    /// first, for the same reason the slots get it: a bypassed rack is not in
+    /// the plan at all, so nothing would report over its last peak.
+    void publishRackMeters() {
+        if (session_ == nullptr || deviceMeters_ == nullptr)
+            return;
+
+        for (const auto rackId : rackIds_)
+            deviceMeters_->setRackPeak(rackId, {});
+
+        session_->forEachRackMeter([this](RackId rackId, engine::LevelTap& tap) {
+            if (!rackIds_.contains(rackId))
+                return;
+
+            const auto levels = tap.read();
+            deviceMeters_->setRackPeak(rackId, {.peakL = levels.peak[0], .peakR = levels.peak[1]});
         });
     }
 
@@ -455,6 +499,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // two walks that disagree (#2570). Only a structural edit moves a
         // device, which is what gets here.
         devicePaths_ = adapter::devicePathsIn(tracks, *master);
+        rackIds_ = modelRacks(tracks, *master);
 
         // Before the swap, so the new plan's first block renders against
         // routing resolved from the same reading of the model (#2592).
@@ -1393,6 +1438,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// Where each device the model holds sits, by the key its ops carry.
     /// Rebuilt with every plan, which is what a device moving is (#2570).
     std::map<engine::DeviceKey, ChainNodePath> devicePaths_;
+
+    /// The racks the model holds, which a rack id alone addresses (#2649).
+    std::set<RackId> rackIds_;
 
     /// Hot-plug, on the message thread. Last, so it is destroyed first and
     /// nothing calls back into a host that is already unwinding.
