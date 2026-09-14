@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string_view>
 
+#include "analysis/TrackMeasurer.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 /**
@@ -63,6 +64,19 @@ class SpectrumTelemetry : public AudioTapTelemetry {
     virtual void setSlopeDbPerOct(float slope) = 0;
     virtual float smoothing() const = 0;
     virtual void setSmoothing(float smoothing) = 0;
+};
+
+/** @brief The loudness meter's readings, taken only while something draws them. */
+class LevelsTelemetry : public DeviceTelemetry {
+  public:
+    static constexpr std::string_view kKey = "levels";
+
+    virtual void setActive(bool active) = 0;
+
+    /// Restart the held figures: integrated loudness, peak holds and PLR.
+    virtual void requestReset() = 0;
+
+    virtual TrackMeasurementSnapshot snapshot() const = 0;
 };
 
 /** @brief The envelope Nimbus's grain-buffer view draws. */

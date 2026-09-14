@@ -17,6 +17,7 @@
 #include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/InternalPluginRegistry.hpp"
+#include "audio/plugins/LevelsPlugin.hpp"
 #include "audio/plugins/MagdaConvolutionPlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/MidiChordEnginePlugin.hpp"
@@ -53,7 +54,6 @@
 #include "custom_ui/MateriaUI.hpp"
 #include "custom_ui/NimbusUI.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
-#include "custom_ui/PluginTelemetrySources.hpp"
 #include "custom_ui/PolyStepSequencerUI.hpp"
 #include "custom_ui/PolySynthUI.hpp"
 #include "custom_ui/SamplerUI.hpp"
@@ -2285,15 +2285,8 @@ void DeviceCustomUIManager::bindDeviceFaceplates() {
 }
 
 void DeviceCustomUIManager::detachFromLivePlugin() {
-    livePluginProvider_ = {};
-    devicePath_ = {};
-    boundDevice_.reset();
-    levelsPlugin_ = nullptr;
-    oscilloscopeTelemetry_.reset();
-    spectrumTelemetry_.reset();
-    levelsTelemetry_.reset();
-    nimbusTelemetry_.reset();
-
+    // The faceplates let go before the lookup does: letting go of the Levels
+    // source switches its device's metering off, which needs the device found.
     if (oscilloscopeUI_ != nullptr)
         oscilloscopeUI_->setTelemetrySource(nullptr);
     if (spectrumAnalyzerUI_ != nullptr) {
@@ -2308,6 +2301,14 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
         polySynthUI_->setLivePlugin(nullptr);
     if (struckUI_ != nullptr)
         struckUI_->setLivePlugin(nullptr);
+
+    livePluginProvider_ = {};
+    devicePath_ = {};
+    boundDevice_.reset();
+    oscilloscopeTelemetry_.reset();
+    spectrumTelemetry_.reset();
+    levelsTelemetry_.reset();
+    nimbusTelemetry_.reset();
 
     arpPlugin_ = nullptr;
     strumPlugin_ = nullptr;
@@ -2355,25 +2356,10 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
         spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
     }
     if (levelsUI_ != nullptr) {
-        // A LevelsPlugin is a te::Plugin rather than one of MAGDA's devices, so
-        // nothing renders it under the native engine: this one stays on the
-        // fork's plugin and is rebuilt whenever that plugin moves (#2585).
-        auto plugin = getLivePlugin();
-        if (plugin.get() != levelsPlugin_) {
-            levelsPlugin_ = plugin.get();
-            levelsTelemetry_.reset();
-        }
-
-        std::shared_ptr<LevelsTelemetrySource> source;
-        if (dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()) != nullptr) {
-            if (levelsTelemetry_ == nullptr)
-                levelsTelemetry_ = std::make_shared<LevelsPluginTelemetrySource>(plugin);
-            source = levelsTelemetry_;
-            publishTelemetrySource(source, LevelsTelemetrySource::kKey);
-        } else {
-            publishTelemetrySource(nullptr, LevelsTelemetrySource::kKey);
-        }
-        levelsUI_->setTelemetrySource(std::move(source));
+        if (levelsTelemetry_ == nullptr)
+            levelsTelemetry_ = std::make_shared<DeviceLevelsTelemetry>(renderedDevice);
+        publishTelemetrySource(levelsTelemetry_, LevelsTelemetrySource::kKey);
+        levelsUI_->setTelemetrySource(levelsTelemetry_);
     }
     if (nimbusUI_ != nullptr) {
         if (nimbusTelemetry_ == nullptr)

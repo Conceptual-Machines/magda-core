@@ -161,6 +161,46 @@ class DeviceSpectrumTelemetry final : public SpectrumTelemetrySource {
     RenderedDeviceQuery device_;
 };
 
+/**
+ * @brief The Levels faceplate's readings, off the device measuring them.
+ *
+ * Whether the faceplate is showing is held here and handed to the device on
+ * every read, since a device built after the faceplate said so (#2575) would
+ * otherwise never start measuring.
+ */
+class DeviceLevelsTelemetry final : public LevelsTelemetrySource {
+  public:
+    explicit DeviceLevelsTelemetry(RenderedDeviceQuery device) : device_(std::move(device)) {}
+
+    void setActive(bool active) override {
+        active_ = active;
+        if (auto surface = meter())
+            surface->setActive(active);
+    }
+
+    void requestReset() override {
+        if (auto surface = meter())
+            surface->requestReset();
+    }
+
+    audio::TrackMeasurementSnapshot snapshot() const override {
+        auto surface = meter();
+        if (surface == nullptr)
+            return {};
+
+        surface->setActive(active_);
+        return surface->snapshot();
+    }
+
+  private:
+    std::shared_ptr<audio::LevelsTelemetry> meter() const {
+        return detail::telemetryFrom<audio::LevelsTelemetry>(device_);
+    }
+
+    RenderedDeviceQuery device_;
+    bool active_ = false;
+};
+
 /** @brief Nimbus's grain-buffer view, off the device filling it. */
 class DeviceNimbusTelemetry final : public NimbusTelemetrySource {
   public:
