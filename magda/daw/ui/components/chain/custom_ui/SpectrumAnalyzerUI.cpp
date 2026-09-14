@@ -84,6 +84,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
         if (telemetry_ != nullptr)
             telemetry_->setFftOrder(order);
         rebuildFft(order);
+        commitSettings();
         persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
     styleCombo(fftCombo_);
@@ -99,6 +100,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             slopeDbPerOct_ = kSlopeOptions[static_cast<size_t>(idx)];
             if (telemetry_ != nullptr)
                 telemetry_->setSlopeDbPerOct(slopeDbPerOct_);
+            commitSettings();
             persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
         }
     };
@@ -114,6 +116,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
             smoothing_ = kSpeedOptions[static_cast<size_t>(idx)];
             if (telemetry_ != nullptr)
                 telemetry_->setSmoothing(smoothing_);
+            commitSettings();
             persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
         }
     };
@@ -125,6 +128,7 @@ SpectrumAnalyzerUI::SpectrumAnalyzerUI() {
     colourCombo_.onChange = [this] {
         if (telemetry_ != nullptr)
             telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        commitSettings();
         persistSpectrumDefaults(telemetry_, persistGlobalDefaults_);
     };
     styleCombo(colourCombo_);
@@ -212,6 +216,10 @@ void SpectrumAnalyzerUI::setTelemetrySource(std::shared_ptr<SpectrumTelemetrySou
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
         popoutUI_->setTelemetrySource(telemetry_);  // keep the popped-out window live
+    refreshSettingsFromSource();
+}
+
+void SpectrumAnalyzerUI::refreshSettingsFromSource() {
     if (telemetry_ == nullptr)
         return;
 
@@ -222,6 +230,21 @@ void SpectrumAnalyzerUI::setTelemetrySource(std::shared_ptr<SpectrumTelemetrySou
     speedCombo_.setSelectedId(nearestId(kSpeedOptions, smoothing_), juce::dontSendNotification);
     colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
     rebuildFft(telemetry_->fftOrder());
+    repaint();
+}
+
+/// Every setting each time: the document is patched rather than replaced, and
+/// which control moved is not worth tracking.
+void SpectrumAnalyzerUI::commitSettings() {
+    if (!onSettingsEdited)
+        return;
+
+    juce::NamedValueSet settings;
+    settings.set("fftOrder", fftCombo_.getSelectedId() == 2 ? 12 : 11);
+    settings.set("slopeDbPerOct", slopeDbPerOct_);
+    settings.set("smoothing", smoothing_);
+    settings.set("traceColour", colourCombo_.getSelectedId() - 1);
+    onSettingsEdited(settings);
 }
 
 void SpectrumAnalyzerUI::setTrackId(magda::TrackId trackId) {
@@ -546,6 +569,7 @@ void SpectrumAnalyzerUI::openPopout() {
         auto content = std::make_unique<SpectrumAnalyzerUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
+        popoutUI_->onSettingsEdited = onSettingsEdited;
         popoutUI_->setTelemetrySource(telemetry_);
         popoutUI_->setTrackId(trackId_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Spectrum Analyzer", std::move(content));

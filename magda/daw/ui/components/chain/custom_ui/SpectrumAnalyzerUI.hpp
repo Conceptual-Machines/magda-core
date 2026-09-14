@@ -35,6 +35,15 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
 
     void setTelemetrySource(std::shared_ptr<SpectrumTelemetrySource> telemetry);
 
+    /// Read the transform and colour the device holds back into the controls.
+    /// Called when the device behind the source changes -- including the first
+    /// one, published after the slot is built (#2663).
+    void refreshSettingsFromSource();
+
+    /// Where an edited setting goes: the model's state document, which is what
+    /// persists it and what the device is rebuilt from (#2317).
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
+
     // The track this Spectrum device lives on. Enables the inter-track masking
     // overlay (#1400): a dropdown picks another track, whose spectrum is drawn
     // over this one with the clashing frequency zones shaded.
@@ -67,6 +76,9 @@ class SpectrumAnalyzerUI : public juce::Component, private juce::Timer {
     void parentHierarchyChanged() override;
 
   private:
+    /// Patch the model's document with what the controls hold.
+    void commitSettings();
+
     void timerCallback() override;
     void updateTimerState();
     void refreshOverlayList();                       // rebuild combo items from the track list

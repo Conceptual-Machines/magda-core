@@ -15,6 +15,7 @@
 #include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/StringTable.hpp"
 #include "core/TechnicalText.hpp"
@@ -220,20 +221,38 @@ void MasterChannelStrip::refreshMiniAnalyzers() {
         };
     };
 
+    // An edited setting goes to the analysis device's own document, resolved
+    // when the edit happens (#2663).
+    const auto editSettings = [](const char* pluginId) {
+        return [pluginId](const juce::NamedValueSet& settings) {
+            const auto id =
+                TrackManager::getInstance().findMixerAnalysisDevice(MASTER_TRACK_ID, pluginId);
+            if (id != INVALID_DEVICE_ID)
+                magda::writeDeviceSettings(ChainNodePath::mixerAnalysisDevice(MASTER_TRACK_ID, id),
+                                           settings);
+        };
+    };
+
     if (miniOscilloscopeUI_) {
         if (miniOscilloscopeTelemetry_ == nullptr) {
             miniOscilloscopeTelemetry_ = std::make_shared<daw::ui::DeviceOscilloscopeTelemetry>(
                 analysisDevice("oscilloscope"));
+            miniOscilloscopeUI_->onSettingsEdited = editSettings("oscilloscope");
         }
         miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
+        // Every refresh, since the source is the same object for the life of
+        // the strip and the device behind it arrives with the plan.
+        miniOscilloscopeUI_->refreshSettingsFromSource();
     }
 
     if (miniSpectrumUI_) {
         if (miniSpectrumTelemetry_ == nullptr) {
             miniSpectrumTelemetry_ = std::make_shared<daw::ui::DeviceSpectrumTelemetry>(
                 analysisDevice("spectrumanalyzer"));
+            miniSpectrumUI_->onSettingsEdited = editSettings("spectrumanalyzer");
         }
         miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
+        miniSpectrumUI_->refreshSettingsFromSource();
     }
 }
 

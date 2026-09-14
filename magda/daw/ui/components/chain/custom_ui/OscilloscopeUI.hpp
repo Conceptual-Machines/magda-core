@@ -30,6 +30,17 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
 
     void setTelemetrySource(std::shared_ptr<OscilloscopeTelemetrySource> telemetry);
 
+    /// Read the timebase and colour the device holds back into the controls.
+    /// The source outlives any one device now, so the host calls this when the
+    /// device behind it changes -- including the first one to arrive, which is
+    /// published after the slot is built (#2663).
+    void refreshSettingsFromSource();
+
+    /// Where an edited setting goes: the model's state document, which is what
+    /// persists it and what the device is rebuilt from (#2317). Empty for a
+    /// faceplate with no device path, such as the mixer's mini monitor.
+    std::function<void(const juce::NamedValueSet&)> onSettingsEdited;
+
     // Compact mode hides the time/colour control row and uses the full
     // bounds for the waveform — used by the mini visualizer on the mixer.
     void setCompact(bool compact);
@@ -58,6 +69,9 @@ class OscilloscopeUI : public juce::Component, private juce::Timer {
     void parentHierarchyChanged() override;
 
   private:
+    /// Patch the model's document with what the controls hold.
+    void commitSettings();
+
     void timerCallback() override;
     void updateTimerState();
     void applyTimebase();      // recompute displaySamples_ / readCount_ from timebase + sample rate

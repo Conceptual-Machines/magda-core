@@ -274,21 +274,6 @@ bool isMidiFxPlugin(const PluginBrowserInfo& plugin) {
            plugin.subcategory.equalsIgnoreCase("MIDI");
 }
 
-/// Patch a device's non-slot settings onto the MODEL's state document, which
-/// the projection then pushes to the live device (#2317). Every faceplate whose
-/// settings are authored state writes them this way.
-void writeDeviceSettings(const magda::ChainNodePath& devicePath,
-                         const juce::NamedValueSet& settings) {
-    auto& trackManager = magda::TrackManager::getInstance();
-    const bool changed = trackManager.updateDeviceAuthoredState(
-        devicePath, [&settings](magda::device_state::Doc& doc) {
-            for (int i = 0; i < settings.size(); ++i)
-                doc.root.props.set(settings.getName(i), settings.getValueAt(i));
-        });
-    if (changed)
-        magda::ProjectManager::getInstance().markDirty();
-}
-
 bool isMidiFxPlugin(const juce::PluginDescription& desc) {
     return desc.category.equalsIgnoreCase("MIDI");
 }
@@ -2289,6 +2274,7 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
     devicePath_ = {};
     boundDevice_.reset();
     levelsPlugin_ = nullptr;
+    analyzerDevice_ = nullptr;
     oscilloscopeTelemetry_.reset();
     spectrumTelemetry_.reset();
     levelsTelemetry_.reset();
@@ -2341,15 +2327,26 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
     // clears them in detachFromLivePlugin() before it dies (#2585).
     const RenderedDeviceQuery renderedDevice = [this]() { return liveDevice(); };
 
+    // An edited setting goes to the model's document, which is what persists it
+    // and what the device is rebuilt from -- the device holds it for the run
+    // and nothing under the native engine captures that back (#2663).
+    const auto editSettings = [this](const juce::NamedValueSet& settings) {
+        writeDeviceSettings(devicePath_, settings);
+    };
+
     if (oscilloscopeUI_ != nullptr) {
-        if (oscilloscopeTelemetry_ == nullptr)
+        if (oscilloscopeTelemetry_ == nullptr) {
             oscilloscopeTelemetry_ = std::make_shared<DeviceOscilloscopeTelemetry>(renderedDevice);
+            oscilloscopeUI_->onSettingsEdited = editSettings;
+        }
         publishTelemetrySource(oscilloscopeTelemetry_, OscilloscopeTelemetrySource::kKey);
         oscilloscopeUI_->setTelemetrySource(oscilloscopeTelemetry_);
     }
     if (spectrumAnalyzerUI_ != nullptr) {
-        if (spectrumTelemetry_ == nullptr)
+        if (spectrumTelemetry_ == nullptr) {
             spectrumTelemetry_ = std::make_shared<DeviceSpectrumTelemetry>(renderedDevice);
+            spectrumAnalyzerUI_->onSettingsEdited = editSettings;
+        }
         publishTelemetrySource(spectrumTelemetry_, SpectrumTelemetrySource::kKey);
         spectrumAnalyzerUI_->setTelemetrySource(spectrumTelemetry_);
         spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
@@ -2381,6 +2378,19 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
         publishTelemetrySource(nimbusTelemetry_, NimbusTelemetrySource::kKey);
         nimbusUI_->setTelemetrySource(nimbusTelemetry_);
     }
+
+    // The controls show what the device holds, and the device arrives after the
+    // slot is built -- so the read follows the device rather than the source,
+    // which is the same object for the life of the faceplate now (#2663).
+    auto* device = liveDevice().get();
+    if (device == analyzerDevice_)
+        return;
+
+    analyzerDevice_ = device;
+    if (oscilloscopeUI_ != nullptr)
+        oscilloscopeUI_->refreshSettingsFromSource();
+    if (spectrumAnalyzerUI_ != nullptr)
+        spectrumAnalyzerUI_->refreshSettingsFromSource();
 }
 
 // =============================================================================
