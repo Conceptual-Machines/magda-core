@@ -5,7 +5,6 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaMultibandCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -88,8 +87,8 @@ CompiledMultibandCurveView::CompiledMultibandCurveView(juce::String /*pluginId*/
 }
 
 void CompiledMultibandCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaMultibandCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledMultibandCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -935,9 +934,11 @@ const CompiledPresentationSpec& getMagdaMultibandPresentation() {
     return kSpec;
 }
 
-void CompiledMultibandCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaMultibandCompiledPlugin>(plugin));
+void CompiledMultibandCurveView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaMultibandCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

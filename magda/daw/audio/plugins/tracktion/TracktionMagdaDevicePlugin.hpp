@@ -112,4 +112,21 @@ template <typename DeviceType> const DeviceType* deviceFromPlugin(const te::Plug
     return adapter != nullptr ? dynamic_cast<const DeviceType*>(&adapter->device()) : nullptr;
 }
 
+/**
+ * @brief The MAGDA device inside @p plugin, holding the plugin open (#2585).
+ *
+ * The fork's answer to "the device rendering here": the edit owns the plugin
+ * and the plugin owns the device, so the handle carries the plugin's own
+ * reference in its deleter rather than a second count beside it. Empty for a
+ * plugin that is not one of MAGDA's devices.
+ */
+inline std::shared_ptr<MagdaDevice> deviceHandleFromPlugin(te::Plugin::Ptr plugin) {
+    auto* device = deviceFromPlugin<MagdaDevice>(plugin.get());
+    if (device == nullptr)
+        return {};
+
+    std::shared_ptr<te::Plugin> owner(plugin.get(), [held = plugin](te::Plugin*) {});
+    return {std::move(owner), device};
+}
+
 }  // namespace magda::daw::audio::tracktion_adapter

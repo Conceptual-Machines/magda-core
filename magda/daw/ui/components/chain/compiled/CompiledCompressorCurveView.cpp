@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaCompressorCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -83,8 +82,8 @@ CompiledCompressorCurveView::CompiledCompressorCurveView(juce::String /*pluginId
 }
 
 void CompiledCompressorCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaCompressorCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaCompressorCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledCompressorCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -423,9 +422,11 @@ const CompiledPresentationSpec& getMagdaCompressorPresentation() {
     return kSpec;
 }
 
-void CompiledCompressorCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaCompressorCompiledPlugin>(plugin));
+void CompiledCompressorCurveView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaCompressorCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

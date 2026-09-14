@@ -26,6 +26,10 @@ namespace juce {
 class AudioDeviceManager;
 }
 
+namespace magda::daw::audio {
+class MagdaDevice;
+}
+
 namespace magda {
 
 class AudioBridge;
@@ -311,6 +315,24 @@ class AudioEngine : public AudioEngineListener {
     /// as the track meters above (#2570).
     virtual DeviceMeters& deviceMeters() = 0;
     virtual const DeviceMeters& deviceMeters() const = 0;
+
+    /**
+     * @brief The MAGDA device rendering at @p devicePath, or null (#2585).
+     *
+     * What a faceplate reads its telemetry off: the oscilloscope's ring, the
+     * sequencer's playing step, a compiled device's own DSP figures. The
+     * instance is the one filling those, so it comes from whichever engine is
+     * rendering -- the fork's plugin under Tracktion, the plan's device under
+     * magda -- and never from a parallel instance nothing renders.
+     *
+     * Held open for as long as the handle lives, so a UI reading a ring cannot
+     * be left on an instance a rebuild freed. Message thread. Null for a path
+     * nothing renders yet, and for a device that is not one of MAGDA's own.
+     */
+    virtual std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
+        const ChainNodePath& /*devicePath*/) const {
+        return {};
+    }
 
     // ===== Plugin state =====
     //

@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -31,13 +32,14 @@ class CompiledChorusCurveView final : public juce::Component,
         return 120;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaChorusCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaChorusCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
     int preferredHeight() const override {
         return getPreferredHeight();
@@ -50,7 +52,7 @@ class CompiledChorusCurveView final : public juce::Component,
     void resampleFromPlugin();
     float effectiveRateHz() const;
 
-    magda::daw::audio::compiled::MagdaChorusCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaChorusCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     int voices_ = 2;  // 1..3, count of active delay lines per channel

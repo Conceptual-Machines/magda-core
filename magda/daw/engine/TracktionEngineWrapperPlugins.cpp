@@ -18,6 +18,7 @@
 #include "../audio/plugins/InternalPluginRegistry.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../audio/plugins/tracktion/TracktionInternalPluginAdapter.hpp"
+#include "../audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "../core/AppPaths.hpp"
 #include "DeviceParameterScan.hpp"
 #include "PluginMetadataStore.hpp"
@@ -917,6 +918,15 @@ juce::String TracktionEngineWrapper::formatDeviceParameter(const ChainNodePath& 
     auto* processor = audioBridge_->getDeviceProcessor(devicePath);
     return processor != nullptr ? processor->formatParameterValue(paramIndex, normalised)
                                 : juce::String{};
+}
+
+std::shared_ptr<daw::audio::MagdaDevice> TracktionEngineWrapper::renderedDevice(
+    const ChainNodePath& devicePath) const {
+    if (audioBridge_ == nullptr)
+        return {};
+
+    return daw::audio::tracktion_adapter::deviceHandleFromPlugin(
+        audioBridge_->getPlugin(devicePath));
 }
 
 }  // namespace magda

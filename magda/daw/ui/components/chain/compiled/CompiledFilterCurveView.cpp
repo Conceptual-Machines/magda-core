@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "audio/plugins/compiled/MagdaFilterCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/ParameterUtils.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -119,8 +118,8 @@ CompiledFilterCurveView::CompiledFilterCurveView(juce::String pluginId) {
 }
 
 void CompiledFilterCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledFilterCurveView::setRawState(int engine, int modeIndex, float cutoffHz,
@@ -198,11 +197,11 @@ void CompiledFilterCurveView::updateTargetValues() {
     using FilterFamily = CompiledFilterCurveView::FilterFamily;
     const ParamLinkContext* linkContext = hasLinkContext_ ? &linkContext_ : nullptr;
     const float cutoff =
-        modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 0, cutoffHz_, linkContext, compiledPlugin_.get());
     const float resonance =
-        modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 1, resonance_, linkContext, compiledPlugin_.get());
     const float drive =
-        modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_);
+        modulatedValueForSlot(deviceSnapshot_, 2, drive_, linkContext, compiledPlugin_.get());
 
     using Filter = magda::daw::audio::compiled::MagdaFilterCompiledPlugin;
     const int engine = static_cast<int>(std::round(valueForSlot(
@@ -429,9 +428,10 @@ const CompiledPresentationSpec& getMagdaFilterPresentation() {
     return kSpec;
 }
 
-void CompiledFilterCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaFilterCompiledPlugin>(plugin));
+void CompiledFilterCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaFilterCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

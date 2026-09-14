@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 
@@ -35,13 +37,14 @@ class CompiledDelayCurveView final : public juce::Component,
         return 140;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaDelayCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaDelayCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}
     int preferredHeight() const override {
         return getPreferredHeight();
@@ -53,7 +56,7 @@ class CompiledDelayCurveView final : public juce::Component,
     void resampleFromPlugin();
     float effectiveDelaySeconds() const;
 
-    magda::daw::audio::compiled::MagdaDelayCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaDelayCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     // Cached display values driven by the host params. Repaints fire only

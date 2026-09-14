@@ -14,9 +14,12 @@
 #include "io/PrefetchThread.hpp"
 #include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
+#include "magda/daw/audio/plugins/AnalysisTelemetry.hpp"
+#include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/engine/EngineDeviceFactory.hpp"
+#include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -70,6 +73,22 @@ magda::DeviceInfo polySynth(magda::DeviceId id) {
         device.parameters.push_back(std::move(info));
     }
 
+    return device;
+}
+
+/// The oscilloscope as a project saves it: a transparent analysis device whose
+/// whole output is the ring a faceplate draws (#2585).
+magda::DeviceInfo oscilloscope(magda::DeviceId id) {
+    using Scope = magda::daw::audio::OscilloscopePlugin;
+
+    magda::DeviceInfo device;
+    device.id = id;
+    device.name = "Oscilloscope";
+    device.pluginId = Scope::xmlTypeName;
+    device.deviceType = magda::DeviceType::Analysis;
+    device.format = magda::PluginFormat::Internal;
+    device.audioInputChannels = 2;
+    device.audioOutputChannels = 2;
     return device;
 }
 
@@ -174,6 +193,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testDroppedKeyIsStillRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testMetersReadWhatWasRendered(); });
+        magda::test::runWithCleanJuceState([this] { testAnalyzerTelemetryIsWhatWasRendered(); });
         magda::test::runWithCleanJuceState([this] { testAuditionReachesAnIdleTrack(); });
         magda::test::runWithCleanJuceState([this] { testDeviceMidiReachesOnlyItsOwnTrack(); });
         magda::test::runWithCleanJuceState([this] { testRouteRemovalPanicsTheInput(); });
@@ -624,6 +644,93 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(metered == engine::DeviceKey{magda::ChainSegment::Fx, magda::DeviceId{1}},
                "Keyed by the device it measures");
         expect(slotPeak > 0.0f, "The slot's meter read the note too");
+    }
+
+    void testAnalyzerTelemetryIsWhatWasRendered() {
+        beginTest("An analyser's telemetry carries the signal the engine rendered");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+        track->chain.fxChainElements.emplace_back(oscilloscope(2));
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 4.0);
+        clips.addMidiNote(
+            clipId, magda::MidiNote{
+                        .noteNumber = 60, .velocity = 100, .startBeat = 0.0, .lengthBeats = 2.0});
+
+        const auto& tracks = trackManager.getTracks();
+        const engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+
+        host::EngineFileReaders files;
+        engine::PrefetchThread reader(false);
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        engine::ClipVoicePool voices(files, reader, context);
+        engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs());
+
+        const auto plan =
+            std::make_shared<const engine::RenderPlan>(engine::compileRenderPlan(tracks, *master));
+
+        engine::PlanValues values;
+        engine::resolvePlanValues(*plan, tracks, *master, values);
+        expect(session
+                   .publish(plan, context, engine::collectRuntimeStateIds(tracks, *master),
+                            std::move(values))
+                   .published,
+               "The plan is published");
+        expect(factory.unbuilt().empty(), "The catalog built the analyser");
+
+        session.publishClips(std::make_shared<const engine::ClipSnapshot>(
+            engine::compileClipSnapshot(host::clipLanesFor(tracks), host::clipSources(), tempo)));
+        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        for (auto block = 0; block < 43; ++block)
+            session.process(context.maxBlockSize, output);
+
+        // The lease a UI reads through: the instance the plan rendered, asked
+        // for the surface rather than cast to a plugin class (#2585).
+        const auto held = session.device(engine::DeviceKey{magda::ChainSegment::Fx, 2});
+        auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(held.get());
+        expect(hosted != nullptr, "The analyser is the device the plan rendered");
+        if (hosted == nullptr)
+            return;
+
+        auto* scope = dynamic_cast<magda::daw::audio::OscilloscopeTelemetry*>(
+            hosted->device().telemetry(magda::daw::audio::OscilloscopeTelemetry::kKey));
+        expect(scope != nullptr, "The device answers its telemetry by key");
+        if (scope == nullptr)
+            return;
+
+        expect(scope->sampleRate() == context.sampleRate, "The tap says what it was fed at");
+        expect(scope->writePosition() > 0, "The tap was written while the note sounded");
+
+        std::array<float, 512> trace{};
+        scope->readLatest(trace.data(), static_cast<int>(trace.size()));
+        const auto loudest =
+            std::ranges::max(trace, {}, [](float sample) { return std::abs(sample); });
+        expect(std::abs(loudest) > 0.0f, "What it holds is the signal, not silence");
+
+        // Nothing else in the project has one, so a UI asking the wrong slot
+        // gets nothing rather than the analyser's ring.
+        const auto synth = session.device(engine::DeviceKey{magda::ChainSegment::Fx, 1});
+        auto* hostedSynth = dynamic_cast<adapter::EngineMagdaDevice*>(synth.get());
+        expect(hostedSynth != nullptr &&
+                   hostedSynth->device().telemetry(
+                       magda::daw::audio::OscilloscopeTelemetry::kKey) == nullptr,
+               "A device with no such surface answers nothing");
     }
 
     /// A track with a Poly Synth on it, which is the shortest path from a note

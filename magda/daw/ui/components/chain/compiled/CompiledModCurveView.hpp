@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -30,14 +31,15 @@ class CompiledModCurveView final : public juce::Component,
         return 110;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaModCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaModCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     // CompiledDevicePanel
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
@@ -56,7 +58,7 @@ class CompiledModCurveView final : public juce::Component,
     float effectiveRateHz() const;
     float lfoSample(double phase) const;
 
-    magda::daw::audio::compiled::MagdaModCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaModCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     int mode_ = 0;   // 0 trem, 1 vib, 2 pan

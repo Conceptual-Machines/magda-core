@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaFreqShiftCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -38,13 +37,15 @@ CompiledFreqShiftCurveView::CompiledFreqShiftCurveView(juce::String /*pluginId*/
 }
 
 void CompiledFreqShiftCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaFreqShiftCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFreqShiftCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledFreqShiftCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaFreqShiftCompiledPlugin>(plugin));
+void CompiledFreqShiftCurveView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaFreqShiftCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledFreqShiftCurveView::updateFromDevice(const magda::DeviceInfo& device) {

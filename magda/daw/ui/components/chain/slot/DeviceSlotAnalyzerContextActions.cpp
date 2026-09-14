@@ -1,16 +1,13 @@
 #include "slot/DeviceSlotAnalyzerContextActions.hpp"
 
-#include "audio/AudioBridge.hpp"
-#include "audio/plugins/OscilloscopePlugin.hpp"
-#include "audio/plugins/SpectrumAnalyzerPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
+#include "audio/plugins/AnalysisTelemetry.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
 #include "custom_ui/AnalyzerWindow.hpp"
+#include "custom_ui/DeviceTelemetrySources.hpp"
 #include "custom_ui/OscilloscopeUI.hpp"
-#include "custom_ui/PluginTelemetrySources.hpp"
 #include "custom_ui/SpectrumAnalyzerUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -34,21 +31,31 @@ void toggleDeviceSlotAnalyzerWindow(std::unique_ptr<AnalyzerWindow>& analyzerWin
     }
 
     auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-    auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-    if (bridge == nullptr)
+    if (engine == nullptr)
         return;
 
-    auto plugin = bridge->getPlugin(nodePath);
+    // Which window to open comes from what the rendered device measures, so the
+    // popout opens under either engine (#2585). The source re-resolves by path
+    // on every read rather than holding this instance, so a rebuild of the
+    // device behind the window is a rebind and not a dangling read.
+    auto renderedNow = engine->renderedDevice(nodePath);
+    if (renderedNow == nullptr)
+        return;
+
+    RenderedDeviceQuery rendered = [path = nodePath]() -> std::shared_ptr<daw::audio::MagdaDevice> {
+        auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
+        return audioEngine != nullptr ? audioEngine->renderedDevice(path)
+                                      : std::shared_ptr<daw::audio::MagdaDevice>{};
+    };
+
     std::unique_ptr<juce::Component> content;
-    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
-            plugin.get()) != nullptr) {
+    if (renderedNow->telemetry(daw::audio::OscilloscopeTelemetry::kKey) != nullptr) {
         auto ui = std::make_unique<OscilloscopeUI>();
-        ui->setTelemetrySource(std::make_shared<OscilloscopePluginTelemetrySource>(plugin));
+        ui->setTelemetrySource(std::make_shared<DeviceOscilloscopeTelemetry>(rendered));
         content = std::move(ui);
-    } else if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
-                   plugin.get()) != nullptr) {
+    } else if (renderedNow->telemetry(daw::audio::SpectrumTelemetry::kKey) != nullptr) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
-        ui->setTelemetrySource(std::make_shared<SpectrumPluginTelemetrySource>(plugin));
+        ui->setTelemetrySource(std::make_shared<DeviceSpectrumTelemetry>(rendered));
         ui->setTrackId(nodePath.trackId);  // enables the masking overlay in the external window
         content = std::move(ui);
     }

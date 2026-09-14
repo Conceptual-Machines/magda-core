@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -31,13 +32,14 @@ class CompiledLimiterCurveView final : public juce::Component,
         return 146;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaLimiterCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)> cb) override {
         onParameterChanged = std::move(cb);
     }
@@ -64,7 +66,7 @@ class CompiledLimiterCurveView final : public juce::Component,
     float dbToY(float db) const;
     Handle pickHandle(float y) const;
 
-    magda::daw::audio::compiled::MagdaLimiterCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaLimiterCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     float thresholdDb_ = -1.0f;

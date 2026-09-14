@@ -2,6 +2,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
+
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
 #include "params/ParamLinkResolver.hpp"
@@ -24,7 +26,8 @@ class CompiledFilterCurveView final : public juce::Component,
 
     void updateFromDevice(const magda::DeviceInfo& device,
                           const ParamLinkContext* linkContext) override;
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaFilterCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> plugin);
 
     /// Drive the curve directly from raw values, for hosts that are not the
     /// MagdaFilterCompiledPlugin (e.g. the poly synth's built-in SVF). Bypasses
@@ -50,7 +53,7 @@ class CompiledFilterCurveView final : public juce::Component,
     void updateFromDevice(const magda::DeviceInfo& device) override {
         updateFromDevice(device, nullptr);
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
     int preferredHeight() const override {
         return getPreferredHeight();
@@ -79,7 +82,7 @@ class CompiledFilterCurveView final : public juce::Component,
     magda::DeviceInfo deviceSnapshot_;
     ParamLinkContext linkContext_;
     bool hasLinkContext_ = false;
-    magda::daw::audio::compiled::MagdaFilterCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFilterCompiledPlugin> compiledPlugin_;
 
     FilterMode modeForIndex() const;
     float responseDbAt(float frequencyHz) const;

@@ -5,7 +5,6 @@
 
 #include "../../../utils/CurveLabelLayout.hpp"
 #include "audio/plugins/compiled/MagdaEqCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
@@ -255,20 +254,20 @@ CompiledEqCurveView::CompiledEqCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledEqCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaEqCompiledPlugin* plugin) {
+    std::shared_ptr<magda::daw::audio::compiled::MagdaEqCompiledPlugin> plugin) {
     if (compiledPlugin_ == plugin)
         return;
 
-    compiledPlugin_ = plugin;
+    compiledPlugin_ = std::move(plugin);
     lastPreSpectrumWritePosition_ = 0;
     lastPostSpectrumWritePosition_ = 0;
     std::fill(preSpectrumDb_.begin(), preSpectrumDb_.end(), kSpectrumMinDb);
     std::fill(postSpectrumDb_.begin(), postSpectrumDb_.end(), kSpectrumMinDb);
 }
 
-void CompiledEqCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaEqCompiledPlugin>(plugin));
+void CompiledEqCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaEqCompiledPlugin>(
+        std::move(device)));
 }
 
 void CompiledEqCurveView::updateFromDevice(const magda::DeviceInfo& device) {

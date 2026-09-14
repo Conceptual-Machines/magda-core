@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaUtilityCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/components/mixer/LevelMeterScale.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -384,9 +383,10 @@ void CompiledUtilityView::resized() {
     panLinkSlot_.toFront(false);
 }
 
-void CompiledUtilityView::bindPlugin(te::Plugin* plugin) {
-    compiledPlugin_ = magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-        magda::daw::audio::compiled::MagdaUtilityCompiledPlugin>(plugin);
+void CompiledUtilityView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    compiledPlugin_ =
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaUtilityCompiledPlugin>(
+            std::move(device));
 }
 
 const CompiledPresentationSpec& getMagdaUtilityPresentation() {

@@ -316,6 +316,10 @@ class TracktionEngineWrapper : public AudioEngine,
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const override;
 
+    /** @brief The MAGDA device inside the fork's plugin at @p devicePath (#2585). */
+    std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
+        const ChainNodePath& devicePath) const override;
+
     /**
      * @brief Export capture pass for External FX / Instrument devices (#1623)
      * @return Pointer to the service, or nullptr when unavailable (headless)

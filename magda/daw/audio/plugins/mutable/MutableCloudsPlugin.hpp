@@ -6,6 +6,7 @@
 
 #include "audio/analysis/AudioTapBuffer.hpp"
 #include "core/ParameterUtils.hpp"
+#include "plugins/AnalysisTelemetry.hpp"
 #include "plugins/MagdaDevice.hpp"
 
 namespace magda::daw::audio {
@@ -29,7 +30,7 @@ namespace magda::daw::audio {
  * plugin used, because projects address the parameters by index and store
  * their values in display units.
  */
-class MutableCloudsPlugin : public MagdaDevice {
+class MutableCloudsPlugin : public MagdaDevice, public GrainEnvelopeTelemetry {
   public:
     MutableCloudsPlugin();
     ~MutableCloudsPlugin() override;
@@ -114,6 +115,27 @@ class MutableCloudsPlugin : public MagdaDevice {
     static constexpr double kBufferSeconds = 8.0;
     const AudioTapBuffer& inputEnvelopeTap() const {
         return inputEnvelope_;
+    }
+
+    // The envelope, as whatever draws it asks for it (#2585).
+    std::string_view telemetryKey() const override {
+        return kKey;
+    }
+
+    DeviceTelemetry* telemetry(std::string_view key) override {
+        return key == kKey ? this : nullptr;
+    }
+
+    const DeviceTelemetry* telemetry(std::string_view key) const override {
+        return key == kKey ? this : nullptr;
+    }
+
+    std::size_t writePosition() const override {
+        return inputEnvelope_.writePosition();
+    }
+
+    std::size_t readLatest(float* dest, int numSamples) const override {
+        return inputEnvelope_.readLatest(dest, numSamples);
     }
 
   private:

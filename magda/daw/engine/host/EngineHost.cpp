@@ -21,6 +21,7 @@
 #include "../../audio/plugins/engine/DeviceControl.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "../../audio/plugins/engine/EngineExternalDevice.hpp"
+#include "../../audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "../../core/AddressedParameters.hpp"
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
@@ -176,6 +177,16 @@ adapter::EngineExternalDevice* externalIn(engine::EngineDevice& device) {
         return externalIn(tracing->wrapped());
 
     return dynamic_cast<adapter::EngineExternalDevice*>(&device);
+}
+
+/// @brief The MAGDA device inside @p device, or null if it is not one (#2585).
+/// Unwraps the trace the same way externalIn does, and for the same reason.
+audio::MagdaDevice* magdaIn(engine::EngineDevice& device) {
+    if (auto* tracing = dynamic_cast<TracingDevice*>(&device))
+        return magdaIn(tracing->wrapped());
+
+    auto* hosted = dynamic_cast<adapter::EngineMagdaDevice*>(&device);
+    return hosted != nullptr ? &hosted->device() : nullptr;
 }
 
 /// The racks a project holds, by the id a rack meter is keyed with (#2649).
@@ -1223,6 +1234,36 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return external != nullptr ? external->describeParameters() : HostParameters{};
     }
 
+    /**
+     * @brief The MAGDA device rendering at @p devicePath, or null (#2585).
+     *
+     * Addressed off the same map the slot meters read, so the device a
+     * faceplate draws and the device it reads telemetry off cannot come from
+     * two walks that disagree -- and so a repaint costs a scan of the project's
+     * devices rather than a walk of its chains.
+     *
+     * The store's lease comes back with it: a UI reading a ring holds the
+     * instance open for the duration of the read, whatever a publish does to
+     * the plan in between.
+     */
+    std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const {
+        if (session_ == nullptr || !devicePath.isValid())
+            return {};
+
+        const auto slot = std::ranges::find(devicePaths_, devicePath,
+                                            [](const auto& entry) { return entry.second; });
+        if (slot == devicePaths_.end())
+            return {};
+
+        auto held = session_->device(slot->first);
+        if (held == nullptr)
+            return {};
+
+        auto* device = magdaIn(*held);
+        return device != nullptr ? std::shared_ptr<audio::MagdaDevice>{std::move(held), device}
+                                 : nullptr;
+    }
+
     std::optional<float> observedParameter(const ChainNodePath& devicePath, int paramIndex) const {
         const auto key = keyOfDeviceAt(devicePath);
         if (!key.has_value())
@@ -1594,6 +1635,11 @@ juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, 
 
 HostParameters EngineHost::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return impl_->describeDeviceParameters(devicePath);
+}
+
+std::shared_ptr<audio::MagdaDevice> EngineHost::renderedDevice(
+    const ChainNodePath& devicePath) const {
+    return impl_->renderedDevice(devicePath);
 }
 
 std::optional<float> EngineHost::observedParameter(const ChainNodePath& devicePath,

@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaFlangerCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -54,13 +53,14 @@ CompiledFlangerCurveView::CompiledFlangerCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledFlangerCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaFlangerCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledFlangerCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaFlangerCompiledPlugin>(plugin));
+void CompiledFlangerCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaFlangerCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledFlangerCurveView::updateFromDevice(const magda::DeviceInfo& device) {
