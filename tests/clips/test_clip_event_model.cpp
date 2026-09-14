@@ -2,7 +2,9 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "AudioClipTestHelpers.hpp"
+#include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipInfo.hpp"
+#include "core/ClipManager.hpp"
 #include "core/SourcePool.hpp"
 
 using namespace magda;
@@ -502,4 +504,144 @@ TEST_CASE("A warped loop reports its warped timeline span", "[clip][event][loop]
         REQUIRE(clip.loopStartInBeats(kProjectBpm) == Approx(1.0));
         REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(2.0));
     }
+}
+
+// =============================================================================
+// Beat mode needs a tempo (#2676)
+// =============================================================================
+
+TEST_CASE("A session clip enters beat mode only when a tempo is known",
+          "[clip][event][session][interpretation]") {
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    SECTION("A file that says what it is comes up in beat mode") {
+        auto& pool = SourcePool::getInstance();
+        pool.seedFactsForTesting("/tmp/known-tempo.wav", 8.0, 44100.0);
+
+        const auto sourceId = pool.acquire("/tmp/known-tempo.wav");
+        pool.getMutable(sourceId)->detectedBpm = 140.0;
+
+        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/known-tempo.wav",
+                                                       ClipView::Session, 120.0);
+
+        const auto* event = clips.getClip(clipId)->primaryEvent();
+        REQUIRE(event != nullptr);
+        REQUIRE(event->interpBpm == Approx(140.0));
+        REQUIRE(event->autoTempo);
+    }
+
+    SECTION("A file that says nothing comes up in time mode") {
+        // Beat mode with no tempo behind it is a claim nothing can honour: the
+        // inspector reads BEAT, loopLengthBeats() answers zero, and the engine
+        // declines the beat face and plays the material at its own rate anyway.
+        SourcePool::getInstance().seedFactsForTesting("/tmp/no-tempo.wav", 8.0, 44100.0);
+
+        const auto clipId =
+            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/no-tempo.wav", ClipView::Session, 120.0);
+
+        const auto* clip = clips.getClip(clipId);
+        const auto* event = clip->primaryEvent();
+        REQUIRE(event != nullptr);
+        REQUIRE(event->interpBpm == Approx(0.0));
+        REQUIRE(!event->autoTempo);
+
+        // Still a session clip: it loops, and the slot plays the whole source.
+        REQUIRE(clip->loopEnabled);
+    }
+
+    SECTION("A tempo detected at creation is what puts it into beat mode") {
+        // A real file, because the detection pass is guarded on one existing.
+        // Its contents do not matter: the pool answers from the seeded facts.
+        juce::TemporaryFile temp(".wav");
+        temp.getFile().replaceWithText("not audio");
+        const auto path = temp.getFile().getFullPathName();
+
+        SourcePool::getInstance().seedFactsForTesting(path, 8.0, 44100.0);
+        AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
+
+        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+
+        const auto* event = clips.getClip(clipId)->primaryEvent();
+        REQUIRE(event != nullptr);
+
+        // Without this the slot could never leave time mode: applyAudioClipBeats
+        // takes the interpretation but grants no mode, so a detection arriving
+        // at creation would land on a clip nothing ever moves out of time mode.
+        REQUIRE(event->autoTempo);
+        REQUIRE(event->interpBpm == Approx(174.0));
+    }
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+}
+
+TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
+          "[clip][event][interpretation][session]") {
+    // Detection cannot answer for a pad, a vocal take or a one-shot, and a user
+    // may simply disagree with what it found. Neither is a reason to refuse the
+    // fields: what a file is, is a fact about the file, and beat mode is a
+    // separate choice about how to play it (#2676).
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+
+    SourcePool::getInstance().seedFactsForTesting("/tmp/untellable.wav", 4.0, 44100.0);
+
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/untellable.wav", ClipView::Session, 120.0);
+
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    ClipManager::AudioClipBeatsUpdate update;
+    update.interpretationBpm = 90.0;
+    update.interpretationTotalBeats = 6.0;
+    clips.applyAudioClipBeats(clipId, update, 120.0);
+
+    const auto* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == Approx(90.0));
+    REQUIRE(event->interpTotalBeats == Approx(6.0));
+
+    // Typing a tempo says what the file is. Whether to play it in beats is the
+    // BEAT toggle, and this path does not decide it either way.
+    REQUIRE(!event->autoTempo);
+
+    // But it is answerable now, which it was not before.
+    REQUIRE(event->hasInterpretedBpm());
+
+    clips.clearAllClips();
+}
+
+TEST_CASE("BEAT grants beat mode only with a tempo behind it",
+          "[clip][event][interpretation][session]") {
+    // The toggle is the one way into beat mode by hand, and it wrote autoTempo
+    // directly -- so a clip could still claim the mode with every beat view at
+    // zero, which is the state creation stopped producing (#2676).
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    SourcePool::getInstance().seedFactsForTesting("/tmp/nothing-says.wav", 4.0, 44100.0);
+
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/nothing-says.wav", ClipView::Session, 120.0);
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    clips.setAutoTempo(clipId, true, 120.0);
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    // The source BPM field is what supplies one, and it answers in time mode.
+    ClipManager::AudioClipBeatsUpdate update;
+    update.interpretationBpm = 90.0;
+    update.interpretationTotalBeats = 6.0;
+    clips.applyAudioClipBeats(clipId, update, 120.0);
+
+    clips.setAutoTempo(clipId, true, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
 }

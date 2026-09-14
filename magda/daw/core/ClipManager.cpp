@@ -421,12 +421,16 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     }
 
     if (view == ClipView::Session) {
-        // Session clips loop by default and follow project tempo. Leaving the
-        // loop region at zero length means "the whole source" until Tracktion
-        // loopInfo populates the interpretation.
+        // Session clips loop by default. A zero-length loop region means "the
+        // whole source", which is what a slot plays until something says
+        // otherwise.
         clip.loopEnabled = true;
-        newEvent.autoTempo = true;
         newEvent.loopLengthSamples = 0;
+
+        // A session slot asks for beat mode; the event grants it only with a
+        // tempo behind it. seedInterpretationFromSource above fills one when
+        // the file said what it is (#2676).
+        newEvent.setBeatMode(true);
     }
     clips_[clip.id] = clip;
 
@@ -480,9 +484,17 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
 
             auto& mgr = ClipManager::getInstance();
             auto* c = mgr.getClip(cid);
-            const auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
+            auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
             if (ev == nullptr || !interpretationBpmLooksDefaulted(*c, *ev, creationProjectBPM))
                 return;
+
+            // The tempo arriving is what beat mode was waiting for. Without
+            // this a slot that came up in time mode for want of one could never
+            // leave it: applyAudioClipBeats below answers only for a clip
+            // already in beat mode (#1157), so the detection would be dropped
+            // by the very state it is meant to resolve (#2676).
+            ev->interpBpm = detectedBPM;
+            ev->setBeatMode(true);
 
             double fileDuration = ev->sourceDurationSeconds();
             if (auto* thumb =
@@ -1991,11 +2003,17 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
                                       double projectBPM) {
     auto* clip = getClip(clipId);
     auto* event = primaryEventOf(clip);
-    if (event == nullptr || !event->autoTempo)
+    if (event == nullptr)
         return;
 
     // (1) Interpretation. BPM and total beats describe the same fixed-duration
     // source, so inspector edits may update both together.
+    //
+    // Not gated on beat mode, unlike the beat-domain intent below. What a file
+    // is, is a fact about the file, and a clip in time mode for want of one is
+    // exactly where a user supplies it: detection cannot answer for a pad or a
+    // one-shot, and refusing the edit there would leave beat mode unreachable
+    // by hand (#2676).
     if (update.interpretationBpm)
         event->interpBpm = juce::jmax(0.0, *update.interpretationBpm);
     if (update.interpretationTotalBeats) {
@@ -2015,7 +2033,15 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
         }
     }
 
-    // (2) User-intent fields — beat-domain canonicals.
+    // (2) User-intent fields — beat-domain canonicals. Views through the
+    // interpretation above, so they mean nothing without beat mode. The
+    // interpretation is what this path answered for; the timeline caches below
+    // depend on the project tempo and the placement, neither of which moved.
+    if (!event->autoTempo) {
+        notifyClipPropertyChanged(clipId);
+        return;
+    }
+
     if (update.lengthBeats) {
         double minBeats =
             isValidBpm(projectBPM) ? (ClipInfo::MIN_CLIP_LENGTH * projectBPM / 60.0) : 0.0;

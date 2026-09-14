@@ -25,9 +25,9 @@ struct AudioClipSourceDisplay {
     double bpm = 0.0;         ///< BPM to display; <= 0 means unknown ("--").
     double totalBeats = 0.0;  ///< Source total beats to display.
 
-    /// Source BPM / Beats only drive playback in beat mode (autoTempo); in
-    /// time-based mode the engine uses speedRatio and never reads them, so they
-    /// are inert there and should be greyed out.
+    /// Source BPM / Beats are editable in either mode: they say what the file
+    /// is, and a clip left in time mode for want of a tempo is exactly where a
+    /// user states it (#2676). False only for a clip that is not audio.
     bool sourceFieldsActive = false;
     /// Speed (speedRatio) is the inverse: live in time-based mode, forced to 1.0
     /// (and greyed) in beat mode.
@@ -39,11 +39,12 @@ inline AudioClipSourceDisplay computeAudioClipSourceDisplay(const ClipInfo& clip
                                                             double cachedSourceBpm) {
     AudioClipSourceDisplay d;
     const auto& event = audioEventRef(clip);
-    d.sourceFieldsActive = event.autoTempo;
     d.speedActive = !event.autoTempo;
 
     if (!clip.isAudio())
         return d;
+
+    d.sourceFieldsActive = true;
 
     const double storedBpm = event.interpBpm;
     const bool storedBpmLooksDefaulted =

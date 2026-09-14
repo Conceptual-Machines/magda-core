@@ -487,36 +487,18 @@ void ClipInspector::initClipPropertiesSection() {
         if (durationSeconds <= 0.0)
             durationSeconds = magda::audioEventRef(*clip).sourceLengthSeconds(clip->length);
 
-        if (magda::audioEventRef(*clip).autoTempo) {
-            magda::ClipManager::AudioClipBeatsUpdate u;
-            u.interpretationBpm = newBPM;
-            if (thumbDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                u.sourceDurationSeconds = thumbDuration;
-            if (durationSeconds > 0.0) {
-                u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-                u.lockInterpretationTotalBeats = true;
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.applyAudioClipBeats(primaryClipId(), u, bpm);
-        } else {
-            // Non-autoTempo audio: source interpretation is stored metadata,
-            // not playback-affecting, but the inspector reads it for display
-            // and tooling (autoTempo toggle, future stretch correctness, etc.)
-            // so the BPM-and-totalBeats pair must stay coherent here too.
-            if (auto* event = clip->primaryEvent()) {
-                event->interpBpm = newBPM;
-                if (auto* src = magda::SourcePool::getInstance().getMutable(event->sourceId);
-                    src != nullptr && thumbDuration > 0.0 && src->durationSeconds <= 0.0) {
-                    src->durationSeconds = thumbDuration;
-                }
-                if (durationSeconds > 0.0) {
-                    event->interpTotalBeats = durationSeconds * newBPM / 60.0;
-                    event->interpTotalBeatsLocked = true;
-                }
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.forceNotifyClipPropertyChanged(primaryClipId());
+        // One path in either mode: applyAudioClipBeats takes the interpretation
+        // whether or not the clip is in beat mode (#2676), and a second route
+        // here is how the two drifted apart before.
+        magda::ClipManager::AudioClipBeatsUpdate u;
+        u.interpretationBpm = newBPM;
+        if (thumbDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
+            u.sourceDurationSeconds = thumbDuration;
+        if (durationSeconds > 0.0) {
+            u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
+            u.lockInterpretationTotalBeats = true;
         }
+        magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
         updateFromSelectedClip();
@@ -541,7 +523,7 @@ void ClipInspector::initClipPropertiesSection() {
     clipBeatsLengthValue_->onValueChange = [this]() {
         if (primaryClipId() != magda::INVALID_CLIP_ID) {
             auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
-            if (clip && magda::audioEventRef(*clip).autoTempo) {
+            if (clip != nullptr && clip->isAudio()) {
                 double newSourceBeats = clipBeatsLengthValue_->getValue();
                 double projectBpm =
                     timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
@@ -1037,7 +1019,9 @@ void ClipInspector::initClipPropertiesSection() {
             if (event != nullptr && magda::isValidBpm(displayedBpm)) {
                 event->interpBpm = displayedBpm;
             }
-            if (event != nullptr && clipBeatsLengthValue_ && clipBeatsLengthValue_->isVisible()) {
+            // Beats is shown in either mode now, so visibility no longer stands in
+            // for an interpretation: read it only when there is one to save (#2676).
+            if (event != nullptr && event->hasInterpretedBpm() && clipBeatsLengthValue_) {
                 const double displayedBeats = clipBeatsLengthValue_->getValue();
                 if (displayedBeats > 0.0) {
                     event->interpTotalBeats = displayedBeats;
