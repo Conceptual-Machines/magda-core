@@ -469,9 +469,7 @@ juce::StringArray MagdaAudioEngine::getGrooveTemplateNames() const {
 }
 std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSession(
     bool resumePlaybackWhenFinished) {
-    juce::ignoreUnused(resumePlaybackWhenFinished);
-    reportUnwired("createOfflineRenderSession", "#2555");
-    return nullptr;
+    return host_->createOfflineRenderSession(resumePlaybackWhenFinished);
 }
 std::vector<SamplerMediaReference> MagdaAudioEngine::getSamplerMediaReferences() {
     reportUnwired("getSamplerMediaReferences", "#2554");

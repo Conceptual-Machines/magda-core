@@ -83,6 +83,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
 
     void prepare(const magda::engine::RenderContext& context) override;
     void reset() override;
+    void setOfflineRender(bool offline) override;
     void setMidiInputBoundBytes(int bytes) override;
     void setMidiOutputBoundBytes(int bytes) override;
     bool forwardsMidiInput() const override;

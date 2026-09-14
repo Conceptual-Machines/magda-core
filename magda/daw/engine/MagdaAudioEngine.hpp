@@ -38,8 +38,8 @@ class TracktionEngineWrapper;
  * output buffer is magda::engine and nothing else, and what the ruler converts
  * through is the map it renders with. Tempo automation is #2554.
  *
- * Recording, session launch and offline render are not wired yet (#2552,
- * #2553, #2555) and say so once in the log rather than answering silently.
+ * Recording and session launch are not wired yet (#2552, #2553) and say so
+ * once in the log rather than answering silently.
  *
  * ## Why it holds a Tracktion engine
  *

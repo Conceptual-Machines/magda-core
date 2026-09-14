@@ -90,6 +90,9 @@ class TracingDevice final : public magda::engine::EngineDevice {
     void reset() override {
         device_->reset();
     }
+    void setOfflineRender(bool offline) override {
+        device_->setOfflineRender(offline);
+    }
     void setMidiInputBoundBytes(int bytes) override {
         device_->setMidiInputBoundBytes(bytes);
     }

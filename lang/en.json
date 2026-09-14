@@ -237,6 +237,7 @@
     "label.format": "Format:",
     "label.sample_rate": "Sample Rate:",
     "label.bit_depth": "Bit Depth:",
+    "label.dither": "Dither:",
     "label.lead_in_silence": "Lead-in Silence:",
     "label.export_range": "Export Range:",
     "option.entire_song": "Entire Song",
@@ -247,7 +248,9 @@
     "button.export": "Export",
     "bit_depth.16": "16-bit",
     "bit_depth.24": "24-bit",
-    "bit_depth.32_float": "32-bit Float"
+    "bit_depth.32_float": "32-bit Float",
+    "dither.off": "Off",
+    "dither.shaped": "Noise Shaped"
   },
   "export_midi": {
     "label.midi_format": "{0} Format:",
@@ -318,7 +321,6 @@
     "progress.exporting_audio": "Exporting Audio",
     "progress.preparing": "Preparing to export",
     "progress.rendering": "Rendering:",
-    "progress.trimming": "Trimming preroll",
     "progress.complete": "Export complete!",
     "progress.failed": "Export failed",
     "alert.cancelled_title": "Export Cancelled",
@@ -333,7 +335,6 @@
     "capture.error_setup": "Couldn't set up the external hardware capture. The export was aborted.",
     "capture.error_failed": "Recording the external hardware returns failed. The export was aborted.",
     "capture.cleanup_failed": "Cleaning up after the hardware capture pass failed.",
-    "error.trim_failed": "Render succeeded but failed to trim preroll.",
     "error.file_not_created": "Render completed but file was not created. The project may be empty or contain no audio.",
     "error.render_failed": "Render job failed",
     "error.cancelled": "Export cancelled by user",

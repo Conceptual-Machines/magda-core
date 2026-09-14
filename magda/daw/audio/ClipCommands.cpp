@@ -16,10 +16,8 @@
 #include "audio/AudioBridge.hpp"
 #include "audio/insert_capture/InsertRenderCaptureService.hpp"
 #include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/InsertCapturePlugin.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
-#include "audio/racks/InstrumentRackManager.hpp"
 #include "core/ClipOcclusion.hpp"
 #include "core/ClipOperations.hpp"
 #include "core/ClipPlacementPolicy.hpp"
@@ -126,17 +124,25 @@ class RenderProgressWindow : public juce::ThreadWithProgressWindow {
     bool success_ = false;
 };
 
-// True when this track hosts an enabled external insert with both send and
-// return set — its hardware return only exists live, so an offline bounce
-// needs the real-time capture pass first (#1623).
-bool trackNeedsInsertCapture(te::Track& track) {
-    for (auto* plugin : track.pluginList) {
-        if (auto* insert = dynamic_cast<te::InsertPlugin*>(plugin))
-            if (insert->isEnabled() && insert->outputDevice.get().isNotEmpty() &&
-                insert->inputDevice.get().isNotEmpty())
-                return true;
-    }
-    return false;
+/**
+ * @brief Whether @p trackId hosts an enabled external insert with a send and a return.
+ *
+ * Its hardware return only exists live, so an offline bounce needs the
+ * real-time capture pass first (#1623). Only the Tracktion engine hosts one.
+ */
+bool trackNeedsInsertCapture(AudioEngine& engine, TrackId trackId) {
+    auto* bridge = engine.getAudioBridge();
+    auto* track = bridge != nullptr ? bridge->getAudioTrack(trackId) : nullptr;
+    if (track == nullptr)
+        return false;
+
+    const auto isRoutedInsert = [](te::Plugin* plugin) {
+        const auto* insert = dynamic_cast<te::InsertPlugin*>(plugin);
+        return insert != nullptr && insert->isEnabled() &&
+               insert->outputDevice.get().isNotEmpty() && insert->inputDevice.get().isNotEmpty();
+    };
+
+    return std::ranges::any_of(track->pluginList, isRoutedInsert);
 }
 
 // Runs the external-insert capture pass modally over [startSec, endSec]
@@ -206,6 +212,9 @@ struct InsertCaptureScope {
             service->cleanupAfterRender();
     }
 };
+
+/// Rendered past a bounce's range, for reverb and delay tails.
+constexpr double kBounceTailSeconds = 2.0;
 
 struct PlaybackResumeScope {
     explicit PlaybackResumeScope(AudioEngine& engine)
@@ -1224,16 +1233,8 @@ void RenderClipCommand::execute() {
     // Snapshot original clip for undo
     originalClipSnapshot_ = *clip;
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("RenderClipCommand: no active edit or bridge");
-        return;
-    }
-
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("RenderClipCommand: TE clip not found");
+    if (!engine_->hasActiveEdit()) {
+        DBG("RenderClipCommand: no active edit");
         return;
     }
 
@@ -1251,10 +1252,6 @@ void RenderClipCommand::execute() {
     renderedFile_ =
         rendersDir.getNonexistentChildFile(expandRenderPattern(clipName, trackName), ".wav", false);
 
-    const double projectBPM = currentProjectBpm();
-    const double renderStart = clip->getTimelineStart(projectBPM);
-    const double renderEnd = clip->getTimelineEnd(projectBPM);
-
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
     OfflineRenderRequest request;
     request.destination = renderedFile_;
@@ -1262,7 +1259,7 @@ void RenderClipCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = false;
     request.useMasterPlugins = false;
-    request.range = {{renderStart}, {renderEnd}, {}};
+    request.range = {{clip->placement.startBeat}, {clip->placement.endBeat()}};
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
 
@@ -1281,6 +1278,7 @@ void RenderClipCommand::execute() {
     }
 
     // Capture original clip properties before deletion
+    const double projectBPM = currentProjectBpm();
     double startBeats = clip->getStartBeats(projectBPM);
     double lengthBeats = clip->getLengthInBeats(projectBPM);
     double startTime = clip->getTimelineStart(projectBPM);
@@ -1357,6 +1355,15 @@ void RenderTimeSelectionCommand::execute() {
     trackStates_.clear();
     newClipIds_.clear();
 
+    // The timeline selection is held in seconds; the render takes beats.
+    const auto* tempoMap = engine_->tempoMap();
+    if (tempoMap == nullptr) {
+        DBG("RenderTimeSelectionCommand: no tempo map");
+        return;
+    }
+    const BeatRange selectionBeats{{tempoMap->timeToBeat(startTime_)},
+                                   {tempoMap->timeToBeat(endTime_)}};
+
     auto renderSession = engine_->createOfflineRenderSession(engine_->isPlaying());
     if (!renderSession) {
         DBG("RenderTimeSelectionCommand: could not create render session");
@@ -1414,7 +1421,7 @@ void RenderTimeSelectionCommand::execute() {
         request.sampleRate = project.sampleRate;
         request.usePlugins = false;
         request.useMasterPlugins = false;
-        request.range = {{startTime_}, {endTime_}, {}};
+        request.range = selectionBeats;
         request.trackIds = {trackId};
 
         // Run render on background thread with progress UI
@@ -2045,16 +2052,8 @@ void BounceInPlaceCommand::execute() {
     const auto bounceRange =
         resolveBounceRenderRange(replacement_.getOriginalClip(), range_, tempoMap, true);
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("BounceInPlaceCommand: no active edit or bridge");
-        return;
-    }
-
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("BounceInPlaceCommand: TE clip not found");
+    if (!engine_->hasActiveEdit()) {
+        DBG("BounceInPlaceCommand: no active edit");
         return;
     }
 
@@ -2095,22 +2094,14 @@ void BounceInPlaceCommand::execute() {
     // and resume once after every render/capture cleanup has completed.
     PlaybackResumeScope playbackScope(*engine_);
 
-    // Find TE track
-    auto* teTrack = teClip->getTrack();
-    if (!teTrack) {
-        DBG("BounceInPlaceCommand: clip has no track");
-        return;
-    }
-
     // External insert returns only exist live — run the capture pass first,
     // with the chain still fully enabled (#1623). The taps substitute the
     // captured returns during the offline render below.
-    const double bounceTailSeconds = 2.0;
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*teTrack)) {
+    if (trackNeedsInsertCapture(*engine_, clip->trackId)) {
         const double renderRate = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate;
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds, renderRate)) {
+                                  bounceRange.endSeconds + kBounceTailSeconds, renderRate)) {
             // A user cancel (no recorded error) stays quiet; a real capture
             // failure gets the toast.
             auto* service = engine_->getInsertRenderCaptureService();
@@ -2124,34 +2115,13 @@ void BounceInPlaceCommand::execute() {
         captureScope.service = engine_->getInsertRenderCaptureService();
 
         // The pass ran the live transport; listener callbacks may have
-        // invalidated the model/engine clip pointers — re-resolve.
+        // invalidated the model clip pointer — re-resolve.
         clip = clipManager.getClip(clipId_);
-        teClip = clip != nullptr ? bridge->getArrangementTeClip(clipId_) : nullptr;
-        teTrack = teClip != nullptr ? teClip->getTrack() : nullptr;
-        if (clip == nullptr || teClip == nullptr || teTrack == nullptr) {
+        if (clip == nullptr) {
             errorMessage_ = "Bounce failed: the clip disappeared during the capture pass.";
             juce::Logger::writeToLog(errorMessage_);
             return;
         }
-    }
-
-    // Bypass FX plugins (everything that isn't the instrument wrapper rack).
-    // The external insert counts as the instrument on its track, and the
-    // hidden capture tap must stay enabled to play the captured return.
-    auto& rackManager = bridge->getPluginManager().getInstrumentRackManager();
-    struct PluginState {
-        te::Plugin* plugin;
-        bool wasEnabled;
-    };
-    std::vector<PluginState> savedStates;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (rackManager.isWrapperRack(plugin) ||
-            dynamic_cast<te::InsertPlugin*>(plugin) != nullptr ||
-            dynamic_cast<InsertCapturePlugin*>(plugin) != nullptr)
-            continue;
-        savedStates.push_back({plugin, plugin->isEnabled()});
-        plugin->setEnabled(false);
     }
 
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
@@ -2161,7 +2131,11 @@ void BounceInPlaceCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
+
+    // The instrument's own output: the effects after it stay out of the bounce.
+    request.useTrackEffects = false;
+    request.range = {{bounceRange.startBeats}, {bounceRange.endBeats}};
+    request.tailSeconds = kBounceTailSeconds;
     request.trackIds = {clip->trackId};
     request.clipIds = {clipId_};
 
@@ -2174,11 +2148,6 @@ void BounceInPlaceCommand::execute() {
             "Bouncing In Place...", renderSession ? renderSession->createTask(request) : nullptr);
         userCancelled = !progressWindow.runThread();
         renderSucceeded = progressWindow.wasSuccessful();
-    }
-
-    // Restore FX plugins regardless of render outcome
-    for (auto& state : savedStates) {
-        state.plugin->setEnabled(state.wasEnabled);
     }
 
     if (userCancelled || !renderSucceeded) {
@@ -2252,16 +2221,8 @@ void BounceToNewTrackCommand::execute() {
         return;
     }
 
-    auto* bridge = engine_->getAudioBridge();
-    if (!engine_->hasActiveEdit() || !bridge) {
-        DBG("BounceToNewTrackCommand: no active edit or bridge");
-        return;
-    }
-
-    // Find the TE clip
-    auto* teClip = bridge->getArrangementTeClip(clipId_);
-    if (!teClip) {
-        DBG("BounceToNewTrackCommand: TE clip not found");
+    if (!engine_->hasActiveEdit()) {
+        DBG("BounceToNewTrackCommand: no active edit");
         return;
     }
 
@@ -2308,21 +2269,14 @@ void BounceToNewTrackCommand::execute() {
 
     PlaybackResumeScope playbackScope(*engine_);
 
-    // Find TE track
-    auto* teTrack = teClip->getTrack();
-    if (!teTrack) {
-        DBG("BounceToNewTrackCommand: clip has no track");
-        return;
-    }
-
-    const double bounceTailSeconds = 2.0;
     const auto& project = ProjectManager::getInstance().getCurrentProjectInfo();
 
     // External insert returns only exist live — capture them first (#1623).
     InsertCaptureScope captureScope;
-    if (trackNeedsInsertCapture(*teTrack)) {
+    if (trackNeedsInsertCapture(*engine_, sourceTrackId)) {
         if (!runInsertCapturePass(*engine_, bounceRange.startSeconds,
-                                  bounceRange.endSeconds + bounceTailSeconds, project.sampleRate)) {
+                                  bounceRange.endSeconds + kBounceTailSeconds,
+                                  project.sampleRate)) {
             auto* service = engine_->getInsertRenderCaptureService();
             if (service != nullptr &&
                 service->getLastPassError() != InsertRenderCaptureService::PassError::None) {
@@ -2340,8 +2294,9 @@ void BounceToNewTrackCommand::execute() {
     request.sampleRate = project.sampleRate;
     request.usePlugins = true;
     request.useMasterPlugins = false;
-    request.range = {{bounceRange.startSeconds}, {bounceRange.endSeconds + bounceTailSeconds}, {}};
-    request.trackIds = {clip->trackId};
+    request.range = {{bounceRange.startBeats}, {bounceRange.endBeats}};
+    request.tailSeconds = kBounceTailSeconds;
+    request.trackIds = {sourceTrackId};
     request.clipIds = {clipId_};
 
     // Render
@@ -2475,11 +2430,12 @@ bool playsAt(const AudibleSpan& span, double timelineBeat) {
         return false;
     if (timelineBeat < span.startBeat - tolBeats || timelineBeat >= span.endBeat() - tolBeats)
         return false;
-    for (const auto& hole : span.silenced) {
-        if (timelineBeat >= hole.start.value - tolBeats && timelineBeat < hole.end.value - tolBeats)
-            return false;
-    }
-    return true;
+    const auto silencedHere = [timelineBeat](const auto& hole) {
+        return timelineBeat >= hole.start.value - tolBeats &&
+               timelineBeat < hole.end.value - tolBeats;
+    };
+
+    return std::ranges::none_of(span.silenced, silencedHere);
 }
 
 }  // namespace
