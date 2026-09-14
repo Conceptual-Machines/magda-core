@@ -82,21 +82,24 @@ DevicePluginPtr createDrumGridPlugin(const DevicePluginCreationContext& context)
     return ta::pluginHandle(new DrumGridPlugin(ta::creationInfo(context)));
 }
 
+/// What a device is created from: the host's own preferences when it supplied
+/// them, and otherwise whatever the session it belongs to registered (#2663).
+DevicePluginDefaults defaultsFor(const DevicePluginCreationContext& context) {
+    return context.defaults.value_or(getDeviceServices(context.sessionKey).defaults);
+}
+
 std::unique_ptr<MagdaDevice> createOscilloscopeDevice(const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    return std::make_unique<OscilloscopePlugin>(services.defaults.oscilloscope);
+    return std::make_unique<OscilloscopePlugin>(defaultsFor(context).oscilloscope);
 }
 
 std::unique_ptr<MagdaDevice> createSpectrumAnalyzerDevice(
     const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    return std::make_unique<SpectrumAnalyzerPlugin>(services.defaults.spectrum);
+    return std::make_unique<SpectrumAnalyzerPlugin>(defaultsFor(context).spectrum);
 }
 
 DevicePluginPtr createMidiReceivePlugin(const DevicePluginCreationContext& context) {
-    auto services = getDeviceServices(context.sessionKey);
-    return ta::pluginHandle(
-        new ::magda::MidiReceivePlugin(ta::creationInfo(context), services.defaults.midiReceive));
+    return ta::pluginHandle(new ::magda::MidiReceivePlugin(ta::creationInfo(context),
+                                                           defaultsFor(context).midiReceive));
 }
 
 DevicePluginPtr createInstrumentMeterTapPlugin(const DevicePluginCreationContext& context) {

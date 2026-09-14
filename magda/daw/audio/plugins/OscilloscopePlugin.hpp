@@ -13,7 +13,8 @@ namespace magda::daw::audio {
 class OscilloscopePlugin : public AnalysisTapPlugin, public OscilloscopeTelemetry {
   public:
     explicit OscilloscopePlugin(const DevicePluginDefaults::Oscilloscope& defaults)
-        : AnalysisTapPlugin(262144), timebaseMs_(defaults.timebaseMs) {}  // ~5.4 s at 48k
+        : AnalysisTapPlugin(262144, defaults.traceColour),
+          timebaseMs_(defaults.timebaseMs) {}  // ~5.4 s at 48k
 
     static const char* getPluginName() {
         return "Oscilloscope";

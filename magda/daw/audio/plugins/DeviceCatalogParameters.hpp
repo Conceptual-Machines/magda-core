@@ -6,6 +6,7 @@
 #include <memory>
 
 #include "core/DeviceInfo.hpp"
+#include "plugins/DevicePluginDefaults.hpp"
 
 namespace magda::daw::audio {
 
@@ -16,9 +17,14 @@ class MagdaDevice;
  *
  * @p savedState is restored into it when given, for devices whose parameter set
  * depends on it. Null for an unknown id or a device that is still a host plugin.
+ *
+ * @p defaults is what a device with nothing saved starts from -- the user's
+ * last-used settings, which no session registry answers for a detached
+ * creation (#2663).
  */
 std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
-                                                  const juce::String& savedState = {});
+                                                  const juce::String& savedState = {},
+                                                  const DevicePluginDefaults& defaults = {});
 
 /// A device's saved state as a tree, in either format a project holds it in;
 /// `decode()` refuses the engine's v1 XML by design (#2602). Invalid when unreadable.

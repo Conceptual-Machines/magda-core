@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "core/ChainWalk.hpp"
+#include "core/Config.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "core/PluginParameterConfigStore.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
@@ -78,6 +79,23 @@ template <typename Tracks, typename Master> auto collectDevices(Tracks& tracks, 
 
     collectTrackDevices(master, devices);
     return devices;
+}
+
+/// The user's last-used analyser settings, which is what a device the model has
+/// no state for starts from. Read here rather than snapshotted at startup: the
+/// faceplate writes them as they are changed (#2663).
+DevicePluginDefaults hostDefaults() {
+    const auto scope = magda::Config::getInstance().getOscilloscopeDefaults();
+    const auto spectrum = magda::Config::getInstance().getSpectrumDefaults();
+
+    DevicePluginDefaults defaults;
+    defaults.oscilloscope.timebaseMs = scope.timebaseMs;
+    defaults.oscilloscope.traceColour = scope.traceColour;
+    defaults.spectrum.fftOrder = spectrum.fftOrder;
+    defaults.spectrum.slopeDbPerOct = spectrum.slopeDbPerOct;
+    defaults.spectrum.smoothing = spectrum.smoothing;
+    defaults.spectrum.traceColour = spectrum.traceColour;
+    return defaults;
 }
 
 /// Log an unreadable saved state rather than drop it silently (#2602).
@@ -201,7 +219,10 @@ std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::Dev
                                                                 bool offlineRender) {
     // Built with its state in it: EngineMagdaDevice snapshots the parameter
     // metadata at construction, and the runtime Faust device's slots come from it.
-    auto sdkDevice = createDetachedDevice(device.pluginId, device.pluginState);
+    // The defaults matter for a device the model has nothing saved for -- one
+    // just added -- which is every analyser the track header's toggle makes
+    // (#2663).
+    auto sdkDevice = createDetachedDevice(device.pluginId, device.pluginState, hostDefaults());
     if (sdkDevice == nullptr)
         return {};
 

@@ -26,13 +26,15 @@ juce::ValueTree deviceStateTree(const juce::String& savedState) {
 }
 
 std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
-                                                  const juce::String& savedState) {
+                                                  const juce::String& savedState,
+                                                  const DevicePluginDefaults& defaults) {
     // No session key: the services behind one are a running engine's, and
-    // nothing here may reach them.
+    // nothing here may reach them. The preferences a fresh device starts from
+    // are not one of those, so the caller hands them over instead (#2663).
     juce::ValueTree state(juce::Identifier("PLUGIN"));
     state.setProperty(juce::Identifier("type"), pluginId, nullptr);
     const DevicePluginCreationContext context{
-        .sessionKey = {}, .state = std::move(state), .isNewPlugin = true};
+        .sessionKey = {}, .state = std::move(state), .isNewPlugin = true, .defaults = defaults};
 
     // The internal registry first, because that is the catalog an id is
     // canonicalised against; a compiled device is not in it.

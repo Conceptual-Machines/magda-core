@@ -93,6 +93,15 @@ OscilloscopeUI::OscilloscopeUI() {
         if (telemetry_ != nullptr)
             telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
         commitSettings();
+
+        // The last-used colour, for the next analyser added: the header's
+        // toggle deletes this one, so its document does not survive (#2663).
+        if (!persistGlobalDefaults_)
+            return;
+        auto d = Config::getInstance().getOscilloscopeDefaults();
+        d.traceColour = colourCombo_.getSelectedId() - 1;
+        Config::getInstance().setOscilloscopeDefaults(d);
+        Config::getInstance().save();
     };
     addAndMakeVisible(colourCombo_);
 

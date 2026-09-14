@@ -390,12 +390,14 @@ void Config::save() {
 
         auto* oscObj = new juce::DynamicObject();
         oscObj->setProperty("timebaseMs", oscilloscopeDefaults_.timebaseMs);
+        oscObj->setProperty("traceColour", oscilloscopeDefaults_.traceColour);
         adObj->setProperty("oscilloscope", juce::var(oscObj));
 
         auto* specObj = new juce::DynamicObject();
         specObj->setProperty("fftOrder", spectrumDefaults_.fftOrder);
         specObj->setProperty("slopeDbPerOct", spectrumDefaults_.slopeDbPerOct);
         specObj->setProperty("smoothing", spectrumDefaults_.smoothing);
+        specObj->setProperty("traceColour", spectrumDefaults_.traceColour);
         adObj->setProperty("spectrum", juce::var(specObj));
 
         root->setProperty("analysisDefaults", juce::var(adObj));
@@ -904,6 +906,9 @@ void Config::load() {
                 if (oscObj->hasProperty("timebaseMs"))
                     oscilloscopeDefaults_.timebaseMs =
                         static_cast<float>(static_cast<double>(oscObj->getProperty("timebaseMs")));
+                if (oscObj->hasProperty("traceColour"))
+                    oscilloscopeDefaults_.traceColour =
+                        static_cast<int>(oscObj->getProperty("traceColour"));
             }
             auto specVar = adObj->getProperty("spectrum");
             if (auto* specObj = specVar.getDynamicObject()) {
@@ -915,6 +920,9 @@ void Config::load() {
                 if (specObj->hasProperty("smoothing"))
                     spectrumDefaults_.smoothing =
                         static_cast<float>(static_cast<double>(specObj->getProperty("smoothing")));
+                if (specObj->hasProperty("traceColour"))
+                    spectrumDefaults_.traceColour =
+                        static_cast<int>(specObj->getProperty("traceColour"));
             }
         }
     }

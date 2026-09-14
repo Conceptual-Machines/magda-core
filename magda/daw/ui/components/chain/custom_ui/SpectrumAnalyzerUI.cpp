@@ -54,6 +54,9 @@ void persistSpectrumDefaults(const std::shared_ptr<SpectrumTelemetrySource>& tel
     d.fftOrder = telemetry->fftOrder();
     d.slopeDbPerOct = telemetry->slopeDbPerOct();
     d.smoothing = telemetry->smoothing();
+    // The last-used colour too: the header's toggle deletes the device, so its
+    // own document does not survive turning an analyser off and on (#2663).
+    d.traceColour = telemetry->traceColourIndex();
     Config::getInstance().setSpectrumDefaults(d);
     Config::getInstance().save();
 }
