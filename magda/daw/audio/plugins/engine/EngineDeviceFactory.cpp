@@ -4,6 +4,7 @@
 
 #include "core/ChainWalk.hpp"
 #include "core/Config.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/PluginCapabilities.hpp"
 #include "core/PluginParameterConfigStore.hpp"
 #include "plugin_manager/ExternalPluginLookup.hpp"
@@ -239,6 +240,10 @@ bool canCreateEngineDevice(const juce::String& pluginId) {
         return spec->createDevice != nullptr;
 
     return false;
+}
+
+bool engineRendersDevice(const juce::String& pluginId) {
+    return canCreateEngineDevice(pluginId) || isPadRackDevice(pluginId);
 }
 
 bool isRegisteredDevice(const juce::String& pluginId) {

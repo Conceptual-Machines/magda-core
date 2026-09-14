@@ -297,6 +297,15 @@ TEST_CASE("the engine can run every device that has moved to the SDK", "[engine]
     CHECK(sdkDevices > 0);
 }
 
+TEST_CASE("the engine plays a Drum Grid it never builds", "[engine][devices][2659]") {
+    // The plan compiler expands a pad device into its pads, so the grid itself
+    // never reaches the factory and is still a device the engine plays.
+    CHECK_FALSE(adapter::canCreateEngineDevice("drumgrid"));
+    CHECK(adapter::engineRendersDevice("drumgrid"));
+
+    CHECK_FALSE(adapter::engineRendersDevice("not_a_device"));
+}
+
 TEST_CASE("a device the catalogs do not have is refused rather than stood in for",
           "[engine][devices][2174]") {
     CHECK_FALSE(adapter::canCreateEngineDevice("not_a_device"));

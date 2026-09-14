@@ -562,12 +562,12 @@ std::vector<PluginBrowserInfo> PluginBrowserContent::getInternalPlugins() {
     // Native + TE internal devices: the registry is the single source of truth.
     // A device appears here by setting showInBrowser on its InternalPluginSpec -
     // no separate hand-maintained list to keep in sync.
-    // Under the MAGDA engine a device with no native factory cannot be built
-    // at all, so listing it would offer something that arrives silent (#2437).
+    // Under the MAGDA engine a device it cannot play would arrive silent, so it
+    // is not offered (#2437).
     const auto runnable = chosenAudioEngine() != AudioEngineChoice::Magda;
     const auto listedInBrowser = [runnable](const audio::InternalPluginSpec* spec) {
         return spec->showInBrowser &&
-               (runnable || audio::engine_adapter::canCreateEngineDevice(spec->pluginId));
+               (runnable || audio::engine_adapter::engineRendersDevice(spec->pluginId));
     };
     const auto asBrowserEntry = [](const audio::InternalPluginSpec* spec) {
         return PluginBrowserInfo::createInternal(spec->displayName, spec->pluginId,
