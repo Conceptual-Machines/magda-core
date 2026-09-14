@@ -179,6 +179,41 @@ TEST_CASE("A pad sampler with no sample yet is still a sampler", "[drumgrid][pad
     CHECK(static_cast<int>(doc->root.props["rootNote"]) == 40);
 }
 
+TEST_CASE("A pad is named by the sample its sampler plays", "[drumgrid][pads][2669]") {
+    const auto sample = juce::File::createTempFile(".wav");
+    REQUIRE(sample.create().wasOk());
+
+    magda::ChainInfo pad;
+    CHECK(magda::padVoiceName(pad).isEmpty());
+
+    auto sampler = magda::padSamplerDevice(sample.getFullPathName(), 36);
+    sampler.name = "Sampler";
+    pad.elements.push_back(sampler);
+    CHECK(magda::padVoiceName(pad) == sample.getFileNameWithoutExtension());
+
+    // Once the sample is gone, the device's own name is what is left.
+    REQUIRE(sample.deleteFile());
+    CHECK(magda::padVoiceName(pad) == "Sampler");
+}
+
+TEST_CASE("A pad's played notes are traced back to the notes it answers to",
+          "[drumgrid][pads][2669]") {
+    // A pad taking 38..40 plays them from its root at 60.
+    magda::ChainInfo pad;
+    pad.lowNote = 38;
+    pad.highNote = 40;
+    pad.rootNote = 60;
+
+    std::bitset<128> played;
+    played.set(61);
+    played.set(40);
+    CHECK(magda::padNotesPlayed(pad, played) == std::vector<int>{39});
+
+    pad.lowNote = 1;
+    pad.highNote = 0;
+    CHECK(magda::padNotesPlayed(pad, played).empty());
+}
+
 TEST_CASE("A copied device does not share its pads", "[drumgrid][pads]") {
     auto device = drumGridDevice();
     auto& pads = magda::ensurePads(device);
@@ -326,6 +361,17 @@ TEST_CASE("A device's pads are migrated out of its plugin state once", "[drumgri
     device.pads->chains.clear();
     magda::migrateLegacyPads(device);
     CHECK(device.pads->chains.empty());
+}
+
+TEST_CASE("A Drum Grid with nothing to migrate still owns its pads", "[drumgrid][pads][2669]") {
+    // The compiler expands a device with pads and plans one without as a plain
+    // device, which nothing can build.
+    auto device = drumGridDevice();
+    magda::migrateLegacyPads(device);
+
+    REQUIRE(static_cast<bool>(device.pads));
+    CHECK(device.pads->chains.empty());
+    CHECK(device.pads->id == magda::padRackIdFor(device.id));
 }
 
 TEST_CASE("A device that is not a Drum Grid is left alone by the migration", "[drumgrid][pads]") {

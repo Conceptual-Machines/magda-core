@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bitset>
 #include <map>
 
 #include "../core/ChainNodePath.hpp"
@@ -63,6 +64,23 @@ class DeviceMeters {
         return true;
     }
 
+    /// A note started on the pads of the device at @p gridPath (#2669).
+    void startPadNote(const ChainNodePath& gridPath, int note) {
+        if (note >= 0 && note < 128)
+            padNotes_[gridPath].set(static_cast<std::size_t>(note));
+    }
+
+    /// Whether @p note started on @p gridPath's pads since the last take.
+    bool takePadNote(const ChainNodePath& gridPath, int note) {
+        const auto found = padNotes_.find(gridPath);
+        if (found == padNotes_.end() || note < 0 || note >= 128)
+            return false;
+
+        const auto started = found->second.test(static_cast<std::size_t>(note));
+        found->second.reset(static_cast<std::size_t>(note));
+        return started;
+    }
+
     /// Called at a project boundary by whichever engine feeds this
     /// (EngineHost::projectTeardown, AudioBridge::projectTeardown): the next
     /// project's devices reuse these ids, and a slot that has not rendered yet
@@ -71,11 +89,13 @@ class DeviceMeters {
     void clear() {
         devices_.clear();
         racks_.clear();
+        padNotes_.clear();
     }
 
   private:
     std::map<ChainNodePath, Levels> devices_;
     std::map<RackId, Levels> racks_;
+    std::map<ChainNodePath, std::bitset<128>> padNotes_;
 };
 
 }  // namespace magda

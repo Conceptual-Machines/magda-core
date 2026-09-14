@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,24 @@ std::vector<const magda::engine::PlanOp*> opsOfKind(const RenderPlan& plan, OpKi
         if (op.kind == kind)
             found.push_back(&op);
     return found;
+}
+
+/** @brief Taps every pad's gate, as a host drawing a Drum Grid does. */
+class PadTapFactory final : public magda::engine::RuntimeStateFactory {
+  public:
+    std::unique_ptr<magda::engine::NoteOnTap> createNoteOnTap(
+        const magda::engine::OpKey& key) override {
+        return key.role == OpRole::PadNoteGate ? std::make_unique<magda::engine::NoteOnTap>()
+                                               : nullptr;
+    }
+};
+
+std::set<ChainId> tappedPads(const magda::engine::RuntimeStateStore& store) {
+    std::set<ChainId> pads;
+    store.forEachNoteOnTap([&pads](const magda::engine::OpKey& key, magda::engine::NoteOnTap&) {
+        pads.insert(key.chainId);
+    });
+    return pads;
 }
 
 }  // namespace
@@ -508,4 +527,30 @@ TEST_CASE("A modifier on a pad device is collected as a modulation source",
     magda::engine::collectModulationTaps(track, taps, notes);
 
     CHECK(taps.contains(magda::engine::ModTap{track.id, magda::ModTapPoint::PostFader}));
+}
+
+TEST_CASE("Each pad's gate is tapped, and the tap goes with the pad",
+          "[engine][plan][padrack][2669]") {
+    PadTapFactory factory;
+    magda::engine::RuntimeStateStore store(factory);
+    const magda::engine::RenderContext context{44100.0, 64, 2};
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(
+        makeDrumGrid(10, {makePad(0, 36, 36, 60, 101), makePad(1, 38, 40, 60, 102)}));
+    const auto plan = magda::engine::compileRenderPlan({track}, makeMaster(), {});
+    const auto bindings = store.realise(plan, context);
+
+    for (const auto* gate : opsOfKind(plan, OpKind::MidiNoteGate))
+        CHECK(bindings.midiTaps.contains(gate->key));
+    CHECK(tappedPads(store) == std::set<ChainId>{0, 1});
+
+    auto fewer = makeTrack(1);
+    fewer.chain.fxChainElements.push_back(makeDrumGrid(10, {makePad(0, 36, 36, 60, 101)}));
+    const auto smaller = magda::engine::compileRenderPlan({fewer}, makeMaster(), {});
+    store.realise(smaller, context);
+    store.releaseDeleted(smaller, magda::engine::collectRuntimeStateIds({fewer}, makeMaster()),
+                         nullptr);
+
+    CHECK(tappedPads(store) == std::set<ChainId>{0});
 }

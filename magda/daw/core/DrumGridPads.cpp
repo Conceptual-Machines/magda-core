@@ -424,6 +424,35 @@ DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote) {
     return device;
 }
 
+juce::String padVoiceName(const ChainInfo& pad) {
+    const auto first = std::ranges::find_if(pad.elements, isDevice);
+    if (first == pad.elements.end())
+        return {};
+
+    const auto& device = getDevice(*first);
+    if (device.pluginId == kSamplerId)
+        if (const auto doc = ds::decode(device.pluginState)) {
+            const juce::File sample(doc->root.props[kSamplePath].toString());
+            if (sample.existsAsFile())
+                return sample.getFileNameWithoutExtension();
+        }
+    return device.name;
+}
+
+std::vector<int> padNotesPlayed(const ChainInfo& pad, const std::bitset<128>& played) {
+    std::vector<int> notes;
+    if (pad.answersToEveryNote())
+        return notes;
+
+    // Clamped the way the plan's note gate clamps them.
+    const auto shift = std::clamp(pad.rootNote - pad.lowNote, -127, 127);
+    for (auto note = std::clamp(pad.lowNote, 0, 127); note <= std::clamp(pad.highNote, 0, 127);
+         ++note)
+        if (played.test(static_cast<std::size_t>(std::clamp(note + shift, 0, 127))))
+            notes.push_back(note);
+    return notes;
+}
+
 std::unique_ptr<RackInfo> readLegacyPads(const juce::String& pluginId,
                                          const juce::String& pluginState) {
     if (!isPadRackDevice(pluginId) || pluginState.isEmpty())
@@ -448,8 +477,8 @@ void migrateLegacyPads(DeviceInfo& device) {
     if (!isPadRackDevice(device.pluginId) || device.pads)
         return;
 
-    if (auto pads = readLegacyPads(device.pluginId, device.pluginState))
-        device.pads.reset(std::move(pads));
+    auto pads = readLegacyPads(device.pluginId, device.pluginState);
+    device.pads.reset(pads != nullptr ? std::move(pads) : std::make_unique<RackInfo>());
 
     stampPadRackId(device);
 }

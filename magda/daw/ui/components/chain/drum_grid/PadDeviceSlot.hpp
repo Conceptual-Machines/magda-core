@@ -27,8 +27,9 @@ class Plugin;
 }
 
 namespace magda::daw::audio {
+class MagdaDevice;
 class MagdaSamplerPlugin;
-}
+}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
 
@@ -50,19 +51,25 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     PadDeviceSlot();
     ~PadDeviceSlot() override;
 
-    void setPlugin(tracktion::engine::Plugin* plugin);
-    void setPlugin(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device,
-                   std::function<tracktion::engine::Plugin::Ptr()> livePlugin);
-    void setSampler(te::Plugin* samplerPlugin);
+    /** @brief The model's pad device a slot shows, and what renders it. */
+    struct Binding {
+        magda::DeviceInfo device;
+        magda::ChainNodePath devicePath;
+        /// The instance rendering the device, on either engine. Null while none does.
+        std::function<std::shared_ptr<daw::audio::MagdaDevice>()> renderedDevice;
+        /// Tracktion's plugin for the device, where that engine hosts one.
+        tracktion::engine::Plugin* plugin = nullptr;
+        std::function<tracktion::engine::Plugin::Ptr()> livePlugin;
+    };
+
+    /** @brief Show a sampler, a MAGDA faceplate or a hosted plugin's parameters for @p binding. */
+    void setDevice(Binding binding);
     void clear();
     int getPreferredWidth() const;
     void setPreferredWidth(int width) {
         preferredWidth_ = width;
     }
 
-    tracktion::engine::Plugin* getPlugin() const {
-        return plugin_;
-    }
     bool isCollapsed() const {
         return collapsed_;
     }
@@ -76,9 +83,6 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     std::function<void()> onDeleteClicked;
     std::function<void()> onLayoutChanged;
     std::function<void()> onClicked;
-
-    // Provide sampler pointer for SamplerUI wiring
-    std::function<daw::audio::MagdaSamplerPlugin*()> getSampler;
 
     // Provide callbacks for file operations
     std::function<void(const juce::File&)> onSampleDropped;
@@ -129,12 +133,11 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     static constexpr int METER_WIDTH = 8;
     static constexpr int GAIN_SLIDER_WIDTH = 44;
 
-    tracktion::engine::Plugin* plugin_ = nullptr;
+    Binding binding_;
     magda::DeviceId pluginDeviceId_ = magda::INVALID_DEVICE_ID;
     magda::DeviceInfo device_;
     magda::ChainNodePath devicePath_;
     magda::ChainNodePath linkOwnerPath_;
-    std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
     int preferredWidth_ = SLOT_WIDTH;
     int visibleParamCount_ = 0;
     DeviceSlotTraits traits_;
@@ -162,12 +165,16 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
 
     void timerCallback() override;
 
-    // Takes the PLUGIN because that is what the faceplate reads its readouts,
-    // waveform and playhead from. Edits go the other way, to the model at
-    // devicePath_, and reach the plugin by projection (#2379).
-    void setupForSampler(te::Plugin* samplerPlugin);
+    /// The rendered sampler, if the device is one and something renders it.
+    std::shared_ptr<daw::audio::MagdaSamplerPlugin> renderedSampler() const;
+
+    // Readouts, waveform and playhead come off the rendered sampler. Edits go
+    // the other way, to the model at devicePath_, and reach it by projection (#2379).
+    void setupForSampler();
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
-    bool setupForSharedDeviceUi(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device);
+    /// A hosted plugin no Tracktion plugin stands for: its parameters as the engine describes them.
+    void setupForHostedParameters();
+    bool setupForSharedDeviceUi(const magda::DeviceInfo& device);
     void resetSharedInlineUi();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadDeviceSlot)

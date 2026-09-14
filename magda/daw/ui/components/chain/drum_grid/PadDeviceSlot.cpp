@@ -4,13 +4,12 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "audio/sampling/SamplerModelEdits.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
-#include "core/ParameterUtils.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
+#include "engine/AudioEngine.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -147,82 +146,30 @@ void PadDeviceSlot::timerCallback() {
     }
 }
 
-void PadDeviceSlot::setPlugin(te::Plugin* plugin) {
-    plugin_ = plugin;
-    livePluginProvider_ = {};
+void PadDeviceSlot::setDevice(Binding binding) {
+    binding_ = std::move(binding);
+    device_ = binding_.device;
+    devicePath_ = binding_.devicePath;
     resetSharedInlineUi();
-    if (!plugin) {
-        clear();
-        return;
+
+    if (device_.pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName))
+        setupForSampler();
+    else if (!setupForSharedDeviceUi(device_)) {
+        if (binding_.plugin != nullptr)
+            setupForExternalPlugin(binding_.plugin);
+        else
+            setupForHostedParameters();
     }
 
-    // Check if it's a sampler
-    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin) !=
-        nullptr) {
-        setupForSampler(plugin);
-    } else {
-        setupForExternalPlugin(plugin);
-    }
-
-    // Restore collapsed state from plugin's ValueTree
-    bool wasCollapsed = plugin->state.getProperty("uiCollapsed", false);
-    if (wasCollapsed)
-        collapsed_ = true;
-
-    // Update on button state
-    onButton_->setToggleState(plugin->isEnabled(), juce::dontSendNotification);
-    onButton_->setActive(plugin->isEnabled());
-
-    resized();
-}
-
-void PadDeviceSlot::setPlugin(te::Plugin* plugin, const magda::DeviceInfo& device,
-                              std::function<te::Plugin::Ptr()> livePlugin) {
-    plugin_ = plugin;
-    device_ = device;
-    livePluginProvider_ = std::move(livePlugin);
-    resetSharedInlineUi();
-    if (!plugin) {
-        clear();
-        return;
-    }
-
-    if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(plugin) !=
-        nullptr) {
-        setupForSampler(plugin);
-    } else if (!setupForSharedDeviceUi(plugin, device)) {
-        setupForExternalPlugin(plugin);
-    }
-
-    bool wasCollapsed = plugin->state.getProperty("uiCollapsed", false);
-    if (wasCollapsed)
-        collapsed_ = true;
-
-    onButton_->setToggleState(plugin->isEnabled(), juce::dontSendNotification);
-    onButton_->setActive(plugin->isEnabled());
-
-    resized();
-}
-
-void PadDeviceSlot::setSampler(te::Plugin* samplerPlugin) {
-    plugin_ = samplerPlugin;
-    livePluginProvider_ = {};
-    resetSharedInlineUi();
-    if (!samplerPlugin) {
-        clear();
-        return;
-    }
-    setupForSampler(samplerPlugin);
-    onButton_->setToggleState(samplerPlugin->isEnabled(), juce::dontSendNotification);
-    onButton_->setActive(samplerPlugin->isEnabled());
+    // Collapsed is the model's, so it survives the chain rebuild every pad edit makes.
+    collapsed_ = !device_.expanded;
     resized();
 }
 
 void PadDeviceSlot::clear() {
-    plugin_ = nullptr;
+    binding_ = {};
     pluginDeviceId_ = magda::INVALID_DEVICE_ID;
     device_ = {};
-    livePluginProvider_ = {};
     resetSharedInlineUi();
     visibleParamCount_ = 0;
     nameLabel_.setText("", juce::dontSendNotification);
@@ -231,6 +178,11 @@ void PadDeviceSlot::clear() {
         if (slot)
             slot->setVisible(false);
     uiButton_->setVisible(false);
+}
+
+std::shared_ptr<daw::audio::MagdaSamplerPlugin> PadDeviceSlot::renderedSampler() const {
+    auto device = binding_.renderedDevice ? binding_.renderedDevice() : nullptr;
+    return std::dynamic_pointer_cast<daw::audio::MagdaSamplerPlugin>(device);
 }
 
 int PadDeviceSlot::getPreferredWidth() const {
@@ -242,9 +194,8 @@ int PadDeviceSlot::getPreferredWidth() const {
 void PadDeviceSlot::setCollapsed(bool collapsed) {
     if (collapsed_ != collapsed) {
         collapsed_ = collapsed;
-        // Persist to plugin's ValueTree so it survives save/reload
-        if (plugin_)
-            plugin_->state.setProperty("uiCollapsed", collapsed, nullptr);
+        if (auto* device = magda::TrackManager::getInstance().getDeviceInChainByPath(devicePath_))
+            device->expanded = !collapsed;
         resized();
         repaint();
         if (onLayoutChanged)
@@ -260,12 +211,8 @@ void PadDeviceSlot::resetSharedInlineUi() {
     customUI_.reset();
 }
 
-void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
-    namespace ta = daw::audio::tracktion_adapter;
+void PadDeviceSlot::setupForSampler() {
     using Sampler = daw::audio::MagdaSamplerPlugin;
-    auto* sampler = ta::deviceFromPlugin<Sampler>(samplerPlugin);
-    if (sampler == nullptr)
-        return;
     resetSharedInlineUi();
     preferredWidth_ = SAMPLER_SLOT_WIDTH;
     uiButton_->setVisible(false);
@@ -295,8 +242,9 @@ void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
         magda::sampler_edits::setRootNote(devicePath_, note);
     };
 
-    samplerUI_->getPlaybackPosition = [sampler]() -> double {
-        return sampler->getPlaybackPosition();
+    samplerUI_->getPlaybackPosition = [this]() -> double {
+        const auto sampler = renderedSampler();
+        return sampler != nullptr ? sampler->getPlaybackPosition() : 0.0;
     };
 
     samplerUI_->onFileDropped = [this](const juce::File& file) {
@@ -309,22 +257,32 @@ void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
             onLoadSampleRequested();
     };
 
-    // Update parameters
-    juce::String sampleName;
-    auto file = sampler->getSampleFile();
-    if (file.existsAsFile())
-        sampleName = file.getFileNameWithoutExtension();
+    // A sampler the engine has not built yet reads as the model holds it, with no waveform.
+    const auto sampler = renderedSampler();
+    const auto slot = [this, &sampler](int index) -> float {
+        if (sampler != nullptr)
+            return sampler->displayValue(index);
+        const auto* info = device_.findParameterByIndex(index);
+        return info != nullptr ? info->currentValue : 0.0f;
+    };
 
-    const auto slot = [sampler](int index) { return sampler->displayValue(index); };
+    juce::String sampleName = device_.name;
+    if (sampler != nullptr)
+        if (const auto file = sampler->getSampleFile(); file.existsAsFile())
+            sampleName = file.getFileNameWithoutExtension();
+
     samplerUI_->updateParameters(
         slot(Sampler::kAttack), slot(Sampler::kDecay), slot(Sampler::kSustain),
         slot(Sampler::kRelease), slot(Sampler::kPitch), slot(Sampler::kFine), slot(Sampler::kLevel),
-        slot(Sampler::kSampleStart), slot(Sampler::kSampleEnd), sampler->loopEnabled(),
-        slot(Sampler::kLoopStart), slot(Sampler::kLoopEnd), slot(Sampler::kVelAmount), sampleName,
-        sampler->getRootNote(), slot(Sampler::kVoiceMode), slot(Sampler::kGlide));
+        slot(Sampler::kSampleStart), slot(Sampler::kSampleEnd),
+        sampler != nullptr && sampler->loopEnabled(), slot(Sampler::kLoopStart),
+        slot(Sampler::kLoopEnd), slot(Sampler::kVelAmount), sampleName,
+        sampler != nullptr ? sampler->getRootNote() : 60, slot(Sampler::kVoiceMode),
+        slot(Sampler::kGlide));
 
-    samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
-                                sampler->getSampleLengthSeconds());
+    if (sampler != nullptr)
+        samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
+                                    sampler->getSampleLengthSeconds());
 
     samplerUI_->setVisible(true);
 
@@ -334,9 +292,8 @@ void PadDeviceSlot::setupForSampler(te::Plugin* samplerPlugin) {
             slot->setVisible(false);
 }
 
-bool PadDeviceSlot::setupForSharedDeviceUi(te::Plugin* plugin, const magda::DeviceInfo& device) {
-    if (plugin == nullptr || device.pluginId.isEmpty() ||
-        device.format != magda::PluginFormat::Internal)
+bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
+    if (device.pluginId.isEmpty() || device.format != magda::PluginFormat::Internal)
         return false;
 
     traits_ = makeDeviceSlotTraits(device);
@@ -349,24 +306,14 @@ bool PadDeviceSlot::setupForSharedDeviceUi(te::Plugin* plugin, const magda::Devi
             slot->setVisible(false);
     visibleParamCount_ = 0;
 
-    nameLabel_.setText(device.name.isNotEmpty() ? device.name : plugin->getName(),
-                       juce::dontSendNotification);
+    nameLabel_.setText(device.name, juce::dontSendNotification);
     uiButton_->setVisible(false);
 
     DeviceSlotInlineUiCallbacks callbacks;
+    // To the model at the pad device's own path, as a slot on the chain writes (#2317).
     callbacks.onParameterChanged = [this](int paramIndex, float value) {
-        if (plugin_ == nullptr)
-            return;
-        auto params = plugin_->getAutomatableParameters();
-        auto* info = device_.findParameterByIndex(paramIndex);
-        if (paramIndex >= 0 && paramIndex < params.size()) {
-            const float teValue = info != nullptr ? magda::ParameterUtils::modelToTeValue(
-                                                        magda::ParameterModelValue{value}, *info)
-                                                  : value;
-            params[paramIndex]->setParameterFromHost(teValue, juce::sendNotificationSync);
-        }
-        if (info != nullptr)
-            info->currentValue = value;
+        magda::TrackManager::getInstance().setDeviceParameterValue(
+            devicePath_, paramIndex, magda::ParameterModelValue{value});
     };
     callbacks.onLayoutChanged = [this]() {
         resized();
@@ -375,13 +322,15 @@ bool PadDeviceSlot::setupForSharedDeviceUi(te::Plugin* plugin, const magda::Devi
             onLayoutChanged();
     };
     callbacks.getNodePath = [this]() { return devicePath_; };
-    callbacks.getLivePlugin = [this]() -> te::Plugin::Ptr {
-        if (livePluginProvider_) {
-            if (auto plugin = livePluginProvider_())
-                return plugin;
-        }
-        return plugin_ != nullptr ? te::Plugin::Ptr(plugin_) : te::Plugin::Ptr();
-    };
+    // Tracktion's pad plugin has no path its bridge resolves, so it is handed over;
+    // under the native engine there is none and the faceplate asks for the path.
+    if (binding_.livePlugin || binding_.plugin != nullptr)
+        callbacks.getLivePlugin = [this]() -> te::Plugin::Ptr {
+            if (binding_.livePlugin)
+                if (auto plugin = binding_.livePlugin())
+                    return plugin;
+            return te::Plugin::Ptr(binding_.plugin);
+        };
 
     const auto createdKind = createDeviceSlotInlineUi(device_, traits_, devicePath_, *this,
                                                       {.compiledPanel = compiledPanel_,
@@ -461,6 +410,51 @@ void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
     }
 
     // 8 columns × 4 rows, matching DeviceSlotComponent layout
+    constexpr int paramsPerRow = 8;
+    constexpr int PARAM_CELL_WIDTH = 48;
+    preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
+}
+
+void PadDeviceSlot::setupForHostedParameters() {
+    resetSharedInlineUi();
+    if (samplerUI_)
+        samplerUI_->setVisible(false);
+
+    nameLabel_.setText(device_.name, juce::dontSendNotification);
+
+    uiButton_->setVisible(true);
+    uiButton_->onClick = [this]() {
+        auto* engine = magda::TrackManager::getInstance().getAudioEngine();
+        const bool open = engine != nullptr && engine->toggleDeviceEditor(devicePath_);
+        uiButton_->setToggleState(open, juce::dontSendNotification);
+        uiButton_->setActive(open);
+    };
+
+    // Every parameter the instance reports, written the way a slot on the chain writes one.
+    std::vector<magda::ParameterInfo> described;
+    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
+        described = engine->describeDeviceParameters(devicePath_).parameters;
+
+    visibleParamCount_ = juce::jmin(static_cast<int>(described.size()), PLUGIN_PARAM_SLOTS);
+    for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
+        auto& slot = paramSlots_[static_cast<size_t>(i)];
+        if (i >= visibleParamCount_) {
+            slot->setVisible(false);
+            continue;
+        }
+
+        const auto info = described[static_cast<size_t>(i)];
+        slot->setParamIndex(info.paramIndex);
+        slot->setParamName(info.name);
+        slot->setParameterInfo(info);
+        slot->setParamValue(info.currentValue);
+        slot->onValueChanged = [this, info](double value) {
+            magda::TrackManager::getInstance().setDeviceParameterValue(
+                devicePath_, info, magda::ParameterModelValue{static_cast<float>(value)});
+        };
+        slot->setVisible(true);
+    }
+
     constexpr int paramsPerRow = 8;
     constexpr int PARAM_CELL_WIDTH = 48;
     preferredWidth_ = PARAM_CELL_WIDTH * paramsPerRow;
@@ -657,10 +651,9 @@ void PadDeviceSlot::resized() {
     // Expanded: restore visibility and text colour
     nameLabel_.setVisible(true);
     nameLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
-    if (plugin_) {
-        bool isSampler =
-            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
-                plugin_) != nullptr;
+    if (device_.pluginId.isNotEmpty()) {
+        const bool isSampler =
+            device_.pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName);
         if (samplerUI_)
             samplerUI_->setVisible(isSampler);
         if (compiledPanel_)

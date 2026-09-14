@@ -493,6 +493,7 @@ juce::var ProjectSerializer::serializeDeviceInfo(const DeviceInfo& device) {
     obj->setProperty("gainPanelOpen", device.gainPanelOpen);
     obj->setProperty("paramPanelOpen", device.paramPanelOpen);
     obj->setProperty("aiPanelOpen", device.aiPanelOpen);
+    obj->setProperty("padDetailOpen", device.padDetailOpen);
 
     // Parameters
     juce::Array<juce::var> paramsArray;
@@ -673,6 +674,8 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
     outDevice.paramPanelOpen = obj->getProperty("paramPanelOpen");
     if (obj->hasProperty("aiPanelOpen"))
         outDevice.aiPanelOpen = static_cast<bool>(obj->getProperty("aiPanelOpen"));
+    if (obj->hasProperty("padDetailOpen"))
+        outDevice.padDetailOpen = static_cast<bool>(obj->getProperty("padDetailOpen"));
 
     // Parameters
     auto paramsVar = obj->getProperty("parameters");

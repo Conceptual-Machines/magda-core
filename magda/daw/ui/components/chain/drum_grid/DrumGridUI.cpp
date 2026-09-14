@@ -1,14 +1,12 @@
 #include "drum_grid/DrumGridUI.hpp"
 
 #include <BinaryData.h>
-#include <tracktion_engine/tracktion_engine.h>
 
 #include <algorithm>
 #include <cmath>
 #include <set>
 
-#include "audio/plugins/DrumGridPlugin.hpp"
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
+#include "core/DrumGridPads.hpp"
 #include "ui/components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "ui/components/common/InternalFileDrag.hpp"
 #include "ui/debug/DebugSettings.hpp"
@@ -16,8 +14,6 @@
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/utils/AudioFileTypes.hpp"
-
-namespace te = tracktion::engine;
 
 namespace magda::daw::ui {
 
@@ -211,6 +207,8 @@ void DrumGridUI::PadButton::mouseUp(const juce::MouseEvent& /*e*/) {
 // =============================================================================
 
 DrumGridUI::DrumGridUI() {
+    startTimer(50);  // pad triggers and the pads' mix, at 20 fps
+
     // Setup pad buttons
     for (int i = 0; i < kPadsPerPage; ++i) {
         padButtons_[static_cast<size_t>(i)].onClicked = [this](int padIndex) {
@@ -388,22 +386,18 @@ DrumGridUI::~DrumGridUI() {
     stopTimer();
 }
 
-void DrumGridUI::setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin) {
-    drumGridPlugin_ = plugin;
-    if (drumGridPlugin_) {
-        startTimer(50);  // 20fps polling
-        // Restore detail collapsed state
-        detailCollapsed_ = drumGridPlugin_->state.getProperty("uiDetailCollapsed", false);
-    }
+void DrumGridUI::restoreDetailCollapsed(bool collapsed) {
+    if (detailCollapsed_ == collapsed)
+        return;
+    detailCollapsed_ = collapsed;
+    resized();
+    repaint();
 }
 
 void DrumGridUI::timerCallback() {
-    if (!drumGridPlugin_)
-        return;
-
     int pageStart = currentPage_ * kPadsPerPage;
     for (int i = 0; i < kTotalPads; ++i) {
-        if (drumGridPlugin_->consumePadTrigger(i)) {
+        if (consumePadTrigger && consumePadTrigger(i)) {
             // Only flash pads on the current page
             int btnIdx = i - pageStart;
             if (btnIdx >= 0 && btnIdx < kPadsPerPage) {
@@ -428,15 +422,15 @@ void DrumGridUI::timerCallback() {
         if (info.chainIndex < 0)
             continue;
 
-        const auto* chain = drumGridPlugin_->getChainByIndex(info.chainIndex);
-        if (!chain)
+        const auto mix = getPadMix ? getPadMix(i) : std::nullopt;
+        if (!mix.has_value())
             continue;
 
-        float chainLevel = chain->level.get();
-        float chainPan = chain->pan.get();
-        bool chainMute = chain->mute.get();
-        bool chainSolo = chain->solo.get();
-        int chainBusOutput = chain->busOutput.get();
+        float chainLevel = mix->level;
+        float chainPan = mix->pan;
+        bool chainMute = mix->mute;
+        bool chainSolo = mix->solo;
+        int chainBusOutput = mix->busOutput;
 
         bool changed = false;
         if (std::abs(info.level - chainLevel) > 0.01f) {
@@ -1163,8 +1157,8 @@ void DrumGridUI::setDetailCollapsed(bool collapsed) {
     if (detailCollapsed_ == collapsed)
         return;
     detailCollapsed_ = collapsed;
-    if (drumGridPlugin_)
-        drumGridPlugin_->state.setProperty("uiDetailCollapsed", collapsed, nullptr);
+    if (onDetailCollapsedChanged)
+        onDetailCollapsedChanged(collapsed);
     resized();
     repaint();
     if (onLayoutChanged)
@@ -1258,7 +1252,7 @@ void DrumGridUI::goToNextPage() {
 }
 
 juce::String DrumGridUI::getNoteName(int padIndex) {
-    int midiNote = daw::audio::DrumGridPlugin::baseNote + padIndex;
+    int midiNote = magda::padNoteFor(padIndex);
     return juce::MidiMessage::getMidiNoteName(midiNote, true, true, 3);
 }
 

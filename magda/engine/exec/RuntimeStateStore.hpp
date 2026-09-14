@@ -16,6 +16,7 @@
 #include "launch/SessionLauncher.hpp"
 #include "plan/RenderPlan.hpp"
 #include "tap/LevelTap.hpp"
+#include "tap/NoteOnTap.hpp"
 #include "tap/RecordTap.hpp"
 #include "tap/ValueTap.hpp"
 
@@ -104,6 +105,12 @@ class RuntimeStateFactory {
      * read off the key.
      */
     virtual std::unique_ptr<LevelTap> createMeter(const OpKey&) {
+        return nullptr;
+    }
+
+    /// The tap behind a MIDI op at @p key, or null to bind none (#2669).
+    /// Declined in the ordinary case, like a meter.
+    virtual std::unique_ptr<NoteOnTap> createNoteOnTap(const OpKey&) {
         return nullptr;
     }
 
@@ -306,6 +313,14 @@ class RuntimeStateStore {
                 visit(key.rackId, *tap);
     }
 
+    /// Every note tap the store holds, with the key of the op it watches
+    /// (#2669). @p visit is called with `(const OpKey&, NoteOnTap&)`; one
+    /// visitor, since a take is destructive.
+    template <typename Visit> void forEachNoteOnTap(Visit&& visit) const {
+        for (const auto& [key, tap] : noteOnTaps_)
+            visit(key, *tap);
+    }
+
     /**
      * @brief Make a handle for every slot @p clips names, publish them, and
      *        retire the ones the snapshot has stopped naming.
@@ -412,6 +427,7 @@ class RuntimeStateStore {
     /// after the plan was published still gets its meters at the next
     /// publish.
     LevelTap* realiseMeter(const OpKey& key);
+    NoteOnTap* realiseNoteOnTap(const OpKey& key);
 
     RuntimeStateFactory& factory_;
 
@@ -479,6 +495,9 @@ class RuntimeStateStore {
     /// binding whose identity is the whole op rather than a DeviceKey or a
     /// TrackId, and the one whose retention therefore reads the plan.
     std::map<OpKey, std::unique_ptr<LevelTap>> meters_;
+
+    /// Keyed and retained the way meters_ is, for the same reason (#2669).
+    std::map<OpKey, std::unique_ptr<NoteOnTap>> noteOnTaps_;
 
     /// The values the host has asked to read back, kept across publishes so
     /// an edit elsewhere in the project doesn't restate a number something

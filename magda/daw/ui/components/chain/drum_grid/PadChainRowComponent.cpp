@@ -2,7 +2,7 @@
 
 #include <BinaryData.h>
 
-#include "audio/plugins/DrumGridPlugin.hpp"
+#include "core/DrumGridPads.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
@@ -61,7 +61,7 @@ PadChainRowComponent::PadChainRowComponent(int padIndex) : padIndex_(padIndex) {
     outputButton_.onClick = [this]() {
         juce::PopupMenu menu;
         menu.addItem(1, "Main", true, currentBusOutput_ == 0);
-        for (int bus = 1; bus < daw::audio::DrumGridPlugin::maxBusOutputs; ++bus)
+        for (int bus = 1; bus < magda::kPadBusCount; ++bus)
             menu.addItem(bus + 1, "Bus " + juce::String(bus), true, currentBusOutput_ == bus);
         juce::Component::SafePointer<PadChainRowComponent> safeThis(this);
         menu.showMenuAsync(

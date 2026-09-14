@@ -543,3 +543,25 @@ TEST_CASE("Renaming a pad announces a property change on its track", "[chain-wal
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A new Drum Grid owns its pads, and its track finds it inside a rack",
+          "[chain-walk][2669]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+    tm.addDeviceToTrack(trackId, effect("Delay"));
+    CHECK(tm.findPadDevice(trackId) == nullptr);
+
+    const auto rackPath = ChainNodePath::rack(trackId, tm.addRackToTrack(trackId, "Rack"));
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto gridId = tm.addDeviceToChainByPath(rackPath.withChain(chainId), drumGrid("Grid"));
+
+    const auto* grid = tm.findPadDevice(trackId);
+    REQUIRE(grid != nullptr);
+    CHECK(grid->id == gridId);
+    REQUIRE(static_cast<bool>(grid->pads));
+    CHECK(grid->pads->chains.empty());
+
+    tm.clearAllTracks();
+}

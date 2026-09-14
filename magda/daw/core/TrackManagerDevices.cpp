@@ -2129,6 +2129,11 @@ DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& dev
     // than a route to it: every link into these pads carries the old DeviceId
     // in its PadRack step, and the ones the grid's own macros and mods hold
     // carry it in `topLevelDeviceId` as well.
+    // A pad device owns its pads from the start, so the compiler expands it
+    // rather than planning a device nothing builds.
+    if (isPadRackDevice(newDevice.pluginId))
+        ensurePads(newDevice);
+
     ChainIdRemap ids;
     ids.devices[device.id] = newDevice.id;
     rekeyPads(newDevice, ids);

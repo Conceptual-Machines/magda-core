@@ -854,15 +854,6 @@ void DeviceSlotComponent::setCustomUITabIndex(int index) {
     customUI_.setCustomUITabIndex(index);
 }
 
-std::vector<tracktion::engine::Plugin*> DeviceSlotComponent::getDrumPadCollapsedPlugins() const {
-    return drum_grid_slot::getCollapsedPlugins(customUI_.getDrumGridUI());
-}
-
-void DeviceSlotComponent::setDrumPadCollapsedPlugins(
-    const std::vector<tracktion::engine::Plugin*>& plugins) {
-    drum_grid_slot::setCollapsedPlugins(customUI_.getDrumGridUI(), plugins);
-}
-
 int DeviceSlotComponent::getPreferredWidth() const {
     // Meter strip + padding is added to content width (not via getMeterWidth since meter is
     // content-area only)
@@ -1350,7 +1341,8 @@ const magda::MacroArray* DeviceSlotComponent::getMacrosData() const {
 std::vector<std::pair<magda::DeviceId, juce::String>> DeviceSlotComponent::getAvailableDevices()
     const {
     std::vector<std::pair<magda::DeviceId, juce::String>> result = {{device_.id, device_.name}};
-    drum_grid_slot::appendAvailableDevices(customUI_.getDrumGridUI(), result);
+    drum_grid_slot::appendAvailableDevices(
+        magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_), result);
     return result;
 }
 
@@ -1358,7 +1350,8 @@ std::map<magda::DeviceId, std::vector<juce::String>> DeviceSlotComponent::getDev
     const {
     std::map<magda::DeviceId, std::vector<juce::String>> result = {
         {device_.id, device_.paramNamesByIndex()}};
-    drum_grid_slot::appendDeviceParamNames(customUI_.getDrumGridUI(), result);
+    drum_grid_slot::appendDeviceParamNames(
+        magda::TrackManager::getInstance().getDeviceInChainByPath(nodePath_), result);
     return result;
 }
 

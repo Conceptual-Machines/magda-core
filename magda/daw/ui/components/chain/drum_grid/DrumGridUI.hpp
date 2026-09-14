@@ -7,6 +7,7 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 
 #include "custom_ui/SamplerUI.hpp"
 #include "drum_grid/PadChainPanel.hpp"
@@ -21,7 +22,6 @@ class Plugin;
 }
 
 namespace magda::daw::audio {
-class DrumGridPlugin;
 class MagdaSamplerPlugin;
 }  // namespace magda::daw::audio
 
@@ -136,11 +136,27 @@ class DrumGridUI : public juce::Component,
      */
     std::function<void(int, int, int, int)> onPadRangeChanged;
 
-    /** Set the DrumGridPlugin pointer for trigger polling. Starts timer. */
-    void setDrumGridPlugin(daw::audio::DrumGridPlugin* plugin);
-    daw::audio::DrumGridPlugin* getDrumGridPlugin() const {
-        return drumGridPlugin_;
-    }
+    /** @brief A pad's switches, faders and output as the model holds them. */
+    struct PadMix {
+        float level = 0.0f;
+        float pan = 0.0f;
+        bool mute = false;
+        bool solo = false;
+        int busOutput = 0;
+    };
+
+    /// Read at the poll rate, so a pad fader moved elsewhere (a mixer
+    /// sub-channel) shows here. Nothing for a pad with no chain.
+    std::function<std::optional<PadMix>(int padIndex)> getPadMix;
+
+    /// Whether a pad has sounded since it was last asked. Read at the poll rate.
+    std::function<bool(int padIndex)> consumePadTrigger;
+
+    /// Where a change to the detail panel's collapsed state is kept.
+    std::function<void(bool collapsed)> onDetailCollapsedChanged;
+
+    /** @brief Show the detail panel as the model keeps it, without reporting a change. */
+    void restoreDetailCollapsed(bool collapsed);
 
     /** Called when layout changes (e.g., chains panel toggled) so parent can resize. */
     std::function<void()> onLayoutChanged;
@@ -319,9 +335,6 @@ class DrumGridUI : public juce::Component,
     // being dragged, so we can highlight every pad that will receive a sample.
     int fileDropStartPad_ = -1;
     int fileDropCount_ = 0;
-
-    // DrumGridPlugin pointer for trigger polling
-    daw::audio::DrumGridPlugin* drumGridPlugin_ = nullptr;
 
     //==============================================================================
     void setDetailCollapsed(bool collapsed);

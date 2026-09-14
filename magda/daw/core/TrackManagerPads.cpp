@@ -114,6 +114,11 @@ DownstreamSearch searchDownstream(const std::vector<ChainElement>& elements,
 
 }  // namespace
 
+const DeviceInfo* TrackManager::findPadDevice(TrackId trackId) const {
+    const auto* track = getTrack(trackId);
+    return track != nullptr ? firstPadDeviceFrom(track->chain.fxChainElements, 0) : nullptr;
+}
+
 const DeviceInfo* TrackManager::findPadDeviceDownstreamOf(const ChainNodePath& devicePath) const {
     const auto* track = getTrack(devicePath.trackId);
     if (track == nullptr)

@@ -2,7 +2,9 @@
 
 #include <juce_core/juce_core.h>
 
+#include <bitset>
 #include <memory>
+#include <vector>
 
 #include "DeviceInfo.hpp"
 #include "TypeIds.hpp"
@@ -111,6 +113,14 @@ ChainId nextPadChainId(const RackInfo& pads);
 /// re-derived after a save and reload.
 DeviceInfo padSamplerDevice(const juce::String& samplePath, int rootNote);
 
+/// What @p pad's first device is called: a sampler by the sample it plays.
+/// Empty for a pad with no device.
+juce::String padVoiceName(const ChainInfo& pad);
+
+/// The notes @p pad answers to that started, given the notes its devices were
+/// @p played: a pad plays its notes transposed onto its root (#2669).
+std::vector<int> padNotesPlayed(const ChainInfo& pad, const std::bitset<128>& played);
+
 /// The pads a project saved before #2207 kept inside `pluginState`, as a rack.
 ///
 /// Null for a device that is not pad-per-chain, one with no pads saved, and
@@ -121,7 +131,8 @@ std::unique_ptr<RackInfo> readLegacyPads(const juce::String& pluginId,
 /// Move a pre-#2207 device's pads out of its plugin state and into the model.
 ///
 /// No-op once the device has pads, so a project saved since is never re-read
-/// from the copy its plugin state still carries. A pad plugin saved before pad
+/// from the copy its plugin state still carries. One with nothing to read gets
+/// an empty pad rack, which every pad device owns. A pad plugin saved before pad
 /// ids existed arrives with `INVALID_DEVICE_ID`; ids are allocated once the
 /// whole project is loaded, by `TrackManager::allocatePadDeviceIds()`, which is
 /// also where a colliding one would be caught.

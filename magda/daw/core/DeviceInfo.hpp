@@ -313,6 +313,7 @@ struct DeviceInfo {
     bool gainPanelOpen = false;   // Gain panel visible
     bool paramPanelOpen = false;  // Parameter panel visible
     bool aiPanelOpen = false;     // AI sound-design panel visible
+    bool padDetailOpen = true;    // A pad device's detail panel visible
 
     // AI panel output text — transient runtime state, NOT serialized to disk.
     // Lives on DeviceInfo so the streamed prompt/result history survives slot

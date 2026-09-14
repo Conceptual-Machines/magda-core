@@ -401,6 +401,11 @@ class EngineSession {
         store_.forEachRackMeter(std::forward<Visit>(visit));
     }
 
+    /// Every note tap, by the key of the MIDI op it watches (#2669).
+    template <typename Visit> void forEachNoteOnTap(Visit&& visit) const {
+        store_.forEachNoteOnTap(std::forward<Visit>(visit));
+    }
+
     /**
      * @brief The device at @p key, or null.
      *
