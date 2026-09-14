@@ -421,12 +421,22 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     }
 
     if (view == ClipView::Session) {
-        // Session clips loop by default and follow project tempo. Leaving the
-        // loop region at zero length means "the whole source" until Tracktion
-        // loopInfo populates the interpretation.
+        // Session clips loop by default. A zero-length loop region means "the
+        // whole source", which is what a slot plays until something says
+        // otherwise.
         clip.loopEnabled = true;
-        newEvent.autoTempo = true;
         newEvent.loopLengthSamples = 0;
+
+        // Beat mode only where there is a tempo to interpret against (#2676).
+        // seedInterpretationFromSource above fills interpBpm when the file said
+        // what it is; with nothing behind it, beat mode is a claim nothing can
+        // honour -- loopLengthBeats() answers zero, the inspector reads BEAT,
+        // and the engine declines the beat face and plays the material at its
+        // own rate anyway (EventPlacement.cpp: usesBeatFace). A clip that comes
+        // up in time mode and is switched over once its tempo is known behaves;
+        // one that claims beat mode with no tempo has readouts that are all
+        // zeroes.
+        newEvent.autoTempo = newEvent.interpBpm > 0.0;
     }
     clips_[clip.id] = clip;
 
@@ -480,9 +490,16 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
 
             auto& mgr = ClipManager::getInstance();
             auto* c = mgr.getClip(cid);
-            const auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
+            auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
             if (ev == nullptr || !interpretationBpmLooksDefaulted(*c, *ev, creationProjectBPM))
                 return;
+
+            // The tempo arriving is what beat mode was waiting for. Without
+            // this a slot that came up in time mode for want of one could never
+            // leave it: applyAudioClipBeats below answers only for a clip
+            // already in beat mode (#1157), so the detection would be dropped
+            // by the very state it is meant to resolve (#2676).
+            ev->autoTempo = true;
 
             double fileDuration = ev->sourceDurationSeconds();
             if (auto* thumb =
