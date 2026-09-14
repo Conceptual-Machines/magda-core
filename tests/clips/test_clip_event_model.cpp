@@ -577,3 +577,39 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
     clips.clearAllClips();
     AudioThumbnailManager::getInstance().clearCache();
 }
+
+TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
+          "[clip][event][interpretation][session]") {
+    // Detection cannot answer for a pad, a vocal take or a one-shot, and a user
+    // may simply disagree with what it found. Neither is a reason to refuse the
+    // fields: what a file is, is a fact about the file, and beat mode is a
+    // separate choice about how to play it (#2676).
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+
+    SourcePool::getInstance().seedFactsForTesting("/tmp/untellable.wav", 4.0, 44100.0);
+
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/untellable.wav", ClipView::Session, 120.0);
+
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    ClipManager::AudioClipBeatsUpdate update;
+    update.interpretationBpm = 90.0;
+    update.interpretationTotalBeats = 6.0;
+    clips.applyAudioClipBeats(clipId, update, 120.0);
+
+    const auto* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == Approx(90.0));
+    REQUIRE(event->interpTotalBeats == Approx(6.0));
+
+    // Typing a tempo says what the file is. Whether to play it in beats is the
+    // BEAT toggle, and this path does not decide it either way.
+    REQUIRE(!event->autoTempo);
+
+    // But it is answerable now, which it was not before.
+    REQUIRE(event->hasInterpretedBpm());
+
+    clips.clearAllClips();
+}
