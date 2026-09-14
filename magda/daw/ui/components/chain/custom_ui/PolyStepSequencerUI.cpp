@@ -2,26 +2,19 @@
 
 #include <algorithm>
 
-#include "audio/AudioBridge.hpp"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "core/GestureRouter.hpp"
+#include "core/RackInfo.hpp"
 #include "core/TrackManager.hpp"
-#include "engine/AudioEngine.hpp"
 #include "ui/themes/SmallButtonLookAndFeel.hpp"
 #include "ui/themes/SmallComboBoxLookAndFeel.hpp"
 
 namespace magda::daw::ui {
-
-namespace te = tracktion::engine;
 
 using PolySeqPlugin = daw::audio::PolyStepSequencerPlugin;
 
 std::atomic<int> PolyStepSequencerUI::nextPatternGesture_{magda::kNoStepPatternGesture + 1};
 
 namespace {
-
-// Drum Grid chain child type (mirrors DrumGridPlugin's private chainTreeId)
-const juce::Identifier DRUM_CHAIN_TYPE("CHAIN");
 
 const char* POLY_NOTE_NAMES[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 
@@ -525,26 +518,18 @@ class PolyStepSequencerUI::KeysView : public PolyStepSequencerUI::PatternView {
 // pattern notes that match no lane get an orphan lane so they stay editable.
 
 class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternView,
-                                           private juce::ValueTree::Listener {
+                                           private magda::TrackManagerListener {
   public:
-    DrumLanesView() = default;
+    DrumLanesView() {
+        magda::TrackManager::getInstance().addListener(this);
+    }
 
     ~DrumLanesView() override {
-        detachStateListeners();
+        magda::TrackManager::getInstance().removeListener(this);
     }
 
     void setContext(const ViewContext& context) override {
-        detachStateListeners();
         PatternView::setContext(context);
-
-        // Watch the owner track's tree so the lane set follows Drum Grid
-        // devices being added / removed / reordered in the chain.
-        if (auto sequencer = liveSequencer()) {
-            if (auto* track = sequencer->getOwnerTrack()) {
-                trackState_ = track->state;
-                trackState_.addListener(this);
-            }
-        }
         refreshLanes();
     }
 
@@ -717,75 +702,21 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
 
     // --- Lane discovery ---
 
-    /** Find a Drum Grid downstream of the sequencer on the owner track,
-     *  looking inside rack instances (instruments are rack-wrapped). If the
-     *  sequencer itself is not on the top-level list, any Drum Grid on the
-     *  track is accepted. */
-    daw::audio::DrumGridPlugin* findDownstreamDrumGrid() const {
-        auto sequencer = liveSequencer();
-        if (sequencer == nullptr)
-            return nullptr;
-        auto* track = sequencer->getOwnerTrack();
-        if (track == nullptr)
-            return nullptr;
-
-        bool passedSelf = false;
-        daw::audio::DrumGridPlugin* fallback = nullptr;
-        for (auto* p : track->pluginList) {
-            if (p == sequencer.get()) {
-                passedSelf = true;
-                continue;
-            }
-            auto* found = dynamic_cast<daw::audio::DrumGridPlugin*>(p);
-            if (found == nullptr) {
-                if (auto* rackInstance = dynamic_cast<te::RackInstance*>(p)) {
-                    if (rackInstance->type != nullptr) {
-                        for (auto* inner : rackInstance->type->getPlugins()) {
-                            found = dynamic_cast<daw::audio::DrumGridPlugin*>(inner);
-                            if (found != nullptr)
-                                break;
-                        }
-                    }
-                }
-            }
-            if (found != nullptr) {
-                if (passedSelf)
-                    return found;
-                if (fallback == nullptr)
-                    fallback = found;
-            }
-        }
-        return passedSelf ? nullptr : fallback;
-    }
-
     /** Rebuild the lane list: Drum Grid chains (or GM fallback) + orphan
      *  lanes for pattern notes that match no chain. Sorted note-ascending so
      *  the lowest lane paints at the bottom. */
     void refreshLanes() {
-        auto* drumGrid = findDownstreamDrumGrid();
-
-        // (Re)attach the Drum Grid state listener when the target changes,
-        // so chain renames / note-range edits refresh the lane labels.
-        auto newState = drumGrid != nullptr ? drumGrid->state : juce::ValueTree();
-        if (newState != drumGridState_) {
-            if (drumGridState_.isValid())
-                drumGridState_.removeListener(this);
-            drumGridState_ = newState;
-            if (drumGridState_.isValid())
-                drumGridState_.addListener(this);
-        }
+        const auto* drumGrid =
+            magda::TrackManager::getInstance().findPadDeviceDownstreamOf(context_.devicePath);
 
         lanes_.clear();
-        if (drumGrid != nullptr) {
-            for (const auto& chain : drumGrid->getChains()) {
-                if (chain == nullptr)
-                    continue;
-                // The chain's low note is the incoming MIDI note that triggers
-                // the pad (single-note chains have lowNote == highNote).
+        if (drumGrid != nullptr && drumGrid->pads) {
+            for (const auto& pad : drumGrid->pads->chains) {
+                // The pad's low note is the incoming MIDI note that triggers
+                // it (single-note pads have lowNote == highNote).
                 Lane lane;
-                lane.note = chain->lowNote;
-                lane.label =
-                    chain->name.isNotEmpty() ? chain->name : polyNoteNameShort(chain->lowNote);
+                lane.note = pad.lowNote;
+                lane.label = pad.name.isNotEmpty() ? pad.name : polyNoteNameShort(pad.lowNote);
                 lanes_.push_back(std::move(lane));
             }
         }
@@ -838,32 +769,12 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             });
     }
 
-    void detachStateListeners() {
-        if (trackState_.isValid()) {
-            trackState_.removeListener(this);
-            trackState_ = juce::ValueTree();
-        }
-        if (drumGridState_.isValid()) {
-            drumGridState_.removeListener(this);
-            drumGridState_ = juce::ValueTree();
-        }
+    // Chain membership and every pad edit arrive as a devices change on the track.
+    void tracksChanged() override {
+        triggerLaneRefresh();
     }
-
-    // ValueTree::Listener — chain membership (track tree) + Drum Grid chains
-    void valueTreePropertyChanged(juce::ValueTree& tree, const juce::Identifier&) override {
-        if (tree.hasType(DRUM_CHAIN_TYPE))
-            triggerLaneRefresh();
-    }
-    void valueTreeChildAdded(juce::ValueTree&, juce::ValueTree& child) override {
-        if (child.hasType(te::IDs::PLUGIN) || child.hasType(DRUM_CHAIN_TYPE))
-            triggerLaneRefresh();
-    }
-    void valueTreeChildRemoved(juce::ValueTree&, juce::ValueTree& child, int) override {
-        if (child.hasType(te::IDs::PLUGIN) || child.hasType(DRUM_CHAIN_TYPE))
-            triggerLaneRefresh();
-    }
-    void valueTreeChildOrderChanged(juce::ValueTree& parent, int, int) override {
-        if (parent == trackState_)
+    void trackDevicesChanged(magda::TrackId trackId) override {
+        if (trackId == context_.devicePath.trackId)
             triggerLaneRefresh();
     }
 
@@ -978,25 +889,11 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
         g.fillPath(arrow);
     }
 
-    /// The live sequencer behind this faceplate. Only the lane discovery needs
-    /// it: the drum lanes come from a Drum Grid downstream in the same chain,
-    /// which is the engine's ordering to answer, not the model's.
-    te::Plugin::Ptr liveSequencer() const {
-        if (!context_.devicePath.isValid())
-            return nullptr;
-        auto* engine = magda::TrackManager::getInstance().getAudioEngine();
-        auto* bridge = engine != nullptr ? engine->getAudioBridge() : nullptr;
-        return bridge != nullptr ? bridge->getPlugin(context_.devicePath) : nullptr;
-    }
-
     int playStep_ = -1;
     int scrollOffset_ = 0;  // Index of the bottom-most visible lane
     bool refreshPending_ = false;
 
     std::vector<Lane> lanes_;  // Sorted note-ascending (lowest paints at the bottom)
-
-    juce::ValueTree trackState_;     // Owner track tree (chain membership)
-    juce::ValueTree drumGridState_;  // Discovered Drum Grid state (CHAIN children)
 
     juce::Rectangle<int> scrollUpArea_;
     juce::Rectangle<int> scrollDownArea_;

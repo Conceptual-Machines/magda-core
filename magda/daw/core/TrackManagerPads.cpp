@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ChainWalk.hpp"
 #include "DrumGridPads.hpp"
 #include "RackInfo.hpp"
 #include "SelectionManager.hpp"
@@ -50,6 +51,26 @@ RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) {
 
 const RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) const {
     return const_cast<TrackManager*>(this)->getPads(gridPath);
+}
+
+const DeviceInfo* TrackManager::findPadDeviceDownstreamOf(const ChainNodePath& devicePath) const {
+    const auto* track = getTrack(devicePath.trackId);
+    if (track == nullptr)
+        return nullptr;
+
+    const DeviceInfo* found = nullptr;
+    auto passed = false;
+    chain_walk::forEachDevice(track->chain.fxChainElements,
+                              ChainNodePath::trackLevel(devicePath.trackId), chain_walk::Pads::Skip,
+                              [&](const DeviceInfo& device, const ChainNodePath& path) {
+                                  if (passed && isPadRackDevice(device.pluginId)) {
+                                      found = &device;
+                                      return false;
+                                  }
+                                  passed = passed || path == devicePath;
+                                  return true;
+                              });
+    return found;
 }
 
 void TrackManager::setPads(const ChainNodePath& gridPath, const PadRack& pads) {

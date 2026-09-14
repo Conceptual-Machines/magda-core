@@ -444,3 +444,33 @@ TEST_CASE("A pad device left behind loses its link to a device that moved away",
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A sequencer's drum lanes come from the pad device after it in the chain",
+          "[chain-walk][2659]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto earlierGrid = tm.addDeviceToTrack(trackId, drumGrid("Earlier"));
+    const auto sequencerId = tm.addDeviceToTrack(trackId, effect("Sequencer"));
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainId = tm.addChainToRack(rackPath);
+    const auto laterGrid =
+        tm.addDeviceToChainByPath(rackPath.withChain(chainId), drumGrid("Later"));
+
+    const auto sequencerPath = ChainNodePath::topLevelDevice(trackId, sequencerId);
+    const auto* downstream = tm.findPadDeviceDownstreamOf(sequencerPath);
+    REQUIRE(downstream != nullptr);
+    CHECK(downstream->id == laterGrid);
+
+    // A grid is not downstream of itself, and nothing follows the last one.
+    const auto* afterEarlier =
+        tm.findPadDeviceDownstreamOf(ChainNodePath::topLevelDevice(trackId, earlierGrid));
+    REQUIRE(afterEarlier != nullptr);
+    CHECK(afterEarlier->id == laterGrid);
+    CHECK(tm.findPadDeviceDownstreamOf(rackPath.withChain(chainId).withDevice(laterGrid)) ==
+          nullptr);
+
+    tm.clearAllTracks();
+}
