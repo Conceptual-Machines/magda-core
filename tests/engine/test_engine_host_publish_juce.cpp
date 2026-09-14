@@ -182,6 +182,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
         magda::test::runWithCleanJuceState([this] { testDevicePathsAreTheAddressesTheUIDraws(); });
         magda::test::runWithCleanJuceState([this] { testRackMeterReadsWhatTheRackRendered(); });
+        magda::test::runWithCleanJuceState([this] { testModelParameterEditReachesTheDevice(); });
         magda::test::runWithCleanJuceState(
             [this] { testTheMeterStoreIsEmptiedAtAProjectBoundary(); });
         magda::test::runWithCleanJuceState([this] { testMacroAndLaneEditsAskForAPublish(); });
@@ -1011,6 +1012,14 @@ class EngineHostPublishTest final : public juce::UnitTest {
         trackManager.setMacroValue(devicePath, 0, 0.75f);
         expect(asked() > beforeMacro, "Turning a macro asks for one");
 
+        // The other half of #2613: a control moved on one of MAGDA's own
+        // devices. What a republish then does to the sound is pinned by
+        // testModelParameterEditReachesTheDevice; this is the link between the
+        // two, and without it that test would pass with nothing listening.
+        const auto beforeParameter = asked();
+        trackManager.setDeviceParameterValue(devicePath, 1, -60.0f);
+        expect(asked() > beforeParameter, "So does moving a device's own parameter");
+
         const auto beforeLane = asked();
         const auto laneId = magda::AutomationManager::getInstance().createLane(
             magda::ControlTarget::pluginParam(devicePath, 2), magda::AutomationLaneType::Absolute);
@@ -1040,6 +1049,123 @@ class EngineHostPublishTest final : public juce::UnitTest {
                "So is a device slot's, which the chain UI draws (#2570)");
         expect(factory.createMeter(inputMeter) == nullptr,
                "A monitored input's is still nobody's (#1895)");
+    }
+
+    /// The write half of #2613: a control moved on one of MAGDA's own devices
+    /// has to reach the device the native engine renders, or the faceplate is
+    /// the least of it -- nothing on the device does anything.
+    void testModelParameterEditReachesTheDevice() {
+        beginTest("Moving a MAGDA device's parameter changes what it renders");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Instrument");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(polySynth(1));
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto clipId = clips.createMidiClipBeats(trackId, 0.0, 8.0);
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
+                                                         .velocity = 100,
+                                                         .startBeat = 0.0,
+                                                         .lengthBeats = 2.0}),
+               "A note that is sounding when the edit lands");
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 60,
+                                                         .velocity = 100,
+                                                         .startBeat = 4.0,
+                                                         .lengthBeats = 2.0}),
+               "And one that starts after it");
+
+        const auto& tracks = trackManager.getTracks();
+        const magda::engine::RenderContext context{.sampleRate = 44100.0, .maxBlockSize = 512};
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+
+        host::EngineFileReaders files;
+        magda::engine::PrefetchThread reader(false);
+        host::EngineRuntimeFactory factory;
+        factory.setModel(tracks, *master);
+
+        magda::engine::ClipVoicePool voices(files, reader, context);
+        magda::engine::EngineSession session(factory, nullptr, &voices);
+        factory.attach(session.clipFeed(), voices.feed(), session.launchHandleFeed(),
+                       session.liveInputs());
+
+        const auto plan = std::make_shared<const magda::engine::RenderPlan>(
+            magda::engine::compileRenderPlan(tracks, *master));
+
+        const auto valuesNow = [&] {
+            magda::engine::PlanValues values;
+            magda::engine::resolvePlanValues(*plan, trackManager.getTracks(), *master, values);
+            return values;
+        };
+
+        expect(session
+                   .publish(plan, context, magda::engine::collectRuntimeStateIds(tracks, *master),
+                            valuesNow())
+                   .published,
+               "The plan is published");
+
+        session.publishClips(
+            std::make_shared<const magda::engine::ClipSnapshot>(magda::engine::compileClipSnapshot(
+                host::clipLanesFor(tracks), host::clipSources(), tempo)));
+
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        const auto render = [&](int blocks, int measureFrom) {
+            float peak = 0.0f;
+            for (auto block = 0; block < blocks; ++block) {
+                session.process(context.maxBlockSize, output);
+                if (block >= measureFrom)
+                    peak = std::max(peak, output.getMagnitude(0, context.maxBlockSize));
+            }
+            return peak;
+        };
+
+        // 120 bpm at 44.1 kHz in 512-sample blocks: a beat is 43 blocks, so the
+        // first note runs to block 86 and the second from 172 to 258.
+        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+        const auto before = render(40, 0);
+        expect(before > 0.05f, "The synth is sounding at the patch's level");
+
+        // What the UI does with a slider: the model value in the parameter's
+        // own units, and a values publish behind it -- no plan change, which is
+        // what a parameter edit is (#2626). Osc 1's level is the only
+        // oscillator this patch has up, so the bottom of its range is an
+        // assertion about sound rather than about a number copied somewhere.
+        const auto devicePath = magda::ChainNodePath::topLevelDevice(trackId, 1);
+        constexpr int kOsc1LevelSlot = 1;
+        trackManager.setDeviceParameterValue(devicePath, kOsc1LevelSlot, -60.0f);
+
+        const auto* edited = trackManager.getDeviceInChainByPath(devicePath);
+        expect(edited != nullptr && edited->findParameterByIndex(kOsc1LevelSlot) != nullptr &&
+                   edited->findParameterByIndex(kOsc1LevelSlot)->currentValue == -60.0f,
+               "The model holds the edit");
+
+        expect(session.publishValues(valuesNow()).published, "The values are published");
+
+        // Measured after the ramp, not across it: the level is smoothed in the
+        // DSP, so the first block either side of an edit is still on its way
+        // between the two values.
+        const auto sounding = render(40, 30);
+
+        // The note that starts after the edit, which is a voice the change
+        // reached before it sounded rather than during. Blocks 80..199, read
+        // from 180: the second note is sounding from 172.
+        const auto afterwards = render(120, 100);
+
+        // Put it back, mid-note, and the same note comes back up. This is what
+        // says the second note was sounding at all: a silence because nothing
+        // was playing would pass an upper bound on its own.
+        trackManager.setDeviceParameterValue(devicePath, kOsc1LevelSlot, -12.0f);
+        expect(session.publishValues(valuesNow()).published, "The edit is undone");
+        const auto restored = render(40, 20);
+
+        expect(sounding < before * 0.1f, "The note that was sounding followed the edit");
+        expect(afterwards < before * 0.1f, "And so did the one that started after it");
+        expect(restored > before * 0.5f, "Which was sounding all along, as undoing it shows");
     }
 
     /// A rack's own level, which the fork answers with the track's (#2649).
