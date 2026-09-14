@@ -45,6 +45,35 @@ double quantizeBeats(LaunchQuantize quantize, double beatsPerBar) {
     return 0.0;
 }
 
+/// Stop whatever else on @p trackId is sounding, on the beat @p launching
+/// starts. Asked inside the launching gesture, so the two land together.
+///
+/// The engine renders every slot whose handle is playing
+/// (SessionPlayback.hpp): one clip per track is the session grid's rule, not
+/// the launcher's, so the slot being replaced has to be told to stop.
+///
+/// Read off @p launcher's states rather than off the track's active clip, which
+/// is the user's intent and not what is sounding: a follow action moves a run
+/// to a slot nobody launched (#2304).
+void handOver(const SlotLauncher& launcher, engine::LaunchRequestQueue::Gesture& gesture,
+              TrackId trackId, const engine::SlotKey& launching, std::optional<double> due) {
+    auto& clips = ClipManager::getInstance();
+
+    for (const auto clipId : clips.getClipsOnTrack(trackId, ClipView::Session)) {
+        const auto* clip = clips.getClip(clipId);
+        if (clip == nullptr || keyOf(*clip) == launching)
+            continue;
+
+        if (launcher.playState(clipId) == SessionClipPlayState::Stopped)
+            continue;
+
+        // A plain stop, not a release: the slot taking over holds the track,
+        // and releasing the section here would hand it back for the instant
+        // between the two (#2302).
+        gesture.stop(keyOf(*clip), due);
+    }
+}
+
 /// Whether anything is sounding, which decides whether the first launch of a
 /// set waits for a boundary or starts where it was asked.
 bool anythingActive() {
@@ -97,6 +126,11 @@ void SlotLauncher::launch(ClipId clipId) {
         // the run begins: the handle re-triggers on it, and the pass it defines
         // is what the playhead below is wrapped against (LaunchRequests.hpp).
         gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+
+        // On the same beat as the launch below, so the track hands over on one
+        // sample rather than sounding two slots across the gap.
+        handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
+
         gesture.play(keyOf(*clip), due);
     }
 
@@ -194,8 +228,10 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
 
         const auto leader = keyOf(*launching.front());
 
-        for (const auto* clip : launching)
+        for (const auto* clip : launching) {
             gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+            handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
+        }
 
         // Every follower joins the leader's run rather than starting one of its
         // own, which is what keeps a scene in phase when it is relaunched

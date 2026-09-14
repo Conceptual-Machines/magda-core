@@ -207,6 +207,7 @@ class SlotLauncherTest final : public juce::UnitTest {
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testUnquantizedLaunchSounds(); });
         magda::test::runWithCleanJuceState([this] { testQuantizedLaunchWaitsForTheBar(); });
+        magda::test::runWithCleanJuceState([this] { testOneSlotPerTrack(); });
         magda::test::runWithCleanJuceState([this] { testASceneStartsTogether(); });
         magda::test::runWithCleanJuceState([this] { testStoppingReturnsTheTrack(); });
         magda::test::runWithCleanJuceState([this] { testThePlayheadWrapsOnThePass(); });
@@ -265,6 +266,33 @@ class SlotLauncherTest final : public juce::UnitTest {
 
         expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Playing,
                "and at the bar it starts");
+    }
+
+    void testOneSlotPerTrack() {
+        beginTest("Launching a slot stops whatever its track was already playing");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto first = rig.slotClip(trackId, 0);
+        const auto second = rig.slotClip(trackId, 1);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+
+        rig.launcher.launch(first);
+        rig.render(rig.blocksFor(0.5));
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Playing,
+               "The first slot is sounding");
+
+        rig.launcher.launch(second);
+        rig.render(1);
+
+        // The engine renders every slot whose handle is playing
+        // (SessionPlayback.hpp): one clip per track is the grid's rule, and
+        // nothing enforces it unless the handover is asked for.
+        expect(rig.launcher.playState(second) == magda::SessionClipPlayState::Playing,
+               "and the second takes over");
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Stopped,
+               "leaving the first stopped rather than sounding under it");
     }
 
     void testASceneStartsTogether() {
