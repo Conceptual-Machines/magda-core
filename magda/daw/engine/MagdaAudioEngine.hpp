@@ -220,6 +220,9 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     const TracktionEngineWrapper& fork() const {
         return *fork_;
     }
+
+    /** @brief Every method that has named itself unwired, in the order it did. */
+    static juce::StringArray unwiredMethods();
 #endif
 
     // Overridden because AudioEngine and AudioEngineListener give these default
