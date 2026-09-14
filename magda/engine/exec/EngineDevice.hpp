@@ -149,6 +149,10 @@ class EngineDevice {
     /// Drop any tail state. Called off the audio thread.
     virtual void reset() {}
 
+    /// Whether the blocks after the next prepare() are an offline render, for a
+    /// live instance an export borrows (#2555). Called off the audio thread.
+    virtual void setOfflineRender(bool) {}
+
     /**
      * @brief The most encoded MIDI that can reach this device in one block.
      *

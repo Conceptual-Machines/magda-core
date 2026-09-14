@@ -52,6 +52,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
 
     add_library(magda_engine_host STATIC
         host/EngineHost.cpp
+        host/EngineOfflineRender.cpp
         host/EngineProject.cpp
         host/EngineRuntimeFactory.cpp
         host/EngineTrace.cpp
@@ -60,7 +61,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/LiveMidiQueue.cpp
         host/LiveMidiRouting.cpp
         host/LiveMidiSources.cpp
+        host/OfflineRenderModel.cpp
         host/EngineHost.hpp
+        host/EngineOfflineRender.hpp
         host/EngineProject.hpp
         host/EngineRuntimeFactory.hpp
         host/EngineTrace.hpp
@@ -69,6 +72,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/LiveMidiQueue.hpp
         host/LiveMidiRouting.hpp
         host/LiveMidiSources.hpp
+        host/OfflineRenderModel.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)
 

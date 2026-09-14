@@ -210,14 +210,6 @@ class AnalysisJob : public juce::Thread {
         constexpr double kAnalysisSampleRate = 22050.0;
         const double sampleRate = kAnalysisSampleRate;
 
-        const auto* tempoMap = engine_.tempoMap();
-        if (tempoMap == nullptr) {
-            err.hasError = true;
-            err.error = "The audio engine does not provide a tempo map.";
-            return err;
-        }
-
-        // Resolve the musical range first; convert only at the render boundary.
         BeatRange musicalRange{{0.0}, {engine_.getEditLengthBeats().value}};
         if (request_.range == OfflineMixAnalysis::RangeMode::LoopRange) {
             const auto loop = engine_.getLoopRegionBeats();
@@ -229,9 +221,8 @@ class AnalysisJob : public juce::Thread {
         base.bitDepth = 24;
         base.sampleRate = sampleRate;
         base.usePlugins = true;
-        base.range = {{tempoMap->beatToTime(musicalRange.start.value)},
-                      {tempoMap->beatToTime(musicalRange.end.value)},
-                      {2.0}};
+        base.range = musicalRange;
+        base.tailSeconds = 2.0;
 
         MessageThreadRenderSession renderSession(engine_);
         if (!renderSession.open()) {

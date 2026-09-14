@@ -74,6 +74,18 @@ enum class OfflineRenderFormat {
     Flac,
 };
 
+/** @brief What a fixed-point render is dithered with before it is rounded. */
+enum class OfflineRenderDither {
+    None,
+    Tpdf,
+    Shaped,
+};
+
+/** @brief TPDF for 16 and 24 bit, nothing for 32-bit float. */
+inline OfflineRenderDither defaultOfflineRenderDither(int bitDepth) {
+    return bitDepth >= 32 ? OfflineRenderDither::None : OfflineRenderDither::Tpdf;
+}
+
 enum class TempoSequenceRippleMode {
     Insert,
     Delete,
@@ -84,15 +96,29 @@ struct OfflineRenderRequest {
     juce::File destination;
     OfflineRenderFormat format = OfflineRenderFormat::Wav;
     int bitDepth = 24;
+
+    /// Unset lets the bit depth decide (defaultOfflineRenderDither).
+    std::optional<OfflineRenderDither> dither;
+
     double sampleRate = 44100.0;
     int blockSize = 512;
     bool shouldNormalise = false;
     float normaliseToLevelDb = 0.0f;
     bool useMasterPlugins = true;
     bool usePlugins = true;
-    bool checkNodesForAudio = false;
+
+    /// False renders a track's instruments without the effects after them.
+    bool useTrackEffects = true;
+
     bool realTimeRender = false;
-    RenderTimeRange range;
+    BeatRange range;
+
+    /// Rendered past the range's end, for reverb and delay tails.
+    double tailSeconds = 0.0;
+
+    /// Silence written ahead of the range.
+    double leadInSeconds = 0.0;
+
     std::vector<TrackId> trackIds;
     std::vector<TrackId> excludedTrackIds;
     std::vector<ClipId> clipIds;

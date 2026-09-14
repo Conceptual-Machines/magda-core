@@ -592,6 +592,10 @@ void EngineExternalDevice::reset() {
     instance_->reset();
 }
 
+void EngineExternalDevice::setOfflineRender(bool offline) {
+    offlineRender_ = offline;
+}
+
 void EngineExternalDevice::setMidiInputBoundBytes(int bytes) {
     midiInputBoundBytes_ = bytes;
 

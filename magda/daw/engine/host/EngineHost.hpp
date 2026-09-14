@@ -19,6 +19,7 @@ class String;
 }  // namespace juce
 
 namespace magda {
+class OfflineRenderSession;
 class TempoMap;
 struct HostParameters;
 }  // namespace magda
@@ -246,6 +247,15 @@ class EngineHost {
         double endBeat = 0.0;
     };
     LoopState loop() const;
+
+    /**
+     * @brief An offline render over this host's devices (#2555).
+     *
+     * The live callback is off and publishes are held until the session is
+     * destroyed. Message thread.
+     */
+    std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
+        bool resumePlaybackWhenFinished);
 
     /// The tempo and signature above as the app's beats<->seconds facade.
     /// Never null, and valid until this host is destroyed.

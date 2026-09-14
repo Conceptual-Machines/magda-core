@@ -232,6 +232,10 @@ void EngineMagdaDevice::reset() {
     device_->reset();
 }
 
+void EngineMagdaDevice::setOfflineRender(bool offline) {
+    offlineRender_ = offline;
+}
+
 int EngineMagdaDevice::latencySamples() const {
     return latencySamples_;
 }

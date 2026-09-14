@@ -29,6 +29,7 @@
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../../project/ProjectManager.hpp"
+#include "EngineOfflineRender.hpp"
 #include "EngineProject.hpp"
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
@@ -264,7 +265,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private TrackManagerListener,
                                 private AutomationManagerListener,
                                 private ClipManagerListener,
-                                private ProjectManagerListener {
+                                private ProjectManagerListener,
+                                public OfflineRenderHost {
     Impl()
         : loader_([this](engine::DeviceKey key) { return modelDevice(key); },
                   [this](engine::DeviceKey key, const DeviceInfo& resolved,
@@ -743,6 +745,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// resolves values on its way through, so the two are alternatives; clips
     /// travel on their own and are published beside either.
     void handleAsyncUpdate() override {
+        // Held rather than dropped: the flags stay set, and the end of the render asks again.
+        if (offlineRenders_ > 0)
+            return;
+
         const engine::RenderContext wanted{.sampleRate = rate_.load(),
                                            .maxBlockSize = blockSize_.load(),
                                            .numChannels = kChannels};
@@ -932,6 +938,54 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishClips();
 
         devices_->addAudioCallback(this);
+    }
+
+    // ===== Offline renders (#2555) =====
+
+    void beginOfflineRender() override {
+        if (offlineRenders_++ > 0)
+            return;
+
+        if (request_.playing)
+            publishRequest({.playing = false, .locate = false});
+
+        // removeAudioCallback returns once the callback has left, so a render
+        // borrowing a device never shares it with a block.
+        if (devices_ != nullptr)
+            devices_->removeAudioCallback(this);
+    }
+
+    void endOfflineRender(bool resumePlayback) override {
+        if (--offlineRenders_ > 0)
+            return;
+
+        // Structural, so the live executor prepares its devices' MIDI bounds again.
+        if (session_ != nullptr)
+            publishPlan(livePlan_);
+
+        if (devices_ != nullptr)
+            devices_->addAudioCallback(this);
+
+        if (resumePlayback)
+            publishRequest({.playing = true, .locate = false});
+
+        triggerAsyncUpdate();
+    }
+
+    std::shared_ptr<engine::EngineDevice> liveDevice(engine::DeviceKey key) const override {
+        return session_ != nullptr ? session_->device(key) : nullptr;
+    }
+
+    std::optional<engine::RenderContext> liveContext() const override {
+        return session_ != nullptr ? std::optional(context_) : std::nullopt;
+    }
+
+    engine::TempoMap renderTempo() const override {
+        return map_;
+    }
+
+    adapter::ExternalPluginServices pluginServices() const override {
+        return {.formats = formats_, .knownPlugins = knownPlugins_, .context = context_};
     }
 
     // ===== The device =====
@@ -1376,6 +1430,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     adapter::LocalDeviceControlPlane plane_{control_, sessionDevices_};
 
     juce::AudioDeviceManager* devices_ = nullptr;
+
+    /// Plugin services an offline render loads a plugin with when no live instance exists.
+    juce::AudioPluginFormatManager* formats_ = nullptr;
+    const juce::KnownPluginList* knownPlugins_ = nullptr;
+
+    /// Offline render sessions open. Nested ones share the first one's suspension.
+    int offlineRenders_ = 0;
+
     engine::RenderContext context_{};
     juce::AudioBuffer<float> scratch_;
 
@@ -1459,6 +1521,8 @@ void EngineHost::start(juce::AudioDeviceManager& devices) {
 void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
                                    const juce::KnownPluginList& knownPlugins) {
     impl_->loader_.setServices(&formats, &knownPlugins);
+    impl_->formats_ = &formats;
+    impl_->knownPlugins_ = &knownPlugins;
 }
 
 void EngineHost::meterInto(MeterSink sink) {
@@ -1612,6 +1676,11 @@ void EngineHost::setMetronomeEnabled(bool enabled) {
 
 bool EngineHost::isMetronomeEnabled() const {
     return impl_->click_.enabled;
+}
+
+std::unique_ptr<OfflineRenderSession> EngineHost::createOfflineRenderSession(
+    bool resumePlaybackWhenFinished) {
+    return createEngineOfflineRenderSession(*impl_, resumePlaybackWhenFinished);
 }
 
 EngineHost::LoopState EngineHost::loop() const {

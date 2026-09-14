@@ -1,8 +1,11 @@
 #include "OfflineRenderHelper.hpp"
 
+#include <algorithm>
 #include <utility>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/plugins/InsertCapturePlugin.hpp"
+#include "../audio/racks/InstrumentRackManager.hpp"
 #include "TracktionEngineWrapper.hpp"
 
 namespace magda {
@@ -66,6 +69,54 @@ void restorePluginsAfterOfflineRender(TracktionEngineWrapper& engine) {
         bridge->getPluginManager().restoreAfterRendering();
 }
 
+/// Rendered ahead of a non-realtime render and cut off again, so plugins settle.
+constexpr double kPrerollSeconds = 2.0;
+
+/**
+ * @brief Cut the first @p seconds off @p file, rewriting it at its own format.
+ *
+ * Tracktion's renderer starts where it is told, so the preroll lands in the file.
+ */
+bool trimLeadingSeconds(const juce::File& file, double seconds) {
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
+
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager.createReaderFor(file));
+    if (!reader)
+        return false;
+
+    const auto samplesToSkip = static_cast<juce::int64>(seconds * reader->sampleRate);
+    const auto samplesToKeep = reader->lengthInSamples - samplesToSkip;
+    if (samplesToKeep <= 0)
+        return false;
+
+    const auto tempFile =
+        file.getSiblingFile(file.getFileNameWithoutExtension() + "_tmp" + file.getFileExtension());
+
+    std::unique_ptr<juce::AudioFormat> format;
+    if (file.hasFileExtension(".flac"))
+        format = std::make_unique<juce::FlacAudioFormat>();
+    else
+        format = std::make_unique<juce::WavAudioFormat>();
+
+    std::unique_ptr<juce::OutputStream> outputStream =
+        std::make_unique<juce::FileOutputStream>(tempFile);
+    auto writerOptions = juce::AudioFormatWriterOptions()
+                             .withSampleRate(reader->sampleRate)
+                             .withNumChannels(static_cast<int>(reader->numChannels))
+                             .withBitsPerSample(static_cast<int>(reader->bitsPerSample));
+    auto writer = format->createWriterFor(outputStream, writerOptions);
+    if (!writer)
+        return false;
+
+    writer->writeFromAudioReader(*reader, samplesToSkip, samplesToKeep);
+    writer.reset();
+    reader.reset();
+
+    file.deleteFile();
+    return tempFile.moveFileTo(file);
+}
+
 class TracktionOfflineRenderTask final : public OfflineRenderTask {
   public:
     TracktionOfflineRenderTask(TracktionEngineWrapper& engine, tracktion::Edit& edit,
@@ -76,19 +127,30 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
         params_.audioFormat = request_.format == OfflineRenderFormat::Flac ? formats.getFlacFormat()
                                                                            : formats.getWavFormat();
         params_.bitDepth = request_.bitDepth;
+        params_.ditheringEnabled =
+            request_.dither.value_or(defaultOfflineRenderDither(request_.bitDepth)) !=
+            OfflineRenderDither::None;
         params_.sampleRateForAudio = request_.sampleRate;
         params_.blockSizeForAudio = request_.blockSize;
         params_.shouldNormalise = request_.shouldNormalise;
         params_.normaliseToLevelDb = request_.normaliseToLevelDb;
         params_.useMasterPlugins = request_.useMasterPlugins;
         params_.usePlugins = request_.usePlugins;
-        params_.checkNodesForAudio = request_.checkNodesForAudio;
         params_.realTimeRender = request_.realTimeRender;
+
+        // Lead-in is kept out of the preroll rather than rendered on top of it.
+        if (!request_.realTimeRender)
+            trimSeconds_ = std::max(0.0, kPrerollSeconds - request_.leadInSeconds);
+
+        const auto& tempo = edit.tempoSequence;
+        const auto start =
+            tempo.toTime(tracktion::BeatPosition::fromBeats(request_.range.start.value));
+        const auto end = tempo.toTime(tracktion::BeatPosition::fromBeats(request_.range.end.value));
         params_.time =
-            tracktion::TimeRange(tracktion::TimePosition::fromSeconds(request_.range.start.seconds),
-                                 tracktion::TimePosition::fromSeconds(request_.range.end.seconds));
-        params_.endAllowance =
-            tracktion::TimeDuration::fromSeconds(request_.range.endAllowance.seconds);
+            tracktion::TimeRange(start - tracktion::TimeDuration::fromSeconds(
+                                             request_.realTimeRender ? 0.0 : kPrerollSeconds),
+                                 end);
+        params_.endAllowance = tracktion::TimeDuration::fromSeconds(request_.tailSeconds);
         params_.tracksToDo = tracksToDo;
 
         if (auto* bridge = engine.getAudioBridge())
@@ -121,6 +183,8 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
             return {false, task.errorMessage};
         if (!request_.destination.existsAsFile() || request_.destination.getSize() <= 0)
             return {false, "Render did not create an output file"};
+        if (trimSeconds_ > 0.0 && !trimLeadingSeconds(request_.destination, trimSeconds_))
+            return {false, "Render could not trim its preroll"};
         if (onProgress)
             onProgress(1.0f);
         return {true, {}};
@@ -129,6 +193,7 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
   private:
     OfflineRenderRequest request_;
     tracktion::Renderer::Parameters params_;
+    double trimSeconds_ = 0.0;
 };
 
 class TracktionOfflineRenderSession final : public OfflineRenderSession {
@@ -144,6 +209,10 @@ class TracktionOfflineRenderSession final : public OfflineRenderSession {
     }
 
     ~TracktionOfflineRenderSession() override {
+        for (const auto& [plugin, wasEnabled] : bypassed_)
+            if (plugin != nullptr)
+                plugin->setEnabled(wasEnabled);
+
         restorePluginsAfterOfflineRender(engine_);
         edit_.getTransport().ensureContextAllocated();
         engine_.setOfflineRenderActive(false);
@@ -177,14 +246,38 @@ class TracktionOfflineRenderSession final : public OfflineRenderSession {
                 return nullptr;
         }
 
+        if (!request.useTrackEffects && bridge != nullptr)
+            for (const auto trackId : request.trackIds)
+                if (auto* track = bridge->getAudioTrack(trackId))
+                    bypassEffects(*track, bridge->getPluginManager().getInstrumentRackManager());
+
         return std::make_unique<TracktionOfflineRenderTask>(engine_, edit_, request, *tracksToDo);
     }
 
   private:
+    /**
+     * @brief Disable everything on @p track but its instrument, until the session ends.
+     *
+     * An external insert counts as the instrument, and the capture tap has to
+     * keep playing the captured return (#1623).
+     */
+    void bypassEffects(tracktion::AudioTrack& track, InstrumentRackManager& racks) {
+        for (auto* plugin : track.pluginList) {
+            if (racks.isWrapperRack(plugin) ||
+                dynamic_cast<tracktion::InsertPlugin*>(plugin) != nullptr ||
+                dynamic_cast<InsertCapturePlugin*>(plugin) != nullptr)
+                continue;
+
+            bypassed_.emplace_back(plugin, plugin->isEnabled());
+            plugin->setEnabled(false);
+        }
+    }
+
     TracktionEngineWrapper& engine_;
     tracktion::Edit& edit_;
     bool resumePlaybackWhenFinished_ = false;
     tracktion::TransportControl::ReallocationInhibitor inhibitor_;
+    std::vector<std::pair<tracktion::Plugin::Ptr, bool>> bypassed_;
 };
 
 }  // namespace

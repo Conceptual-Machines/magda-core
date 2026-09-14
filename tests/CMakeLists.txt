@@ -437,6 +437,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_offline_render.cpp)
     list(APPEND TEST_SOURCES engine/test_pcm_quantiser.cpp)
     list(APPEND TEST_SOURCES engine/test_audio_file_sink.cpp)
+    list(APPEND TEST_SOURCES engine/test_offline_render_model.cpp)
     list(APPEND TEST_SOURCES engine/test_insert_capture_session.cpp)
     # What an armed or monitoring track hears (#2459): the callback's own
     # samples, its own piece of a split callback, and nothing between callbacks.
@@ -833,6 +834,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+
+        # Export, bounce and analysis renders on the native engine, read off disk (#2555).
+        engine/test_engine_offline_render_juce.cpp
 
         # What the app's own engine answers with no Edit behind it (#2579).
         engine/test_magda_audio_engine_juce.cpp
