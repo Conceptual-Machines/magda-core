@@ -68,6 +68,15 @@ TIDY_SYSROOT := $(shell if [ "$$(uname)" = "Darwin" ]; then \
 		[ -n "$$SDK" ] && echo "--extra-arg=-isysroot --extra-arg=$$SDK"; \
 	fi)
 
+# clang-tidy analyses one file per process on one thread, so the lint targets run
+# a process per core. Each file's report is buffered and printed whole, so two
+# files' diagnostics never interleave. Override with `make lint TIDY_JOBS=n`.
+TIDY_JOBS ?= $(shell sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 4)
+TIDY_PARALLEL = xargs -0 -n 1 -P $(TIDY_JOBS) sh -c \
+	'out=$$("$$@" 2>&1); [ -z "$$out" ] || printf "%s\n" "$$out"' tidy \
+	$(CLANG_TIDY) --config-file=.clang-tidy --format-style=file \
+	-p=$(BUILD_DIR) $(TIDY_SYSROOT) --quiet
+
 # Default target
 .PHONY: all
 all: debug
@@ -463,13 +472,7 @@ lint:
 		exit 1; \
 	fi
 	@echo "📋 Analyzing magda sources (tests are out of scope)..."
-	@find magda -name "*.cpp" -type f -exec \
-		$(CLANG_TIDY) \
-		{} \
-		--config-file=.clang-tidy \
-		--format-style=file \
-		-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
-		--quiet \;
+	@find magda -name "*.cpp" -type f -print0 | $(TIDY_PARALLEL)
 	@echo "✅ Code analysis complete"
 
 # Lint recently modified files only
@@ -489,14 +492,7 @@ lint-changed:
 		echo "No modified .cpp files found"; \
 	else \
 		echo "Analyzing: $$CHANGED_FILES"; \
-		for file in $$CHANGED_FILES; do \
-			$(CLANG_TIDY) \
-				$$file \
-				--config-file=.clang-tidy \
-				--format-style=file \
-				-p=$(BUILD_DIR) $(TIDY_SYSROOT) \
-				--quiet; \
-		done; \
+		printf "%s\0" $$CHANGED_FILES | $(TIDY_PARALLEL); \
 	fi
 	@echo "✅ Analysis complete"
 
