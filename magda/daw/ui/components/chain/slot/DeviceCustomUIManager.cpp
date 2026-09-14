@@ -2218,13 +2218,17 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
     bindDeviceFaceplates();
 }
 
-bool DeviceCustomUIManager::awaitingRenderedDevice() const {
-    if (boundDevice_ != nullptr)
-        return false;
+bool DeviceCustomUIManager::needsDeviceRebind() const {
+    const bool polls = chordEngineUI_ != nullptr || arpeggiatorUI_ != nullptr ||
+                       strumUI_ != nullptr || stepSequencerUI_ != nullptr ||
+                       polyStepSequencerUI_ != nullptr || polySynthUI_ != nullptr ||
+                       struckUI_ != nullptr;
 
-    return chordEngineUI_ != nullptr || arpeggiatorUI_ != nullptr || strumUI_ != nullptr ||
-           stepSequencerUI_ != nullptr || polyStepSequencerUI_ != nullptr ||
-           polySynthUI_ != nullptr || struckUI_ != nullptr;
+    // Compared rather than latched on "never bound": a session remade for a new
+    // sample rate rebuilds every device without the model moving, and a
+    // faceplate that stopped asking would poll the retired instance -- which
+    // boundDevice_ is holding open -- until the slot was rebuilt.
+    return polls && liveDevice().get() != boundDevice_.get();
 }
 
 void DeviceCustomUIManager::bindDeviceFaceplates() {

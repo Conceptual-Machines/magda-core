@@ -178,9 +178,10 @@ class DeviceCustomUIManager {
         return deviceUiContext_;
     }
 
-    /// Whether a faceplate that polls a live device is still without one: the
-    /// slot is built before the engine has published a plan holding it (#2585).
-    bool awaitingRenderedDevice() const;
+    /// Whether a faceplate that polls a live device is bound to something other
+    /// than what renders now: nothing yet, because the slot is built before the
+    /// plan that holds the device, or an instance a rebuild retired (#2585).
+    bool needsDeviceRebind() const;
 
     // Tab index for FourOscUI persistence across rebuilds
     int getCustomUITabIndex() const;

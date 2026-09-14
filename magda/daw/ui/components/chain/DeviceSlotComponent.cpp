@@ -639,9 +639,10 @@ void DeviceSlotComponent::timerCallback() {
     if (!engine)
         return;
 
-    // A faceplate still waiting for its device rebinds here: the slot is built
-    // from the model, and the engine publishes the device after it (#2585).
-    if (compiledPanel_ != nullptr || traits_.isAnalysis || customUI_.awaitingRenderedDevice())
+    // A faceplate bound to anything but the device rendering now rebinds here:
+    // the slot is built before the plan that holds it, and a session remade for
+    // a new sample rate rebuilds every device without the model moving (#2585).
+    if (compiledPanel_ != nullptr || traits_.isAnalysis || customUI_.needsDeviceRebind())
         refreshInlinePluginBindings();
 
     // Update UI button state to match the actual window state.
