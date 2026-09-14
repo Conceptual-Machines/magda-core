@@ -1405,37 +1405,6 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
         });
     };
 
-    // The notes a pad answers to. A pad that answers to everything is a chain
-    // built before pads were keyed by pitch; it reads as the pad's own note so
-    // the row shows the range the grid actually plays it at.
-    drumGridUI_->getNoteRange = [gridPath](int padIndex) -> std::tuple<int, int, int> {
-        const int note = magda::padNoteFor(padIndex);
-        const auto* pad = magda::TrackManager::getInstance().getPad(gridPath(), padIndex);
-        if (pad == nullptr || pad->answersToEveryNote())
-            return {note, note, note};
-        return {pad->lowNote, pad->highNote, pad->rootNote};
-    };
-
-    drumGridUI_->onPadRangeChanged = [this, postPadEdit, gridPath](int padIndex, int lowNote,
-                                                                   int highNote, int rootNote) {
-        // A range has to stay inside the grid's own notes and clear of every
-        // other pad's. Asked before the edit, so a refused range snaps the row
-        // back rather than leaving it showing something the model never took,
-        // and does not become an undo step that changed nothing.
-        if (!magda::TrackManager::getInstance().padNoteRangeIsFree(gridPath(), padIndex, lowNote,
-                                                                   highNote)) {
-            if (drumGridUI_ != nullptr)
-                drumGridUI_->refreshRangeRows();
-            return;
-        }
-
-        postPadEdit("Set Pad Key Range",
-                    [padIndex, lowNote, highNote, rootNote](const magda::ChainNodePath& grid) {
-                        magda::TrackManager::getInstance().setPadNoteRange(grid, padIndex, lowNote,
-                                                                           highNote, rootNote);
-                    });
-    };
-
     // Plugin drag and drop onto pads: an instrument replaces the pad
     drumGridUI_->onPluginDropped = [postPadEdit, updatePadFromModel,
                                     loadSampleToPad](int padIndex, const juce::DynamicObject& obj) {

@@ -374,6 +374,13 @@ class MidiBridge : public juce::MidiInputCallback {
     std::atomic<bool> isShuttingDown_{false};
     std::atomic<int> activeCallbacks_{0};
 
+    /** @brief Open what a route names once it is plugged in, and close what was unplugged. */
+    void refreshMidiInputs();
+
+    // Last, so it disconnects before anything its callback reads is destroyed.
+    juce::MidiDeviceListConnection deviceList_ =
+        juce::MidiDeviceListConnection::make([this] { refreshMidiInputs(); });
+
     juce::ListenerList<Listener> midiDeviceListListeners_;
 
     // Raw MIDI listeners (for ControllerRouter)

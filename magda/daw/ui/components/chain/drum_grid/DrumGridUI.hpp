@@ -11,7 +11,6 @@
 
 #include "custom_ui/SamplerUI.hpp"
 #include "drum_grid/PadChainPanel.hpp"
-#include "drum_grid/PadChainRangeRowComponent.hpp"
 #include "drum_grid/PadChainRowComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "ui/components/common/SvgButton.hpp"
@@ -129,13 +128,6 @@ class DrumGridUI : public juce::Component,
     /** Called when play button is pressed/released on a pad. (padIndex, isNoteOn) */
     std::function<void(int, bool)> onNotePreview;
 
-    /** Query note range for a pad. Returns {lowNote, highNote, rootNote}. (padIndex) */
-    std::function<std::tuple<int, int, int>(int)> getNoteRange;
-
-    /** Called when the user changes note range for a pad. (padIndex, lowNote, highNote, rootNote)
-     */
-    std::function<void(int, int, int, int)> onPadRangeChanged;
-
     /** @brief A pad's switches, faders and output as the model holds them. */
     struct PadMix {
         float level = 0.0f;
@@ -171,10 +163,6 @@ class DrumGridUI : public juce::Component,
 
     /** Rebuild visible chain rows from padInfos_. */
     void rebuildChainRows();
-
-    /** Re-read the key range rows from the model. Called after an edit the
-        model refused, so the row shows the range it actually kept (#2211). */
-    void refreshRangeRows();
 
     /** Show or hide the chains panel. */
     void setChainsPanelVisible(bool visible);
@@ -319,10 +307,6 @@ class DrumGridUI : public juce::Component,
     juce::Viewport chainsViewport_;
     juce::Component chainsContainer_;
     std::vector<std::unique_ptr<PadChainRowComponent>> chainRows_;
-    // One per chain row, laid out only under the selected one. Built with the
-    // rows rather than on selection: selection changes from a row's own
-    // mouseUp, and rebuilding there would free the component mid-callback.
-    std::vector<std::unique_ptr<PadChainRangeRowComponent>> rangeRows_;
     std::unique_ptr<magda::SvgButton> chainsToggleButton_;
 
     // Paint rects (set in resized, used in paint)
