@@ -36,6 +36,33 @@
 
 namespace magda {
 
+namespace {
+
+constexpr const char* kOscilloscopeId = "oscilloscope";
+constexpr const char* kSpectrumId = "spectrumanalyzer";
+
+/// The device the engine renders for this track's mixer-analysis slot (#2585).
+std::shared_ptr<daw::audio::MagdaDevice> renderedAnalyser(TrackId trackId, const char* pluginId) {
+    auto& tracks = TrackManager::getInstance();
+    const auto deviceId = tracks.findMixerAnalysisDevice(trackId, pluginId);
+    auto* engine = tracks.getAudioEngine();
+    if (deviceId == INVALID_DEVICE_ID || engine == nullptr)
+        return {};
+
+    return engine->renderedDevice(ChainNodePath::mixerAnalysisDevice(trackId, deviceId));
+}
+
+/// Patch the analyser's own document, which is what persists its settings and
+/// what the device is rebuilt from (#2663).
+void editAnalyserSettings(TrackId trackId, const char* pluginId,
+                          const juce::NamedValueSet& settings) {
+    const auto deviceId = TrackManager::getInstance().findMixerAnalysisDevice(trackId, pluginId);
+    if (deviceId != INVALID_DEVICE_ID)
+        writeDeviceSettings(ChainNodePath::mixerAnalysisDevice(trackId, deviceId), settings);
+}
+
+}  // namespace
+
 // "Add Send" row — "Add Send" label on the left, square "+" on the right
 // aligned with the existing send rows' delete (x) button. Whole row is one
 // button; click anywhere fires the destination picker.
@@ -1034,21 +1061,17 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     // One source per faceplate, over a query that finds the mixer-analysis
     // device again on every read: whichever engine renders it answers, and a
     // device rebuilt or removed under the strip is a rebind (#2585).
-    const auto analysisDevice = [trackId = trackId_](const char* pluginId) {
-        return [trackId, pluginId]() -> std::shared_ptr<daw::audio::MagdaDevice> {
-            const auto id = TrackManager::getInstance().findMixerAnalysisDevice(trackId, pluginId);
-            auto* engine = TrackManager::getInstance().getAudioEngine();
-            if (id == INVALID_DEVICE_ID || engine == nullptr)
-                return {};
-
-            return engine->renderedDevice(ChainNodePath::mixerAnalysisDevice(trackId, id));
-        };
-    };
-
     if (miniOscilloscopeUI_) {
         if (miniOscilloscopeTelemetry_ == nullptr) {
             miniOscilloscopeTelemetry_ = std::make_shared<daw::ui::DeviceOscilloscopeTelemetry>(
-                analysisDevice("oscilloscope"));
+                [trackId = trackId_] { return renderedAnalyser(trackId, kOscilloscopeId); });
+            // An edited setting goes to the device's own document, addressed
+            // when the edit happens: which device answers for the strip is the
+            // model's to say (#2663).
+            miniOscilloscopeUI_->onSettingsEdited =
+                [trackId = trackId_](const juce::NamedValueSet& settings) {
+                    editAnalyserSettings(trackId, kOscilloscopeId, settings);
+                };
         }
         miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
@@ -1056,9 +1079,36 @@ void MixerView::ChannelStrip::refreshMiniAnalyzers() {
     if (miniSpectrumUI_) {
         if (miniSpectrumTelemetry_ == nullptr) {
             miniSpectrumTelemetry_ = std::make_shared<daw::ui::DeviceSpectrumTelemetry>(
-                analysisDevice("spectrumanalyzer"));
+                [trackId = trackId_] { return renderedAnalyser(trackId, kSpectrumId); });
+            miniSpectrumUI_->onSettingsEdited =
+                [trackId = trackId_](const juce::NamedValueSet& settings) {
+                    editAnalyserSettings(trackId, kSpectrumId, settings);
+                };
         }
         miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
+    }
+
+    refreshAnalyserSettings();
+}
+
+void MixerView::ChannelStrip::refreshAnalyserSettings() {
+    // The controls show what the device holds, and the device is published
+    // after the model change that added it -- so the read follows the device
+    // rather than the notification (#2663).
+    if (miniOscilloscopeUI_) {
+        const auto* device = renderedAnalyser(trackId_, kOscilloscopeId).get();
+        if (device != miniOscilloscopeDevice_) {
+            miniOscilloscopeDevice_ = device;
+            miniOscilloscopeUI_->refreshSettingsFromSource();
+        }
+    }
+
+    if (miniSpectrumUI_) {
+        const auto* device = renderedAnalyser(trackId_, kSpectrumId).get();
+        if (device != miniSpectrumDevice_) {
+            miniSpectrumDevice_ = device;
+            miniSpectrumUI_->refreshSettingsFromSource();
+        }
     }
 }
 
@@ -2633,6 +2683,15 @@ void MixerView::timerCallback() {
             masterStrip->resetPeak();
     }
     wasPlaying_ = isPlaying;
+
+    // A faceplate whose device has just been published re-reads its settings
+    // here: the model's notification ran before the publish (#2663).
+    for (auto& strip : channelStrips)
+        strip->refreshAnalyserSettings();
+    for (auto& strip : auxChannelStrips)
+        strip->refreshAnalyserSettings();
+    if (masterStrip)
+        masterStrip->refreshAnalyserSettings();
 
     // Update channel strip meters
     for (auto& strip : channelStrips) {
