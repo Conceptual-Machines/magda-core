@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaGateExpanderCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/GestureRouter.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -43,8 +42,8 @@ CompiledGateCurveView::CompiledGateCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledGateCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
 void CompiledGateCurveView::updateFromDevice(const magda::DeviceInfo& device) {
@@ -272,9 +271,10 @@ const CompiledPresentationSpec& getMagdaGatePresentation() {
     return kSpec;
 }
 
-void CompiledGateCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin>(plugin));
+void CompiledGateCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaGateExpanderCompiledPlugin>(
+            std::move(device)));
 }
 
 }  // namespace magda::daw::ui

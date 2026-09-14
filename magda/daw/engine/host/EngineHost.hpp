@@ -23,6 +23,10 @@ class TempoMap;
 struct HostParameters;
 }  // namespace magda
 
+namespace magda::daw::audio {
+class MagdaDevice;
+}
+
 /**
  * @file EngineHost.hpp
  * @brief The app's end of magda::engine: a device callback and a publisher.
@@ -179,6 +183,20 @@ class EngineHost {
 
     /** @brief Every parameter the plugin at @p devicePath reports (#2629). */
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const;
+
+    /**
+     * @brief The MAGDA device the plan renders at @p devicePath, or null (#2585).
+     *
+     * What a faceplate reads its telemetry off. Held open by the store's own
+     * lease, so a UI reading a ring is still holding the instance a rebuild
+     * has taken out of the plan.
+     *
+     * Message thread, and synchronous: a ring is read inside a repaint. It is
+     * a query -- nothing is suspended and nothing moves -- which is why it does
+     * not go through the control plane, the same exemption formatDeviceParameter
+     * has.
+     */
+    std::shared_ptr<audio::MagdaDevice> renderedDevice(const ChainNodePath& devicePath) const;
 
     /**
      * @brief What the plugin last reported for @p paramIndex, if anything.

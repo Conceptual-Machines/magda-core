@@ -1,6 +1,7 @@
 #pragma once
 
 #include "plugins/AnalysisTapPlugin.hpp"
+#include "plugins/AnalysisTelemetry.hpp"
 #include "plugins/DeviceServices.hpp"
 
 namespace magda::daw::audio {
@@ -9,7 +10,7 @@ namespace magda::daw::audio {
  * @brief Spectrum Analyzer analysis device. Transparent passthrough that taps
  *        the signal into an AudioTapBuffer; SpectrumAnalyzerUI runs the FFT.
  */
-class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public DeviceTelemetry {
+class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public SpectrumTelemetry {
   public:
     explicit SpectrumAnalyzerPlugin(const DevicePluginDefaults::Spectrum& defaults)
         : AnalysisTapPlugin(8192),
@@ -21,26 +22,25 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public DeviceTelemetry 
         return "Spectrum Analyzer";
     }
     static const char* xmlTypeName;
-    static constexpr std::string_view telemetryKeyValue = "spectrum";
 
     // Display settings (message thread). FFT order is 11 (2048) or 12 (4096);
     // slope is the display tilt in dB/octave; smoothing is the response speed (0..1).
     int getFftOrder() const {
         return juce::jlimit(11, 12, fftOrder_.load(std::memory_order_relaxed));
     }
-    void setFftOrder(int order) {
+    void setFftOrder(int order) override {
         fftOrder_.store(juce::jlimit(11, 12, order), std::memory_order_relaxed);
     }
     float getSlopeDbPerOct() const {
         return slopeDbPerOct_.load(std::memory_order_relaxed);
     }
-    void setSlopeDbPerOct(float slope) {
+    void setSlopeDbPerOct(float slope) override {
         slopeDbPerOct_.store(slope, std::memory_order_relaxed);
     }
     float getSmoothing() const {
         return juce::jlimit(0.05f, 1.0f, smoothing_.load(std::memory_order_relaxed));
     }
-    void setSmoothing(float s) {
+    void setSmoothing(float s) override {
         smoothing_.store(juce::jlimit(0.05f, 1.0f, s), std::memory_order_relaxed);
     }
 
@@ -70,15 +70,48 @@ class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public DeviceTelemetry 
     }
 
     std::string_view telemetryKey() const override {
-        return telemetryKeyValue;
+        return kKey;
     }
 
     DeviceTelemetry* telemetry(std::string_view key) override {
-        return key == telemetryKeyValue ? this : nullptr;
+        return key == kKey ? this : nullptr;
     }
 
     const DeviceTelemetry* telemetry(std::string_view key) const override {
-        return key == telemetryKeyValue ? this : nullptr;
+        return key == kKey ? this : nullptr;
+    }
+
+    // The tap and its settings, as whatever draws them asks for them (#2585).
+    std::size_t writePosition() const override {
+        return getTapBuffer().writePosition();
+    }
+
+    std::size_t readLatest(float* dest, int numSamples) const override {
+        return getTapBuffer().readLatest(dest, numSamples);
+    }
+
+    double sampleRate() const override {
+        return getSampleRate();
+    }
+
+    int traceColourIndex() const override {
+        return getTraceColourIndex();
+    }
+
+    void setTraceColourIndex(int index) override {
+        AnalysisTapPlugin::setTraceColourIndex(index);
+    }
+
+    int fftOrder() const override {
+        return getFftOrder();
+    }
+
+    float slopeDbPerOct() const override {
+        return getSlopeDbPerOct();
+    }
+
+    float smoothing() const override {
+        return getSmoothing();
     }
 
   private:

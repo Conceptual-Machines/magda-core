@@ -44,7 +44,6 @@
 #include "slot/DeviceSlotHeaderControls.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 #include "slot/DeviceSlotMidiActivity.hpp"
-#include "slot/DeviceSlotMidiUiBinding.hpp"
 #include "slot/DeviceSlotModMacroCommands.hpp"
 #include "slot/DeviceSlotModulationContext.hpp"
 #include "slot/DeviceSlotMultiOutControls.hpp"
@@ -640,7 +639,9 @@ void DeviceSlotComponent::timerCallback() {
     if (!engine)
         return;
 
-    if (compiledPanel_ != nullptr || traits_.isAnalysis)
+    // A faceplate still waiting for its device rebinds here: the slot is built
+    // from the model, and the engine publishes the device after it (#2585).
+    if (compiledPanel_ != nullptr || traits_.isAnalysis || customUI_.awaitingRenderedDevice())
         refreshInlinePluginBindings();
 
     // Update UI button state to match the actual window state.
@@ -841,8 +842,6 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
     // pick up the current state.
     refreshControllerIndicators();
 
-    // Update MIDI custom UIs with the now-valid trackId (createCustomUI runs before setNodePath).
-    bindDeviceSlotMidiCustomUIs(customUI_, nodePath_);
     refreshInlinePluginBindings();
 }
 
@@ -1015,12 +1014,8 @@ void DeviceSlotComponent::updateParamModulation() {
                                       context.selectedMacroIndex);
 
     if (compiledPanel_) {
-        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            if (auto* bridge = audioEngine->getAudioBridge()) {
-                auto plugin = bridge->getPlugin(nodePath_);
-                compiledPanel_->bindPlugin(plugin.get());
-            }
-        }
+        if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+            compiledPanel_->bindDevice(audioEngine->renderedDevice(nodePath_));
         ParamLinkContext curveLinkContext{device_.id,
                                           -1,
                                           nodePath_,
@@ -1750,7 +1745,7 @@ void DeviceSlotComponent::createCustomUI() {
 
 void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
     if (compiledPanel_ != nullptr)
-        compiledPanel_->bindPlugin(nullptr);
+        compiledPanel_->bindDevice(nullptr);
     if (faustUI_ != nullptr)
         faustUI_->setPlugin(nullptr);
     // The meter supplier holds a reference to the plugin so its pool cannot

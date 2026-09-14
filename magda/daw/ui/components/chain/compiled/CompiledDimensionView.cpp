@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -42,13 +41,14 @@ CompiledDimensionView::CompiledDimensionView(juce::String /*pluginId*/) {
 }
 
 void CompiledDimensionView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaDimensionCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledDimensionView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaDimensionCompiledPlugin>(plugin));
+void CompiledDimensionView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledDimensionView::updateFromDevice(const magda::DeviceInfo& device) {

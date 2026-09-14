@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaReverbCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -46,13 +45,14 @@ CompiledReverbCurveView::CompiledReverbCurveView(juce::String /*pluginId*/) {
 }
 
 void CompiledReverbCurveView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaReverbCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaReverbCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledReverbCurveView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaReverbCompiledPlugin>(plugin));
+void CompiledReverbCurveView::bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaReverbCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledReverbCurveView::updateFromDevice(const magda::DeviceInfo& device) {

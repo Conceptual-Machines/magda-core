@@ -84,6 +84,7 @@ set(TEST_SOURCES
     devices/test_midi_strum_lifecycle.cpp
     devices/test_midi_strum_provenance.cpp
     devices/test_device_ui_context.cpp
+    devices/test_device_telemetry_sources.cpp
     ui/test_levels_ui.cpp
     # LevelsUI builds into magda_daw_app, so magda_tests needs its implementation
     # directly - along with FontManager, which its themed button LookAndFeel pulls in.

@@ -43,6 +43,7 @@
 #include "core/StepPatternCommands.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/ArpeggiatorUI.hpp"
+#include "custom_ui/DeviceTelemetrySources.hpp"
 #include "custom_ui/DrumVoiceUI.hpp"
 #include "custom_ui/FMUI.hpp"
 #include "custom_ui/FourOscUI.hpp"
@@ -653,6 +654,20 @@ tracktion::engine::Plugin::Ptr DeviceCustomUIManager::getLivePlugin() const {
     return {};
 }
 
+std::shared_ptr<daw::audio::MagdaDevice> DeviceCustomUIManager::liveDevice() const {
+    // The Drum Grid pad override hands over a fork plugin; everywhere else the
+    // rendering engine answers for the path, fork or native (#2585).
+    if (livePluginProvider_) {
+        if (auto plugin = livePluginProvider_())
+            return daw::audio::tracktion_adapter::deviceHandleFromPlugin(plugin);
+    }
+
+    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+        return audioEngine->renderedDevice(devicePath_);
+
+    return {};
+}
+
 bool DeviceCustomUIManager::randomizeSequencerPattern(bool polyphonic) {
     if (deviceUiContext_ == nullptr || !deviceUiContext_->isValid())
         return false;
@@ -966,14 +981,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
     if (device.pluginId.containsIgnoreCase(daw::audio::MidiChordEnginePlugin::xmlTypeName)) {
         chordEngineUI_ = std::make_unique<ChordPanelContent>();
         parent.addAndMakeVisible(*chordEngineUI_);
-        // Connect to the plugin instance
-        if (auto plugin = getLivePlugin()) {
-            if (auto* cp = daw::audio::tracktion_adapter::deviceFromPlugin<
-                    daw::audio::MidiChordEnginePlugin>(plugin.get())) {
-                chordEngineUI_->setChordEngine(cp, magda::INVALID_TRACK_ID);
-                chordPlugin_ = cp;
-            }
-        }
+        bindDeviceFaceplates();
         return true;
     }
 
@@ -988,14 +996,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
             writeDeviceSettings(devicePath_, settings);
         };
         parent.addAndMakeVisible(*arpeggiatorUI_);
-        if (auto plugin = getLivePlugin()) {
-            if (auto* arp =
-                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::ArpeggiatorPlugin>(
-                        plugin.get())) {
-                arpeggiatorUI_->setArpeggiator(arp);
-                arpPlugin_ = arp;
-            }
-        }
+        bindDeviceFaceplates();
         update(device);
         return true;
     }
@@ -1004,10 +1005,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
         strumUI_ = std::make_unique<StrumUI>();
         forwardParameterChanges(*strumUI_, callbacks);
         parent.addAndMakeVisible(*strumUI_);
-        if (auto plugin = getLivePlugin())
-            strumPlugin_ =
-                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MidiStrumPlugin>(
-                    plugin.get());
+        bindDeviceFaceplates();
         update(device);
         return true;
     }
@@ -1035,13 +1033,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
                     polyStepSequencerUI_->setPattern(magda::currentPolyPattern(devicePath_));
             };
         parent.addAndMakeVisible(*polyStepSequencerUI_);
-        if (auto plugin = getLivePlugin()) {
-            if (auto* seq = daw::audio::tracktion_adapter::deviceFromPlugin<
-                    daw::audio::PolyStepSequencerPlugin>(plugin.get())) {
-                polyStepSequencerUI_->setSequencer(seq);
-                polyStepSeqPlugin_ = seq;
-            }
-        }
+        bindDeviceFaceplates();
         update(device);
         return true;
     }
@@ -1069,13 +1061,7 @@ bool DeviceCustomUIManager::createMidiUtilityUI(const magda::DeviceInfo& device,
                 }
             };
         parent.addAndMakeVisible(*stepSequencerUI_);
-        if (auto plugin = getLivePlugin()) {
-            if (auto* seq = daw::audio::tracktion_adapter::deviceFromPlugin<
-                    daw::audio::StepSequencerPlugin>(plugin.get())) {
-                stepSequencerUI_->setSequencer(seq);
-                stepSeqPlugin_ = seq;
-            }
-        }
+        bindDeviceFaceplates();
         update(device);
         return true;
     }
@@ -2015,9 +2001,8 @@ bool DeviceCustomUIManager::createDrumGridUI(const magda::DeviceInfo& device,
 
 juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& command,
                                                        const juce::var& arguments) {
-    auto plugin = getLivePlugin();
-    auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
-        plugin.get());
+    auto device = liveDevice();
+    auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(device.get());
 
     // The loop switch, the root note and the sample are the sampler's authored
     // state: the edit patches the MODEL's state document and the projection
@@ -2039,9 +2024,8 @@ juce::var DeviceCustomUIManager::executeSamplerCommand(const juce::Identifier& c
     if (!magda::sampler_edits::loadSample(devicePath_, file))
         return false;
 
-    plugin = getLivePlugin();
-    sampler = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
-        plugin.get());
+    device = liveDevice();
+    sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(device.get());
     if (sampler != nullptr && samplerUI_ != nullptr) {
         pushSamplerParameters(*samplerUI_, *sampler, file.getFileNameWithoutExtension());
         samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
@@ -2231,27 +2215,76 @@ void DeviceCustomUIManager::refreshLivePluginBindings() {
     if (polyStepSequencerUI_ != nullptr)
         polyStepSequencerUI_->setDevicePath(devicePath_);
 
+    bindDeviceFaceplates();
+}
+
+bool DeviceCustomUIManager::awaitingRenderedDevice() const {
+    if (boundDevice_ != nullptr)
+        return false;
+
+    return chordEngineUI_ != nullptr || arpeggiatorUI_ != nullptr || strumUI_ != nullptr ||
+           stepSequencerUI_ != nullptr || polyStepSequencerUI_ != nullptr ||
+           polySynthUI_ != nullptr || struckUI_ != nullptr;
+}
+
+void DeviceCustomUIManager::bindDeviceFaceplates() {
+    // Whatever renders the slot now. Held for as long as the raw pointers
+    // below do, so a rebuild cannot leave one reading a freed device (#2585).
+    boundDevice_ = liveDevice();
+    auto* instance = boundDevice_.get();
+
+    if (chordEngineUI_ != nullptr) {
+        auto* chord = dynamic_cast<daw::audio::MidiChordEnginePlugin*>(instance);
+        if (chord != chordPlugin_) {
+            chordPlugin_ = chord;
+            chordEngineUI_->setChordEngine(chord, devicePath_.trackId);
+        }
+    }
+
+    if (arpeggiatorUI_ != nullptr) {
+        auto* arp = dynamic_cast<daw::audio::ArpeggiatorPlugin*>(instance);
+        if (arp != arpPlugin_) {
+            arpPlugin_ = arp;
+            arpeggiatorUI_->setArpeggiator(arp);
+        }
+    }
+
+    // The strum faceplate reads the model; only the note strip wants the device.
+    if (strumUI_ != nullptr)
+        strumPlugin_ = dynamic_cast<daw::audio::MidiStrumPlugin*>(instance);
+
+    if (stepSequencerUI_ != nullptr) {
+        auto* seq = dynamic_cast<daw::audio::StepSequencerPlugin*>(instance);
+        if (seq != stepSeqPlugin_) {
+            stepSeqPlugin_ = seq;
+            stepSequencerUI_->setSequencer(seq);
+        }
+    }
+
+    if (polyStepSequencerUI_ != nullptr) {
+        auto* seq = dynamic_cast<daw::audio::PolyStepSequencerPlugin*>(instance);
+        if (seq != polyStepSeqPlugin_) {
+            polyStepSeqPlugin_ = seq;
+            polyStepSequencerUI_->setSequencer(seq);
+        }
+    }
+
     if (polySynthUI_ != nullptr) {
-        daw::audio::compiled::MagdaPolySynthCompiledPlugin* synth = nullptr;
-        if (auto plugin = getLivePlugin())
-            synth = daw::audio::tracktion_adapter::deviceFromPlugin<
-                daw::audio::compiled::MagdaPolySynthCompiledPlugin>(plugin.get());
-        polySynthUI_->setLivePlugin(synth);
+        polySynthUI_->setLivePlugin(
+            dynamic_cast<daw::audio::compiled::MagdaPolySynthCompiledPlugin*>(instance));
     }
 
     if (struckUI_ != nullptr) {
-        daw::audio::compiled::MagdaCompiledPolyInstrument* inst = nullptr;
-        if (auto plugin = getLivePlugin())
-            inst = daw::audio::tracktion_adapter::deviceFromPlugin<
-                daw::audio::compiled::MagdaCompiledPolyInstrument>(plugin.get());
-        struckUI_->setLivePlugin(inst);
+        struckUI_->setLivePlugin(
+            dynamic_cast<daw::audio::compiled::MagdaCompiledPolyInstrument*>(instance));
     }
 }
 
 void DeviceCustomUIManager::detachFromLivePlugin() {
     livePluginProvider_ = {};
     devicePath_ = {};
-    telemetryPlugin_ = nullptr;
+    boundDevice_.reset();
+    levelsPlugin_ = nullptr;
     oscilloscopeTelemetry_.reset();
     spectrumTelemetry_.reset();
     levelsTelemetry_.reset();
@@ -2298,44 +2331,35 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
             basicContext->clearTelemetrySource(key);
     };
 
-    auto plugin = getLivePlugin();
-    if (plugin.get() != telemetryPlugin_) {
-        telemetryPlugin_ = plugin.get();
-        oscilloscopeTelemetry_.reset();
-        spectrumTelemetry_.reset();
-        levelsTelemetry_.reset();
-        nimbusTelemetry_.reset();
-    }
+    // One source per UI, for the life of the UI: each re-resolves the rendered
+    // device on every read, so a rebuilt or removed device is an empty trace
+    // rather than a rebind. Safe to capture `this` — the manager owns these and
+    // clears them in detachFromLivePlugin() before it dies (#2585).
+    const RenderedDeviceQuery renderedDevice = [this]() { return liveDevice(); };
 
     if (oscilloscopeUI_ != nullptr) {
-        std::shared_ptr<OscilloscopeTelemetrySource> source;
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
-                plugin.get()) != nullptr) {
-            if (oscilloscopeTelemetry_ == nullptr)
-                oscilloscopeTelemetry_ =
-                    std::make_shared<OscilloscopePluginTelemetrySource>(plugin);
-            source = oscilloscopeTelemetry_;
-            publishTelemetrySource(source, OscilloscopeTelemetrySource::kKey);
-        } else {
-            publishTelemetrySource(nullptr, OscilloscopeTelemetrySource::kKey);
-        }
-        oscilloscopeUI_->setTelemetrySource(std::move(source));
+        if (oscilloscopeTelemetry_ == nullptr)
+            oscilloscopeTelemetry_ = std::make_shared<DeviceOscilloscopeTelemetry>(renderedDevice);
+        publishTelemetrySource(oscilloscopeTelemetry_, OscilloscopeTelemetrySource::kKey);
+        oscilloscopeUI_->setTelemetrySource(oscilloscopeTelemetry_);
     }
     if (spectrumAnalyzerUI_ != nullptr) {
-        std::shared_ptr<SpectrumTelemetrySource> source;
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
-                plugin.get()) != nullptr) {
-            if (spectrumTelemetry_ == nullptr)
-                spectrumTelemetry_ = std::make_shared<SpectrumPluginTelemetrySource>(plugin);
-            source = spectrumTelemetry_;
-            publishTelemetrySource(source, SpectrumTelemetrySource::kKey);
-        } else {
-            publishTelemetrySource(nullptr, SpectrumTelemetrySource::kKey);
-        }
-        spectrumAnalyzerUI_->setTelemetrySource(std::move(source));
+        if (spectrumTelemetry_ == nullptr)
+            spectrumTelemetry_ = std::make_shared<DeviceSpectrumTelemetry>(renderedDevice);
+        publishTelemetrySource(spectrumTelemetry_, SpectrumTelemetrySource::kKey);
+        spectrumAnalyzerUI_->setTelemetrySource(spectrumTelemetry_);
         spectrumAnalyzerUI_->setTrackId(devicePath_.trackId);  // enables masking overlay
     }
     if (levelsUI_ != nullptr) {
+        // A LevelsPlugin is a te::Plugin rather than one of MAGDA's devices, so
+        // nothing renders it under the native engine: this one stays on the
+        // fork's plugin and is rebuilt whenever that plugin moves (#2585).
+        auto plugin = getLivePlugin();
+        if (plugin.get() != levelsPlugin_) {
+            levelsPlugin_ = plugin.get();
+            levelsTelemetry_.reset();
+        }
+
         std::shared_ptr<LevelsTelemetrySource> source;
         if (dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get()) != nullptr) {
             if (levelsTelemetry_ == nullptr)
@@ -2348,17 +2372,10 @@ void DeviceCustomUIManager::bindAnalyzerPlugins() {
         levelsUI_->setTelemetrySource(std::move(source));
     }
     if (nimbusUI_ != nullptr) {
-        std::shared_ptr<NimbusTelemetrySource> source;
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MutableCloudsPlugin>(
-                plugin.get()) != nullptr) {
-            if (nimbusTelemetry_ == nullptr)
-                nimbusTelemetry_ = std::make_shared<NimbusPluginTelemetrySource>(plugin);
-            source = nimbusTelemetry_;
-            publishTelemetrySource(source, NimbusTelemetrySource::kKey);
-        } else {
-            publishTelemetrySource(nullptr, NimbusTelemetrySource::kKey);
-        }
-        nimbusUI_->setTelemetrySource(std::move(source));
+        if (nimbusTelemetry_ == nullptr)
+            nimbusTelemetry_ = std::make_shared<DeviceNimbusTelemetry>(renderedDevice);
+        publishTelemetrySource(nimbusTelemetry_, NimbusTelemetrySource::kKey);
+        nimbusUI_->setTelemetrySource(nimbusTelemetry_);
     }
 }
 
@@ -2432,10 +2449,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
             glide = device.parameters[13].currentValue;
         }
 
-        auto plugin = getLivePlugin();
-        if (auto* sampler =
-                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaSamplerPlugin>(
-                    plugin.get())) {
+        auto rendered = liveDevice();
+        if (auto* sampler = dynamic_cast<daw::audio::MagdaSamplerPlugin*>(rendered.get())) {
             auto file = sampler->getSampleFile();
             if (file.existsAsFile())
                 sampleName = file.getFileNameWithoutExtension();
@@ -2533,10 +2548,8 @@ void DeviceCustomUIManager::update(const magda::DeviceInfo& device) {
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName) {
         impulseResponseUI_->updateFromParameters(device.parameters);
 
-        auto plugin = getLivePlugin();
-        if (const auto* ir =
-                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::MagdaConvolutionPlugin>(
-                    plugin.get()))
+        auto rendered = liveDevice();
+        if (const auto* ir = dynamic_cast<daw::audio::MagdaConvolutionPlugin*>(rendered.get()))
             impulseResponseUI_->setIRName(ir->irName());
     }
 }

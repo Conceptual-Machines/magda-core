@@ -154,6 +154,8 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     juce::String formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
                                        float normalised) const override;
 
+    std::shared_ptr<daw::audio::MagdaDevice> renderedDevice(
+        const ChainNodePath& devicePath) const override;
     HostParameters describeDeviceParameters(const ChainNodePath& devicePath) const override;
     std::optional<float> observedParameter(const ChainNodePath& devicePath,
                                            int paramIndex) const override;

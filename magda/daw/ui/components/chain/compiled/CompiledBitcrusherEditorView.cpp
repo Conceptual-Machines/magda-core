@@ -3,7 +3,6 @@
 #include <cmath>
 
 #include "audio/plugins/compiled/MagdaBitcrusherCompiledPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "ui/themes/DarkTheme.hpp"
 
 namespace magda::daw::ui {
@@ -35,13 +34,15 @@ CompiledBitcrusherEditorView::CompiledBitcrusherEditorView(juce::String /*plugin
 }
 
 void CompiledBitcrusherEditorView::setCompiledPlugin(
-    magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin* plugin) {
-    compiledPlugin_ = plugin;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin> plugin) {
+    compiledPlugin_ = std::move(plugin);
 }
 
-void CompiledBitcrusherEditorView::bindPlugin(te::Plugin* plugin) {
-    setCompiledPlugin(magda::daw::audio::tracktion_adapter::deviceFromPlugin<
-                      magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin>(plugin));
+void CompiledBitcrusherEditorView::bindDevice(
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device) {
+    setCompiledPlugin(
+        std::dynamic_pointer_cast<magda::daw::audio::compiled::MagdaBitcrusherCompiledPlugin>(
+            std::move(device)));
 }
 
 void CompiledBitcrusherEditorView::updateFromDevice(const magda::DeviceInfo& device) {

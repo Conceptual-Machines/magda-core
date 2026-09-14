@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "audio/plugins/compiled/MagdaDimensionCompiledPlugin.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
@@ -28,13 +29,14 @@ class CompiledDimensionView final : public juce::Component,
         return 56;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaDimensionCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only
     int preferredHeight() const override {
         return getPreferredHeight();
@@ -48,7 +50,7 @@ class CompiledDimensionView final : public juce::Component,
     void timerCallback() override;
     void resampleFromDevice();
 
-    magda::daw::audio::compiled::MagdaDimensionCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaDimensionCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     int engine_ = 0;

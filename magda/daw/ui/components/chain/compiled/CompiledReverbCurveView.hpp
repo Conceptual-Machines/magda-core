@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <functional>
+#include <memory>
 
 #include "compiled/CompiledPluginPresentation.hpp"
 #include "core/DeviceInfo.hpp"
@@ -32,13 +33,14 @@ class CompiledReverbCurveView final : public juce::Component,
         return 120;
     }
 
-    void setCompiledPlugin(magda::daw::audio::compiled::MagdaReverbCompiledPlugin* plugin);
+    void setCompiledPlugin(
+        std::shared_ptr<magda::daw::audio::compiled::MagdaReverbCompiledPlugin> plugin);
     void updateFromDevice(const magda::DeviceInfo& device) override;
 
     juce::Component& component() override {
         return *this;
     }
-    void bindPlugin(te::Plugin* plugin) override;
+    void bindDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device) override;
     void setOnParameterChanged(std::function<void(int, float)>) override {}  // read-only view
     int preferredHeight() const override {
         return getPreferredHeight();
@@ -54,7 +56,7 @@ class CompiledReverbCurveView final : public juce::Component,
     // engine-aware mapping that lives in each magda_reverb_*.dsp.
     static float t60SecondsForEngine(int engineIndex, float decayDisplay);
 
-    magda::daw::audio::compiled::MagdaReverbCompiledPlugin* compiledPlugin_ = nullptr;
+    std::shared_ptr<magda::daw::audio::compiled::MagdaReverbCompiledPlugin> compiledPlugin_;
     magda::DeviceInfo deviceSnapshot_;
 
     int engine_ = 0;         // 0 = Plate, 1 = Hall, 2 = Room

@@ -22,7 +22,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "../utils/SelectionPolicy.hpp"
-#include "components/chain/custom_ui/PluginTelemetrySources.hpp"
+#include "components/chain/custom_ui/DeviceTelemetrySources.hpp"
 #include "core/ChainNodePath.hpp"
 #include "core/Config.hpp"
 #include "core/SelectionManager.hpp"
@@ -1030,51 +1030,32 @@ void MixerView::ChannelStrip::syncMiniChainPluginWindow(DeviceId deviceId, bool 
 }
 
 void MixerView::ChannelStrip::refreshMiniAnalyzers() {
-    auto& tm = TrackManager::getInstance();
-    auto* bridge = audioEngine_ ? audioEngine_->getAudioBridge() : nullptr;
+    // One source per faceplate, over a query that finds the mixer-analysis
+    // device again on every read: whichever engine renders it answers, and a
+    // device rebuilt or removed under the strip is a rebind (#2585).
+    const auto analysisDevice = [trackId = trackId_](const char* pluginId) {
+        return [trackId, pluginId]() -> std::shared_ptr<daw::audio::MagdaDevice> {
+            const auto id = TrackManager::getInstance().findMixerAnalysisDevice(trackId, pluginId);
+            auto* engine = TrackManager::getInstance().getAudioEngine();
+            if (id == INVALID_DEVICE_ID || engine == nullptr)
+                return {};
+
+            return engine->renderedDevice(ChainNodePath::mixerAnalysisDevice(trackId, id));
+        };
+    };
 
     if (miniOscilloscopeUI_) {
-        te::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(trackId_, "oscilloscope");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::OscilloscopePlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniOscilloscopeTelemetryPlugin_) {
-            miniOscilloscopeTelemetryPlugin_ = pluginPtr.get();
-            miniOscilloscopeTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::OscilloscopePluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniOscilloscopeTelemetry_ == nullptr) {
+            miniOscilloscopeTelemetry_ = std::make_shared<daw::ui::DeviceOscilloscopeTelemetry>(
+                analysisDevice("oscilloscope"));
         }
         miniOscilloscopeUI_->setTelemetrySource(miniOscilloscopeTelemetry_);
     }
 
     if (miniSpectrumUI_) {
-        te::Plugin::Ptr pluginPtr;
-        DeviceId id = INVALID_DEVICE_ID;
-        if (bridge) {
-            id = tm.findMixerAnalysisDevice(trackId_, "spectrumanalyzer");
-            if (id != INVALID_DEVICE_ID)
-                pluginPtr = bridge->getPlugin(ChainNodePath::mixerAnalysisDevice(trackId_, id));
-        }
-
-        if (daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::SpectrumAnalyzerPlugin>(
-                pluginPtr.get()) == nullptr)
-            pluginPtr = nullptr;
-
-        if (pluginPtr.get() != miniSpectrumTelemetryPlugin_) {
-            miniSpectrumTelemetryPlugin_ = pluginPtr.get();
-            miniSpectrumTelemetry_ =
-                pluginPtr != nullptr
-                    ? std::make_shared<daw::ui::SpectrumPluginTelemetrySource>(pluginPtr)
-                    : nullptr;
+        if (miniSpectrumTelemetry_ == nullptr) {
+            miniSpectrumTelemetry_ = std::make_shared<daw::ui::DeviceSpectrumTelemetry>(
+                analysisDevice("spectrumanalyzer"));
         }
         miniSpectrumUI_->setTelemetrySource(miniSpectrumTelemetry_);
     }

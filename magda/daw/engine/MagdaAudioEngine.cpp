@@ -369,6 +369,13 @@ juce::String MagdaAudioEngine::formatDeviceParameter(const ChainNodePath& device
 
     return tracktion_->formatDeviceParameter(devicePath, paramIndex, normalised);
 }
+/** @brief The host's instance is the one filling the ring a faceplate draws (#2585). */
+std::shared_ptr<daw::audio::MagdaDevice> MagdaAudioEngine::renderedDevice(
+    const ChainNodePath& devicePath) const {
+    return host_ != nullptr ? host_->renderedDevice(devicePath)
+                            : std::shared_ptr<daw::audio::MagdaDevice>{};
+}
+
 /** @brief The host's instances, which are the only ones there are (#2579). */
 HostParameters MagdaAudioEngine::describeDeviceParameters(const ChainNodePath& devicePath) const {
     return host_ != nullptr ? host_->describeDeviceParameters(devicePath) : HostParameters{};

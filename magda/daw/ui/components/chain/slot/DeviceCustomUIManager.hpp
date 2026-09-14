@@ -14,6 +14,7 @@
 
 namespace magda::daw::audio {
 class ArpeggiatorPlugin;
+class MagdaDevice;
 class MidiChordEnginePlugin;
 class MidiStrumPlugin;
 class OscilloscopePlugin;
@@ -177,17 +178,9 @@ class DeviceCustomUIManager {
         return deviceUiContext_;
     }
 
-    // MIDI utility binding refreshes. Concrete plugin pointers stay inside the
-    // manager so slot/header code does not depend on plugin lifetime.
-    void bindStepSequencerPlugin(daw::audio::StepSequencerPlugin* p) {
-        stepSeqPlugin_ = p;
-    }
-    void bindPolyStepSequencerPlugin(daw::audio::PolyStepSequencerPlugin* p) {
-        polyStepSeqPlugin_ = p;
-    }
-    void bindStrumPlugin(daw::audio::MidiStrumPlugin* p) {
-        strumPlugin_ = p;
-    }
+    /// Whether a faceplate that polls a live device is still without one: the
+    /// slot is built before the engine has published a plan holding it (#2585).
+    bool awaitingRenderedDevice() const;
 
     // Tab index for FourOscUI persistence across rebuilds
     int getCustomUITabIndex() const;
@@ -245,11 +238,17 @@ class DeviceCustomUIManager {
 
   private:
     void refreshSequencerState(const magda::DeviceInfo& device);
-    // (Re-)resolve the live plugin for the oscilloscope / spectrum analyzer UIs
-    // from the current devicePath_ and hand it to them. Safe to call before the
-    // path or plugin exists (it simply binds nothing).
+    // Hand the oscilloscope / spectrum / levels / Nimbus faceplates their
+    // telemetry source. The device-backed ones re-resolve on every read, so one
+    // per UI is built and published once (#2585).
     void bindAnalyzerPlugins();
+    // Re-point the faceplates that poll a live MAGDA device at whatever the
+    // engine renders for this slot now (#2585).
+    void bindDeviceFaceplates();
     tracktion::engine::Plugin::Ptr getLivePlugin() const;
+    // The MAGDA device the rendering engine holds for this slot, or the one
+    // inside the slot's own plugin override. Empty for a hosted te::Plugin.
+    std::shared_ptr<daw::audio::MagdaDevice> liveDevice() const;
     void createToneGeneratorUI(const magda::DeviceInfo& device, juce::Component& parent,
                                const Callbacks& callbacks);
     bool createSamplerUI(const magda::DeviceInfo& device, juce::Component& parent,
@@ -280,7 +279,11 @@ class DeviceCustomUIManager {
     magda::ChainNodePath devicePath_;
     std::shared_ptr<magda::DeviceUiContext> deviceUiContext_;
     std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
-    tracktion::engine::Plugin* telemetryPlugin_ = nullptr;
+    /// Holds open the instance the raw device pointers below read (#2585).
+    std::shared_ptr<daw::audio::MagdaDevice> boundDevice_;
+    /// Which plugin levelsTelemetry_ was built over. A LevelsPlugin is hosted
+    /// rather than a device, so that one source still follows the plugin.
+    tracktion::engine::Plugin* levelsPlugin_ = nullptr;
     std::shared_ptr<OscilloscopeTelemetrySource> oscilloscopeTelemetry_;
     std::shared_ptr<SpectrumTelemetrySource> spectrumTelemetry_;
     std::shared_ptr<LevelsTelemetrySource> levelsTelemetry_;

@@ -39,6 +39,29 @@ tracktion::engine::Plugin::Ptr resolveLivePlugin(const magda::ChainNodePath& pat
     return getLivePlugin(path);
 }
 
+std::shared_ptr<daw::audio::MagdaDevice> getRenderedDevice(const magda::ChainNodePath& path) {
+    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
+        return audioEngine->renderedDevice(path);
+
+    return {};
+}
+
+/**
+ * @brief The device behind this slot, preferring the caller's own plugin (#2585).
+ *
+ * A Drum Grid pad has no bridge-resolvable path, so it supplies the plugin and
+ * the device comes off that.
+ */
+std::shared_ptr<daw::audio::MagdaDevice> resolveRenderedDevice(
+    const magda::ChainNodePath& path, const DeviceSlotInlineUiCallbacks& callbacks) {
+    if (callbacks.getLivePlugin) {
+        if (auto device =
+                daw::audio::tracktion_adapter::deviceHandleFromPlugin(callbacks.getLivePlugin()))
+            return device;
+    }
+    return getRenderedDevice(path);
+}
+
 DeviceCustomUIManager::Callbacks makeCustomUiCallbacks(DeviceSlotInlineUiCallbacks callbacks) {
     DeviceCustomUIManager::Callbacks customCallbacks;
     customCallbacks.onParameterChanged = std::move(callbacks.onParameterChanged);
@@ -161,9 +184,7 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         if (callbacks.onLayoutChanged)
             storage.compiledPanel->setOnLayoutChanged(callbacks.onLayoutChanged);
 
-        if (auto plugin = resolveLivePlugin(nodePath, callbacks))
-            storage.compiledPanel->bindPlugin(plugin.get());
-
+        storage.compiledPanel->bindDevice(resolveRenderedDevice(nodePath, callbacks));
         storage.compiledPanel->updateFromDevice(device);
         parent.addAndMakeVisible(storage.compiledPanel->component());
         return DeviceSlotInlineUiKind::Compiled;
@@ -236,10 +257,8 @@ void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePat
     if (!nodePath.isValid())
         return;
 
-    if (compiledPanel != nullptr) {
-        auto plugin = getLivePlugin(nodePath);
-        compiledPanel->bindPlugin(plugin.get());
-    }
+    if (compiledPanel != nullptr)
+        compiledPanel->bindDevice(getRenderedDevice(nodePath));
 
     customUI.refreshLivePluginBindings();
 }
