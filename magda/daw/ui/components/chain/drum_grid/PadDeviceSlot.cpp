@@ -430,12 +430,20 @@ void PadDeviceSlot::setupForHostedParameters() {
         uiButton_->setActive(open);
     };
 
-    // Every parameter the instance reports, written the way a slot on the chain writes one.
-    std::vector<magda::ParameterInfo> described;
-    if (auto* engine = magda::TrackManager::getInstance().getAudioEngine())
-        described = engine->describeDeviceParameters(devicePath_).parameters;
+    // The model's parameters, which the engine fills in once the plugin has loaded, and
+    // which a chain rebuild then hands this slot again. Written the way a slot on the chain
+    // writes one.
+    std::vector<const magda::ParameterInfo*> shown;
+    if (device_.visibleParameters.empty()) {
+        for (const auto& info : device_.parameters)
+            shown.push_back(&info);
+    } else {
+        for (const auto index : device_.visibleParameters)
+            if (const auto* info = device_.findParameterByIndex(index))
+                shown.push_back(info);
+    }
 
-    visibleParamCount_ = juce::jmin(static_cast<int>(described.size()), PLUGIN_PARAM_SLOTS);
+    visibleParamCount_ = juce::jmin(static_cast<int>(shown.size()), PLUGIN_PARAM_SLOTS);
     for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
         auto& slot = paramSlots_[static_cast<size_t>(i)];
         if (i >= visibleParamCount_) {
@@ -443,7 +451,7 @@ void PadDeviceSlot::setupForHostedParameters() {
             continue;
         }
 
-        const auto info = described[static_cast<size_t>(i)];
+        const auto info = *shown[static_cast<size_t>(i)];
         slot->setParamIndex(info.paramIndex);
         slot->setParamName(info.name);
         slot->setParameterInfo(info);
