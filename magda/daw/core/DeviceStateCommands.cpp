@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "../audio/plugins/MagdaDevice.hpp"
+#include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "DeviceState.hpp"
 #include "ProjectManager.hpp"
 #include "TrackManager.hpp"
@@ -57,6 +59,33 @@ void LoadImpulseResponseCommand::performAction() {
             doc.root.props.set(irFileDataProp, juce::var(irData_));
         });
     ProjectManager::getInstance().markDirty();
+}
+
+void projectAuthoredStateToDevice(daw::audio::MagdaDevice& device, const juce::String& docText,
+                                  const juce::String& deviceType) {
+    auto tree = daw::audio::tracktion_adapter::devicePluginTreeFromState(docText);
+    if (!tree.isValid()) {
+        // An empty snapshot is still a state: "nothing authored". Project a
+        // bare typed tree so a device whose contract reads absence as none (a
+        // convolution's impulse response) actually unloads, rather than the
+        // model saying the edit was undone while the engine keeps playing it.
+        tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
+        tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
+    }
+
+    device.restoreState(tree);
+}
+
+bool writeDeviceSettings(const ChainNodePath& devicePath, const juce::NamedValueSet& settings) {
+    const bool changed = TrackManager::getInstance().updateDeviceAuthoredState(
+        devicePath, [&settings](device_state::Doc& doc) {
+            for (int i = 0; i < settings.size(); ++i)
+                doc.root.props.set(settings.getName(i), settings.getValueAt(i));
+        });
+    if (changed)
+        ProjectManager::getInstance().markDirty();
+
+    return changed;
 }
 
 }  // namespace magda

@@ -271,6 +271,7 @@ file(GLOB_RECURSE _magda_device_pack_sources CONFIGURE_DEPENDS
 )
 set(_magda_device_sdk_sources
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceParameterHandle.hpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginDefaults.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DevicePluginHandle.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/DeviceServices.hpp"

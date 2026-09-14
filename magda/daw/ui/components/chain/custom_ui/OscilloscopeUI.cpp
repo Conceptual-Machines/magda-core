@@ -47,13 +47,19 @@ OscilloscopeUI::OscilloscopeUI() {
     timeSlider_.onValueChange = [this] {
         updateTimeReadout();
         if (telemetry_ != nullptr) {
+            // The device during the drag, the document at the end of it: a
+            // values publish per frame is what committing every tick would cost.
             telemetry_->setTimebaseMs(static_cast<float>(timeSlider_.getValue()));
             applyTimebase();
             repaint();
         }
+        // A wheel or keyboard change never ends a drag, so it commits here.
+        if (!timeSlider_.isMouseButtonDown())
+            commitSettings();
     };
     // Persist as the global last-used default on release (not per drag tick).
     timeSlider_.onDragEnd = [this] {
+        commitSettings();
         if (telemetry_ == nullptr || !persistGlobalDefaults_)
             return;
         auto d = Config::getInstance().getOscilloscopeDefaults();
@@ -84,9 +90,18 @@ OscilloscopeUI::OscilloscopeUI() {
     for (int i = 0; i < kAnalyzerColourCount; ++i)
         colourCombo_.addItem(kAnalyzerColourNames[i], i + 1);
     colourCombo_.onChange = [this] {
-        if (telemetry_ == nullptr)
+        if (telemetry_ != nullptr)
+            telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        commitSettings();
+
+        // The last-used colour, for the next analyser added: the header's
+        // toggle deletes this one, so its document does not survive (#2663).
+        if (!persistGlobalDefaults_)
             return;
-        telemetry_->setTraceColourIndex(colourCombo_.getSelectedId() - 1);
+        auto d = Config::getInstance().getOscilloscopeDefaults();
+        d.traceColour = colourCombo_.getSelectedId() - 1;
+        Config::getInstance().setOscilloscopeDefaults(d);
+        Config::getInstance().save();
     };
     addAndMakeVisible(colourCombo_);
 
@@ -139,12 +154,30 @@ void OscilloscopeUI::setTelemetrySource(std::shared_ptr<OscilloscopeTelemetrySou
     lastTapWritePosition_ = 0;
     if (popoutUI_ != nullptr)
         popoutUI_->setTelemetrySource(telemetry_);  // keep the popped-out window live
+    refreshSettingsFromSource();
+}
+
+void OscilloscopeUI::refreshSettingsFromSource() {
     if (telemetry_ == nullptr)
         return;
+
     timeSlider_.setValue(telemetry_->timebaseMs(), juce::dontSendNotification);
     updateTimeReadout();
     applyTimebase();
     colourCombo_.setSelectedId(telemetry_->traceColourIndex() + 1, juce::dontSendNotification);
+    repaint();
+}
+
+/// Both settings every time: the document is patched rather than replaced, and
+/// which of the two moved is not worth tracking.
+void OscilloscopeUI::commitSettings() {
+    if (!onSettingsEdited)
+        return;
+
+    juce::NamedValueSet settings;
+    settings.set("timebaseMs", static_cast<float>(timeSlider_.getValue()));
+    settings.set("traceColour", colourCombo_.getSelectedId() - 1);
+    onSettingsEdited(settings);
 }
 
 void OscilloscopeUI::visibilityChanged() {
@@ -324,6 +357,7 @@ void OscilloscopeUI::openPopout() {
         auto content = std::make_unique<OscilloscopeUI>();  // full-size (not compact)
         popoutUI_ = content.get();
         popoutUI_->setPersistGlobalDefaults(persistGlobalDefaults_);
+        popoutUI_->onSettingsEdited = onSettingsEdited;
         popoutUI_->setTelemetrySource(telemetry_);
         popoutWindow_ = std::make_unique<AnalyzerWindow>("Oscilloscope", std::move(content));
         popoutWindow_->onClose = [this]() {

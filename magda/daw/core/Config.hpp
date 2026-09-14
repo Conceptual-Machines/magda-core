@@ -1229,11 +1229,16 @@ class Config {
     // own saved colour in pluginState.
     struct OscilloscopeDefaults {
         float timebaseMs = 10.0f;
+        /// Index into the analyzer palette. Carried here because the track
+        /// header's toggle deletes the device, so nothing device-scoped
+        /// survives turning an analyser off and on (#2663).
+        int traceColour = 0;
     };
     struct SpectrumDefaults {
         int fftOrder = 11;  // 11 = 2048, 12 = 4096
         float slopeDbPerOct = 4.5f;
         float smoothing = 0.5f;
+        int traceColour = 0;
     };
 
     OscilloscopeDefaults getOscilloscopeDefaults() const {

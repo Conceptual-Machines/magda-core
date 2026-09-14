@@ -13,7 +13,7 @@ namespace magda::daw::audio {
 class SpectrumAnalyzerPlugin : public AnalysisTapPlugin, public SpectrumTelemetry {
   public:
     explicit SpectrumAnalyzerPlugin(const DevicePluginDefaults::Spectrum& defaults)
-        : AnalysisTapPlugin(8192),
+        : AnalysisTapPlugin(8192, defaults.traceColour),
           fftOrder_(defaults.fftOrder),
           slopeDbPerOct_(defaults.slopeDbPerOct),
           smoothing_(defaults.smoothing) {}  // one FFT frame (max 4096) + headroom

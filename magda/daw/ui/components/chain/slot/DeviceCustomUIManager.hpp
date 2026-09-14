@@ -282,6 +282,9 @@ class DeviceCustomUIManager {
     std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
     /// Holds open the instance the raw device pointers below read (#2585).
     std::shared_ptr<daw::audio::MagdaDevice> boundDevice_;
+    /// Which device the analyser faceplates last read their settings off.
+    /// Compared only (#2663).
+    const daw::audio::MagdaDevice* analyzerDevice_ = nullptr;
     std::shared_ptr<OscilloscopeTelemetrySource> oscilloscopeTelemetry_;
     std::shared_ptr<SpectrumTelemetrySource> spectrumTelemetry_;
     std::shared_ptr<LevelsTelemetrySource> levelsTelemetry_;

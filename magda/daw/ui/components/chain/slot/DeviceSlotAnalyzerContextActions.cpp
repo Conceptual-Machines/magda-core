@@ -1,6 +1,7 @@
 #include "slot/DeviceSlotAnalyzerContextActions.hpp"
 
 #include "audio/plugins/AnalysisTelemetry.hpp"
+#include "core/DeviceStateCommands.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackCommands.hpp"
 #include "core/TrackManager.hpp"
@@ -48,13 +49,20 @@ void toggleDeviceSlotAnalyzerWindow(std::unique_ptr<AnalyzerWindow>& analyzerWin
                                       : std::shared_ptr<daw::audio::MagdaDevice>{};
     };
 
+    // The window's own controls edit the same document the slot's do (#2663).
+    auto editSettings = [path = nodePath](const juce::NamedValueSet& settings) {
+        magda::writeDeviceSettings(path, settings);
+    };
+
     std::unique_ptr<juce::Component> content;
     if (renderedNow->telemetry(daw::audio::OscilloscopeTelemetry::kKey) != nullptr) {
         auto ui = std::make_unique<OscilloscopeUI>();
+        ui->onSettingsEdited = editSettings;
         ui->setTelemetrySource(std::make_shared<DeviceOscilloscopeTelemetry>(rendered));
         content = std::move(ui);
     } else if (renderedNow->telemetry(daw::audio::SpectrumTelemetry::kKey) != nullptr) {
         auto ui = std::make_unique<SpectrumAnalyzerUI>();
+        ui->onSettingsEdited = std::move(editSettings);
         ui->setTelemetrySource(std::make_shared<DeviceSpectrumTelemetry>(rendered));
         ui->setTrackId(nodePath.trackId);  // enables the masking overlay in the external window
         content = std::move(ui);
