@@ -1,7 +1,9 @@
 #include "MagdaAudioEngine.hpp"
 
-#include <set>
+#include <algorithm>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "../api/magda_api_live.hpp"
 #include "../core/TrackManager.hpp"
@@ -15,6 +17,15 @@ namespace magda::daw::engine_host {
 /// headers, which magda_daw does not see (EngineHost.hpp says why).
 double projectEndBeat();
 }  // namespace magda::daw::engine_host
+
+namespace {
+/// What has named itself unwired, in the order it first did. Message thread
+/// only, like every caller of the surface below.
+std::vector<std::string_view>& unwiredSoFar() {
+    static std::vector<std::string_view> names;
+    return names;
+}
+}  // namespace
 
 namespace magda {
 
@@ -65,13 +76,26 @@ void MagdaAudioEngine::meterInto() {
 }
 
 void MagdaAudioEngine::reportUnwired(const char* method, const char* issue) const {
-    static std::set<std::string> said;
-    if (!said.insert(method).second)
+    // string_view over the literal: the session surface below is asked from
+    // paint loops, so only a method's first report may touch the heap.
+    auto& said = unwiredSoFar();
+    if (std::ranges::find(said, std::string_view{method}) != said.end())
         return;
 
+    said.emplace_back(method);
     juce::Logger::writeToLog(juce::String("[engine] ") + method +
                              " is not wired on magda::engine yet (" + issue + ")");
 }
+
+#ifdef MAGDA_ENABLE_TEST_HOOKS
+juce::StringArray MagdaAudioEngine::unwiredMethods() {
+    juce::StringArray methods;
+    for (const auto name : unwiredSoFar())
+        methods.add(juce::String(name.data(), name.size()));
+
+    return methods;
+}
+#endif
 
 MagdaAudioEngine::~MagdaAudioEngine() {
     // The app destroys the engine with a plain reset() and no shutdown() call
@@ -183,31 +207,45 @@ bool MagdaAudioEngine::isPlaying() const {
     return host_->isPlaying();
 }
 bool MagdaAudioEngine::isRecording() const {
+    // Unwired like record(), but not reported: while nothing records, false is
+    // the true answer rather than a silence (#2553).
     return tracktion_->isRecording();
 }
+// The session launcher is #2552's. These forwarded until now, and the fork
+// under this engine has no Edit and so no session scheduler, so each answered
+// Stopped, false or empty without a word -- and a launcher that does nothing
+// looks exactly like one nobody wired. The answers are the fork's own defaults.
 double MagdaAudioEngine::getSessionPlayheadPosition() const {
-    return tracktion_->getSessionPlayheadPosition();
+    reportUnwired("getSessionPlayheadPosition", "#2552");
+    return -1.0;
 }
 ClipId MagdaAudioEngine::getSessionPlayheadClipId() const {
-    return tracktion_->getSessionPlayheadClipId();
+    reportUnwired("getSessionPlayheadClipId", "#2552");
+    return INVALID_CLIP_ID;
 }
 std::unordered_map<ClipId, double> MagdaAudioEngine::getActiveClipPlayheadPositions() const {
-    return tracktion_->getActiveClipPlayheadPositions();
+    reportUnwired("getActiveClipPlayheadPositions", "#2552");
+    return {};
 }
 SessionClipPlayState MagdaAudioEngine::getSessionClipPlayState(ClipId clipId) const {
-    return tracktion_->getSessionClipPlayState(clipId);
+    juce::ignoreUnused(clipId);
+    reportUnwired("getSessionClipPlayState", "#2552");
+    return SessionClipPlayState::Stopped;
 }
 void MagdaAudioEngine::stopSessionTrack(TrackId trackId) {
-    tracktion_->stopSessionTrack(trackId);
+    juce::ignoreUnused(trackId);
+    reportUnwired("stopSessionTrack", "#2552");
 }
 bool MagdaAudioEngine::isSessionTrackStopPending(TrackId trackId) const {
-    return tracktion_->isSessionTrackStopPending(trackId);
+    juce::ignoreUnused(trackId);
+    reportUnwired("isSessionTrackStopPending", "#2552");
+    return false;
 }
 double MagdaAudioEngine::getAudioThreadTransportSeconds() const {
     return host_->positionSeconds();
 }
 void MagdaAudioEngine::deactivateAllSessionClips() {
-    tracktion_->deactivateAllSessionClips();
+    reportUnwired("deactivateAllSessionClips", "#2552");
 }
 // Tempo, time signature and loop are the host's: there is no Edit to hold a
 // second copy of them, and what the ruler converts through is the same map the
@@ -271,7 +309,8 @@ void MagdaAudioEngine::updateTriggerState() {
     TrackManager::getInstance().updateTransportState(playing, getTempo(), justStarted, justLooped);
 }
 void MagdaAudioEngine::processSessionStateEvents() {
-    tracktion_->processSessionStateEvents();
+    // The launcher's state events, pumped once a frame by PlaybackPositionTimer.
+    reportUnwired("processSessionStateEvents", "#2552");
 }
 juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
     return tracktion_->getDeviceManager();
@@ -410,16 +449,21 @@ const MidiBridge* MagdaAudioEngine::getMidiBridge() const {
 MagdaApi& MagdaAudioEngine::getMagdaApi() {
     return *api_;
 }
+// Null for good: it drives te::ExternalPlugin::windowState, and the instance a
+// window would open onto is not the one rendering. Editors are the host's
+// (#2580); what null costs is the mixer's icon, which is #2668.
 PluginWindowManager* MagdaAudioEngine::getPluginWindowManager() {
-    // It drives te::ExternalPlugin::windowState, and the instance a window
-    // would open onto is not the one rendering.
-    reportUnwired("getPluginWindowManager", "#2580");
+    reportUnwired("getPluginWindowManager", "#2668");
     return nullptr;
 }
 const PluginWindowManager* MagdaAudioEngine::getPluginWindowManager() const {
+    reportUnwired("getPluginWindowManager", "#2668");
     return nullptr;
 }
 InsertRenderCaptureService* MagdaAudioEngine::getInsertRenderCaptureService() {
+    // Null makes a bounce skip the capture pass, so an external insert's return
+    // renders as silence. It needs this engine's own hardware input (#2588).
+    reportUnwired("getInsertRenderCaptureService", "#2588");
     return nullptr;
 }
 juce::Array<juce::PluginDescription> MagdaAudioEngine::getKnownPluginTypes() const {
@@ -598,35 +642,50 @@ void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
 }
 
 // --- the bases' defaulted virtuals -------------------------------------------
+//
+// Slot recording and punch, which are #2553's. Overridden rather than inherited
+// because a default body answers no-op and false forever without saying so; the
+// fork's arm state was worse, since it lit the slot up from a map nothing
+// renders from.
 
 void MagdaAudioEngine::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
-    tracktion_->armSessionSlotRecording(trackId, sceneIndex);
+    juce::ignoreUnused(trackId, sceneIndex);
+    reportUnwired("armSessionSlotRecording", "#2553");
 }
 
 void MagdaAudioEngine::beginArmedSessionSlotRecordings() {
-    tracktion_->beginArmedSessionSlotRecordings();
+    reportUnwired("beginArmedSessionSlotRecordings", "#2553");
 }
 
 bool MagdaAudioEngine::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
-    return tracktion_->isSessionSlotRecordArmed(trackId, sceneIndex);
+    juce::ignoreUnused(trackId, sceneIndex);
+    reportUnwired("isSessionSlotRecordArmed", "#2553");
+    return false;
 }
 
 bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) const {
-    return tracktion_->isSessionSlotRecording(trackId, sceneIndex);
+    juce::ignoreUnused(trackId, sceneIndex);
+    reportUnwired("isSessionSlotRecording", "#2553");
+    return false;
 }
 
 const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()
     const {
-    return tracktion_->getRecordingPreviews();
+    reportUnwired("getRecordingPreviews", "#2553");
+
+    static const std::unordered_map<TrackId, RecordingPreview> none;
+    return none;
 }
 
 void MagdaAudioEngine::onPunchRegionChanged(double startSeconds, double endSeconds,
                                             bool punchInEnabled, bool punchOutEnabled) {
-    tracktion_->onPunchRegionChanged(startSeconds, endSeconds, punchInEnabled, punchOutEnabled);
+    juce::ignoreUnused(startSeconds, endSeconds, punchInEnabled, punchOutEnabled);
+    reportUnwired("onPunchRegionChanged", "#2553");
 }
 
 void MagdaAudioEngine::onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) {
-    tracktion_->onPunchEnabledChanged(punchInEnabled, punchOutEnabled);
+    juce::ignoreUnused(punchInEnabled, punchOutEnabled);
+    reportUnwired("onPunchEnabledChanged", "#2553");
 }
 
 }  // namespace magda
