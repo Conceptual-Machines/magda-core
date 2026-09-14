@@ -26,6 +26,7 @@
 #include "../../core/AutomationManager.hpp"
 #include "../../core/ChainWalk.hpp"
 #include "../../core/ClipManager.hpp"
+#include "../../core/DrumGridPads.hpp"
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
@@ -323,6 +324,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
+        publishPadTriggers();
 
         for (const auto& line : trace_.drain())
             EngineTrace::print(line);
@@ -413,6 +415,34 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
             const auto levels = tap.read();
             deviceMeters_->setRackPeak(rackId, {.peakL = levels.peak[0], .peakR = levels.peak[1]});
+        });
+    }
+
+    /// The notes each pad's gate passed since the last tick, as the grid notes
+    /// that started them (#2669).
+    void publishPadTriggers() {
+        if (session_ == nullptr || deviceMeters_ == nullptr)
+            return;
+
+        session_->forEachNoteOnTap([this](const engine::OpKey& key, engine::NoteOnTap& tap) {
+            const auto started = tap.take();
+            if (started.none())
+                return;
+
+            const auto grid = devicePaths_.find(key.deviceKey());
+            if (grid == devicePaths_.end())
+                return;
+
+            const auto* pads = TrackManager::getInstance().getPads(grid->second);
+            if (pads == nullptr)
+                return;
+
+            const auto pad = std::ranges::find(pads->chains, key.chainId, &ChainInfo::id);
+            if (pad == pads->chains.end())
+                return;
+
+            for (const auto note : padNotesPlayed(*pad, started))
+                deviceMeters_->startPadNote(grid->second, note);
         });
     }
 

@@ -1229,6 +1229,7 @@ void BottomPanel::updateContentBasedOnSelection() {
         if (!gridDenominatorLabel_->isDragging())
             gridDenominatorLabel_->setValue(static_cast<double>(denominator),
                                             juce::dontSendNotification);
+        updateGridDivisionFace();
     };
     if (auto* midiEditor = dynamic_cast<daw::ui::MidiEditorContent*>(content)) {
         midiEditor->onAutoGridDisplayChanged = autoGridDisplayChanged;
@@ -1635,6 +1636,13 @@ void BottomPanel::syncGridControlsFromContent() {
             isAutoGrid_ = clip->gridAutoGrid;
             gridNumerator_ = clip->gridNumerator;
             gridDenominator_ = clip->gridDenominator;
+            if (isAutoGrid_) {
+                // The clip stores the manual division; Auto uses the editor's
+                // current zoom-dependent resolution.
+                gridNumerator_ = 1;
+                gridDenominator_ = std::max(
+                    1, static_cast<int>(std::round(4.0 / midiEditor->getGridResolutionBeats())));
+            }
             isSnapEnabled_ = clip->gridSnapEnabled;
         }
     } else {

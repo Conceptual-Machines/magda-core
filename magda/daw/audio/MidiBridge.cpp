@@ -4,6 +4,7 @@
 #include <iterator>
 #include <memory>
 #include <ranges>
+#include <vector>
 
 #include "../core/RangesHelpers.hpp"
 #include "../core/TrackManager.hpp"
@@ -249,6 +250,43 @@ void MidiBridge::disableMidiInput(const juce::String& deviceId) {
         inputToDestroy->removeCallback(*this);
     }
     // inputToDestroy destroyed here, outside lock
+}
+
+void MidiBridge::refreshMidiInputs() {
+    if (isShuttingDown_.load(std::memory_order_acquire))
+        return;
+
+    const auto available = juce::MidiInput::getAvailableDevices();
+    const auto isAvailable = [&available](const juce::String& deviceId) {
+        return std::ranges::any_of(
+            available, [&deviceId](const auto& device) { return device.identifier == deviceId; });
+    };
+
+    std::vector<juce::String> unplugged;
+    std::vector<juce::String> routed;
+    {
+        juce::ScopedLock lock(routingLock_);
+        for (const auto& [deviceId, input] : activeMidiInputs_)
+            if (!isAvailable(deviceId))
+                unplugged.push_back(deviceId);
+
+        for (const auto& [trackId, route] : trackMidiInputs_) {
+            if (route != "all") {
+                routed.push_back(route);
+                continue;
+            }
+            for (const auto& device : available)
+                routed.push_back(device.identifier);
+        }
+    }
+
+    // A replugged device comes back under the same identifier, and an input
+    // still held for it would read as already open.
+    for (const auto& deviceId : unplugged)
+        disableMidiInput(deviceId);
+
+    for (const auto& deviceId : routed)
+        enableMidiInput(deviceId);
 }
 
 bool MidiBridge::isMidiInputEnabled(const juce::String& deviceId) const {

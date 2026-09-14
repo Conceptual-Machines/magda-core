@@ -254,6 +254,8 @@ class DeviceCustomUIManager {
                                const Callbacks& callbacks);
     bool createSamplerUI(const magda::DeviceInfo& device, juce::Component& parent,
                          const Callbacks& callbacks);
+    /// Show @p pad, the model's chain for @p padIndex, on the Drum Grid faceplate. Null clears it.
+    void showPad(int padIndex, const magda::ChainInfo* pad);
     bool createDrumGridUI(const magda::DeviceInfo& device, juce::Component& parent,
                           const Callbacks& callbacks);
     bool createAnalyzerUI(const magda::DeviceInfo& device, juce::Component& parent);

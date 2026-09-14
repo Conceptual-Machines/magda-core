@@ -14,6 +14,7 @@
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "custom_ui/SamplerUI.hpp"
+#include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceSlotTraits.hpp"
@@ -27,8 +28,9 @@ class Plugin;
 }
 
 namespace magda::daw::audio {
+class MagdaDevice;
 class MagdaSamplerPlugin;
-}
+}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
 
@@ -50,19 +52,25 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     PadDeviceSlot();
     ~PadDeviceSlot() override;
 
-    void setPlugin(tracktion::engine::Plugin* plugin);
-    void setPlugin(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device,
-                   std::function<tracktion::engine::Plugin::Ptr()> livePlugin);
-    void setSampler(te::Plugin* samplerPlugin);
+    /** @brief The model's pad device a slot shows, and what renders it. */
+    struct Binding {
+        magda::DeviceInfo device;
+        magda::ChainNodePath devicePath;
+        /// The instance rendering the device, on either engine. Null while none does.
+        std::function<std::shared_ptr<daw::audio::MagdaDevice>()> renderedDevice;
+        /// Tracktion's plugin for the device, where that engine hosts one.
+        tracktion::engine::Plugin* plugin = nullptr;
+        std::function<tracktion::engine::Plugin::Ptr()> livePlugin;
+    };
+
+    /** @brief Show a sampler, a MAGDA faceplate or a hosted plugin's parameters for @p binding. */
+    void setDevice(Binding binding);
     void clear();
     int getPreferredWidth() const;
     void setPreferredWidth(int width) {
         preferredWidth_ = width;
     }
 
-    tracktion::engine::Plugin* getPlugin() const {
-        return plugin_;
-    }
     bool isCollapsed() const {
         return collapsed_;
     }
@@ -76,9 +84,6 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     std::function<void()> onDeleteClicked;
     std::function<void()> onLayoutChanged;
     std::function<void()> onClicked;
-
-    // Provide sampler pointer for SamplerUI wiring
-    std::function<daw::audio::MagdaSamplerPlugin*()> getSampler;
 
     // Provide callbacks for file operations
     std::function<void(const juce::File&)> onSampleDropped;
@@ -104,16 +109,19 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     /** Get all linkable controls (sampler LinkableTextSliders or external ParamSlotComponents). */
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
-    /** Access a param slot for callback wiring (external plugins only). */
+    /** Access a parameter cell in the active internal or hosted grid for callback wiring. */
     ParamSlotComponent* getParamSlot(int i) {
+        if (sharedParamGrid_)
+            return i >= 0 && i < sharedParamGrid_->getSlotCount() ? sharedParamGrid_->getSlot(i)
+                                                                  : nullptr;
         return (i >= 0 && i < PLUGIN_PARAM_SLOTS) ? paramSlots_[static_cast<size_t>(i)].get()
                                                   : nullptr;
     }
-    static int getParamSlotCount() {
-        return PLUGIN_PARAM_SLOTS;
+    int getParamSlotCount() const {
+        return sharedParamGrid_ ? sharedParamGrid_->getSlotCount() : PLUGIN_PARAM_SLOTS;
     }
     int getVisibleParamCount() const {
-        return visibleParamCount_;
+        return sharedParamGrid_ ? sharedParamGrid_->getSlotCount() : visibleParamCount_;
     }
 
     void paint(juce::Graphics& g) override;
@@ -129,12 +137,11 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     static constexpr int METER_WIDTH = 8;
     static constexpr int GAIN_SLIDER_WIDTH = 44;
 
-    tracktion::engine::Plugin* plugin_ = nullptr;
+    Binding binding_;
     magda::DeviceId pluginDeviceId_ = magda::INVALID_DEVICE_ID;
     magda::DeviceInfo device_;
     magda::ChainNodePath devicePath_;
     magda::ChainNodePath linkOwnerPath_;
-    std::function<tracktion::engine::Plugin::Ptr()> livePluginProvider_;
     int preferredWidth_ = SLOT_WIDTH;
     int visibleParamCount_ = 0;
     DeviceSlotTraits traits_;
@@ -152,23 +159,31 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // Meter strip (right edge of content area)
     magda::LevelMeter levelMeter_;
 
-    // Content — one of these visible at a time
+    // Content — compiled/Faust faceplates share the body with sharedParamGrid_.
     std::unique_ptr<SamplerUI> samplerUI_;
+    std::weak_ptr<daw::audio::MagdaSamplerPlugin> displayedSampler_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<DeviceCustomUIManager> customUI_;
+    std::unique_ptr<ParamHostComponent> sharedParamGrid_;
     std::array<std::unique_ptr<ParamSlotComponent>, PLUGIN_PARAM_SLOTS> paramSlots_;
 
     void timerCallback() override;
 
-    // Takes the PLUGIN because that is what the faceplate reads its readouts,
-    // waveform and playhead from. Edits go the other way, to the model at
-    // devicePath_, and reach the plugin by projection (#2379).
-    void setupForSampler(te::Plugin* samplerPlugin);
+    /// The rendered sampler, if the device is one and something renders it.
+    std::shared_ptr<daw::audio::MagdaSamplerPlugin> renderedSampler() const;
+
+    // Readouts, waveform and playhead come off the rendered sampler. Edits go
+    // the other way, to the model at devicePath_, and reach it by projection (#2379).
+    void setupForSampler();
+    void refreshSamplerDisplay(const std::shared_ptr<daw::audio::MagdaSamplerPlugin>& sampler);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
-    bool setupForSharedDeviceUi(tracktion::engine::Plugin* plugin, const magda::DeviceInfo& device);
+    /// A hosted plugin no Tracktion plugin stands for: its parameters as the engine describes them.
+    void setupForHostedParameters();
+    bool setupForSharedDeviceUi(const magda::DeviceInfo& device);
     void resetSharedInlineUi();
+    void updateSharedParameterSlots();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadDeviceSlot)
 };

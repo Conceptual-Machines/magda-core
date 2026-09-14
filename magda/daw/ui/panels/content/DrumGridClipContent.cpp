@@ -9,18 +9,15 @@
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
 #include "../../utils/SelectionPolicy.hpp"
-#include "AudioBridge.hpp"
-#include "AudioEngine.hpp"
 #include "BinaryData.h"
-#include "audio/plugins/DrumGridPlugin.hpp"
 #include "audio/plugins/DrumGridRoles.hpp"
 #include "audio/plugins/DrumGridTemplates.hpp"
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/ClipOperations.hpp"
+#include "core/DrumGridPads.hpp"
 #include "core/DrumkitManager.hpp"
 #include "core/GestureRouter.hpp"
 #include "core/MidiNoteCommands.hpp"
+#include "core/RackInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/UndoManager.hpp"
@@ -37,11 +34,7 @@
 
 namespace magda::daw::ui {
 
-//==============================================================================
-// Helper: find DrumGridPlugin for a track
-//==============================================================================
 namespace {
-namespace te = tracktion::engine;
 
 // Lookup the (track, device) of the primary instrument plugin for the editing
 // clip. Returns {INVALID_TRACK_ID, INVALID_DEVICE_ID} if there's no clip or no
@@ -70,34 +63,6 @@ PrimaryInstance primaryInstanceForClip(magda::ClipId clipId) {
 const magda::KitRow* findKitRow(const std::vector<magda::KitRow>& rows, int noteNumber) {
     const auto it = std::ranges::find(rows, noteNumber, &magda::KitRow::noteNumber);
     return it == rows.end() ? nullptr : &(*it);
-}
-
-daw::audio::DrumGridPlugin* findDrumGridForTrack(magda::TrackId trackId) {
-    auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine();
-    if (!audioEngine)
-        return nullptr;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (!bridge)
-        return nullptr;
-
-    auto* teTrack = bridge->getAudioTrack(trackId);
-    if (!teTrack)
-        return nullptr;
-
-    for (auto* plugin : teTrack->pluginList) {
-        if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(plugin))
-            return dg;
-
-        if (auto* rackInstance = dynamic_cast<te::RackInstance*>(plugin)) {
-            if (rackInstance->type != nullptr) {
-                for (auto* innerPlugin : rackInstance->type->getPlugins()) {
-                    if (auto* dg = dynamic_cast<daw::audio::DrumGridPlugin*>(innerPlugin))
-                        return dg;
-                }
-            }
-        }
-    }
-    return nullptr;
 }
 
 }  // namespace
@@ -2711,7 +2676,7 @@ void DrumGridClipContent::clipsChanged() {
 void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
     if (clipId == magda::INVALID_CLIP_ID) {
         editingClipId_ = magda::INVALID_CLIP_ID;
-        drumGrid_ = nullptr;
+        hasPadDevice_ = false;
         gridComponent_->setClipId(magda::INVALID_CLIP_ID);
         padRows_.clear();
         updateGridSize();
@@ -2732,7 +2697,7 @@ void DrumGridClipContent::clipSelectionChanged(magda::ClipId clipId) {
 // ============================================================================
 
 void DrumGridClipContent::setClip(magda::ClipId clipId) {
-    if (editingClipId_ == clipId && drumGrid_ != nullptr)
+    if (editingClipId_ == clipId && hasPadDevice_)
         return;
 
     editingClipId_ = clipId;
@@ -2925,20 +2890,23 @@ void DrumGridClipContent::updateVelocityLane() {
 // DrumGrid-specific helpers
 // ============================================================================
 
-void DrumGridClipContent::findDrumGrid() {
-    drumGrid_ = nullptr;
-    if (editingClipId_ == magda::INVALID_CLIP_ID)
-        return;
-
+const magda::DeviceInfo* DrumGridClipContent::padDevice() const {
     const auto* clip = magda::ClipManager::getInstance().getClip(editingClipId_);
-    if (!clip)
-        return;
+    return clip != nullptr ? magda::TrackManager::getInstance().findPadDevice(clip->trackId)
+                           : nullptr;
+}
 
-    drumGrid_ = findDrumGridForTrack(clip->trackId);
-    if (drumGrid_) {
-        baseNote_ = daw::audio::DrumGridPlugin::baseNote;
-        numPads_ = daw::audio::DrumGridPlugin::maxPads;
-    }
+const magda::ChainInfo* DrumGridClipContent::padForNote(int noteNumber) const {
+    const auto* device = padDevice();
+    if (device == nullptr || !device->pads)
+        return nullptr;
+    return magda::findPadChain(*device->pads.get(), noteNumber - magda::kPadBaseNote);
+}
+
+void DrumGridClipContent::findDrumGrid() {
+    hasPadDevice_ = padDevice() != nullptr;
+    baseNote_ = hasPadDevice_ ? magda::kPadBaseNote : 0;
+    numPads_ = hasPadDevice_ ? magda::kPadCount : 128;
 }
 
 juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
@@ -2954,30 +2922,13 @@ juce::String DrumGridClipContent::resolvePadName(int padIndex) const {
         }
     }
 
-    if (drumGrid_) {
-        const auto* chain = drumGrid_->getChainForNote(noteNumber);
-        if (chain) {
-            // Check if chain has a custom name
-            if (chain->name.isNotEmpty())
-                return chain->name;
-
-            // Check for MagdaSamplerPlugin with loaded sample
-            for (const auto& plugin : chain->plugins) {
-                if (auto* sampler = daw::audio::tracktion_adapter::deviceFromPlugin<
-                        daw::audio::MagdaSamplerPlugin>(plugin.get())) {
-                    auto sampleFile = sampler->getSampleFile();
-                    if (sampleFile.existsAsFile())
-                        return sampleFile.getFileNameWithoutExtension();
-                }
-            }
-
-            // Has chain but no sample - show first plugin name
-            if (!chain->plugins.empty())
-                return chain->plugins[0]->getName();
-        }
+    if (const auto* pad = padForNote(noteNumber)) {
+        if (pad->name.isNotEmpty())
+            return pad->name;
+        if (auto voice = magda::padVoiceName(*pad); voice.isNotEmpty())
+            return voice;
     }
 
-    // Fallback: MIDI note name
     return juce::MidiMessage::getMidiNoteName(noteNumber, true, true, 3);
 }
 
@@ -3025,15 +2976,10 @@ void DrumGridClipContent::buildPadRows() {
         int noteNumber = baseNote_ + i;
         if (filterToUsed && !std::ranges::contains(usedNotes, noteNumber))
             continue;
-        bool hasChain = false;
-        if (drumGrid_) {
-            hasChain = (drumGrid_->getChainForNote(noteNumber) != nullptr);
-        }
-
         PadRow row;
         row.noteNumber = noteNumber;
         row.name = resolvePadName(i);
-        row.hasChain = hasChain;
+        row.hasChain = padForNote(noteNumber) != nullptr;
         if (inst.valid()) {
             if (const auto* kitRow = findKitRow(inst.device->kitRows, noteNumber))
                 row.role = kitRow->role;
@@ -3054,9 +3000,7 @@ void DrumGridClipContent::refreshPadRowNames() {
             continue;
 
         juce::String newName = resolvePadName(padIndex);
-        bool newHasChain = false;
-        if (drumGrid_)
-            newHasChain = (drumGrid_->getChainForNote(row.noteNumber) != nullptr);
+        const bool newHasChain = padForNote(row.noteNumber) != nullptr;
         juce::String newRole;
         if (inst.valid()) {
             if (const auto* kitRow = findKitRow(inst.device->kitRows, row.noteNumber))

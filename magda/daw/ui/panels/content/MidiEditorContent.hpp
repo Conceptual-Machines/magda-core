@@ -169,6 +169,11 @@ class MidiEditorContent : public PanelContent,
     // by the piano roll and drum grid so both toggles read identically (#1705).
     static void syncNotePreviewToggle(magda::SvgButton& button, bool on);
 
+    /// Effective grid division, including the current Auto zoom resolution.
+    double getGridResolutionBeats() const {
+        return gridResolutionBeats_;
+    }
+
   protected:
     // --- Shared state ---
     magda::ClipId editingClipId_ = magda::INVALID_CLIP_ID;
@@ -180,9 +185,6 @@ class MidiEditorContent : public PanelContent,
     double gridResolutionBeats_ = 0.25;  // Current grid resolution in beats (default 1/16)
     bool snapEnabled_ = true;            // Whether snap-to-grid is active
 
-    double getGridResolutionBeats() const {
-        return gridResolutionBeats_;
-    }
     double snapBeatToGrid(double beat) const;
     void updateGridResolution();
 

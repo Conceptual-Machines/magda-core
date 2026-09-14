@@ -7,12 +7,9 @@
 
 namespace magda {
 class SvgButton;
+struct ChainInfo;
+struct DeviceInfo;
 }  // namespace magda
-
-namespace magda::daw::audio {
-class DrumGridPlugin;
-class MagdaSamplerPlugin;
-}  // namespace magda::daw::audio
 
 namespace magda::daw::ui {
 
@@ -102,7 +99,7 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void highlightMonitoredNote(int noteNumber, bool noteOn) override;
     void ensureMonitoredNoteVisible(int noteNumber) override;
 
-    daw::audio::DrumGridPlugin* drumGrid_ = nullptr;
+    bool hasPadDevice_ = false;
 
     // Layout constants (DrumGrid-specific)
     static constexpr int SIDEBAR_WIDTH = 32;
@@ -137,6 +134,9 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     void buildPadRows();
     void refreshPadRowNames();
     void findDrumGrid();
+    /// The pad device on the edited clip's track, or null.
+    const magda::DeviceInfo* padDevice() const;
+    const magda::ChainInfo* padForNote(int noteNumber) const;
     void setLabelWidth(int newWidth);
     void showRowContextMenu(int noteNumber, juce::Point<int> screenPos);
     void applyTemplateToClip(const daw::audio::drum_grid_templates::Template& templ);

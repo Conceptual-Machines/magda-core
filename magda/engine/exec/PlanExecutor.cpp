@@ -687,7 +687,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                 break;
             }
 
-            case OpKind::MergeMidi: {
+            case OpKind::MergeMidi:
+            case OpKind::MidiNoteGate: {
                 // Optional for the same reason a meter is, and silent for the
                 // same reason: an observation point nobody is watching is the
                 // ordinary case, and reporting one would put a line per track in

@@ -313,18 +313,6 @@ juce::String getCollapsedName(bool isDrumGrid, const juce::String& drumGridName,
     return isDrumGrid ? drumGridName : fallbackName;
 }
 
-std::vector<tracktion::engine::Plugin*> getCollapsedPlugins(const DrumGridUI* drumGridUI) {
-    if (drumGridUI == nullptr)
-        return {};
-    return drumGridUI->getPadChainPanel().getCollapsedPlugins();
-}
-
-void setCollapsedPlugins(DrumGridUI* drumGridUI,
-                         const std::vector<tracktion::engine::Plugin*>& plugins) {
-    if (drumGridUI != nullptr)
-        drumGridUI->getPadChainPanel().setCollapsedPlugins(plugins);
-}
-
 int getPreferredContentWidth(bool isDrumGrid, const DrumGridUI* drumGridUI) {
     return isDrumGrid && drumGridUI != nullptr ? drumGridUI->getPreferredContentWidth() : 0;
 }
@@ -347,47 +335,24 @@ void setPadChainLinkContext(DrumGridUI* drumGridUI, const magda::ChainNodePath& 
             nodePath, macros, mods, trackMacros, trackMods, selectedModIndex, selectedMacroIndex);
 }
 
-void appendAvailableDevices(const DrumGridUI* drumGridUI,
+void appendAvailableDevices(const magda::DeviceInfo* grid,
                             std::vector<std::pair<magda::DeviceId, juce::String>>& devices) {
-    if (drumGridUI == nullptr)
+    if (grid == nullptr || !grid->pads)
         return;
 
-    if (auto* dg = drumGridUI->getDrumGridPlugin()) {
-        for (const auto& chain : dg->getChains()) {
-            for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-                int devId = dg->getPluginDeviceId(chain->index, pi);
-                if (devId >= 0) {
-                    devices.emplace_back(devId,
-                                         chain->name + ": " +
-                                             chain->plugins[static_cast<size_t>(pi)]->getName());
-                }
-            }
-        }
-    }
+    for (const auto& pad : grid->pads->chains)
+        for (const auto* device : pad.getDevices())
+            devices.emplace_back(device->id, pad.name + ": " + device->name);
 }
 
-void appendDeviceParamNames(const DrumGridUI* drumGridUI,
+void appendDeviceParamNames(const magda::DeviceInfo* grid,
                             std::map<magda::DeviceId, std::vector<juce::String>>& paramsByDevice) {
-    if (drumGridUI == nullptr)
+    if (grid == nullptr || !grid->pads)
         return;
 
-    if (auto* dg = drumGridUI->getDrumGridPlugin()) {
-        for (const auto& chain : dg->getChains()) {
-            for (int pi = 0; pi < static_cast<int>(chain->plugins.size()); ++pi) {
-                int devId = dg->getPluginDeviceId(chain->index, pi);
-                if (devId < 0)
-                    continue;
-
-                auto* plugin = chain->plugins[static_cast<size_t>(pi)].get();
-                auto params = plugin->getAutomatableParameters();
-                std::vector<juce::String> paramNames;
-                paramNames.reserve(static_cast<size_t>(params.size()));
-                for (auto* param : params)
-                    paramNames.push_back(param->getParameterName());
-                paramsByDevice[devId] = std::move(paramNames);
-            }
-        }
-    }
+    for (const auto& pad : grid->pads->chains)
+        for (const auto* device : pad.getDevices())
+            paramsByDevice[device->id] = device->paramNamesByIndex();
 }
 
 void wirePadChainLinkCallbacks(DrumGridUI* drumGridUI, PadChainLinkCallbacks callbacks) {

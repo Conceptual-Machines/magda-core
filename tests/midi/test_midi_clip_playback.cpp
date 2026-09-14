@@ -1457,3 +1457,74 @@ TEST_CASE("A note inside a ramp is placed where the map puts it", "[engine][clip
     // would pass on a block that could not tell them apart.
     CHECK(worstOnTheLine > 1.0);
 }
+
+TEST_CASE("Adjacent notes release before retriggering at fractional sample positions",
+          "[midi][playback][adjacent-note-edges]") {
+    ClipSnapshotFeed feed;
+    ClipMidiSource source(kTrack, feed);
+    constexpr double rate = 44100.0;
+    constexpr int frames = 512;
+    source.prepare(RenderContext{rate, frames, 2});
+    std::vector<ClipInfo> clips;
+    SECTION("adjacent notes in one clip") {
+        auto clip = makeMidiClip(99, 0.0, 0.5);
+        for (int i = 0; i < 8; ++i)
+            clip.midiNotes.push_back(note(25, i * 0.0625, 0.0625));
+        clips.push_back(clip);
+    }
+    SECTION("a held note retriggers at a loop boundary") {
+        auto clip = makeMidiClip(99, 0.0, 0.5);
+        clip.midiNotes.push_back(note(25, 0.0, 1.0));
+        clip.loopEnabled = true;
+        clip.loopStartBeats = 0.0;
+        clip.loopLengthBeats = 0.0625;
+        clips.push_back(clip);
+    }
+    SECTION("a held note retriggers in the next clip") {
+        for (int i = 0; i < 8; ++i) {
+            auto clip = makeMidiClip(99 + i, i * 0.0625, 0.0625);
+            clip.midiNotes.push_back(note(25, 0.0, 1.0));
+            clips.push_back(clip);
+        }
+    }
+    feed.publish(std::make_shared<const ClipSnapshot>(
+        compileClipSnapshot({ClipLane{kTrack, clips}}, {}, makeTempoMap(), {})));
+
+    bool held = false;
+    int ons = 0;
+    int offs = 0;
+    int previousOffSample = -1;
+    for (int start = 0; start < 12000; start += frames) {
+        BlockInfo block;
+        block.numSamples = frames;
+        block.sampleRate = rate;
+        block.playing = true;
+        block.continuous = start != 0;
+        block.monotonicSamples = {magda::engine::SamplePosition{start},
+                                  magda::engine::SamplePosition{start + frames}};
+        block.seconds = {start / rate, (start + frames) / rate};
+        block.beats = {block.seconds.start * 2.0, block.seconds.end * 2.0};
+        juce::MidiBuffer midi;
+        magda::test::renderBlock(source, feed, block, midi);
+        for (const auto event : midi) {
+            const auto message = event.getMessage();
+            const int at = start + event.samplePosition;
+            CAPTURE(at, ons, offs);
+            if (message.isNoteOn()) {
+                CHECK_FALSE(held);
+                if (ons > 0)
+                    CHECK(previousOffSample == at);
+                held = true;
+                ++ons;
+            } else if (message.isNoteOff()) {
+                CHECK(held);
+                held = false;
+                previousOffSample = at;
+                ++offs;
+            }
+        }
+    }
+    CHECK(ons == 8);
+    CHECK(offs == 8);
+    CHECK_FALSE(held);
+}

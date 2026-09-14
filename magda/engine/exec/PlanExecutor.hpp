@@ -654,7 +654,7 @@ class PlanExecutor {
     std::vector<LevelTap*> meterForOp_;
     int boundMeterCount_ = 0;
 
-    /// Where a MergeMidi op publishes what reached it, or nullptr. See
+    /// Where a MergeMidi or MidiNoteGate op publishes what reached it, or nullptr. See
     /// PlanBindings::midiTaps.
     std::vector<MidiTap*> midiTapForOp_;
 

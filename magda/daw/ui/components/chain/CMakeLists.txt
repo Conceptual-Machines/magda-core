@@ -33,7 +33,6 @@ target_sources(magda_daw_app PRIVATE
     drum_grid/DrumGridUI.cpp
     drum_grid/PadChainPanel.cpp
     drum_grid/PadDeviceSlot.cpp
-    drum_grid/PadChainRangeRowComponent.cpp
     drum_grid/PadChainRowComponent.cpp
     params/ParamHostComponent.cpp
     params/ParamSlotComponent.cpp
@@ -136,7 +135,6 @@ target_sources(magda_daw_app PRIVATE
     drum_grid/DrumGridUI.hpp
     drum_grid/PadChainPanel.hpp
     drum_grid/PadDeviceSlot.hpp
-    drum_grid/PadChainRangeRowComponent.hpp
     drum_grid/PadChainRowComponent.hpp
     params/ParamHostComponent.hpp
     params/MomentaryParamButton.hpp

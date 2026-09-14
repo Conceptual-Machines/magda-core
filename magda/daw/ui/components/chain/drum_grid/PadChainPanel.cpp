@@ -4,8 +4,6 @@
 
 #include <algorithm>
 
-#include "audio/plugins/MagdaSamplerPlugin.hpp"
-#include "audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "core/TrackManager.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -63,35 +61,6 @@ void PadChainPanel::clear() {
 void PadChainPanel::refresh() {
     if (currentPadIndex_ >= 0)
         rebuildSlots();
-}
-
-std::vector<tracktion::engine::Plugin*> PadChainPanel::getCollapsedPlugins() const {
-    std::vector<tracktion::engine::Plugin*> result;
-    for (const auto& slot : slots_) {
-        if (slot->isCollapsed() && slot->getPlugin())
-            result.push_back(slot->getPlugin());
-    }
-    return result;
-}
-
-void PadChainPanel::setCollapsedPlugins(const std::vector<tracktion::engine::Plugin*>& plugins) {
-    if (plugins.empty())
-        return;
-    for (auto& slot : slots_) {
-        if (slot->getPlugin() && std::ranges::contains(plugins, slot->getPlugin())) {
-            if (!slot->isCollapsed()) {
-                // Temporarily detach callback to avoid per-slot layout cascade
-                auto saved = std::move(slot->onLayoutChanged);
-                slot->setCollapsed(true);
-                slot->onLayoutChanged = std::move(saved);
-            }
-        }
-    }
-    // Single layout update after all collapses
-    resized();
-    repaint();
-    if (onLayoutChanged)
-        onLayoutChanged();
 }
 
 void PadChainPanel::setLinkContext(const magda::ChainNodePath& devicePath,
@@ -158,13 +127,6 @@ int PadChainPanel::getContentWidth() const {
 }
 
 void PadChainPanel::rebuildSlots() {
-    // Preserve collapsed state across rebuild (keyed by plugin pointer)
-    std::vector<tracktion::engine::Plugin*> collapsedPlugins;
-    for (auto& slot : slots_) {
-        if (slot->isCollapsed() && slot->getPlugin())
-            collapsedPlugins.push_back(slot->getPlugin());
-    }
-
     slots_.clear();
     container_.removeAllChildren();
     container_.addAndMakeVisible(addButton_);
@@ -219,13 +181,10 @@ void PadChainPanel::rebuildSlots() {
                     auto slotInfos = getPluginSlots ? getPluginSlots(currentPadIndex_)
                                                     : std::vector<PluginSlotInfo>{};
                     if (pluginIndex < static_cast<int>(slotInfos.size())) {
-                        const auto& info = slotInfos[static_cast<size_t>(pluginIndex)];
-                        auto* plugin = info.plugin;
-                        if (plugin) {
-                            name = info.device.name.isNotEmpty() ? info.device.name
-                                                                 : plugin->getName();
-                            type = info.device.getFormatString() + " Plugin";
-                        }
+                        const auto& device =
+                            slotInfos[static_cast<size_t>(pluginIndex)].binding.device;
+                        name = device.name;
+                        type = device.getFormatString() + " Plugin";
                     }
                 }
                 onDeviceClicked(name, type);
@@ -239,12 +198,7 @@ void PadChainPanel::rebuildSlots() {
         slot->onPowerChanged = info.onPowerChanged;
         slot->setPowered(!info.bypassed);
 
-        // Set plugin content
-        if (info.isSampler) {
-            slot->setSampler(info.plugin);
-        } else if (info.plugin) {
-            slot->setPlugin(info.plugin, info.device, info.livePlugin);
-        }
+        slot->setDevice(info.binding);
 
         // Apply link mode context (deviceId, macros, mods)
         applyLinkContextToSlot(*slot, info);
@@ -252,11 +206,6 @@ void PadChainPanel::rebuildSlots() {
         // Let DeviceSlotComponent wire link callbacks on param slots
         if (onSlotSetup)
             onSlotSetup(*slot, info);
-
-        // Restore collapsed state from before rebuild
-        if (info.plugin && std::ranges::contains(collapsedPlugins, info.plugin)) {
-            slot->setCollapsed(true);
-        }
 
         container_.addAndMakeVisible(*slot);
         slots_.push_back(std::move(slot));

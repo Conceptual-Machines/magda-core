@@ -4,6 +4,7 @@
 #include "exec/PlanExecutor.hpp"
 #include "exec/PlanValues.hpp"
 #include "plan/RenderPlan.hpp"
+#include "tap/NoteOnTap.hpp"
 
 // The MidiNoteGate op (#2200).
 //
@@ -161,6 +162,22 @@ TEST_CASE("A note gate passes only the notes in its range", "[engine][exec][note
     harness.render();
 
     CHECK(harness.capture.noteOnNumbers() == std::vector<int>{36, 38, 39});
+}
+
+TEST_CASE("A note gate tells its tap which notes it started", "[engine][exec][notegate][2669]") {
+    GateHarness harness({noteOn(35), noteOn(38), juce::MidiMessage::noteOff(1, 39)}, 36, 40,
+                        60 - 36);
+    magda::engine::NoteOnTap tap;
+    harness.bindings.midiTaps[harness.plan.ops[1].key] = &tap;
+    harness.render();
+
+    // What the pad plays, transposed, and only the note that started.
+    const auto started = tap.take();
+    CHECK(started.count() == 1);
+    CHECK(started.test(62));
+
+    // A take is destructive, so the next reader sees only what came after.
+    CHECK(tap.take().none());
 }
 
 TEST_CASE("A note gate transposes what it passes onto its root", "[engine][exec][notegate]") {

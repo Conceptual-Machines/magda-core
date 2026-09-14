@@ -55,11 +55,6 @@ bool shouldShowCollapsedUiButton(bool isDrumGrid, bool isInternalDevice);
 juce::String getCollapsedName(bool isDrumGrid, const juce::String& drumGridName,
                               const juce::String& fallbackName);
 
-std::vector<tracktion::engine::Plugin*> getCollapsedPlugins(const DrumGridUI* drumGridUI);
-
-void setCollapsedPlugins(DrumGridUI* drumGridUI,
-                         const std::vector<tracktion::engine::Plugin*>& plugins);
-
 int getPreferredContentWidth(bool isDrumGrid, const DrumGridUI* drumGridUI);
 
 bool layoutDrumGridUI(DrumGridUI* drumGridUI, juce::Rectangle<int> contentArea);
@@ -69,10 +64,12 @@ void setPadChainLinkContext(DrumGridUI* drumGridUI, const magda::ChainNodePath& 
                             const magda::MacroArray* trackMacros, const magda::ModArray* trackMods,
                             int selectedModIndex, int selectedMacroIndex);
 
-void appendAvailableDevices(const DrumGridUI* drumGridUI,
+/// The devices on @p grid's pads, for a link menu. Nothing for a device with no pads.
+void appendAvailableDevices(const magda::DeviceInfo* grid,
                             std::vector<std::pair<magda::DeviceId, juce::String>>& devices);
 
-void appendDeviceParamNames(const DrumGridUI* drumGridUI,
+/// The parameter names of the devices on @p grid's pads, by device.
+void appendDeviceParamNames(const magda::DeviceInfo* grid,
                             std::map<magda::DeviceId, std::vector<juce::String>>& paramsByDevice);
 
 struct PadChainLinkCallbacks {

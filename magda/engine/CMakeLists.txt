@@ -102,6 +102,7 @@ add_library(magda_engine STATIC
     param/ModSources.hpp
     param/ModRuntime.hpp
     tap/LevelTap.hpp
+    tap/NoteOnTap.hpp
     tap/RecordTap.cpp
     tap/RecordTap.hpp
     tap/SampleRing.hpp

@@ -64,3 +64,35 @@ TEST_CASE("An installed sound carries nothing that changes", "[devices][sampler]
     CHECK_FALSE(sound.hasData());
     CHECK(sound.sourceSampleRate == 44100.0);
 }
+
+TEST_CASE("Short sampler notes render between their MIDI edges",
+          "[devices][sampler][short-notes]") {
+    using namespace magda::daw::audio;
+    // Include an onset inside the block: JUCE's default batching treats the
+    // first event differently from later events.
+    for (const int onset : {0, 64}) {
+        for (const int length : {1, 16, 31, 32, 128}) {
+            CAPTURE(onset, length);
+            SamplerSynth synth;
+            synth.setCurrentPlaybackSampleRate(44100.0);
+            auto* sound = new SamplerSound();
+            sound->audioData.setSize(1, 1024);
+            for (int i = 0; i < 1024; ++i)
+                sound->audioData.setSample(0, i, 1.0f);
+            synth.addSound(sound);
+            auto* voice = new SamplerVoice();
+            voice->setRootNote(60);
+            voice->setADSR(0.001f, 0.1f, 1.0f, 0.1f);
+            synth.addVoice(voice);
+            juce::AudioBuffer<float> output(1, 512);
+            output.clear();
+            juce::MidiBuffer midi;
+            midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), onset);
+            midi.addEvent(juce::MidiMessage::noteOff(1, 60), onset + length);
+            synth.renderNextBlock(output, midi, 0, 512);
+            CHECK(output.getMagnitude(0, onset, length) > 0.0f);
+            if (onset > 0)
+                CHECK(output.getMagnitude(0, 0, onset) == 0.0f);
+        }
+    }
+}

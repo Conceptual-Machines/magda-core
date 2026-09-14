@@ -199,6 +199,12 @@ PlanBindings RuntimeStateStore::realise(const RenderPlan& plan, const RenderCont
                     bindings.meters[op.key] = tap;
                 break;
 
+            case OpKind::MergeMidi:
+            case OpKind::MidiNoteGate:
+                if (auto* tap = realiseNoteOnTap(op.key))
+                    bindings.midiTaps[op.key] = tap;
+                break;
+
             default:
                 break;
         }
@@ -232,6 +238,17 @@ LevelTap* RuntimeStateStore::realiseMeter(const OpKey& key) {
         return nullptr;
 
     return meters_.emplace(key, std::move(created)).first->second.get();
+}
+
+NoteOnTap* RuntimeStateStore::realiseNoteOnTap(const OpKey& key) {
+    if (const auto found = noteOnTaps_.find(key); found != noteOnTaps_.end())
+        return found->second.get();
+
+    auto created = factory_.createNoteOnTap(key);
+    if (created == nullptr)
+        return nullptr;
+
+    return noteOnTaps_.emplace(key, std::move(created)).first->second.get();
 }
 
 std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
@@ -281,12 +298,19 @@ std::size_t RuntimeStateStore::releaseDeleted(const RenderPlan& livePlan,
     // live one (#2649). Everything the plan still emits keeps the tap it had,
     // which is the promise a plan swap makes.
     std::set<OpKey> liveMeters;
-    for (const auto& op : livePlan.ops)
+    std::set<OpKey> liveMidiOps;
+    for (const auto& op : livePlan.ops) {
         if (op.kind == OpKind::Meter)
             liveMeters.insert(op.key);
+        else if (op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate)
+            liveMidiOps.insert(op.key);
+    }
 
     removed += std::erase_if(
         meters_, [&liveMeters](const auto& entry) { return !liveMeters.contains(entry.first); });
+    removed += std::erase_if(noteOnTaps_, [&liveMidiOps](const auto& entry) {
+        return !liveMidiOps.contains(entry.first);
+    });
 
     // The live table first and unconditionally, on the same reading the plan
     // gets above. A tap the table carries may be one the executor holds a
@@ -516,8 +540,8 @@ std::shared_ptr<EngineDevice> RuntimeStateStore::device(DeviceKey key) const {
 std::size_t RuntimeStateStore::size() const {
     return devices_.size() + retired_.size() + clipAudio_.size() + clipMidi_.size() +
            sessionAudio_.size() + sessionMidi_.size() + handles_.size() + audioInputs_.size() +
-           midiInputs_.size() + meters_.size() + valueTaps_.size() + takes_.size() +
-           takeTaps_.size();
+           midiInputs_.size() + meters_.size() + noteOnTaps_.size() + valueTaps_.size() +
+           takes_.size() + takeTaps_.size();
 }
 
 }  // namespace magda::engine
