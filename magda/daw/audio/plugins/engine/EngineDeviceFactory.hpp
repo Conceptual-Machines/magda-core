@@ -93,6 +93,14 @@ std::unique_ptr<magda::engine::EngineDevice> createEngineDevice(const magda::Dev
 bool canCreateEngineDevice(const juce::String& pluginId);
 
 /**
+ * @brief Whether the engine plays a device named @p pluginId.
+ *
+ * One it builds, or a pad device, which the plan compiler expands into its pads
+ * and never asks to build.
+ */
+bool engineRendersDevice(const juce::String& pluginId);
+
+/**
  * @brief Whether either catalog knows @p pluginId at all.
  *
  * True with canCreateEngineDevice() false is the case worth reporting: the
