@@ -240,6 +240,11 @@ int EngineMagdaDevice::latencySamples() const {
     return latencySamples_;
 }
 
+double EngineMagdaDevice::tailSeconds() const {
+    // Live rather than the cached properties: a convolution's tail is whatever impulse is loaded.
+    return device_->properties().tailLengthSeconds;
+}
+
 void EngineMagdaDevice::writeParameters(const magda::engine::DeviceParams& params) {
     for (int slot = 0; slot < static_cast<int>(parameters_.size()); ++slot) {
         const auto& mapping = parameters_[static_cast<std::size_t>(slot)];

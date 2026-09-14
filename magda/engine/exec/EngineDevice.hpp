@@ -208,6 +208,12 @@ class EngineDevice {
         return 0;
     }
 
+    /// Seconds the device keeps sounding after its input stops. Infinite for
+    /// one that never stops, which a render asking for the tail treats as none.
+    virtual double tailSeconds() const {
+        return 0.0;
+    }
+
     virtual void process(DeviceBlock&) = 0;
 };
 

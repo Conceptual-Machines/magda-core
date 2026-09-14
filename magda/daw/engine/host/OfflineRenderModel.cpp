@@ -73,6 +73,15 @@ void faderToUnity(TrackInfo& track) {
     track.pan = 0.0f;
 }
 
+/** @brief Cut @p track at its fader, the way a freeze renders it. */
+void keepPreFader(TrackInfo& track) {
+    faderToUnity(track);
+    track.muted = false;
+
+    if (track.chain.postFxPostFader)
+        track.chain.postFxChainElements.clear();
+}
+
 bool automatesFader(const AutomationLaneInfo& lane, TrackId trackId) {
     return lane.target.devicePath.trackId == trackId &&
            (lane.target.kind == ControlTarget::Kind::TrackVolume ||
@@ -108,6 +117,15 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
         if (!request.usePlugins || !request.useTrackEffects) {
             faderToUnity(track);
             unityFaders.insert(track.id);
+        }
+
+        if (request.freezeTrackId != INVALID_TRACK_ID) {
+            track.soloed = false;
+
+            if (track.id == request.freezeTrackId) {
+                keepPreFader(track);
+                unityFaders.insert(track.id);
+            }
         }
     }
 

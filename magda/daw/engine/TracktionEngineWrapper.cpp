@@ -6,6 +6,7 @@
 #include "../audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "../audio/session/SessionClipAudioMonitor.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
+#include "../core/TrackManager.hpp"
 
 namespace magda {
 
@@ -97,6 +98,11 @@ double TracktionEngineWrapper::getAudioThreadTransportSeconds() const {
 void TracktionEngineWrapper::deactivateAllSessionClips() {
     if (sessionScheduler_)
         sessionScheduler_->deactivateAllSessionClips();
+}
+
+// The bridge turns the flag into a Tracktion freeze, which renders on its own.
+void TracktionEngineWrapper::setTrackFrozen(TrackId trackId, bool frozen) {
+    TrackManager::getInstance().setTrackFrozen(trackId, frozen);
 }
 
 std::vector<SamplerMediaReference> TracktionEngineWrapper::getSamplerMediaReferences() {
