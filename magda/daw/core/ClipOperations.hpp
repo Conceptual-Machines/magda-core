@@ -729,9 +729,15 @@ class ClipOperations {
         if (enabled && !isValidBpm(bpm))
             return;
 
+        // Beat mode is asked for, not set. Everything below converts through the
+        // interpretation, so granting it without one leaves every beat view at
+        // zero (#2676); the source BPM field is where a user supplies it.
+        if (enabled && !event->hasInterpretedBpm())
+            return;
+
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
-        event->autoTempo = enabled;
+        event->setBeatMode(enabled);
 
         if (enabled) {
             event->analogPitch = false;  // Analog pitch is incompatible with autoTempo

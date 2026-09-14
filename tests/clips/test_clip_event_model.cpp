@@ -568,8 +568,8 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         REQUIRE(event != nullptr);
 
         // Without this the slot could never leave time mode: applyAudioClipBeats
-        // answers only for a clip already in beat mode, so the detection would
-        // be dropped by the very state it is meant to resolve.
+        // takes the interpretation but grants no mode, so a detection arriving
+        // at creation would land on a clip nothing ever moves out of time mode.
         REQUIRE(event->autoTempo);
         REQUIRE(event->interpBpm == Approx(174.0));
     }
@@ -612,4 +612,36 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
     REQUIRE(event->hasInterpretedBpm());
 
     clips.clearAllClips();
+}
+
+TEST_CASE("BEAT grants beat mode only with a tempo behind it",
+          "[clip][event][interpretation][session]") {
+    // The toggle is the one way into beat mode by hand, and it wrote autoTempo
+    // directly -- so a clip could still claim the mode with every beat view at
+    // zero, which is the state creation stopped producing (#2676).
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    SourcePool::getInstance().seedFactsForTesting("/tmp/nothing-says.wav", 4.0, 44100.0);
+
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/nothing-says.wav", ClipView::Session, 120.0);
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    clips.setAutoTempo(clipId, true, 120.0);
+    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    // The source BPM field is what supplies one, and it answers in time mode.
+    ClipManager::AudioClipBeatsUpdate update;
+    update.interpretationBpm = 90.0;
+    update.interpretationTotalBeats = 6.0;
+    clips.applyAudioClipBeats(clipId, update, 120.0);
+
+    clips.setAutoTempo(clipId, true, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
 }

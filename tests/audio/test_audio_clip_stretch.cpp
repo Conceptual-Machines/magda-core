@@ -435,6 +435,10 @@ TEST_CASE("Auto-tempo selects the default quality tier",
         clip.setAudioContent();
         magda::test::giveAudioEvent(clip, "test.wav");
         clip.length = 4.0;
+        // Beat mode is granted only with an interpretation behind it (#2676),
+        // and this case is about the tier it picks once it is in.
+        magda::test::audioEvent(clip).interpBpm = 120.0;
+        magda::test::audioEvent(clip).interpTotalBeats = 8.0;
         return clip;
     };
 
