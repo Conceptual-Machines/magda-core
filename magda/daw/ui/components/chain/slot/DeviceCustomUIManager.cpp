@@ -2285,14 +2285,8 @@ void DeviceCustomUIManager::bindDeviceFaceplates() {
 }
 
 void DeviceCustomUIManager::detachFromLivePlugin() {
-    livePluginProvider_ = {};
-    devicePath_ = {};
-    boundDevice_.reset();
-    oscilloscopeTelemetry_.reset();
-    spectrumTelemetry_.reset();
-    levelsTelemetry_.reset();
-    nimbusTelemetry_.reset();
-
+    // The faceplates let go before the lookup does: letting go of the Levels
+    // source switches its device's metering off, which needs the device found.
     if (oscilloscopeUI_ != nullptr)
         oscilloscopeUI_->setTelemetrySource(nullptr);
     if (spectrumAnalyzerUI_ != nullptr) {
@@ -2307,6 +2301,14 @@ void DeviceCustomUIManager::detachFromLivePlugin() {
         polySynthUI_->setLivePlugin(nullptr);
     if (struckUI_ != nullptr)
         struckUI_->setLivePlugin(nullptr);
+
+    livePluginProvider_ = {};
+    devicePath_ = {};
+    boundDevice_.reset();
+    oscilloscopeTelemetry_.reset();
+    spectrumTelemetry_.reset();
+    levelsTelemetry_.reset();
+    nimbusTelemetry_.reset();
 
     arpPlugin_ = nullptr;
     strumPlugin_ = nullptr;
