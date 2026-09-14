@@ -600,7 +600,7 @@ class TrackManager : public daw::audio::DeviceIdAllocator, public daw::audio::De
     RackInfo* getPads(const ChainNodePath& gridPath);
     const RackInfo* getPads(const ChainNodePath& gridPath) const;
 
-    /// The first pad device after @p devicePath in its track's chain, or null.
+    /// The first pad device @p devicePath's signal reaches after it, or null.
     const DeviceInfo* findPadDeviceDownstreamOf(const ChainNodePath& devicePath) const;
 
     /// The pad device @p devicePath names, or null when it names none.

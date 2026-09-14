@@ -53,24 +53,75 @@ const RackInfo* TrackManager::getPads(const ChainNodePath& gridPath) const {
     return const_cast<TrackManager*>(this)->getPads(gridPath);
 }
 
+namespace {
+
+/// The first pad device from @p from on, in any chain of a rack on the way:
+/// every chain of a rack starts from what reaches the rack.
+const DeviceInfo* firstPadDeviceFrom(const std::vector<ChainElement>& elements, std::size_t from) {
+    for (auto index = from; index < elements.size(); ++index) {
+        const auto& element = elements[index];
+        if (isDevice(element)) {
+            if (isPadRackDevice(getDevice(element).pluginId))
+                return &getDevice(element);
+            continue;
+        }
+
+        if (isRack(element))
+            for (const auto& chain : getRack(element).chains)
+                if (const auto* found = firstPadDeviceFrom(chain.elements, 0))
+                    return found;
+    }
+    return nullptr;
+}
+
+/** @brief Where @p target sits under @p elements, and the first pad device its signal reaches. */
+struct DownstreamSearch {
+    bool located = false;
+    const DeviceInfo* padDevice = nullptr;
+};
+
+DownstreamSearch searchDownstream(const std::vector<ChainElement>& elements,
+                                  const ChainNodePath& parentPath, const ChainNodePath& target) {
+    for (std::size_t index = 0; index < elements.size(); ++index) {
+        const auto& element = elements[index];
+
+        if (isDevice(element)) {
+            if (chain_walk::deviceIn(parentPath, getDevice(element).id) == target)
+                return {.located = true, .padDevice = firstPadDeviceFrom(elements, index + 1)};
+            continue;
+        }
+
+        if (!isRack(element))
+            continue;
+
+        // Its sibling chains start from the rack's input, so the search leaves the
+        // rack by its output: a chain's MIDI is part of what the rack puts out.
+        const auto& rack = getRack(element);
+        const auto rackPath = chain_walk::rackIn(parentPath, rack.id);
+        for (const auto& chain : rack.chains) {
+            const auto inner =
+                searchDownstream(chain.elements, rackPath.withChain(chain.id), target);
+            if (!inner.located)
+                continue;
+
+            if (inner.padDevice != nullptr)
+                return inner;
+            return {.located = true, .padDevice = firstPadDeviceFrom(elements, index + 1)};
+        }
+    }
+    return {};
+}
+
+}  // namespace
+
 const DeviceInfo* TrackManager::findPadDeviceDownstreamOf(const ChainNodePath& devicePath) const {
     const auto* track = getTrack(devicePath.trackId);
     if (track == nullptr)
         return nullptr;
 
-    const DeviceInfo* found = nullptr;
-    auto passed = false;
-    chain_walk::forEachDevice(track->chain.fxChainElements,
-                              ChainNodePath::trackLevel(devicePath.trackId), chain_walk::Pads::Skip,
-                              [&](const DeviceInfo& device, const ChainNodePath& path) {
-                                  if (passed && isPadRackDevice(device.pluginId)) {
-                                      found = &device;
-                                      return false;
-                                  }
-                                  passed = passed || path == devicePath;
-                                  return true;
-                              });
-    return found;
+    return searchDownstream(track->chain.fxChainElements,
+                            ChainNodePath::trackLevel(devicePath.trackId), devicePath)
+        .padDevice;
 }
 
 void TrackManager::setPads(const ChainNodePath& gridPath, const PadRack& pads) {

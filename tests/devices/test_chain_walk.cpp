@@ -474,3 +474,72 @@ TEST_CASE("A sequencer's drum lanes come from the pad device after it in the cha
 
     tm.clearAllTracks();
 }
+
+TEST_CASE("A sequencer's drum lanes follow its signal out of a rack, not into a sibling chain",
+          "[chain-walk][2659]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    // Track: Rack[ chain A: Sequencer ; chain B: Sibling ], After
+    const auto trackId = tm.createTrack("Track");
+    const auto rackId = tm.addRackToTrack(trackId, "Rack");
+    const auto afterGrid = tm.addDeviceToTrack(trackId, drumGrid("After"));
+
+    const auto rackPath = ChainNodePath::rack(trackId, rackId);
+    const auto chainA = tm.addChainToRack(rackPath);
+    const auto chainB = tm.addChainToRack(rackPath);
+    const auto sequencerId =
+        tm.addDeviceToChainByPath(rackPath.withChain(chainA), effect("Sequencer"));
+    tm.addDeviceToChainByPath(rackPath.withChain(chainB), drumGrid("Sibling"));
+
+    const auto sequencerPath = rackPath.withChain(chainA).withDevice(sequencerId);
+    const auto* downstream = tm.findPadDeviceDownstreamOf(sequencerPath);
+    REQUIRE(downstream != nullptr);
+    CHECK(downstream->id == afterGrid);
+
+    // A grid behind the sequencer in its own chain is the nearer one.
+    const auto inChain = tm.addDeviceToChainByPath(rackPath.withChain(chainA), drumGrid("InChain"));
+    downstream = tm.findPadDeviceDownstreamOf(sequencerPath);
+    REQUIRE(downstream != nullptr);
+    CHECK(downstream->id == inChain);
+
+    tm.clearAllTracks();
+}
+
+namespace {
+
+/// The tracks a property change was announced for.
+class PropertyChanges final : public TrackManagerListener {
+  public:
+    void tracksChanged() override {}
+    void trackPropertyChanged(int trackId) override {
+        tracks.push_back(trackId);
+    }
+
+    std::vector<int> tracks;
+};
+
+}  // namespace
+
+TEST_CASE("Renaming a pad announces a property change on its track", "[chain-walk][2659]") {
+    auto& tm = TrackManager::getInstance();
+    tm.clearAllTracks();
+
+    const auto trackId = tm.createTrack("Track");
+    const auto gridPath =
+        ChainNodePath::topLevelDevice(trackId, tm.addDeviceToTrack(trackId, drumGrid("Grid")));
+    const auto padChainId = tm.ensurePad(gridPath, 0);
+    REQUIRE(padChainId != INVALID_CHAIN_ID);
+
+    PropertyChanges changes;
+    tm.addListener(&changes);
+    tm.setChainName(TrackManager::padChainPath(gridPath, padChainId), "Kick");
+    tm.removeListener(&changes);
+
+    const auto* pad = tm.getPad(gridPath, 0);
+    REQUIRE(pad != nullptr);
+    CHECK(pad->name == "Kick");
+    CHECK(changes.tracks == std::vector<int>{trackId});
+
+    tm.clearAllTracks();
+}

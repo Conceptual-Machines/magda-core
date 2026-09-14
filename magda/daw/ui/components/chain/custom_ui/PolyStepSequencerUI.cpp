@@ -769,11 +769,16 @@ class PolyStepSequencerUI::DrumLanesView : public PolyStepSequencerUI::PatternVi
             });
     }
 
-    // Chain membership and every pad edit arrive as a devices change on the track.
+    // Chain membership and pad edits arrive as a devices change on the track, a
+    // pad renamed through setChainName as a property change.
     void tracksChanged() override {
         triggerLaneRefresh();
     }
     void trackDevicesChanged(magda::TrackId trackId) override {
+        if (trackId == context_.devicePath.trackId)
+            triggerLaneRefresh();
+    }
+    void trackPropertyChanged(int trackId) override {
         if (trackId == context_.devicePath.trackId)
             triggerLaneRefresh();
     }
