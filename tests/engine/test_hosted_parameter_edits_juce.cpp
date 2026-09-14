@@ -1,9 +1,11 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_events/juce_events.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <vector>
 
 #include "core/DeviceInfo.hpp"
@@ -118,7 +120,13 @@ class StubPlugin final : public juce::AudioPluginInstance {
 
     void changeProgramName(int, const juce::String&) override {}
     void getStateInformation(juce::MemoryBlock&) override {}
-    void setStateInformation(const void*, int) override {}
+    void setStateInformation(const void*, int) override {
+        // Halfway through a patch, as a plugin that throws while restoring is.
+        if (throwsOnRestore) {
+            parameters[2]->setValue(0.8f);
+            throw std::runtime_error("restore failed");
+        }
+    }
 
     /// In plugin order, which is slots two upwards: the wrapper pair is in
     /// front of them.
@@ -129,6 +137,7 @@ class StubPlugin final : public juce::AudioPluginInstance {
     std::optional<float> echoesDuringProcess;
 
     int blocksProcessed = 0;
+    bool throwsOnRestore = false;
 };
 
 /// The plan's window for the device, built by hand: one segment per slot it
@@ -181,6 +190,9 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         testEveryAppliedEditKeepsItsOutcome();
         testAnEditAndTheTableInOneBlockEndOnTheTable();
         testAPatchAppliedOverQueuedEditsDropsThem();
+        testAStateAppliedOverADrivenSlotGivesItBack();
+        testAStateAppliedReportsEveryParameter();
+        testAFailedRestoreReportsNothing();
         testAnUnchangedTableValueStillWinsAfterAnEdit();
         testAPluginThatCannotRunIsNotFenced();
         testASlotHeldInTheEditorIsNotWrittenOver();
@@ -537,6 +549,66 @@ class HostedParameterEditsTest final : public juce::UnitTest {
         // Never prepared, so there is no block to process the edit with.
         expect(device.queueParameterEdit(2, 0.4f).has_value(), "Taken");
         expect(!device.fenceParameterEdits(), "Refused, so the capture fails");
+    }
+
+    void testAStateAppliedOverADrivenSlotGivesItBack() {
+        beginTest("A state applied over a driven slot is given back to the host at the next block");
+
+        Rig rig;
+        rig.device->setRendered(true);
+
+        Window driven;
+        driven.carry(2, 0.3f, /*driven=*/true);
+        rig.render(driven);
+
+        auto& gain = *rig.plugin->parameters[0];
+        expectWithinAbsoluteError(gain.getValue(), 0.3f, 1.0e-6f);
+
+        // What a patch does to the slot, under the table's last delivery.
+        gain.setValue(0.9f);
+        rig.device->applyState(magda::DeviceInfo{});
+
+        rig.render(driven);
+        expectWithinAbsoluteError(gain.getValue(), 0.3f, 1.0e-6f);
+    }
+
+    void testAStateAppliedReportsEveryParameter() {
+        beginTest("A state applied reports every parameter the patch moved");
+
+        Rig rig;
+        rig.drain();
+        rig.observed.clear();
+
+        rig.plugin->parameters[2]->setValue(0.6f);
+        rig.device->applyState(magda::DeviceInfo{});
+        rig.drain();
+
+        expect(rig.observed.size() == 3, "One report per parameter");
+
+        const auto drive =
+            std::ranges::find(rig.observed, 4, &adapter::EngineExternalDevice::Observation::slot);
+        expect(drive != rig.observed.end(), "Drive, at slot four, among them");
+        if (drive != rig.observed.end()) {
+            expectWithinAbsoluteError(drive->normalised, 0.6f, 1.0e-6f);
+            expect(drive->source == magda::ObservationSource::Readback,
+                   "Readback, so no base takes it");
+        }
+    }
+
+    void testAFailedRestoreReportsNothing() {
+        beginTest("A restore the plugin threw out of reports none of its half patch");
+
+        Rig rig;
+        rig.drain();
+        rig.observed.clear();
+        rig.plugin->throwsOnRestore = true;
+
+        magda::DeviceInfo saved;
+        saved.pluginState = juce::MemoryBlock("patch", 5).toBase64Encoding();
+
+        expect(rig.device->applyState(saved) == magda::SavedStateOutcome::Failed, "Failed");
+        rig.drain();
+        expect(rig.observed.empty(), "Nothing reported");
     }
 
     void testAPatchAppliedOverQueuedEditsDropsThem() {

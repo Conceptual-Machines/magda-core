@@ -76,7 +76,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
      * @brief Write @p saved into the plugin: parameter array, then state chunk.
      *
      * Call on the control executor (#2573). A Failed return means the plugin
-     * threw partway through and must not be read back.
+     * threw partway through and must not be read back. Afterwards every slot a
+     * host control drives is sent again at the next block, and, unless it
+     * failed, every parameter is reported, since the patch moved them all.
      */
     magda::SavedStateOutcome applyState(const magda::DeviceInfo& saved);
 
@@ -244,6 +246,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     class PluginListener;
 
     void writeParameters(const magda::engine::DeviceParams& params);
+
+    /// Report every live parameter's value as readback, through the drain.
+    void reportEveryParameter();
 
     /// Apply every slot the mailbox holds. Audio thread, or the control side
     /// holding the callback lock. True if any was applied or refused.

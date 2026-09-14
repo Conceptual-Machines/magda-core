@@ -147,6 +147,20 @@ Reply call(httplib::Client& client, const juce::String& method, juce::var params
  * quiet, so this parses out the events and lets a test wait for the nth one
  * rather than sleep and hope.
  */
+/// Poll @p condition until it holds or @p timeout passes. For server-side state
+/// with no signal to wait on; the deadline matches SseStream::waitFor's, since a
+/// loaded CI runner takes well over a second to attach a stream.
+template <typename Condition>
+bool waitUntil(Condition&& condition, std::chrono::milliseconds timeout = std::chrono::seconds(5)) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (!condition()) {
+        if (std::chrono::steady_clock::now() >= deadline)
+            return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return true;
+}
+
 class SseStream {
   public:
     explicit SseStream(const std::string& origin) : client_(origin) {
@@ -950,9 +964,7 @@ TEST_CASE("Closing a stream releases its slot and its subscription",
     // Closing the stream is the cancellation. Both the slot and the hub
     // registration have to come back, or a client that reconnects a few times
     // would exhaust the server.
-    for (int i = 0; i < 100 && server.streamCount() != 0; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    REQUIRE(server.streamCount() == 0);
+    REQUIRE(waitUntil([&server] { return server.streamCount() == 0; }));
     REQUIRE(hub.clientCount() == 0);
 }
 
@@ -1001,8 +1013,7 @@ TEST_CASE("A legacy client initializes, subscribes, and is served on its GET str
     // The subscription only reaches the hub once there is somewhere to deliver.
     SseStream stream(base(server));
     stream.openGet(session);
-    for (int i = 0; i < 100 && hub.clientCount() == 0; ++i)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    REQUIRE(waitUntil([&hub] { return hub.clientCount() != 0; }));
     REQUIRE(hub.clientCount() == 1);
 
     // A client is in the hub from the moment its stream attaches, which is a
