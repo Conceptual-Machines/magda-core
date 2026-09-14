@@ -461,7 +461,8 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         expect(worst <= 1.0e-4f,
                "The fader, the mute and the master are not in it: off by " + juce::String(worst));
 
-        trackManager.setTrackFrozen(frozenId, true);
+        // Unnotified: the shared engine's Tracktion bridge would run its own modal freeze.
+        frozen->frozen = true;
         const auto& tracks = trackManager.getTracks();
         const auto frozenTracks = host::frozenTracksWithFiles(tracks);
         expect(frozenTracks.size() == 1 && frozenTracks[0].trackId == frozenId,
