@@ -436,7 +436,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         // up in time mode and is switched over once its tempo is known behaves;
         // one that claims beat mode with no tempo has readouts that are all
         // zeroes.
-        newEvent.autoTempo = newEvent.interpBpm > 0.0;
+        newEvent.autoTempo = newEvent.hasInterpretedBpm();
     }
     clips_[clip.id] = clip;
 

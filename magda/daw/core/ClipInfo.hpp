@@ -243,7 +243,7 @@ struct AudioEvent {
     double sourceInstantToTimelineBeats(double sourceSeconds, double projectBpm) const {
         const double warped = warpedSourceSeconds(sourceSeconds);
 
-        if ((autoTempo || warpEnabled) && interpBpm > 0.0)
+        if ((autoTempo || warpEnabled) && hasInterpretedBpm())
             return warped * interpBpm / 60.0;
 
         return isValidBpm(projectBpm) ? sourceToTimeline(warped) * projectBpm / 60.0 : 0.0;
@@ -340,18 +340,25 @@ struct AudioEvent {
     // Samples are authoritative. Seconds and beats are views onto them, so a
     // change to interpBpm moves the beat view and leaves the audio alone.
 
+    /// Whether this event has been interpreted at a tempo. Every beat view
+    /// below is zero without one, and beat mode is a claim nothing can honour
+    /// (#2676).
+    bool hasInterpretedBpm() const {
+        return interpBpm > 0.0;
+    }
+
     double anchorSeconds() const {
         return static_cast<double>(sourceAnchorSamples) / sourceSampleRate();
     }
     double anchorBeats() const {
-        return interpBpm > 0.0 ? anchorSeconds() * interpBpm / 60.0 : 0.0;
+        return hasInterpretedBpm() ? anchorSeconds() * interpBpm / 60.0 : 0.0;
     }
     void setAnchorSeconds(double seconds) {
         sourceAnchorSamples =
             static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
     }
     void setAnchorBeats(double beats) {
-        if (interpBpm > 0.0)
+        if (hasInterpretedBpm())
             setAnchorSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
 
@@ -362,10 +369,10 @@ struct AudioEvent {
         return static_cast<double>(loopLengthSamples) / sourceSampleRate();
     }
     double loopStartBeats() const {
-        return interpBpm > 0.0 ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
+        return hasInterpretedBpm() ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
     }
     double loopLengthBeats() const {
-        return interpBpm > 0.0 ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
+        return hasInterpretedBpm() ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
     }
     void setLoopStartSeconds(double seconds) {
         loopStartSamples =
@@ -376,11 +383,11 @@ struct AudioEvent {
             static_cast<int64_t>(std::llround(juce::jmax(0.0, seconds) * sourceSampleRate()));
     }
     void setLoopStartBeats(double beats) {
-        if (interpBpm > 0.0)
+        if (hasInterpretedBpm())
             setLoopStartSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
     void setLoopLengthBeats(double beats) {
-        if (interpBpm > 0.0)
+        if (hasInterpretedBpm())
             setLoopLengthSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
 
@@ -454,7 +461,7 @@ struct AudioEvent {
     /// renders as a plausible-looking integer that never gets corrected once a
     /// real BPM arrives.
     void seedInterpretation(double numBeats, double bpm) {
-        if (bpm > 0.0 && interpBpm <= 0.0)
+        if (bpm > 0.0 && !hasInterpretedBpm())
             interpBpm = bpm;
         if (numBeats > 0.0 && bpm > 0.0 && interpTotalBeats <= 0.0)
             interpTotalBeats = numBeats;
@@ -467,9 +474,9 @@ struct AudioEvent {
         const auto* src = source();
         if (src == nullptr)
             return;
-        if (interpBpm <= 0.0 && src->detectedBpm > 0.0)
+        if (!hasInterpretedBpm() && src->detectedBpm > 0.0)
             interpBpm = src->detectedBpm;
-        if (interpTotalBeats <= 0.0 && interpBpm > 0.0 && src->durationSeconds > 0.0)
+        if (interpTotalBeats <= 0.0 && hasInterpretedBpm() && src->durationSeconds > 0.0)
             interpTotalBeats = src->durationSeconds * interpBpm / 60.0;
         if (keyRoot.empty())
             keyRoot = src->detectedKeyRoot;
