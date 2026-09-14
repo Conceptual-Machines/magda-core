@@ -1012,6 +1012,14 @@ class EngineHostPublishTest final : public juce::UnitTest {
         trackManager.setMacroValue(devicePath, 0, 0.75f);
         expect(asked() > beforeMacro, "Turning a macro asks for one");
 
+        // The other half of #2613: a control moved on one of MAGDA's own
+        // devices. What a republish then does to the sound is pinned by
+        // testModelParameterEditReachesTheDevice; this is the link between the
+        // two, and without it that test would pass with nothing listening.
+        const auto beforeParameter = asked();
+        trackManager.setDeviceParameterValue(devicePath, 1, -60.0f);
+        expect(asked() > beforeParameter, "So does moving a device's own parameter");
+
         const auto beforeLane = asked();
         const auto laneId = magda::AutomationManager::getInstance().createLane(
             magda::ControlTarget::pluginParam(devicePath, 2), magda::AutomationLaneType::Absolute);
@@ -1143,12 +1151,21 @@ class EngineHostPublishTest final : public juce::UnitTest {
         // between the two values.
         const auto sounding = render(40, 30);
 
-        // And the note that starts after the edit, which is a voice the change
-        // reached before it sounded rather than during.
-        const auto afterwards = render(220, 130);
+        // The note that starts after the edit, which is a voice the change
+        // reached before it sounded rather than during. Blocks 80..199, read
+        // from 180: the second note is sounding from 172.
+        const auto afterwards = render(120, 100);
+
+        // Put it back, mid-note, and the same note comes back up. This is what
+        // says the second note was sounding at all: a silence because nothing
+        // was playing would pass an upper bound on its own.
+        trackManager.setDeviceParameterValue(devicePath, kOsc1LevelSlot, -12.0f);
+        expect(session.publishValues(valuesNow()).published, "The edit is undone");
+        const auto restored = render(40, 20);
 
         expect(sounding < before * 0.1f, "The note that was sounding followed the edit");
         expect(afterwards < before * 0.1f, "And so did the one that started after it");
+        expect(restored > before * 0.5f, "Which was sounding all along, as undoing it shows");
     }
 
     /// A rack's own level, which the fork answers with the track's (#2649).
