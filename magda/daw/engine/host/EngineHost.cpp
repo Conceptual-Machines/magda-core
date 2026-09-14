@@ -39,6 +39,7 @@
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
+#include "SlotLauncher.hpp"
 #include "TrackFreeze.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
@@ -278,7 +279,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private AutomationManagerListener,
                                 private ClipManagerListener,
                                 private ProjectManagerListener,
-                                public OfflineRenderHost {
+                                public OfflineRenderHost,
+                                public LaunchHost {
     Impl()
         : loader_([this](engine::DeviceKey key) { return modelDevice(key); },
                   [this](engine::DeviceKey key, const DeviceInfo& resolved,
@@ -755,6 +757,38 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
     void clipPropertyChanged(ClipId) override {
         wantClips();
+    }
+
+    /// The session grid's launches, which is the one model signal that is an
+    /// order rather than an edit: it asks for something to happen at a beat
+    /// rather than describing what to publish (#2552).
+    void clipPlaybackRequested(ClipId clipId, ClipPlaybackRequest request) override {
+        if (request == ClipPlaybackRequest::Play)
+            launcher_.launch(clipId);
+        else
+            launcher_.stop(clipId);
+    }
+
+    // ===== LaunchHost =====
+
+    engine::EngineSession* launchSession() override {
+        return session_.get();
+    }
+
+    const engine::TempoMap& launchTempo() const override {
+        return map_;
+    }
+
+    double launchBeatsPerBar() const override {
+        return static_cast<double>(numerator_) * 4.0 / static_cast<double>(denominator_);
+    }
+
+    bool launchTransportPlaying() const override {
+        return request_.playing;
+    }
+
+    void startLaunchTransport() override {
+        publishRequest({.playing = true, .locate = false});
     }
 
     void wantPlan() {
@@ -1522,6 +1556,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
     std::unique_ptr<engine::EngineSession> session_;
 
+    /// What the session grid asks of the launcher, and what it reads back
+    /// (#2552). Holds this rather than the session, which is rebuilt whenever
+    /// the device changes.
+    SlotLauncher launcher_{*this};
+
     /// The plan the session is rendering, kept so a mixer move can resolve
     /// values against it without compiling another.
     std::shared_ptr<const engine::RenderPlan> livePlan_;
@@ -1794,6 +1833,50 @@ EngineHost::LoopState EngineHost::loop() const {
     return {.enabled = impl_->loop_.enabled,
             .startBeat = impl_->loop_.startBeat,
             .endBeat = impl_->loop_.endBeat};
+}
+
+void EngineHost::launchClip(ClipId clipId) {
+    impl_->launcher_.launch(clipId);
+}
+
+void EngineHost::stopClip(ClipId clipId) {
+    impl_->launcher_.stop(clipId);
+}
+
+void EngineHost::launchScene(const std::vector<TrackId>& trackIds, int sceneIndex) {
+    impl_->launcher_.launchScene(trackIds, sceneIndex);
+}
+
+void EngineHost::stopSessionTrack(TrackId trackId) {
+    impl_->launcher_.stopTrack(trackId);
+}
+
+void EngineHost::stopAllSessionClips() {
+    impl_->launcher_.stopEverything();
+}
+
+SessionClipPlayState EngineHost::sessionClipPlayState(ClipId clipId) const {
+    return impl_->launcher_.playState(clipId);
+}
+
+bool EngineHost::sessionTrackStopPending(TrackId trackId) const {
+    return impl_->launcher_.stopPending(trackId);
+}
+
+double EngineHost::sessionPlayheadSeconds() const {
+    return impl_->launcher_.playheadSeconds(impl_->launcher_.playheadClip());
+}
+
+ClipId EngineHost::sessionPlayheadClip() const {
+    return impl_->launcher_.playheadClip();
+}
+
+std::unordered_map<ClipId, double> EngineHost::sessionPlayheads() const {
+    return impl_->launcher_.playheads();
+}
+
+void EngineHost::processSessionStateEvents() {
+    impl_->launcher_.processStateEvents();
 }
 
 const magda::TempoMap* EngineHost::tempoMap() const {

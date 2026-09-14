@@ -74,9 +74,10 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
     /**
      * The last row of #2551's list: nothing on this engine may answer a
-     * question it has not been wired for without saying so. The session and
-     * recording surface forwarded into a fork with no Edit and no scheduler,
-     * which answered Stopped, false and empty in silence.
+     * question it has not been wired for without saying so. The recording
+     * surface forwarded into a fork with no Edit, which answered false and
+     * empty in silence. The session launcher was on this list too until #2552
+     * wired it, and every method it took is a line the list no longer carries.
      */
     void testUnwiredMethodsNameThemselves() {
         beginTest("Every method nothing answers yet names itself, with its issue");
@@ -85,20 +86,13 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         expect(engine.initialize(), "The engine comes up headless");
 
         constexpr magda::TrackId trackId = 1;
-        constexpr magda::ClipId clipId = 1;
         constexpr int sceneIndex = 0;
 
-        // The session launcher, #2552. The answers are the ones the fork gave
-        // with no scheduler behind it, so nothing that polls them changes.
+        // The launcher answers these off its own taps now (#2552), and with no
+        // project published there is nothing for them to find.
         expect(engine.getSessionPlayheadPosition() < 0.0, "No session playhead");
         expect(engine.getSessionPlayheadClipId() == magda::INVALID_CLIP_ID, "and no clip under it");
         expect(engine.getActiveClipPlayheadPositions().empty(), "and nothing launched");
-        expect(engine.getSessionClipPlayState(clipId) == magda::SessionClipPlayState::Stopped,
-               "A slot reads Stopped");
-        expect(!engine.isSessionTrackStopPending(trackId), "and no track is stopping");
-        engine.stopSessionTrack(trackId);
-        engine.deactivateAllSessionClips();
-        engine.processSessionStateEvents();
 
         // Recording and slot recording, #2553. Arming has to answer false: the
         // fork kept it in a map nothing renders from, so the slot lit up and
@@ -124,28 +118,12 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
                "and no ripple command");
 
         const auto named = magda::MagdaAudioEngine::unwiredMethods();
-        for (const auto* method : {"getSessionPlayheadPosition",
-                                   "getSessionPlayheadClipId",
-                                   "getActiveClipPlayheadPositions",
-                                   "getSessionClipPlayState",
-                                   "isSessionTrackStopPending",
-                                   "stopSessionTrack",
-                                   "deactivateAllSessionClips",
-                                   "processSessionStateEvents",
-                                   "record",
-                                   "onTransportRecord",
-                                   "onTransportStopRecording",
-                                   "armSessionSlotRecording",
-                                   "isSessionSlotRecordArmed",
-                                   "isSessionSlotRecording",
-                                   "beginArmedSessionSlotRecordings",
-                                   "getRecordingPreviews",
-                                   "onPunchRegionChanged",
-                                   "onPunchEnabledChanged",
-                                   "getPluginWindowManager",
-                                   "getInsertRenderCaptureService",
-                                   "getSamplerMediaReferences",
-                                   "createTempoSequenceRippleCommand"})
+        for (const auto* method :
+             {"record", "onTransportRecord", "onTransportStopRecording", "armSessionSlotRecording",
+              "isSessionSlotRecordArmed", "isSessionSlotRecording",
+              "beginArmedSessionSlotRecordings", "getRecordingPreviews", "onPunchRegionChanged",
+              "onPunchEnabledChanged", "getPluginWindowManager", "getInsertRenderCaptureService",
+              "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
             expect(named.contains(method), juce::String(method) + " says it is not wired");
 
         engine.shutdown();

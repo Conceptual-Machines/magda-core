@@ -6,9 +6,12 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <vector>
 
 #include "../../audio/DeviceMeters.hpp"
 #include "../../core/ChainNodePath.hpp"
+#include "../../core/ClipTypes.hpp"
 #include "../../core/HostedParameterEdit.hpp"
 #include "../../core/TypeIds.hpp"
 
@@ -293,6 +296,45 @@ class EngineHost {
     /// The tempo and signature above as the app's beats<->seconds facade.
     /// Never null, and valid until this host is destroyed.
     const magda::TempoMap* tempoMap() const;
+
+    // ===== The session launcher (#2552) =====
+    //
+    // A launch is a request queued against the slot's handle at the beat it is
+    // due on, and what a slot is doing is read back off the tap the block that
+    // advanced it wrote. SlotLauncher.hpp is the whole of it; these forward.
+
+    /** @brief Launch @p clipId's slot, at the clip's own quantization. */
+    void launchClip(ClipId clipId);
+
+    /** @brief Stop @p clipId's slot and give its track back to the arrangement. */
+    void stopClip(ClipId clipId);
+
+    /** @brief Scene @p sceneIndex across @p trackIds, launched on one beat. */
+    void launchScene(const std::vector<TrackId>& trackIds, int sceneIndex);
+
+    /** @brief Stop what @p trackId is playing, at the stopping clip's quantization. */
+    void stopSessionTrack(TrackId trackId);
+
+    /** @brief Stop every slot and return every track to its arrangement. */
+    void stopAllSessionClips();
+
+    /** @brief What @p clipId's slot is doing, as the last block left it. */
+    SessionClipPlayState sessionClipPlayState(ClipId clipId) const;
+
+    /** @brief Whether a quantized stop is in flight on @p trackId. */
+    bool sessionTrackStopPending(TrackId trackId) const;
+
+    /** @brief Where the session playhead is, in seconds, or -1.0. */
+    double sessionPlayheadSeconds() const;
+
+    /** @brief The clip the session playhead follows, or INVALID_CLIP_ID. */
+    ClipId sessionPlayheadClip() const;
+
+    /** @brief Every sounding slot's playhead, in seconds. */
+    std::unordered_map<ClipId, double> sessionPlayheads() const;
+
+    /** @brief Turn what the taps say into the model's own state, once a frame. */
+    void processSessionStateEvents();
 
   private:
     struct Impl;

@@ -128,6 +128,7 @@ class TracktionEngineWrapper : public AudioEngine,
     bool isSessionTrackStopPending(TrackId trackId) const override;
     double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
+    void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) override;
     void armSessionSlotRecording(TrackId trackId, int sceneIndex) override;
     void beginArmedSessionSlotRecordings() override;
     bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const override;

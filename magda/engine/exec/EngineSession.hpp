@@ -315,6 +315,12 @@ class EngineSession {
         return clock_.positionBeats();
     }
 
+    /// The cursor and the monotonic count as one block left them, which is what
+    /// a quantized launch is resolved against off the audio thread (#2305).
+    SyncPoint syncPoint() const {
+        return clock_.syncPoint();
+    }
+
     /**
      * @brief The run edges the launcher publishes, for the capture (#2464).
      *

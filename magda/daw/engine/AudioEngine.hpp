@@ -235,6 +235,15 @@ class AudioEngine : public AudioEngineListener {
     /** Stop all session clips, clear active state, revert to arrangement. */
     virtual void deactivateAllSessionClips() = 0;
 
+    /** Launch scene @p sceneIndex across @p trackIds: each track's slot, or a
+        stop for a track whose slot is empty.
+
+        One call rather than a loop of launches, because a scene is one event:
+        the native engine puts every slot of it on the audio thread together,
+        and slots launched one at a time can land on two sides of a boundary
+        (#2552). */
+    virtual void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) = 0;
+
     /** Mark an empty session slot as the target for recording. */
     virtual void armSessionSlotRecording(TrackId /*trackId*/, int /*sceneIndex*/) {}
 

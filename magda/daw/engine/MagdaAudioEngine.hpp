@@ -106,6 +106,7 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     bool isSessionTrackStopPending(TrackId trackId) const override;
     double getAudioThreadTransportSeconds() const override;
     void deactivateAllSessionClips() override;
+    void launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) override;
     void setTempo(double bpm) override;
     double getTempo() const override;
     void setTimeSignature(int numerator, int denominator) override;

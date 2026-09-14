@@ -6,6 +6,7 @@
 #include "../audio/plugins/tracktion/SamplerHostBinding.hpp"
 #include "../audio/session/SessionClipAudioMonitor.hpp"
 #include "../audio/session/SessionClipScheduler.hpp"
+#include "../core/ClipManager.hpp"
 #include "../core/TrackManager.hpp"
 
 namespace magda {
@@ -98,6 +99,23 @@ double TracktionEngineWrapper::getAudioThreadTransportSeconds() const {
 void TracktionEngineWrapper::deactivateAllSessionClips() {
     if (sessionScheduler_)
         sessionScheduler_->deactivateAllSessionClips();
+}
+
+// A launch each, which is what a scene has always been on this side: the
+// scheduler quantizes every one of them to the same boundary, so they arrive
+// together whether or not they were asked for together.
+void TracktionEngineWrapper::launchSessionScene(const std::vector<TrackId>& trackIds,
+                                                int sceneIndex) {
+    auto& clips = ClipManager::getInstance();
+
+    for (const auto trackId : trackIds) {
+        const auto clipId = clips.getClipInSlot(trackId, sceneIndex);
+
+        if (clipId != INVALID_CLIP_ID)
+            clips.triggerClip(clipId);
+        else
+            stopSessionTrack(trackId);
+    }
 }
 
 // The bridge turns the flag into a Tracktion freeze, which renders on its own.

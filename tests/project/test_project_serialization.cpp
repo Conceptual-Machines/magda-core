@@ -151,6 +151,8 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         ++deactivateCalls;
     }
 
+    void launchSessionScene(const std::vector<TrackId>&, int) override {}
+
     void setTempo(double bpm) override {
         tempo = bpm;
     }

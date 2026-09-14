@@ -319,4 +319,29 @@ struct MaterialOrigin {
     bool operator==(const MaterialOrigin&) const = default;
 };
 
+/**
+ * @brief The timeline and the monotonic count, as one block saw them (#2305).
+ *
+ * Two faces of an instant, which BlockInstant above refuses -- and legitimately,
+ * because these two are the same unit a fixed distance apart rather than one
+ * number read through a map. What separates them is every wrap and locate so
+ * far, so a pair taken from two different blocks is wrong by a whole loop and
+ * not by a rounding.
+ *
+ * What it is for: a launch is queued in monotonic beats, and the boundary it is
+ * quantized to is a timeline beat. Whoever converts between them off the audio
+ * thread has to do it against one block's pairing.
+ */
+struct SyncPoint {
+    double beat = 0.0;
+    double monotonicBeat = 0.0;
+
+    /// @brief @p timelineBeat in the monotonic domain this pairing fixes.
+    double monotonicAt(double timelineBeat) const {
+        return monotonicBeat + (timelineBeat - beat);
+    }
+
+    bool operator==(const SyncPoint&) const = default;
+};
+
 }  // namespace magda::engine
