@@ -117,8 +117,9 @@ struct OfflineRenderRequest {
     bool realTimeRender = false;
     BeatRange range;
 
-    /// Rendered past the range's end, for reverb and delay tails.
-    double tailSeconds = 0.0;
+    /// Rendered past the range's end, for reverb and delay tails. Unset renders
+    /// the longest tail the rendered devices declare.
+    std::optional<double> tailSeconds = 0.0;
 
     /// Silence written ahead of the range.
     double leadInSeconds = 0.0;
@@ -126,6 +127,9 @@ struct OfflineRenderRequest {
     std::vector<TrackId> trackIds;
     std::vector<TrackId> excludedTrackIds;
     std::vector<ClipId> clipIds;
+
+    /// The track a freeze renders: up to its fader, unmuted, with no track soloed.
+    TrackId freezeTrackId = INVALID_TRACK_ID;
 };
 
 struct OfflineRenderResult {
@@ -458,6 +462,14 @@ class AudioEngine : public AudioEngineListener {
     // ===== Offline Rendering =====
     virtual std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) = 0;
+
+    /**
+     * @brief Freeze or unfreeze @p trackId. Message thread.
+     *
+     * A freeze renders the track before its flag flips, modally with progress,
+     * and leaves it unfrozen when there is nothing to render or the render fails.
+     */
+    virtual void setTrackFrozen(TrackId trackId, bool frozen) = 0;
 
     // ===== Project Media =====
     virtual std::vector<SamplerMediaReference> getSamplerMediaReferences() = 0;

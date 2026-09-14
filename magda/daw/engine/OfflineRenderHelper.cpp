@@ -117,6 +117,18 @@ bool trimLeadingSeconds(const juce::File& file, double seconds) {
     return tempFile.moveFileTo(file);
 }
 
+/** @brief The longest tail a plugin on the tracks in @p tracksToDo declares. */
+tracktion::TimeDuration declaredTail(tracktion::Edit& edit, const juce::BigInteger& tracksToDo) {
+    const auto allTracks = tracktion::getAllTracks(edit);
+
+    juce::Array<tracktion::EditItemID> trackIds;
+    for (auto index = 0; index < allTracks.size(); ++index)
+        if (tracksToDo[index])
+            trackIds.add(allTracks[index]->itemID);
+
+    return tracktion::RenderOptions::findEndAllowance(edit, &trackIds, nullptr);
+}
+
 class TracktionOfflineRenderTask final : public OfflineRenderTask {
   public:
     TracktionOfflineRenderTask(TracktionEngineWrapper& engine, tracktion::Edit& edit,
@@ -150,13 +162,16 @@ class TracktionOfflineRenderTask final : public OfflineRenderTask {
             tracktion::TimeRange(start - tracktion::TimeDuration::fromSeconds(
                                              request_.realTimeRender ? 0.0 : kPrerollSeconds),
                                  end);
-        params_.endAllowance = tracktion::TimeDuration::fromSeconds(request_.tailSeconds);
         params_.tracksToDo = tracksToDo;
 
         if (auto* bridge = engine.getAudioBridge())
             for (const auto clipId : request_.clipIds)
                 if (auto* clip = bridge->getArrangementTeClip(clipId))
                     params_.allowedClips.add(clip);
+
+        params_.endAllowance = request_.tailSeconds.has_value()
+                                   ? tracktion::TimeDuration::fromSeconds(*request_.tailSeconds)
+                                   : declaredTail(edit, tracksToDo);
     }
 
     OfflineRenderResult run(const std::function<bool()>& shouldCancel,

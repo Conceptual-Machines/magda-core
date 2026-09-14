@@ -105,6 +105,9 @@ class TracingDevice final : public magda::engine::EngineDevice {
     int latencySamples() const override {
         return device_->latencySamples();
     }
+    double tailSeconds() const override {
+        return device_->tailSeconds();
+    }
 
     void process(magda::engine::DeviceBlock& block) override;
 

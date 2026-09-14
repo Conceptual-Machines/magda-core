@@ -612,6 +612,10 @@ int EngineExternalDevice::latencySamples() const {
     return latencySamples_;
 }
 
+double EngineExternalDevice::tailSeconds() const {
+    return instance_->getTailLengthSeconds();
+}
+
 void EngineExternalDevice::writeParameters(const magda::engine::DeviceParams& params) {
     // The entries the table carries, not every slot the plugin has (#2629).
     for (int entry = 0; entry < params.size(); ++entry) {

@@ -1,6 +1,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -15,6 +16,7 @@
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineOfflineRender.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
+#include "magda/daw/engine/host/TrackFreeze.hpp"
 
 /**
  * @file test_engine_offline_render_juce.cpp
@@ -171,6 +173,10 @@ class RingingDevice final : public magda::engine::EngineDevice {
         ringing = false;
     }
 
+    double tailSeconds() const override {
+        return tail;
+    }
+
     void process(magda::engine::DeviceBlock& block) override {
         if (ringing)
             for (std::size_t channel = 0; channel < block.audio.getNumChannels(); ++channel)
@@ -180,6 +186,7 @@ class RingingDevice final : public magda::engine::EngineDevice {
     }
 
     bool ringing = false;
+    double tail = 0.0;
 };
 
 /** @brief A host whose live session holds one device, at @p key. */
@@ -235,6 +242,8 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testDitherOnTheFile(); });
         magda::test::runWithCleanJuceState([this] { testNormaliseAndLeadIn(); });
         magda::test::runWithCleanJuceState([this] { testBorrowedDeviceStartsClean(); });
+        magda::test::runWithCleanJuceState([this] { testDeclaredTail(); });
+        magda::test::runWithCleanJuceState([this] { testFreezeRendersUpToTheFader(); });
     }
 
   private:
@@ -368,6 +377,116 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
         }
 
         expect(!device->ringing, "Live playback resumes without the render's tail");
+    }
+
+    void testDeclaredTail() {
+        beginTest("A render left to find its tail rings for as long as its longest device");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        auto* track = trackManager.getTrack(trackManager.createTrack("Effect"));
+        expect(track != nullptr, "The track exists");
+        if (track == nullptr)
+            return;
+
+        track->chain.fxChainElements.emplace_back(chorus(1));
+
+        auto device = std::make_shared<RingingDevice>();
+        device->tail = 0.25;
+        LendingHost lender({magda::ChainSegment::Fx, magda::DeviceId{1}}, device);
+
+        const auto file = scratchDirectory().getChildFile("declared_tail.wav");
+        auto request = requestFor(file, 32, magda::OfflineRenderDither::None);
+        request.tailSeconds = std::nullopt;
+
+        auto session = host::createEngineOfflineRenderSession(lender, false);
+        auto task = session->createTask(request);
+        expect(task != nullptr && task->run().success, "The render succeeds");
+
+        expectEquals(readBack(file).getNumSamples(),
+                     kRangeSamples + static_cast<int>(kSampleRate / 4),
+                     "The file is the range and the device's tail");
+    }
+
+    void testFreezeRendersUpToTheFader() {
+        beginTest(
+            "A freeze renders its track and what feeds it up to the fader, and plays the file");
+
+        const auto signal = sine(0.5f, 441.0);
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto frozenId = trackManager.createTrack("Frozen");
+        const auto feedingId = trackManager.createTrack("Feeding");
+        magda::ClipManager::getInstance().createAudioClipBeats(
+            feedingId, 0.0, 4.0, writeSource("feeding", signal).getFullPathName());
+
+        auto* frozen = trackManager.getTrack(frozenId);
+        auto* feeding = trackManager.getTrack(feedingId);
+        auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(frozen != nullptr && feeding != nullptr && master != nullptr, "The tracks exist");
+        if (frozen == nullptr || feeding == nullptr || master == nullptr)
+            return;
+
+        feeding->audioOutputDevice = "track:" + juce::String(frozenId);
+        frozen->volume = 0.25f;
+        frozen->muted = true;
+        master->volume = 0.1f;
+
+        host::EngineHost engineHost;
+        expect(engineHost.planFreeze(feedingId).request == nullptr,
+               "A track routed into another track is refused");
+
+        const auto freeze = engineHost.planFreeze(frozenId);
+        expect(freeze.request != nullptr, "The frozen track has a render: " + freeze.refusal);
+        if (freeze.request == nullptr)
+            return;
+
+        const auto file = freeze.request->destination;
+        file.getParentDirectory().createDirectory();
+        {
+            auto session = engineHost.createOfflineRenderSession(false);
+            auto task = session->createTask(*freeze.request);
+            const auto result =
+                task != nullptr ? task->run() : magda::OfflineRenderResult{false, "no task"};
+            expect(result.success, "The freeze renders: " + result.error);
+        }
+        engineHost.adoptFreeze(*freeze.request);
+
+        const auto stored = readBack(file);
+        expectEquals(stored.getNumSamples(), kRangeSamples, "The file is the clip's length");
+        if (stored.getNumSamples() != kRangeSamples)
+            return;
+
+        auto worst = 0.0f;
+        for (auto sample = 0; sample < kRangeSamples; ++sample)
+            worst = std::max(worst, std::abs(stored.getSample(0, sample) - signal(sample)));
+        expect(worst <= 1.0e-4f,
+               "The fader, the mute and the master are not in it: off by " + juce::String(worst));
+
+        // Unnotified: the shared engine's Tracktion bridge would run its own modal freeze.
+        frozen->frozen = true;
+        const auto& tracks = trackManager.getTracks();
+        const auto frozenTracks = host::frozenTracksWithFiles(tracks);
+        expect(frozenTracks.size() == 1 && frozenTracks[0].trackId == frozenId,
+               "The frozen track has its file");
+        if (frozenTracks.size() != 1)
+            return;
+
+        const auto played = host::tracksAsPlayed(tracks, frozenTracks);
+        expect(std::ranges::find(played, feedingId, &magda::TrackInfo::id) == played.end(),
+               "The track feeding it is not played");
+
+        const auto tempo = host::tempoMapAt(120.0, 4, 4);
+        const auto snapshot = magda::engine::compileClipSnapshot(
+            host::lanesAsPlayed(host::clipLanesFor(tracks), tracks, frozenTracks, tempo),
+            host::clipSources(), tempo);
+        const auto* lane = snapshot.find(frozenId);
+        expect(lane != nullptr && lane->audio.size() == 1 && lane->audio[0].events.size() == 1 &&
+                   lane->audio[0].events[0].filePath == file.getFullPathName().toStdString(),
+               "The frozen track plays its file");
+        expect(snapshot.find(feedingId) == nullptr, "The feeding track's clip is not played");
+
+        file.deleteFile();
+        host::unfreezeTracksWithoutFiles();
+        expect(!trackManager.getTrack(frozenId)->frozen, "A frozen track without its file thaws");
     }
 };
 

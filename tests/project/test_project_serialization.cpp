@@ -351,6 +351,7 @@ class ProjectBoundaryResetEngine : public AudioEngine {
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(bool) override {
         return nullptr;
     }
+    void setTrackFrozen(TrackId, bool) override {}
 
     std::vector<SamplerMediaReference> getSamplerMediaReferences() override {
         return {};
