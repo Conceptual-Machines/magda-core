@@ -427,16 +427,10 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         clip.loopEnabled = true;
         newEvent.loopLengthSamples = 0;
 
-        // Beat mode only where there is a tempo to interpret against (#2676).
-        // seedInterpretationFromSource above fills interpBpm when the file said
-        // what it is; with nothing behind it, beat mode is a claim nothing can
-        // honour -- loopLengthBeats() answers zero, the inspector reads BEAT,
-        // and the engine declines the beat face and plays the material at its
-        // own rate anyway (EventPlacement.cpp: usesBeatFace). A clip that comes
-        // up in time mode and is switched over once its tempo is known behaves;
-        // one that claims beat mode with no tempo has readouts that are all
-        // zeroes.
-        newEvent.autoTempo = newEvent.hasInterpretedBpm();
+        // A session slot asks for beat mode; the event grants it only with a
+        // tempo behind it. seedInterpretationFromSource above fills one when
+        // the file said what it is (#2676).
+        newEvent.setBeatMode(true);
     }
     clips_[clip.id] = clip;
 
@@ -499,7 +493,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             // leave it: applyAudioClipBeats below answers only for a clip
             // already in beat mode (#1157), so the detection would be dropped
             // by the very state it is meant to resolve (#2676).
-            ev->autoTempo = true;
+            ev->interpBpm = detectedBPM;
+            ev->setBeatMode(true);
 
             double fileDuration = ev->sourceDurationSeconds();
             if (auto* thumb =

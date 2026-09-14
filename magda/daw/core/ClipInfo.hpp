@@ -347,6 +347,23 @@ struct AudioEvent {
         return interpBpm > 0.0;
     }
 
+    /**
+     * @brief Ask for beat mode, which is granted only with a tempo behind it.
+     *
+     * Resolved here rather than at each caller, because the flag and the
+     * interpretation it depends on are one fact: every beat view answers zero
+     * without an interpretation, and the engine declines the beat face anyway
+     * (EventPlacement.cpp: usesBeatFace), so a flag stored without one drifts
+     * from what can honour it (#2676).
+     *
+     * Not the other way round: a tempo does not imply beat mode. An
+     * arrangement clip is interpreted and stays in time mode, and a user who
+     * switched beat mode off keeps it off.
+     */
+    void setBeatMode(bool enabled) {
+        autoTempo = enabled && hasInterpretedBpm();
+    }
+
     double anchorSeconds() const {
         return static_cast<double>(sourceAnchorSamples) / sourceSampleRate();
     }
