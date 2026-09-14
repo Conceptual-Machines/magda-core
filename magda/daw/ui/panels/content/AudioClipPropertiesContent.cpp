@@ -303,48 +303,28 @@ void AudioClipPropertiesContent::createControls() {
         double newBPM = bpmValue_->getValue();
 
         // BPM and Beats are two editable views of the same fixed-duration source
-        // interpretation. Editing either one must keep the other coherent.
-        if (magda::audioEventRef(*clip).autoTempo) {
-            double bpm = 120.0;
-            if (auto* tc = magda::TimelineController::getCurrent())
-                bpm = tc->getState().tempo.bpm;
-            magda::ClipManager::AudioClipBeatsUpdate u;
-            u.interpretationBpm = newBPM;
-            double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    magda::audioEventRef(*clip).sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0)
-                    durationSeconds = fileDuration;
-                if (fileDuration > 0.0 &&
-                    magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                    u.sourceDurationSeconds = fileDuration;
-            }
-            if (durationSeconds > 0.0) {
-                u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-                u.lockInterpretationTotalBeats = true;
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.applyAudioClipBeats(clipId_, u, bpm);
-        } else {
-            // Non-autoTempo audio: source interpretation BPM is just stored metadata.
-            auto* event = clip->primaryEvent();
-            if (event != nullptr)
-                event->interpBpm = newBPM;
-            if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                    magda::audioEventRef(*clip).sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
-                    if (auto* src = magda::SourcePool::getInstance().getMutable(
-                            magda::audioEventRef(*clip).sourceId);
-                        src != nullptr && src->durationSeconds <= 0.0) {
-                        src->durationSeconds = fileDuration;
-                    }
-                }
-            }
-            auto& mgr = magda::ClipManager::getInstance();
-            mgr.forceNotifyClipPropertyChanged(clipId_);
+        // interpretation. Editing either one must keep the other coherent, in
+        // beat mode or out of it — applyAudioClipBeats takes the interpretation
+        // either way (#2676).
+        double bpm = 120.0;
+        if (auto* tc = magda::TimelineController::getCurrent())
+            bpm = tc->getState().tempo.bpm;
+        magda::ClipManager::AudioClipBeatsUpdate u;
+        u.interpretationBpm = newBPM;
+        double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
+        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
+                magda::audioEventRef(*clip).sourceFilePath())) {
+            double fileDuration = thumb->getTotalLength();
+            if (fileDuration > 0.0)
+                durationSeconds = fileDuration;
+            if (fileDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
+                u.sourceDurationSeconds = fileDuration;
         }
+        if (durationSeconds > 0.0) {
+            u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
+            u.lockInterpretationTotalBeats = true;
+        }
+        magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
     };
     addAndMakeVisible(*bpmValue_);
 
@@ -654,13 +634,14 @@ void AudioClipPropertiesContent::updateFromClip() {
 
     bool enabled = hasClip;
     bool isAutoTempo = hasClip && magda::audioEventRef(*clip).autoTempo;
-    // Speed is live in time-based mode; Source BPM / Beats are live only in beat
-    // mode (autoTempo) — they're inert otherwise, so grey them out. Mirrors the
-    // right-panel clip inspector.
+    // Speed is live in time-based mode only. Source BPM / Beats are live in
+    // both: they say what the file is, which is what a clip in time mode for
+    // want of a tempo needs a way to state (#2676). Mirrors the right-panel
+    // clip inspector.
     stretchValue_->setEnabled(enabled && !isAutoTempo);
     stretchModeCombo_->setEnabled(enabled);
-    bpmValue_->setEnabled(enabled && isAutoTempo);
-    beatsValue_->setEnabled(enabled && isAutoTempo);
+    bpmValue_->setEnabled(enabled);
+    beatsValue_->setEnabled(enabled);
     pitchValue_->setEnabled(enabled);
     analogPitchToggle_->setEnabled(enabled && !isAutoTempo &&
                                    !(hasClip && magda::audioEventRef(*clip).warpEnabled));

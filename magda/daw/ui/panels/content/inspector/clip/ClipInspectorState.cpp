@@ -59,8 +59,7 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
         clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);
     }
 
-    if (audioEventRef(clip).autoTempo && clipBeatsLengthValue_ &&
-        !clipBeatsLengthValue_->isDragging()) {
+    if (clipBeatsLengthValue_ && !clipBeatsLengthValue_->isDragging()) {
         clipBeatsLengthValue_->setValue(display.totalBeats > 0.0 ? display.totalBeats : 4.0,
                                         juce::dontSendNotification);
     }
@@ -326,23 +325,22 @@ void ClipInspector::updateFromSelectedClip() {
             }
             clipBpmValue_.setVisible(true);
             clipBpmUnitLabel_.setVisible(true);
-            // Source BPM only drives playback in beat mode (autoTempo); in
-            // time-based mode the engine uses speedRatio and never reads it, so
-            // grey it out — the mirror of how the speed control is disabled in
-            // beat mode.
-            const bool sourceBpmActive = magda::audioEventRef(*clip).autoTempo;
-            clipBpmValue_.setEnabled(sourceBpmActive);
-            clipBpmValue_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
-            clipBpmUnitLabel_.setAlpha(sourceBpmActive ? 1.0f : 0.4f);
+            // Live in both modes. What tempo a file is, is a fact about the
+            // file, and a clip left in time mode for want of one is exactly
+            // where a user types it (#2676).
+            clipBpmValue_.setEnabled(true);
+            clipBpmValue_.setAlpha(1.0f);
+            clipBpmUnitLabel_.setAlpha(1.0f);
             updateAudioSourceValueDisplays(*clip);
         } else {
             clipBpmValue_.setVisible(false);
             clipBpmUnitLabel_.setVisible(false);
         }
 
-        // Show source interpretation total beats for audio clips with auto-tempo enabled.
+        // Show source interpretation total beats for audio clips, in either mode —
+        // it is the other half of the interpretation the BPM field edits (#2676).
         // Clip placement length is already represented by start/end and by the clip body itself.
-        if (showAudioProps && magda::audioEventRef(*clip).autoTempo && !isMulti) {
+        if (showAudioProps && !isMulti) {
             clipBeatsLengthValue_->setVisible(true);
             clipBeatsUnitLabel_.setVisible(true);
             clipBeatsLengthValue_->setEnabled(true);
