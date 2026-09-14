@@ -8,10 +8,12 @@
 #include "../audio/plugin_manager/ExternalPluginStateUtil.hpp"
 #include "../audio/plugins/DeviceCatalogParameters.hpp"
 #include "../audio/plugins/InternalPluginRegistry.hpp"
+#include "../audio/plugins/MagdaDevice.hpp"
 #include "../audio/plugins/tracktion/TracktionDeviceStateBridge.hpp"
 #include "../engine/AudioEngine.hpp"
 #include "ChainWalk.hpp"
 #include "DeviceState.hpp"
+#include "DeviceStateCommands.hpp"
 #include "DrumGridPads.hpp"
 #include "HostedParameterEdit.hpp"
 #include "LegacyDeviceAliases.hpp"
@@ -1977,24 +1979,27 @@ void projectAuthoredStateToEngine(AudioEngine* audioEngine, const ChainNodePath&
                                   const juce::String& docText, const juce::String& deviceType) {
     if (audioEngine == nullptr)
         return;
-    auto* bridge = audioEngine->getAudioBridge();
-    if (bridge == nullptr)
-        return;
-    auto plugin = bridge->getPlugin(devicePath);
-    if (plugin == nullptr)
-        return;
 
-    namespace ta = daw::audio::tracktion_adapter;
-    auto tree = ta::devicePluginTreeFromState(docText);
-    if (!tree.isValid()) {
-        // An empty snapshot is still a state: "nothing authored". Project a
-        // bare typed tree so a device whose contract reads absence as none (a
-        // convolution's impulse response) actually unloads, rather than the
-        // model saying the edit was undone while the engine keeps playing it.
-        tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
-        tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
+    if (auto* bridge = audioEngine->getAudioBridge()) {
+        if (auto plugin = bridge->getPlugin(devicePath)) {
+            namespace ta = daw::audio::tracktion_adapter;
+            auto tree = ta::devicePluginTreeFromState(docText);
+            if (!tree.isValid()) {
+                tree = juce::ValueTree(tracktion::engine::IDs::PLUGIN);
+                tree.setProperty(tracktion::engine::IDs::type, deviceType, nullptr);
+            }
+
+            plugin->restorePluginStateFromValueTree(tree);
+            return;
+        }
     }
-    plugin->restorePluginStateFromValueTree(tree);
+
+    // No fork plugin means the native engine is rendering, and the device it
+    // holds is the same object the fork's plugin would have handed the tree to.
+    // Without this the edit reached the model and nothing told the instance
+    // (#2663).
+    if (auto device = audioEngine->renderedDevice(devicePath))
+        projectAuthoredStateToDevice(*device, docText, deviceType);
 }
 
 }  // namespace

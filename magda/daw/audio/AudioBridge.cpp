@@ -140,9 +140,11 @@ AudioBridge::AudioBridge(te::Engine& engine, te::Edit& edit, TrackMeters& meters
     deviceServices.sessionContext = &sessionAudioMonitor_;
     deviceServices.meteringContext = &deviceMetering_;
     deviceServices.defaults.oscilloscope.timebaseMs = oscilloscopeDefaults.timebaseMs;
+    deviceServices.defaults.oscilloscope.traceColour = oscilloscopeDefaults.traceColour;
     deviceServices.defaults.spectrum.fftOrder = spectrumDefaults.fftOrder;
     deviceServices.defaults.spectrum.slopeDbPerOct = spectrumDefaults.slopeDbPerOct;
     deviceServices.defaults.spectrum.smoothing = spectrumDefaults.smoothing;
+    deviceServices.defaults.spectrum.traceColour = spectrumDefaults.traceColour;
     daw::audio::registerDeviceServices(daw::audio::DeviceSessionKey::fromAddress(&edit_),
                                        deviceServices);
 

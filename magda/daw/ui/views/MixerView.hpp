@@ -30,6 +30,10 @@
 
 namespace magda {
 
+namespace daw::audio {
+class MagdaDevice;
+}
+
 // Forward declarations
 class AudioEngine;
 class UndoableCommand;
@@ -220,7 +224,14 @@ class MixerView : public juce::Component,
         std::unique_ptr<daw::ui::SpectrumAnalyzerUI> miniSpectrumUI_;
         std::shared_ptr<daw::ui::OscilloscopeTelemetrySource> miniOscilloscopeTelemetry_;
         std::shared_ptr<daw::ui::SpectrumTelemetrySource> miniSpectrumTelemetry_;
+        /// Which device each faceplate last read its settings off. Compared only.
+        const daw::audio::MagdaDevice* miniOscilloscopeDevice_ = nullptr;
+        const daw::audio::MagdaDevice* miniSpectrumDevice_ = nullptr;
         void refreshMiniAnalyzers();
+
+        /// Re-read the analyser controls when the device behind them changes:
+        /// the model's notification comes before the plan that holds it (#2663).
+        void refreshAnalyserSettings();
 
         // Mini FX chain: one MiniChainRow per top-level fx device on this
         // track. Built from TrackInfo::chain.fxChainElements; nested racks

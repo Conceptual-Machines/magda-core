@@ -54,6 +54,7 @@ set(TEST_SOURCES
     devices/test_plugin_loading.cpp
     devices/test_plugin_format.cpp
     devices/test_device_authored_state.cpp
+    devices/test_analyser_defaults.cpp
     devices/test_sampler_model_edits.cpp
     devices/test_device_catalog_parameters.cpp
     devices/test_device_state_hydration.cpp

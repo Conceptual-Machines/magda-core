@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "../../magda/daw/audio/plugins/OscilloscopePlugin.hpp"
+#include "../../magda/daw/audio/plugins/SpectrumAnalyzerPlugin.hpp"
 #include "../../magda/daw/core/DeviceState.hpp"
 #include "../../magda/daw/core/DeviceStateCommands.hpp"
 #include "../../magda/daw/core/TrackManager.hpp"
@@ -180,4 +182,69 @@ TEST_CASE("Authored-state edits refuse what they cannot read", "[device-authored
         CHECK_FALSE(command.canExecute());
         TrackManager::getInstance().clearAllTracks();
     }
+}
+
+// ============================================================================
+// #2663 — an analyser's Time, Color and FFT are authored state like every other
+// faceplate's settings. They used to live only on the live device, where the
+// native engine never captured them back and a save lost them.
+// ============================================================================
+
+TEST_CASE("An analyser's settings are written to its document", "[device-authored-state][2663]") {
+    const auto path = addInternalDevice("oscilloscope", {});
+
+    juce::NamedValueSet settings;
+    settings.set("timebaseMs", 250.0f);
+    settings.set("traceColour", 3);
+    REQUIRE(writeDeviceSettings(path, settings));
+
+    const auto* device = TrackManager::getInstance().getDeviceInChainByPath(path);
+    REQUIRE(device != nullptr);
+    const auto written = ds::decode(device->pluginState);
+    REQUIRE(written.has_value());
+    CHECK(static_cast<float>(written->root.props[juce::Identifier("timebaseMs")]) ==
+          Catch::Approx(250.0f));
+    CHECK(static_cast<int>(written->root.props[juce::Identifier("traceColour")]) == 3);
+}
+
+TEST_CASE("The projection puts an analyser's document onto the running device",
+          "[device-authored-state][2663]") {
+    namespace audio = magda::daw::audio;
+
+    // The whole round trip the faceplate depends on: the keys it writes are the
+    // ones the device reads back, through the projection the native engine uses
+    // in place of the fork's plugin.
+    const auto path = addInternalDevice("oscilloscope", {});
+
+    juce::NamedValueSet scopeSettings;
+    scopeSettings.set("timebaseMs", 250.0f);
+    scopeSettings.set("traceColour", 3);
+    REQUIRE(writeDeviceSettings(path, scopeSettings));
+
+    const auto* saved = TrackManager::getInstance().getDeviceInChainByPath(path);
+    REQUIRE(saved != nullptr);
+
+    audio::OscilloscopePlugin scope{audio::DevicePluginDefaults::Oscilloscope{}};
+    projectAuthoredStateToDevice(scope, saved->pluginState, "oscilloscope");
+    CHECK(scope.timebaseMs() == Catch::Approx(250.0f));
+    CHECK(scope.traceColourIndex() == 3);
+
+    const auto spectrumPath = addInternalDevice("spectrumanalyzer", {});
+
+    juce::NamedValueSet spectrumSettings;
+    spectrumSettings.set("fftOrder", 12);
+    spectrumSettings.set("slopeDbPerOct", 3.0f);
+    spectrumSettings.set("smoothing", 0.25f);
+    spectrumSettings.set("traceColour", 2);
+    REQUIRE(writeDeviceSettings(spectrumPath, spectrumSettings));
+
+    const auto* savedSpectrum = TrackManager::getInstance().getDeviceInChainByPath(spectrumPath);
+    REQUIRE(savedSpectrum != nullptr);
+
+    audio::SpectrumAnalyzerPlugin spectrum{audio::DevicePluginDefaults::Spectrum{}};
+    projectAuthoredStateToDevice(spectrum, savedSpectrum->pluginState, "spectrumanalyzer");
+    CHECK(spectrum.fftOrder() == 12);
+    CHECK(spectrum.slopeDbPerOct() == Catch::Approx(3.0f));
+    CHECK(spectrum.smoothing() == Catch::Approx(0.25f));
+    CHECK(spectrum.traceColourIndex() == 2);
 }

@@ -5,6 +5,10 @@
 #include "ChainNodePath.hpp"
 #include "CommandPattern.hpp"
 
+namespace magda::daw::audio {
+class MagdaDevice;
+}
+
 namespace magda {
 
 /**
@@ -44,5 +48,32 @@ class LoadImpulseResponseCommand : public SnapshotCommand<juce::String> {
     juce::String irName_;
     juce::MemoryBlock irData_;
 };
+
+/**
+ * @brief Patch a device's non-slot settings into its state document.
+ *
+ * What every faceplate whose settings are authored state writes through: the
+ * model holds them, the projection pushes them to whatever is rendering, and a
+ * save carries them. Not undoable -- a control's own position is the state, and
+ * nobody reaches for undo after moving one.
+ *
+ * @return whether the document changed, which is false for a path the model
+ *         has no internal device at.
+ */
+bool writeDeviceSettings(const ChainNodePath& devicePath, const juce::NamedValueSet& settings);
+
+/**
+ * @brief Push a state document onto a device that is already running.
+ *
+ * The projection's other half: the fork hands its plugin the tree and the
+ * plugin hands it to the device, so a device the native engine holds is given
+ * the same tree directly (#2663).
+ *
+ * @p deviceType names the device for an empty @p docText, which is still a
+ * state -- "nothing authored" -- and has to reach a device whose contract reads
+ * absence as none.
+ */
+void projectAuthoredStateToDevice(daw::audio::MagdaDevice& device, const juce::String& docText,
+                                  const juce::String& deviceType);
 
 }  // namespace magda
