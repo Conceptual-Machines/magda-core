@@ -474,12 +474,11 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
          .createMode = InternalPluginCreateMode::SavedStateOrFresh,
          .loadAliases = kLevelsAliases,
          .loadAliasCount = static_cast<int>(std::size(kLevelsAliases)),
-         .matchesPlugin = matches<LevelsPlugin>,
          .showInBrowser = true,
          .tags = kLevelsTags,
          .tagCount = static_cast<int>(std::size(kLevelsTags)),
          .createInSession = createValueTreePlugin,
-         .createPlugin = createPlugin<LevelsPlugin>});
+         .createDevice = createDevice<LevelsPlugin>});
     add(registry,
         {.pluginId = MutableElementsPlugin::xmlTypeName,
          .displayName = "Materia",

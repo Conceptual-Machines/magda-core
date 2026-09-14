@@ -1,7 +1,9 @@
 #include <array>
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <memory>
 
+#include "audio/plugins/LevelsPlugin.hpp"
 #include "custom_ui/DeviceTelemetrySources.hpp"
 
 /**
@@ -224,4 +226,46 @@ TEST_CASE("A spectrum source reads the same way", "[device-telemetry][2585]") {
     source.setFftOrder(12);
     CHECK(source.fftOrder() == 12);
     CHECK(device->fftOrder() == 12);
+}
+
+namespace {
+
+/// One block of @p level on both channels through @p device, as a host renders it.
+void measureBlock(audio::LevelsPlugin& device, float level) {
+    juce::AudioBuffer<float> buffer(2, 512);
+    for (auto channel = 0; channel < buffer.getNumChannels(); ++channel)
+        juce::FloatVectorOperations::fill(buffer.getWritePointer(channel), level, 512);
+
+    audio::DeviceProcessContext context;
+    context.audio = &buffer;
+    context.numSamples = 512;
+    device.process(context);
+}
+
+}  // namespace
+
+TEST_CASE("A Levels faceplate measures through the device the engine renders",
+          "[device-telemetry][2658]") {
+    std::shared_ptr<audio::LevelsPlugin> device;
+    ui::DeviceLevelsTelemetry source(
+        [&device]() -> std::shared_ptr<audio::MagdaDevice> { return device; });
+
+    // The faceplate shows before anything renders behind it.
+    source.setActive(true);
+    CHECK(source.snapshot().samplePeakDb == audio::kSilenceDb);
+
+    device = std::make_shared<audio::LevelsPlugin>();
+    device->prepare({.sampleRate = 48000.0, .maximumBlockSize = 512});
+
+    measureBlock(*device, 0.5f);
+    REQUIRE(source.snapshot().samplePeakDb == audio::kSilenceDb);
+
+    // The read handed the device the faceplate's state, so the next block is measured.
+    measureBlock(*device, 0.5f);
+    CHECK(source.snapshot().samplePeakDb == Catch::Approx(-6.02f).margin(0.01f));
+
+    source.setActive(false);
+    source.requestReset();
+    measureBlock(*device, 1.0f);
+    CHECK(source.snapshot().samplePeakDb == Catch::Approx(-6.02f).margin(0.01f));
 }

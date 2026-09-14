@@ -24,6 +24,7 @@
 #include "magda/daw/audio/AudioBridge.hpp"
 #include "magda/daw/audio/plugin_manager/PluginManager.hpp"
 #include "magda/daw/audio/plugins/LevelsPlugin.hpp"
+#include "magda/daw/audio/plugins/tracktion/TracktionMagdaDevicePlugin.hpp"
 #include "magda/daw/core/ChainNodePath.hpp"
 #include "magda/daw/core/Config.hpp"
 #include "magda/daw/core/TrackManager.hpp"
@@ -222,7 +223,8 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             return;
 
         auto plugin = bridge->getPlugin(ChainNodePath::postFxDevice(trackId, levelsId));
-        auto* levelsPlugin = dynamic_cast<daw::audio::LevelsPlugin*>(plugin.get());
+        auto* levelsPlugin =
+            daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::LevelsPlugin>(plugin.get());
         expect(levelsPlugin != nullptr, "the Levels device must reach the engine");
         if (levelsPlugin == nullptr)
             return;
@@ -281,7 +283,7 @@ class PostFxFaderOrderTest final : public juce::UnitTest {
             levelsPlugin->requestReset();
             Reading reading;
             reading.bufferPeak = runBlock();
-            reading.meterDb = levelsPlugin->getSnapshot().samplePeakDb;
+            reading.meterDb = levelsPlugin->snapshot().samplePeakDb;
             return reading;
         };
 
