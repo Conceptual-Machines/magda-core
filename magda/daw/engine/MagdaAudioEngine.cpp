@@ -211,41 +211,35 @@ bool MagdaAudioEngine::isRecording() const {
     // the true answer rather than a silence (#2553).
     return tracktion_->isRecording();
 }
-// The session launcher is #2552's. These forwarded until now, and the fork
-// under this engine has no Edit and so no session scheduler, so each answered
-// Stopped, false or empty without a word -- and a launcher that does nothing
-// looks exactly like one nobody wired. The answers are the fork's own defaults.
+// The session launcher, off the handle the engine publishes per slot and the
+// tap the block that advanced it wrote (#2552). SlotLauncher.hpp is the whole
+// of it; what a slot is doing is never asked of the fork again.
 double MagdaAudioEngine::getSessionPlayheadPosition() const {
-    reportUnwired("getSessionPlayheadPosition", "#2552");
-    return -1.0;
+    return host_->sessionPlayheadSeconds();
 }
 ClipId MagdaAudioEngine::getSessionPlayheadClipId() const {
-    reportUnwired("getSessionPlayheadClipId", "#2552");
-    return INVALID_CLIP_ID;
+    return host_->sessionPlayheadClip();
 }
 std::unordered_map<ClipId, double> MagdaAudioEngine::getActiveClipPlayheadPositions() const {
-    reportUnwired("getActiveClipPlayheadPositions", "#2552");
-    return {};
+    return host_->sessionPlayheads();
 }
 SessionClipPlayState MagdaAudioEngine::getSessionClipPlayState(ClipId clipId) const {
-    juce::ignoreUnused(clipId);
-    reportUnwired("getSessionClipPlayState", "#2552");
-    return SessionClipPlayState::Stopped;
+    return host_->sessionClipPlayState(clipId);
 }
 void MagdaAudioEngine::stopSessionTrack(TrackId trackId) {
-    juce::ignoreUnused(trackId);
-    reportUnwired("stopSessionTrack", "#2552");
+    host_->stopSessionTrack(trackId);
 }
 bool MagdaAudioEngine::isSessionTrackStopPending(TrackId trackId) const {
-    juce::ignoreUnused(trackId);
-    reportUnwired("isSessionTrackStopPending", "#2552");
-    return false;
+    return host_->sessionTrackStopPending(trackId);
+}
+void MagdaAudioEngine::launchSessionScene(const std::vector<TrackId>& trackIds, int sceneIndex) {
+    host_->launchScene(trackIds, sceneIndex);
 }
 double MagdaAudioEngine::getAudioThreadTransportSeconds() const {
     return host_->positionSeconds();
 }
 void MagdaAudioEngine::deactivateAllSessionClips() {
-    reportUnwired("deactivateAllSessionClips", "#2552");
+    host_->stopAllSessionClips();
 }
 // Tempo, time signature and loop are the host's: there is no Edit to hold a
 // second copy of them, and what the ruler converts through is the same map the
@@ -309,8 +303,10 @@ void MagdaAudioEngine::updateTriggerState() {
     TrackManager::getInstance().updateTransportState(playing, getTempo(), justStarted, justLooped);
 }
 void MagdaAudioEngine::processSessionStateEvents() {
-    // The launcher's state events, pumped once a frame by PlaybackPositionTimer.
-    reportUnwired("processSessionStateEvents", "#2552");
+    // What the taps say, turned into the model's own state once a frame. Where
+    // a follow action is noticed, since the engine moves a run between slots
+    // without telling anyone (#2304).
+    host_->processSessionStateEvents();
 }
 juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
     return tracktion_->getDeviceManager();

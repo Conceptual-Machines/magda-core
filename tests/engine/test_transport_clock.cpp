@@ -750,3 +750,56 @@ TEST_CASE("The monotonic seconds count rendered time, not converted beats",
         CHECK(whole.monotonicSeconds() == approx(pieces.monotonicSeconds()));
     }
 }
+
+TEST_CASE("The sync point pairs the cursor with the monotonic count",
+          "[engine][transport][clock][launch]") {
+    TransportClock clock;
+    const auto snapshot = playing(0.0);
+
+    // Two beats in: the cursor and the count agree, because nothing has moved
+    // the cursor yet.
+    advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 2));
+
+    const auto rolled = clock.syncPoint();
+    CHECK(rolled.beat == approx(2.0));
+    CHECK(rolled.monotonicBeat == approx(2.0));
+    CHECK(rolled.beat == approx(clock.positionBeats()));
+
+    // A boundary ahead of the cursor is that far ahead on the count too: the
+    // pairing is an offset, not a conversion.
+    CHECK(rolled.monotonicAt(4.0) == approx(4.0));
+}
+
+TEST_CASE("A loop wrap leaves the sync point's two faces a loop apart",
+          "[engine][transport][clock][launch][loop]") {
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.loop = {true, 0.0, 1.0};
+
+    // Three passes and a bit, so the count is three beats past the cursor.
+    advance(clock, snapshot, static_cast<int>(kSamplesPerBeat * 3.5));
+
+    const auto wrapped = clock.syncPoint();
+    CHECK(wrapped.beat == approx(0.5));
+    CHECK(wrapped.monotonicBeat == approx(3.5));
+
+    // The pair is what makes this answerable at all: the next bar line is a
+    // timeline beat, and what the launcher queues is a monotonic one. Reading
+    // the cursor from this block and the count from the one before would put
+    // the launch a whole pass in the past.
+    CHECK(wrapped.monotonicAt(1.0) == approx(4.0));
+    CHECK(wrapped.monotonicAt(wrapped.beat) == approx(wrapped.monotonicBeat));
+}
+
+TEST_CASE("A stopped transport publishes the cursor it stands on",
+          "[engine][transport][clock][launch]") {
+    TransportClock clock;
+
+    advance(clock, stopped(8.0), 512);
+
+    // A launch asked for while stopped is quantized against this, so the
+    // cursor has to be the one the transport would start from.
+    const auto standing = clock.syncPoint();
+    CHECK(standing.beat == approx(8.0));
+    CHECK(standing.monotonicBeat == approx(0.0));
+}

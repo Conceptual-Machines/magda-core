@@ -76,6 +76,18 @@ class TransportClock {
         return playingPublic_.load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief The cursor and the monotonic count as one block left them. Any
+     *        thread.
+     *
+     * What a launch is quantized against off the audio thread: the boundary is
+     * a timeline beat and the request names a monotonic one (#2305). Both faces
+     * come from one block, which is the whole point -- a wrap moves the cursor
+     * back and leaves the monotonic beat where it was, so a pair taken from two
+     * blocks is a whole loop out.
+     */
+    SyncPoint syncPoint() const;
+
     /// Musical time the transport has rolled through since the clock began,
     /// in beats that never go backwards. Audio thread, and the domain a
     /// queued launch names its position in (#2300).
@@ -131,6 +143,10 @@ class TransportClock {
     /// already behind.
     std::int64_t samplesUntil(const TempoMap& tempo, double beat) const;
 
+    /// @brief Publish @p beat beside the monotonic count as one reading.
+    ///        Audio thread, wherever the cursor is stored.
+    void publishSyncPoint(double beat);
+
     void applyRequest(const TransportSnapshot& snapshot);
     void followTempo(const TempoMap& tempo);
 
@@ -181,6 +197,18 @@ class TransportClock {
     std::atomic<double> positionBeats_{0.0};
     std::atomic<bool> playingPublic_{false};
     std::atomic<int> loopWrapOverflows_{0};
+
+    /// The pair @ref syncPoint answers, published under @ref syncSequence_.
+    /// Two words rather than one packed like LaunchTap's, because a monotonic
+    /// beat accumulates for the life of the session and neither face can be
+    /// given up to fixed point.
+    std::atomic<double> syncBeat_{0.0};
+    std::atomic<double> syncMonotonicBeat_{0.0};
+
+    /// Odd while the pair above is being written. The reader retries rather
+    /// than the writer waiting, which is what keeps the audio thread's side of
+    /// this to two stores.
+    std::atomic<std::uint64_t> syncSequence_{0};
 };
 
 }  // namespace magda::engine

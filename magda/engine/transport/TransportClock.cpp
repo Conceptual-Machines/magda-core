@@ -17,6 +17,7 @@ void TransportClock::anchorTo(const TempoMap& tempo, double beat) {
     tempoFingerprint_ = tempo.fingerprint();
     positionBeat_ = beat;
     positionBeats_.store(beat, std::memory_order_relaxed);
+    publishSyncPoint(beat);
 }
 
 double TransportClock::secondsAfter(std::int64_t samples) const {
@@ -34,6 +35,36 @@ std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) co
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
     return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
+}
+
+// A seqlock: the reader retries, so the audio thread's side is two stores and
+// never a wait. The fences are what stop the pair being published before it is
+// written, and what stop the reader's loads being hoisted over the count.
+void TransportClock::publishSyncPoint(double beat) {
+    const auto writing = syncSequence_.load(std::memory_order_relaxed) + 1;
+
+    syncSequence_.store(writing, std::memory_order_relaxed);
+    std::atomic_thread_fence(std::memory_order_release);
+
+    syncBeat_.store(beat, std::memory_order_relaxed);
+    syncMonotonicBeat_.store(monotonicBeat_, std::memory_order_relaxed);
+
+    syncSequence_.store(writing + 1, std::memory_order_release);
+}
+
+SyncPoint TransportClock::syncPoint() const {
+    for (;;) {
+        const auto before = syncSequence_.load(std::memory_order_acquire);
+        if ((before & 1U) != 0U)
+            continue;
+
+        const SyncPoint point{syncBeat_.load(std::memory_order_relaxed),
+                              syncMonotonicBeat_.load(std::memory_order_relaxed)};
+
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (syncSequence_.load(std::memory_order_relaxed) == before)
+            return point;
+    }
 }
 
 void TransportClock::applyRequest(const TransportSnapshot& snapshot) {
@@ -135,6 +166,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         continuous_ = true;
         positionBeat_ = beat;
         positionBeats_.store(beat, std::memory_order_relaxed);
+        publishSyncPoint(beat);
         return {segments_.data(), 1};
     }
 
@@ -258,6 +290,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
 
     positionBeat_ = beatAfter(tempo, samplesSinceAnchor_);
     positionBeats_.store(positionBeat_, std::memory_order_relaxed);
+    publishSyncPoint(positionBeat_);
 
     return {segments_.data(), static_cast<std::size_t>(segmentCount_)};
 }

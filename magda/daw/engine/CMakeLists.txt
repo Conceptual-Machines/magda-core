@@ -62,6 +62,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/LiveMidiRouting.cpp
         host/LiveMidiSources.cpp
         host/OfflineRenderModel.cpp
+        host/SlotLauncher.cpp
         host/TrackFreeze.cpp
         host/EngineHost.hpp
         host/EngineOfflineRender.hpp
@@ -74,6 +75,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         host/LiveMidiRouting.hpp
         host/LiveMidiSources.hpp
         host/OfflineRenderModel.hpp
+        host/SlotLauncher.hpp
         host/TrackFreeze.hpp
     )
     add_library(magda::engine_host ALIAS magda_engine_host)
