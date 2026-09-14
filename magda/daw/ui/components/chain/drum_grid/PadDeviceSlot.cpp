@@ -3,15 +3,20 @@
 #include <BinaryData.h>
 #include <tracktion_engine/tracktion_engine.h>
 
+#include "audio/DeviceParameterList.hpp"
 #include "audio/plugins/MagdaSamplerPlugin.hpp"
 #include "audio/sampling/SamplerModelEdits.hpp"
 #include "compiled/CompiledPluginPresentation.hpp"
+#include "core/PluginParameterConfigStore.hpp"
 #include "core/TrackManager.hpp"
 #include "custom_ui/FaustCustomUIRegistry.hpp"
 #include "custom_ui/FaustUI.hpp"
 #include "engine/AudioEngine.hpp"
 #include "layout/DeviceSlotHeaderLayout.hpp"
+#include "slot/DeviceSlotContentLayout.hpp"
 #include "slot/DeviceSlotInlineUiFactory.hpp"
+#include "slot/DeviceSlotParamLayoutFactory.hpp"
+#include "slot/DeviceSlotParameterPaging.hpp"
 #include "ui/debug/DebugSettings.hpp"
 #include "ui/themes/DarkTheme.hpp"
 #include "ui/themes/FontManager.hpp"
@@ -144,6 +149,14 @@ void PadDeviceSlot::timerCallback() {
         auto [l, r] = getMeterLevels();
         levelMeter_.setLevels(l, r);
     }
+    // The model creates the slot before the engine's asynchronous publish seats
+    // its sampler. Retry the display read when it arrives, or is replaced.
+    if (samplerUI_ &&
+        device_.pluginId.equalsIgnoreCase(daw::audio::MagdaSamplerPlugin::xmlTypeName)) {
+        const auto sampler = renderedSampler();
+        if (sampler && (sampler != displayedSampler_.lock() || !samplerUI_->hasWaveform()))
+            refreshSamplerDisplay(sampler);
+    }
 }
 
 void PadDeviceSlot::setDevice(Binding binding) {
@@ -205,6 +218,7 @@ void PadDeviceSlot::setCollapsed(bool collapsed) {
 
 void PadDeviceSlot::resetSharedInlineUi() {
     usingSharedInlineUi_ = false;
+    sharedParamGrid_.reset();
     compiledPanel_.reset();
     faustCustomView_.reset();
     faustUI_.reset();
@@ -212,7 +226,6 @@ void PadDeviceSlot::resetSharedInlineUi() {
 }
 
 void PadDeviceSlot::setupForSampler() {
-    using Sampler = daw::audio::MagdaSamplerPlugin;
     resetSharedInlineUi();
     preferredWidth_ = SAMPLER_SLOT_WIDTH;
     uiButton_->setVisible(false);
@@ -257,8 +270,20 @@ void PadDeviceSlot::setupForSampler() {
             onLoadSampleRequested();
     };
 
-    // A sampler the engine has not built yet reads as the model holds it, with no waveform.
-    const auto sampler = renderedSampler();
+    refreshSamplerDisplay(renderedSampler());
+    samplerUI_->setVisible(true);
+
+    // Hide param slots — sampler uses LinkableTextSliders in SamplerUI instead
+    for (auto& slot : paramSlots_)
+        if (slot)
+            slot->setVisible(false);
+}
+
+void PadDeviceSlot::refreshSamplerDisplay(
+    const std::shared_ptr<daw::audio::MagdaSamplerPlugin>& sampler) {
+    using Sampler = daw::audio::MagdaSamplerPlugin;
+    displayedSampler_ = sampler;
+    // Until the rendered sampler arrives, display the model's values.
     const auto slot = [this, &sampler](int index) -> float {
         if (sampler != nullptr)
             return sampler->displayValue(index);
@@ -283,13 +308,6 @@ void PadDeviceSlot::setupForSampler() {
     if (sampler != nullptr)
         samplerUI_->setWaveformData(sampler->getWaveform(), sampler->getSampleRate(),
                                     sampler->getSampleLengthSeconds());
-
-    samplerUI_->setVisible(true);
-
-    // Hide param slots — sampler uses LinkableTextSliders in SamplerUI instead
-    for (auto& slot : paramSlots_)
-        if (slot)
-            slot->setVisible(false);
 }
 
 bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
@@ -312,6 +330,12 @@ bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
     DeviceSlotInlineUiCallbacks callbacks;
     // To the model at the pad device's own path, as a slot on the chain writes (#2317).
     callbacks.onParameterChanged = [this](int paramIndex, float value) {
+        if (auto* parameter = device_.findParameterByIndex(paramIndex))
+            parameter->currentValue = value;
+        if (sharedParamGrid_) {
+            updateDeviceSlotParameterValues(device_, *sharedParamGrid_);
+            sharedParamGrid_->refreshEnabledStates(device_, sharedParamGrid_->getCurrentPage());
+        }
         magda::TrackManager::getInstance().setDeviceParameterValue(
             devicePath_, paramIndex, magda::ParameterModelValue{value});
     };
@@ -341,6 +365,7 @@ bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
 
     usingSharedInlineUi_ = createdKind == DeviceSlotInlineUiKind::Compiled ||
                            createdKind == DeviceSlotInlineUiKind::Faust ||
+                           traits_.compiledPresentation != nullptr ||
                            (customUI_ != nullptr && customUI_->hasAnyUI());
     if (!usingSharedInlineUi_) {
         resetSharedInlineUi();
@@ -359,7 +384,35 @@ bool PadDeviceSlot::setupForSharedDeviceUi(const magda::DeviceInfo& device) {
 
     updateDeviceSlotInlineUi(device_, compiledPanel_.get(), *customUI_);
     readAndPushDeviceSlotInlineUiModMatrix(device_.id, *customUI_);
+    if (traits_.compiledPresentation != nullptr || faustUI_ != nullptr) {
+        sharedParamGrid_ =
+            std::make_unique<ParamHostComponent>(createDeviceSlotParamLayout(traits_));
+        addAndMakeVisible(*sharedParamGrid_);
+        sharedParamGrid_->onPrevPage = [this]() {
+            goToPreviousDeviceSlotParameterPage(
+                device_, *sharedParamGrid_,
+                {.reloadParameterSlots = [this]() { updateSharedParameterSlots(); }});
+        };
+        sharedParamGrid_->onNextPage = [this]() {
+            goToNextDeviceSlotParameterPage(
+                device_, *sharedParamGrid_,
+                {.reloadParameterSlots = [this]() { updateSharedParameterSlots(); }});
+        };
+        sharedParamGrid_->onPageSelected = [this](int page) {
+            goToDeviceSlotParameterPage(
+                device_, *sharedParamGrid_, page,
+                {.reloadParameterSlots = [this]() { updateSharedParameterSlots(); }});
+        };
+        updateDeviceSlotParameterPagination(device_, sharedParamGrid_.get());
+        updateSharedParameterSlots();
+    }
     return true;
+}
+
+void PadDeviceSlot::updateSharedParameterSlots() {
+    updateDeviceSlotParameterSlots(
+        device_, devicePath_, *sharedParamGrid_, compiledPanel_.get(), traits_,
+        {.reloadParameterSlots = [this]() { updateSharedParameterSlots(); }});
 }
 
 void PadDeviceSlot::setupForExternalPlugin(te::Plugin* plugin) {
@@ -430,9 +483,14 @@ void PadDeviceSlot::setupForHostedParameters() {
         uiButton_->setActive(open);
     };
 
-    // The model's parameters, which the engine fills in once the plugin has loaded, and
-    // which a chain rebuild then hands this slot again. Written the way a slot on the chain
-    // writes one.
+    // The model retains only addressed parameters under the MAGDA engine. Like the
+    // main chain slot, adopt the full hosted list with model values and saved config
+    // applied; before the instance is available this falls back to the model.
+    device_.parameters = magda::deviceParameterList(device_, devicePath_);
+    // deviceParameterList returns customized parameter records, but not the saved
+    // visible selection. Resolve that selection against the full list too, since
+    // the model may only carry a subset of the plugin's parameters.
+    magda::PluginParameterConfigStore::applyToDevice(device_);
     std::vector<const magda::ParameterInfo*> shown;
     if (device_.visibleParameters.empty()) {
         for (const auto& info : device_.parameters)
@@ -482,9 +540,9 @@ void PadDeviceSlot::setLinkContext(magda::DeviceId deviceId, const magda::ChainN
     if (faustUI_ != nullptr)
         faustUI_->setDevicePath(devicePath_);
 
-    // Wire external plugin ParamSlotComponents
-    for (int i = 0; i < PLUGIN_PARAM_SLOTS; ++i) {
-        auto& slot = paramSlots_[static_cast<size_t>(i)];
+    // Wire parameter cells in whichever grid this slot uses.
+    for (int i = 0; i < getParamSlotCount(); ++i) {
+        auto* slot = getParamSlot(i);
         slot->setDeviceId(deviceId);
         slot->setDevicePath(devicePath);
         slot->setLinkOwnerPath(linkOwnerPath);
@@ -638,6 +696,8 @@ void PadDeviceSlot::resized() {
             samplerUI_->setVisible(false);
         if (compiledPanel_)
             compiledPanel_->component().setVisible(false);
+        if (sharedParamGrid_)
+            sharedParamGrid_->setVisible(false);
         if (faustUI_)
             faustUI_->setVisible(false);
         if (faustCustomView_)
@@ -709,8 +769,23 @@ void PadDeviceSlot::resized() {
         samplerUI_->setBounds(area);
     } else if (usingSharedInlineUi_) {
         auto contentArea = area.reduced(2, 0);
-        if (compiledPanel_) {
-            compiledPanel_->component().setBounds(contentArea);
+        if (sharedParamGrid_) {
+            const auto* spec = traits_.compiledPresentation;
+            layoutDeviceSlotContentBody(
+                contentArea, traits_, true, customUI_ != nullptr && customUI_->hasAnyUI(),
+                {.faustHeader = faustUI_.get(),
+                 .faustCustomView = faustCustomView_.get(),
+                 .faustCustomViewPreferredHeight =
+                     faustCustomView_ ? faustCustomView_->getPreferredHeight() : 0,
+                 .compiledPanel = compiledPanel_ ? &compiledPanel_->component() : nullptr,
+                 .compiledPanelPreferredHeight =
+                     compiledPanel_ ? compiledPanel_->preferredHeight() : 0,
+                 .compiledPanelMinFractionNumerator = spec ? spec->visualMinFractionNumerator : 3,
+                 .compiledPanelMinFractionDenominator =
+                     spec ? spec->visualMinFractionDenominator : 4,
+                 .compiledPanelWantsFullBody = compiledPanel_ && compiledPanel_->wantsFullBody(),
+                 .paramGrid = sharedParamGrid_.get()},
+                faustUI_ ? faustUI_->getDesiredHeight() : FaustUI::kHeaderHeight);
         } else if (faustUI_) {
             if (faustCustomView_) {
                 const auto customHeight =

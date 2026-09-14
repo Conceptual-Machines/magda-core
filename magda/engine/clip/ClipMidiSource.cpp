@@ -328,10 +328,11 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
                     const auto onBeat = active_.startBeat(channel, note);
                     const auto at = std::clamp(timelineBeat, onBeat, passEndBeat);
 
-                    // The end of a note's stretch, so an edge: one that falls
-                    // on the block boundary is heard a sample early rather than
-                    // written past the buffer (RenderContext.hpp).
-                    endNote(out, block.soundsAt(block.edgeForBeat(at)), channel, note);
+                    // Both MIDI edges must use the same sample conversion.
+                    // Rounding this off to nearest while flooring the next on
+                    // can release the replacement voice one sample after it
+                    // starts. eventForBeat also clamps a boundary event to N-1.
+                    endNote(out, block.eventForBeat(at), channel, note);
                     continue;
                 }
 
@@ -351,8 +352,7 @@ void ClipMidiSource::renderClip(juce::MidiBuffer& out, const BlockInfo& block,
         // it. This is what the fold owes the invariant: every note that sounded
         // in a pass is ended inside the same pass.
         if (pass.endsPass)
-            endClip(out,
-                    block.soundsAt(block.edgeForBeat(pass.timelineOfContentZero + pass.windowEnd)),
+            endClip(out, block.eventForBeat(pass.timelineOfContentZero + pass.windowEnd),
                     clip.clipId);
     }
 
@@ -396,7 +396,7 @@ void ClipMidiSource::playLane(juce::MidiBuffer& out, const BlockInfo& block,
         // looping off does not shorten a clip the way MidiClip::disableLooping
         // does.
         if (clip.span.beats.end > from && clip.span.beats.end <= to)
-            endClip(out, block.soundsAt(block.edgeForBeat(clip.span.beats.end)), clip.clipId);
+            endClip(out, block.eventForBeat(clip.span.beats.end), clip.clipId);
     }
 }
 

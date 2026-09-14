@@ -14,6 +14,7 @@
 #include "core/ModInfo.hpp"
 #include "core/SelectionManager.hpp"
 #include "custom_ui/SamplerUI.hpp"
+#include "params/ParamHostComponent.hpp"
 #include "params/ParamSlotComponent.hpp"
 #include "slot/DeviceCustomUIManager.hpp"
 #include "slot/DeviceSlotTraits.hpp"
@@ -108,16 +109,19 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     /** Get all linkable controls (sampler LinkableTextSliders or external ParamSlotComponents). */
     std::vector<LinkableTextSlider*> getLinkableSliders();
 
-    /** Access a param slot for callback wiring (external plugins only). */
+    /** Access a parameter cell in the active internal or hosted grid for callback wiring. */
     ParamSlotComponent* getParamSlot(int i) {
+        if (sharedParamGrid_)
+            return i >= 0 && i < sharedParamGrid_->getSlotCount() ? sharedParamGrid_->getSlot(i)
+                                                                  : nullptr;
         return (i >= 0 && i < PLUGIN_PARAM_SLOTS) ? paramSlots_[static_cast<size_t>(i)].get()
                                                   : nullptr;
     }
-    static int getParamSlotCount() {
-        return PLUGIN_PARAM_SLOTS;
+    int getParamSlotCount() const {
+        return sharedParamGrid_ ? sharedParamGrid_->getSlotCount() : PLUGIN_PARAM_SLOTS;
     }
     int getVisibleParamCount() const {
-        return visibleParamCount_;
+        return sharedParamGrid_ ? sharedParamGrid_->getSlotCount() : visibleParamCount_;
     }
 
     void paint(juce::Graphics& g) override;
@@ -155,12 +159,14 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // Meter strip (right edge of content area)
     magda::LevelMeter levelMeter_;
 
-    // Content — one of these visible at a time
+    // Content — compiled/Faust faceplates share the body with sharedParamGrid_.
     std::unique_ptr<SamplerUI> samplerUI_;
+    std::weak_ptr<daw::audio::MagdaSamplerPlugin> displayedSampler_;
     std::unique_ptr<CompiledDevicePanel> compiledPanel_;
     std::unique_ptr<FaustUI> faustUI_;
     std::unique_ptr<FaustCustomView> faustCustomView_;
     std::unique_ptr<DeviceCustomUIManager> customUI_;
+    std::unique_ptr<ParamHostComponent> sharedParamGrid_;
     std::array<std::unique_ptr<ParamSlotComponent>, PLUGIN_PARAM_SLOTS> paramSlots_;
 
     void timerCallback() override;
@@ -171,11 +177,13 @@ class PadDeviceSlot : public juce::Component, private juce::Timer {
     // Readouts, waveform and playhead come off the rendered sampler. Edits go
     // the other way, to the model at devicePath_, and reach it by projection (#2379).
     void setupForSampler();
+    void refreshSamplerDisplay(const std::shared_ptr<daw::audio::MagdaSamplerPlugin>& sampler);
     void setupForExternalPlugin(tracktion::engine::Plugin* plugin);
     /// A hosted plugin no Tracktion plugin stands for: its parameters as the engine describes them.
     void setupForHostedParameters();
     bool setupForSharedDeviceUi(const magda::DeviceInfo& device);
     void resetSharedInlineUi();
+    void updateSharedParameterSlots();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PadDeviceSlot)
 };

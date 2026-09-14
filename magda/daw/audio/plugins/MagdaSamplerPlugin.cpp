@@ -398,6 +398,13 @@ SamplerVoice* SamplerSynth::monoVoice() {
     return nullptr;
 }
 
+SamplerSynth::SamplerSynth() {
+    // JUCE otherwise batches MIDI edges less than 32 samples apart. A short
+    // note can then release an envelope that has never rendered, making the
+    // whole note silent depending on its position within the block.
+    setMinimumRenderingSubdivisionSize(1, true);
+}
+
 void SamplerSynth::noteOn(int midiChannel, int midiNoteNumber, float velocity) {
     if (voiceMode == Poly) {
         juce::Synthesiser::noteOn(midiChannel, midiNoteNumber, velocity);

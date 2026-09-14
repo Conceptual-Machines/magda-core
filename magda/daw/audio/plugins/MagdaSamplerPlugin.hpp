@@ -169,6 +169,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
  */
 class SamplerSynth : public juce::Synthesiser {
   public:
+    SamplerSynth();
     enum VoiceMode { Poly = 0, Mono = 1, Legato = 2 };
 
     void setVoiceMode(int mode) {
