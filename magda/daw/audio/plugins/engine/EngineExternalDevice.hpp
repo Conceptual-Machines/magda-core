@@ -55,6 +55,7 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
     void setMidiInputBoundBytes(int bytes) override;
     void setMidiOutputBoundBytes(int bytes) override;
     int latencySamples() const override;
+    double tailSeconds() const override;
 
     /**
      * @brief One block through the plugin: parameters written, audio

@@ -179,3 +179,42 @@ TEST_CASE("A render hears no live input", "[engine][offline][2555]") {
     CHECK_FALSE(source->recordArmed);
     CHECK(source->inputMonitor == magda::InputMonitorMode::Off);
 }
+
+TEST_CASE("A freeze renders its track up to the fader, unmuted, with nothing soloed",
+          "[engine][offline][2555]") {
+    auto model = project();
+    model.tracks[1].muted = true;
+    model.tracks[1].soloed = true;
+    model.tracks[1].chain.postFxPostFader = true;
+    model.tracks[1].chain.postFxChainElements.push_back({.device = device(21, false)});
+    model.tracks[1].chain.fxChainElements.emplace_back(device(20, false));
+    model.tracks[0].soloed = true;
+
+    magda::AutomationLaneInfo fader;
+    fader.target.kind = magda::ControlTarget::Kind::TrackVolume;
+    fader.target.devicePath = magda::ChainNodePath::trackLevel(2);
+    model.automation.push_back(fader);
+
+    OfflineRenderRequest request;
+    request.trackIds = {2, 1};
+    request.freezeTrackId = 2;
+    request.useMasterPlugins = false;
+
+    const auto narrowed = narrowForRender(std::move(model), request);
+    const auto* frozen = find(narrowed, 2);
+    const auto* feeding = find(narrowed, 1);
+    REQUIRE(frozen != nullptr);
+    REQUIRE(feeding != nullptr);
+
+    CHECK(frozen->volume == 1.0f);
+    CHECK(frozen->pan == 0.0f);
+    CHECK_FALSE(frozen->muted);
+    CHECK_FALSE(frozen->soloed);
+    CHECK(frozen->chain.fxChainElements.size() == 1);
+    CHECK(frozen->chain.postFxChainElements.empty());
+    CHECK(narrowed.automation.empty());
+
+    CHECK_FALSE(feeding->soloed);
+    CHECK(feeding->volume == 0.5f);
+    CHECK(feeding->audioOutputDevice == "track:2");
+}

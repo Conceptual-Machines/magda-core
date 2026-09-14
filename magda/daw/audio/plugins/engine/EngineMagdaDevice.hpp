@@ -88,6 +88,7 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     void setMidiOutputBoundBytes(int bytes) override;
     bool forwardsMidiInput() const override;
     int latencySamples() const override;
+    double tailSeconds() const override;
     void process(magda::engine::DeviceBlock& block) override;
 
     /// The device this stands for. For a host that has to reach past the

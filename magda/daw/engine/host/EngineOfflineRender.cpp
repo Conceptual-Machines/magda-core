@@ -106,6 +106,9 @@ class BorrowedDevice final : public engine::EngineDevice {
     int latencySamples() const override {
         return device_->latencySamples();
     }
+    double tailSeconds() const override {
+        return device_->tailSeconds();
+    }
     void process(engine::DeviceBlock& block) override {
         device_->process(block);
     }
@@ -293,11 +296,16 @@ struct OfflineRuntime {
 
         compileClips(model);
         compilePlan(model);
-        return bind(model);
+        if (auto failure = bind(model); failure.isNotEmpty())
+            return failure;
+
+        tailSeconds = request.tailSeconds.value_or(declaredTail());
+        return {};
     }
 
     OfflineRenderRequest request;
     engine::RenderContext context;
+    double tailSeconds = 0.0;
     engine::TempoMap tempo;
     adapter::ExternalPluginServices services;
 
@@ -361,6 +369,18 @@ struct OfflineRuntime {
     void compilePlan(const OfflineRenderModel& model) {
         plan = std::make_shared<const engine::RenderPlan>(compile(model));
         report("plan", plan->diagnostics);
+    }
+
+    /// The longest finite tail a device in the plan declares.
+    double declaredTail() const {
+        auto longest = 0.0;
+        for (const auto& op : plan->ops)
+            if (op.kind == engine::OpKind::Device)
+                if (const auto device = store.device(op.key.deviceKey()))
+                    if (const auto tail = device->tailSeconds(); std::isfinite(tail))
+                        longest = std::max(longest, tail);
+
+        return longest;
     }
 
     juce::String bind(const OfflineRenderModel& model) {
@@ -473,7 +493,7 @@ class EngineOfflineRenderTask final : public OfflineRenderTask {
         const auto expected = std::max<std::int64_t>(
             1, samplesFor(runtime.tempo.beatToTime(request.range.end.value) -
                               runtime.tempo.beatToTime(request.range.start.value) +
-                              request.tailSeconds,
+                              runtime.tailSeconds,
                           runtime.context.sampleRate));
         const auto started = juce::Time::getMillisecondCounterHiRes();
 
@@ -495,7 +515,7 @@ class EngineOfflineRenderTask final : public OfflineRenderTask {
             engine::renderOffline(runtime.executor, runtime.values, runtime.context, runtime.tempo,
                                   {.startBeat = request.range.start.value,
                                    .endBeat = request.range.end.value,
-                                   .tailSeconds = request.tailSeconds,
+                                   .tailSeconds = runtime.tailSeconds,
                                    .blockSize = request.blockSize},
                                   counted, runtime.voices.get(), &runtime.clips, {}, keepGoing);
 

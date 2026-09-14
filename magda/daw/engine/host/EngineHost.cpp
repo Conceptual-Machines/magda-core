@@ -38,6 +38,7 @@
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
+#include "TrackFreeze.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
@@ -485,7 +486,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
-        const auto& tracks = TrackManager::getInstance().getTracks();
+        const auto& model = TrackManager::getInstance().getTracks();
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || master == nullptr)
             return;
@@ -494,14 +495,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // this machine has now rather than to whichever of them has already
         // played a note.
         sources_.registerAvailableDevices();
-        factory_.setModel(tracks, *master);
+        factory_.setModel(model, *master);
 
         // Off the same reading of the model as the devices the plan is about to
         // bind, so a slot's meter and the slot the UI draws cannot come from
         // two walks that disagree (#2570). Only a structural edit moves a
         // device, which is what gets here.
-        devicePaths_ = adapter::devicePathsIn(tracks, *master);
-        rackIds_ = modelRacks(tracks, *master);
+        devicePaths_ = adapter::devicePathsIn(model, *master);
+        rackIds_ = modelRacks(model, *master);
+
+        const auto tracks = playedTracks();
 
         // Before the swap, so the new plan's first block renders against
         // routing resolved from the same reading of the model (#2592).
@@ -511,10 +514,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             plan = compilePlan(tracks, *master);
         report("plan", plan->diagnostics);
 
+        // Values and ids off the model rather than what plays: a frozen chain's
+        // lanes stay addressed and its devices keep their state.
         engine::PlanValues values;
-        report("values", resolveValues(*plan, tracks, *master, values));
+        report("values", resolveValues(*plan, model, *master, values));
 
-        const auto ids = engine::collectRuntimeStateIds(tracks, *master);
+        const auto ids = engine::collectRuntimeStateIds(model, *master);
         const auto result = session_->publish(plan, context_, ids, std::move(values));
         report("publish", result.messages);
 
@@ -558,7 +563,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// escalates itself into a structural publish when a link edit changed the
     /// parameter table's shape, which is the one thing values cannot carry.
     void publishValues() {
-        const auto& tracks = TrackManager::getInstance().getTracks();
+        const auto tracks = playedTracks();
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || livePlan_ == nullptr || master == nullptr)
             return;
@@ -577,7 +582,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
 
         engine::PlanValues values;
-        report("values", resolveValues(*livePlan_, tracks, *master, values));
+        report("values",
+               resolveValues(*livePlan_, TrackManager::getInstance().getTracks(), *master, values));
         report("values", session_->publishValues(std::move(values)).messages);
 
         // A monitor or route change arrives as a track property, off the same
@@ -609,7 +615,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// would resolve to a source nothing pushes under.
     void refreshLiveMidiDevices() {
         sources_.registerAvailableDevices();
-        publishRouting(TrackManager::getInstance().getTracks());
+        publishRouting(playedTracks());
     }
 
     /// What every track plays, resolved against the tempo the transport is
@@ -620,8 +626,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         const auto& tracks = TrackManager::getInstance().getTracks();
-        auto snapshot = std::make_shared<const engine::ClipSnapshot>(
-            engine::compileClipSnapshot(clipLanesFor(tracks), clipSources(), tempoMap()));
+        auto snapshot = std::make_shared<const engine::ClipSnapshot>(engine::compileClipSnapshot(
+            lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap()), clipSources(),
+            tempoMap()));
         report("clips", snapshot->diagnostics);
 
         traceEdit(EngineTrace::Kind::Publish);
@@ -652,6 +659,26 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// with devices that are already gone (#2572).
     void projectTeardown() override {
         forgetProject();
+    }
+
+    /// Before the first publish reads the loaded model.
+    void projectOpened(const ProjectInfo&) override {
+        unfreezeTracksWithoutFiles();
+    }
+
+    /// What live playback compiles: the model, with each frozen track playing its file.
+    std::vector<TrackInfo> playedTracks() const {
+        return tracksAsPlayed(TrackManager::getInstance().getTracks(), frozen_);
+    }
+
+    /// Whether a track froze, thawed or lost its file since the last reading.
+    bool refreshFrozenTracks() {
+        auto frozen = frozenTracksWithFiles(TrackManager::getInstance().getTracks());
+        if (frozen == frozen_)
+            return false;
+
+        frozen_ = std::move(frozen);
+        return true;
     }
 
     void forgetProject() {
@@ -760,12 +787,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
         }
 
+        // A freeze changes the plan's shape and the lanes together.
+        const auto frozenMoved = refreshFrozenTracks();
+        if (frozenMoved)
+            shape_.store(true, std::memory_order_relaxed);
+
         // All three taken before any of them runs, so a plan publish clears the
         // values it already resolved rather than leaving them to be published
         // again at whatever the next edit turns out to be.
         const auto plan = plan_.exchange(false);
-        const auto values = values_.exchange(false);
-        const auto clips = clips_.exchange(false);
+        const auto values = values_.exchange(false) || frozenMoved;
+        const auto clips = clips_.exchange(false) || frozenMoved;
 
         // Before either publish reads the model, so the table it compiles
         // carries whatever the edit just addressed (#2635).
@@ -927,6 +959,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         session_->liveInputs().prepare(inputChannels_.load(std::memory_order_relaxed),
                                        context.maxBlockSize);
         prepareLiveMidi();
+        refreshFrozenTracks();
 
         plan_.store(false, std::memory_order_relaxed);
         values_.store(false, std::memory_order_relaxed);
@@ -1452,6 +1485,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// values against it without compiling another.
     std::shared_ptr<const engine::RenderPlan> livePlan_;
 
+    /// The frozen tracks the plan and the lanes were last published with.
+    std::vector<FrozenTrack> frozen_;
+
     double bpm_ = 120.0;
     int numerator_ = 4;
     int denominator_ = 4;
@@ -1676,6 +1712,31 @@ void EngineHost::setMetronomeEnabled(bool enabled) {
 
 bool EngineHost::isMetronomeEnabled() const {
     return impl_->click_.enabled;
+}
+
+EngineHost::FreezePlan EngineHost::planFreeze(TrackId trackId) const {
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    if (auto refusal = freezeRefusal(tracks, trackId); refusal.isNotEmpty())
+        return {.refusal = std::move(refusal)};
+
+    const auto file = freezeFileFor(trackId);
+    if (file == juce::File())
+        return {.refusal = "There is no project to keep the freeze in"};
+
+    const auto context = impl_->liveContext().value_or(engine::RenderContext{
+        .sampleRate = ProjectManager::getInstance().getCurrentProjectInfo().sampleRate,
+        .maxBlockSize = 512,
+        .numChannels = kChannels});
+
+    auto request = freezeRequest(tracks, clipLanesFor(tracks), trackId, file, context);
+    if (!request.has_value())
+        return {.refusal = "Nothing to freeze"};
+
+    return {.request = std::make_shared<OfflineRenderRequest>(std::move(*request))};
+}
+
+void EngineHost::adoptFreeze(const OfflineRenderRequest& request) {
+    refreshPooledFile(request.destination);
 }
 
 std::unique_ptr<OfflineRenderSession> EngineHost::createOfflineRenderSession(

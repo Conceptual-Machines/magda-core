@@ -11,6 +11,7 @@
 
 #include "../core/RangesHelpers.hpp"
 #include "../engine/AudioEngine.hpp"
+#include "../engine/RenderProgressWindow.hpp"
 #include "../project/ProjectManager.hpp"
 #include "../ui/state/TimelineController.hpp"
 #include "audio/AudioBridge.hpp"
@@ -93,36 +94,6 @@ double timelineSecondsForBeat(double beat, const TempoMap* tempoMap) {
         return tempoMap->beatToTime(beat);
     return beat * 60.0 / currentProjectBpm();
 }
-
-/**
- * Progress window for offline rendering that runs on a background thread
- * while pumping the message loop (via runThread()) so the UI stays responsive.
- */
-class RenderProgressWindow : public juce::ThreadWithProgressWindow {
-  public:
-    RenderProgressWindow(const juce::String& title, std::unique_ptr<OfflineRenderTask> task)
-        : ThreadWithProgressWindow(title, true, true), task_(std::move(task)) {
-        setStatusMessage("Preparing to render...");
-    }
-
-    void run() override {
-        setStatusMessage("Rendering...");
-        if (!task_)
-            return;
-        result_ = task_->run([this]() { return threadShouldExit(); },
-                             [this](float progress) { setProgress(progress); });
-        success_ = result_.success;
-    }
-
-    bool wasSuccessful() const {
-        return success_;
-    }
-
-  private:
-    std::unique_ptr<OfflineRenderTask> task_;
-    OfflineRenderResult result_;
-    bool success_ = false;
-};
 
 /**
  * @brief Whether @p trackId hosts an enabled external insert with a send and a return.

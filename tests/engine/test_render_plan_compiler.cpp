@@ -1902,7 +1902,8 @@ TEST_CASE("Audition gives every track that reads MIDI something to preview throu
     }
 }
 
-TEST_CASE("A frozen track is reported as not compiled", "[engine][plan][compiler]") {
+TEST_CASE("A frozen track handed to the compiler compiles its live chain",
+          "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1)};
     tracks[0].frozen = true;
     tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
@@ -1910,8 +1911,10 @@ TEST_CASE("A frozen track is reported as not compiled", "[engine][plan][compiler
     const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
     requireWellFormed(plan);
 
-    REQUIRE(plan.diagnostics.size() == 1);
-    CHECK(plan.diagnostics.front().find("freeze") != std::string::npos);
+    CHECK(plan.diagnostics.empty());
+    CHECK(std::ranges::any_of(plan.ops, [](const auto& op) {
+        return op.kind == magda::engine::OpKind::Device && op.key.deviceId == 7;
+    }));
 }
 
 TEST_CASE("validatePlan enforces the differ's identity precondition", "[engine][plan][validate]") {

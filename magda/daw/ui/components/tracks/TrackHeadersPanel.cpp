@@ -3106,9 +3106,8 @@ void TrackHeadersPanel::showContextMenu(int trackIndex, juce::Point<int> positio
                 }
             } else if (result == ToggleFreeze) {
                 auto* t = TrackManager::getInstance().getTrack(trackId);
-                if (t) {
-                    TrackManager::getInstance().setTrackFrozen(trackId, !t->frozen);
-                }
+                if (t && audioEngine_ != nullptr)
+                    audioEngine_->setTrackFrozen(trackId, !t->frozen);
             } else if (result == PreferDrumGrid) {
                 if (auto* instrument = TrackManager::getInstance().getPrimaryInstrument(trackId)) {
                     auto& prefs = magda::PluginPreferences::getInstance();

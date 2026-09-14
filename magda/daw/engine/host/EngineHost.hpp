@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_core/juce_core.h>
+
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -22,6 +24,7 @@ namespace magda {
 class OfflineRenderSession;
 class TempoMap;
 struct HostParameters;
+struct OfflineRenderRequest;
 }  // namespace magda
 
 /**
@@ -256,6 +259,18 @@ class EngineHost {
      */
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished);
+
+    /** @brief The render that freezes a track, or why there is none. */
+    struct FreezePlan {
+        std::shared_ptr<OfflineRenderRequest> request;
+        juce::String refusal;
+    };
+
+    /** @brief What freezing @p trackId renders, at the device's rate (#2555). Message thread. */
+    FreezePlan planFreeze(TrackId trackId) const;
+
+    /// Take @p request's finished file as what its track plays once frozen.
+    void adoptFreeze(const OfflineRenderRequest& request);
 
     /// The tempo and signature above as the app's beats<->seconds facade.
     /// Never null, and valid until this host is destroyed.

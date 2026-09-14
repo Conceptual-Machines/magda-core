@@ -525,6 +525,7 @@ class TracktionEngineWrapper : public AudioEngine,
     juce::StringArray getGrooveTemplateNames() const override;
     std::unique_ptr<OfflineRenderSession> createOfflineRenderSession(
         bool resumePlaybackWhenFinished) override;
+    void setTrackFrozen(TrackId trackId, bool frozen) override;
     std::vector<SamplerMediaReference> getSamplerMediaReferences() override;
     std::unique_ptr<UndoableCommand> createTempoSequenceRippleCommand(TempoSequenceRippleMode mode,
                                                                       BeatPosition start,

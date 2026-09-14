@@ -6,6 +6,7 @@
 #include "../api/magda_api_live.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
+#include "RenderProgressWindow.hpp"
 #include "TracktionEngineWrapper.hpp"
 #include "host/EngineHost.hpp"
 
@@ -471,6 +472,48 @@ std::unique_ptr<OfflineRenderSession> MagdaAudioEngine::createOfflineRenderSessi
     bool resumePlaybackWhenFinished) {
     return host_->createOfflineRenderSession(resumePlaybackWhenFinished);
 }
+
+void MagdaAudioEngine::setTrackFrozen(TrackId trackId, bool frozen) {
+    auto& tracks = TrackManager::getInstance();
+    const auto* track = tracks.getTrack(trackId);
+    if (track == nullptr || track->frozen == frozen)
+        return;
+
+    if (!frozen) {
+        tracks.setTrackFrozen(trackId, false);
+        return;
+    }
+
+    const auto freeze = host_->planFreeze(trackId);
+    if (freeze.request == nullptr) {
+        juce::Logger::writeToLog("[engine] freeze of track " + juce::String(trackId) + ": " +
+                                 freeze.refusal);
+        return;
+    }
+
+    const auto& file = freeze.request->destination;
+    file.getParentDirectory().createDirectory();
+
+    auto rendered = false;
+    {
+        auto session = host_->createOfflineRenderSession(false);
+        RenderProgressWindow progress("Creating track freeze for \"" + track->name + "\"...",
+                                      session->createTask(*freeze.request));
+        rendered = progress.runThread() && progress.wasSuccessful();
+        if (!rendered)
+            juce::Logger::writeToLog("[engine] freeze of track " + juce::String(trackId) +
+                                     " failed: " + progress.result().error);
+    }
+
+    if (!rendered) {
+        file.deleteFile();
+        return;
+    }
+
+    host_->adoptFreeze(*freeze.request);
+    tracks.setTrackFrozen(trackId, true);
+}
+
 std::vector<SamplerMediaReference> MagdaAudioEngine::getSamplerMediaReferences() {
     reportUnwired("getSamplerMediaReferences", "#2554");
     return {};

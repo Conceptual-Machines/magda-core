@@ -1309,17 +1309,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // track has its insert chain powered off, is silent for the same reason
     // everything else on that chain is.
 
-    // Freeze is structural: the current engine renders the track, disables its
-    // plugins and plays the render back. Compiling the live chain both diverges
-    // from that output and throws away the CPU saving that is the whole point.
-    // Named rather than half-implemented, because the real shape (a source op
-    // reading the freeze file, device ops skipped) needs its op key decided
-    // first so unfreezing carries state sanely.
-    if (track.frozen)
-        diagnose("track " + std::to_string(track.id) +
-                 ": freeze is not compiled yet, the live chain is planned instead of the "
-                 "rendered freeze file");
-
+    // The frozen flag is not read here: live playback hands in a frozen track
+    // already cut to its file (TrackFreeze.hpp), and a render wants the live chain.
     std::vector<PortRef> audioSources;
     if (carriesClips(track)) {
         const OpKey key{track.id,          INVALID_RACK_ID,   INVALID_CHAIN_ID,
