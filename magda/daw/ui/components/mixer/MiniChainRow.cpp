@@ -71,8 +71,12 @@ void MiniChainRow::setDevice(const ChainNodePath& devicePath, AudioEngine* engin
         };
         addAndMakeVisible(*uiButton_);
     }
-    if (uiButton_)
+    if (uiButton_) {
         uiButton_->setVisible(wantUiButton);
+        setPluginEditorOpen(wantUiButton && engine_ != nullptr &&
+                            engine_->isDeviceEditorOpen(devicePath_));
+    }
+    updateTimerState();
 
     repaint();
 }
@@ -88,7 +92,8 @@ void MiniChainRow::setPluginEditorOpen(bool open) {
     if (uiButton_ == nullptr)
         return;
     uiButton_->setToggleState(open, juce::dontSendNotification);
-    uiButton_->setActive(open);
+    if (uiButton_->isActive() != open)
+        uiButton_->setActive(open);
 }
 
 void MiniChainRow::setExpanded(bool expanded) {
@@ -268,13 +273,21 @@ void MiniChainRow::applyParamsAlpha() {
 }
 
 void MiniChainRow::updateTimerState() {
-    if ((expanded_ && !trackedParamIndices_.empty()) || paramsFadeActive_)
+    // Collapsed plugin rows still follow windows opened or closed elsewhere.
+    if ((uiButton_ != nullptr && uiButton_->isVisible() && engine_ != nullptr) ||
+        (expanded_ && !trackedParamIndices_.empty()) || paramsFadeActive_)
         startTimerHz(30);
     else
         stopTimer();
 }
 
 void MiniChainRow::timerCallback() {
+    // Ask the engine that owns the rendered instance, including when its own
+    // window close button was used. A Tracktion window-manager callback cannot
+    // report this for the native engine (#2668).
+    if (isShowing() && uiButton_ != nullptr && uiButton_->isVisible() && engine_ != nullptr)
+        setPluginEditorOpen(engine_->isDeviceEditorOpen(devicePath_));
+
     advanceParamsFade();
 
     // Keep the sliders in sync with the live parameter values (automation,
