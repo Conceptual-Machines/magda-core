@@ -39,4 +39,19 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator);
 /// What the length of a project is with no Edit to ask (#2579).
 double projectEndBeat();
 
+/**
+ * @brief Let a pooled source say what tempo its file was written at (#2552).
+ *
+ * Nothing filled Source::detectedBpm before this. A clip's tempo came from
+ * Tracktion's loopInfo through ClipSynchronizer, so with no Edit an imported
+ * loop had no tempo, could not be in beat mode, and looped at whatever length
+ * its seconds happened to be. The parse is the engine's
+ * (magda/engine/io/SourceLoopInfo.hpp) and is installed from here because this
+ * side sees both headers.
+ *
+ * Once, at startup. Only fills what the file did not already say, like every
+ * other seeding rule in the model.
+ */
+void installSourceTempoProbe();
+
 }  // namespace magda::daw::engine_host

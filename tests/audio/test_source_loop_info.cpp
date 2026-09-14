@@ -3,7 +3,9 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "core/SourcePool.hpp"
 #include "io/SourceLoopInfo.hpp"
+#include "magda/daw/engine/host/EngineProject.hpp"
 
 /**
  * What a file says about its own tempo (#2038).
@@ -229,4 +231,91 @@ TEST_CASE("An empty value said no more than a missing key", "[engine][io][loop-i
 
     REQUIRE_FALSE(info.bpm.has_value());
     REQUIRE_FALSE(info.numBeats.has_value());
+}
+
+// =============================================================================
+// What the pool does with it (#2552)
+// =============================================================================
+
+namespace {
+
+/// A real WAV carrying a real acid chunk, so the round trip is the one a loop
+/// library's file takes: JUCE writes the chunk, the reader parses it back into
+/// metadata, and the parse above reads that.
+juce::File writeAcidLoop(const juce::File& file, double tempo, double beats) {
+    juce::StringPairArray metadata;
+    metadata.set(juce::WavAudioFormat::acidOneShot, "0");
+    metadata.set(juce::WavAudioFormat::acidRootSet, "0");
+    metadata.set(juce::WavAudioFormat::acidStretch, "1");
+    metadata.set(juce::WavAudioFormat::acidDiskBased, "0");
+    metadata.set(juce::WavAudioFormat::acidizerFlag, "1");
+    metadata.set(juce::WavAudioFormat::acidBeats, juce::String(beats));
+    metadata.set(juce::WavAudioFormat::acidTempo, juce::String(tempo));
+
+    juce::WavAudioFormat format;
+    auto stream = std::make_unique<juce::FileOutputStream>(file);
+    stream->setPosition(0);
+    stream->truncate();
+
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        format.createWriterFor(stream.release(), kSampleRate, 1, 16, metadata, 0));
+    REQUIRE(writer != nullptr);
+
+    juce::AudioBuffer<float> silence(1, static_cast<int>(kTwoSeconds));
+    silence.clear();
+    writer->writeFromAudioSampleBuffer(silence, 0, silence.getNumSamples());
+    writer.reset();
+
+    return file;
+}
+
+}  // namespace
+
+TEST_CASE("A pooled source takes its tempo from the file it was probed from",
+          "[source][loopinfo][pool]") {
+    auto& pool = magda::SourcePool::getInstance();
+    pool.clear();
+    pool.clearSeededFactsForTesting();
+
+    juce::TemporaryFile temp(".wav");
+    const auto file = writeAcidLoop(temp.getFile(), 140.0, 4.0);
+
+    SECTION("Nothing fills it until the probe is installed") {
+        // What every imported loop got under an engine with no Edit: the only
+        // tempo a clip ever had came from Tracktion's loopInfo (#2038).
+        pool.setSourceTempoProbe({});
+
+        const auto id = pool.acquire(file.getFullPathName());
+        const auto* source = pool.get(id);
+        REQUIRE(source != nullptr);
+        REQUIRE(source->sampleRate == approx(kSampleRate));
+        REQUIRE(source->detectedBpm == approx(0.0));
+    }
+
+    SECTION("Installed, the file's own tempo arrives with its facts") {
+        magda::daw::engine_host::installSourceTempoProbe();
+
+        const auto id = pool.acquire(file.getFullPathName());
+        const auto* source = pool.get(id);
+        REQUIRE(source != nullptr);
+        REQUIRE(source->detectedBpm == approx(140.0));
+    }
+
+    SECTION("A tempo the project already carries is left alone") {
+        magda::daw::engine_host::installSourceTempoProbe();
+
+        const auto id = pool.acquire(file.getFullPathName());
+        auto* source = pool.getMutable(id);
+        REQUIRE(source != nullptr);
+
+        // The user typed one, or a save carried it. Re-probing the file must
+        // not put the header's answer back over it.
+        source->detectedBpm = 87.0;
+        pool.resolveFacts(id);
+
+        REQUIRE(pool.get(id)->detectedBpm == approx(87.0));
+    }
+
+    pool.setSourceTempoProbe({});
+    pool.clear();
 }

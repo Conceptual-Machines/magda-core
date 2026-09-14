@@ -4,6 +4,7 @@
 
 #include "../../core/ClipManager.hpp"
 #include "../../core/SourcePool.hpp"
+#include "io/SourceLoopInfo.hpp"
 
 namespace magda::daw::engine_host {
 
@@ -48,6 +49,21 @@ engine::TempoMap tempoMapAt(double bpm, int numerator, int denominator) {
                                 .numerator = numerator,
                                 .denominator = denominator,
                             }});
+}
+
+void installSourceTempoProbe() {
+    SourcePool::getInstance().setSourceTempoProbe([](Source& source,
+                                                     const juce::AudioFormatReader& reader) {
+        // A gap only: a project that saved a tempo for this file, or a user
+        // who typed one, outranks what the header claims.
+        if (source.detectedBpm > 0.0)
+            return;
+
+        const auto info =
+            engine::loopInfoFrom(reader.metadataValues, reader.sampleRate, reader.lengthInSamples);
+        if (info.bpm && *info.bpm > 0.0)
+            source.detectedBpm = *info.bpm;
+    });
 }
 
 double projectEndBeat() {

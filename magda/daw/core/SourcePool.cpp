@@ -67,6 +67,12 @@ void SourcePool::probe(Source& source) const {
 
     source.sampleRate = reader->sampleRate;
     source.durationSeconds = static_cast<double>(reader->lengthInSamples) / reader->sampleRate;
+
+    // While the file is open: what it says about its own tempo is in the header
+    // the reader has already parsed, and opening it again to ask would be the
+    // only other way.
+    if (tempoProbe_)
+        tempoProbe_(source, *reader);
 }
 
 SourceId SourcePool::acquire(const juce::String& filePath) {
@@ -135,6 +141,10 @@ void SourcePool::clear() {
 
 void SourcePool::setRateChangeHandler(RateChangeHandler handler) {
     rateChangeHandler_ = std::move(handler);
+}
+
+void SourcePool::setSourceTempoProbe(SourceTempoProbe probe) {
+    tempoProbe_ = std::move(probe);
 }
 
 void SourcePool::reprobeAndNotify(Source& source, double oldRate) {

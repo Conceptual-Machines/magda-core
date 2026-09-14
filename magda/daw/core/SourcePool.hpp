@@ -1,5 +1,7 @@
 #pragma once
 
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <functional>
 #include <map>
 #include <unordered_map>
@@ -78,6 +80,21 @@ class SourcePool {
     void setRateChangeHandler(RateChangeHandler handler);
 
     /**
+     * @brief Fill in what a file says about its own tempo, while it is open.
+     *
+     * Nothing wrote @ref Source::detectedBpm before this: the only tempo a clip
+     * ever got came from Tracktion's loopInfo through ClipSynchronizer, so
+     * under an engine with no Edit an imported loop had no tempo at all and
+     * could not be in beat mode (#2552).
+     *
+     * A hook rather than a call, because the parse lives beside the engine's
+     * reader (magda/engine/io/SourceLoopInfo.hpp) and this side does not see
+     * that header. Installed once, at startup.
+     */
+    using SourceTempoProbe = std::function<void(Source&, const juce::AudioFormatReader&)>;
+    void setSourceTempoProbe(SourceTempoProbe probe);
+
+    /**
      * @brief Open the file and fill in durationSeconds / sampleRate.
      *
      * Anchors computed while the source was unresolved were expressed at
@@ -132,6 +149,7 @@ class SourcePool {
     void probe(Source& source) const;
 
     RateChangeHandler rateChangeHandler_;
+    SourceTempoProbe tempoProbe_;
 
     /// Re-probe @p source and fire the rate-change handler if the rate moved
     /// away from @p oldRate (captured by the caller before any reset).

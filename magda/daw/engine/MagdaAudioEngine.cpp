@@ -16,6 +16,7 @@ namespace magda::daw::engine_host {
 /// Declared rather than included: EngineProject.hpp reaches magda/engine's own
 /// headers, which magda_daw does not see (EngineHost.hpp says why).
 double projectEndBeat();
+void installSourceTempoProbe();
 }  // namespace magda::daw::engine_host
 
 namespace {
@@ -111,6 +112,10 @@ MagdaAudioEngine::~MagdaAudioEngine() {
 // remaining services and what nothing answers yet, each named with its issue.
 
 bool MagdaAudioEngine::initialize() {
+    // Before anything is imported: a file's own tempo is what puts a clip in
+    // beat mode, and with no Edit there is no loopInfo to get it from (#2552).
+    daw::engine_host::installSourceTempoProbe();
+
     // Services alone: an Edit would come with a playback context, an
     // AudioBridge mirroring every device into it and a second copy of every
     // external plugin (#2579).
