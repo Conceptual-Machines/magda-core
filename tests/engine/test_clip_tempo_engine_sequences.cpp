@@ -257,10 +257,7 @@ TEST_CASE("A tempo change inside a clip is reflected in its seconds cache",
         clips.createAudioClipBeats(kTrack, 0.0, 4.0, path, ClipView::Arrangement, 120.0);
     REQUIRE(clipId != magda::INVALID_CLIP_ID);
 
-    ClipManager::AudioClipBeatsUpdate interpretation;
-    interpretation.interpretationBpm = 120.0;
-    interpretation.interpretationTotalBeats = 8.0;
-    clips.applyAudioClipBeats(clipId, interpretation, 120.0);
+    clips.setSourceTempo(clipId, 120.0);
     clips.setAutoTempo(clipId, true, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
 
@@ -269,9 +266,7 @@ TEST_CASE("A tempo change inside a clip is reflected in its seconds cache",
     const auto engineMap = makeStepTempoMap();
     const EngineTempoMapView tempoMap(engineMap);
 
-    ClipManager::AudioClipBeatsUpdate reinterpretation;
-    reinterpretation.interpretationBpm = 100.0;
-    clips.applyAudioClipBeats(clipId, reinterpretation, 120.0);
+    clips.setSourceTempo(clipId, 100.0);
 
     const auto* clip = clips.getClip(clipId);
     REQUIRE(clip != nullptr);

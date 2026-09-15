@@ -610,7 +610,7 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         const auto* event = clips.getClip(clipId)->primaryEvent();
         REQUIRE(event != nullptr);
 
-        // Without this the slot could never leave time mode: applyAudioClipBeats
+        // Without this the slot could never leave time mode: setSourceTempo
         // takes the interpretation but grants no mode, so a detection arriving
         // at creation would land on a clip nothing ever moves out of time mode.
         REQUIRE(event->autoTempo);
@@ -623,7 +623,7 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
 
 // A beat count typed into the wrong field implied 43,000 BPM, and the engine
 // played a 20 ms sliver of the loop: silence (#2674).
-TEST_CASE("ClipManager: applyAudioClipBeats refuses an interpretation no file could have",
+TEST_CASE("ClipManager: setSourceTempo refuses an interpretation no file could have",
           "[clip][event][interpretation]") {
     EventModelFixture fixture;
     auto& clips = ClipManager::getInstance();
@@ -638,10 +638,7 @@ TEST_CASE("ClipManager: applyAudioClipBeats refuses an interpretation no file co
     const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
 
-    ClipManager::AudioClipBeatsUpdate u;
-    u.interpretationTotalBeats = 4001.0;
-    u.interpretationBpm = 4001.0 * 60.0 / 5.517;
-    clips.applyAudioClipBeats(clipId, u, 120.0);
+    clips.setSourceTempo(clipId, 4001.0 * 60.0 / 5.517);
 
     const auto* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(174.0));
@@ -653,7 +650,8 @@ TEST_CASE("ClipManager: applyAudioClipBeats refuses an interpretation no file co
 
 // Tempo and beat count are one fact in two units, tied by the file length:
 // stating either restates the other (#2674).
-TEST_CASE("ClipManager: applyAudioClipBeats restates the unit it was not given",
+TEST_CASE("ClipManager: setSourceTempo and setSourceBeatCount each restate the unit "
+          "they were not given",
           "[clip][event][interpretation]") {
     EventModelFixture fixture;
     auto& clips = ClipManager::getInstance();
@@ -669,16 +667,12 @@ TEST_CASE("ClipManager: applyAudioClipBeats restates the unit it was not given",
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
 
     // 5.486 s at 174 is 15.909 beats, too far from a whole beat to snap.
-    ClipManager::AudioClipBeatsUpdate bpmOnly;
-    bpmOnly.interpretationBpm = 174.0;
-    clips.applyAudioClipBeats(clipId, bpmOnly, 120.0);
+    clips.setSourceTempo(clipId, 174.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats ==
             Approx(5.486 * 174.0 / 60.0));
 
-    ClipManager::AudioClipBeatsUpdate beatsOnly;
-    beatsOnly.interpretationTotalBeats = 32.0;
-    clips.applyAudioClipBeats(clipId, beatsOnly, 120.0);
+    clips.setSourceBeatCount(clipId, 32.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(32.0 * 60.0 / 5.486));
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(32.0));
 
@@ -746,10 +740,7 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
 
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
 
-    ClipManager::AudioClipBeatsUpdate update;
-    update.interpretationBpm = 90.0;
-    update.interpretationTotalBeats = 6.0;
-    clips.applyAudioClipBeats(clipId, update, 120.0);
+    clips.setSourceTempo(clipId, 90.0);
 
     const AudioEvent* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(90.0));
@@ -762,9 +753,7 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
 
     // A slot the user put in time mode stays there when a tempo is typed.
     clips.setAutoTempo(clipId, false, 120.0);
-    ClipManager::AudioClipBeatsUpdate retyped;
-    retyped.interpretationBpm = 95.0;
-    clips.applyAudioClipBeats(clipId, retyped, 120.0);
+    clips.setSourceTempo(clipId, 95.0);
     event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(95.0));
     REQUIRE(event->playbackIntent == PlaybackIntent::Free);
@@ -794,10 +783,7 @@ TEST_CASE("BEAT grants beat mode only with a tempo behind it",
 
     // The request was kept, so the tempo the user then types grants it.
     REQUIRE(clips.getClip(clipId)->primaryEvent()->playbackIntent == PlaybackIntent::Beat);
-    ClipManager::AudioClipBeatsUpdate update;
-    update.interpretationBpm = 90.0;
-    update.interpretationTotalBeats = 6.0;
-    clips.applyAudioClipBeats(clipId, update, 120.0);
+    clips.setSourceTempo(clipId, 90.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
 
     clips.clearAllClips();

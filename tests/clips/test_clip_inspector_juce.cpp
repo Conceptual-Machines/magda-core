@@ -63,10 +63,7 @@ bool writeSilentWav(const juce::File& file, double sampleRate, double seconds) {
 }
 
 void applySourceBeats(ClipId clipId, double beats) {
-    ClipManager::AudioClipBeatsUpdate update;
-    update.interpretationTotalBeats = beats;
-    update.interpretationBpm = beats * 60.0 / sourceDuration;
-    ClipManager::getInstance().applyAudioClipBeats(clipId, update, projectBPM);
+    ClipManager::getInstance().setSourceBeatCount(clipId, beats);
 }
 
 void expectLoopEnd(juce::UnitTest& test, const ClipInspector& inspector, double expected) {

@@ -80,6 +80,139 @@ class SetClipPropertyCommand : public SnapshotCommand<ClipInfo> {
 };
 
 /**
+ * @brief Command for setting a clip's source tempo (supports merging).
+ *
+ * Restating tempo restates beat count and may refit the loop region, so
+ * undo restores the whole clip rather than just the BPM field.
+ */
+class SetSourceTempoCommand : public UndoableCommand {
+  public:
+    SetSourceTempoCommand(ClipId clipId, double newBpm) : clipId_(clipId), newBpm_(newBpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            oldClip_ = *clip;
+            hasOldClip_ = true;
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setSourceTempo(clipId_, newBpm_);
+    }
+    void undo() override {
+        if (!hasOldClip_)
+            return;
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            *clip = oldClip_;
+            ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+        }
+    }
+    juce::String getDescription() const override {
+        return "Set Source BPM";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (const auto* o = dynamic_cast<const SetSourceTempoCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newBpm_ = static_cast<const SetSourceTempoCommand*>(other)->newBpm_;
+    }
+
+  private:
+    ClipId clipId_;
+    double newBpm_;
+    ClipInfo oldClip_;
+    bool hasOldClip_ = false;
+};
+
+/**
+ * @brief Command for setting a clip's source beat count (supports merging).
+ *
+ * Restating beat count restates tempo and may refit the loop region, so
+ * undo restores the whole clip rather than just the beat-count field.
+ */
+class SetSourceBeatCountCommand : public UndoableCommand {
+  public:
+    SetSourceBeatCountCommand(ClipId clipId, double newBeats)
+        : clipId_(clipId), newBeats_(newBeats) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            oldClip_ = *clip;
+            hasOldClip_ = true;
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setSourceBeatCount(clipId_, newBeats_);
+    }
+    void undo() override {
+        if (!hasOldClip_)
+            return;
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            *clip = oldClip_;
+            ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+        }
+    }
+    juce::String getDescription() const override {
+        return "Set Source Beats";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (const auto* o = dynamic_cast<const SetSourceBeatCountCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newBeats_ = static_cast<const SetSourceBeatCountCommand*>(other)->newBeats_;
+    }
+
+  private:
+    ClipId clipId_;
+    double newBeats_;
+    ClipInfo oldClip_;
+    bool hasOldClip_ = false;
+};
+
+/**
+ * @brief Command for setting a clip's playback intent (beat mode).
+ *
+ * Entering or leaving beat mode changes loop, stretch engine, speed and
+ * placement together, so undo restores the whole clip. Not mergeable: this
+ * is a discrete mode switch, not a value drag.
+ */
+class SetPlaybackIntentCommand : public UndoableCommand {
+  public:
+    SetPlaybackIntentCommand(ClipId clipId, PlaybackIntent newIntent, double projectBpm)
+        : clipId_(clipId), newIntent_(newIntent), projectBpm_(projectBpm) {
+        if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            oldClip_ = *clip;
+            hasOldClip_ = true;
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setPlaybackIntent(clipId_, newIntent_, projectBpm_);
+    }
+    void undo() override {
+        if (!hasOldClip_)
+            return;
+        if (auto* clip = ClipManager::getInstance().getClip(clipId_)) {
+            *clip = oldClip_;
+            ClipManager::getInstance().forceNotifyClipPropertyChanged(clipId_);
+        }
+    }
+    juce::String getDescription() const override {
+        return "Set Clip Beat Mode";
+    }
+
+  private:
+    ClipId clipId_;
+    PlaybackIntent newIntent_;
+    double projectBpm_;
+    ClipInfo oldClip_;
+    bool hasOldClip_ = false;
+};
+
+/**
  * @brief Command for setting clip offset (supports merging)
  */
 class SetClipOffsetCommand : public UndoableCommand {
@@ -462,15 +595,22 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
         : clipId_(clipId), newRatio_(newRatio) {
         auto* clip = ClipManager::getInstance().getClip(clipId);
         if (clip)
-            if (const auto* ev = clip->primaryEvent())
+            if (const auto* ev = clip->primaryEvent()) {
                 oldRatio_ = ev->speedRatio;
+                oldLoopLengthSamples_ = ev->loopLengthSamples;
+                oldExtent_ = ev->loopExtent;
+            }
     }
 
     void execute() override {
         ClipManager::getInstance().setSpeedRatio(clipId_, newRatio_);
     }
     void undo() override {
-        ClipManager::getInstance().setSpeedRatio(clipId_, oldRatio_);
+        auto& cm = ClipManager::getInstance();
+        cm.setSpeedRatio(clipId_, oldRatio_);
+        // The speed write can rewrite an explicit region to the new extent;
+        // put the captured samples/extent back on top of the ratio.
+        cm.restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_, 120.0);
     }
     juce::String getDescription() const override {
         return "Set Clip Speed Ratio";
@@ -488,6 +628,8 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     double oldRatio_ = 1.0, newRatio_;
+    int64_t oldLoopLengthSamples_ = 0;
+    RegionExtent oldExtent_ = RegionExtent::WholeSource;
 };
 
 /**

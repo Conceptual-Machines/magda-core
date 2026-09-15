@@ -1296,6 +1296,159 @@ TEST_CASE("SetClipLoopRangeCommand - undo keeps the region following the interpr
     REQUIRE(ev->loopLengthSamples == snapshotSamples);
 }
 
+// ============================================================================
+// Interpretation commands (#2674 phase 3): tempo/beat-count ownership and
+// beat-mode intent.
+// ============================================================================
+
+TEST_CASE("SetSourceTempoCommand - execute then undo restores bpm, beat count and provenance",
+          "[clip][command][tempo][undo]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    magda::test::setSourceDuration(*clip, 4.0);
+
+    auto* ev = primaryEventOf(clip);
+    REQUIRE(ev != nullptr);
+    REQUIRE(ev->adoptBpm(120.0, Provenance::FileMetadata));
+    REQUIRE(ev->adoptTotalBeats(8.0, Provenance::FileMetadata));
+
+    const double oldBpm = ev->interpBpm;
+    const double oldBeats = ev->interpTotalBeats;
+    const Provenance oldBpmFrom = ev->bpmFrom;
+    const Provenance oldBeatsFrom = ev->beatsFrom;
+
+    SetSourceTempoCommand cmd(clipId, 100.0);
+    cmd.execute();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->interpBpm == Catch::Approx(100.0));
+    REQUIRE(ev->bpmFrom == Provenance::User);
+    // The file's length is fixed (4s); beat count restates at the new tempo.
+    REQUIRE(ev->interpTotalBeats == Catch::Approx(4.0 * 100.0 / 60.0));
+
+    cmd.undo();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->interpBpm == Catch::Approx(oldBpm));
+    REQUIRE(ev->interpTotalBeats == Catch::Approx(oldBeats));
+    REQUIRE(ev->bpmFrom == oldBpmFrom);
+    REQUIRE(ev->beatsFrom == oldBeatsFrom);
+}
+
+TEST_CASE("SetSourceBeatCountCommand - two edits merge and a single undo restores the original",
+          "[clip][command][tempo][merge][undo]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    magda::test::setSourceDuration(*clip, 4.0);
+
+    auto* ev = primaryEventOf(clip);
+    REQUIRE(ev != nullptr);
+    REQUIRE(ev->adoptBpm(120.0, Provenance::FileMetadata));
+    REQUIRE(ev->adoptTotalBeats(8.0, Provenance::FileMetadata));
+
+    const double oldBeats = ev->interpTotalBeats;
+    const double oldBpm = ev->interpBpm;
+
+    SetSourceBeatCountCommand cmd1(clipId, 6.0);
+    SetSourceBeatCountCommand cmd2(clipId, 10.0);
+    SetSourceBeatCountCommand cmdOther(clipId + 1, 5.0);
+
+    REQUIRE(cmd1.canMergeWith(&cmd2));
+    REQUIRE_FALSE(cmd1.canMergeWith(&cmdOther));
+
+    cmd1.mergeWith(&cmd2);
+    cmd1.execute();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->interpTotalBeats == Catch::Approx(10.0));
+
+    cmd1.undo();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->interpTotalBeats == Catch::Approx(oldBeats));
+    REQUIRE(ev->interpBpm == Catch::Approx(oldBpm));
+}
+
+TEST_CASE(
+    "SetPlaybackIntentCommand - Beat turns loop and autoTempo on, undo restores both and speed",
+    "[clip][command][beatmode][undo]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    magda::test::setSourceDuration(*clip, 4.0);
+
+    auto* ev = primaryEventOf(clip);
+    REQUIRE(ev != nullptr);
+    REQUIRE(ev->adoptBpm(120.0, Provenance::User));
+    REQUIRE(ev->adoptTotalBeats(8.0, Provenance::User));
+
+    REQUIRE_FALSE(clip->loopEnabled);
+    REQUIRE_FALSE(ev->autoTempo);
+    const double oldSpeedRatio = ev->speedRatio;
+
+    SetPlaybackIntentCommand cmd(clipId, PlaybackIntent::Beat, 120.0);
+    cmd.execute();
+
+    clip = cm.getClip(clipId);
+    ev = primaryEventOf(clip);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->loopEnabled);
+    REQUIRE(ev->autoTempo);
+    REQUIRE(ev->playbackIntent == PlaybackIntent::Beat);
+
+    cmd.undo();
+
+    clip = cm.getClip(clipId);
+    ev = primaryEventOf(clip);
+    REQUIRE(clip != nullptr);
+    REQUIRE_FALSE(clip->loopEnabled);
+    REQUIRE_FALSE(ev->autoTempo);
+    REQUIRE(ev->playbackIntent == PlaybackIntent::Free);
+    REQUIRE(ev->speedRatio == Catch::Approx(oldSpeedRatio));
+}
+
+TEST_CASE("SetClipSpeedRatioCommand - undo restores an explicit region matching the clip's extent",
+          "[clip][command][speed][loop][undo]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& cm = ClipManager::getInstance();
+    auto* clip = cm.getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->loopEnabled = true;
+    magda::test::setSourceDuration(*clip, 8.0);
+
+    auto* ev = primaryEventOf(clip);
+    REQUIRE(ev != nullptr);
+    ev->setLoopLengthSeconds(4.0);  // Explicit, matching the clip's own extent.
+    REQUIRE(ev->loopExtent == RegionExtent::Explicit);
+    const int64_t oldSamples = ev->loopLengthSamples;
+
+    SetClipSpeedRatioCommand cmd(clipId, 2.0);
+    cmd.execute();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopLengthSeconds() == Catch::Approx(8.0));
+
+    cmd.undo();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopExtent == RegionExtent::Explicit);
+    REQUIRE(ev->loopLengthSamples == oldSamples);
+    REQUIRE(ev->speedRatio == Catch::Approx(1.0));
+}
+
 TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",
           "[clip][command][time-selection][delete]") {
     resetState();

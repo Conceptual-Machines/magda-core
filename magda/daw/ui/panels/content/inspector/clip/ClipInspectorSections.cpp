@@ -472,24 +472,8 @@ void ClipInspector::initClipPropertiesSection() {
             return;
         }
 
-        double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-        // What the user types is the fact; the manager restates the beat count
-        // from the file length.
-        double thumbDuration = 0.0;
-        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                magda::audioEventRef(*clip).sourceFilePath())) {
-            thumbDuration = thumb->getTotalLength();
-        }
-
-        // One path in either mode: applyAudioClipBeats takes the interpretation
-        // whether or not the clip is in beat mode (#2676), and a second route
-        // here is how the two drifted apart before.
-        magda::ClipManager::AudioClipBeatsUpdate u;
-        u.interpretationBpm = newBPM;
-        if (thumbDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-            u.sourceDurationSeconds = thumbDuration;
-        magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetSourceTempoCommand>(primaryClipId(), newBPM));
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
         updateFromSelectedClip();
@@ -516,26 +500,9 @@ void ClipInspector::initClipPropertiesSection() {
             auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
             if (clip != nullptr && clip->isAudio()) {
                 double newSourceBeats = clipBeatsLengthValue_->getValue();
-                double projectBpm =
-                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-                double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-                if (durationSeconds <= 0.0) {
-                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                            magda::audioEventRef(*clip).sourceFilePath())) {
-                        durationSeconds = thumb->getTotalLength();
-                    }
-                }
-
-                // The manager restates the BPM from the file length.
-                magda::ClipManager::AudioClipBeatsUpdate u;
-                u.interpretationTotalBeats = newSourceBeats;
-                if (durationSeconds > 0.0 &&
-                    magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                    u.sourceDurationSeconds = durationSeconds;
-
-                magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
-                                                                      projectBpm);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetSourceBeatCountCommand>(primaryClipId(),
+                                                                       newSourceBeats));
             }
         }
     };
@@ -794,10 +761,8 @@ void ClipInspector::initClipPropertiesSection() {
             auto* clip = magda::ClipManager::getInstance().getClip(cid);
             if (!clip || !clip->isAudio())
                 continue;
-            batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
-                cid, "Set Clip Beat Mode", [enable, bpm](auto& manager, magda::ClipId id) {
-                    manager.setAutoTempo(id, enable, bpm);
-                }));
+            batch.execute(std::make_unique<magda::SetPlaybackIntentCommand>(
+                cid, enable ? magda::PlaybackIntent::Beat : magda::PlaybackIntent::Free, bpm));
         }
         updateFromSelectedClip();
     };
@@ -982,9 +947,8 @@ void ClipInspector::initClipPropertiesSection() {
                 const auto display = magda::computeAudioClipSourceDisplay(
                     *clip, projectBPM, getAudioFileDurationForInspector(*clip), cachedBpm);
                 if (display.bpm > 0.0) {
-                    event->adoptBpm(display.bpm, magda::Provenance::Analysis);
-                    if (display.totalBeats > 0.0)
-                        event->adoptTotalBeats(display.totalBeats, magda::Provenance::Analysis);
+                    magda::ClipManager::getInstance().adoptAnalysis(
+                        primaryClipId(), event->sourceFilePath(), display.bpm);
                 }
             }
 

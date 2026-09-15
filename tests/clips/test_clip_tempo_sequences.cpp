@@ -118,9 +118,7 @@ TEST_CASE("Changing the beat count at a typed tempo keeps the loop region",
                                                    ClipView::Session, kProjectBpm);
     clips.setAutoTempo(clipId, true, kProjectBpm);
 
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = 116.0;
-    clips.applyAudioClipBeats(clipId, typed, kProjectBpm);
+    clips.setSourceTempo(clipId, 116.0);
 
     const auto* clip = clips.getClip(clipId);
     const auto* event = clip->primaryEvent();
@@ -129,9 +127,7 @@ TEST_CASE("Changing the beat count at a typed tempo keeps the loop region",
     const auto wholeFile = event->loopLengthSamples;
     REQUIRE(event->loopLengthSeconds() == Approx(kSeconds).margin(0.001));
 
-    ClipManager::AudioClipBeatsUpdate halved;
-    halved.interpretationTotalBeats = 16.0;
-    clips.applyAudioClipBeats(clipId, halved, kProjectBpm);
+    clips.setSourceBeatCount(clipId, 16.0);
 
     REQUIRE(event->interpTotalBeats == Approx(16.0));
     REQUIRE(event->interpBpm == Approx(58.0));
@@ -157,9 +153,7 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     clips.setAutoTempo(clipId, true, kProjectBpm);  // no tempo yet: intent only
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
 
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = 174.0;
-    clips.applyAudioClipBeats(clipId, typed, kProjectBpm);
+    clips.setSourceTempo(clipId, 174.0);
 
     const auto* clip = clips.getClip(clipId);
     const auto* event = clip->primaryEvent();
@@ -177,7 +171,7 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     SourcePool::getInstance().seedFactsForTesting(temp.getFile().getFullPathName(), 3.3, kFileRate);
     const auto take = clips.createAudioClipBeats(1, 0.0, 6.6, temp.getFile().getFullPathName(),
                                                  ClipView::Arrangement, kProjectBpm);
-    clips.applyAudioClipBeats(take, typed, kProjectBpm);
+    clips.setSourceTempo(take, 174.0);
     REQUIRE(clips.getClip(take)->primaryEvent()->interpTotalBeats == Approx(3.3 * 174.0 / 60.0));
 }
 
@@ -191,10 +185,7 @@ TEST_CASE("A tempo the user typed survives the BEAT toggle", "[clip][tempo][sequ
     const auto clipId = dropSessionClip(file.path());
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->hasInterpretedBpm());
 
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = kProjectBpm;
-    typed.interpretationTotalBeats = kFileSeconds * kProjectBpm / 60.0;
-    clips.applyAudioClipBeats(clipId, typed, kProjectBpm);
+    clips.setSourceTempo(clipId, kProjectBpm);
 
     AudioThumbnailManager::getInstance().cacheBPM(file.path(), kFileBpm);
     clips.setAutoTempo(clipId, true, kProjectBpm);
@@ -219,9 +210,7 @@ TEST_CASE("Correcting the tempo on an explicit region moves its beat view, not i
     const auto startSamples = event->loopStartSamples;
     const auto lengthSamples = event->loopLengthSamples;
 
-    ClipManager::AudioClipBeatsUpdate corrected;
-    corrected.interpretationBpm = 174.0;
-    clips.applyAudioClipBeats(clipId, corrected, kProjectBpm);
+    clips.setSourceTempo(clipId, 174.0);
 
     event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(174.0));
@@ -244,9 +233,7 @@ TEST_CASE("Correcting the tempo on a whole-file loop restates its beat count and
     const auto clipId = dropDetectedLoop(file.path());
     REQUIRE(clips.getClip(clipId)->primaryEvent()->loopExtent == RegionExtent::Interpretation);
 
-    ClipManager::AudioClipBeatsUpdate corrected;
-    corrected.interpretationBpm = 174.0;
-    clips.applyAudioClipBeats(clipId, corrected, kProjectBpm);
+    clips.setSourceTempo(clipId, 174.0);
 
     const auto* clip = clips.getClip(clipId);
     const auto* event = clip->primaryEvent();
@@ -295,11 +282,8 @@ TEST_CASE("A tempo edit made through a command is undone as one step", "[clip][t
     const auto lengthSamples = event->loopLengthSamples;
 
     undo.executeCommand(std::make_unique<SetClipPropertyCommand>(
-        clipId, "Set source BPM", [](ClipManager& manager, ClipId id) {
-            ClipManager::AudioClipBeatsUpdate corrected;
-            corrected.interpretationBpm = 174.0;
-            manager.applyAudioClipBeats(id, corrected, kProjectBpm);
-        }));
+        clipId, "Set source BPM",
+        [](ClipManager& manager, ClipId id) { manager.setSourceTempo(id, 174.0); }));
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
 
     REQUIRE(undo.undo());
@@ -321,10 +305,7 @@ TEST_CASE("Pasting an arrangement clip into a slot keeps the user's interpretati
 
     const auto arrangement =
         clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement, kProjectBpm);
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = kFileBpm;
-    typed.interpretationTotalBeats = kFileBeats;
-    clips.applyAudioClipBeats(arrangement, typed, kProjectBpm);
+    clips.setSourceTempo(arrangement, kFileBpm);
     const auto* srcEvent = clips.getClip(arrangement)->primaryEvent();
     REQUIRE(srcEvent->bpmFrom == Provenance::User);
     REQUIRE(srcEvent->beatsFrom == Provenance::User);
@@ -346,9 +327,10 @@ TEST_CASE("Pasting an arrangement clip into a slot keeps the user's interpretati
     REQUIRE(event->loopLengthSeconds() == Approx(kFileBeats * 60.0 / kFileBpm).margin(0.001));
 }
 
-// 16 beats at 174 outrun the 5.486 s file by a few samples' rounding. A region
-// that follows the interpretation keeps that length; only an explicit range
-// is shortened to the file.
+// setSourceTempo ties tempo and beat count to the file length, so an
+// interpretation-sized region can no longer be made to outrun the file the
+// way an inconsistent bpm/beats pair once did; what stays to verify is that
+// sanitizing (setLoopPhase) leaves such a region's samples and extent alone.
 TEST_CASE("Sanitizing a loop that follows its interpretation does not shorten it to the file",
           "[clip][tempo][sequence]") {
     TempoSequenceFixture fixture;
@@ -356,14 +338,10 @@ TEST_CASE("Sanitizing a loop that follows its interpretation does not shorten it
     LoopFile file;
 
     const auto clipId = dropSessionClip(file.path());
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = 174.0;
-    typed.interpretationTotalBeats = 16.0;
-    clips.applyAudioClipBeats(clipId, typed, kProjectBpm);
+    clips.setSourceTempo(clipId, 174.0);
 
     const auto* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
-    REQUIRE(event->loopLengthSeconds() > kFileSeconds);
     const auto lengthSamples = event->loopLengthSamples;
 
     clips.setLoopPhase(clipId, 0.0);

@@ -148,9 +148,7 @@ TEST_CASE("A detection that lands on a clip the user already set does not replac
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = kProjectBpm;
-    ClipManager::getInstance().applyAudioClipBeats(clipId, typed, kProjectBpm);
+    ClipManager::getInstance().setSourceTempo(clipId, kProjectBpm, Provenance::User);
     REQUIRE(eventOf(clipId)->interpBpm == Approx(kProjectBpm));
 
     REQUIRE(fx.pumpUntilAnswered());
@@ -165,9 +163,7 @@ TEST_CASE("A detection that lands on a clip the user set to another tempo does n
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
-    ClipManager::AudioClipBeatsUpdate typed;
-    typed.interpretationBpm = 100.0;
-    ClipManager::getInstance().applyAudioClipBeats(clipId, typed, kProjectBpm);
+    ClipManager::getInstance().setSourceTempo(clipId, 100.0, Provenance::User);
 
     REQUIRE(fx.pumpUntilAnswered());
     REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == Approx(kFileBpm));
@@ -228,4 +224,101 @@ TEST_CASE("A second request for a file in flight joins the first",
     // One read of the file, and the second clip waited on it.
     REQUIRE(log.count("[tempo] detecting loop_128bpm.wav") == 1);
     REQUIRE(log.count("[tempo] joined the request in flight for loop_128bpm.wav") == 1);
+}
+
+TEST_CASE("A detection answering for a file the clip no longer plays lands nowhere",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    const auto clipId = fx.createSessionClip();
+    REQUIRE(eventOf(clipId)->interpBpm == 0.0);
+
+    const auto other = fx.dir.getChildFile("some_other_loop.wav").getFullPathName();
+    ClipManager::getInstance().adoptAnalysis(clipId, other, 100.0);
+
+    REQUIRE(eventOf(clipId)->interpBpm == 0.0);
+}
+
+// =============================================================================
+// Ownership decides whether an answer may land
+// =============================================================================
+
+TEST_CASE("A detection is refused over the user's tempo and taken over an earlier analysis",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+
+    const auto owned = fx.createSessionClip();
+    clips.setSourceTempo(owned, 100.0, Provenance::User);
+    clips.adoptAnalysis(owned, fx.path, 90.0);
+    REQUIRE(eventOf(owned)->interpBpm == Approx(100.0));
+    REQUIRE(eventOf(owned)->bpmFrom == Provenance::User);
+
+    const auto analysed = fx.createSessionClip();
+    clips.setSourceTempo(analysed, 100.0, Provenance::Analysis);
+    clips.adoptAnalysis(analysed, fx.path, 90.0);
+    REQUIRE(eventOf(analysed)->interpBpm == Approx(90.0));
+    REQUIRE(eventOf(analysed)->bpmFrom == Provenance::Analysis);
+}
+
+// =============================================================================
+// Beat mode asked for before there is a tempo to grant it
+// =============================================================================
+
+TEST_CASE("Beat mode asked for without a tempo waits for the detection",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+    const auto clipId = fx.createSessionClip();
+
+    clips.setPlaybackIntent(clipId, PlaybackIntent::BeatWhenKnown, kProjectBpm);
+    REQUIRE(eventOf(clipId)->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    REQUIRE_FALSE(eventOf(clipId)->autoTempo);
+
+    clips.adoptAnalysis(clipId, fx.path, kFileBpm);
+
+    REQUIRE(eventOf(clipId)->autoTempo);
+    REQUIRE(eventOf(clipId)->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(clips.getClip(clipId)->loopEnabled);
+}
+
+// =============================================================================
+// A beat count is refused with its implied tempo
+// =============================================================================
+
+TEST_CASE("A beat count that implies a tempo no file has is refused whole",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+    const auto clipId = fx.createSessionClip();
+
+    clips.setSourceTempo(clipId, kFileBpm, Provenance::Analysis);
+    const double beats = eventOf(clipId)->interpTotalBeats;
+    REQUIRE(beats > 0.0);
+
+    // 1434 beats over a 2 s file is 43,000 BPM — the typo this guards.
+    clips.setSourceBeatCount(clipId, 1434.0);
+
+    REQUIRE(eventOf(clipId)->interpTotalBeats == Approx(beats));
+    REQUIRE(eventOf(clipId)->interpBpm == Approx(kFileBpm));
+}
+
+// =============================================================================
+// Speed moves an explicit range, not one the interpretation sizes
+// =============================================================================
+
+TEST_CASE("A speed change leaves a region that follows the interpretation alone",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+    const auto clipId = fx.createSessionClip();
+
+    clips.adoptAnalysis(clipId, fx.path, kFileBpm);
+    REQUIRE(eventOf(clipId)->loopExtent == RegionExtent::Interpretation);
+    const auto regionSamples = eventOf(clipId)->loopLengthSamples;
+    REQUIRE(regionSamples > 0);
+
+    clips.setSpeedRatio(clipId, 2.0);
+
+    REQUIRE(eventOf(clipId)->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(eventOf(clipId)->loopLengthSamples == regionSamples);
 }

@@ -763,9 +763,18 @@ class ClipOperations {
      * @param bpm Current tempo for conversion
      */
     static inline void setAutoTempo(ClipInfo& clip, bool enabled, double bpm) {
+        setPlaybackIntent(clip, enabled ? PlaybackIntent::Beat : PlaybackIntent::Free, bpm);
+    }
+
+    /**
+     * @brief Record what the user asks of beat mode and make the transition
+     *        when it can be granted (a tempo exists). Free leaves beat mode.
+     */
+    static inline void setPlaybackIntent(ClipInfo& clip, PlaybackIntent intent, double bpm) {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
+        const bool enabled = intent != PlaybackIntent::Free;
 
         // Placement is calibrated once, on the way into beat mode; the rest of
         // the enable path is safe to repeat.
@@ -773,7 +782,7 @@ class ClipOperations {
 
         // The request is kept even when it cannot be granted yet, so a tempo
         // landing later honours it.
-        event->playbackIntent = enabled ? PlaybackIntent::Beat : PlaybackIntent::Free;
+        event->playbackIntent = intent;
 
         // Only a disable can be skipped. Enabling always runs the transition:
         // adoption may already have resolved beat mode on (a cached detection

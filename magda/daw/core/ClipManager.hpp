@@ -378,40 +378,29 @@ class ClipManager {
     /** @brief Set the clip timeline length in beats (autoTempo mode only) */
     void setLengthBeats(ClipId clipId, double beats, double bpm);
 
-    // =====================================================================
-    // Session audio-clip canonical update path (issue #1157)
+    // -- Interpretation operations (#2674) --
     //
-    // For session/autoTempo audio clips, ClipInfo holds two roles:
-    //   - SOURCE INTERPRETATION — AudioClipModel::interpretation. The file's
-    //     musical reading, user-correctable and never clip placement.
-    //   - USER INTENT — lengthBeats (timeline beats the clip occupies on
-    //     the session/timeline), loopStartBeats / loopLengthBeats (sub-loop
-    //     region in source-beat domain), offsetBeats, startBeats. The beat
-    //     slider edits lengthBeats and never touches source interpretation.
-    //
-    // Time-domain fields (length, startTime, offset, loopStart, loopLength)
-    // are DERIVED inside applyAudioClipBeats and must not be set directly
-    // by callers in this path. speedRatio is forced to 1.0.
-    // =====================================================================
-    struct AudioClipBeatsUpdate {
-        std::optional<double> sourceDurationSeconds;
-        std::optional<double> interpretationBpm;
-        std::optional<double> interpretationTotalBeats;
-        /// Who is writing the interpretation; the inspector is the user.
-        Provenance provenance = Provenance::User;
-        std::optional<double> lengthBeats;
-        std::optional<double> loopStartBeats;
-        std::optional<double> loopLengthBeats;
-        std::optional<double> offsetBeats;
-        std::optional<double> startBeats;
-    };
+    // Tempo and beat count are one fact in two units, tied by the file
+    // length: setting either restates the other, and the loop region stays
+    // where it is (an interpretation-sized one refits). Each write is refused
+    // over a value the user owns unless `from` is User.
 
-    /** @brief Apply a partial canonical update to an audio clip and
-     *         atomically recompute every derived field. Single update path for
-     *         the inspector BPM edit and the beat-length slider. The
-     *         interpretation lands whenever its provenance allows; the
-     *         beat-domain fields need beat mode. */
-    void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
+    /** @brief The source's tempo. Refused outside 20-999. */
+    void setSourceTempo(ClipId clipId, double bpm, Provenance from = Provenance::User);
+
+    /** @brief The source's beat count. Refused when it implies a tempo outside 20-999. */
+    void setSourceBeatCount(ClipId clipId, double beats, Provenance from = Provenance::User);
+
+    /** @brief A detection result for @p sourcePath lands as Analysis. Ignored
+     *         when the clip's source is no longer that file or the user owns
+     *         the tempo. A looping whole-source region becomes its beat count.
+     *         Never grants beat mode by itself. */
+    void adoptAnalysis(ClipId clipId, const juce::String& sourcePath, double bpm);
+
+    /** @brief What the user asks of beat mode; whether it is active follows
+     *         from the interpretation. Entering beat mode loops the clip, pins
+     *         speed to 1 and picks a stretch engine. */
+    void setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back
      *         to the media DB. Prefer saveClipToLibrary for UI entry points
@@ -432,20 +421,20 @@ class ClipManager {
      *         loopStart, loopLength) on a beat-authoritative clip from its
      *         canonical beat fields. No-op for time-authoritative clips.
      *
-     *  Called by applyAudioClipBeats and by TimelineController on project-BPM
-     *  change. Does NOT notify listeners — caller's responsibility. */
+     *  Called by the interpretation operations and by TimelineController on
+     *  project-BPM change. Does NOT notify listeners — caller's responsibility. */
     void refreshDerivedSeconds(ClipId clipId, double projectBPM);
 
-    /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
+    /** @brief The BEAT toggle: setPlaybackIntent with Beat or Free. */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
 
     /** @brief Every length a loop has, on one log line: the pass, the source
      *  region in seconds and in beats, and the interpretation (#2674). */
     static juce::String describeLoopGeometry(const ClipInfo& clip);
     /** @brief Detect a tempo for every clip in @p clipIds that has no
-     *  interpreted tempo, then call @p onReady on the message thread. Answers
-     *  land in AudioThumbnailManager's cache, which is where setAutoTempo seeds
-     *  from. onReady may fire before this returns when nothing needs detecting. */
+     *  interpreted tempo, then call @p onReady on the message thread. Each
+     *  answer lands on its clip through adoptAnalysis. onReady may fire before
+     *  this returns when nothing needs detecting. */
     void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
                             std::function<void()> onReady);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
