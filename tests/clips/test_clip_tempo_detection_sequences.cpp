@@ -146,6 +146,8 @@ const AudioEvent* eventOf(ClipId id) {
 // =============================================================================
 
 // Analysis never overrides a user-owned tempo, even one equal to the project's.
+// Detection is only ever requested for a clip missing a tempo, so pressing
+// BEAT on one the user already set asks nothing: no request, no cache entry.
 TEST_CASE("A detection that lands on a clip the user already set does not replace it",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
@@ -154,13 +156,14 @@ TEST_CASE("A detection that lands on a clip the user already set does not replac
     ClipManager::getInstance().setSourceTempo(clipId, kProjectBpm, Provenance::User);
     REQUIRE(eventOf(clipId)->interpBpm == Approx(kProjectBpm));
 
-    REQUIRE(fx.pumpUntilAnswered());
-    REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == Approx(kFileBpm));
+    ClipManager::getInstance().detectMissingTempo({clipId}, kProjectBpm, nullptr);
 
+    REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == 0.0);
     REQUIRE(eventOf(clipId)->interpBpm == Approx(kProjectBpm));
 }
 
-// The boundary of the heuristic: a typed tempo off the project's survives.
+// The boundary of the heuristic: a typed tempo off the project's survives,
+// and is refused the same way — no request goes out at all.
 TEST_CASE("A detection that lands on a clip the user set to another tempo does not replace it",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
@@ -168,27 +171,10 @@ TEST_CASE("A detection that lands on a clip the user set to another tempo does n
 
     ClipManager::getInstance().setSourceTempo(clipId, 100.0, Provenance::User);
 
-    REQUIRE(fx.pumpUntilAnswered());
-    REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == Approx(kFileBpm));
+    ClipManager::getInstance().detectMissingTempo({clipId}, kProjectBpm, nullptr);
 
+    REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == 0.0);
     REQUIRE(eventOf(clipId)->interpBpm == Approx(100.0));
-}
-
-// A detection supplies a tempo; only the user's intent switches beat mode on.
-TEST_CASE("A detection that lands after the user chose time mode does not switch it on",
-          "[clip][tempo][sequence][detection]") {
-    DetectionFixture fx;
-    const auto clipId = fx.createSessionClip();
-
-    // The clip is already in time mode for want of a tempo; this is the
-    // user's gesture saying it should stay there.
-    ClipManager::getInstance().setAutoTempo(clipId, false, kProjectBpm);
-    REQUIRE_FALSE(eventOf(clipId)->autoTempo);
-    REQUIRE(eventOf(clipId)->playbackIntent == PlaybackIntent::Free);
-
-    REQUIRE(fx.pumpUntilAnswered());
-
-    REQUIRE_FALSE(eventOf(clipId)->autoTempo);
 }
 
 // =============================================================================
@@ -201,6 +187,7 @@ TEST_CASE("A detection for a clip that is gone lands nowhere",
     const auto clipId = fx.createSessionClip();
     REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == 0.0);
 
+    ClipManager::getInstance().detectMissingTempo({clipId}, kProjectBpm, nullptr);
     ClipManager::getInstance().deleteClip(clipId);
     REQUIRE(ClipManager::getInstance().getClip(clipId) == nullptr);
 
@@ -217,6 +204,10 @@ TEST_CASE("A second request for a file in flight joins the first",
     LogCapture log;
     const auto first = fx.createSessionClip();
     const auto second = fx.createSessionClip();
+
+    // Each clip presses BEAT on its own; the second's request joins the first.
+    ClipManager::getInstance().detectMissingTempo({first}, kProjectBpm, nullptr);
+    ClipManager::getInstance().detectMissingTempo({second}, kProjectBpm, nullptr);
 
     REQUIRE(fx.pumpUntilAnswered());
 
@@ -273,8 +264,10 @@ TEST_CASE("Beat mode asked for without a tempo waits for the detection",
     auto& clips = ClipManager::getInstance();
     const auto clipId = fx.createSessionClip();
 
-    clips.setPlaybackIntent(clipId, PlaybackIntent::BeatWhenKnown, kProjectBpm);
-    REQUIRE(eventOf(clipId)->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    // What BEAT does on a clip with no tempo yet: ask, then set the intent.
+    clips.detectMissingTempo({clipId}, kProjectBpm, nullptr);
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+    REQUIRE(eventOf(clipId)->playbackIntent == PlaybackIntent::Beat);
     REQUIRE_FALSE(eventOf(clipId)->autoTempo);
 
     clips.adoptAnalysis(clipId, fx.path, kFileBpm);

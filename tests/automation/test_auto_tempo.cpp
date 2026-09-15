@@ -431,7 +431,7 @@ TEST_CASE("setAutoTempo - enabling again does not recalibrate a clip that starte
 // setAutoTempo — beat mode already granted by a detection
 // ─────────────────────────────────────────────────────────────
 
-// A BeatWhenKnown clip is granted beat mode the moment a tempo is adopted
+// A clip that asked for beat mode is granted it the moment a tempo is adopted
 // (ClipManager seeds a cached detection before calling setAutoTempo), so the
 // toggle finds autoTempo already on and must still run the transition.
 static ClipInfo makeDetectionGrantedClip() {
@@ -441,7 +441,7 @@ static ClipInfo makeDetectionGrantedClip() {
     clip.length = 2.0;
     auto& event = magda::test::audioEvent(clip);
     event.speedRatio = 1.5;
-    event.setPlaybackIntent(PlaybackIntent::BeatWhenKnown);
+    event.setPlaybackIntent(PlaybackIntent::Beat);
     REQUIRE_FALSE(event.autoTempo);
     REQUIRE(event.adoptBpm(174.0, Provenance::Analysis));
     REQUIRE(event.autoTempo);

@@ -168,8 +168,8 @@ enum class Provenance { None, FileMetadata, Analysis, User };
 enum class RegionExtent { WholeSource, Interpretation, Explicit };
 
 /// What the user asked of beat mode. Whether it is active is autoTempo, which
-/// also needs a tempo (#2676): BeatWhenKnown is time mode until one arrives.
-enum class PlaybackIntent { Free, Beat, BeatWhenKnown };
+/// also needs a tempo (#2676).
+enum class PlaybackIntent { Free, Beat };
 
 /**
  * @brief Placement of a source inside a clip (#1901).

@@ -350,7 +350,7 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
     event.beatsFrom = Provenance::User;
     event.keyRoot = "A";
     event.keyScale = "minor";
-    event.playbackIntent = PlaybackIntent::BeatWhenKnown;
+    event.playbackIntent = PlaybackIntent::Beat;
     event.autoTempo = true;
     event.warpEnabled = true;
     event.warpMarkers.push_back({0.5, 0.75});
@@ -394,7 +394,7 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
         REQUIRE(restoredEvent.beatsFrom == Provenance::User);
         REQUIRE(restoredEvent.keyRoot == "A");
         REQUIRE(restoredEvent.keyScale == "minor");
-        REQUIRE(restoredEvent.playbackIntent == PlaybackIntent::BeatWhenKnown);
+        REQUIRE(restoredEvent.playbackIntent == PlaybackIntent::Beat);
         REQUIRE(restoredEvent.autoTempo);
         REQUIRE(restoredEvent.transpose == 3);
         REQUIRE(restoredEvent.pitchChange == Approx(-1.5f));
@@ -626,7 +626,7 @@ TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
     event.interpTotalBeats = 16.0;
     event.bpmFrom = Provenance::User;
     event.beatsFrom = Provenance::User;
-    event.playbackIntent = PlaybackIntent::BeatWhenKnown;
+    event.playbackIntent = PlaybackIntent::Beat;
     event.autoTempo = true;
     event.setLoopLengthSeconds(2.0);
 
@@ -669,6 +669,32 @@ TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
     }
 }
 
+// A project saved while BeatWhenKnown still existed stored that string; it has
+// no successor, so the fallback reads the era's autoTempo flag instead.
+TEST_CASE("A v2 event's beatWhenKnown string falls back to autoTempo",
+          "[clip][serialization][ownership]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/legacy-intent.wav", 4.0, kSourceRate);
+    original.setPlacementBeats(0.0, 8.0);
+    event.interpBpm = 120.0;
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    auto& eventJson = firstEventOf(json);
+    eventJson.setProperty("playbackIntent", "beatWhenKnown");
+
+    SECTION("autoTempo true loads as Beat") {
+        eventJson.setProperty("autoTempo", true);
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+    }
+
+    SECTION("autoTempo false loads as Free") {
+        eventJson.setProperty("autoTempo", false);
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Free);
+    }
+}
+
 TEST_CASE("A v2 event stores its ownership as strings", "[clip][serialization][ownership]") {
     MigrationFixture fixture;
 
@@ -683,20 +709,20 @@ TEST_CASE("A v2 event stores its ownership as strings", "[clip][serialization][o
     event.bpmFrom = Provenance::User;
     event.beatsFrom = Provenance::None;
     event.loopExtent = RegionExtent::Interpretation;
-    event.playbackIntent = PlaybackIntent::BeatWhenKnown;
+    event.playbackIntent = PlaybackIntent::Beat;
 
     auto json = ProjectSerializer::serializeClipInfo(original);
     const auto& eventJson = firstEventOf(json);
     REQUIRE(eventJson.getProperty("bpmFrom").toString() == "user");
     REQUIRE(eventJson.getProperty("beatsFrom").toString() == "none");
     REQUIRE(eventJson.getProperty("loopExtent").toString() == "interpretation");
-    REQUIRE(eventJson.getProperty("playbackIntent").toString() == "beatWhenKnown");
+    REQUIRE(eventJson.getProperty("playbackIntent").toString() == "beat");
 
     const auto restored = load(json);
     REQUIRE(restored.primaryEvent()->bpmFrom == Provenance::User);
     REQUIRE(restored.primaryEvent()->beatsFrom == Provenance::None);
     REQUIRE(restored.primaryEvent()->loopExtent == RegionExtent::Interpretation);
-    REQUIRE(restored.primaryEvent()->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    REQUIRE(restored.primaryEvent()->playbackIntent == PlaybackIntent::Beat);
 
     SECTION("Every provenance round-trips") {
         for (const auto from :
@@ -719,8 +745,7 @@ TEST_CASE("A v2 event stores its ownership as strings", "[clip][serialization][o
     }
 
     SECTION("Every intent round-trips") {
-        for (const auto intent :
-             {PlaybackIntent::Free, PlaybackIntent::Beat, PlaybackIntent::BeatWhenKnown}) {
+        for (const auto intent : {PlaybackIntent::Free, PlaybackIntent::Beat}) {
             event.playbackIntent = intent;
             const auto clip = load(ProjectSerializer::serializeClipInfo(original));
             REQUIRE(clip.primaryEvent()->playbackIntent == intent);

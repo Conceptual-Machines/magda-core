@@ -342,7 +342,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
     }
 
     void testSessionImportUsesCachedDetectorFallback() {
-        beginTest("Session import uses cached detector fallback for defaulted source metadata");
+        beginTest("BEAT on a session clip takes the cached detection");
 
         Fixture f;
         auto& thumbs = AudioThumbnailManager::getInstance();
@@ -355,12 +355,15 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         auto clipId = ClipManager::getInstance().createAudioClip(
             f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        // A drop does nothing; BEAT asks and the cached answer lands at once.
+        ClipManager::getInstance().detectMissingTempo({clipId}, 120.0, nullptr);
+        ClipManager::getInstance().setAutoTempo(clipId, true, 120.0);
         auto* clip = ClipManager::getInstance().getClip(clipId);
         expect(clip != nullptr, "Session clip should exist");
         if (clip == nullptr)
             return;
         expect(clip->view == ClipView::Session, "Clip should be a session clip");
-        expect(primaryEventOf(clip)->autoTempo, "Session audio clips should default to beat mode");
+        expect(primaryEventOf(clip)->autoTempo, "BEAT should be granted with a tempo");
         expectWithinAbsoluteError(primaryEventOf(clip)->interpBpm, detectedBpm, 0.01);
         expectWithinAbsoluteError(primaryEventOf(clip)->interpTotalBeats, expectedSourceBeats,
                                   0.01);
@@ -384,6 +387,9 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
 
         auto clipId = ClipManager::getInstance().createAudioClip(
             f.trackId, 0.0, sourceDuration, f.audioPath(), ClipView::Session, 120.0);
+        // A drop does nothing; BEAT asks and the cached answer lands at once.
+        ClipManager::getInstance().detectMissingTempo({clipId}, 120.0, nullptr);
+        ClipManager::getInstance().setAutoTempo(clipId, true, 120.0);
         ClipManager::getInstance().setClipSceneIndex(clipId, 0);
         if (f.clipSync->getSessionTeClip(clipId) == nullptr)
             f.clipSync->syncSessionClipToSlot(clipId);

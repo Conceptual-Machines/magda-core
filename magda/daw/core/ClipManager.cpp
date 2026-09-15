@@ -69,8 +69,6 @@ const char* intentName(PlaybackIntent intent) {
             return "free";
         case PlaybackIntent::Beat:
             return "beat";
-        case PlaybackIntent::BeatWhenKnown:
-            return "beatWhenKnown";
     }
     return "?";
 }
@@ -395,8 +393,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     newEvent.loopStartSamples = 0;
     newEvent.setLoopExtent(RegionExtent::WholeSource);
 
-    // Interpretation saved to the library is the user's own: it restores as
-    // such when the same file is imported again, and no detection replaces it.
+    // A drop loads what the library holds for the file and nothing else. What
+    // the user saved is the user's own; what the scan measured is analysis.
     std::optional<magda::media::EffectiveMetadata> savedMetadata;
     if (audioFilePath.isNotEmpty() && juce::File(audioFilePath).existsAsFile()) {
         savedMetadata = magda::media::getUserMetadataForFile(
@@ -404,9 +402,15 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         if (savedMetadata) {
             if (savedMetadata->bpm && isValidBpm(*savedMetadata->bpm)) {
                 newEvent.adoptBpm(*savedMetadata->bpm, Provenance::User);
+            } else if (savedMetadata->detectedBpm && isValidBpm(*savedMetadata->detectedBpm)) {
+                newEvent.adoptBpm(*savedMetadata->detectedBpm, Provenance::Analysis);
             }
             if (savedMetadata->totalBeats && *savedMetadata->totalBeats > 0.0) {
                 newEvent.adoptTotalBeats(*savedMetadata->totalBeats, Provenance::User);
+            } else if (newEvent.hasInterpretedBpm() && newEvent.sourceDurationSeconds() > 0.0) {
+                newEvent.adoptTotalBeats(
+                    beatCountForDuration(newEvent.sourceDurationSeconds(), newEvent.interpBpm),
+                    newEvent.bpmFrom);
             }
             if (savedMetadata->keyRoot && !savedMetadata->keyRoot->empty()) {
                 newEvent.keyRoot = *savedMetadata->keyRoot;
@@ -427,13 +431,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         }
     }
 
-    if (view == ClipView::Session) {
+    if (view == ClipView::Session)
         clip.loopEnabled = true;
-
-        // The import default for a loop: time mode until a tempo exists, beat
-        // mode the moment one does (#2676).
-        newEvent.setPlaybackIntent(PlaybackIntent::BeatWhenKnown);
-    }
     clips_[clip.id] = clip;
 
     if (savedMetadata && savedMetadata->beatMode) {
@@ -464,18 +463,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
-    // Ask for a tempo detection; it lands as Analysis, so a tempo the user
-    // owns refuses it. Session-only.
-    if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
-        juce::File(audioFilePath).existsAsFile()) {
-        ClipId cid = clip.id;
-        auto applyDetectedBPM = [cid, audioFilePath](double detectedBPM) {
-            ClipManager::getInstance().adoptAnalysis(cid, audioFilePath, detectedBPM);
-        };
-
-        AudioThumbnailManager::getInstance().requestBPMDetection(audioFilePath, applyDetectedBPM);
-    }
-
+    // A drop does nothing else. Detection runs when BEAT is pressed on a clip
+    // with no tempo, and the library is written only by Save to library.
     return clip.id;
 }
 
@@ -3552,6 +3541,7 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                         }
                         newEvent->warpMarkers = srcEvent->warpMarkers;
                         newEvent->adoptInterpretationFrom(*srcEvent);
+                        newEvent->setPlaybackIntent(srcEvent->playbackIntent);
                         newEvent->autoPitch = srcEvent->autoPitch;
                         newEvent->analogPitch = srcEvent->analogPitch;
                         newEvent->autoPitchMode = srcEvent->autoPitchMode;

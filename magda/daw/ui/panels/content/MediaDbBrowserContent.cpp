@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/AudioThumbnailManager.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
@@ -703,6 +704,11 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             menu.addItem(
                 6, selectedCount > 1 ? "Reset selected rows to detected" : "Reset to detected",
                 !owner_.indexing_);
+            menu.addItem(9,
+                         selectedCount > 1
+                             ? "Delete file metadata (" + juce::String(selectedCount) + ")"
+                             : "Delete file metadata",
+                         !owner_.indexing_);
             menu.addItem(7, "Save current clip values to library",
                          !owner_.indexing_ && selectedCount == 1 && hasMatchingClip);
             menu.addItem(8, "Recover missing file...",
@@ -736,6 +742,8 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                         }
                     } else if (choice == 5) {
                         self->deleteFileIdsWithConfirmation(std::move(selectedIds));
+                    } else if (choice == 9) {
+                        self->deleteRowMetadata(std::move(selectedIds));
                     } else if (choice == 6) {
                         self->resetRowsToDetected(std::move(selectedIds));
                     } else if (choice == 7) {
@@ -1538,6 +1546,27 @@ void MediaDbBrowserContent::resetRowsToDetected(const std::vector<std::int64_t>&
                                          .withMessage("No media rows were reset.")
                                          .withButton("OK"),
                                      nullptr);
+        return;
+    }
+    ctx.bumpMediaRevision();
+    restartSearch();
+}
+
+void MediaDbBrowserContent::deleteRowMetadata(const std::vector<std::int64_t>& fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    // The session's cached answer for the file goes with it, so BEAT measures again.
+    for (auto fileId : fileIds) {
+        if (auto row = magda::media::getEditableMediaRow(ctx.db(), fileId)) {
+            AudioThumbnailManager::getInstance().invalidateFile(juce::String(row->path.string()));
+        }
+    }
+    if (magda::media::clearMediaRowMetadata(ctx.db(), fileIds) <= 0) {
         return;
     }
     ctx.bumpMediaRevision();

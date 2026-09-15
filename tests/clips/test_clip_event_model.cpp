@@ -573,6 +573,9 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
         const auto* event = clips.getClip(clipId)->primaryEvent();
         REQUIRE(event != nullptr);
         REQUIRE(event->interpBpm == Approx(140.0));
+        // A drop does nothing more; BEAT is granted at once since the tempo is there.
+        REQUIRE(!event->autoTempo);
+        clips.setAutoTempo(clipId, true, 120.0);
         REQUIRE(event->autoTempo);
     }
 
@@ -609,10 +612,12 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
 
         const auto* event = clips.getClip(clipId)->primaryEvent();
         REQUIRE(event != nullptr);
+        REQUIRE(!event->hasInterpretedBpm());
+        REQUIRE(!event->autoTempo);
 
-        // Without this the slot could never leave time mode: setSourceTempo
-        // takes the interpretation but grants no mode, so a detection arriving
-        // at creation would land on a clip nothing ever moves out of time mode.
+        // BEAT asks; the cached answer lands at once and the mode follows.
+        clips.detectMissingTempo({clipId}, 120.0, nullptr);
+        clips.setAutoTempo(clipId, true, 120.0);
         REQUIRE(event->autoTempo);
         REQUIRE(event->interpBpm == Approx(174.0));
     }
@@ -636,6 +641,7 @@ TEST_CASE("ClipManager: setSourceTempo refuses an interpretation no file could h
     SourcePool::getInstance().seedFactsForTesting(path, 5.517, 44100.0);
     AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
     const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    clips.detectMissingTempo({clipId}, 120.0, nullptr);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
 
     clips.setSourceTempo(clipId, 4001.0 * 60.0 / 5.517);
@@ -664,6 +670,7 @@ TEST_CASE("ClipManager: setSourceTempo and setSourceBeatCount each restate the u
     SourcePool::getInstance().seedFactsForTesting(path, 5.486, 44100.0);
     AudioThumbnailManager::getInstance().cacheBPM(path, 175.0);
     const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    clips.detectMissingTempo({clipId}, 120.0, nullptr);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
 
     // 5.486 s at 174 is 15.909 beats, too far from a whole beat to snap.
@@ -697,11 +704,12 @@ TEST_CASE("ClipManager: detectMissingTempo answers at once for clips that need n
         AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
 
         const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
-        REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+        REQUIRE(!clips.getClip(clipId)->primaryEvent()->hasInterpretedBpm());
 
         bool ready = false;
         clips.detectMissingTempo({clipId}, 120.0, [&ready] { ready = true; });
         REQUIRE(ready);
+        REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
     }
 
     SECTION("A clip whose file is missing and has no cached tempo") {
@@ -747,11 +755,17 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
     REQUIRE(event->interpTotalBeats == Approx(6.0));
 
     // Typing a tempo says what the file is; it does not touch the intent. A
-    // session slot asks for beat mode as soon as a tempo exists, so it gets it.
-    REQUIRE(event->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    // drop asks for nothing, so the tempo alone does not grant beat mode.
+    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
+    REQUIRE(!event->autoTempo);
+
+    // BEAT asks for beat mode, and the known tempo grants it immediately.
+    clips.setAutoTempo(clipId, true, 120.0);
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->playbackIntent == PlaybackIntent::Beat);
     REQUIRE(event->autoTempo);
 
-    // A slot the user put in time mode stays there when a tempo is typed.
+    // A slot the user put back in time mode stays there when a tempo is typed.
     clips.setAutoTempo(clipId, false, 120.0);
     clips.setSourceTempo(clipId, 95.0);
     event = clips.getClip(clipId)->primaryEvent();
@@ -897,14 +911,12 @@ TEST_CASE("Beat mode is granted only when the intent asks and a tempo exists",
     }
 
     SECTION("An asking intent waits for a tempo, and the tempo grants it") {
-        for (const auto intent : {PlaybackIntent::Beat, PlaybackIntent::BeatWhenKnown}) {
-            AudioEvent asking;
-            asking.setPlaybackIntent(intent);
-            REQUIRE_FALSE(asking.autoTempo);
+        AudioEvent asking;
+        asking.setPlaybackIntent(PlaybackIntent::Beat);
+        REQUIRE_FALSE(asking.autoTempo);
 
-            REQUIRE(asking.adoptBpm(120.0, Provenance::Analysis));
-            REQUIRE(asking.autoTempo);
-        }
+        REQUIRE(asking.adoptBpm(120.0, Provenance::Analysis));
+        REQUIRE(asking.autoTempo);
     }
 
     SECTION("The BEAT toggle off records Free") {

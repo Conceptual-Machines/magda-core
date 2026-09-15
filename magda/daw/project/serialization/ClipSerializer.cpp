@@ -62,8 +62,6 @@ const char* toString(PlaybackIntent intent) {
     switch (intent) {
         case PlaybackIntent::Beat:
             return "beat";
-        case PlaybackIntent::BeatWhenKnown:
-            return "beatWhenKnown";
         case PlaybackIntent::Free:
             break;
     }
@@ -97,8 +95,8 @@ PlaybackIntent playbackIntentFromString(const juce::String& text, PlaybackIntent
         return PlaybackIntent::Free;
     if (text == "beat")
         return PlaybackIntent::Beat;
-    if (text == "beatWhenKnown")
-        return PlaybackIntent::BeatWhenKnown;
+    if (text == "beatWhenKnown")  // a project saved while waiting for a tempo
+        return fallback;
     return fallback;
 }
 

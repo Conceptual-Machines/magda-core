@@ -59,12 +59,24 @@ ClipId dropSessionClip(const juce::String& path) {
                                                            ClipView::Session, kProjectBpm);
 }
 
-/// A session clip whose tempo was cached before the drop: 175 / 16 beats,
-/// beat mode on, and a region covering the whole file.
-ClipId dropDetectedLoop(const juce::String& path) {
+/// A session clip whose tempo was cached before the drop, then picked up by
+/// pressing BEAT: 175 / 16 beats, beat mode on, region covering the whole file.
+ClipId dropAndPressBeat(const juce::String& path) {
+    auto& clips = ClipManager::getInstance();
     AudioThumbnailManager::getInstance().cacheBPM(path, kFileBpm);
     const auto clipId = dropSessionClip(path);
-    const auto* event = ClipManager::getInstance().getClip(clipId)->primaryEvent();
+
+    const auto* dropped = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(dropped != nullptr);
+    REQUIRE_FALSE(dropped->hasInterpretedBpm());
+    REQUIRE(dropped->loopExtent == RegionExtent::WholeSource);
+    REQUIRE_FALSE(dropped->autoTempo);
+    REQUIRE(dropped->playbackIntent == PlaybackIntent::Free);
+
+    clips.detectMissingTempo({clipId}, kProjectBpm, nullptr);
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+
+    const auto* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event != nullptr);
     REQUIRE(event->autoTempo);
     REQUIRE(event->interpBpm == Approx(kFileBpm));
@@ -88,7 +100,7 @@ TEST_CASE("A dropped loop's region is the whole source until a tempo lands",
     REQUIRE(clips.getClip(clipId)->loopEnabled);
     REQUIRE(event->loopExtent == RegionExtent::WholeSource);
     REQUIRE(event->loopLengthSamples == 0);
-    REQUIRE(event->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
 
     const auto arrangement =
         clips.createAudioClipBeats(1, 0.0, 4.0, file.path(), ClipView::Arrangement, kProjectBpm);
@@ -187,7 +199,10 @@ TEST_CASE("A tempo the user typed survives the BEAT toggle", "[clip][tempo][sequ
 
     clips.setSourceTempo(clipId, kProjectBpm);
 
+    // Pressing BEAT asks for a detection; the user's tempo already owns the
+    // clip, so it is refused.
     AudioThumbnailManager::getInstance().cacheBPM(file.path(), kFileBpm);
+    clips.detectMissingTempo({clipId}, kProjectBpm, nullptr);
     clips.setAutoTempo(clipId, true, kProjectBpm);
 
     const auto* event = clips.getClip(clipId)->primaryEvent();
@@ -202,7 +217,7 @@ TEST_CASE("Correcting the tempo on an explicit region moves its beat view, not i
     auto& clips = ClipManager::getInstance();
     LoopFile file;
 
-    const auto clipId = dropDetectedLoop(file.path());
+    const auto clipId = dropAndPressBeat(file.path());
     auto* event = clips.getClip(clipId)->primaryEvent();
     event->setLoopStartSeconds(0.5);
     event->setLoopLengthSeconds(2.0);
@@ -230,7 +245,7 @@ TEST_CASE("Correcting the tempo on a whole-file loop restates its beat count and
     auto& clips = ClipManager::getInstance();
     LoopFile file;
 
-    const auto clipId = dropDetectedLoop(file.path());
+    const auto clipId = dropAndPressBeat(file.path());
     REQUIRE(clips.getClip(clipId)->primaryEvent()->loopExtent == RegionExtent::Interpretation);
 
     clips.setSourceTempo(clipId, 174.0);
@@ -251,7 +266,7 @@ TEST_CASE("A loop's interpretation, region and cycle survive save and reload",
     auto& clips = ClipManager::getInstance();
     LoopFile file;
 
-    const auto clipId = dropDetectedLoop(file.path());
+    const auto clipId = dropAndPressBeat(file.path());
     const auto* saved = clips.getClip(clipId);
     const auto* savedEvent = saved->primaryEvent();
 
@@ -276,7 +291,7 @@ TEST_CASE("A tempo edit made through a command is undone as one step", "[clip][t
     auto& undo = UndoManager::getInstance();
     LoopFile file;
 
-    const auto clipId = dropDetectedLoop(file.path());
+    const auto clipId = dropAndPressBeat(file.path());
     const auto* event = clips.getClip(clipId)->primaryEvent();
     const auto startSamples = event->loopStartSamples;
     const auto lengthSamples = event->loopLengthSamples;
@@ -322,7 +337,7 @@ TEST_CASE("Pasting an arrangement clip into a slot keeps the user's interpretati
     REQUIRE(event->bpmFrom == Provenance::User);
     REQUIRE(event->interpTotalBeats == Approx(kFileBeats));
     REQUIRE(event->beatsFrom == Provenance::User);
-    REQUIRE(event->autoTempo);
+    REQUIRE(!event->autoTempo);  // the source was in time mode, so is the copy
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
     REQUIRE(event->loopLengthSeconds() == Approx(kFileBeats * 60.0 / kFileBpm).margin(0.001));
 }
@@ -357,7 +372,7 @@ TEST_CASE("Restoring a loop length puts back its samples and its extent",
     auto& clips = ClipManager::getInstance();
     LoopFile file;
 
-    const auto clipId = dropDetectedLoop(file.path());
+    const auto clipId = dropAndPressBeat(file.path());
     const auto* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
     const auto lengthSamples = event->loopLengthSamples;
