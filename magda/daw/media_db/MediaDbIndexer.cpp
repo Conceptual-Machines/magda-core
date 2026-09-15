@@ -678,11 +678,13 @@ void applyZeroShotTagging(sqlite3* db, std::int64_t fileId,
 // by embedMissingAudio() after the scan, so slow CLAP work cannot make file
 // discovery/indexing appear stuck.
 
-void processOneFile(sqlite3* sqlDb, const ScannedFile& f, MediaDbIndexer::Stats& stats,
+void processOneFile(sqlite3* sqlDb, const ScannedFile& scanned, MediaDbIndexer::Stats& stats,
                     MediaDbIndexer::Mode mode, bool wrapWritesInTransaction,
                     const MediaDbIndexer::FailureFn& failure,
                     const MediaDbIndexer::ShouldCancelFn& shouldCancelFn,
                     const MediaDbIndexer::ScanTagOptions& scanTagOptions) {
+    ScannedFile f = scanned;
+    f.path = libraryPath(scanned.path);
     bool transactionOpen = false;
     try {
         if (shouldCancel(shouldCancelFn)) {
@@ -1180,7 +1182,7 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedMissingAudio(
 
     sqlite3* sqlDb = db_.handle();
     const std::string modelId = encoder_->modelId();
-    const auto files = pendingEmbeddings(sqlDb, modelId, root);
+    const auto files = pendingEmbeddings(sqlDb, modelId, libraryPath(root));
     const int total = static_cast<int>(files.size());
 
     // Zero-shot tagger needs the text encoder + tokenizer (the latter

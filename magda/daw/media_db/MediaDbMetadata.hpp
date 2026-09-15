@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+struct sqlite3;
+
 namespace magda::media {
 
 class MediaDatabase;
@@ -120,6 +122,11 @@ int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds)
 // media_file.path UNIQUE, so this handles symlink/alias/case variants. Files
 // on disk are not deleted. Returns removed media_file rows.
 int removeDuplicateFilePathRows(MediaDatabase& db);
+
+// Rewrite every stored path to its libraryPath, merging rows that turn out to be one file
+// onto the keeper removeDuplicateFilePathRows would pick. Returns rows removed or rewritten;
+// throws MediaDatabaseError on failure.
+int canonicalizeLibraryPaths(sqlite3* db);
 
 [[nodiscard]] std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
     MediaDatabase& db, const std::filesystem::path& path);
