@@ -551,7 +551,7 @@ WaveformEditorContent::WaveformEditorContent() {
     // Warp marker callbacks — route through UndoManager for undo support
     gridComponent_->onWarpMarkerAdd = [this](double sourceTime, double warpTime) {
         auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<AddWarpMarkerCommand>(
                 bridge, editingClipId_, sourceTime, warpTime));
             refreshWarpMarkers();
@@ -560,7 +560,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridComponent_->onWarpMarkerMove = [this](int index, double newWarpTime) {
         auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<MoveWarpMarkerCommand>(
                 bridge, editingClipId_, index, newWarpTime));
             refreshWarpMarkers();
@@ -569,7 +569,7 @@ WaveformEditorContent::WaveformEditorContent() {
 
     gridComponent_->onWarpMarkerRemove = [this](int index) {
         auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
             refreshWarpMarkers();
@@ -580,7 +580,17 @@ WaveformEditorContent::WaveformEditorContent() {
     gridComponent_->onWarpMarkerReposition = [this](int index, double newSourceTime,
                                                     double newWarpTime) {
         auto* bridge = getBridge();
-        if (bridge) {
+        if (editingClipId_ != magda::INVALID_CLIP_ID) {
+            if (!bridge) {
+                const auto markers = magda::getClipWarpMarkers(editingClipId_);
+                // Keep the dragged marker's index stable and never remove it
+                // before an invalid replacement (including a boundary) is rejected.
+                if (index <= 0 || index + 1 >= static_cast<int>(markers.size()) ||
+                    !std::isfinite(newSourceTime) || !std::isfinite(newWarpTime) ||
+                    newSourceTime <= markers[static_cast<size_t>(index - 1)].sourceTime ||
+                    newSourceTime >= markers[static_cast<size_t>(index + 1)].sourceTime)
+                    return;
+            }
             CompoundOperationScope scope("Reposition Warp Marker");
             UndoManager::getInstance().executeCommand(
                 std::make_unique<RemoveWarpMarkerCommand>(bridge, editingClipId_, index));
@@ -962,6 +972,7 @@ void WaveformEditorContent::clipPropertyChanged(magda::ClipId clipId) {
                 }
             }
             wasWarpEnabled_ = warpEnabled;
+            refreshWarpMarkers();
         }
 
         // Check if cached transients were invalidated (e.g. sensitivity changed)
@@ -1185,16 +1196,7 @@ void WaveformEditorContent::setClip(magda::ClipId clipId) {
             gridComponent_->setWarpMode(warpEnabled);
             wasWarpEnabled_ = warpEnabled;
 
-            if (warpEnabled) {
-                auto* bridge = getBridge();
-                if (bridge) {
-                    // Read existing markers from TE — don't call enableWarp()
-                    // which would destroy user-placed markers and re-populate
-                    // from transients.
-                    auto markers = bridge->getWarpMarkers(editingClipId_);
-                    gridComponent_->setWarpMarkers(markers);
-                }
-            }
+            refreshWarpMarkers();
         }
 
         // Check for cached transients or request async detection.
@@ -1478,17 +1480,15 @@ void WaveformEditorContent::zoomToTimeRange(double startTime, double endTime) {
 // ============================================================================
 
 void WaveformEditorContent::refreshWarpMarkers() {
-    auto* bridge = getBridge();
-    if (bridge && editingClipId_ != magda::INVALID_CLIP_ID) {
-        auto markers = bridge->getWarpMarkers(editingClipId_);
+    if (editingClipId_ == magda::INVALID_CLIP_ID)
+        return;
+    if (auto* bridge = getBridge()) {
+        gridComponent_->setWarpMarkers(bridge->getWarpMarkers(editingClipId_));
+    } else {
+        std::vector<magda::WarpMarkerInfo> markers;
+        for (const auto& marker : magda::getClipWarpMarkers(editingClipId_))
+            markers.push_back({marker.sourceTime, marker.warpTime});
         gridComponent_->setWarpMarkers(markers);
-
-        // Warp markers live in TE's WarpTimeManager, not in ClipInfo, so editing
-        // them doesn't fire a clip-property change. The arrangement ClipComponent
-        // draws the warped waveform live (re-fetching markers each paint), so it
-        // just needs a repaint nudge -- otherwise the arrangement preview keeps
-        // showing the pre-edit warp until some other property change repaints it.
-        magda::ClipManager::getInstance().forceNotifyClipPropertyChanged(editingClipId_);
     }
 }
 

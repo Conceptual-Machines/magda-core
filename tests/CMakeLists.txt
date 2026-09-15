@@ -100,6 +100,7 @@ set(TEST_SOURCES
     clips/test_waveform_editor_absolute_mode.cpp
     clips/test_clip_batch_edit.cpp
     clips/test_clip_commands.cpp
+    clips/test_warp_marker_commands.cpp
     clips/test_clip_crossfades.cpp
     clips/test_clip_occlusion.cpp
     # Ghost clips / link groups (issue #12)
