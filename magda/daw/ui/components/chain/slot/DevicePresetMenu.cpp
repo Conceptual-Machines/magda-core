@@ -363,10 +363,7 @@ bool hasPluginPresetsAvailable(const magda::DeviceInfo& device, bool isInternalD
     if (isInternalDevice || device.loadState != magda::DeviceLoadState::Loaded)
         return false;
 
-    // A plugin can expose factory programs without any preset files, and an
-    // empty user folder must still allow Save Preset As. Resolve capabilities
-    // when opening the menu, not from layout (which must not drain engine work).
-    return true;
+    return !magda::PluginPresetScanner::getInstance().getPresets(device).empty();
 }
 
 struct PluginDevicePresetPresenter::State {

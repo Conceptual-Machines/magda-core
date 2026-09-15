@@ -308,7 +308,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
     void refreshPresetsButton();             // re-paint label + recompute visibility
-    bool hasPluginPresetsAvailable() const;  // loaded external plugin; menu resolves capabilities
+    bool hasPluginPresetsAvailable() const;  // loaded external plugin with scanned presets
     void showPluginPresetMenu();
     void loadPluginPresetFile(const juce::File& file);
     void showSavePluginPresetDialog();
