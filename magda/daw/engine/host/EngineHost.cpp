@@ -1730,7 +1730,10 @@ bool EngineHost::toggleDeviceEditor(const ChainNodePath& devicePath) {
 }
 
 bool EngineHost::isDeviceEditorOpen(const ChainNodePath& devicePath) {
-    return impl_->deviceEditor(devicePath, adapter::EditorAction::Query);
+    // UI refreshes must not queue control work or drain pending operations.
+    // Like parameter formatting, this is a message-thread read of the live instance.
+    auto* external = impl_->externalDeviceAt(devicePath);
+    return external != nullptr && external->isEditorOpen();
 }
 
 juce::String EngineHost::formatDeviceParameter(const ChainNodePath& devicePath, int paramIndex,
