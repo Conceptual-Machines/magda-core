@@ -1,10 +1,12 @@
 #include "clip/ClipAudioSource.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <optional>
 #include <tuple>
 #include <vector>
 
+#include "clip/EventPlacement.hpp"
 #include "clip/SessionPlayback.hpp"
 
 namespace magda::engine {
@@ -28,6 +30,7 @@ ClipAudioSource::ClipAudioSource(TrackId trackId, ClipSnapshotFeed& clips, ClipS
     : trackId_(trackId), clips_(clips), streams_(streams), handles_(&handles), section_(section) {}
 
 void ClipAudioSource::prepare(const RenderContext& context) {
+    sampleRate_ = context.sampleRate;
     // Longer than a block, because a clip playing faster than its file consumes
     // more reading than it renders and both live in here (ClipStretcher.hpp).
     scratch_.setSize(context.numChannels, stretchScratchSamples(context.maxBlockSize), false, true,
@@ -200,6 +203,48 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
         handOver_.advance(out);
 }
 
+void ClipAudioSource::prepareForPlay(const TrackClipPlayback& track, const BlockInfo& block,
+                                     const Streams& streams) {
+    const auto cue = [&](const std::vector<AudioClipPlayback>& clips, bool session) {
+        for (const auto& clip : clips) {
+            for (const auto& event : clip.events) {
+                const auto* entry =
+                    std::find_if(streams.first, streams.last, [&](const auto& value) {
+                        return value.clipId == clip.clipId && value.eventId == event.eventId;
+                    });
+                if (entry == streams.last)
+                    continue;
+
+                auto at = session ? event.span.seconds.start
+                                  : std::max({block.seconds.start, clip.span.seconds.start,
+                                              event.span.seconds.start});
+                if (entry->stretcher != nullptr) {
+                    // Match the voice's fixed cell grid, including a stopped
+                    // cursor inside a cell. Cueing the cursor itself would
+                    // still force a backwards seek on the first callback.
+                    const auto start = std::llround(event.span.seconds.start * sampleRate_);
+                    const auto sample = std::llround(at * sampleRate_);
+                    const auto cell = static_cast<std::int64_t>(
+                        std::floor(static_cast<double>(sample - start) / kStretchCellSamples));
+                    at = static_cast<double>(start + cell * kStretchCellSamples) / sampleRate_;
+                }
+                const auto beat = session ? event.span.beats.start : block.beatAtTime(at);
+                const auto position = readingPositionAt(clip, event, at, beat, sampleRate_);
+                const auto ahead =
+                    entry->stretcher != nullptr ? entry->stretcher->readAheadSamples() : 0;
+                entry->stream->prepareRead(static_cast<std::int64_t>(std::llround(position)) +
+                                           ahead - entry->preRollSamples);
+            }
+        }
+    };
+    if (section_ == Section::Session) {
+        for (const auto& slot : track.session)
+            cue(slot.audio, true);
+    } else {
+        cue(track.audio, false);
+    }
+}
+
 void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
                                      const ClipSnapshot* snapshot, const TrackClipPlayback* track) {
     out.clear();
@@ -226,7 +271,15 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
     auto lane = block;
     lane.numSamples = std::min(block.numSamples, static_cast<int>(out.getNumSamples()));
 
-    if (!block.playing || lane.numSamples <= 0)
+    if (!block.playing) {
+        // Stopped callbacks still run. Rewind and refill here, while there is
+        // time for disk I/O, instead of priming the next Play with silence.
+        if (track != nullptr)
+            prepareForPlay(*track, block, table);
+        return silence();
+    }
+
+    if (lane.numSamples <= 0)
         return silence();
 
     if (snapshot == nullptr)

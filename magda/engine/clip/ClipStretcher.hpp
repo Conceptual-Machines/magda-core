@@ -37,8 +37,10 @@
  * and no file handle.
  *
  * Latency is answered here rather than reported upwards: every
- * implementation asks for @ref preRollSamples of material from before the
- * first sample heard, the pool cues the stream that far back, and a
+ * implementation asks for @ref preRollSamples ending at its initial reading
+ * cursor. Signalsmith uses history before the audible start; SoundTouch reads
+ * ahead from that start to fill its output pipe. The pool cues the stream at
+ * audible position + readAheadSamples - preRollSamples, and a
  * voice's first read is one contiguous read starting with the priming
  * samples -- so @ref process comes out aligned with an unstretched voice
  * on the same track, and a ClipAudio op keeps reporting no latency at all.
@@ -95,8 +97,8 @@ class ClipStretcher {
     /**
      * @brief How far ahead of the nominal position the reading is consumed.
      *
-     * Zero for a stretcher, which is handed exactly the samples an output
-     * block spans. Non-zero for the resampling path, whose curve reaches
+     * SoundTouch reads ahead to cover its processing latency. The resampling
+     * path also reads ahead: its curve reaches
      * past the sample it lands on: a sequential stream can't be read twice,
      * so the read runs a fixed few samples ahead and the curve looks back
      * into what it kept. A constant offset rather than a cursor, so
@@ -107,11 +109,11 @@ class ClipStretcher {
     }
 
     /**
-     * @brief Material before the first sample heard that priming needs.
+     * @brief Material before the initial reading cursor that priming needs.
      *
      * At @p rate, since what a stretcher holds back depends on how fast
-     * it's being asked to run. The pool cues a stream this far behind where
-     * the event starts, so the samples exist by the time a voice asks.
+     * it's being asked to run. The pool includes readAheadSamples in that
+     * cursor, so the material may precede or follow the audible start.
      */
     virtual int preRollSamples(double rate) const = 0;
 
@@ -132,7 +134,8 @@ class ClipStretcher {
      * rate the cue used, making the first read a seek instead of a
      * continuation.
      *
-     * Reads through @p stream and leaves it pointed exactly at @p until,
+     * @p until includes readAheadSamples. Reads through @p stream and leaves
+     * it pointed exactly at @p until,
      * so the next block continues the read rather than seeking. The
      * pre-roll buffer is also owned by the implementation rather than
      * passed in, since how much material priming wants runs to tens of
@@ -149,15 +152,14 @@ class ClipStretcher {
     /**
      * @brief Turn @p input into exactly @p output.
      *
-     * On the audio thread. The ratio is whatever the two lengths say, which
-     * makes a tempo curve and a speed ramp free: a block consuming more
-     * reading than the last simply passes more in.
+     * On the audio thread. Input lengths follow the rounded source positions;
+     * @p step carries the continuous ratio before that rounding. SoundTouch
+     * uses it for its tempo setting; Signalsmith consumes the supplied lengths.
      *
      * @p offset is where output sample zero sits relative to input sample
      * zero, in input samples; @p step is the spacing between consecutive
-     * output samples in them. Both matter only to the resampling path,
-     * which lands between samples -- a stretcher is aligned by priming and
-     * reads the ratio off the lengths.
+     * output samples in them. The resampling path uses both to interpolate;
+     * stretchers are aligned by priming and ignore @p offset.
      */
     virtual void process(juce::dsp::AudioBlock<const float> input, double offset, double step,
                          juce::dsp::AudioBlock<float> output) = 0;

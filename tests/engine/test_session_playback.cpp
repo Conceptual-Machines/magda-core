@@ -18,8 +18,10 @@
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
+#include "clip/ClipStretcher.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/SessionPlayback.hpp"
+#include "core/TimeStretchModes.hpp"
 #include "core/TrackInfo.hpp"
 #include "exec/RuntimeStateStore.hpp"
 #include "io/SourceReaders.hpp"
@@ -97,6 +99,36 @@ class ConstantReader final : public magda::engine::AudioFileReader {
                 destination.setSample(channel, destinationOffset + sample, 1.0f);
         return numSamples;
     }
+};
+
+/// A short opening pulse followed by a quieter body. Distinct stereo levels
+/// reveal an onset shifted, discarded, or copied to the wrong channel.
+class OnsetReader final : public magda::engine::AudioFileReader {
+  public:
+    explicit OnsetReader(int pulseSamples) : pulseSamples_(pulseSamples) {}
+    std::int64_t lengthInSamples() const override {
+        return 10000000;
+    }
+    double sampleRate() const override {
+        return kSampleRate;
+    }
+    int numChannels() const override {
+        return 2;
+    }
+
+    int read(juce::AudioBuffer<float>& destination, int offset, std::int64_t start,
+             int count) override {
+        for (int channel = 0; channel < destination.getNumChannels(); ++channel)
+            for (int sample = 0; sample < count; ++sample) {
+                const auto at = start + sample;
+                const auto level = at < 0 ? 0.0f : (at < pulseSamples_ ? 0.8f : 0.25f);
+                destination.setSample(channel, offset + sample, level / (channel + 1));
+            }
+        return count;
+    }
+
+  private:
+    int pulseSamples_;
 };
 
 /// Every sample the same known level, so which section reached the output is
@@ -340,6 +372,35 @@ struct AudioRig {
     ClipStreamTable streamTable;
     juce::AudioBuffer<float> output;
 };
+
+void giveStretchedSlot(AudioRig& rig, int mode, double ratio, bool loop,
+                       std::unique_ptr<magda::engine::AudioFileReader> reader) {
+    SessionSlotPlayback slot;
+    slot.sceneIndex = kScene;
+    slot.lengthBeats = 16.0;
+    slot.audio.push_back(clipOver(1, beats(0.0, slot.lengthBeats)));
+    auto& clip = slot.audio.front();
+    auto& event = clip.events.front();
+    event.timeStretchMode = mode;
+    event.autoTempo = true;
+    event.interpBpm = 120.0 / ratio;
+    event.loopEnabled = loop;
+    event.loopLengthSamples = static_cast<std::int64_t>(std::llround(24000 * ratio));
+    auto stream = std::make_shared<PrefetchStream>(
+        magda::engine::readThrough(std::move(reader),
+                                   magda::engine::sourceReadFor(event, kSampleRate)),
+        context(), magda::engine::PrefetchSettings{8192, 8});
+    const auto setup = magda::engine::stretchSetupFor(clip, event, context());
+    std::shared_ptr<magda::engine::ClipStretcher> stretcher = magda::engine::makeStretcher(setup);
+    REQUIRE(stretcher != nullptr);
+    const auto preRoll = stretcher->preRollSamples(setup.nominalRate);
+    // The same cue calculation as ClipVoicePool, with the file starting at zero.
+    stream->startAt(stretcher->readAheadSamples() - preRoll);
+    rig.streamTable.entries.push_back(
+        {kTrack, 1, event.eventId, stream, std::move(stretcher), preRoll});
+    rig.lane.session.push_back(std::move(slot));
+    rig.publish();
+}
 
 // --- MIDI --------------------------------------------------------------------
 
@@ -685,6 +746,62 @@ TEST_CASE("A slot nobody launched renders silence", "[engine][clip][session]") {
     CHECK(rig.peak() == 0.0f);
     CHECK(rig.handle.playState() == LaunchHandle::PlayState::stopped);
     CHECK(rig.source.starvedVoices() == 0);
+}
+
+TEST_CASE("SoundTouch has output ready from the first sample of a session loop",
+          "[engine][clip][session][stretch][2683]") {
+    for (const auto mode : {magda::time_stretch_mode::kSoundTouchNormal,
+                            magda::time_stretch_mode::kSoundTouchBetter}) {
+        for (const auto ratio : {0.8, 1.2, 1.37}) {
+            for (const auto blockSize : {64, 512}) {
+                AudioRig rig;
+                giveStretchedSlot(rig, mode, ratio, true, std::make_unique<ConstantReader>());
+                rig.handle.play(std::nullopt);
+                float worstError = 0.0f;
+                // Four source passes, including the first callback. This exercises
+                // source looping below the stream, not a launcher re-trigger/seek.
+                for (int start = 0; start < 96000; start += blockSize) {
+                    const auto count = std::min(blockSize, 96000 - start);
+                    rig.renderBlock(smallBlockAt(start, count, start != 0));
+                    for (int channel = 0; channel < 2; ++channel)
+                        for (int i = 0; i < count; ++i)
+                            worstError = std::max(worstError, std::abs(rig.at(i, channel) - 1.0f));
+                }
+                INFO("mode=" << mode << " ratio=" << ratio << " blockSize=" << blockSize);
+                CHECK(rig.streamTable.entries.front().stream->underruns() == 0);
+                CHECK(worstError < 0.001f);
+            }
+        }
+    }
+}
+
+TEST_CASE("SoundTouch preserves the opening pulse of a launched file",
+          "[engine][clip][session][stretch][2683]") {
+    for (const auto mode : {magda::time_stretch_mode::kSoundTouchNormal,
+                            magda::time_stretch_mode::kSoundTouchBetter}) {
+        for (const auto ratio : {0.8, 1.2, 1.37}) {
+            for (const auto pulseSamples : {1, 64}) {
+                AudioRig rig;
+                giveStretchedSlot(rig, mode, ratio, false,
+                                  std::make_unique<OnsetReader>(pulseSamples));
+                // A launch inside a callback also cuts the first stretch cell.
+                rig.handle.play(128.0 / kSampleRate / kSecondsPerBeat);
+                rig.renderBlock(smallBlockAt(0, 512, false));
+                INFO("mode=" << mode << " ratio=" << ratio << " pulseSamples=" << pulseSamples);
+                CHECK(rig.streamTable.entries.front().stream->underruns() == 0);
+                for (int channel = 0; channel < 2; ++channel) {
+                    CHECK(rig.at(127, channel) == 0.0f);
+                    // Allow the filter's small pass-band gain error. The pulse
+                    // must start on the launch sample and retain its whole attack.
+                    CHECK(rig.at(128, channel) == Approx(0.8f / (channel + 1)).margin(0.001));
+                    CHECK(rig.at(128 + pulseSamples - 1, channel) ==
+                          Approx(0.8f / (channel + 1)).margin(0.001));
+                    CHECK(rig.at(128 + pulseSamples + 64, channel) ==
+                          Approx(0.25f / (channel + 1)).margin(0.001));
+                }
+            }
+        }
+    }
 }
 
 TEST_CASE("A launched slot plays its material from the origin", "[engine][clip][session]") {

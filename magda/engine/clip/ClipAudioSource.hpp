@@ -194,6 +194,9 @@ class ClipAudioSource final : public EngineAudioSource {
     void renderMaterial(const BlockInfo& block, juce::dsp::AudioBlock<float> out,
                         const ClipSnapshot* snapshot, const TrackClipPlayback* track);
 
+    void prepareForPlay(const TrackClipPlayback& track, const BlockInfo& block,
+                        const Streams& streams);
+
     /// Drop what the arrangement rendered for as long as the session holds the
     /// track, and de-click both edges of the hand-over (#2302). @p resolved is
     /// the block's own answer, worked out before anything rendered
@@ -235,6 +238,7 @@ class ClipAudioSource final : public EngineAudioSource {
     /// largest block the plan was prepared for, plus the most reading a block
     /// that long can consume (stretchScratchSamples).
     juce::AudioBuffer<float> scratch_;
+    double sampleRate_ = 44100.0;
 
     std::atomic<int> starved_{0};
     std::atomic<int> staleSnapshots_{0};
