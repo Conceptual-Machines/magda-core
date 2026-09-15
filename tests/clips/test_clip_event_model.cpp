@@ -578,6 +578,112 @@ TEST_CASE("A session clip enters beat mode only when a tempo is known",
     AudioThumbnailManager::getInstance().clearCache();
 }
 
+// A beat count typed into the wrong field implied 43,000 BPM, and the engine
+// played a 20 ms sliver of the loop: silence (#2674).
+TEST_CASE("ClipManager: applyAudioClipBeats refuses an interpretation no file could have",
+          "[clip][event][interpretation]") {
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    juce::TemporaryFile temp(".wav");
+    temp.getFile().replaceWithText("not audio");
+    const auto path = temp.getFile().getFullPathName();
+    SourcePool::getInstance().seedFactsForTesting(path, 5.517, 44100.0);
+    AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+
+    ClipManager::AudioClipBeatsUpdate u;
+    u.interpretationTotalBeats = 4001.0;
+    u.interpretationBpm = 4001.0 * 60.0 / 5.517;
+    clips.applyAudioClipBeats(clipId, u, 120.0);
+
+    const auto* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == Approx(174.0));
+    REQUIRE(event->interpTotalBeats == Approx(16.0).margin(0.01));
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+}
+
+// A typed BPM keeps the beat count and a typed beat count keeps the BPM: the
+// two are facts the user states, not views of the file length (#2674).
+TEST_CASE("ClipManager: applyAudioClipBeats leaves the field it was not given alone",
+          "[clip][event][interpretation]") {
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    juce::TemporaryFile temp(".wav");
+    temp.getFile().replaceWithText("not audio");
+    const auto path = temp.getFile().getFullPathName();
+    SourcePool::getInstance().seedFactsForTesting(path, 5.486, 44100.0);
+    AudioThumbnailManager::getInstance().cacheBPM(path, 175.0);
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
+
+    ClipManager::AudioClipBeatsUpdate bpmOnly;
+    bpmOnly.interpretationBpm = 174.0;
+    clips.applyAudioClipBeats(clipId, bpmOnly, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
+
+    ClipManager::AudioClipBeatsUpdate beatsOnly;
+    beatsOnly.interpretationTotalBeats = 32.0;
+    clips.applyAudioClipBeats(clipId, beatsOnly, 120.0);
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(32.0));
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+}
+
+// The path the BEAT toggle takes before it can be granted (#2674).
+TEST_CASE("ClipManager: detectMissingTempo answers at once for clips that need nothing",
+          "[clip][event][interpretation][session]") {
+    EventModelFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+
+    SECTION("A clip whose tempo was cached before creation") {
+        juce::TemporaryFile temp(".wav");
+        temp.getFile().replaceWithText("not audio");
+        const auto path = temp.getFile().getFullPathName();
+
+        SourcePool::getInstance().seedFactsForTesting(path, 8.0, 44100.0);
+        AudioThumbnailManager::getInstance().cacheBPM(path, 174.0);
+
+        const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
+        REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+
+        bool ready = false;
+        clips.detectMissingTempo({clipId}, 120.0, [&ready] { ready = true; });
+        REQUIRE(ready);
+    }
+
+    SECTION("A clip whose file is missing and has no cached tempo") {
+        SourcePool::getInstance().seedFactsForTesting("/tmp/absent.wav", 8.0, 44100.0);
+
+        const auto clipId =
+            clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/absent.wav", ClipView::Session, 120.0);
+
+        bool ready = false;
+        clips.detectMissingTempo({clipId}, 120.0, [&ready] { ready = true; });
+        REQUIRE(ready);
+
+        const auto* event = clips.getClip(clipId)->primaryEvent();
+        REQUIRE(event != nullptr);
+        REQUIRE(!event->hasInterpretedBpm());
+    }
+
+    clips.clearAllClips();
+    AudioThumbnailManager::getInstance().clearCache();
+}
+
 TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
           "[clip][event][interpretation][session]") {
     // Detection cannot answer for a pad, a vocal take or a one-shot, and a user

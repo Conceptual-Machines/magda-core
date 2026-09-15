@@ -256,6 +256,14 @@ void ClipInspector::resized() {
             }
             if (clipStretchValue_ && clipStretchValue_->isVisible()) {
                 clipStretchValue_->setBounds(right.reduced(0, 1));
+                // The beats field shows in time mode too (#2676); it takes the
+                // next row rather than the stretch field's cell.
+                if (clipBeatsLengthValue_->isVisible()) {
+                    addSpace(4);
+                    auto row3 = addRow(22);
+                    row3.removeFromLeft(halfWidth + colGap);
+                    right = row3;
+                }
             }
             if (clipBeatsLengthValue_->isVisible()) {
                 auto beatsArea = right.reduced(0, 1);

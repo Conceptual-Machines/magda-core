@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -430,6 +431,13 @@ class ClipManager {
 
     /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
+    /** @brief Detect a tempo for every clip in @p clipIds whose interpretation
+     *  is unset or still the project default, then call @p onReady on the
+     *  message thread. Answers land in AudioThumbnailManager's cache, which is
+     *  where setAutoTempo seeds from; a clip that already has one costs nothing.
+     *  onReady may fire before this returns when nothing needs detecting. */
+    void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
+                            std::function<void()> onReady);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);

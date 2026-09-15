@@ -470,10 +470,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
-    // Tracktion loopInfo is authoritative when it carries real file metadata,
-    // but it can also report project-default values for freshly inserted clips.
-    // Run audio analysis as a fallback and let it replace only unset/defaulted
-    // source interpretation values. Session-only.
+    // Ask for a tempo detection as a fallback; it may answer later and only
+    // fills unset/defaulted source interpretation values. Session-only.
     if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
         juce::File(audioFilePath).existsAsFile()) {
         ClipId cid = clip.id;
@@ -485,8 +483,16 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             auto& mgr = ClipManager::getInstance();
             auto* c = mgr.getClip(cid);
             auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
-            if (ev == nullptr || !interpretationBpmLooksDefaulted(*c, *ev, creationProjectBPM))
+            if (ev == nullptr || !interpretationBpmLooksDefaulted(*c, *ev, creationProjectBPM)) {
+                juce::Logger::writeToLog(
+                    "[tempo] clip " + juce::String(cid) + ": detected " +
+                    juce::String(detectedBPM, 3) + " not applied, " +
+                    (ev == nullptr ? juce::String("clip is gone")
+                                   : "interpretation already " + juce::String(ev->interpBpm, 3)));
                 return;
+            }
+            juce::Logger::writeToLog("[tempo] clip " + juce::String(cid) + ": detected " +
+                                     juce::String(detectedBPM, 3) + " applied, beat mode on");
 
             // The tempo arriving is what beat mode was waiting for. Without
             // this a slot that came up in time mode for want of one could never
@@ -519,11 +525,7 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
             mgr.applyAudioClipBeats(cid, u, live);
         };
 
-        auto& thumbs = AudioThumbnailManager::getInstance();
-        const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
-        if (cachedBPM > 0.0) {
-            applyDetectedBPM(cachedBPM);
-        }
+        AudioThumbnailManager::getInstance().requestBPMDetection(audioFilePath, applyDetectedBPM);
     }
 
     return clip.id;
@@ -1710,6 +1712,12 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
                 seedSourceMetadataFromCachedDetection(*clip, bpm);
 
             ClipOperations::setAutoTempo(*clip, enabled, bpm);
+            if (const auto* ev = clip->primaryEvent())
+                juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": beat mode " +
+                                         (enabled ? "on" : "off") + " asked, now " +
+                                         (ev->autoTempo ? "on" : "off") + ", interpretation " +
+                                         juce::String(ev->interpBpm, 3) + " BPM / " +
+                                         juce::String(ev->interpTotalBeats, 3) + " beats");
 
             // Ensure time-stretching is enabled when beat mode is on
             if (auto* event = clip->primaryEvent();
@@ -1727,6 +1735,35 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             refreshDerivedSeconds(clipId, bpm);
             notifyClipPropertyChanged(clipId);
         }
+    }
+}
+
+void ClipManager::detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
+                                     std::function<void()> onReady) {
+    std::vector<juce::String> files;
+    for (auto id : clipIds) {
+        const auto* clip = getClip(id);
+        const auto* event = primaryEventOf(clip);
+        if (event == nullptr || !interpretationBpmLooksDefaulted(*clip, *event, projectBPM))
+            continue;
+        if (auto path = event->sourceFilePath(); path.isNotEmpty())
+            files.push_back(path);
+    }
+    juce::Logger::writeToLog("[tempo] " + juce::String(clipIds.size()) + " clip(s) asked, " +
+                             juce::String(files.size()) + " need a tempo");
+    if (files.empty()) {
+        if (onReady)
+            onReady();
+        return;
+    }
+    // Counted before any request goes out: a cached answer calls back at once.
+    auto remaining = std::make_shared<size_t>(files.size());
+    auto ready = std::make_shared<std::function<void()>>(std::move(onReady));
+    for (const auto& file : files) {
+        AudioThumbnailManager::getInstance().requestBPMDetection(file, [remaining, ready](double) {
+            if (--*remaining == 0 && *ready)
+                (*ready)();
+        });
     }
 }
 
@@ -2005,6 +2042,24 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     auto* event = primaryEventOf(clip);
     if (event == nullptr)
         return;
+    // A tempo no file has is refused whole: a beat count typed into the wrong
+    // field implied 43,000 BPM and the engine played a 20 ms sliver of the loop.
+    if (update.interpretationBpm && !isValidBpm(*update.interpretationBpm)) {
+        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": refused " +
+                                 juce::String(*update.interpretationBpm, 3) +
+                                 " BPM (outside 20-999)");
+        return;
+    }
+    if (update.interpretationBpm || update.interpretationTotalBeats) {
+        juce::Logger::writeToLog(
+            "[tempo] clip " + juce::String(clipId) + ": interpretation " +
+            (update.interpretationBpm ? juce::String(*update.interpretationBpm, 3) + " BPM"
+                                      : juce::String("(BPM kept)")) +
+            ", " +
+            (update.interpretationTotalBeats ? juce::String(*update.interpretationTotalBeats, 3)
+                                             : juce::String("(beats kept)")) +
+            " beats, beat mode " + (event->autoTempo ? "on" : "off"));
+    }
 
     // (1) Interpretation. BPM and total beats describe the same fixed-duration
     // source, so inspector edits may update both together.

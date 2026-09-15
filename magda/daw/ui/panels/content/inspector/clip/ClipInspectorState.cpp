@@ -53,7 +53,9 @@ void ClipInspector::updateAudioSourceValueDisplays(const magda::ClipInfo& clip) 
     const auto display = magda::computeAudioClipSourceDisplay(
         clip, projectBPM, getAudioFileDurationForInspector(clip), cachedBpm);
 
-    if (display.bpm > 0.0) {
+    if (clipBpmValue_.isBeingEdited()) {
+        // Never under the user's cursor: setText would close the editor.
+    } else if (display.bpm > 0.0) {
         clipBpmValue_.setText(juce::String(display.bpm, 1), juce::dontSendNotification);
     } else {
         clipBpmValue_.setText(juce::String::fromUTF8("\xe2\x80\x94"), juce::dontSendNotification);

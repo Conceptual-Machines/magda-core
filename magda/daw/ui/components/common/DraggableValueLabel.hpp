@@ -290,6 +290,10 @@ class DraggableValueLabel : public juce::Component,
     bool isDragging() const {
         return isDragging_;
     }
+    /// True while a typed value is being entered; a refresh must not replace it.
+    bool isEditing() const {
+        return valueControl_.isEditing();
+    }
 
     // Mark this label as being edited indirectly because another label in a
     // multi-selection group is being dragged. Paints the same drag-active

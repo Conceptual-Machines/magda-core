@@ -2,6 +2,8 @@
 
 #include "WaveformPeakCache.hpp"
 #include "core/BlockMath.hpp"
+#include "media_db/AudioFeatures.hpp"
+#include "media_db/BeatTracker.hpp"
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
@@ -19,6 +21,8 @@ AudioThumbnailManager::AudioThumbnailManager() {
     // Thumbnails are also cached to disk in a temp directory
     thumbnailCache_ = std::make_unique<juce::AudioThumbnailCache>(100);
 }
+
+AudioThumbnailManager::~AudioThumbnailManager() = default;
 
 AudioThumbnailManager& AudioThumbnailManager::getInstance() {
     static AudioThumbnailManager instance;
@@ -166,28 +170,6 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
     }
 }
 
-namespace {
-// BPM DSP fallback is disabled. Tracktion/SoundTouch BPMDetect is crashing on
-// some files inside its worker thread; return unknown BPM instead of risking the app.
-double runBpmDetection(const juce::String& filePath) {
-    juce::ignoreUnused(filePath);
-    constexpr double result = 0.0;
-    return result;
-}
-}  // namespace
-
-double AudioThumbnailManager::detectBPM(const juce::String& filePath) {
-    // Check cache first
-    auto it = bpmCache_.find(filePath);
-    if (it != bpmCache_.end()) {
-        return it->second;
-    }
-
-    double result = runBpmDetection(filePath);
-    bpmCache_[filePath] = result;
-    return result;
-}
-
 double AudioThumbnailManager::getCachedBPM(const juce::String& filePath) const {
     auto it = bpmCache_.find(filePath);
     return it != bpmCache_.end() ? it->second : 0.0;
@@ -198,23 +180,84 @@ void AudioThumbnailManager::cacheBPM(const juce::String& filePath, double bpm) {
         bpmCache_[filePath] = bpm;
 }
 
+double AudioThumbnailManager::measureTempoOnBackgroundThread(const juce::String& filePath) {
+    if (!beatTracker_ && !beatTrackerFailed_ && media::BeatTracker::isAvailable()) {
+        try {
+            beatTracker_ =
+                std::make_unique<media::BeatTracker>(media::BeatTracker::defaultModelPath());
+        } catch (const std::exception& e) {
+            beatTrackerFailed_ = true;
+            juce::Logger::writeToLog(juce::String("[AudioThumbnailManager] beat model: ") +
+                                     e.what());
+        }
+    }
+    try {
+        return media::detectTempo(std::filesystem::path(filePath.toStdString()), beatTracker_.get())
+            .value_or(0.0);
+    } catch (const std::exception& e) {
+        juce::Logger::writeToLog(juce::String("[AudioThumbnailManager] tempo of ") + filePath +
+                                 ": " + e.what());
+        return 0.0;
+    }
+}
+
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
-                                                const std::function<void(double)>& onComplete) {
+                                                std::function<void(double)> onComplete) {
     // Caches are message-thread only (no locks).
     JUCE_ASSERT_MESSAGE_THREAD;
 
-    // Cache hit — fire callback synchronously and return.
-    auto cacheIt = bpmCache_.find(filePath);
-    if (cacheIt != bpmCache_.end()) {
+    if (auto cached = bpmCache_.find(filePath); cached != bpmCache_.end()) {
+        juce::Logger::writeToLog("[tempo] cached " + juce::String(cached->second, 3) + " for " +
+                                 juce::File(filePath).getFileName());
         if (onComplete)
-            onComplete(cacheIt->second);
+            onComplete(cached->second);
+        return;
+    }
+    // No message loop means nowhere to deliver a result: the model tests.
+    if (!juce::File(filePath).existsAsFile() ||
+        juce::MessageManager::getInstanceWithoutCreating() == nullptr) {
+        if (onComplete)
+            onComplete(0.0);
         return;
     }
 
-    const double result = runBpmDetection(filePath);
-    bpmCache_[filePath] = result;
+    const bool inFlight = pendingBpm_.count(filePath) > 0;
+    auto& waiting = pendingBpm_[filePath];
     if (onComplete)
-        onComplete(result);
+        waiting.push_back(std::move(onComplete));
+    if (inFlight) {
+        juce::Logger::writeToLog("[tempo] joined the request in flight for " +
+                                 juce::File(filePath).getFileName());
+        return;
+    }
+    juce::Logger::writeToLog(
+        "[tempo] detecting " + juce::File(filePath).getFileName() +
+        (media::BeatTracker::isAvailable() ? " (beat model)" : " (no model: autocorrelation)"));
+
+    getOrCreateBackgroundPool().addJob([filePath]() {
+        auto& self = getInstance();
+        const double bpm = self.measureTempoOnBackgroundThread(filePath);
+        juce::Logger::writeToLog("[tempo] " + juce::File(filePath).getFileName() + " -> " +
+                                 (bpm > 0.0 ? juce::String(bpm, 3) : juce::String("no answer")));
+        // A miss is forgotten only while a model could still arrive: this build
+        // can run one and none is installed yet.
+#if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP
+        const bool modelCouldArrive = self.beatTracker_ == nullptr;
+#else
+        const bool modelCouldArrive = false;
+#endif
+        const bool remember = bpm > 0.0 || !modelCouldArrive;
+        juce::MessageManager::callAsync([filePath, bpm, remember]() {
+            auto& self = getInstance();
+            if (remember)
+                self.bpmCache_[filePath] = bpm;
+            auto node = self.pendingBpm_.extract(filePath);
+            if (node.empty())
+                return;
+            for (auto& callback : node.mapped())
+                callback(bpm);
+        });
+    });
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -549,6 +592,8 @@ void AudioThumbnailManager::shutdown() {
         backgroundThreadPool_->removeAllJobs(true, -1);
         backgroundThreadPool_.reset();
     }
+    pendingBpm_.clear();
+    beatTracker_.reset();
     pendingPeakComputes_.clear();
     peakCaches_.clear();
 
