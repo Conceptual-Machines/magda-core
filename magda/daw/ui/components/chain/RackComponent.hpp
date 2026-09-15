@@ -94,7 +94,6 @@ class RackComponent : public NodeComponent, public juce::Timer {
 
     void initializeCommon(const magda::RackInfo& rack);
     void onAddChainClicked();
-    void openMacroPanelForSelectionIfNeeded();
 
     magda::ChainNodePath rackPath_;  // Full path to this rack
     magda::TrackId trackId_;

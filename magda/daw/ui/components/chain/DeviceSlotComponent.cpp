@@ -1574,26 +1574,6 @@ void DeviceSlotComponent::goToNextPage() {
 // SelectionManagerListener
 // ============================================================================
 
-void DeviceSlotComponent::chainNodeSelectionChanged(const magda::ChainNodePath& path) {
-    // SelectionManager deliberately notifies listeners when the current node is selected again.
-    // NodeComponent uses that reselection to support header-click collapse/expand, but it must not
-    // be treated as a fresh selection by the "open macros on select" preference.
-    const bool wasAlreadySelected = isSelected();
-    NodeComponent::chainNodeSelectionChanged(path);
-
-    // Likewise skip it when this selection is part of a header-bar collapse
-    // gesture — opening the macro panel on the click that collapses the device
-    // is the opposite of what the user asked for.
-    if (wasAlreadySelected || isCollapseGestureActive() || !nodePath_.isValid() ||
-        path != nodePath_) {
-        return;
-    }
-
-    openDeviceSlotMacroPanelForSelectionIfNeeded(
-        nodePath_, paramPanelVisible_, exposesDeviceModulation(), macroButton_.get(),
-        {.setParamPanelVisible = [this](bool visible) { setParamPanelVisible(visible); }});
-}
-
 void DeviceSlotComponent::selectionTypeChanged(magda::SelectionType newType) {
     // Call base class first (handles node deselection)
     NodeComponent::selectionTypeChanged(newType);
@@ -1639,20 +1619,7 @@ void DeviceSlotComponent::mouseDown(const juce::MouseEvent& e) {
         return;
     }
 
-    // Check for double-click
-    if (e.getNumberOfClicks() == 2) {
-        // Toggle the editor / analyzer window on double-click.
-        if (audio::isInternalAnalysisPlugin(device_.pluginId)) {
-            toggleAnalyzerWindow();
-        } else if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-            const bool isOpen = audioEngine->toggleDeviceEditor(nodePath_);
-            uiButton_->setToggleState(isOpen, juce::dontSendNotification);
-            uiButton_->setActive(isOpen);
-        }
-    } else {
-        // Pass to base class for normal click handling
-        NodeComponent::mouseDown(e);
-    }
+    NodeComponent::mouseDown(e);
 }
 
 void DeviceSlotComponent::showMultiOutMenu() {

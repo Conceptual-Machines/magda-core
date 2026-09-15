@@ -130,7 +130,6 @@ void Config::save() {
     root->setProperty("duplicateLoopGrows", duplicateLoopGrows);
     root->setProperty("showTooltips", showTooltips);
     root->setProperty("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
-    root->setProperty("openMacrosOnSelect", openMacrosOnSelect);
 
     // Mixer view-toggle rail
     root->setProperty("mixerShowSends", mixerShowSends_);
@@ -539,7 +538,6 @@ void Config::load() {
     duplicateLoopGrows = getBool("duplicateLoopGrows", duplicateLoopGrows);
     showTooltips = getBool("showTooltips", showTooltips);
     autoMonitorSelectedTrack = getBool("autoMonitorSelectedTrack", autoMonitorSelectedTrack);
-    openMacrosOnSelect = getBool("openMacrosOnSelect", openMacrosOnSelect);
 
     mixerShowSends_ = getBool("mixerShowSends", mixerShowSends_);
     mixerShowRouting_ = getBool("mixerShowRouting", mixerShowRouting_);

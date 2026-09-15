@@ -643,20 +643,20 @@ void PadDeviceSlot::paint(juce::Graphics& g) {
 }
 
 void PadDeviceSlot::mouseDown(const juce::MouseEvent& e) {
+    if (!e.mods.isLeftButtonDown() || e.mods.isPopupMenu())
+        return;
+
     // Click name label or collapsed body
     if (e.originalComponent == &nameLabel_ || (collapsed_ && e.originalComponent == this)) {
-        bool wasSelected = selected_;
-
-        // Always select (fires inspector update)
+        if (selected_ && e.getNumberOfClicks() == 2 && !e.mods.isAnyModifierKeyDown()) {
+            setCollapsed(!collapsed_);
+            return;
+        }
+        // Selection may rebuild the panel, so finish local work before dispatch.
+        selected_ = true;
+        repaint();
         if (onClicked)
             onClicked();
-        selected_ = true;
-
-        // If already selected, toggle collapse
-        if (wasSelected)
-            setCollapsed(!collapsed_);
-
-        repaint();
         return;
     }
     juce::Component::mouseDown(e);

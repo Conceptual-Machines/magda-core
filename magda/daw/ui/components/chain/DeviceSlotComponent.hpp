@@ -187,7 +187,6 @@ class DeviceSlotComponent : public NodeComponent,
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans
     // refreshControllerIndicators() out for us.
-    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void selectionTypeChanged(magda::SelectionType newType) override;
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
