@@ -1229,6 +1229,73 @@ TEST_CASE("MIDI loop start setter takes seconds and stores clip beats",
     REQUIRE(clip->loopStartBeats == Catch::Approx(6.0));
 }
 
+// An audio clip whose loop region follows an 8-beat interpretation at 120 BPM.
+// The source is longer than the region so no sanitize clamp re-tags it.
+static ClipId createInterpretationSizedAudio(int64_t& snapshotSamples) {
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+
+    auto* clip = ClipManager::getInstance().getClip(clipId);
+    REQUIRE(clip != nullptr);
+    clip->loopEnabled = true;
+    magda::test::setSourceDuration(*clip, 8.0);
+
+    auto* ev = primaryEventOf(clip);
+    REQUIRE(ev != nullptr);
+    REQUIRE(ev->adoptBpm(120.0, Provenance::User));
+    REQUIRE(ev->adoptTotalBeats(8.0, Provenance::User));
+    ev->setLoopExtent(RegionExtent::Interpretation);
+    REQUIRE(ev->loopExtent == RegionExtent::Interpretation);
+
+    snapshotSamples = ev->loopLengthSamples;
+    REQUIRE(snapshotSamples == static_cast<int64_t>(4.0 * magda::test::kTestSourceSampleRate));
+    return clipId;
+}
+
+TEST_CASE("SetClipLoopLengthCommand - undo keeps the region following the interpretation",
+          "[clip][command][loop][extent][undo]") {
+    resetState();
+    int64_t snapshotSamples = 0;
+    ClipId clipId = createInterpretationSizedAudio(snapshotSamples);
+    auto& cm = ClipManager::getInstance();
+
+    SetClipLoopLengthCommand cmd(clipId, 2.0, 120.0);
+    cmd.execute();
+
+    auto* ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopExtent == RegionExtent::Explicit);
+    REQUIRE(ev->loopLengthSeconds() == Catch::Approx(2.0));
+
+    cmd.undo();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(ev->loopLengthSamples == snapshotSamples);
+}
+
+TEST_CASE("SetClipLoopRangeCommand - undo keeps the region following the interpretation",
+          "[clip][command][loop][extent][undo]") {
+    resetState();
+    int64_t snapshotSamples = 0;
+    ClipId clipId = createInterpretationSizedAudio(snapshotSamples);
+    auto& cm = ClipManager::getInstance();
+
+    SetClipLoopRangeCommand cmd(clipId, 1.0, 2.0, 120.0);
+    cmd.execute();
+
+    auto* ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopExtent == RegionExtent::Explicit);
+    REQUIRE(ev->loopStartSeconds() == Catch::Approx(1.0));
+    REQUIRE(ev->loopLengthSeconds() == Catch::Approx(2.0));
+
+    cmd.undo();
+
+    ev = primaryEventOf(cm.getClip(clipId));
+    REQUIRE(ev->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(ev->loopStartSeconds() == Catch::Approx(0.0));
+    REQUIRE(ev->loopLengthSamples == snapshotSamples);
+}
+
 TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",
           "[clip][command][time-selection][delete]") {
     resetState();

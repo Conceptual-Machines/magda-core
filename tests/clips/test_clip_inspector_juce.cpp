@@ -27,6 +27,7 @@ ClipInfo makeInspectorAudioClip(ClipId id = 9001) {
     clip.view = ClipView::Session;
     clip.name = "InspectorTest";
     magda::test::audioEvent(clip).autoTempo = true;
+    magda::test::audioEvent(clip).playbackIntent = PlaybackIntent::Beat;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).speedRatio = 1.0;
     magda::test::setSourceDuration(clip, sourceDuration);
@@ -47,7 +48,6 @@ void applySourceBeats(ClipId clipId, double beats) {
     ClipManager::AudioClipBeatsUpdate update;
     update.interpretationTotalBeats = beats;
     update.interpretationBpm = beats * 60.0 / sourceDuration;
-    update.lockInterpretationTotalBeats = true;
     ClipManager::getInstance().applyAudioClipBeats(clipId, update, projectBPM);
 }
 

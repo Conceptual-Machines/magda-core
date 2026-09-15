@@ -3842,7 +3842,8 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (newClipId != INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
                 newClipId, audioFile.getFileNameWithoutExtension()));
-            clipManager.setClipLoopEnabled(newClipId, true, bpm);
+            // Creation already loops a session clip over the whole source;
+            // enabling loop again would freeze the span into a chosen range.
             clipManager.setClipSceneIndex(newClipId, sceneSlot);
         }
     };

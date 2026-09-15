@@ -6,6 +6,7 @@
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SourcePool.hpp"
+#include "core/TempoUtils.hpp"
 
 using namespace magda;
 using Catch::Approx;
@@ -291,15 +292,16 @@ TEST_CASE("Seeding an interpretation only fills gaps", "[clip][event][interpreta
     AudioEvent event;
 
     SECTION("Both land when unset") {
-        event.seedInterpretation(4.0, 120.0);
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
         REQUIRE(event.interpBpm == Approx(120.0));
         REQUIRE(event.interpTotalBeats == Approx(4.0));
+        REQUIRE(event.bpmFrom == Provenance::FileMetadata);
     }
 
     SECTION("A value the user already set is never overwritten") {
-        event.interpBpm = 90.0;
-        event.interpTotalBeats = 16.0;
-        event.seedInterpretation(4.0, 120.0);
+        REQUIRE(event.adoptBpm(90.0, Provenance::User));
+        REQUIRE(event.adoptTotalBeats(16.0, Provenance::User));
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
         REQUIRE(event.interpBpm == Approx(90.0));
         REQUIRE(event.interpTotalBeats == Approx(16.0));
     }
@@ -307,7 +309,7 @@ TEST_CASE("Seeding an interpretation only fills gaps", "[clip][event][interpreta
     SECTION("A beat count without a tempo is not taken") {
         // It would claim musical content the file has not been calibrated to,
         // and render as a plausible integer that never gets corrected.
-        event.seedInterpretation(4.0, 0.0);
+        event.seedInterpretation(4.0, 0.0, Provenance::FileMetadata);
         REQUIRE(event.interpTotalBeats == Approx(0.0));
     }
 }
@@ -333,11 +335,52 @@ TEST_CASE("New events inherit the source's detected facts", "[clip][event][inter
     REQUIRE(event.keyScale == "minor");
 
     SECTION("Re-seeding cannot rewrite what the user changed") {
-        event.interpBpm = 87.0;
+        REQUIRE(event.adoptBpm(87.0, Provenance::User));
         event.keyRoot = "C";
         event.seedInterpretationFromSource();
         REQUIRE(event.interpBpm == Approx(87.0));
         REQUIRE(event.keyRoot == "C");
+    }
+
+    SECTION("A loop exported at its tempo seeds a whole beat count") {
+        // 5.517 s at 174 is 15.9993 beats: a 16-beat loop, not a fraction.
+        source->durationSeconds = 5.517;
+        AudioEvent exact;
+        exact.sourceId = sourceId;
+        exact.seedInterpretationFromSource();
+        REQUIRE(exact.interpTotalBeats == 16.0);
+    }
+
+    SECTION("A file half a beat off keeps its fraction") {
+        source->durationSeconds = 16.5 * 60.0 / 174.0;
+        AudioEvent off;
+        off.sourceId = sourceId;
+        off.seedInterpretationFromSource();
+        REQUIRE(off.interpTotalBeats == Approx(16.5));
+    }
+}
+
+TEST_CASE("beatCountForDuration snaps a whole-beat file and keeps a fraction",
+          "[tempo][interpretation]") {
+    REQUIRE(beatCountForDuration(5.517, 174.0) == 16.0);
+    REQUIRE(beatCountForDuration(4.0, 120.0) == 8.0);
+
+    SECTION("Within 0.02 of a beat snaps; further off does not") {
+        REQUIRE(beatCountForDuration(16.015 * 60.0 / 174.0, 174.0) == 16.0);
+        REQUIRE(beatCountForDuration(15.985 * 60.0 / 174.0, 174.0) == 16.0);
+        REQUIRE(beatCountForDuration(16.05 * 60.0 / 174.0, 174.0) == Approx(16.05));
+        REQUIRE(beatCountForDuration(15.95 * 60.0 / 174.0, 174.0) == Approx(15.95));
+    }
+
+    SECTION("A file that is not a loop keeps its fraction") {
+        REQUIRE(beatCountForDuration(4.0, 174.0) == Approx(11.6));
+        REQUIRE(beatCountForDuration(16.5 * 60.0 / 174.0, 174.0) == Approx(16.5));
+    }
+
+    SECTION("Nothing to measure gives zero") {
+        REQUIRE(beatCountForDuration(0.0, 120.0) == 0.0);
+        REQUIRE(beatCountForDuration(4.0, 0.0) == 0.0);
+        REQUIRE(beatCountForDuration(-1.0, 120.0) == 0.0);
     }
 }
 
@@ -706,16 +749,24 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
     update.interpretationTotalBeats = 6.0;
     clips.applyAudioClipBeats(clipId, update, 120.0);
 
-    const auto* event = clips.getClip(clipId)->primaryEvent();
+    const AudioEvent* event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(90.0));
     REQUIRE(event->interpTotalBeats == Approx(6.0));
 
-    // Typing a tempo says what the file is. Whether to play it in beats is the
-    // BEAT toggle, and this path does not decide it either way.
-    REQUIRE(!event->autoTempo);
+    // Typing a tempo says what the file is; it does not touch the intent. A
+    // session slot asks for beat mode as soon as a tempo exists, so it gets it.
+    REQUIRE(event->playbackIntent == PlaybackIntent::BeatWhenKnown);
+    REQUIRE(event->autoTempo);
 
-    // But it is answerable now, which it was not before.
-    REQUIRE(event->hasInterpretedBpm());
+    // A slot the user put in time mode stays there when a tempo is typed.
+    clips.setAutoTempo(clipId, false, 120.0);
+    ClipManager::AudioClipBeatsUpdate retyped;
+    retyped.interpretationBpm = 95.0;
+    clips.applyAudioClipBeats(clipId, retyped, 120.0);
+    event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event->interpBpm == Approx(95.0));
+    REQUIRE(event->playbackIntent == PlaybackIntent::Free);
+    REQUIRE(!event->autoTempo);
 
     clips.clearAllClips();
 }
@@ -739,15 +790,368 @@ TEST_CASE("BEAT grants beat mode only with a tempo behind it",
     clips.setAutoTempo(clipId, true, 120.0);
     REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
 
-    // The source BPM field is what supplies one, and it answers in time mode.
+    // The request was kept, so the tempo the user then types grants it.
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->playbackIntent == PlaybackIntent::Beat);
     ClipManager::AudioClipBeatsUpdate update;
     update.interpretationBpm = 90.0;
     update.interpretationTotalBeats = 6.0;
     clips.applyAudioClipBeats(clipId, update, 120.0);
-
-    clips.setAutoTempo(clipId, true, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
 
     clips.clearAllClips();
     AudioThumbnailManager::getInstance().clearCache();
+}
+
+// =============================================================================
+// Interpretation ownership (#2674 phase 2)
+// =============================================================================
+
+// Anything may write a value until the user does; then only the user may.
+TEST_CASE("A tempo is replaced by analysis until the user owns it", "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    AudioEvent event;
+
+    REQUIRE(event.adoptBpm(120.0, Provenance::Analysis));
+    REQUIRE(event.bpmFrom == Provenance::Analysis);
+    REQUIRE(event.adoptBpm(128.0, Provenance::Analysis));
+    REQUIRE(event.interpBpm == Approx(128.0));
+
+    REQUIRE(event.adoptBpm(100.0, Provenance::User));
+    REQUIRE(event.bpmFrom == Provenance::User);
+
+    // A refused adopt leaves both the value and its owner untouched.
+    REQUIRE_FALSE(event.adoptBpm(174.0, Provenance::Analysis));
+    REQUIRE(event.interpBpm == Approx(100.0));
+    REQUIRE(event.bpmFrom == Provenance::User);
+
+    REQUIRE(event.adoptBpm(90.0, Provenance::User));
+    REQUIRE(event.interpBpm == Approx(90.0));
+    REQUIRE(event.bpmFrom == Provenance::User);
+}
+
+TEST_CASE("A beat count is replaced by analysis until the user owns it",
+          "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    AudioEvent event;
+
+    REQUIRE(event.adoptTotalBeats(8.0, Provenance::Analysis));
+    REQUIRE(event.beatsFrom == Provenance::Analysis);
+    REQUIRE(event.adoptTotalBeats(16.0, Provenance::Analysis));
+    REQUIRE(event.interpTotalBeats == Approx(16.0));
+
+    REQUIRE(event.adoptTotalBeats(12.0, Provenance::User));
+    REQUIRE(event.beatsFrom == Provenance::User);
+
+    REQUIRE_FALSE(event.adoptTotalBeats(32.0, Provenance::Analysis));
+    REQUIRE(event.interpTotalBeats == Approx(12.0));
+    REQUIRE(event.beatsFrom == Provenance::User);
+
+    REQUIRE(event.adoptTotalBeats(13.0, Provenance::User));
+    REQUIRE(event.interpTotalBeats == Approx(13.0));
+}
+
+TEST_CASE("A tempo of zero is never adopted", "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    AudioEvent event;
+    REQUIRE(event.adoptBpm(120.0, Provenance::Analysis));
+
+    REQUIRE_FALSE(event.adoptBpm(0.0, Provenance::User));
+    REQUIRE(event.interpBpm == Approx(120.0));
+    REQUIRE(event.bpmFrom == Provenance::Analysis);
+}
+
+TEST_CASE("The loop region follows its extent", "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    auto& pool = SourcePool::getInstance();
+    pool.seedFactsForTesting("/tmp/ownership-loop.wav", 5.486, 44100.0);
+
+    AudioEvent event;
+    event.sourceId = pool.acquire("/tmp/ownership-loop.wav");
+    REQUIRE(event.adoptBpm(175.0, Provenance::Analysis));
+    REQUIRE(event.adoptTotalBeats(16.0, Provenance::Analysis));
+
+    SECTION("WholeSource is the zero-length sentinel") {
+        event.setLoopLengthSeconds(2.0);
+        event.setLoopExtent(RegionExtent::WholeSource);
+        REQUIRE(event.loopLengthSamples == 0);
+    }
+
+    SECTION("Interpretation is the beat count at the tempo, and refits with it") {
+        event.setLoopExtent(RegionExtent::Interpretation);
+        REQUIRE(event.loopLengthSeconds() == Approx(5.486).margin(0.001));
+
+        REQUIRE(event.adoptBpm(174.0, Provenance::User));
+        REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+        REQUIRE(event.loopLengthSeconds() == Approx(5.517).margin(0.001));
+    }
+
+    SECTION("Explicit is a range of its own and does not move with the tempo") {
+        event.setLoopLengthSeconds(2.0);
+        REQUIRE(event.loopExtent == RegionExtent::Explicit);
+        const auto lengthSamples = event.loopLengthSamples;
+
+        REQUIRE(event.adoptBpm(174.0, Provenance::User));
+        REQUIRE(event.loopLengthSamples == lengthSamples);
+        REQUIRE(event.loopLengthSeconds() == Approx(2.0));
+    }
+}
+
+// autoTempo is granted, never set: the intent asks and a tempo has to exist.
+TEST_CASE("Beat mode is granted only when the intent asks and a tempo exists",
+          "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    AudioEvent event;
+
+    SECTION("Free stays in time mode even with a tempo") {
+        REQUIRE(event.adoptBpm(120.0, Provenance::Analysis));
+        event.setPlaybackIntent(PlaybackIntent::Free);
+        REQUIRE_FALSE(event.autoTempo);
+    }
+
+    SECTION("An asking intent waits for a tempo, and the tempo grants it") {
+        for (const auto intent : {PlaybackIntent::Beat, PlaybackIntent::BeatWhenKnown}) {
+            AudioEvent asking;
+            asking.setPlaybackIntent(intent);
+            REQUIRE_FALSE(asking.autoTempo);
+
+            REQUIRE(asking.adoptBpm(120.0, Provenance::Analysis));
+            REQUIRE(asking.autoTempo);
+        }
+    }
+
+    SECTION("The BEAT toggle off records Free") {
+        REQUIRE(event.adoptBpm(120.0, Provenance::Analysis));
+        event.setBeatMode(true);
+        REQUIRE(event.autoTempo);
+
+        event.setBeatMode(false);
+        REQUIRE(event.playbackIntent == PlaybackIntent::Free);
+        REQUIRE_FALSE(event.autoTempo);
+    }
+}
+
+// =============================================================================
+// Ownership helpers (#2674 phase 2)
+// =============================================================================
+
+TEST_CASE("A ghost's interpretation-sized region refits to what it receives",
+          "[clip][event][ghost][ownership]") {
+    EventModelFixture fixture;
+    auto source = makeAudioClip();  // 120 bpm, 8 beats
+
+    auto ghost = makeAudioClip();
+    auto& ghostEvent = *ghost.primaryEvent();
+    ghostEvent.interpBpm = 90.0;
+    ghostEvent.setLoopExtent(RegionExtent::Interpretation);
+    REQUIRE(ghostEvent.loopLengthSeconds() == Approx(8.0 * 60.0 / 90.0));
+
+    ghost.copySharedContentFrom(source);
+
+    REQUIRE(ghostEvent.interpBpm == Approx(120.0));
+    REQUIRE(ghostEvent.loopExtent == RegionExtent::Interpretation);
+    REQUIRE(ghostEvent.loopLengthSeconds() == Approx(4.0));
+}
+
+TEST_CASE("A ghost's beat mode is resolved from the intent and tempo it receives",
+          "[clip][event][ghost][ownership]") {
+    EventModelFixture fixture;
+    auto source = makeAudioClip();
+    auto& sourceEvent = *source.primaryEvent();
+    auto ghost = makeAudioClip();
+    auto& ghostEvent = *ghost.primaryEvent();
+
+    SECTION("An asking intent with a tempo is granted, whatever the flag said") {
+        sourceEvent.playbackIntent = PlaybackIntent::Beat;
+        sourceEvent.autoTempo = false;  // stale: written before the tempo landed
+        ghost.copySharedContentFrom(source);
+        REQUIRE(ghostEvent.autoTempo);
+    }
+
+    SECTION("A claim with no tempo behind it is not copied") {
+        sourceEvent.playbackIntent = PlaybackIntent::Beat;
+        sourceEvent.interpBpm = 0.0;
+        sourceEvent.autoTempo = true;
+        ghost.copySharedContentFrom(source);
+        REQUIRE_FALSE(ghostEvent.autoTempo);
+    }
+
+    SECTION("Free stays in time mode") {
+        sourceEvent.playbackIntent = PlaybackIntent::Free;
+        sourceEvent.autoTempo = true;
+        ghost.copySharedContentFrom(source);
+        REQUIRE_FALSE(ghostEvent.autoTempo);
+    }
+}
+
+TEST_CASE("Adopting another event's interpretation carries its ownership",
+          "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    AudioEvent src;
+    REQUIRE(src.adoptBpm(120.0, Provenance::FileMetadata));
+    REQUIRE(src.adoptTotalBeats(8.0, Provenance::Analysis));
+
+    SECTION("An unowned destination takes both values and their owners") {
+        AudioEvent dst;
+        dst.adoptInterpretationFrom(src);
+        REQUIRE(dst.interpBpm == Approx(120.0));
+        REQUIRE(dst.bpmFrom == Provenance::FileMetadata);
+        REQUIRE(dst.interpTotalBeats == Approx(8.0));
+        REQUIRE(dst.beatsFrom == Provenance::Analysis);
+    }
+
+    SECTION("A user-owned destination keeps its values against a non-user source") {
+        AudioEvent dst;
+        REQUIRE(dst.adoptBpm(100.0, Provenance::User));
+        REQUIRE(dst.adoptTotalBeats(12.0, Provenance::User));
+        dst.adoptInterpretationFrom(src);
+        REQUIRE(dst.interpBpm == Approx(100.0));
+        REQUIRE(dst.interpTotalBeats == Approx(12.0));
+        REQUIRE(dst.bpmFrom == Provenance::User);
+        REQUIRE(dst.beatsFrom == Provenance::User);
+    }
+
+    SECTION("A user-owned source overwrites a user-owned destination") {
+        AudioEvent dst;
+        REQUIRE(dst.adoptBpm(100.0, Provenance::User));
+        REQUIRE(dst.adoptTotalBeats(12.0, Provenance::User));
+        AudioEvent typed;
+        REQUIRE(typed.adoptBpm(90.0, Provenance::User));
+        REQUIRE(typed.adoptTotalBeats(6.0, Provenance::User));
+        dst.adoptInterpretationFrom(typed);
+        REQUIRE(dst.interpBpm == Approx(90.0));
+        REQUIRE(dst.interpTotalBeats == Approx(6.0));
+        REQUIRE(dst.bpmFrom == Provenance::User);
+        REQUIRE(dst.beatsFrom == Provenance::User);
+    }
+
+    SECTION("Each field is judged on its own owner") {
+        AudioEvent dst;
+        REQUIRE(dst.adoptBpm(100.0, Provenance::User));
+        dst.adoptInterpretationFrom(src);
+        REQUIRE(dst.interpBpm == Approx(100.0));
+        REQUIRE(dst.interpTotalBeats == Approx(8.0));
+        REQUIRE(dst.beatsFrom == Provenance::Analysis);
+    }
+}
+
+TEST_CASE("A whole-source region follows the interpretation once there is one",
+          "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();  // 120 bpm, 8 beats on a 4 s file
+    auto& event = *clip.primaryEvent();
+    REQUIRE(event.loopExtent == RegionExtent::WholeSource);
+
+    SECTION("With a tempo and a beat count it becomes the fitted length") {
+        event.followInterpretationIfWholeSource();
+        REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+        REQUIRE(event.loopLengthSeconds() == Approx(4.0));
+    }
+
+    SECTION("Without a beat count there is nothing to follow") {
+        event.interpTotalBeats = 0.0;
+        event.followInterpretationIfWholeSource();
+        REQUIRE(event.loopExtent == RegionExtent::WholeSource);
+        REQUIRE(event.loopLengthSamples == 0);
+    }
+
+    SECTION("Without a tempo there is nothing to follow") {
+        event.interpBpm = 0.0;
+        event.followInterpretationIfWholeSource();
+        REQUIRE(event.loopExtent == RegionExtent::WholeSource);
+        REQUIRE(event.loopLengthSamples == 0);
+    }
+
+    SECTION("An explicit range is left alone") {
+        event.setLoopLengthSeconds(1.0);
+        event.followInterpretationIfWholeSource();
+        REQUIRE(event.loopExtent == RegionExtent::Explicit);
+        REQUIRE(event.loopLengthSeconds() == Approx(1.0));
+    }
+}
+
+TEST_CASE("Restoring a loop length puts the snapshot back without re-tagging",
+          "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();  // 8 beats at 120 would fit to 4 s
+    auto& event = *clip.primaryEvent();
+    const auto samples = event.secondsToSourceSamples(1.5);
+
+    SECTION("An interpretation snapshot keeps its samples, not a refit") {
+        event.restoreLoopLength(samples, RegionExtent::Interpretation);
+        REQUIRE(event.loopLengthSamples == samples);
+        REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+    }
+
+    SECTION("An explicit snapshot") {
+        event.restoreLoopLength(samples, RegionExtent::Explicit);
+        REQUIRE(event.loopLengthSamples == samples);
+        REQUIRE(event.loopExtent == RegionExtent::Explicit);
+    }
+
+    SECTION("A whole-source snapshot") {
+        event.setLoopLengthSeconds(2.0);
+        event.restoreLoopLength(0, RegionExtent::WholeSource);
+        REQUIRE(event.loopLengthSamples == 0);
+        REQUIRE(event.loopExtent == RegionExtent::WholeSource);
+    }
+
+    SECTION("A negative length is clamped to zero") {
+        event.restoreLoopLength(-5, RegionExtent::Explicit);
+        REQUIRE(event.loopLengthSamples == 0);
+    }
+}
+
+TEST_CASE("Clamping the loop region keeps it inside the file", "[clip][tempo][ownership]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();  // 4 s file
+    auto& event = *clip.primaryEvent();
+
+    SECTION("The start is clamped for every extent") {
+        for (const auto extent :
+             {RegionExtent::WholeSource, RegionExtent::Interpretation, RegionExtent::Explicit}) {
+            event.restoreLoopLength(0, extent);
+            event.setLoopStartSeconds(10.0);
+            event.clampLoopRegionToSource(4.0);
+            REQUIRE(event.loopStartSeconds() == Approx(4.0));
+            REQUIRE(event.loopExtent == extent);
+        }
+    }
+
+    SECTION("An explicit range past the end is shortened to what is left") {
+        event.setLoopStartSeconds(1.0);
+        event.setLoopLengthSeconds(5.0);
+        event.clampLoopRegionToSource(4.0);
+        REQUIRE(event.loopStartSeconds() == Approx(1.0));
+        REQUIRE(event.loopLengthSeconds() == Approx(3.0));
+        REQUIRE(event.loopExtent == RegionExtent::Explicit);
+    }
+
+    SECTION("An explicit range inside the file is untouched") {
+        event.setLoopStartSeconds(1.0);
+        event.setLoopLengthSeconds(2.0);
+        event.clampLoopRegionToSource(4.0);
+        REQUIRE(event.loopLengthSeconds() == Approx(2.0));
+    }
+
+    SECTION("A region sized by the interpretation may overrun the file") {
+        event.restoreLoopLength(event.secondsToSourceSamples(6.0), RegionExtent::Interpretation);
+        event.clampLoopRegionToSource(4.0);
+        REQUIRE(event.loopLengthSeconds() == Approx(6.0));
+        REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+    }
+
+    SECTION("A whole-source region has no length to clamp") {
+        event.setLoopStartSeconds(1.0);
+        event.clampLoopRegionToSource(4.0);
+        REQUIRE(event.loopLengthSamples == 0);
+        REQUIRE(event.loopExtent == RegionExtent::WholeSource);
+    }
+
+    SECTION("An unknown file duration clamps nothing") {
+        event.setLoopStartSeconds(10.0);
+        event.setLoopLengthSeconds(5.0);
+        event.clampLoopRegionToSource(0.0);
+        REQUIRE(event.loopStartSeconds() == Approx(10.0));
+        REQUIRE(event.loopLengthSeconds() == Approx(5.0));
+    }
 }

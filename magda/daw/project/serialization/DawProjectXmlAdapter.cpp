@@ -864,7 +864,7 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
     if (auto* warps = clipElement.getChildByName("Warps")) {
         clip.setAudioContent();
         auto& event = clip.audio().addEvent({});
-        event.autoTempo = true;
+        event.playbackIntent = PlaybackIntent::Beat;  // granted once a tempo is adopted
         if (auto* audioElement = warps->getChildByName("Audio")) {
             if (auto* fileElement = audioElement->getChildByName("File"))
                 event.sourceId =
@@ -877,18 +877,16 @@ ClipInfo clipFromXml(const juce::XmlElement& clipElement, TrackId trackId, ClipI
             maxBeats = juce::jmax(maxBeats, w->getDoubleAttribute("time", 0.0));
             maxSeconds = juce::jmax(maxSeconds, w->getDoubleAttribute("contentTime", 0.0));
         }
-        event.interpTotalBeats = maxBeats;
+        event.adoptTotalBeats(maxBeats, Provenance::FileMetadata);
         if (maxSeconds > 0.0)
-            event.interpBpm = maxBeats * 60.0 / maxSeconds;
+            event.adoptBpm(maxBeats * 60.0 / maxSeconds, Provenance::FileMetadata);
 
-        // The beat setters below all convert through interpBpm, so without one
-        // they are silent no-ops: the anchor and region would stay at zero
-        // while loopEnabled was set, and the clip would loop the whole source
-        // instead of the region the file states. The imported project's own
-        // tempo is the best stand-in, and is what the old beat-field import
-        // effectively played at.
+        // The beat setters below convert through interpBpm, so without one the
+        // anchor and region would stay at zero. The project's tempo is a guess,
+        // adopted as Analysis so anything better can replace it.
         if (!isValidBpm(event.interpBpm) && maxBeats > 0.0)
-            event.interpBpm = isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
+            event.adoptBpm(isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM,
+                           Provenance::Analysis);
 
         const bool regionApplicable = isValidBpm(event.interpBpm);
 

@@ -9,6 +9,7 @@ set(TEST_SOURCES
     audio/test_audiobridge_plugin_cleanup_bug.cpp
     automation/test_auto_tempo.cpp
     audio/test_audio_clip_stretch.cpp
+    clips/test_audio_clip_source_display.cpp
     clips/test_clip_bpm_invariant.cpp
     audio/test_source_pool.cpp
     clips/test_clip_event_model.cpp

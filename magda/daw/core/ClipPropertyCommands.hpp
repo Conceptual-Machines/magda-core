@@ -223,21 +223,35 @@ class SetClipLoopStartCommand : public UndoableCommand {
 
 /**
  * @brief Command for setting a clip's loop length (source-time seconds).
+ *
+ * Undo restores the region's samples and extent rather than re-setting a
+ * length, which would tag an interpretation-sized region Explicit.
  */
 class SetClipLoopLengthCommand : public UndoableCommand {
   public:
     SetClipLoopLengthCommand(ClipId clipId, double newLoopLength, double bpm = 120.0)
         : clipId_(clipId), newLoopLength_(newLoopLength), bpm_(bpm) {
-        if (auto* clip = ClipManager::getInstance().getClip(clipId))
-            if (const auto* ev = clip->primaryEvent())
-                oldLoopLength_ = ev->loopLengthSeconds();
+        if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            if (const auto* ev = clip->primaryEvent()) {
+                oldLoopLengthSamples_ = ev->loopLengthSamples;
+                oldExtent_ = ev->loopExtent;
+                isAudio_ = true;
+            } else if (clip->isMidi()) {
+                oldMidiLoopLengthBeats_ = clip->loopLengthBeats;
+            }
+        }
     }
 
     void execute() override {
         ClipManager::getInstance().setLoopLength(clipId_, newLoopLength_, bpm_);
     }
     void undo() override {
-        ClipManager::getInstance().setLoopLength(clipId_, oldLoopLength_, bpm_);
+        if (isAudio_)
+            ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_,
+                                                         bpm_);
+        else
+            ClipManager::getInstance().setMidiLoopLengthBeats(clipId_, oldMidiLoopLengthBeats_,
+                                                              bpm_);
     }
     juce::String getDescription() const override {
         return "Set Clip Loop Length";
@@ -256,7 +270,11 @@ class SetClipLoopLengthCommand : public UndoableCommand {
 
   private:
     ClipId clipId_;
-    double oldLoopLength_ = 0.0, newLoopLength_;
+    int64_t oldLoopLengthSamples_ = 0;
+    RegionExtent oldExtent_ = RegionExtent::WholeSource;
+    bool isAudio_ = false;
+    double oldMidiLoopLengthBeats_ = 0.0;
+    double newLoopLength_;
     double bpm_;
 };
 
@@ -349,6 +367,9 @@ class SetClipLoopRangeCommand : public UndoableCommand {
             if (ev != nullptr) {
                 oldLoopStart_ = ev->loopStartSeconds();
                 oldLoopLength_ = ev->loopLengthSeconds();
+                oldLoopLengthSamples_ = ev->loopLengthSamples;
+                oldExtent_ = ev->loopExtent;
+                isAudio_ = true;
             }
             oldOffset_ =
                 clip->isMidi() ? clip->midiOffset : (ev != nullptr ? ev->anchorSeconds() : 0.0);
@@ -364,6 +385,10 @@ class SetClipLoopRangeCommand : public UndoableCommand {
         // audio clips when loopStart moves; restore the captured pre-drag
         // offset on top so undo is a true round-trip.
         ClipManager::getInstance().setOffset(clipId_, oldOffset_);
+        // It also tags the length Explicit; put the captured extent back.
+        if (isAudio_)
+            ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_,
+                                                         bpm_);
     }
     juce::String getDescription() const override {
         return "Set Clip Loop Range";
@@ -385,6 +410,9 @@ class SetClipLoopRangeCommand : public UndoableCommand {
     ClipId clipId_;
     double oldLoopStart_ = 0.0, newLoopStart_;
     double oldLoopLength_ = 0.0, newLoopLength_;
+    int64_t oldLoopLengthSamples_ = 0;
+    RegionExtent oldExtent_ = RegionExtent::WholeSource;
+    bool isAudio_ = false;
     double oldOffset_ = 0.0;
     double bpm_;
 };

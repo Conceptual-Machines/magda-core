@@ -342,12 +342,7 @@ class ClipOperations {
             return;
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
-        event->setLoopStartSeconds(juce::jlimit(0.0, fileDuration, event->loopStartSeconds()));
-
-        const double availableFromLoop = fileDuration - event->loopStartSeconds();
-        if (event->loopLengthSeconds() > availableFromLoop)
-            event->setLoopLengthSeconds(juce::jmax(0.0, availableFromLoop));
-
+        event->clampLoopRegionToSource(fileDuration);
         event->setAnchorSeconds(juce::jlimit(0.0, fileDuration, event->anchorSeconds()));
 
         if (!clip.loopEnabled && !event->autoTempo) {
@@ -627,12 +622,13 @@ class ClipOperations {
         auto* event = clip.primaryEvent();
         if (event == nullptr || !(ratio > 0.0) || ratio == 1.0)
             return;
-        if (event->interpTotalBeats > 0.0)
-            event->interpTotalBeats *= ratio;
-        if (event->interpBpm > 0.0)
-            event->interpBpm *= ratio;
-        // The anchor and loop region are fixed source samples; their beat views
-        // scale with interpBpm on their own, so there is nothing else to touch.
+        // A stretch is the user's reading of the file, so both values become
+        // theirs and a later detection cannot undo it. They scale together, so
+        // a region that follows the interpretation ends the same length.
+        const double beats = event->interpTotalBeats * ratio;
+        const double bpm = event->interpBpm * ratio;
+        event->adoptTotalBeats(beats, Provenance::User);
+        event->adoptBpm(bpm, Provenance::User);
     }
 
     static inline void stretchAbsolute(ClipInfo& clip, double newSpeedRatio, double newLength,
@@ -741,7 +737,7 @@ class ClipOperations {
         if (event == nullptr)
             return;
 
-        event->autoTempo = true;
+        event->setPlaybackIntent(PlaybackIntent::Beat);
         clip.setPlacementBeats(clip.placement.startBeat, lengthBeats);
 
         // Source beats need the SOURCE tempo to become source seconds. Fall
@@ -768,7 +764,18 @@ class ClipOperations {
      */
     static inline void setAutoTempo(ClipInfo& clip, bool enabled, double bpm) {
         auto* event = clip.primaryEvent();
-        if (event == nullptr || event->autoTempo == enabled)
+        if (event == nullptr)
+            return;
+
+        // The request is kept even when it cannot be granted yet, so a tempo
+        // landing later honours it.
+        event->playbackIntent = enabled ? PlaybackIntent::Beat : PlaybackIntent::Free;
+
+        // Only a disable can be skipped. Enabling always runs the transition:
+        // adoption may already have resolved beat mode on (a cached detection
+        // seeded just before this) without the loop, stretch engine or
+        // placement following, and every step below is a no-op once done.
+        if (!enabled && !event->autoTempo)
             return;
 
         if (enabled && !isValidBpm(bpm))
@@ -782,7 +789,7 @@ class ClipOperations {
 
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
 
-        event->setBeatMode(enabled);
+        event->resolveBeatMode();
 
         if (enabled) {
             event->analogPitch = false;  // Analog pitch is incompatible with autoTempo
@@ -795,11 +802,14 @@ class ClipOperations {
             // Preserve current timeline position in beat-domain placement.
             clip.setPlacementBeats(clip.getStartBeats(bpm), clip.placement.lengthBeats);
 
-            // Enable looping (required for TE's autoTempo beat range to work)
+            // Beat mode loops. A whole-source region stays one; a range keeps
+            // the clip's span.
             if (!clip.loopEnabled) {
                 clip.loopEnabled = true;
                 event->loopStartSamples = event->sourceAnchorSamples;
-                event->setLoopLengthSeconds(event->timelineToSource(clip.getTimelineLength(bpm)));
+                if (event->loopExtent != RegionExtent::WholeSource)
+                    event->setLoopLengthSeconds(
+                        event->timelineToSource(clip.getTimelineLength(bpm)));
             }
 
             // Issue #1157: when a full, untrimmed source file carries source
@@ -829,18 +839,13 @@ class ClipOperations {
             else
                 clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
 
-            // A loop region already set is source-domain and needs no
-            // re-derivation. Only a clip that had none needs one seeded, in
-            // source seconds via the source tempo (project tempo while
-            // detection has not produced one yet).
-            if (event->loopLengthSamples <= 0) {
-                const double srcBpm = event->interpBpm > 0.0 ? event->interpBpm : bpm;
-                const double regionBeats = event->interpTotalBeats > 0.0
-                                               ? event->interpTotalBeats
-                                               : clip.placement.lengthBeats;
-                if (srcBpm > 0.0)
-                    event->setLoopLengthSeconds(regionBeats * 60.0 / srcBpm);
-                event->loopStartSamples = 0;
+            // A region that still spans the whole source becomes the beat
+            // count, or the placement when the count is unknown.
+            if (event->loopExtent == RegionExtent::WholeSource) {
+                if (event->interpTotalBeats > 0.0)
+                    event->setLoopExtent(RegionExtent::Interpretation);
+                else
+                    event->setLoopLengthBeats(clip.placement.lengthBeats);
             }
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)

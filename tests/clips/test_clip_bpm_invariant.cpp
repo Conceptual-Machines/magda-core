@@ -34,13 +34,15 @@ ClipInfo makeSessionAutoTempoClip(ClipId id = 1) {
     clip.view = ClipView::Session;
     magda::test::giveAudioEvent(clip, "fake.wav");
     magda::test::setSourceDuration(clip, FILE_DURATION);
-    magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).speedRatio = 1.0;
 
-    // Pretend detection has already populated source metadata.
+    // Pretend detection has already populated source metadata, and the user
+    // asked for beat mode: the intent must be recorded or the next
+    // interpretation write resolves the mode off.
     magda::test::audioEvent(clip).interpBpm = DETECTED_BPM;
     magda::test::audioEvent(clip).interpTotalBeats = DETECTED_NUM_BEATS;
+    magda::test::audioEvent(clip).setPlaybackIntent(PlaybackIntent::Beat);
 
     // User intent: clip occupies 4 timeline beats, loop covers the full file.
     clip.lengthBeats = 4.0;
@@ -120,6 +122,38 @@ TEST_CASE("applyAudioClipBeats - BPM correction preserves source region seconds"
         REQUIRE(c->lengthBeats == Approx(4.0));
         REQUIRE(c->length == Approx(2.0));
     }
+}
+
+// The user typed a tempo, not a beat count: the count read off the file is an
+// inference a later analysis may still refine.
+TEST_CASE("applyAudioClipBeats - a beat count derived from the file is an inference",
+          "[clip][bpm][issue-2674]") {
+    ClipManager::getInstance().shutdown();
+
+    ClipInfo seed;
+    seed.id = 7;
+    seed.trackId = 1;
+    seed.view = ClipView::Session;
+    seed.loopEnabled = true;
+    magda::test::giveAudioEvent(seed, "derived_beats.wav");
+    magda::test::setSourceDuration(seed, FILE_DURATION);
+    magda::test::audioEvent(seed).setPlaybackIntent(PlaybackIntent::Beat);
+    ClipManager::getInstance().restoreClip(seed);
+
+    ClipManager::AudioClipBeatsUpdate u;
+    u.interpretationBpm = DETECTED_BPM;  // provenance defaults to User
+    ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
+
+    auto* event = primaryEventOf(ClipManager::getInstance().getClip(seed.id));
+    REQUIRE(event != nullptr);
+    REQUIRE(event->bpmFrom == Provenance::User);
+    REQUIRE(event->interpTotalBeats == Approx(DETECTED_NUM_BEATS));
+    REQUIRE(event->beatsFrom == Provenance::Analysis);
+
+    REQUIRE(event->adoptTotalBeats(8.0, Provenance::Analysis));
+    REQUIRE(event->interpTotalBeats == Approx(8.0));
+    REQUIRE_FALSE(event->adoptBpm(90.0, Provenance::Analysis));
+    REQUIRE(event->interpBpm == Approx(DETECTED_BPM));
 }
 
 TEST_CASE("getTimelineLoopLength tracks the loop wrap after a BPM reinterpretation",
@@ -208,13 +242,12 @@ TEST_CASE("loop-length edit does not rewrite source total beats", "[clip][bpm][i
         REQUIRE(c != nullptr);
         REQUIRE(primaryEventOf(c)->loopLengthBeats() == Approx(8.0));
         REQUIRE(primaryEventOf(c)->interpTotalBeats == Approx(DETECTED_NUM_BEATS));
-        REQUIRE_FALSE(primaryEventOf(c)->interpTotalBeatsLocked);
+        REQUIRE(primaryEventOf(c)->beatsFrom != Provenance::User);
     }
 
     SECTION("Manual total beats override remains independent from future loop edits") {
         ClipManager::AudioClipBeatsUpdate manual;
         manual.interpretationTotalBeats = 13.0;
-        manual.lockInterpretationTotalBeats = true;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, manual, PROJECT_BPM);
 
         ClipManager::AudioClipBeatsUpdate loopEdit;
@@ -225,7 +258,7 @@ TEST_CASE("loop-length edit does not rewrite source total beats", "[clip][bpm][i
         REQUIRE(c != nullptr);
         REQUIRE(primaryEventOf(c)->loopLengthBeats() == Approx(8.0));
         REQUIRE(primaryEventOf(c)->interpTotalBeats == Approx(13.0));
-        REQUIRE(primaryEventOf(c)->interpTotalBeatsLocked);
+        REQUIRE(primaryEventOf(c)->beatsFrom == Provenance::User);
     }
 }
 
@@ -253,7 +286,6 @@ TEST_CASE("source beats edits update inspector loop end readout",
         ClipManager::AudioClipBeatsUpdate u;
         u.interpretationTotalBeats = beats;
         u.interpretationBpm = beats * 60.0 / sourceDuration;
-        u.lockInterpretationTotalBeats = true;
         ClipManager::getInstance().applyAudioClipBeats(seed.id, u, PROJECT_BPM);
     };
 
@@ -318,7 +350,7 @@ TEST_CASE("late source metadata does not overwrite extended clip placement",
     magda::test::audioEvent(clip).setLoopLengthBeats(8.0);
     magda::test::audioEvent(clip).setLoopLengthSeconds(8.0 * 60.0 / 172.0);
 
-    magda::test::audioEvent(clip).seedInterpretation(8.0, 172.0);
+    magda::test::audioEvent(clip).seedInterpretation(8.0, 172.0, Provenance::FileMetadata);
 
     REQUIRE(clip.placement.lengthBeats == Approx(356.0));
     REQUIRE(clip.lengthBeats == Approx(356.0));
@@ -544,7 +576,11 @@ TEST_CASE("audio clip creation accepts beat placement without seconds round-trip
     REQUIRE(clip->lengthBeats == Approx(lengthBeats));
     REQUIRE(clip->startTime == Approx(startBeats * 60.0 / projectBpm));
     REQUIRE(clip->length == Approx(lengthBeats * 60.0 / projectBpm));
-    REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Approx(lengthBeats * 60.0 / projectBpm));
+    // Nothing chose a range: the region is the whole source and resolves to
+    // the clip's own extent.
+    REQUIRE(primaryEventOf(clip)->loopExtent == RegionExtent::WholeSource);
+    REQUIRE(primaryEventOf(clip)->sourceLengthSeconds(clip->length) ==
+            Approx(lengthBeats * 60.0 / projectBpm));
 }
 
 TEST_CASE("audio clip manager operations accept beat placement", "[clip][bpm][beats][audio]") {

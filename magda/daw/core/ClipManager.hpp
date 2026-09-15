@@ -354,6 +354,12 @@ class ClipManager {
      *         touch offset / phase / loop start. */
     void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
 
+    /** @brief Undo of setLoopLength: put the region's samples and extent back
+     *         as they were, so an interpretation-sized region does not come
+     *         back as an explicit range. */
+    void restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
+                           double bpm = 120.0);
+
     /** @brief Set MIDI loop region start in beats. Does NOT touch offset / phase. */
     void setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm = 120.0);
 
@@ -391,7 +397,8 @@ class ClipManager {
         std::optional<double> sourceDurationSeconds;
         std::optional<double> interpretationBpm;
         std::optional<double> interpretationTotalBeats;
-        bool lockInterpretationTotalBeats = false;
+        /// Who is writing the interpretation; the inspector is the user.
+        Provenance provenance = Provenance::User;
         std::optional<double> lengthBeats;
         std::optional<double> loopStartBeats;
         std::optional<double> loopLengthBeats;
@@ -399,11 +406,11 @@ class ClipManager {
         std::optional<double> startBeats;
     };
 
-    /** @brief Apply a partial canonical update to a session/autoTempo audio
-     *         clip and atomically recompute every derived field. Single
-     *         update path for inspector BPM edit, beat-length slider, and
-     *         BPM-detection callbacks. No-op for non-autoTempo / non-audio
-     *         clips. */
+    /** @brief Apply a partial canonical update to an audio clip and
+     *         atomically recompute every derived field. Single update path for
+     *         the inspector BPM edit and the beat-length slider. The
+     *         interpretation lands whenever its provenance allows; the
+     *         beat-domain fields need beat mode. */
     void applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update, double projectBPM);
 
     /** @brief Persist a user-asserted BPM for the clip's source file back
@@ -435,11 +442,10 @@ class ClipManager {
     /** @brief Every length a loop has, on one log line: the pass, the source
      *  region in seconds and in beats, and the interpretation (#2674). */
     static juce::String describeLoopGeometry(const ClipInfo& clip);
-    /** @brief Detect a tempo for every clip in @p clipIds whose interpretation
-     *  is unset or still the project default, then call @p onReady on the
-     *  message thread. Answers land in AudioThumbnailManager's cache, which is
-     *  where setAutoTempo seeds from; a clip that already has one costs nothing.
-     *  onReady may fire before this returns when nothing needs detecting. */
+    /** @brief Detect a tempo for every clip in @p clipIds that has no
+     *  interpreted tempo, then call @p onReady on the message thread. Answers
+     *  land in AudioThumbnailManager's cache, which is where setAutoTempo seeds
+     *  from. onReady may fire before this returns when nothing needs detecting. */
     void detectMissingTempo(const std::vector<ClipId>& clipIds, double projectBPM,
                             std::function<void()> onReady);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:

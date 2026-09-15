@@ -268,6 +268,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
                                       double sourceDurationSeconds, double loopStartBeats,
                                       double loopLengthBeats, double placementLengthBeats) {
         magda::test::audioEvent(clip).autoTempo = true;
+        magda::test::audioEvent(clip).playbackIntent = PlaybackIntent::Beat;
         clip.loopEnabled = true;
         magda::test::audioEvent(clip).interpBpm = sourceBpm;
         magda::test::audioEvent(clip).interpTotalBeats = sourceDurationSeconds * sourceBpm / 60.0;
@@ -467,6 +468,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         constexpr double sourceBpm = 172.0;
         const double sourceBeats = primaryEventOf(clip)->sourceDurationSeconds() * sourceBpm / 60.0;
         primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->playbackIntent = PlaybackIntent::Beat;
         primaryEventOf(clip)->interpBpm = sourceBpm;
         primaryEventOf(clip)->interpTotalBeats = sourceBeats;
         primaryEventOf(clip)->timeStretchMode =
@@ -512,6 +514,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         primaryEventOf(sessionClip)->autoTempo = true;
+        primaryEventOf(sessionClip)->playbackIntent = PlaybackIntent::Beat;
         primaryEventOf(sessionClip)->interpBpm = sourceBpm;
         primaryEventOf(sessionClip)->interpTotalBeats = sourceBeats;
         primaryEventOf(sessionClip)->timeStretchMode =
@@ -1309,6 +1312,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // Auto-tempo + beat-domain loop region (clips are beat-authoritative).
         auto* clip = ClipManager::getInstance().getClip(clipId);
         primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->playbackIntent = PlaybackIntent::Beat;
         primaryEventOf(clip)->interpBpm = 60.0;
         primaryEventOf(clip)->interpTotalBeats = 5.0;  // 5s sine WAV at 60 BPM
         clip->loopEnabled = true;
@@ -1415,6 +1419,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         // (1.5× the loop region) via setPlacementBeats; deriveTimesFromBeats
         // refreshes the seconds cache so the renderer agrees with TE.
         primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->playbackIntent = PlaybackIntent::Beat;
         primaryEventOf(clip)->interpBpm = 60.0;
         primaryEventOf(clip)->interpTotalBeats = 5.0;
         clip->loopEnabled = true;
@@ -1715,6 +1720,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
             return;
 
         primaryEventOf(clip)->autoTempo = true;
+        primaryEventOf(clip)->playbackIntent = PlaybackIntent::Beat;
         clip->loopEnabled = true;
         primaryEventOf(clip)->interpBpm = 172.0;
         primaryEventOf(clip)->interpTotalBeats = 5.0 * 172.0 / 60.0;

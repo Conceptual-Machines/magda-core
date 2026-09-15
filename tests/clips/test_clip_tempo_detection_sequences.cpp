@@ -142,10 +142,9 @@ const AudioEvent* eventOf(ClipId id) {
 // A detection never overrides what the user set
 // =============================================================================
 
-// Fails today: the callback keeps a typed value only when it differs from the
-// project tempo, so 120 in a 120 project looks defaulted. Passes after phase 2.
+// Analysis never overrides a user-owned tempo, even one equal to the project's.
 TEST_CASE("A detection that lands on a clip the user already set does not replace it",
-          "[clip][tempo][sequence][detection][!mayfail]") {
+          "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
@@ -176,10 +175,9 @@ TEST_CASE("A detection that lands on a clip the user set to another tempo does n
     REQUIRE(eventOf(clipId)->interpBpm == Approx(100.0));
 }
 
-// Fails today: the callback grants beat mode whenever it applies a tempo.
-// Passes after phase 2.
+// A detection supplies a tempo; only the user's intent switches beat mode on.
 TEST_CASE("A detection that lands after the user chose time mode does not switch it on",
-          "[clip][tempo][sequence][detection][!mayfail]") {
+          "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
     const auto clipId = fx.createSessionClip();
 
@@ -187,6 +185,7 @@ TEST_CASE("A detection that lands after the user chose time mode does not switch
     // user's gesture saying it should stay there.
     ClipManager::getInstance().setAutoTempo(clipId, false, kProjectBpm);
     REQUIRE_FALSE(eventOf(clipId)->autoTempo);
+    REQUIRE(eventOf(clipId)->playbackIntent == PlaybackIntent::Free);
 
     REQUIRE(fx.pumpUntilAnswered());
 

@@ -212,36 +212,8 @@ void AudioClipPropertiesContent::createControls() {
                 if (button == nullptr)
                     return;
                 button->setEnabled(true);
-                auto* clip = magda::ClipManager::getInstance().getClip(clipId);
-                if (!clip)
+                if (magda::ClipManager::getInstance().getClip(clipId) == nullptr)
                     return;
-
-                const bool sourceInterpretationBpmLooksDefaulted =
-                    magda::audioEventRef(*clip).interpBpm <= 0.0 ||
-                    std::abs(magda::audioEventRef(*clip).interpBpm - bpm) < 0.1;
-                if (clip->isAudio() && sourceInterpretationBpmLooksDefaulted) {
-                    // Issue #1157: only seed from AudioThumbnailManager when the
-                    // file didn't carry tempo metadata. setSourceMetadata (from TE's
-                    // loopInfo) is authoritative when present.
-                    auto& thumbs = magda::AudioThumbnailManager::getInstance();
-                    auto* event = clip->primaryEvent();
-                    double cached =
-                        event != nullptr ? thumbs.getCachedBPM(event->sourceFilePath()) : 0.0;
-                    if (event != nullptr && cached > 0.0) {
-                        event->interpBpm = cached;
-                        if (auto* thumb = thumbs.getThumbnail(event->sourceFilePath())) {
-                            double fileDuration = thumb->getTotalLength();
-                            if (fileDuration > 0.0) {
-                                if (auto* src = magda::SourcePool::getInstance().getMutable(
-                                        event->sourceId);
-                                    src != nullptr && src->durationSeconds <= 0.0) {
-                                    src->durationSeconds = fileDuration;
-                                }
-                                event->interpTotalBeats = fileDuration * cached / 60.0;
-                            }
-                        }
-                    }
-                }
 
                 magda::ClipManager::getInstance().setAutoTempo(clipId, true, bpm);
 
@@ -330,26 +302,19 @@ void AudioClipPropertiesContent::createControls() {
 
         double newBPM = bpmValue_->getValue();
 
-        // What the user types is the fact. A BPM edit keeps the beat count the
-        // clip already has; one is derived from the file length only when there
-        // is none yet (#2674).
+        // What the user types is the fact. The manager keeps the beat count the
+        // clip has and derives one from the file length only when there is
+        // none yet (#2674).
         double bpm = 120.0;
         if (auto* tc = magda::TimelineController::getCurrent())
             bpm = tc->getState().tempo.bpm;
         magda::ClipManager::AudioClipBeatsUpdate u;
         u.interpretationBpm = newBPM;
-        double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
         if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                 magda::audioEventRef(*clip).sourceFilePath())) {
-            double fileDuration = thumb->getTotalLength();
-            if (fileDuration > 0.0)
-                durationSeconds = fileDuration;
+            const double fileDuration = thumb->getTotalLength();
             if (fileDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
                 u.sourceDurationSeconds = fileDuration;
-        }
-        if (durationSeconds > 0.0 && magda::audioEventRef(*clip).interpTotalBeats <= 0.0) {
-            u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-            u.lockInterpretationTotalBeats = true;
         }
         magda::ClipManager::getInstance().applyAudioClipBeats(clipId_, u, bpm);
     };
@@ -390,7 +355,6 @@ void AudioClipPropertiesContent::createControls() {
         // file length only when there is none yet (#2674).
         magda::ClipManager::AudioClipBeatsUpdate u;
         u.interpretationTotalBeats = newSourceBeats;
-        u.lockInterpretationTotalBeats = true;
         if (durationSeconds > 0.0 && !magda::audioEventRef(*clip).hasInterpretedBpm())
             u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
         if (durationSeconds > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
@@ -445,14 +409,19 @@ void AudioClipPropertiesContent::createControls() {
             return;
         }
         auto* event = clip->primaryEvent();
+        // A displayed hint on a tempo-less event is the cached detection, not a
+        // user statement; an edited label is. An unchanged value keeps its provenance.
+        const bool hadTempo = event != nullptr && event->hasInterpretedBpm();
+        const auto from = hadTempo ? magda::Provenance::User : magda::Provenance::Analysis;
         const double displayedBpm = bpmValue_ ? bpmValue_->getValue() : 0.0;
-        if (event != nullptr && magda::isValidBpm(displayedBpm)) {
-            event->interpBpm = displayedBpm;
+        if (event != nullptr && magda::isValidBpm(displayedBpm) &&
+            (!hadTempo || std::abs(displayedBpm - event->interpBpm) > 1e-6)) {
+            event->adoptBpm(displayedBpm, from);
         }
         const double displayedBeats = beatsValue_ ? beatsValue_->getValue() : 0.0;
-        if (event != nullptr && displayedBeats > 0.0) {
-            event->interpTotalBeats = displayedBeats;
-            event->interpTotalBeatsLocked = true;
+        if (event != nullptr && displayedBeats > 0.0 &&
+            (!hadTempo || std::abs(displayedBeats - event->interpTotalBeats) > 1e-6)) {
+            event->adoptTotalBeats(displayedBeats, from);
         }
 
         std::optional<std::vector<magda::WarpMarker>> markers;
