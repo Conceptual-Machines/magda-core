@@ -17,7 +17,7 @@
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbMetadata.hpp"
-#include "../../../media_db/SampleTaggerDownloader.hpp"
+#include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -2062,7 +2062,8 @@ void MediaDbBrowserContent::runSearch() {
     resultsTable_.updateContent();
     resultsTable_.repaint();
     resultsTable_.setVisible(false);
-    const bool needsModelLoad = magda::media::SampleTaggerDownloader::isInstalled() &&
+    const bool needsModelLoad = magda::media::MediaModelDownloader::isInstalled(
+                                    magda::media::MediaModelDownloader::Bundle::SampleTagger) &&
                                 (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded());
     emptyState_.setText(needsModelLoad ? "Loading text-search model (~500 MB)..." : "Searching...",
                         juce::dontSendNotification);
@@ -2159,7 +2160,9 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         } else {
             text = "No results match the current filters.";
             if constexpr (magda::media::clapBackendAvailable()) {
-                if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
+                if (!queryText_.isEmpty() &&
+                    !magda::media::MediaModelDownloader::isInstalled(
+                        magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
                     text += "\n\nText search is filename / tag only without the AI Sample "
                             "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
                 }
@@ -2221,7 +2224,8 @@ void MediaDbBrowserContent::visibilityChanged() {
     // so by the time they type a query it's likely already done. No-op when
     // the bundle isn't installed (preloadModels() returns immediately) or
     // when the encoder is already loaded.
-    if (magda::media::SampleTaggerDownloader::isInstalled()) {
+    if (magda::media::MediaModelDownloader::isInstalled(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
         auto& ctx = magda::media::MediaDbContext::getInstance();
         if (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded()) {
             if (!searchPool_) {
@@ -2287,7 +2291,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     };
 
     if constexpr (magda::media::clapBackendAvailable()) {
-        if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        if (!magda::media::MediaModelDownloader::isInstalled(
+                magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
             const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
             juce::AlertWindow::showAsync(
                 juce::MessageBoxOptions()

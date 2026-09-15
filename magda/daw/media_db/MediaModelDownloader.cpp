@@ -1,10 +1,11 @@
-#include "SampleTaggerDownloader.hpp"
+#include "MediaModelDownloader.hpp"
 
 #include <juce_cryptography/juce_cryptography.h>
 #include <juce_events/juce_events.h>
 
 #include <array>
 #include <filesystem>
+#include <span>
 #include <system_error>
 
 #include "MediaDbContext.hpp"
@@ -27,7 +28,7 @@ struct ManifestEntry {
     juce::int64 size;
 };
 
-constexpr std::array<ManifestEntry, 3> kManifest = {{
+constexpr std::array<ManifestEntry, 3> kSampleTaggerFiles = {{
     {
         "clap_audio.onnx",
         "https://huggingface.co/ConceptualMachines/magda-sample-tagger/resolve/main/"
@@ -49,6 +50,29 @@ constexpr std::array<ManifestEntry, 3> kManifest = {{
     },
 }};
 
+// Beat This! (CPJKU), MIT, exported to ONNX at opset 14. Hash and size come
+// from scripts/upload_beat_tracker_to_hf.py's output; re-export the model and
+// both change together with the model card (#2674).
+constexpr std::array<ManifestEntry, 1> kBeatTrackerFiles = {{
+    {
+        "beat_this.onnx",
+        "https://huggingface.co/ConceptualMachines/magda-beat-tracker/resolve/main/"
+        "beat_this.onnx",
+        "c5c1466e08abdb03fdeb50668a06f244b787d564c212490482231a9cfbe9ccbd",
+        83077778,
+    },
+}};
+
+std::span<const ManifestEntry> manifestFor(MediaModelDownloader::Bundle bundle) {
+    switch (bundle) {
+        case MediaModelDownloader::Bundle::BeatTracker:
+            return kBeatTrackerFiles;
+        case MediaModelDownloader::Bundle::SampleTagger:
+            break;
+    }
+    return kSampleTaggerFiles;
+}
+
 juce::File modelsDirAsFile() {
     return {juce::String(MediaDbContext::getInstance().modelsDir().string())};
 }
@@ -63,17 +87,21 @@ juce::File destinationFile(const ManifestEntry& entry) {
 // Worker — background thread that runs the actual download and verification
 // ===========================================================================
 
-class SampleTaggerDownloader::Worker : public juce::Thread {
+class MediaModelDownloader::Worker : public juce::Thread {
   public:
-    Worker(SampleTaggerDownloader& owner, ProgressCallback onProgress)
-        : juce::Thread("MAGDA SampleTaggerDownloader"),
+    Worker(MediaModelDownloader& owner, MediaModelDownloader::Bundle bundle,
+           ProgressCallback onProgress)
+        : juce::Thread("MAGDA MediaModelDownloader"),
           owner_(owner),
+          bundle_(bundle),
           onProgress_(std::move(onProgress)) {}
 
     void run() override {
+        const auto manifest = manifestFor(bundle_);
+
         Progress p;
-        p.totalFiles = static_cast<int>(kManifest.size());
-        p.totalBytesAll = SampleTaggerDownloader::expectedTotalBytes();
+        p.totalFiles = static_cast<int>(manifest.size());
+        p.totalBytesAll = MediaModelDownloader::expectedTotalBytes(bundle_);
         p.phase = Phase::Downloading;
 
         const auto destDir = modelsDirAsFile();
@@ -86,8 +114,8 @@ class SampleTaggerDownloader::Worker : public juce::Thread {
 
         juce::int64 cumulativeBytes = 0;
 
-        for (int i = 0; i < static_cast<int>(kManifest.size()); ++i) {
-            const auto& entry = kManifest[i];
+        for (int i = 0; i < static_cast<int>(manifest.size()); ++i) {
+            const auto& entry = manifest[static_cast<std::size_t>(i)];
 
             p.currentFileIndex = i;
             p.currentFilename = entry.filename;
@@ -225,26 +253,28 @@ class SampleTaggerDownloader::Worker : public juce::Thread {
         juce::MessageManager::callAsync([cb, p]() { cb(p); });
     }
 
-    SampleTaggerDownloader& owner_;
+    MediaModelDownloader& owner_;
+
+    MediaModelDownloader::Bundle bundle_;
     ProgressCallback onProgress_;
 };
 
 // ===========================================================================
-// SampleTaggerDownloader
+// MediaModelDownloader
 // ===========================================================================
 
-SampleTaggerDownloader::SampleTaggerDownloader() = default;
+MediaModelDownloader::MediaModelDownloader(Bundle bundle) : bundle_(bundle) {}
 
-SampleTaggerDownloader::~SampleTaggerDownloader() {
+MediaModelDownloader::~MediaModelDownloader() {
     cancel();
     if (worker_) {
         worker_->stopThread(10000);  // up to 10 s for an in-flight chunk to finish
     }
 }
 
-bool SampleTaggerDownloader::isInstalled() {
+bool MediaModelDownloader::isInstalled(Bundle bundle) {
     auto dir = modelsDirAsFile();
-    for (const auto& entry : kManifest) {
+    for (const auto& entry : manifestFor(bundle)) {
         auto f = dir.getChildFile(entry.filename);
         if (!f.existsAsFile()) {
             return false;
@@ -256,29 +286,61 @@ bool SampleTaggerDownloader::isInstalled() {
     return true;
 }
 
-juce::int64 SampleTaggerDownloader::expectedTotalBytes() {
+juce::int64 MediaModelDownloader::expectedTotalBytes(Bundle bundle) {
     juce::int64 total = 0;
-    for (const auto& entry : kManifest) {
+    for (const auto& entry : manifestFor(bundle)) {
         total += entry.size;
     }
     return total;
 }
 
-void SampleTaggerDownloader::start(ProgressCallback onProgress) {
+const char* MediaModelDownloader::displayName(Bundle bundle) {
+    switch (bundle) {
+        case Bundle::BeatTracker:
+            return "Beat tracker";
+        case Bundle::SampleTagger:
+            break;
+    }
+    return "Sample tagger";
+}
+
+const char* MediaModelDownloader::sourceUrl(Bundle bundle) {
+    switch (bundle) {
+        case Bundle::BeatTracker:
+            return "https://huggingface.co/ConceptualMachines/magda-beat-tracker";
+        case Bundle::SampleTagger:
+            break;
+    }
+    return "https://huggingface.co/ConceptualMachines/magda-sample-tagger";
+}
+
+bool MediaModelDownloader::remove(Bundle bundle) {
+    auto dir = modelsDirAsFile();
+    bool removedAll = true;
+    for (const auto& entry : manifestFor(bundle)) {
+        auto file = dir.getChildFile(entry.filename);
+        if (file.existsAsFile() && !file.deleteFile()) {
+            removedAll = false;
+        }
+    }
+    return removedAll;
+}
+
+void MediaModelDownloader::start(ProgressCallback onProgress) {
     if (worker_ && worker_->isThreadRunning()) {
         return;
     }
-    worker_ = std::make_unique<Worker>(*this, std::move(onProgress));
+    worker_ = std::make_unique<Worker>(*this, bundle_, std::move(onProgress));
     worker_->startThread();
 }
 
-void SampleTaggerDownloader::cancel() {
+void MediaModelDownloader::cancel() {
     if (worker_) {
         worker_->signalThreadShouldExit();
     }
 }
 
-bool SampleTaggerDownloader::isRunning() const noexcept {
+bool MediaModelDownloader::isRunning() const noexcept {
     return worker_ != nullptr && worker_->isThreadRunning();
 }
 

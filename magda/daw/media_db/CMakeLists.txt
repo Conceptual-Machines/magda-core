@@ -16,7 +16,7 @@ target_sources(magda_daw PRIVATE
     PathRules.cpp
     PresetDbIndexer.cpp
     RobertaTokenizer.cpp
-    SampleTaggerDownloader.cpp
+    MediaModelDownloader.cpp
     Scan.cpp
     TempoEstimator.cpp
 )

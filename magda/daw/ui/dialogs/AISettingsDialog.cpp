@@ -15,7 +15,7 @@
 #include "../../core/AppPaths.hpp"
 #include "../../core/Config.hpp"
 #include "../../media_db/MediaDbContext.hpp"
-#include "../../media_db/SampleTaggerDownloader.hpp"
+#include "../../media_db/MediaModelDownloader.hpp"
 #include "../../stem_separation/DemucsSeparator.hpp"
 #include "../../stem_separation/StemModelDownloader.hpp"
 #include "../themes/DarkTheme.hpp"
@@ -1827,7 +1827,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string());
         locationField_.setText(currentDir, juce::dontSendNotification);
 
-        const bool installed = magda::media::SampleTaggerDownloader::isInstalled();
+        const bool installed = magda::media::MediaModelDownloader::isInstalled(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger);
         auto& ctx = magda::media::MediaDbContext::getInstance();
         const bool loaded =
             ctx.isAudioEncoderLoaded() && ctx.isTextEncoderLoaded() && ctx.isTokenizerLoaded();
@@ -1843,8 +1844,9 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             actionButton_.setButtonText("Remove");
             progressBar_.setVisible(false);
         } else {
-            const auto totalMb =
-                magda::media::SampleTaggerDownloader::expectedTotalBytes() / (1024.0 * 1024.0);
+            const auto totalMb = magda::media::MediaModelDownloader::expectedTotalBytes(
+                                     magda::media::MediaModelDownloader::Bundle::SampleTagger) /
+                                 (1024.0 * 1024.0);
             statusLabel_.setText(
                 "Sample Analyzer is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
                     " MB) to enable text search over indexed samples. Without it, the media "
@@ -1910,7 +1912,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
             downloader_.cancel();
             return;
         }
-        if (magda::media::SampleTaggerDownloader::isInstalled()) {
+        if (magda::media::MediaModelDownloader::isInstalled(
+                magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
             removeInstalledFiles();
             refreshStatus();
             return;
@@ -1929,8 +1932,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
         });
     }
 
-    void onProgress(const magda::media::SampleTaggerDownloader::Progress& p) {
-        using Phase = magda::media::SampleTaggerDownloader::Phase;
+    void onProgress(const magda::media::MediaModelDownloader::Progress& p) {
+        using Phase = magda::media::MediaModelDownloader::Phase;
         switch (p.phase) {
             case Phase::Downloading:
             case Phase::Verifying: {
@@ -1965,14 +1968,8 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
     }
 
     static void removeInstalledFiles() {
-        // Re-use the downloader's manifest by querying isInstalled state; we
-        // don't bother re-implementing the file list here — just nuke the
-        // models dir's known filenames.
-        auto dir = juce::File(
-            juce::String(magda::media::MediaDbContext::getInstance().modelsDir().string()));
-        for (const auto* name : {"clap_audio.onnx", "clap_text.onnx", "tokenizer.json"}) {
-            dir.getChildFile(name).deleteFile();
-        }
+        magda::media::MediaModelDownloader::remove(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger);
     }
 
     juce::Label statusLabel_;
@@ -1989,7 +1986,141 @@ class AISettingsDialog::SampleTaggerPage : public juce::Component {
     juce::TextButton loadButton_;
     juce::ToggleButton loadOnStartupToggle_;
     bool loadInFlight_ = false;
-    magda::media::SampleTaggerDownloader downloader_;
+    magda::media::MediaModelDownloader downloader_{
+        magda::media::MediaModelDownloader::Bundle::SampleTagger};
+};
+
+// ============================================================================
+// BeatTrackerPage — the model behind the measured BPM tier (issue #2674)
+// ============================================================================
+
+class AISettingsDialog::BeatTrackerPage : public juce::Component {
+  public:
+    using Bundle = magda::media::MediaModelDownloader::Bundle;
+
+    BeatTrackerPage() {
+        statusLabel_.setFont(FontManager::getInstance().getUIFont(12.0f));
+        statusLabel_.setColour(juce::Label::textColourId, DarkTheme::getTextColour());
+        statusLabel_.setJustificationType(juce::Justification::topLeft);
+        addAndMakeVisible(statusLabel_);
+
+        sourceLink_.setButtonText("huggingface.co/ConceptualMachines/magda-beat-tracker");
+        sourceLink_.setURL(
+            juce::URL(magda::media::MediaModelDownloader::sourceUrl(Bundle::BeatTracker)));
+        sourceLink_.setFont(FontManager::getInstance().getUIFont(11.0f), false);
+        addAndMakeVisible(sourceLink_);
+
+        actionButton_.onClick = [this]() { handleActionClick(); };
+        addAndMakeVisible(actionButton_);
+
+        progressBar_.setVisible(false);
+        addAndMakeVisible(progressBar_);
+
+        refreshStatus();
+    }
+
+    void resized() final {
+        auto bounds = getLocalBounds().reduced(12);
+        statusLabel_.setBounds(bounds.removeFromTop(96));
+        bounds.removeFromTop(4);
+        sourceLink_.setBounds(bounds.removeFromTop(18));
+        bounds.removeFromTop(8);
+        auto row = bounds.removeFromTop(28);
+        actionButton_.setBounds(row.removeFromLeft(200).reduced(0, 1));
+        if (progressBar_.isVisible()) {
+            bounds.removeFromTop(8);
+            progressBar_.setBounds(bounds.removeFromTop(20));
+        }
+    }
+
+    void apply(magda::Config&) const {}
+
+  private:
+    void refreshStatus() {
+        const bool installed = magda::media::MediaModelDownloader::isInstalled(Bundle::BeatTracker);
+        if (installed) {
+            statusLabel_.setText(
+                "Beat tracker is installed.\n\nA sample whose filename and header say nothing "
+                "about its tempo has one measured from the audio when the library indexes it, "
+                "and a clip can be put into beat mode without typing a BPM. Remove it to free "
+                "the disk space; tempo then falls back to a weaker estimate.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Remove");
+        } else {
+            const auto totalMb =
+                magda::media::MediaModelDownloader::expectedTotalBytes(Bundle::BeatTracker) /
+                (1024.0 * 1024.0);
+            statusLabel_.setText(
+                "Beat tracker is not installed.\n\nDownload (~" + juce::String(totalMb, 0) +
+                    " MB) to measure the tempo of samples whose filename and header do not "
+                    "carry one. Without it MAGDA falls back to an estimate that is right far "
+                    "less often, and says nothing when it cannot tell.",
+                juce::dontSendNotification);
+            actionButton_.setButtonText("Download Beat Tracker");
+        }
+        progressBar_.setVisible(false);
+        actionButton_.setEnabled(true);
+        resized();
+    }
+
+    void handleActionClick() {
+        if (magda::media::MediaModelDownloader::isInstalled(Bundle::BeatTracker)) {
+            magda::media::MediaModelDownloader::remove(Bundle::BeatTracker);
+            refreshStatus();
+            return;
+        }
+
+        actionButton_.setEnabled(false);
+        progressValue_ = 0.0;
+        progressBar_.setVisible(true);
+        resized();
+
+        const juce::Component::SafePointer<BeatTrackerPage> self(this);
+        downloader_.start([self](const magda::media::MediaModelDownloader::Progress& p) {
+            if (self != nullptr) {
+                self->onProgress(p);
+            }
+        });
+    }
+
+    void onProgress(const magda::media::MediaModelDownloader::Progress& p) {
+        using Phase = magda::media::MediaModelDownloader::Phase;
+        switch (p.phase) {
+            case Phase::Downloading:
+            case Phase::Verifying:
+                if (p.totalBytesAll > 0) {
+                    progressValue_ =
+                        static_cast<double>(p.bytesDoneAll) / static_cast<double>(p.totalBytesAll);
+                }
+                statusLabel_.setText(
+                    juce::String(p.phase == Phase::Verifying ? "Verifying " : "Downloading ") +
+                        p.currentFilename,
+                    juce::dontSendNotification);
+                break;
+            case Phase::Done:
+                refreshStatus();
+                break;
+            case Phase::Failed:
+                statusLabel_.setText("Download failed: " + p.errorMessage,
+                                     juce::dontSendNotification);
+                actionButton_.setEnabled(true);
+                progressBar_.setVisible(false);
+                break;
+            case Phase::Cancelled:
+            case Phase::Idle:
+                refreshStatus();
+                break;
+        }
+    }
+
+    juce::Label statusLabel_;
+    juce::HyperlinkButton sourceLink_;
+    // ProgressBar holds a reference to the value, so the value is declared
+    // first to be constructed first.
+    double progressValue_ = 0.0;
+    juce::ProgressBar progressBar_{progressValue_};
+    juce::TextButton actionButton_;
+    magda::media::MediaModelDownloader downloader_{Bundle::BeatTracker};
 };
 
 // ============================================================================
@@ -2378,9 +2509,11 @@ class AISettingsDialog::CommandModelPage : public juce::Component {
 class AISettingsDialog::ModelDownloadsPage : public juce::Component {
   public:
     ModelDownloadsPage(LocalPage& localPage, SampleTaggerPage* samplePage,
-                       StemSeparationPage* stemsPage, CommandModelPage* commandPage)
+                       BeatTrackerPage* beatPage, StemSeparationPage* stemsPage,
+                       CommandModelPage* commandPage)
         : localPage_(localPage),
           samplePage_(samplePage),
+          beatPage_(beatPage),
           stemsPage_(stemsPage),
           commandPage_(commandPage) {
         categoryLabel_.setText("Category", juce::dontSendNotification);
@@ -2390,6 +2523,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         categoryCombo_.addItem("Local LLM", kLocal);
         if (samplePage_ != nullptr)
             categoryCombo_.addItem("Sample analysis", kSampleAnalyzer);
+        if (beatPage_ != nullptr)
+            categoryCombo_.addItem("Tempo detection", kBeatTracker);
         if (stemsPage_ != nullptr)
             categoryCombo_.addItem("Stem separation", kStems);
         if (commandPage_ != nullptr)
@@ -2402,6 +2537,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         addAndMakeVisible(localPage_);
         if (samplePage_ != nullptr)
             addAndMakeVisible(*samplePage_);
+        if (beatPage_ != nullptr)
+            addAndMakeVisible(*beatPage_);
         if (stemsPage_ != nullptr)
             addAndMakeVisible(*stemsPage_);
         if (commandPage_ != nullptr)
@@ -2419,6 +2556,8 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
         localPage_.setBounds(bounds);
         if (samplePage_ != nullptr)
             samplePage_->setBounds(bounds);
+        if (beatPage_ != nullptr)
+            beatPage_->setBounds(bounds);
         if (stemsPage_ != nullptr)
             stemsPage_->setBounds(bounds);
         if (commandPage_ != nullptr)
@@ -2443,13 +2582,15 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
     }
 
   private:
-    enum Category { kLocal = 1, kSampleAnalyzer, kStems, kCommandModel };
+    enum Category { kLocal = 1, kSampleAnalyzer, kBeatTracker, kStems, kCommandModel };
 
     void updateVisiblePage() {
         const int category = categoryCombo_.getSelectedId();
         localPage_.setVisible(category == kLocal);
         if (samplePage_ != nullptr)
             samplePage_->setVisible(category == kSampleAnalyzer);
+        if (beatPage_ != nullptr)
+            beatPage_->setVisible(category == kBeatTracker);
         if (stemsPage_ != nullptr)
             stemsPage_->setVisible(category == kStems);
         if (commandPage_ != nullptr)
@@ -2459,6 +2600,7 @@ class AISettingsDialog::ModelDownloadsPage : public juce::Component {
 
     LocalPage& localPage_;
     SampleTaggerPage* samplePage_;
+    BeatTrackerPage* beatPage_;
     StemSeparationPage* stemsPage_;
     CommandModelPage* commandPage_;
     juce::Label categoryLabel_;
@@ -2479,6 +2621,7 @@ AISettingsDialog::AISettingsDialog() {
         samplePage_ = std::make_unique<SampleTaggerPage>();
     }
     if constexpr (magda::stems::DemucsSeparator::backendAvailable()) {
+        beatTrackerPage_ = std::make_unique<BeatTrackerPage>();
         stemsPage_ = std::make_unique<StemSeparationPage>();
     }
     // The encoder command model runs on ONNX Runtime, same availability gate
@@ -2486,8 +2629,9 @@ AISettingsDialog::AISettingsDialog() {
     if constexpr (magda::media::clapBackendAvailable()) {
         commandModelPage_ = std::make_unique<CommandModelPage>();
     }
-    modelDownloadsPage_ = std::make_unique<ModelDownloadsPage>(
-        *localPage_, samplePage_.get(), stemsPage_.get(), commandModelPage_.get());
+    modelDownloadsPage_ =
+        std::make_unique<ModelDownloadsPage>(*localPage_, samplePage_.get(), beatTrackerPage_.get(),
+                                             stemsPage_.get(), commandModelPage_.get());
 
     // Wire config page to sibling pages
     configPage_->cloudPage = cloudPage_.get();
