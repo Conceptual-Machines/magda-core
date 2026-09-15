@@ -254,6 +254,12 @@ class SlotLauncherTest final : public juce::UnitTest {
         rig.render(rig.blocksFor(0.5));
 
         rig.launcher.launch(queued);
+
+        // Before any block has run: the click's own notification reads the
+        // state, and a slot button blinks on it or never does (#2674).
+        expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Queued,
+               "The launcher answers for a click the audio thread has not seen yet");
+
         rig.render(1);
 
         expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Queued,

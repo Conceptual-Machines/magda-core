@@ -136,6 +136,7 @@ void SlotLauncher::launch(ClipId clipId) {
 
         gesture.play(keyOf(*clip), due);
     }
+    noteAsked(*clip);
 
     // The user's intent, which outlives any one run and is what a transport
     // stop and start re-launches from.
@@ -174,6 +175,7 @@ void SlotLauncher::stop(ClipId clipId) {
     }
 
     lastState_.erase(clipId);
+    asked_.erase(clipId);
     stopping_.erase(clip->trackId);
 
     if (auto* mutableClip = clips.getClip(clipId); mutableClip != nullptr)
@@ -250,6 +252,7 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         if (auto* track = tracks.getTrack(clip->trackId); track != nullptr)
             track->activeSessionClipId = clip->id;
 
+        noteAsked(*clip);
         stopping_.erase(clip->trackId);
         lastState_[clip->id] = SessionClipPlayState::Queued;
         clips.notifyClipPlaybackStateChanged(clip->id);
@@ -288,6 +291,7 @@ void SlotLauncher::stopTrack(TrackId trackId) {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
         gesture.stop(keyOf(*clip), due);
     }
+    asked_.erase(clipId);
 
     // Cleared here, so the sweep in processStateEvents knows this track is
     // winding down; the mode stays Session until the handle actually stops, or
@@ -339,6 +343,20 @@ void SlotLauncher::stopEverything() {
     syncPlaybackModes();
 }
 
+void SlotLauncher::noteAsked(const ClipInfo& clip) {
+    // Everything else on the track is being handed over, so its mark is stale.
+    for (const auto other :
+         ClipManager::getInstance().getClipsOnTrack(clip.trackId, ClipView::Session))
+        asked_.erase(other);
+
+    const auto* tap = tapFor(clip);
+    const auto reading = tap != nullptr ? tap->read() : engine::LaunchTap::Reading{};
+    asked_[clip.id] = Asked{.playing = reading.playing,
+                            .queued = static_cast<int>(reading.queued),
+                            .holdsSection = reading.holdsSection,
+                            .elapsedBeats = reading.elapsedBeats};
+}
+
 SessionClipPlayState SlotLauncher::playState(ClipId clipId) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip == nullptr || clip->view != ClipView::Session)
@@ -349,6 +367,16 @@ SessionClipPlayState SlotLauncher::playState(ClipId clipId) const {
         return SessionClipPlayState::Stopped;
 
     const auto reading = tap->read();
+    if (const auto asked = asked_.find(clipId); asked != asked_.end()) {
+        const auto& at = asked->second;
+        const bool unanswered =
+            reading.playing == at.playing && static_cast<int>(reading.queued) == at.queued &&
+            reading.holdsSection == at.holdsSection && reading.elapsedBeats == at.elapsedBeats;
+        if (unanswered)
+            return SessionClipPlayState::Queued;
+        asked_.erase(asked);
+    }
+
     if (reading.playing)
         return SessionClipPlayState::Playing;
 
@@ -467,6 +495,7 @@ void SlotLauncher::processStateEvents() {
 
 void SlotLauncher::forget() {
     lastState_.clear();
+    asked_.clear();
     stopping_.clear();
     playheadClip_ = INVALID_CLIP_ID;
     wasPlaying_ = false;
@@ -544,6 +573,7 @@ void SlotLauncher::stopForTransport() {
     }
 
     lastState_.clear();
+    asked_.clear();
     stopping_.clear();
 }
 

@@ -149,6 +149,19 @@ class SlotLauncher {
     /// What each slot was last seen doing, so a change can be notified once.
     std::unordered_map<ClipId, SessionClipPlayState> lastState_;
 
+    /// The tap as it read when a slot was asked to play. Until it moves, the
+    /// audio thread has not answered the click, and the slot is queued: the
+    /// click's own notification reads the state, and a slot button blinks on
+    /// it or never does (#2674). Cleared by any stop the launcher issues.
+    struct Asked {
+        bool playing = false;
+        int queued = 0;
+        bool holdsSection = false;
+        double elapsedBeats = 0.0;
+    };
+    mutable std::unordered_map<ClipId, Asked> asked_;
+    void noteAsked(const ClipInfo& clip);
+
     /// Tracks with a quantized stop in flight (@ref stopPending).
     std::unordered_set<TrackId> stopping_;
 
