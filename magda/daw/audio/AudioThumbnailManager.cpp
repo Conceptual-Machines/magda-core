@@ -203,8 +203,10 @@ double AudioThumbnailManager::measureTempoOnBackgroundThread(const juce::String&
 
 void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
                                                 std::function<void(double)> onComplete) {
-    // Caches are message-thread only (no locks).
-    JUCE_ASSERT_MESSAGE_THREAD;
+    // Caches are message-thread only (no locks). The model tests have no
+    // message thread at all, and that is not the mistake this guards.
+    jassert(juce::MessageManager::getInstanceWithoutCreating() == nullptr ||
+            juce::MessageManager::getInstance()->isThisTheMessageThread());
 
     if (auto cached = bpmCache_.find(filePath); cached != bpmCache_.end()) {
         juce::Logger::writeToLog("[tempo] cached " + juce::String(cached->second, 3) + " for " +

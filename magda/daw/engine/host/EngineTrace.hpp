@@ -42,7 +42,7 @@ class EngineTrace {
      */
     static void print(const juce::String& line);
 
-    enum class Kind : std::uint8_t { NoteOn, NoteOff, Publish, Swap };
+    enum class Kind : std::uint8_t { NoteOn, NoteOff, Publish, Swap, PassWrap, VoiceWindow };
 
     struct Entry {
         Kind kind = Kind::NoteOn;
@@ -51,6 +51,9 @@ class EngineTrace {
         int sample = 0;
         double beat = 0.0;
         std::uint64_t block = 0;
+        // PassWrap and VoiceWindow payload (#2674), see engine/trace/PlaybackTrace.hpp.
+        std::int64_t clip = 0;
+        double a = 0.0, b = 0.0, c = 0.0, d = 0.0;
     };
 
     /// From the audio thread, once per event. Drops rather than blocks when the

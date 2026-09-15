@@ -1,5 +1,6 @@
 #include "EngineTrace.hpp"
 
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 
@@ -26,6 +27,23 @@ juce::String describe(const EngineTrace::Entry& entry) {
         case EngineTrace::Kind::Swap:
             line << "plan published";
             break;
+        case EngineTrace::Kind::PassWrap:
+            line << "PASS WRAP: pass " << juce::String(entry.a, 3) << " beats, wrap at beat "
+                 << juce::String(entry.b, 3) << ", run origin " << juce::String(entry.c, 3)
+                 << ", elapsed " << juce::String(entry.d, 3);
+            break;
+        case EngineTrace::Kind::VoiceWindow: {
+            // The reading is monotonic; the loop folds it below the stream.
+            const auto fold = [&](double x) {
+                return entry.d > 0.0 ? std::fmod(x - entry.c, entry.d) : x;
+            };
+            line << "voice clip " << juce::String(entry.clip) << " reads "
+                 << juce::String(entry.a, 0) << " -> " << juce::String(entry.b, 0) << " = in loop "
+                 << juce::String(fold(entry.a), 0) << " -> " << juce::String(fold(entry.b), 0)
+                 << " of " << juce::String(entry.d, 0)
+                 << (fold(entry.b) < fold(entry.a) ? "  <-- SOURCE LOOP WRAP" : "");
+            break;
+        }
     }
 
     return line;

@@ -1705,6 +1705,22 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+juce::String ClipManager::describeLoopGeometry(const ClipInfo& clip) {
+    const auto* ev = clip.primaryEvent();
+    if (ev == nullptr)
+        return "clip " + juce::String(clip.id) + ": no audio event";
+    return "clip " + juce::String(clip.id) + (clip.view == ClipView::Session ? " slot" : " arr") +
+           " pass=" + juce::String(clip.placement.lengthBeats, 3) + " beats" + " | region " +
+           juce::String(ev->loopStartSeconds(), 3) + "s +" +
+           juce::String(ev->loopLengthSeconds(), 3) + "s (" + juce::String(ev->loopLengthSamples) +
+           " smp = " + juce::String(ev->loopLengthBeats(), 3) + " beats at interp)" + " | interp " +
+           juce::String(ev->interpBpm, 3) + " BPM / " + juce::String(ev->interpTotalBeats, 3) +
+           " beats" + " | file " + juce::String(ev->sourceDurationSeconds(), 3) + "s" +
+           " | beat mode " + (ev->autoTempo ? "on" : "off") + ", loop " +
+           (clip.loopEnabled ? "on" : "off") + ", anchor " + juce::String(ev->sourceAnchorSamples) +
+           " smp";
+}
+
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (clip->isAudio()) {
@@ -1733,6 +1749,7 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             // beats→seconds→beats round-trip that accumulated FP drift each
             // toggle. Just refresh the seconds cache from beats and notify.
             refreshDerivedSeconds(clipId, bpm);
+            juce::Logger::writeToLog("[tempo] after BEAT: " + describeLoopGeometry(*clip));
             notifyClipPropertyChanged(clipId);
         }
     }
@@ -2120,6 +2137,7 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
     // (3) Recompute the seconds cache from beats atomically.
     refreshDerivedSeconds(clipId, projectBPM);
 
+    juce::Logger::writeToLog("[tempo] after edit: " + describeLoopGeometry(*clip));
     notifyClipPropertyChanged(clipId);
 }
 

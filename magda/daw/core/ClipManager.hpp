@@ -431,6 +431,10 @@ class ClipManager {
 
     /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
+
+    /** @brief Every length a loop has, on one log line: the pass, the source
+     *  region in seconds and in beats, and the interpretation (#2674). */
+    static juce::String describeLoopGeometry(const ClipInfo& clip);
     /** @brief Detect a tempo for every clip in @p clipIds whose interpretation
      *  is unset or still the project default, then call @p onReady on the
      *  message thread. Answers land in AudioThumbnailManager's cache, which is
