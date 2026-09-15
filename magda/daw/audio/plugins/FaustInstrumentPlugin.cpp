@@ -1018,6 +1018,15 @@ ParameterInfo FaustInstrumentPlugin::parameterInfo(int index) const {
     return info;
 }
 
+bool FaustInstrumentPlugin::offersParameter(int index) const {
+    if (index >= FaustParamPool::kSize && index < parameterCount())
+        return true;
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return false;
+    const auto& slot = pool_.slot(index);
+    return slot.active && !slot.hidden;
+}
+
 float FaustInstrumentPlugin::parameterValue(int index) const {
     if (index >= FaustParamPool::kSize && index < parameterCount())
         return hostValue(index);

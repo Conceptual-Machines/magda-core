@@ -616,6 +616,13 @@ ParameterInfo FaustPlugin::parameterInfo(int index) const {
     return info;
 }
 
+bool FaustPlugin::offersParameter(int index) const {
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return false;
+    const auto& slot = pool_.slot(index);
+    return slot.active && !slot.hidden;
+}
+
 float FaustPlugin::parameterValue(int index) const {
     if (index < 0 || index >= FaustParamPool::kSize)
         return 0.0f;

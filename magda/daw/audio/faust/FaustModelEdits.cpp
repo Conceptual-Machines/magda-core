@@ -35,8 +35,8 @@ struct DeclaredPatch {
     SidechainPort sidechainPort;
 };
 
-/// An active, visible pool slot is a parameter under its own slot index, and the host's parameters
-/// past the pool always are. A slot that still names the same control keeps its value.
+/// The parameters the patch offers, under their own slot indices. A slot that still names the same
+/// control keeps its value.
 DeclaredPatch declare(const daw::audio::MagdaDevice& device,
                       const daw::audio::IFaustEditorModel& faust,
                       const std::vector<ParameterInfo>& previous) {
@@ -44,11 +44,8 @@ DeclaredPatch declare(const daw::audio::MagdaDevice& device,
     const auto& pool = faust.getPool();
 
     for (int index = 0; index < device.parameterCount(); ++index) {
-        if (index < FaustParamPool::kSize) {
-            const auto& slot = pool.slot(index);
-            if (!slot.active || slot.hidden)
-                continue;
-        }
+        if (!device.offersParameter(index))
+            continue;
 
         auto info = device.parameterInfo(index);
         info.paramIndex = index;

@@ -1,9 +1,13 @@
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "magda/daw/audio/plugins/ArpeggiatorPlugin.hpp"
 #include "magda/daw/audio/plugins/DeviceCatalogParameters.hpp"
 #include "magda/daw/audio/plugins/DeviceStateHydration.hpp"
+#include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
+#include "magda/daw/audio/plugins/FaustParamPool.hpp"
+#include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/DeviceState.hpp"
@@ -51,6 +55,27 @@ TEST_CASE("Seeding gives the model every parameter a device declares", "[device-
         CHECK(param->name.isNotEmpty());
         CHECK(param->currentValue == Catch::Approx(param->defaultValue));
     }
+}
+
+TEST_CASE("Seeding gives a Faust device the controls its patch has, not its empty pool slots",
+          "[device-catalog-params][2659]") {
+    // A fresh effect runs the passthrough, which has no controls at all.
+    auto effect = internalDevice(magda::daw::audio::FaustPlugin::xmlTypeName);
+    seedDeclaredParameters(effect);
+    CHECK(effect.parameters.empty());
+
+    // A fresh instrument runs its default synth: that patch's controls, then the host's voice
+    // settings.
+    auto instrument = internalDevice(magda::daw::audio::FaustInstrumentPlugin::xmlTypeName);
+    REQUIRE(seedDeclaredParameters(instrument));
+    const auto poolSlots = std::ranges::count_if(instrument.parameters, [](const auto& param) {
+        return param.paramIndex < magda::daw::audio::FaustParamPool::kSize;
+    });
+    CHECK(poolSlots > 0);
+    CHECK(poolSlots < magda::daw::audio::FaustParamPool::kSize);
+    CHECK(instrument.parameters.size() ==
+          static_cast<size_t>(poolSlots) +
+              magda::daw::audio::FaustInstrumentPlugin::kHostParamCount);
 }
 
 TEST_CASE("Seeding leaves a parameter the model already carries alone", "[device-catalog-params]") {

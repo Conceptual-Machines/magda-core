@@ -191,6 +191,12 @@ class MagdaDevice {
     }
     virtual void setParameterValue(int, float) {}
 
+    /// Whether @p slot is a parameter the device offers now. A pool its state fills (a runtime
+    /// Faust patch) answers false for an empty slot, which stays addressable but out of the model.
+    virtual bool offersParameter(int /*slot*/) const {
+        return true;
+    }
+
     /// Every parameter this device describes, in slot order. Non-virtual, over
     /// the two above: a device implements nothing extra. The view yields values,
     /// because parameterInfo() builds one per call.
