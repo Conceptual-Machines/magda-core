@@ -219,8 +219,9 @@ TEST_CASE("A warped session slot's cycle is the warp-aware loop length",
     REQUIRE(slot != nullptr);
 
     INFO("warp-aware loop length " << warpAware << " beats, sessionCycleBeats "
-                                   << clip.sessionCycleBeats() << ", slot " << slot->lengthBeats);
-    CHECK(clip.sessionCycleBeats() == Approx(warpAware));
+                                   << clip.sessionCycleBeats(120.0) << ", slot "
+                                   << slot->lengthBeats);
+    CHECK(clip.sessionCycleBeats(120.0) == Approx(warpAware));
     CHECK(slot->lengthBeats == Approx(warpAware));
     REQUIRE(slot->audio.size() == 1);
     CHECK(slot->audio.front().span.beats.length() == Approx(warpAware));

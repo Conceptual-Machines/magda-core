@@ -1298,15 +1298,25 @@ struct ClipInfo {
 
     /// What one pass of a session slot is worth, in project beats: the loop
     /// region when the clip loops, else the placement. The launcher retriggers
-    /// on it and the playhead wraps on it. A 16-beat loop dropped at the
-    /// project tempo has a 10.97-beat placement, and read that it wrapped
-    /// early (#2674).
-    double sessionCycleBeats() const {
+    /// on it and the playhead wraps on it (#2674). In beat mode the region's
+    /// source beats are project beats; a free-playing clip plays the region
+    /// at its own rate, so its pass is those seconds at the project tempo.
+    double sessionCycleBeats(double projectBpm) const {
         if (loopEnabled) {
             const auto* event = primaryEvent();
-            const double beats = event != nullptr ? event->loopLengthBeats() : loopLengthBeats;
-            if (beats > 0.0)
-                return beats;
+            if (event == nullptr) {
+                if (loopLengthBeats > 0.0)
+                    return loopLengthBeats;
+            } else if (event->autoTempo) {
+                if (const double beats = event->loopLengthBeats(); beats > 0.0)
+                    return beats;
+            } else if (isValidBpm(projectBpm)) {
+                const double seconds = event->loopLengthSamples > 0
+                                           ? event->loopLengthSeconds()
+                                           : event->sourceDurationSeconds();
+                if (seconds > 0.0)
+                    return event->sourceToTimeline(seconds) * projectBpm / 60.0;
+            }
         }
         return placement.lengthBeats;
     }

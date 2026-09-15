@@ -132,7 +132,7 @@ class SlotLauncher {
         double passBeats = 0.0;
         bool looping = false;
     };
-    static Material materialOf(const ClipInfo& clip);
+    static Material materialOf(const ClipInfo& clip, double projectBpm);
 
     /// Stop everything sounding, for a transport that stopped: a slot resumed
     /// mid-phrase is not what the fork does, and not what a launcher means.

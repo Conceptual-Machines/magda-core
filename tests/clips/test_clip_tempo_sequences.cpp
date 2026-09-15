@@ -145,7 +145,33 @@ TEST_CASE("Changing the beat count at a typed tempo keeps the loop region",
     REQUIRE(event->interpBpm == Approx(58.0));
     REQUIRE(event->bpmFrom == Provenance::User);
     REQUIRE(event->loopLengthSamples == wholeFile);
-    REQUIRE(clip->sessionCycleBeats() == Approx(16.0));
+    REQUIRE(clip->sessionCycleBeats(kProjectBpm) == Approx(16.0));
+}
+
+// A free-playing slot plays its region at its own rate, so its pass is the
+// region's seconds at the project tempo, not the source beats.
+TEST_CASE("A free-playing slot's pass is its region at the project tempo",
+          "[clip][tempo][sequence]") {
+    TempoSequenceFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    LoopFile file;
+
+    const auto clipId = dropSessionClip(file.path());
+    const auto* clip = clips.getClip(clipId);
+    REQUIRE(!clip->primaryEvent()->autoTempo);
+    REQUIRE(clip->sessionCycleBeats(120.0) == Approx(kFileSeconds * 2.0).margin(0.01));
+    REQUIRE(clip->sessionCycleBeats(60.0) == Approx(kFileSeconds).margin(0.01));
+
+    // Sped up, the same region passes in half the time.
+    clips.setSpeedRatio(clipId, 2.0);
+    REQUIRE(clip->sessionCycleBeats(120.0) == Approx(kFileSeconds).margin(0.01));
+    clips.setSpeedRatio(clipId, 1.0);
+
+    // In beat mode the region's source beats are the pass whatever the project plays at.
+    clips.setSourceTempo(clipId, kFileBpm);
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+    REQUIRE(clip->primaryEvent()->autoTempo);
+    REQUIRE(clip->sessionCycleBeats(60.0) == Approx(kFileBeats));
 }
 
 // The file is 5.516 s: 15.996 beats at 174, a few samples short of the 16 it
@@ -174,7 +200,7 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     // The count is the typed tempo in other units, so it is the user's too.
     REQUIRE(event->beatsFrom == Provenance::User);
     REQUIRE(event->loopLengthSeconds() == Approx(16.0 * 60.0 / 174.0).margin(0.001));
-    REQUIRE(clip->sessionCycleBeats() == Approx(16.0));
+    REQUIRE(clip->sessionCycleBeats(kProjectBpm) == Approx(16.0));
 
     // A file that is not a whole number of beats keeps its fraction.
     SourcePool::getInstance().clear();
@@ -257,7 +283,7 @@ TEST_CASE("Correcting the tempo on a whole-file loop restates its beat count and
     REQUIRE(event->interpTotalBeats == Approx(beatsAt174));
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
     REQUIRE(event->loopLengthSeconds() == Approx(kFileSeconds).margin(0.001));
-    REQUIRE(clip->sessionCycleBeats() == Approx(beatsAt174).margin(0.01));
+    REQUIRE(clip->sessionCycleBeats(kProjectBpm) == Approx(beatsAt174).margin(0.01));
 }
 
 TEST_CASE("A loop's interpretation, region and cycle survive save and reload",
@@ -282,7 +308,7 @@ TEST_CASE("A loop's interpretation, region and cycle survive save and reload",
     REQUIRE(loaded.loopEnabled == saved->loopEnabled);
     REQUIRE(loadedEvent->loopStartSamples == savedEvent->loopStartSamples);
     REQUIRE(loadedEvent->loopLengthSamples == savedEvent->loopLengthSamples);
-    REQUIRE(loaded.sessionCycleBeats() == Approx(saved->sessionCycleBeats()));
+    REQUIRE(loaded.sessionCycleBeats(kProjectBpm) == Approx(saved->sessionCycleBeats(kProjectBpm)));
 }
 
 TEST_CASE("A tempo edit made through a command is undone as one step", "[clip][tempo][sequence]") {

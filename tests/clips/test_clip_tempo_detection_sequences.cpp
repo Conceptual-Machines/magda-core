@@ -188,6 +188,32 @@ TEST_CASE("A second request for a file in flight joins the first",
     REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == Approx(kFileBpm));
 }
 
+// BEAT before a tempo exists is a request; the tempo the user then types
+// grants it, and the transition has to follow the grant.
+TEST_CASE("A typed tempo completes a BEAT request made without one",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+    const auto clipId =
+        clips.createAudioClipBeats(1, 0.0, 4.0, fx.path, ClipView::Arrangement, kProjectBpm);
+    auto* event = clips.getClip(clipId)->primaryEvent();
+    event->analogPitch = true;
+    event->speedRatio = 1.5;
+
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+    REQUIRE(event->playbackIntent == PlaybackIntent::Beat);
+    REQUIRE(!event->autoTempo);
+    REQUIRE(!clips.getClip(clipId)->loopEnabled);
+
+    clips.setSourceTempo(clipId, 120.0);
+    REQUIRE(event->autoTempo);
+    REQUIRE(clips.getClip(clipId)->loopEnabled);
+    REQUIRE(!event->analogPitch);
+    REQUIRE(event->speedRatio == Approx(1.0));
+    REQUIRE(event->timeStretchMode != time_stretch_mode::kDisabled);
+    REQUIRE(event->loopExtent == RegionExtent::Interpretation);
+}
+
 TEST_CASE("A detection answering for a file the clip no longer plays lands nowhere",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;

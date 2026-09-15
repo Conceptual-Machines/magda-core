@@ -1948,6 +1948,17 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
                                                  beatMode, std::move(mediaMarkers));
 }
 
+/// A tempo landing on a clip that asked for beat mode grants it, and the
+/// transition (loop, speed, stretch engine) has to follow the grant.
+static void settleBeatMode(ClipInfo& clip, double projectBpm) {
+    auto* event = clip.primaryEvent();
+    if (event == nullptr || !event->autoTempo)
+        return;
+    ClipOperations::setPlaybackIntent(clip, event->playbackIntent, projectBpm);
+    if (event->timeStretchMode == time_stretch_mode::kDisabled)
+        event->timeStretchMode = time_stretch_mode::kSignalsmith;
+}
+
 void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
     auto* clip = getClip(clipId);
     auto* event = primaryEventOf(clip);
@@ -1975,6 +1986,7 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault());
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
@@ -2010,6 +2022,7 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault());
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
@@ -2043,6 +2056,7 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
     // A loop with a tempo is its beat count.
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault());
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);

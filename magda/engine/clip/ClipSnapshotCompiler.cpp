@@ -415,7 +415,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             // loop region, which is what the launcher retriggers on (#2674).
             auto normalised = clip;
             normalised.view = ClipView::Arrangement;
-            normalised.setPlacementBeats(0.0, clip.sessionCycleBeats());
+            normalised.setPlacementBeats(0.0, clip.sessionCycleBeats(tempoMap.bpmAt(0.0)));
 
             ClipLane slotLane;
             slotLane.trackId = lane.trackId;
@@ -431,7 +431,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
             SessionSlotPlayback slot;
             slot.sceneIndex = clip.sceneIndex;
-            slot.lengthBeats = clip.sessionCycleBeats();
+            slot.lengthBeats = clip.sessionCycleBeats(tempoMap.bpmAt(0.0));
             slot.follow = compileFollow(clip);
             slot.audio = std::move(compiled.tracks.front().audio);
             slot.midi = std::move(compiled.tracks.front().midi);
