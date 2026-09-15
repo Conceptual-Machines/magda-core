@@ -10,7 +10,9 @@
 #include <memory>
 #include <vector>
 
+#include "BeatTracker.hpp"
 #include "PathRules.hpp"
+#include "TempoEstimator.hpp"
 
 namespace magda::media {
 
@@ -142,8 +144,33 @@ std::optional<double> metadataBpm(const juce::StringPairArray& meta) {
     return std::nullopt;
 }
 
-std::optional<double> dspBpm(const std::filesystem::path& path) {
-    (void)path;
+// A tempo nothing is sure of is worse than none: the seeding rule fills gaps,
+// so a guess becomes a clip's interpretation and stays there. Both figures come
+// from measuring against a library of loops whose tempo is in their filenames.
+//
+// The beat tracker at 0.8 answers for half of that library and is right 96% of
+// the time allowing an octave. The autocorrelation behind it reaches 62% at
+// best, so it only speaks when the model is not installed (#2674).
+constexpr double kMinBeatSteadiness = 0.8;
+constexpr double kMinTempoConfidence = 0.6;
+
+/// The learned tier. Nothing when the model was never downloaded, when it
+/// cannot read the file, or when the beats it found are not steady enough to
+/// call a tempo.
+std::optional<double> trackedBpm(const juce::AudioBuffer<float>& mono, int sampleRate) {
+    if (!BeatTracker::isAvailable()) {
+        return std::nullopt;
+    }
+    try {
+        static const BeatTracker tracker(BeatTracker::defaultModelPath());
+        const auto tracked =
+            tracker.track(mono.getReadPointer(0), mono.getNumSamples(), sampleRate);
+        if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
+            return tracked->bpm;
+        }
+    } catch (const std::exception&) {
+        // A model that will not load is a tier that does not answer.
+    }
     return std::nullopt;
 }
 
@@ -249,6 +276,9 @@ std::array<signed char, kFftBins> makePitchClassLookup(int sampleRate) {
 struct SpectralAnalysis {
     SpectralStats stats{0.0F, 0.0F, 0.0F};
     std::optional<ChromaKey> key;
+    /// One spectral flux value per hop. Transient density is a count of its
+    /// peaks; the tempo tier reads the shape (#2674).
+    std::vector<float> flux;
 };
 
 SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, int sampleRate,
@@ -339,6 +369,7 @@ SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, i
     if (analyseKey) {
         out.key = computeKey(chroma);
     }
+    out.flux = std::move(flux);
     return out;
 }
 
@@ -354,15 +385,6 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     f.sampleRate = decoded->sampleRate;
     f.channels = decoded->channels;
     f.durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
-
-    // --- BPM: filename > metadata ---
-    if (auto p = parseBpmFromPath(path)) {
-        f.bpm = p;
-    } else if (auto m = metadataBpm(decoded->metadata)) {
-        f.bpm = m;
-    } else if (auto d = dspBpm(path)) {
-        f.bpm = d;
-    }
 
     // --- Key: filename > DSP ---
     // Metadata-encoded keys (ACID root note) exist but are rare and decode
@@ -385,6 +407,21 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
         f.keyConfidence = ck.confidence;
     }
 
+    // --- BPM: filename > metadata > measured ---
+    // The measured tier reads the flux envelope the pass above already built,
+    // so a file pays one FFT for its statistics, its key and its tempo.
+    if (auto p = parseBpmFromPath(path)) {
+        f.bpm = p;
+    } else if (auto m = metadataBpm(decoded->metadata)) {
+        f.bpm = m;
+    } else if (auto tracked = trackedBpm(decoded->mono, decoded->sampleRate)) {
+        f.bpm = tracked;
+    } else if (auto measured = estimateTempo(
+                   analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
+               measured && measured->confidence >= kMinTempoConfidence) {
+        f.bpm = measured->bpm;
+    }
+
     // --- Always-DSP spectral stats ---
     f.rms = decoded->mono.getRMSLevel(0, 0, decoded->mono.getNumSamples());
     f.spectralCentroid = analysis.stats.centroid;
@@ -392,6 +429,17 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     f.transientDensity = analysis.stats.transientDensity;
 
     return f;
+}
+
+std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path) {
+    auto decoded = decodeFile(path);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    const auto analysis = computeSpectralAnalysis(decoded->mono, decoded->sampleRate, false);
+    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
+    return estimateTempo(analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate,
+                         durationS);
 }
 
 }  // namespace magda::media

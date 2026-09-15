@@ -9,9 +9,11 @@
 //   1. Filename token (parseBpmFromPath / parseKeyFromPath in PathRules)
 //   2. Audio metadata chunks (ACID tempo, ACID root note via JUCE reader
 //      metadataValues)
-//   3. DSP fallback for key (chroma + Krumhansl); BPM DSP fallback is disabled.
+//   3. DSP: chroma + Krumhansl for key, TempoEstimator for BPM.
 //
-// The cheap tiers run first so a well-named sample never pays the DSP cost.
+// The cheap tiers run first, but nothing is saved by it: the DSP pass runs for
+// every file anyway for the spectral statistics the indexer derives shape from,
+// and the tempo tier reads the flux envelope that pass already built.
 
 #pragma once
 
@@ -26,9 +28,9 @@ struct AudioFeatures {
     int sampleRate = 0;
     int channels = 0;
 
-    // Source tier: filename > metadata > DSP. BPM DSP fallback is disabled.
-    // nullopt if no source produced a
-    // sensible value (silence, no key marker on atonal content, etc.).
+    // Source tier: filename > metadata > DSP. nullopt if no source produced a
+    // sensible value (silence, no key marker on atonal content, nothing
+    // periodic enough to call a tempo).
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;   // "C", "C#", "D", ...
     std::optional<std::string> keyScale;  // "major" | "minor"
@@ -45,5 +47,12 @@ struct AudioFeatures {
 // can't be opened or read. Safe to call from a background thread; uses its
 // own juce::AudioFormatManager (not thread-safe to share).
 std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path);
+
+// Measure the tempo of the file at `path` from its audio alone, ignoring what
+// its name or its metadata chunks claim. What the third BPM tier answers, and
+// how a detector is measured against material whose tempo is already known.
+// nullopt when the file cannot be read or nothing periodic explains it.
+struct TempoEstimate;
+std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path);
 
 }  // namespace magda::media

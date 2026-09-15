@@ -340,6 +340,9 @@ set(TEST_SOURCES
     media/test_media_db_indexer.cpp
     # What a producer called a file (#2674)
     media/test_path_shape_hint.cpp
+    # Tempo measured from the audio, and what it scores on a real library
+    media/test_tempo_estimator.cpp
+    media/test_tempo_estimator_corpus.cpp
     # Media database (issue #768) — Phase E2: MediaDbQuery (hybrid search)
     media/test_media_db_query.cpp
     # Media database (issue #1319) — CLAP zero-shot tagging
