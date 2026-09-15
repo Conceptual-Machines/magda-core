@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <utility>
 
 #include "ClipInfo.hpp"
@@ -89,6 +90,50 @@ class ClipOperations {
                                                     : clip.lengthBeats);
         const double startBeat = clip.loopEnabled ? 0.0 : juce::jmax(0.0, clip.midiTrimOffset);
         return {startBeat, juce::jmax(0.0, lengthBeats)};
+    }
+
+    /**
+     * @brief The content beat heard at @p timelineBeat, or nullopt outside the clip.
+     *
+     * Follows the engine's MIDI fold (MidiEventList.cpp): a looped clip plays its loop start
+     * plus the phase into the loop, otherwise the trim and offset move the content origin.
+     */
+    static inline std::optional<double> contentBeatAtTimelineBeat(const ClipInfo& clip,
+                                                                  double timelineBeat, double bpm) {
+        const double elapsed = timelineBeat - clip.placement.startBeat;
+        if (elapsed < 0.0 || elapsed > clip.placement.lengthBeats)
+            return std::nullopt;
+
+        const double offset = clip.isMidi() ? clip.midiOffset : 0.0;
+        const double loopLength = clip.loopLengthInBeats(bpm);
+        if (clip.loopEnabled && loopLength > 0.0)
+            return clip.loopStartInBeats(bpm) + wrapPhase(elapsed + offset, loopLength);
+        return elapsed + offset + getMidiVisibleRange(clip).startBeat;
+    }
+
+    /**
+     * @brief The timeline beat that plays @p contentBeat; the inverse of contentBeatAtTimelineBeat.
+     *
+     * A looped clip plays each content beat once per pass, so this takes the pass
+     * @p nearTimelineBeat is in and keeps the result inside the clip.
+     */
+    static inline double timelineBeatForContentBeat(const ClipInfo& clip, double contentBeat,
+                                                    double nearTimelineBeat, double bpm) {
+        const double start = clip.placement.startBeat;
+        const double offset = clip.isMidi() ? clip.midiOffset : 0.0;
+        const double loopLength = clip.loopLengthInBeats(bpm);
+        if (!clip.loopEnabled || loopLength <= 0.0)
+            return start + contentBeat - getMidiVisibleRange(clip).startBeat - offset;
+
+        const double end = clip.placement.endBeat();
+        const double phase = wrapPhase(contentBeat - clip.loopStartInBeats(bpm), loopLength);
+        const double pass = std::floor((nearTimelineBeat - start + offset) / loopLength);
+        double target = start + pass * loopLength + phase - offset;
+        while (target < start)
+            target += loopLength;
+        while (target > end)
+            target -= loopLength;
+        return juce::jlimit(start, end, target);
     }
 
     static inline bool clipMidiNoteToVisibleRange(const ClipInfo& clip, MidiNote& note) {

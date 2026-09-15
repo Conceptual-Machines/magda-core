@@ -92,7 +92,7 @@ class TimeRuler : public juce::Component, private juce::Timer {
     // Loop phase marker (shows where playback phase is within the loop)
     void setLoopPhaseMarker(double positionSeconds, bool visible);
 
-    // Playhead position (for drawing playhead line during playback)
+    // Playhead line position in this ruler's display seconds; negative hides it.
     void setPlayheadPosition(double positionSeconds);
     double getPlayheadPosition() const {
         return playheadPosition;

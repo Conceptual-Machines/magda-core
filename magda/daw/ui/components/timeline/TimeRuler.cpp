@@ -848,27 +848,13 @@ void TimeRuler::drawBarsBeatsMode(juce::Graphics& g) {
         }
     }
 
-    // Draw playhead line if playing — only when within the clip's time range
-    if (playheadPosition >= 0.0 && clipLength > 0.0) {
-        double relPos = playheadPosition - timeOffset;
-        if (relPos >= 0.0 && relPos <= clipLength) {
-            double displayTime = relativeMode ? (playheadPosition - timeOffset) : playheadPosition;
-
-            // Wrap playhead within loop region when looping is active
-            if (loopEnabled && loopActive && loopLength > 0.0) {
-                double loopStart = relativeMode ? loopOffset : (timeOffset + loopOffset);
-                double wrapped = std::fmod(displayTime - loopStart, loopLength);
-                if (wrapped < 0.0)
-                    wrapped += loopLength;
-                displayTime = loopStart + wrapped;
-            }
-
-            int playheadX = timeToPixel(displayTime);
-            if (playheadX >= 0 && playheadX <= width) {
-                int tickAreaTop = height - tickHeightMajor();
-                g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
-                g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
-            }
+    // Draw playhead line if playing; the owner has already placed it on this ruler's axis
+    if (playheadPosition >= 0.0) {
+        int playheadX = timeToPixel(playheadPosition);
+        if (playheadX >= 0 && playheadX <= width) {
+            int tickAreaTop = height - tickHeightMajor();
+            g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
+            g.fillRect(playheadX - 1, tickAreaTop, 2, tickHeightMajor());
         }
     }
 }

@@ -270,7 +270,8 @@ class MidiEditorContent : public PanelContent,
     virtual int getLeftPanelWidth() const = 0;
     virtual void updateGridSize() = 0;
     virtual void setGridPixelsPerBeat(double ppb) = 0;
-    virtual void setGridPlayheadPosition(double position) = 0;
+    // Transport position in timeline beats while playing; negative hides the playhead.
+    virtual void setGridPlayheadBeat(double timelineBeat) = 0;
 
     // --- Edit cursor (subclass must forward to its grid component) ---
     virtual void setGridEditCursorPosition(double positionSeconds, bool visible) = 0;
