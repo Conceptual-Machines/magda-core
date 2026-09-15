@@ -41,6 +41,9 @@ struct InternalPluginSpec {
     const char* const* tags = nullptr;  // extensible behavioural classifications
     int tagCount = 0;
     int defaultModulationParamIndex = -1;
+    // The saved state decides which parameters the device has (a runtime Faust patch), so an
+    // instance built from one state cannot stand in for another.
+    bool stateDefinesParameters = false;
     DevicePluginPtr (*createInSession)(const InternalPluginSpec&, DeviceSessionKey,
                                        const juce::String& savedPluginState) = nullptr;
     std::unique_ptr<MagdaDevice> (*createDevice)(const DevicePluginCreationContext&) = nullptr;

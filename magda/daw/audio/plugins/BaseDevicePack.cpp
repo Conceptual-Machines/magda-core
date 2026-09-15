@@ -426,6 +426,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .showInBrowser = true,
                    .tags = kFaustTags,
                    .tagCount = static_cast<int>(std::size(kFaustTags)),
+                   .stateDefinesParameters = true,
                    .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<FaustPlugin>});
     add(registry, {.pluginId = FaustInstrumentPlugin::xmlTypeName,
@@ -441,6 +442,7 @@ void registerNativeDevices(InternalPluginRegistry& registry) {
                    .isInstrument = true,
                    .tags = kFaustInstrumentTags,
                    .tagCount = static_cast<int>(std::size(kFaustInstrumentTags)),
+                   .stateDefinesParameters = true,
                    .createInSession = createValueTreePlugin,
                    .createDevice = createDevice<FaustInstrumentPlugin>});
     add(registry,

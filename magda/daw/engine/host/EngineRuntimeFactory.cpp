@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "../../audio/plugins/InternalPluginRegistry.hpp"
 #include "../../audio/plugins/engine/EngineDeviceFactory.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipMidiSource.hpp"
@@ -13,10 +14,16 @@ namespace adapter = magda::daw::audio::engine_adapter;
 namespace {
 
 /// Which device a slot asks for, as one string. No display name and no role,
-/// so a rename and a load's own correction are not a different device.
+/// so a rename and a load's own correction are not a different device. A device
+/// whose state decides its parameters is also its state: the instance holds a
+/// copy of the parameters it was built with (#2659).
 juce::String deviceIdentityOf(const DeviceInfo& device) {
-    return device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
-           device.getFormatString();
+    auto identity = device.pluginId + "|" + device.uniqueId + "|" + device.fileOrIdentifier + "|" +
+                    device.getFormatString();
+    if (const auto* spec = daw::audio::findInternalPluginSpec(device.pluginId);
+        spec != nullptr && spec->stateDefinesParameters)
+        identity << "|" << juce::String::toHexString(device.pluginState.hashCode64());
+    return identity;
 }
 
 }  // namespace

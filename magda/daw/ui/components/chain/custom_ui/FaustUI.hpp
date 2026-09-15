@@ -9,7 +9,8 @@
 
 namespace magda::daw::audio {
 class IFaustEditorModel;
-}
+class MagdaDevice;
+}  // namespace magda::daw::audio
 
 namespace magda {
 class SvgButton;
@@ -28,15 +29,13 @@ class FaustCustomView;
  *
  * This component renders that strip and *only* that strip. The
  * device's parameter widgets are rendered by the standard
- * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo that
- * FaustProcessor produces from the FaustPlugin pool. Sharing the
- * grid with every other device gives Faust mod/macro/automation/MIDI
- * Learn drag-and-drop for free.
+ * DeviceSlotComponent::paramGrid_, driven by the ParameterInfo the
+ * loaded patch declares on the model. Sharing the grid with every
+ * other device gives Faust mod/macro/automation/MIDI Learn
+ * drag-and-drop for free.
  *
- * After a successful Load or Edit-recompile, FaustUI fires
- * onDspChanged so the host (DeviceSlotComponent) can trigger a
- * track-devices-changed rebuild — paramGrid_ then re-fetches
- * DeviceInfo.parameters from the (now refreshed) pool.
+ * Load and Edit-recompile go through faust_edits::loadSource, which
+ * puts the patch on the model and rebuilds the slot against it.
  *
  * Fixed-height layout: the host carves `kHeaderHeight` from the top
  * of the content area for this strip, and gives the rest to
@@ -61,12 +60,13 @@ class FaustUI : public juce::Component {
     FaustUI();
     ~FaustUI() override;
 
-    void setPlugin(magda::daw::audio::IFaustEditorModel* plugin);
+    /// The Faust device rendering this slot, held open while bound. Null unbinds.
+    void setDevice(std::shared_ptr<magda::daw::audio::MagdaDevice> device);
+    const magda::daw::audio::MagdaDevice* boundDevice() const {
+        return device_.get();
+    }
 
-    /// Path of the device this UI is bound to. Used by the DSP-load
-    /// flow to fire a track-devices-changed notification, which
-    /// makes the standard paramGrid_ rebuild against the new pool
-    /// state.
+    /// Path of the device this UI loads patches into.
     void setDevicePath(const ChainNodePath& path);
 
     void paint(juce::Graphics& g) override;
@@ -96,6 +96,7 @@ class FaustUI : public juce::Component {
 
     void refreshNameLabel();
 
+    std::shared_ptr<magda::daw::audio::MagdaDevice> device_;
     magda::daw::audio::IFaustEditorModel* plugin_ = nullptr;
     ChainNodePath devicePath_;
 
