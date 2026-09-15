@@ -118,6 +118,9 @@ void SlotLauncher::launch(ClipId clipId) {
         return;
 
     const auto due = dueBeat(*clip);
+    juce::Logger::writeToLog("[tempo] launch at beat " +
+                             (due ? juce::String(*due, 3) : juce::String("next")) + ": " +
+                             ClipManager::describeLoopGeometry(*clip));
 
     {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
@@ -125,7 +128,7 @@ void SlotLauncher::launch(ClipId clipId) {
         // Before the play and on the same lane, so the length is in place when
         // the run begins: the handle re-triggers on it, and the pass it defines
         // is what the playhead below is wrapped against (LaunchRequests.hpp).
-        gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+        gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats());
 
         // On the same beat as the launch below, so the track hands over on one
         // sample rather than sounding two slots across the gap.
@@ -229,7 +232,7 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         const auto leader = keyOf(*launching.front());
 
         for (const auto* clip : launching) {
-            gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+            gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats());
             handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
         }
 
@@ -513,11 +516,10 @@ bool SlotLauncher::hasHandle(const ClipInfo& clip) const {
 }
 
 SlotLauncher::Material SlotLauncher::materialOf(const ClipInfo& clip) {
-    // The placed length, which is what the engine re-triggers the slot on
-    // (ClipSnapshot.hpp) and so the only modulus a playhead can wrap against
-    // without drifting away from what is sounding. The clip's own loop region
-    // is a separate thing that happens inside one pass.
-    return {.passBeats = clip.placement.lengthBeats, .looping = clip.loopEnabled};
+    // The cycle the engine re-triggers the slot on (ClipSnapshot.hpp), so the
+    // only modulus a playhead can wrap against without drifting from what is
+    // sounding.
+    return {.passBeats = clip.sessionCycleBeats(), .looping = clip.loopEnabled};
 }
 
 void SlotLauncher::stopForTransport() {
@@ -572,7 +574,7 @@ void SlotLauncher::relaunchActive() {
     engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
 
     for (const auto* clip : relaunching) {
-        gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+        gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats());
         gesture.play(keyOf(*clip));
     }
 }
