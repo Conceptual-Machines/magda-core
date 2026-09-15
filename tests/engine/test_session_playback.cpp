@@ -19,6 +19,7 @@
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/ClipStretcher.hpp"
+#include "clip/ClipVoicePool.hpp"
 #include "clip/EventPlacement.hpp"
 #include "clip/SessionPlayback.hpp"
 #include "core/TimeStretchModes.hpp"
@@ -2983,4 +2984,72 @@ TEST_CASE("A source made while the session holds the track resumes with it",
     }
 
     CHECK(out.getSample(0, kSectionDeClickSamples) == Approx(1.0f));
+}
+
+TEST_CASE("Session loop attacks survive a wrap inside the callback with the disk worker paused",
+          "[engine][session][first-hit]") {
+    class Impulses final : public magda::engine::AudioFileReader {
+      public:
+        std::int64_t lengthInSamples() const override {
+            return 1000000;
+        }
+        double sampleRate() const override {
+            return kSampleRate;
+        }
+        int numChannels() const override {
+            return 2;
+        }
+        int read(juce::AudioBuffer<float>& out, int offset, std::int64_t start,
+                 int count) override {
+            out.clear(offset, count);
+            if (start <= 0 && start + count > 0)
+                for (int c = 0; c < out.getNumChannels(); ++c)
+                    out.setSample(c, offset + static_cast<int>(-start), 1.0f);
+            return count;
+        }
+    };
+    class Files final : public magda::engine::AudioFileReaderFactory {
+      public:
+        std::unique_ptr<magda::engine::AudioFileReader> open(const std::string&) override {
+            return std::make_unique<Impulses>();
+        }
+    } files;
+
+    for (double rate : {1.0, 1.25, 2.0}) {
+        CAPTURE(rate);
+        AudioRig rig;
+        constexpr double loopBeats = 1.1;
+        constexpr int loopSamples = 26400;
+        rig.give(1, loopBeats, std::make_unique<Impulses>());
+        auto& event = rig.lane.session.front().audio.front().events.front();
+        event.timeStretchMode = magda::time_stretch_mode::kSignalsmith;
+        event.speedRatio = rate;
+        auto snapshot = std::make_shared<ClipSnapshot>();
+        snapshot->tracks.push_back(rig.lane);
+        rig.clips.publish(snapshot);
+
+        magda::engine::PrefetchThread worker(false);
+        magda::engine::ClipVoicePool pool(files, worker, context());
+        pool.setSnapshot(snapshot);
+        pool.service();
+        ClipAudioSource source{kTrack, rig.clips, pool.feed(), rig.handles, Section::Session};
+        source.prepare(context());
+        rig.handle.setLooping(loopBeats);
+        rig.handle.play(0.0);
+
+        for (int index = 0; index < 18; ++index) {
+            auto block = blockAt(index, index != 0);
+            magda::engine::advanceLaunchHandles(rig.handles, rig.requests, block);
+            rig.output.clear();
+            magda::test::renderBlock(source, rig.clips, block,
+                                     juce::dsp::AudioBlock<float>(rig.output), &rig.handles);
+            for (int hit = 0; hit < 5; ++hit) {
+                const auto offset = hit * loopSamples - index * kBlockSize;
+                if (offset >= 0 && offset < kBlockSize) {
+                    CAPTURE(hit, index, offset);
+                    CHECK(rig.at(offset) > 0.7f);
+                }
+            }
+        }
+    }
 }

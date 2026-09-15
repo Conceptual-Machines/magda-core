@@ -614,13 +614,19 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
             REQUIRE(stretcher != nullptr);
 
-            // Each primes from history. SoundTouch also reads ahead to cover
-            // its output latency; the pool's cue accounts for both quantities.
-            REQUIRE(stretcher->preRollSamples(setup.nominalRate) > stretcher->readAheadSamples());
-            if (which == mode::kSignalsmith)
-                REQUIRE(stretcher->readAheadSamples() == 0);
-            else
+            // Signalsmith primes from a window at the start, so its read-ahead
+            // is its priming length. SoundTouch primes from history and reads
+            // ahead to cover its output latency, so it primes more than it
+            // reads ahead.
+            REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
+            if (which == mode::kSignalsmith) {
+                REQUIRE(stretcher->readAheadSamples() ==
+                        stretcher->preRollSamples(setup.nominalRate));
+            } else {
                 REQUIRE(stretcher->readAheadSamples() > 0);
+                REQUIRE(stretcher->preRollSamples(setup.nominalRate) >
+                        stretcher->readAheadSamples());
+            }
         }
     }
 
@@ -1257,6 +1263,54 @@ TEST_CASE("Nothing a stretcher pushes is derived from the block size", "[engine]
                 INFO("mode " << which << " rate " << rate << " at block size " << blockSize);
                 CHECK(preRollAt(blockSize) == reference);
             }
+        }
+    }
+}
+
+TEST_CASE("Signalsmith places the opening transient on time after each restart",
+          "[engine][clip][stretch][first-hit]") {
+    class ImpulseReader final : public magda::engine::AudioFileReader {
+      public:
+        std::int64_t lengthInSamples() const override {
+            return 1000000;
+        }
+        double sampleRate() const override {
+            return kSampleRate;
+        }
+        int numChannels() const override {
+            return 2;
+        }
+        int read(juce::AudioBuffer<float>& destination, int offset, std::int64_t start,
+                 int count) override {
+            destination.clear(offset, count);
+            if (start <= 0 && start + count > 0)
+                for (int channel = 0; channel < destination.getNumChannels(); ++channel)
+                    destination.setSample(channel, offset + static_cast<int>(-start), 1.0f);
+            return count;
+        }
+    };
+
+    for (double rate : {0.5, 1.25, 2.0}) {
+        CAPTURE(rate);
+        Rig rig;
+        rig.lane.audio.push_back(clipOver(1, blocks(100, 400)));
+        rig.event(1).timeStretchMode = mode::kSignalsmith;
+        rig.event(1).speedRatio = rate;
+        auto& stream = rig.give(1, 1, std::make_unique<ImpulseReader>());
+        const auto& entry = rig.table.entries.front();
+        const auto cue = entry.stretcher->readAheadSamples() - entry.preRollSamples;
+        stream.startAt(cue, entry.preRollSamples + 8192);
+        rig.publish();
+
+        for (int pass = 0; pass < 3; ++pass) {
+            // No fill(): a session wrap must prime from retained audio while
+            // the disk worker is still servicing the previous playback run.
+            auto block = blockFrom(blockTime(100), false);
+            rig.output.clear();
+            magda::test::renderBlock(rig.source, rig.clips, block,
+                                     juce::dsp::AudioBlock<float>(rig.output));
+            CHECK(rig.at(0) > 0.7f);
+            CHECK(stream.underruns() == 0);
         }
     }
 }
