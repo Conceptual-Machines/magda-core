@@ -1491,7 +1491,8 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
 
 MediaDbIndexer::TempoStats MediaDbIndexer::measureMissingTempo(const std::filesystem::path& root) {
     sqlite3* sqlDb = db_.handle();
-    return trackTempos(sqlDb, pendingTempo(sqlDb, root), failure_, shouldCancel_, progress_);
+    return trackTempos(sqlDb, pendingTempo(sqlDb, libraryPath(root)), failure_, shouldCancel_,
+                       progress_);
 }
 
 MediaDbIndexer::TempoStats MediaDbIndexer::measureTempoForFileIds(
