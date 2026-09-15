@@ -345,6 +345,7 @@ class DeviceSlotComponent : public NodeComponent,
     // Helper to create custom UI for internal devices
     void createCustomUI();
     void detachInlineUiFromLivePlugin();
+    void bindFaustHeader();
     void refreshInlinePluginBindings();
     void setupCustomUILinking();
     void wirePadChainLinkCallbacks();  // Wire link mode on PadDeviceSlot param slots

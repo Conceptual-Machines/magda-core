@@ -1,6 +1,5 @@
 #include "slot/DeviceSlotInlineUiFactory.hpp"
 
-#include "audio/AudioBridge.hpp"
 #include "audio/plugins/FaustInstrumentPlugin.hpp"
 #include "audio/plugins/FaustParamPool.hpp"
 #include "audio/plugins/FaustPlugin.hpp"
@@ -20,24 +19,6 @@
 namespace magda::daw::ui {
 
 namespace {
-
-tracktion::engine::Plugin::Ptr getLivePlugin(const magda::ChainNodePath& path) {
-    if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine()) {
-        if (auto* bridge = audioEngine->getAudioBridge())
-            return bridge->getPlugin(path);
-    }
-
-    return {};
-}
-
-tracktion::engine::Plugin::Ptr resolveLivePlugin(const magda::ChainNodePath& path,
-                                                 const DeviceSlotInlineUiCallbacks& callbacks) {
-    if (callbacks.getLivePlugin) {
-        if (auto plugin = callbacks.getLivePlugin())
-            return plugin;
-    }
-    return getLivePlugin(path);
-}
 
 std::shared_ptr<daw::audio::MagdaDevice> getRenderedDevice(const magda::ChainNodePath& path) {
     if (auto* audioEngine = magda::TrackManager::getInstance().getAudioEngine())
@@ -196,26 +177,23 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
         device.pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)) {
         storage.faustUI = std::make_unique<FaustUI>();
 
-        if (auto plugin = resolveLivePlugin(nodePath, callbacks)) {
-            if (auto* faustModel =
-                    daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
-                        plugin.get())) {
-                storage.faustUI->setPlugin(faustModel);
-                storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
-                    faustModel->getCustomViewName(), *faustModel);
-                if (storage.faustCustomView != nullptr)
-                    parent.addAndMakeVisible(*storage.faustCustomView);
+        auto device = resolveRenderedDevice(nodePath, callbacks);
+        if (auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get())) {
+            storage.faustUI->setDevice(device);
+            storage.faustCustomView = FaustCustomUIRegistry::getInstance().create(
+                faustModel->getCustomViewName(), *faustModel);
+            if (storage.faustCustomView != nullptr)
+                parent.addAndMakeVisible(*storage.faustCustomView);
 
-                if (callbacks.setMeterSource) {
-                    // The lambda keeps the plugin alive so `faustModel` cannot
-                    // dangle: the grid drops the supplier when the slot is
-                    // rebuilt, which is the same moment the rest of this
-                    // inline UI goes away. The pool is looked up per call
-                    // because a recompile replaces every zone it holds.
-                    callbacks.setMeterSource([plugin, faustModel](int meterIndex) {
-                        return faustModel->getPool().readOutput(meterIndex);
-                    });
-                }
+            if (callbacks.setMeterSource) {
+                // The lambda keeps the device alive so `faustModel` cannot
+                // dangle: the grid drops the supplier when the slot is
+                // rebuilt, which is the same moment the rest of this
+                // inline UI goes away. The pool is looked up per call
+                // because a recompile replaces every zone it holds.
+                callbacks.setMeterSource([device, faustModel](int meterIndex) {
+                    return faustModel->getPool().readOutput(meterIndex);
+                });
             }
         }
 
@@ -229,26 +207,40 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
     return DeviceSlotInlineUiKind::Custom;
 }
 
-void bindDeviceSlotFaustInlineUi(
+bool bindDeviceSlotFaustInlineUi(
     const magda::ChainNodePath& nodePath, FaustUI* faustUI,
+    std::unique_ptr<FaustCustomView>& faustCustomView, juce::Component& parent,
     const std::function<void(std::function<float(int meterIndex)>)>& setMeterSource) {
     if (faustUI == nullptr)
-        return;
+        return false;
 
     faustUI->setDevicePath(nodePath);
 
-    if (auto plugin = getLivePlugin(nodePath)) {
-        if (auto* faustModel =
-                daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
-                    plugin.get())) {
-            faustUI->setPlugin(faustModel);
-            if (setMeterSource) {
-                setMeterSource([plugin, faustModel](int meterIndex) {
-                    return faustModel->getPool().readOutput(meterIndex);
-                });
-            }
-        }
+    auto device = getRenderedDevice(nodePath);
+    if (device.get() == faustUI->boundDevice())
+        return false;
+
+    // The custom view holds the device by reference, so it goes before the device can.
+    faustCustomView.reset();
+    faustUI->setDevice(device);
+
+    auto* faustModel = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get());
+    if (faustModel != nullptr) {
+        faustCustomView = FaustCustomUIRegistry::getInstance().create(
+            faustModel->getCustomViewName(), *faustModel);
+        if (faustCustomView != nullptr)
+            parent.addAndMakeVisible(*faustCustomView);
     }
+
+    if (setMeterSource) {
+        if (faustModel != nullptr)
+            setMeterSource([device, faustModel](int meterIndex) {
+                return faustModel->getPool().readOutput(meterIndex);
+            });
+        else
+            setMeterSource({});
+    }
+    return true;
 }
 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,

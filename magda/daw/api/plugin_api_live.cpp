@@ -5,6 +5,7 @@
 #include <set>
 
 #include "../audio/AudioBridge.hpp"
+#include "../audio/faust/FaustModelEdits.hpp"
 #include "../audio/plugins/DrumGridPlugin.hpp"
 #include "../audio/plugins/FaustInstrumentPlugin.hpp"
 #include "../audio/plugins/FaustPlugin.hpp"
@@ -456,27 +457,20 @@ juce::String PluginApiLive::applyFaustSource(const ChainNodePath& path,
          !device->pluginId.equalsIgnoreCase(daw::audio::FaustInstrumentPlugin::xmlTypeName)))
         return "(target device is not a Faust plugin)";
 
-    auto* bridge = getAudioBridge();
-    auto plugin = bridge != nullptr ? bridge->getPlugin(path) : nullptr;
-    auto* faust = daw::audio::tracktion_adapter::deviceFromPlugin<daw::audio::IFaustEditorModel>(
-        plugin.get());
-    if (faust == nullptr)
-        return "(could not resolve live Faust plugin)";
-
     if (!verified) {
+        auto* engine = TrackManager::getInstance().getAudioEngine();
+        const auto device = engine != nullptr ? engine->renderedDevice(path) : nullptr;
+        auto* faust = dynamic_cast<daw::audio::IFaustEditorModel*>(device.get());
+        if (faust == nullptr)
+            return "(could not resolve live Faust plugin)";
         faust->stageSourceForEditing(displayName, source);
         return "generated \"" + displayName +
                "\" - open the editor to compile (Faust MCP disabled)";
     }
 
     juce::String error;
-    if (!faust->loadDspSource(displayName, source, error))
+    if (!faust_edits::loadSource(path, displayName, source, error))
         return "compile error: " + error;
-
-    if (!bridge)
-        return "applied \"" + displayName + "\" (live sync not available)";
-    bridge->getPluginManager().refreshDeviceParameters(path);
-    bridge->getPluginManager().capturePluginState(path);
     return "applied \"" + displayName + "\"";
 }
 

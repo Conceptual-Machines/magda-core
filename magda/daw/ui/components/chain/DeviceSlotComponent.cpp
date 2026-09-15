@@ -644,6 +644,9 @@ void DeviceSlotComponent::timerCallback() {
     // a new sample rate rebuilds every device without the model moving (#2585).
     if (compiledPanel_ != nullptr || traits_.isAnalysis || customUI_.needsDeviceRebind())
         refreshInlinePluginBindings();
+    // A patch load rebuilds a Faust device under the native engine (#2659).
+    if (faustUI_ != nullptr)
+        bindFaustHeader();
 
     // Update UI button state to match the actual window state.
     if (uiButton_) {
@@ -828,15 +831,8 @@ void DeviceSlotComponent::setNodePath(const magda::ChainNodePath& path) {
         aiPanel_->setDevicePluginId(device_.pluginId);
     }
     // Same story for FaustUI: createCustomUI ran before nodePath_ was
-    // valid, so resolve the live plugin again once the path is known.
-    bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(),
-                                [this](std::function<float(int)> source) {
-                                    if (faustMeterPanel_ == nullptr) {
-                                        faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
-                                        addChildComponent(*faustMeterPanel_);
-                                    }
-                                    faustMeterPanel_->setMeterSource(std::move(source));
-                                });
+    // valid, so resolve the device again once the path is known.
+    bindFaustHeader();
 
     // Initial compute for the controller indicator dots — listeners only fire
     // on change, so a slot built after the binding was added wouldn't otherwise
@@ -1708,12 +1704,26 @@ void DeviceSlotComponent::detachInlineUiFromLivePlugin() {
     if (compiledPanel_ != nullptr)
         compiledPanel_->bindDevice(nullptr);
     if (faustUI_ != nullptr)
-        faustUI_->setPlugin(nullptr);
+        faustUI_->setDevice(nullptr);
     // The meter supplier holds a reference to the plugin so its pool cannot
     // vanish mid-poll; dropping it here is what lets the plugin go.
     if (faustMeterPanel_ != nullptr)
         faustMeterPanel_->setMeterSource(nullptr);
     customUI_.detachFromLivePlugin();
+}
+
+void DeviceSlotComponent::bindFaustHeader() {
+    const auto rebound =
+        bindDeviceSlotFaustInlineUi(nodePath_, faustUI_.get(), faustCustomView_, *this,
+                                    [this](std::function<float(int)> source) {
+                                        if (faustMeterPanel_ == nullptr) {
+                                            faustMeterPanel_ = std::make_unique<FaustMeterPanel>();
+                                            addChildComponent(*faustMeterPanel_);
+                                        }
+                                        faustMeterPanel_->setMeterSource(std::move(source));
+                                    });
+    if (rebound)
+        resized();
 }
 
 void DeviceSlotComponent::refreshInlinePluginBindings() {

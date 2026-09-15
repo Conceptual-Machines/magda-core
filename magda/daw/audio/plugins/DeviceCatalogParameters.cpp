@@ -74,9 +74,10 @@ bool seedDeclaredParameters(magda::DeviceInfo& device) {
         // Declaration order for a device that left paramIndex unset, which is
         // the fallback both engine adapters address it by.
         const int index = info.paramIndex >= 0 ? info.paramIndex : slot;
+        const bool offered = declared->offersParameter(slot);
         ++slot;
 
-        if (device.findParameterByIndex(index) != nullptr)
+        if (!offered || device.findParameterByIndex(index) != nullptr)
             continue;
 
         info.paramIndex = index;

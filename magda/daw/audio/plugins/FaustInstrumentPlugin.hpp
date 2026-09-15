@@ -57,6 +57,7 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     ParameterInfo parameterInfo(int index) const override;
     float parameterValue(int index) const override;
     void setParameterValue(int index, float value) override;
+    bool offersParameter(int index) const override;
 
     void flushState(juce::ValueTree& state) override;
     void restoreState(const juce::ValueTree& v) override;

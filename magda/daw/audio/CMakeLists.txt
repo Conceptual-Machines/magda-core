@@ -486,6 +486,8 @@ target_sources(magda_daw PRIVATE
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp
+    faust/FaustModelEdits.cpp
+    faust/FaustModelEdits.hpp
     sampling/SamplerModelEdits.cpp
     sampling/SamplerModelEdits.hpp
     sidechain/SidechainRoutingManager.cpp

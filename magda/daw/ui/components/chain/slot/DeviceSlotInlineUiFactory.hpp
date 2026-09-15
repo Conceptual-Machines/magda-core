@@ -72,11 +72,12 @@ DeviceSlotInlineUiKind createDeviceSlotInlineUi(const magda::DeviceInfo& device,
                                                 DeviceSlotInlineUiStorage storage,
                                                 DeviceSlotInlineUiCallbacks callbacks);
 
-/// Re-resolves the live Faust plugin once `nodePath` is known, since
-/// createDeviceSlotInlineUi can run before the slot has a valid path.
-/// `setMeterSource` is re-applied for the same reason.
-void bindDeviceSlotFaustInlineUi(
+/// Binds the Faust header, its custom view and its meters to the device rendering `nodePath`: the
+/// slot can be built before it has a path, and a patch load rebuilds the device under the native
+/// engine. Returns whether the binding changed.
+bool bindDeviceSlotFaustInlineUi(
     const magda::ChainNodePath& nodePath, FaustUI* faustUI,
+    std::unique_ptr<FaustCustomView>& faustCustomView, juce::Component& parent,
     const std::function<void(std::function<float(int meterIndex)>)>& setMeterSource = {});
 
 void refreshDeviceSlotInlineUiPluginBindings(const magda::ChainNodePath& nodePath,

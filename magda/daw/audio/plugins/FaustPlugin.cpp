@@ -547,8 +547,8 @@ void FaustPlugin::process(DeviceProcessContext& context) {
 }
 
 void FaustPlugin::flushState(juce::ValueTree& state) {
-    state.setProperty("dspName", dspName_, nullptr);
-    state.setProperty("dspSource", dspSource_, nullptr);
+    state.setProperty(kFaustDspNameProperty, dspName_, nullptr);
+    state.setProperty(kFaustDspSourceProperty, dspSource_, nullptr);
     for (int i = 0; i < FaustParamPool::kSize; ++i)
         state.setProperty(juce::Identifier(poolParamId(i)),
                           poolValues_[static_cast<size_t>(i)].load(std::memory_order_relaxed),
@@ -556,8 +556,8 @@ void FaustPlugin::flushState(juce::ValueTree& state) {
 }
 
 void FaustPlugin::restoreState(const juce::ValueTree& v) {
-    const auto savedSource = v.getProperty("dspSource", juce::String()).toString();
-    const auto savedName = v.getProperty("dspName", juce::String()).toString();
+    const auto savedSource = v.getProperty(kFaustDspSourceProperty, juce::String()).toString();
+    const auto savedName = v.getProperty(kFaustDspNameProperty, juce::String()).toString();
 
     if (savedSource.isNotEmpty() && savedSource != dspSource_) {
         juce::String err;
@@ -614,6 +614,13 @@ ParameterInfo FaustPlugin::parameterInfo(int index) const {
     info.paramIndex = index;
     info.stableId = poolParamId(index);
     return info;
+}
+
+bool FaustPlugin::offersParameter(int index) const {
+    if (index < 0 || index >= FaustParamPool::kSize)
+        return false;
+    const auto& slot = pool_.slot(index);
+    return slot.active && !slot.hidden;
 }
 
 float FaustPlugin::parameterValue(int index) const {

@@ -15,6 +15,7 @@
 #include "magda/daw/audio/DeviceMeters.hpp"
 #include "magda/daw/audio/MidiBridge.hpp"
 #include "magda/daw/audio/plugins/AnalysisTelemetry.hpp"
+#include "magda/daw/audio/plugins/FaustPlugin.hpp"
 #include "magda/daw/audio/plugins/OscilloscopePlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaChorusCompiledPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
@@ -22,6 +23,7 @@
 #include "magda/daw/audio/plugins/engine/EngineMagdaDevice.hpp"
 #include "magda/daw/core/AutomationManager.hpp"
 #include "magda/daw/core/ClipManager.hpp"
+#include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
@@ -188,6 +190,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMidiClipReachesAnInstrument(); });
         magda::test::runWithCleanJuceState([this] { testNoteMovedWhileRolling(); });
         magda::test::runWithCleanJuceState([this] { testReplacedPluginIsRebuilt(); });
+        magda::test::runWithCleanJuceState([this] { testFaustPatchChangeIsRebuilt(); });
         magda::test::runWithCleanJuceState([this] { testExternalKeysNamesOnlyExternals(); });
         magda::test::runWithCleanJuceState([this] { testPadPluginIsItsOwnKey(); });
         magda::test::runWithCleanJuceState([this] { testClearedProjectIsRebuilt(); });
@@ -446,6 +449,56 @@ class EngineHostPublishTest final : public juce::UnitTest {
         const auto rebuild = factory.devicesToRebuild();
         expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
                "The slot's new plugin is named for rebuild");
+    }
+
+    /// A runtime Faust device holding @p source, the way a patch load leaves the model.
+    static magda::DeviceInfo faustEffect(magda::DeviceId id, const juce::String& source) {
+        magda::device_state::Doc doc;
+        doc.deviceType = magda::daw::audio::FaustPlugin::xmlTypeName;
+        doc.root.props.set(magda::daw::audio::kFaustDspSourceProperty, source);
+
+        magda::DeviceInfo device;
+        device.id = id;
+        device.name = "Faust";
+        device.pluginId = magda::daw::audio::FaustPlugin::xmlTypeName;
+        device.format = magda::PluginFormat::Internal;
+        device.pluginState = magda::device_state::encode(doc);
+        return device;
+    }
+
+    void testFaustPatchChangeIsRebuilt() {
+        beginTest("A Faust device given another patch is rebuilt, and other state is not (#2659)");
+
+        auto& trackManager = magda::TrackManager::getInstance();
+        const auto trackId = trackManager.createTrack("Faust");
+        auto* track = trackManager.getTrack(trackId);
+        const auto* master = trackManager.getTrack(magda::MASTER_TRACK_ID);
+        expect(track != nullptr && master != nullptr, "The track and the master exist");
+        if (track == nullptr || master == nullptr)
+            return;
+
+        // "stdfaust.lib" is named so the compile does not import the library.
+        track->chain.fxChainElements.emplace_back(
+            faustEffect(1, "// stdfaust.lib\nprocess = *(hslider(\"Gain\", 0.5, 0, 1, 0.01));"));
+        track->chain.fxChainElements.emplace_back(polySynth(2));
+
+        host::EngineRuntimeFactory factory;
+        factory.setModel(trackManager.getTracks(), *master);
+        expect(factory.createDevice(firstFxSlot()) != nullptr,
+               "The catalog builds the Faust device");
+        const magda::engine::DeviceKey synthSlot{magda::ChainSegment::Fx, 2};
+        expect(factory.createDevice(synthSlot) != nullptr, "The catalog builds the synth");
+
+        // The instance copied the parameters its patch declared, so a new patch is a new device.
+        magda::getDevice(track->chain.fxChainElements[0]).pluginState =
+            faustEffect(1, "// stdfaust.lib\nprocess = *(hslider(\"Cutoff\", 1000, 20, 20000, 1));")
+                .pluginState;
+        magda::getDevice(track->chain.fxChainElements[1]).pluginState = "changed";
+        factory.setModel(trackManager.getTracks(), *master);
+
+        const auto rebuild = factory.devicesToRebuild();
+        expect(rebuild.size() == 1 && rebuild.contains(firstFxSlot()),
+               "Only the Faust device is named for rebuild");
     }
 
     void testExternalKeysNamesOnlyExternals() {
