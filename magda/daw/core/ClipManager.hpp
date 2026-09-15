@@ -427,10 +427,6 @@ class ClipManager {
 
     /** @brief The BEAT toggle: setPlaybackIntent with Beat or Free. */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
-
-    /** @brief Every length a loop has, on one log line: the pass, the source
-     *  region in seconds and in beats, and the interpretation (#2674). */
-    static juce::String describeLoopGeometry(const ClipInfo& clip);
     /** @brief Detect a tempo for every clip in @p clipIds that has no
      *  interpreted tempo, then call @p onReady on the message thread. Each
      *  answer lands on its clip through adoptAnalysis. onReady may fire before

@@ -118,9 +118,6 @@ void SlotLauncher::launch(ClipId clipId) {
         return;
 
     const auto due = dueBeat(*clip);
-    juce::Logger::writeToLog("[tempo] launch at beat " +
-                             (due ? juce::String(*due, 3) : juce::String("next")) + ": " +
-                             ClipManager::describeLoopGeometry(*clip));
 
     {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());

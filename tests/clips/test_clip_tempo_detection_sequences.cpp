@@ -107,33 +107,6 @@ struct DetectionFixture {
     }
 };
 
-/// Collects the [tempo] log lines detection writes; the only view of a join.
-struct LogCapture : juce::Logger {
-    LogCapture() {
-        juce::Logger::setCurrentLogger(this);
-    }
-    ~LogCapture() override {
-        juce::Logger::setCurrentLogger(nullptr);
-    }
-
-    void logMessage(const juce::String& message) override {
-        const juce::ScopedLock sl(lock);
-        lines.add(message);
-    }
-
-    int count(const juce::String& needle) const {
-        const juce::ScopedLock sl(lock);
-        int n = 0;
-        for (const auto& line : lines)
-            if (line.contains(needle))
-                ++n;
-        return n;
-    }
-
-    juce::CriticalSection lock;
-    juce::StringArray lines;
-};
-
 const AudioEvent* eventOf(ClipId id) {
     const auto* clip = ClipManager::getInstance().getClip(id);
     return clip != nullptr ? clip->primaryEvent() : nullptr;
@@ -201,7 +174,6 @@ TEST_CASE("A detection for a clip that is gone lands nowhere",
 TEST_CASE("A second request for a file in flight joins the first",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;
-    LogCapture log;
     const auto first = fx.createSessionClip();
     const auto second = fx.createSessionClip();
 
@@ -214,10 +186,6 @@ TEST_CASE("A second request for a file in flight joins the first",
     REQUIRE(eventOf(first)->interpBpm == Approx(kFileBpm));
     REQUIRE(eventOf(second)->interpBpm == Approx(kFileBpm));
     REQUIRE(AudioThumbnailManager::getInstance().getCachedBPM(fx.path) == Approx(kFileBpm));
-
-    // One read of the file, and the second clip waited on it.
-    REQUIRE(log.count("[tempo] detecting loop_128bpm.wav") == 1);
-    REQUIRE(log.count("[tempo] joined the request in flight for loop_128bpm.wav") == 1);
 }
 
 TEST_CASE("A detection answering for a file the clip no longer plays lands nowhere",

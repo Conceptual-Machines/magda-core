@@ -187,16 +187,12 @@ double AudioThumbnailManager::measureTempoOnBackgroundThread(const juce::String&
                 std::make_unique<media::BeatTracker>(media::BeatTracker::defaultModelPath());
         } catch (const std::exception& e) {
             beatTrackerFailed_ = true;
-            juce::Logger::writeToLog(juce::String("[AudioThumbnailManager] beat model: ") +
-                                     e.what());
         }
     }
     try {
         return media::detectTempo(std::filesystem::path(filePath.toStdString()), beatTracker_.get())
             .value_or(0.0);
     } catch (const std::exception& e) {
-        juce::Logger::writeToLog(juce::String("[AudioThumbnailManager] tempo of ") + filePath +
-                                 ": " + e.what());
         return 0.0;
     }
 }
@@ -209,8 +205,6 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
             juce::MessageManager::getInstance()->isThisTheMessageThread());
 
     if (auto cached = bpmCache_.find(filePath); cached != bpmCache_.end()) {
-        juce::Logger::writeToLog("[tempo] cached " + juce::String(cached->second, 3) + " for " +
-                                 juce::File(filePath).getFileName());
         if (onComplete)
             onComplete(cached->second);
         return;
@@ -228,19 +222,12 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
     if (onComplete)
         waiting.push_back(std::move(onComplete));
     if (inFlight) {
-        juce::Logger::writeToLog("[tempo] joined the request in flight for " +
-                                 juce::File(filePath).getFileName());
         return;
     }
-    juce::Logger::writeToLog(
-        "[tempo] detecting " + juce::File(filePath).getFileName() +
-        (media::BeatTracker::isAvailable() ? " (beat model)" : " (no model: autocorrelation)"));
 
     getOrCreateBackgroundPool().addJob([filePath]() {
         auto& self = getInstance();
         const double bpm = self.measureTempoOnBackgroundThread(filePath);
-        juce::Logger::writeToLog("[tempo] " + juce::File(filePath).getFileName() + " -> " +
-                                 (bpm > 0.0 ? juce::String(bpm, 3) : juce::String("no answer")));
         // A miss is forgotten only while a model could still arrive: this build
         // can run one and none is installed yet.
 #if defined(MAGDA_HAVE_CLAP) && MAGDA_HAVE_CLAP

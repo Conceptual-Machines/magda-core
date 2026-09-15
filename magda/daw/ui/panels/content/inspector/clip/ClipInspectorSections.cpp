@@ -464,10 +464,7 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
-        juce::Logger::writeToLog("[tempo] BPM field: typed \"" + clipBpmValue_.getText() +
-                                 "\" for clip " + juce::String(primaryClipId()));
         if (newBPM < 20.0 || newBPM > 999.0) {
-            juce::Logger::writeToLog("[tempo] BPM field: refused, outside 20-999");
             updateFromSelectedClip();  // show what the clip holds, not the rejected text
             return;
         }
@@ -779,8 +776,6 @@ void ClipInspector::initClipPropertiesSection() {
             return;
 
         bool newState = !magda::audioEventRef(*clip).autoTempo;
-        juce::Logger::writeToLog("[tempo] BEAT clicked: " + juce::String(newState ? "on" : "off") +
-                                 " for " + juce::String(targetClipIds.size()) + " clip(s)");
         if (!newState) {
             applyAutoTempo(false, targetClipIds);
             return;

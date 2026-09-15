@@ -1039,25 +1039,11 @@ MediaDbIndexer::TempoStats trackTempos(sqlite3* db, const std::vector<PendingFil
                 const double refined = refineTempo(tracked->bpm, durationSeconds, hints);
                 writeBpm(db, f.fileId, refined);
                 ++stats.measured;
-                juce::Logger::writeToLog("[tempo] db " + juce::String(f.fileId) + ": " +
-                                         juce::String(refined, 3) + " BPM, steadiness " +
-                                         juce::String(tracked->steadiness, 2) + ", " +
-                                         juce::String(f.path.filename().string()));
             } else if (auto resolved = resolveTempo(measureTempo(f.path), durationSeconds, hints)) {
                 writeBpm(db, f.fileId, *resolved);
                 ++stats.measured;
-                juce::Logger::writeToLog("[tempo] db " + juce::String(f.fileId) + ": " +
-                                         juce::String(*resolved, 3) + " BPM by autocorrelation, " +
-                                         juce::String(f.path.filename().string()));
             } else {
                 ++stats.silent;
-                juce::Logger::writeToLog(
-                    "[tempo] db " + juce::String(f.fileId) + ": no steady beat" +
-                    (tracked ? " (" + juce::String(tracked->bpm, 3) + " at steadiness " +
-                                   juce::String(tracked->steadiness, 2) + ", below " +
-                                   juce::String(kMinBeatSteadiness, 2) + ")"
-                             : juce::String(" (too short)")) +
-                    ", " + juce::String(f.path.filename().string()));
             }
         } catch (const std::exception& e) {
             reportFailure(failure, f.path, e.what());

@@ -37,42 +37,6 @@ double currentProjectTempoOrDefault() {
     return isValidBpm(bpm) ? bpm : DEFAULT_BPM;
 }
 
-const char* extentName(RegionExtent extent) {
-    switch (extent) {
-        case RegionExtent::WholeSource:
-            return "whole";
-        case RegionExtent::Interpretation:
-            return "interp";
-        case RegionExtent::Explicit:
-            return "explicit";
-    }
-    return "?";
-}
-
-const char* provenanceName(Provenance from) {
-    switch (from) {
-        case Provenance::None:
-            return "none";
-        case Provenance::FileMetadata:
-            return "file";
-        case Provenance::Analysis:
-            return "analysis";
-        case Provenance::User:
-            return "user";
-    }
-    return "?";
-}
-
-const char* intentName(PlaybackIntent intent) {
-    switch (intent) {
-        case PlaybackIntent::Free:
-            return "free";
-        case PlaybackIntent::Beat:
-            return "beat";
-    }
-    return "?";
-}
-
 /// The file length is what ties a tempo to a beat count, so fill it from the
 /// thumbnail when the source probe left it unknown.
 void ensureSourceDurationKnown(const AudioEvent& event) {
@@ -1645,26 +1609,6 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     }
 }
 
-juce::String ClipManager::describeLoopGeometry(const ClipInfo& clip) {
-    const auto* ev = clip.primaryEvent();
-    if (ev == nullptr)
-        return "clip " + juce::String(clip.id) + ": no audio event";
-    return "clip " + juce::String(clip.id) + (clip.view == ClipView::Session ? " slot" : " arr") +
-           " cycle=" + juce::String(clip.sessionCycleBeats(), 3) + " beats (placement " +
-           juce::String(clip.placement.lengthBeats, 3) + ")" + " | region " +
-           juce::String(ev->loopStartSeconds(), 3) + "s +" +
-           juce::String(ev->loopLengthSeconds(), 3) + "s (" + juce::String(ev->loopLengthSamples) +
-           " smp = " + juce::String(ev->loopLengthBeats(), 3) + " beats at interp)" + " | interp " +
-           juce::String(ev->interpBpm, 3) + " BPM / " + juce::String(ev->interpTotalBeats, 3) +
-           " beats" + " | file " + juce::String(ev->sourceDurationSeconds(), 3) + "s" +
-           " | beat mode " + (ev->autoTempo ? "on" : "off") + ", loop " +
-           (clip.loopEnabled ? "on" : "off") + ", anchor " + juce::String(ev->sourceAnchorSamples) +
-           " smp" + " | extent=" + extentName(ev->loopExtent) +
-           " bpmFrom=" + provenanceName(ev->bpmFrom) +
-           " beatsFrom=" + provenanceName(ev->beatsFrom) +
-           " intent=" + intentName(ev->playbackIntent);
-}
-
 void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM) {
     auto* clip = getClip(clipId);
     if (clip == nullptr || !clip->isAudio())
@@ -1676,12 +1620,6 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     if (event == nullptr)
         return;
 
-    juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": beat mode " +
-                             intentName(intent) + " asked, now " +
-                             (event->autoTempo ? "on" : "off") + ", interpretation " +
-                             juce::String(event->interpBpm, 3) + " BPM / " +
-                             juce::String(event->interpTotalBeats, 3) + " beats");
-
     // Beat mode plays through a stretcher; keep an engine the user chose.
     if (event->autoTempo && event->timeStretchMode == time_stretch_mode::kDisabled)
         event->timeStretchMode = time_stretch_mode::kSignalsmith;
@@ -1689,7 +1627,6 @@ void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double
     // Issue #1157: ClipOperations wrote the placement in beats at the mode
     // boundary. Refresh the seconds cache from it rather than converting back.
     refreshDerivedSeconds(clipId, projectBPM);
-    juce::Logger::writeToLog("[tempo] after BEAT: " + describeLoopGeometry(*clip));
     notifyClipPropertyChanged(clipId);
 }
 
@@ -1707,8 +1644,6 @@ void ClipManager::detectMissingTempo(const std::vector<ClipId>& clipIds, double 
         if (auto path = event->sourceFilePath(); path.isNotEmpty())
             pending.emplace_back(id, path);
     }
-    juce::Logger::writeToLog("[tempo] " + juce::String(clipIds.size()) + " clip(s) asked, " +
-                             juce::String(pending.size()) + " need a tempo");
     if (pending.empty()) {
         if (onReady)
             onReady();
@@ -1856,7 +1791,6 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
     clip->setPlacementBeats(clip->placement.startBeat, juce::jmax(minBeats, newBeats));
 
     refreshDerivedSeconds(clipId, bpm);
-    juce::Logger::writeToLog("[tempo] after length: " + describeLoopGeometry(*clip));
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2023,16 +1957,12 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
     // A tempo no file has is refused whole: a beat count typed into the wrong
     // field implied 43,000 BPM and the engine played a 20 ms sliver of the loop.
     if (!isValidBpm(bpm)) {
-        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": refused " +
-                                 juce::String(bpm, 3) + " BPM (outside 20-999)");
         return;
     }
 
     ensureSourceDurationKnown(*event);
 
     if (!event->adoptBpm(bpm, from)) {
-        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": kept the user's " +
-                                 juce::String(event->interpBpm, 3) + " BPM");
         return;
     }
 
@@ -2047,7 +1977,6 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
         event->followInterpretationIfWholeSource();
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
-    juce::Logger::writeToLog("[tempo] after tempo: " + describeLoopGeometry(*clip));
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2058,8 +1987,6 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
         return;
 
     if (!(beats > 0.0)) {
-        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": refused " +
-                                 juce::String(beats, 3) + " beats");
         return;
     }
 
@@ -2067,18 +1994,12 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
     const double fileSeconds = event->sourceDurationSeconds();
     const double impliedBpm = fileSeconds > 0.0 ? beats * 60.0 / fileSeconds : 0.0;
     if (fileSeconds > 0.0 && !isValidBpm(impliedBpm)) {
-        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": refused " +
-                                 juce::String(beats, 3) + " beats, it implies " +
-                                 juce::String(impliedBpm, 3) + " BPM");
         return;
     }
 
     // Checked before either write, so the pair can never land half-applied.
     if (!AudioEvent::provenanceAllows(event->beatsFrom, from) ||
         (fileSeconds > 0.0 && !AudioEvent::provenanceAllows(event->bpmFrom, from))) {
-        juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": kept the user's " +
-                                 juce::String(event->interpTotalBeats, 3) + " beats at " +
-                                 juce::String(event->interpBpm, 3) + " BPM");
         return;
     }
 
@@ -2091,35 +2012,26 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
         event->followInterpretationIfWholeSource();
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
-    juce::Logger::writeToLog("[tempo] after beat count: " + describeLoopGeometry(*clip));
     notifyClipPropertyChanged(clipId);
 }
 
 void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, double bpm) {
-    const juce::String prefix =
-        "[tempo] clip " + juce::String(clipId) + ": detected " + juce::String(bpm, 3);
-
     auto* clip = getClip(clipId);
     auto* event = primaryEventOf(clip);
     if (event == nullptr) {
-        juce::Logger::writeToLog(prefix + " not applied, clip is gone");
         return;
     }
     if (bpm <= 0.0) {
-        juce::Logger::writeToLog(prefix + " not applied, no tempo was found");
         return;
     }
     // The request was for a file this clip no longer plays.
     if (event->sourceFilePath() != sourcePath) {
-        juce::Logger::writeToLog(prefix + " not applied, the clip's source changed");
         return;
     }
 
     ensureSourceDurationKnown(*event);
 
     if (!event->adoptBpm(bpm, Provenance::Analysis)) {
-        juce::Logger::writeToLog(prefix + " not applied, the user set " +
-                                 juce::String(event->interpBpm, 3));
         return;
     }
 
@@ -2133,7 +2045,6 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
         event->followInterpretationIfWholeSource();
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
-    juce::Logger::writeToLog(prefix + " applied, beat mode " + (event->autoTempo ? "on" : "off"));
     notifyClipPropertyChanged(clipId);
 }
 
