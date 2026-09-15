@@ -19,6 +19,11 @@
 
 namespace magda::media {
 
+// The spelling media_file.path stores and is looked up by: an absolute path with
+// its symlinks resolved, so one file has one row however it was reached (#2687).
+// Relative paths come back unchanged.
+std::filesystem::path libraryPath(const std::filesystem::path& path);
+
 // Family inferred from path keywords ("vocal", "drum", "kick", "/Snares/"...).
 // Walks path components LEAF-FIRST so the immediate parent folder dominates
 // pack-name ancestors (e.g. ".../LAUT 'Drum & Bass Toolkit'/Snares/x.wav"

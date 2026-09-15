@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstdint>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,7 @@
 
 #include "MediaDatabase.hpp"
 #include "MediaDbContext.hpp"
+#include "PathRules.hpp"
 
 namespace magda::media {
 
@@ -121,7 +123,7 @@ std::optional<EffectiveMetadata> getEffectiveMetadata(MediaDatabase& db,
     if (sqlite3_prepare_v2(db.handle(), kSql, -1, &stmt, nullptr) != SQLITE_OK) {
         return std::nullopt;
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
 
     std::optional<EffectiveMetadata> result;
@@ -150,7 +152,7 @@ std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
     if (sqlite3_prepare_v2(db.handle(), kSql, -1, &stmt, nullptr) != SQLITE_OK) {
         return std::nullopt;
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
 
     std::optional<EffectiveMetadata> result;
@@ -180,7 +182,7 @@ void setUserBpm(MediaDatabase& db, const std::filesystem::path& path, std::optio
     } else {
         sqlite3_bind_null(stmt, 1);
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -205,7 +207,7 @@ void setUserKey(MediaDatabase& db, const std::filesystem::path& path,
     } else {
         sqlite3_bind_null(stmt, 2);
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 3, p.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -223,7 +225,7 @@ void setUserKeyRoot(MediaDatabase& db, const std::filesystem::path& path,
     } else {
         sqlite3_bind_null(stmt, 1);
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -235,7 +237,7 @@ bool isFileIndexed(MediaDatabase& db, const std::filesystem::path& path) {
                            &stmt, nullptr) != SQLITE_OK) {
         return false;
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
     const bool found = sqlite3_step(stmt) == SQLITE_ROW;
     sqlite3_finalize(stmt);
@@ -301,7 +303,7 @@ std::optional<std::vector<WarpMarkerMetadata>> getUserWarpMarkers(
                            -1, &stmt, nullptr) != SQLITE_OK) {
         return std::nullopt;
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 1, p.c_str(), -1, SQLITE_TRANSIENT);
 
     std::optional<std::vector<WarpMarkerMetadata>> result;
@@ -329,7 +331,7 @@ void setUserWarpMarkers(MediaDatabase& db, const std::filesystem::path& path,
     } else {
         sqlite3_bind_null(stmt, 1);
     }
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 2, p.c_str(), -1, SQLITE_TRANSIENT);
     sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -377,7 +379,7 @@ bool saveUserMetadata(MediaDatabase& db, const std::filesystem::path& path,
         sqlite3_bind_null(stmt, 5);
     }
 
-    const std::string p = path.string();
+    const std::string p = libraryPath(path).string();
     sqlite3_bind_text(stmt, 6, p.c_str(), -1, SQLITE_TRANSIENT);
     const bool ok = sqlite3_step(stmt) == SQLITE_DONE &&
                     (sqlite3_changes(db.handle()) > 0 || isFileIndexed(db, path));
@@ -466,7 +468,7 @@ bool hasIndexedDescendant(MediaDatabase& db, const std::filesystem::path& folder
     // descendants (foo/bar/baz.wav), never the folder itself or sibling
     // entries (foo/barxyz.wav). Upper bound increments the last char so
     // the range query covers exactly the descendant set.
-    std::string prefix = folder.string();
+    std::string prefix = libraryPath(folder).string();
     if (prefix.empty()) {
         return false;
     }
@@ -498,7 +500,7 @@ bool hasIndexedDescendantOfFolder(const std::filesystem::path& folder) {
 }
 
 int removeFolderFromLibrary(MediaDatabase& db, const std::filesystem::path& folder) {
-    std::string prefix = folder.string();
+    std::string prefix = libraryPath(folder).string();
     if (prefix.empty()) {
         return 0;
     }
@@ -977,7 +979,7 @@ bool recoverMissingMediaFilePath(MediaDatabase& db, std::int64_t fileId,
         return false;
     }
 
-    const auto pathText = newPath.string();
+    const auto pathText = libraryPath(newPath).string();
     std::int64_t duplicateId = -1;
     sqlite3_stmt* dup = nullptr;
     bool ok = true;
@@ -1073,45 +1075,33 @@ bool recoverMissingMediaFilePath(MediaDatabase& db, std::int64_t fileId,
     return ok;
 }
 
-int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
-    auto* handle = db.handle();
-    if (fileIds.empty() ||
-        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
-        return 0;
-    }
+namespace {
 
-    int removed = 0;
-    bool ok = true;
+bool deleteRows(sqlite3* handle, const std::vector<std::int64_t>& fileIds, int& removed) {
     sqlite3_stmt* delFile = nullptr;
-    ok = sqlite3_prepare_v2(handle, "DELETE FROM media_file WHERE id = ?", -1, &delFile, nullptr) ==
-         SQLITE_OK;
-
-    if (ok) {
-        for (auto fileId : fileIds) {
-            sqlite3_bind_int64(delFile, 1, fileId);
-            if (sqlite3_step(delFile) == SQLITE_DONE) {
-                removed += sqlite3_changes(handle);
-            } else {
-                ok = false;
-                break;
-            }
-            sqlite3_reset(delFile);
-            sqlite3_clear_bindings(delFile);
+    if (sqlite3_prepare_v2(handle, "DELETE FROM media_file WHERE id = ?", -1, &delFile, nullptr) !=
+        SQLITE_OK) {
+        return false;
+    }
+    bool ok = true;
+    for (auto fileId : fileIds) {
+        sqlite3_bind_int64(delFile, 1, fileId);
+        if (sqlite3_step(delFile) != SQLITE_DONE) {
+            ok = false;
+            break;
         }
+        removed += sqlite3_changes(handle);
+        sqlite3_reset(delFile);
+        sqlite3_clear_bindings(delFile);
     }
-
     sqlite3_finalize(delFile);
-    if (ok) {
-        ok = rebuildFts(handle);
-    }
-    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
-    return ok ? removed : 0;
+    return ok;
 }
 
-int removeDuplicateFilePathRows(MediaDatabase& db) {
+std::optional<std::vector<FilePathDedupeRow>> readDedupeRows(sqlite3* handle) {
     sqlite3_stmt* stmt = nullptr;
     if (sqlite3_prepare_v2(
-            db.handle(),
+            handle,
             "SELECT id, path, indexed_at, "
             "(bpm_user IS NOT NULL OR key_root_user IS NOT NULL OR "
             " key_scale_user IS NOT NULL OR total_beats_user IS NOT NULL OR "
@@ -1121,44 +1111,94 @@ int removeDuplicateFilePathRows(MediaDatabase& db) {
             "EXISTS (SELECT 1 FROM media_embedding WHERE file_id = media_file.id) AS analyzed "
             "FROM media_file ORDER BY id",
             -1, &stmt, nullptr) != SQLITE_OK) {
-        return 0;
+        return std::nullopt;
     }
 
-    std::unordered_map<std::string, FilePathDedupeRow> keeperByPhysicalFile;
-    std::vector<std::int64_t> removeIds;
+    std::vector<FilePathDedupeRow> rows;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const auto* pathText = sqlite3_column_text(stmt, 1);
         if (pathText == nullptr) {
             continue;
         }
-
         FilePathDedupeRow row;
         row.fileId = sqlite3_column_int64(stmt, 0);
         row.path = std::filesystem::path(reinterpret_cast<const char*>(pathText));
         row.indexedAt = sqlite3_column_int64(stmt, 2);
         row.userEdited = sqlite3_column_int(stmt, 3) != 0;
         row.analyzed = sqlite3_column_int(stmt, 4) != 0;
+        rows.push_back(std::move(row));
+    }
+    sqlite3_finalize(stmt);
+    return rows;
+}
 
-        const auto key = physicalFileKey(row.path);
+struct DedupePlan {
+    std::unordered_map<std::string, FilePathDedupeRow> keeperByKey;
+    std::vector<std::int64_t> removeIds;
+};
+
+// Rows sharing a key collapse onto the best keeper; rows without a key are left alone.
+DedupePlan planDedupe(
+    std::vector<FilePathDedupeRow> rows,
+    const std::function<std::optional<std::string>(const std::filesystem::path&)>& keyOf) {
+    DedupePlan plan;
+    for (auto& row : rows) {
+        const auto key = keyOf(row.path);
         if (!key) {
             continue;
         }
-
-        auto it = keeperByPhysicalFile.find(*key);
-        if (it == keeperByPhysicalFile.end()) {
-            keeperByPhysicalFile.emplace(*key, std::move(row));
-            continue;
-        }
-
-        if (isBetterDuplicateKeeper(row, it->second)) {
-            removeIds.push_back(it->second.fileId);
+        auto it = plan.keeperByKey.find(*key);
+        if (it == plan.keeperByKey.end()) {
+            plan.keeperByKey.emplace(*key, std::move(row));
+        } else if (isBetterDuplicateKeeper(row, it->second)) {
+            plan.removeIds.push_back(it->second.fileId);
             it->second = std::move(row);
         } else {
-            removeIds.push_back(row.fileId);
+            plan.removeIds.push_back(row.fileId);
+        }
+    }
+    return plan;
+}
+
+bool anyPathNeedsCanonicalizing(sqlite3* handle) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(handle, "SELECT path FROM media_file", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+        throw MediaDatabaseError("prepare canonical path check: " +
+                                 std::string(sqlite3_errmsg(handle)));
+    }
+    bool found = false;
+    while (!found && sqlite3_step(stmt) == SQLITE_ROW) {
+        if (const auto* text = sqlite3_column_text(stmt, 0)) {
+            const std::filesystem::path path(reinterpret_cast<const char*>(text));
+            found = libraryPath(path) != path;
         }
     }
     sqlite3_finalize(stmt);
+    return found;
+}
 
+}  // namespace
+
+int deleteMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
+    auto* handle = db.handle();
+    if (fileIds.empty() ||
+        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+
+    int removed = 0;
+    const bool ok = deleteRows(handle, fileIds, removed) && rebuildFts(handle);
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok ? removed : 0;
+}
+
+int removeDuplicateFilePathRows(MediaDatabase& db) {
+    auto rows = readDedupeRows(db.handle());
+    if (!rows) {
+        return 0;
+    }
+    auto removeIds = planDedupe(std::move(*rows), physicalFileKey).removeIds;
     if (removeIds.empty()) {
         return 0;
     }
@@ -1168,10 +1208,58 @@ int removeDuplicateFilePathRows(MediaDatabase& db) {
     return deleteMediaRows(db, removeIds);
 }
 
+int canonicalizeLibraryPaths(sqlite3* handle) {
+    if (!anyPathNeedsCanonicalizing(handle)) {
+        return 0;
+    }
+    auto rows = readDedupeRows(handle);
+    if (!rows) {
+        throw MediaDatabaseError("read rows to canonicalize: " +
+                                 std::string(sqlite3_errmsg(handle)));
+    }
+    const auto plan = planDedupe(std::move(*rows), [](const std::filesystem::path& path) {
+        return std::optional<std::string>(libraryPath(path).string());
+    });
+
+    if (sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("begin canonicalize: " + std::string(sqlite3_errmsg(handle)));
+    }
+    int changed = 0;
+    bool ok = deleteRows(handle, plan.removeIds, changed);
+
+    sqlite3_stmt* upd = nullptr;
+    ok = ok && sqlite3_prepare_v2(handle, "UPDATE OR IGNORE media_file SET path = ? WHERE id = ?",
+                                  -1, &upd, nullptr) == SQLITE_OK;
+    for (const auto& [key, keeper] : plan.keeperByKey) {
+        if (!ok) {
+            break;
+        }
+        if (key == keeper.path.string()) {
+            continue;
+        }
+        sqlite3_bind_text(upd, 1, key.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64(upd, 2, keeper.fileId);
+        ok = sqlite3_step(upd) == SQLITE_DONE;
+        changed += sqlite3_changes(handle);
+        sqlite3_reset(upd);
+        sqlite3_clear_bindings(upd);
+    }
+    sqlite3_finalize(upd);
+
+    ok = ok && rebuildFts(handle);
+    if (!ok) {
+        const std::string err = sqlite3_errmsg(handle);
+        sqlite3_exec(handle, "ROLLBACK", nullptr, nullptr, nullptr);
+        throw MediaDatabaseError("canonicalize library paths: " + err);
+    }
+    sqlite3_exec(handle, "COMMIT", nullptr, nullptr, nullptr);
+    return changed;
+}
+
 int moveFolderInLibrary(MediaDatabase& db, const std::filesystem::path& oldFolder,
                         const std::filesystem::path& newFolder) {
-    std::string oldPrefix = oldFolder.string();
-    std::string newPrefix = newFolder.string();
+    std::string oldPrefix = libraryPath(oldFolder).string();
+    std::string newPrefix = libraryPath(newFolder).string();
     if (oldPrefix.empty() || newPrefix.empty()) {
         juce::Logger::writeToLog("[moveFolder] empty prefix, aborting");
         return 0;

@@ -22,6 +22,8 @@
 #include "../../magda/daw/core/MidiFileWriter.hpp"
 #include "../../magda/daw/media_db/MediaDatabase.hpp"
 #include "../../magda/daw/media_db/MediaDbIndexer.hpp"
+#include "../../magda/daw/media_db/MediaDbMetadata.hpp"
+#include "../../magda/daw/media_db/PathRules.hpp"
 
 namespace fs = std::filesystem;
 using Catch::Approx;
@@ -235,6 +237,38 @@ TEST_CASE("indexer: indexes one imported audio file", "[media_db][indexer]") {
     REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
 }
 
+TEST_CASE("indexer: a folder reached through a symlink indexes onto the same rows (#2687)",
+          "[media_db][indexer]") {
+    TempDir dir;
+    const auto real = dir.path() / "Splice";
+    writeMonoWav(real / "packs" / "kick.wav", 0.5, 100.0);
+    const auto alias = dir.path() / "Macintosh HD";
+    std::error_code ec;
+    fs::create_directory_symlink(real, alias, ec);
+    if (ec) {
+        SUCCEED("filesystem does not allow symlinks in this test location");
+        return;
+    }
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    REQUIRE(indexer.indexDirectory(real).inserted == 1);
+
+    REQUIRE(magda::media::hasIndexedDescendant(db, alias / "packs"));
+    const auto again = indexer.indexDirectory(alias / "packs");
+    REQUIRE(again.inserted == 0);
+    REQUIRE(again.skipped == 1);
+    REQUIRE(countRows(db.handle(), "SELECT COUNT(*) FROM media_file") == 1);
+
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT path FROM media_file", -1, &stmt, nullptr) ==
+            SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) ==
+            fs::canonical(real / "packs" / "kick.wav").string());
+    sqlite3_finalize(stmt);
+}
+
 TEST_CASE("indexer: extracts metadata for MIDI clip files", "[media_db][indexer][midi]") {
     TempDir dir;
     const auto midiPath = dir.path() / "Leads" / "Hook Melody.mid";
@@ -254,7 +288,7 @@ TEST_CASE("indexer: extracts metadata for MIDI clip files", "[media_db][indexer]
                        "SELECT kind, format, duration_s, bpm, shape, family, tonal "
                        "FROM media_file WHERE path = ?",
                        -1, &stmt, nullptr);
-    const auto pathText = midiPath.string();
+    const auto pathText = magda::media::libraryPath(midiPath).string();
     sqlite3_bind_text(stmt, 1, pathText.c_str(), -1, SQLITE_TRANSIENT);
 
     REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);

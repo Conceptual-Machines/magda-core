@@ -252,6 +252,16 @@ ParsedKey normalizeKey(const std::string& rootLetter, const std::string& acciden
 
 }  // namespace
 
+std::filesystem::path libraryPath(const std::filesystem::path& path) {
+    if (!path.is_absolute()) {
+        return path;
+    }
+    // weakly_canonical, so a file that is gone still resolves through the folders that remain.
+    std::error_code ec;
+    auto resolved = std::filesystem::weakly_canonical(path, ec);
+    return ec ? path : resolved;
+}
+
 std::optional<std::string> pathFamilyHint(const std::filesystem::path& path) {
     auto resolved = resolveForInspection(path);
     const auto& map = familyKeywords();

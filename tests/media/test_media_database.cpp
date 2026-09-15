@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <random>
 #include <set>
 #include <string>
@@ -372,6 +373,78 @@ TEST_CASE("Duplicate file path cleanup removes rows pointing to the same physica
     REQUIRE(sqlite3_column_double(stmt, 1) == Approx(172.0));
     REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
     sqlite3_finalize(stmt);
+}
+
+TEST_CASE("Canonicalizing library paths merges a file stored under two spellings (#2687)",
+          "[media_db][migration]") {
+    TempDir dir;
+    const auto real = dir.path() / "Splice";
+    fs::create_directories(real);
+    std::ofstream(real / "break.wav") << "audio";
+    const auto alias = dir.path() / "Macintosh HD";
+    std::error_code ec;
+    fs::create_directory_symlink(real, alias, ec);
+    if (ec) {
+        SUCCEED("filesystem does not allow symlinks in this test location");
+        return;
+    }
+
+    const auto canonicalText = fs::canonical(real / "break.wav").string();
+    const auto aliasText = (alias / "break.wav").string();
+    const auto goneAliasText = (alias / "gone.wav").string();
+    const auto goneCanonicalText = (fs::canonical(real) / "gone.wav").string();
+
+    MediaDatabase db(":memory:");
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(
+        sqlite3_prepare_v2(db.handle(),
+                           "INSERT INTO media_file "
+                           "(id, path, kind, format, size_bytes, mtime_ns, indexed_at, bpm_user) "
+                           "VALUES (?, ?, 'audio', 'wav', 5, 1, ?, ?)",
+                           -1, &stmt, nullptr) == SQLITE_OK);
+    const auto insert = [&](int id, const std::string& path, int indexedAt,
+                            std::optional<double> bpmUser) {
+        sqlite3_bind_int(stmt, 1, id);
+        sqlite3_bind_text(stmt, 2, path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(stmt, 3, indexedAt);
+        if (bpmUser) {
+            sqlite3_bind_double(stmt, 4, *bpmUser);
+        } else {
+            sqlite3_bind_null(stmt, 4);
+        }
+        REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    };
+    insert(1, aliasText, 10, 172.0);
+    insert(2, canonicalText, 20, std::nullopt);
+    insert(3, goneAliasText, 30, std::nullopt);
+    sqlite3_finalize(stmt);
+
+    // The user-edited alias row keeps the file; the gone file still resolves through its folder.
+    REQUIRE(magda::media::canonicalizeLibraryPaths(db.handle()) == 3);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT id, path, bpm_user FROM media_file ORDER BY id",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(stmt, 0) == 1);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) ==
+            canonicalText);
+    REQUIRE(sqlite3_column_double(stmt, 2) == Approx(172.0));
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(stmt, 0) == 3);
+    REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) ==
+            goneCanonicalText);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_DONE);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT COUNT(*) FROM media_fts", -1, &stmt, nullptr) ==
+            SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_int(stmt, 0) == 2);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(magda::media::canonicalizeLibraryPaths(db.handle()) == 0);
 }
 
 TEST_CASE("Migration ladder rebuilds media_file to accept kind='progression'",
