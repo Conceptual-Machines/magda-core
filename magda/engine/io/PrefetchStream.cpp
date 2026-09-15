@@ -52,6 +52,11 @@ void PrefetchStream::seek(std::int64_t sourceStart) {
     cue_.nonRealtimeReplace(SeekRequest{sourceStart, ++cueGeneration_});
 }
 
+void PrefetchStream::prepareRead(std::int64_t sourceStart) {
+    if (sourceStart != nextSample_)
+        requestSeek(sourceStart);
+}
+
 void PrefetchStream::applyPendingCue() {
     // Whether anything played out of this stream since the last time it was
     // asked. Read here rather than in read(), so that what it answers is a

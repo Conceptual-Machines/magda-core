@@ -122,6 +122,11 @@ class PrefetchStream {
      */
     void seek(std::int64_t sourceStart);
 
+    /// On the audio thread while playback is stopped: prepare the next read
+    /// without consuming it. Repeating the same cue leaves prefetched data in
+    /// place. This gives the worker time to fill before Play needs its samples.
+    void prepareRead(std::int64_t sourceStart);
+
     /**
      * @brief Take up a cue, if one is waiting. On the audio thread.
      *

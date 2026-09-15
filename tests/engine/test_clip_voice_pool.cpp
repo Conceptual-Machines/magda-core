@@ -757,6 +757,60 @@ TEST_CASE("A pool with nothing published provisions nothing", "[engine][clip][po
         REQUIRE(output.getSample(0, sample) == Catch::Approx(0.0f).margin(1e-4));
 }
 
+TEST_CASE("Stopping prepares a stretched arrangement clip for the next Play",
+          "[engine][clip][pool][stretch][2683]") {
+    for (const auto mode : {magda::time_stretch_mode::kSoundTouchNormal,
+                            magda::time_stretch_mode::kSoundTouchBetter}) {
+        TestFiles files;
+        PrefetchThread reader(false);
+        ClipVoicePool pool(files, reader, context());
+        auto clip = clipAt(1, 0.0, 20.0, 1000);
+        clip.events.front().timeStretchMode = mode;
+        clip.events.front().speedRatio = 1.2;
+        const auto snapshot = snapshotOf({clip});
+        pool.setSnapshot(snapshot);
+        pool.service();
+        pool.fillNow();
+        ClipSnapshotFeed clips;
+        clips.publish(snapshot);
+        ClipAudioSource source(kTrack, clips, pool.feed());
+        source.prepare(context());
+        juce::AudioBuffer<float> output(2, kBlockSize);
+        std::shared_ptr<magda::engine::PrefetchStream> stream;
+        {
+            const magda::engine::ClipStreamFeed::Reader published(pool.feed());
+            REQUIRE(published);
+            stream = published->entries.front().stream;
+        }
+        double startSeconds = 0.0;
+        for (int attempt = 0; attempt < 3; ++attempt) {
+            INFO("mode=" << mode << " play=" << attempt);
+            const auto before = stream->underruns();
+            for (int block = 0; block < 128; ++block) {
+                pool.fillNow();
+                magda::test::renderBlock(
+                    source, clips,
+                    blockFrom(startSeconds + block * kBlockSize / kSampleRate, block != 0),
+                    juce::dsp::AudioBlock<float>(output));
+                if (block == 0)
+                    CHECK(output.getMagnitude(0, kBlockSize) > 100.0f);
+            }
+            CHECK(stream->underruns() == before);
+            // Real stopped callbacks continue to run, with the transport back
+            // at the next start. Also cover a cursor inside a stretch cell.
+            startSeconds = attempt == 0 ? 65.0 / kSampleRate : 0.0;
+            auto stopped = blockFrom(startSeconds, false);
+            stopped.playing = false;
+            for (int block = 0; block < 8; ++block) {
+                magda::test::renderBlock(source, clips, stopped,
+                                         juce::dsp::AudioBlock<float>(output));
+                pool.service();
+                pool.fillNow();
+            }
+        }
+    }
+}
+
 TEST_CASE("A stretched clip is provisioned with a stretcher of its own",
           "[engine][clip][pool][stretch]") {
     // Made here rather than in a voice, because building one allocates and

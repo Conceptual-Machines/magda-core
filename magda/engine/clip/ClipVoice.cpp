@@ -273,8 +273,7 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // two ends.
     const auto step = (closes - opens) / count;
 
-    // How far ahead of the position wanted the reading is consumed, which is not
-    // zero only for the path that lands between samples (ClipStretcher.hpp).
+    // The input lead needed for interpolation or the stretcher's latency.
     const auto ahead = stretcher != nullptr ? stretcher->readAheadSamples() : 0;
     const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
     const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;

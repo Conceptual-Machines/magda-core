@@ -5,6 +5,7 @@
 #include <memory>
 #include <vector>
 
+#include "AllocationWatch.hpp"
 #include "ClipCallback.hpp"
 #include "clip/ClipAudioSource.hpp"
 #include "clip/ClipStretcher.hpp"
@@ -613,10 +614,13 @@ TEST_CASE("A clip asks for a stretcher only when it needs one", "[engine][clip][
 
             REQUIRE(stretcher != nullptr);
 
-            // Every one of them holds material back, and says how much, which is
-            // what the pool cues behind the clip's own start.
-            REQUIRE(stretcher->preRollSamples(setup.nominalRate) > 0);
-            REQUIRE(stretcher->readAheadSamples() == 0);
+            // Each primes from history. SoundTouch also reads ahead to cover
+            // its output latency; the pool's cue accounts for both quantities.
+            REQUIRE(stretcher->preRollSamples(setup.nominalRate) > stretcher->readAheadSamples());
+            if (which == mode::kSignalsmith)
+                REQUIRE(stretcher->readAheadSamples() == 0);
+            else
+                REQUIRE(stretcher->readAheadSamples() > 0);
         }
     }
 
@@ -1004,6 +1008,99 @@ TEST_CASE("SoundTouch runs the whole rate range without growing a buffer under a
 
             INFO("mode " << which << " ratio " << ratio);
             CHECK(std::isfinite(rig.rms()));
+        }
+    }
+}
+
+TEST_CASE("SoundTouch holds the tempo when a cell consumes a fractional number of samples",
+          "[engine][clip][stretch][2683]") {
+    // At the minimum rate, cells alternate between 12 and 13 input samples.
+    // Using those lengths as tempo settings, then clamping the 12-sample case,
+    // makes the pipe run faster than its input supply. It eventually drains
+    // even a correctly primed lookahead and inserts silence (#2683).
+    constexpr double rate = magda::engine::kMinStretchRate;
+    constexpr auto cell = magda::engine::kStretchCellSamples;
+    for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        StretchSetup setup;
+        setup.mode = which;
+        setup.nominalRate = rate;
+        auto stretcher = magda::engine::makeStretcher(setup);
+        REQUIRE(stretcher != nullptr);
+        const auto ahead = stretcher->readAheadSamples();
+        const auto preRoll = stretcher->preRollSamples(rate);
+        PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
+        stream.startAt(ahead - preRoll);
+        while (stream.fill()) {
+        }
+        stretcher->prime(stream, ahead, preRoll, rate);
+
+        juce::AudioBuffer<float> input(2, cell);
+        juce::AudioBuffer<float> output(2, cell);
+        float worstError = 0.0f;
+        for (int index = 0; index < 20000; ++index) {
+            while (stream.fill()) {
+            }
+            const auto from = std::llround(index * cell * rate) + ahead;
+            const auto to = std::llround((index + 1) * cell * rate) + ahead;
+            const auto count = static_cast<int>(to - from);
+            auto reading = juce::dsp::AudioBlock<float>(input).getSubBlock(0, count);
+            stream.read(from, reading, count);
+            stretcher->process(reading, 0.0, rate, juce::dsp::AudioBlock<float>(output));
+            for (int channel = 0; channel < 2; ++channel)
+                for (int sample = 0; sample < cell; ++sample)
+                    worstError =
+                        std::max(worstError, std::abs(output.getSample(channel, sample) - 1.0f));
+        }
+        INFO("mode=" << which);
+        CHECK(stream.underruns() == 0);
+        CHECK(worstError < 0.001f);
+    }
+}
+
+TEST_CASE("SoundTouch primes its lookahead without allocating on the audio thread",
+          "[engine][clip][stretch][2683]") {
+    if (!magda::test::allocationWatchWorks())
+        SKIP("this build's operator new is not instrumented");
+
+    for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        for (const auto pitch : {-4.0f, 0.0f, 4.0f}) {
+            for (const auto rate : {0.1, 0.5, 1.2, 1.37, 4.3, 9.97, 10.0}) {
+                StretchSetup setup;
+                setup.mode = which;
+                setup.semitones = pitch;
+                setup.nominalRate = rate;
+                auto stretcher = magda::engine::makeStretcher(setup);
+                REQUIRE(stretcher != nullptr);
+                const auto ahead = stretcher->readAheadSamples();
+                const auto preRoll = stretcher->preRollSamples(rate);
+                PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 32});
+                stream.startAt(ahead - preRoll);
+                while (stream.fill()) {
+                }
+
+                constexpr auto cell = magda::engine::kStretchCellSamples;
+                juce::AudioBuffer<float> input(2, magda::engine::maxReadingSamples(cell));
+                juce::AudioBuffer<float> output(2, cell);
+                std::size_t heapOperations = 0;
+                {
+                    const magda::test::AllocationWatch watch;
+                    stretcher->reset();
+                    stretcher->prime(stream, ahead, preRoll, rate);
+                    for (int index = 0; index < 32; ++index) {
+                        const auto from = std::llround(index * cell * rate) + ahead;
+                        const auto to = std::llround((index + 1) * cell * rate) + ahead;
+                        const auto count = static_cast<int>(to - from);
+                        auto reading = juce::dsp::AudioBlock<float>(input).getSubBlock(0, count);
+                        stream.read(from, reading, count);
+                        stretcher->process(reading, 0.0, rate,
+                                           juce::dsp::AudioBlock<float>(output));
+                    }
+                    heapOperations = watch.total();
+                }
+                INFO("mode=" << which << " rate=" << rate << " pitch=" << pitch);
+                CHECK(stream.underruns() == 0);
+                CHECK(heapOperations == 0);
+            }
         }
     }
 }
