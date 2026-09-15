@@ -9,6 +9,8 @@
 #include "ui/components/chain/DeviceSlotComponent.hpp"
 #include "ui/components/chain/RackComponent.hpp"
 #include "ui/components/chain/drum_grid/PadDeviceSlot.hpp"
+#include "ui/components/chain/layout/StandardDeviceLayout.hpp"
+#include "ui/components/chain/slot/DeviceSlotSelectionHandling.hpp"
 #include "ui/themes/FontManager.hpp"
 
 using namespace magda;
@@ -152,6 +154,40 @@ int main() {
                 click(*node, 8, 0, 2);
                 unchanged(*node);
             }
+            // Parameter identity must survive offset indices, custom ordering and pages.
+            ParamHostComponent grid(std::make_unique<StandardDeviceLayout>());
+            DeviceInfo parameterModel;
+            for (int index = 2; index < 42; ++index) {
+                ParameterInfo parameter;
+                parameter.paramIndex = index;
+                parameter.name = "Parameter " + juce::String(index);
+                parameterModel.parameters.push_back(parameter);
+            }
+            auto selectCell = [&](int cell) {
+                const int parameter = grid.getSlot(cell)->getParamIndex();
+                applyDeviceSlotParamSelectionChange(firstPath, {firstPath, parameter}, grid, {});
+                for (int i = 0; i < grid.getSlotCount(); ++i)
+                    check(grid.getSlot(i)->isSelected() == (i == cell),
+                          "parameter selection highlighted the wrong grid cell");
+            };
+            grid.updateParameterSlots(parameterModel, 0, {});
+            selectCell(0);  // Parameter 2 is cell 0, not cell 2.
+            selectCell(3);
+            parameterModel.visibleParameters = {8, 2, 6, 4};
+            grid.updateParameterSlots(parameterModel, 0, {});
+            selectCell(0);
+            selectCell(1);
+            applyDeviceSlotParamSelectionChange(firstPath, {secondPath, 2}, grid, {});
+            for (int i = 0; i < grid.getSlotCount(); ++i)
+                check(!grid.getSlot(i)->isSelected(), "selection leaked between devices");
+            parameterModel.visibleParameters.clear();
+            grid.updateParameterSlots(parameterModel, 1, {});
+            selectCell(0);
+            selectCell(7);
+            applyDeviceSlotParamSelectionChange(firstPath, {}, grid, {});
+            for (int i = 0; i < grid.getSlotCount(); ++i)
+                check(!grid.getSlot(i)->isSelected(), "cleared selection left a cell highlighted");
+
             PadDeviceSlot pad;
             PadDeviceSlot::Binding binding;
             binding.device = model;

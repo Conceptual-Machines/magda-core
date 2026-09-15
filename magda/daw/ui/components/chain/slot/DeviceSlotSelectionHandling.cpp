@@ -75,8 +75,10 @@ void applyDeviceSlotParamSelectionChange(const magda::ChainNodePath& nodePath,
     updateMacroPanel(callbacks);
 
     for (int i = 0; i < paramGrid.getSlotCount(); ++i) {
-        const bool isSelected =
-            selection.isValid() && selection.devicePath == nodePath && selection.paramIndex == i;
+        // Grid positions change with filtering, ordering and pagination. Selection
+        // names the parameter bound to the cell, not its position in the grid.
+        const bool isSelected = selection.isValid() && selection.devicePath == nodePath &&
+                                selection.paramIndex == paramGrid.getSlot(i)->getParamIndex();
         paramGrid.setSlotSelected(i, isSelected);
     }
 }
