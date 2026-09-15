@@ -1,11 +1,18 @@
+#include <juce_audio_formats/juce_audio_formats.h>
+
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
 
 #include "AudioClipTestHelpers.hpp"
+#include "MediaDbTestHelpers.hpp"
 #include "audio/AudioThumbnailManager.hpp"
 #include "core/ClipInfo.hpp"
 #include "core/ClipManager.hpp"
+#include "core/ClipOperations.hpp"
 #include "core/SourcePool.hpp"
+#include "media_db/MediaDbContext.hpp"
+#include "media_db/MediaDbIndexer.hpp"
 
 using namespace magda;
 using Catch::Approx;
@@ -614,33 +621,60 @@ TEST_CASE("The source's tempo and beat count can be set on a clip in time mode",
     clips.clearAllClips();
 }
 
-TEST_CASE("BEAT grants beat mode only with a tempo behind it",
-          "[clip][event][interpretation][session]") {
+TEST_CASE("Beat mode is granted only with a tempo behind it", "[clip][event][interpretation]") {
     // The toggle is the one way into beat mode by hand, and it wrote autoTempo
     // directly -- so a clip could still claim the mode with every beat view at
     // zero, which is the state creation stopped producing (#2676).
     EventModelFixture fixture;
+
+    ClipInfo clip;
+    auto& event = magda::test::giveAudioEvent(clip, "nothing-says.wav", 4.0);
+    clip.setPlacementBeats(0.0, 8.0);
+    clip.loopEnabled = true;
+    REQUIRE(!event.hasInterpretedBpm());
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+    REQUIRE(!magda::test::audioEvent(clip).autoTempo);
+
+    // The source BPM field is what supplies one, and it answers in time mode.
+    magda::test::audioEvent(clip).interpBpm = 90.0;
+    magda::test::audioEvent(clip).interpTotalBeats = 6.0;
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+    REQUIRE(magda::test::audioEvent(clip).autoTempo);
+}
+
+TEST_CASE("A scanned file's tempo reaches the clip that imports it",
+          "[clip][event][interpretation][media-db]") {
+    // The media DB answers a tempo in two columns: bpm_user, what a user set,
+    // and bpm, what the scanner worked out from the filename token or the ACID
+    // chunk. Import read only the first, so a well-named loop from a scanned
+    // library still arrived with no tempo at all (#2674).
+    EventModelFixture fixture;
+    magda::test::TempMediaDb mediaDb;
     auto& clips = ClipManager::getInstance();
     clips.clearAllClips();
     AudioThumbnailManager::getInstance().clearCache();
 
-    SourcePool::getInstance().seedFactsForTesting("/tmp/nothing-says.wav", 4.0, 44100.0);
+    const auto file = magda::test::writeTestWav(mediaDb.dir(), "bass_loop_140bpm.wav");
+    REQUIRE(file.existsAsFile());
+
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    REQUIRE(ctx.ensureInitialized());
+    magda::media::MediaDbIndexer indexer(ctx.db(), nullptr);
+    const auto path = std::filesystem::path(file.getFullPathName().toStdString());
+    const auto stats = indexer.indexFile(path, magda::media::MediaDbIndexer::Mode::ForceAll);
+    REQUIRE(stats.inserted + stats.updated > 0);
 
     const auto clipId =
-        clips.createAudioClipBeats(1, 0.0, 4.0, "/tmp/nothing-says.wav", ClipView::Session, 120.0);
-    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+        clips.createAudioClipBeats(1, 0.0, 8.0, file.getFullPathName(), ClipView::Session, 100.0);
 
-    clips.setAutoTempo(clipId, true, 120.0);
-    REQUIRE(!clips.getClip(clipId)->primaryEvent()->autoTempo);
+    const auto* event = clips.getClip(clipId)->primaryEvent();
+    REQUIRE(event != nullptr);
+    REQUIRE(event->interpBpm == Approx(140.0));
 
-    // The source BPM field is what supplies one, and it answers in time mode.
-    ClipManager::AudioClipBeatsUpdate update;
-    update.interpretationBpm = 90.0;
-    update.interpretationTotalBeats = 6.0;
-    clips.applyAudioClipBeats(clipId, update, 120.0);
-
-    clips.setAutoTempo(clipId, true, 120.0);
-    REQUIRE(clips.getClip(clipId)->primaryEvent()->autoTempo);
+    // And with a tempo behind it, the slot's ask for beat mode is granted.
+    REQUIRE(event->autoTempo);
 
     clips.clearAllClips();
     AudioThumbnailManager::getInstance().clearCache();

@@ -430,6 +430,16 @@ class ClipManager {
 
     /** @brief Enable/disable auto-tempo (beat-locked) mode for an audio clip */
     void setAutoTempo(ClipId clipId, bool enabled, double bpm);
+
+    /**
+     * @brief Work out what a file is, then ask for beat mode again.
+     *
+     * The BEAT press on a clip with no interpretation is what triggers a
+     * detection pass over its file, off the message thread. An answer seeds the
+     * interpretation; no answer falls back to the project tempo, so the press
+     * still does what it means (#2674).
+     */
+    void resolveInterpretationThenSetAutoTempo(ClipId clipId, double projectBPM);
     /** @brief Set the playback speed ratio (1.0 = original, 2.0 = double speed) - TE:
      * Clip::speedRatio */
     void setSpeedRatio(ClipId clipId, double speedRatio);

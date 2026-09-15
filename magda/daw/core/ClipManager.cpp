@@ -408,6 +408,22 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
                 newEvent.keyScale = *savedMetadata->keyScale;
             }
         }
+        // What the scanner worked out (filename token, then ACID chunk) is in the
+        // detected column, and the read above sees only the override columns --
+        // so a scanned file's tempo reached no clip at all (#2674). A hint, not
+        // an assertion: it fills a gap and never overwrites what a user set.
+        if (!newEvent.hasInterpretedBpm()) {
+            if (const auto scanned = magda::media::getEffectiveMetadataForFile(
+                    std::filesystem::path(audioFilePath.toStdString()));
+                scanned && scanned->bpm && isValidBpm(*scanned->bpm)) {
+                newEvent.interpBpm = *scanned->bpm;
+                if (newEvent.interpTotalBeats <= 0.0 && newEvent.sourceDurationSeconds() > 0.0) {
+                    newEvent.interpTotalBeats =
+                        newEvent.sourceDurationSeconds() * newEvent.interpBpm / 60.0;
+                }
+            }
+        }
+
         const auto savedMarkers = magda::media::getUserWarpMarkersForFile(
             std::filesystem::path(audioFilePath.toStdString()));
         if (savedMarkers) {
@@ -1709,6 +1725,17 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             if (enabled)
                 seedSourceMetadataFromCachedDetection(*clip, bpm);
 
+            // Beat mode is granted only with a tempo behind it (#2676), and the
+            // press is what says this file's tempo is the one the user cares
+            // about: nothing is scanned on drop, and a file nothing knows about
+            // is analysed here (#2674). The mode follows when the answer lands.
+            if (auto* pending = enabled ? clip->primaryEvent() : nullptr;
+                pending != nullptr && !pending->hasInterpretedBpm() &&
+                !pending->sourceFilePath().isEmpty()) {
+                resolveInterpretationThenSetAutoTempo(clipId, bpm);
+                return;
+            }
+
             ClipOperations::setAutoTempo(*clip, enabled, bpm);
 
             // Ensure time-stretching is enabled when beat mode is on
@@ -1728,6 +1755,36 @@ void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
             notifyClipPropertyChanged(clipId);
         }
     }
+}
+
+void ClipManager::resolveInterpretationThenSetAutoTempo(ClipId clipId, double projectBPM) {
+    auto* clip = getClip(clipId);
+    auto* event = clip != nullptr ? clip->primaryEvent() : nullptr;
+    if (event == nullptr)
+        return;
+
+    AudioThumbnailManager::getInstance().requestBPMDetection(
+        event->sourceFilePath(), [clipId, projectBPM](double detected) {
+            auto& mgr = ClipManager::getInstance();
+            auto* c = mgr.getClip(clipId);
+            auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
+            if (ev == nullptr)
+                return;
+
+            if (!ev->hasInterpretedBpm()) {
+                // Nothing could tell -- a pad, a vocal take, a one-shot -- and
+                // the press still means what pressing it means: play this at my
+                // tempo. The source BPM and beat-count fields are there to
+                // correct it.
+                const double resolved =
+                    detected > 0.0 ? detected : (isValidBpm(projectBPM) ? projectBPM : DEFAULT_BPM);
+                ev->interpBpm = resolved;
+                if (ev->interpTotalBeats <= 0.0 && ev->sourceDurationSeconds() > 0.0)
+                    ev->interpTotalBeats = ev->sourceDurationSeconds() * resolved / 60.0;
+            }
+
+            mgr.setAutoTempo(clipId, true, projectBPM);
+        });
 }
 
 void ClipManager::setOffset(ClipId clipId, double offset) {

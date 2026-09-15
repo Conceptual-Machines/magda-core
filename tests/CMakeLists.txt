@@ -715,6 +715,8 @@ target_sources(magda_juce_tests PRIVATE
     clips/test_multi_clip_resize_preview_juce.cpp
     clips/test_clip_paint_juce.cpp
     clips/test_clip_nudge_juce.cpp
+    # BEAT works out what an unscanned file is (#2674)
+    clips/test_clip_beat_detection_juce.cpp
     clips/test_clip_drag_targets_juce.cpp
     # A .mid dropped on the chord track arrives as chords
     ui/test_chord_track_file_drop_juce.cpp
