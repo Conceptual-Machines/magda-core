@@ -12,6 +12,8 @@ set(TEST_SOURCES
     clips/test_clip_bpm_invariant.cpp
     audio/test_source_pool.cpp
     clips/test_clip_event_model.cpp
+    clips/test_clip_tempo_sequences.cpp
+    clips/test_clip_tempo_detection_sequences.cpp
     clips/test_clip_schema_migration.cpp
     audio/test_audio_source_length.cpp
     audio/test_audio_export.cpp
@@ -473,6 +475,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_take_across_swap.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
+    list(APPEND TEST_SOURCES engine/test_clip_tempo_engine_sequences.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
     # The two edges of a voice (#2302): the step a start subtracts and the
     # one a stop carries down, which is what a section switch is made of.

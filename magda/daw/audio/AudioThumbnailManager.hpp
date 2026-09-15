@@ -110,6 +110,10 @@ class AudioThumbnailManager {
      */
     void requestBPMDetection(const juce::String& filePath, std::function<void(double)> onComplete);
 
+    /// Stop the background thread and drop what it was asked for. For tests
+    /// that own a message loop: the thread must not outlive it.
+    void stopBackgroundWork();
+
     /**
      * @brief Get cached transient times for an audio file
      * @param filePath Absolute path to the audio file

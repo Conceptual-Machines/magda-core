@@ -585,7 +585,7 @@ void AudioThumbnailManager::requestPeakCacheLoad(const juce::String& audioFilePa
     });
 }
 
-void AudioThumbnailManager::shutdown() {
+void AudioThumbnailManager::stopBackgroundWork() {
     // Stop any in-flight peak-compute jobs before tearing down state.
     if (backgroundThreadPool_) {
         // Drain UNBOUNDED (timeout < 0). A finite timeout that a peak-compute
@@ -595,8 +595,14 @@ void AudioThumbnailManager::shutdown() {
         backgroundThreadPool_.reset();
     }
     pendingBpm_.clear();
-    beatTracker_.reset();
     pendingPeakComputes_.clear();
+    // With the thread, since only it touched the model: an ONNX session left
+    // to static destruction died locking a mutex the runtime had already freed.
+    beatTracker_.reset();
+}
+
+void AudioThumbnailManager::shutdown() {
+    stopBackgroundWork();
     peakCaches_.clear();
 
     // Clear the cache first — this cancels any pending background thumbnail jobs

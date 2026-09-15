@@ -1710,7 +1710,8 @@ juce::String ClipManager::describeLoopGeometry(const ClipInfo& clip) {
     if (ev == nullptr)
         return "clip " + juce::String(clip.id) + ": no audio event";
     return "clip " + juce::String(clip.id) + (clip.view == ClipView::Session ? " slot" : " arr") +
-           " pass=" + juce::String(clip.placement.lengthBeats, 3) + " beats" + " | region " +
+           " cycle=" + juce::String(clip.sessionCycleBeats(), 3) + " beats (placement " +
+           juce::String(clip.placement.lengthBeats, 3) + ")" + " | region " +
            juce::String(ev->loopStartSeconds(), 3) + "s +" +
            juce::String(ev->loopLengthSeconds(), 3) + "s (" + juce::String(ev->loopLengthSamples) +
            " smp = " + juce::String(ev->loopLengthBeats(), 3) + " beats at interp)" + " | interp " +
