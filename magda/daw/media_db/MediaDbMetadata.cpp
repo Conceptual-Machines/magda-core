@@ -145,7 +145,7 @@ std::optional<EffectiveMetadata> getEffectiveMetadata(MediaDatabase& db,
 std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
                                                  const std::filesystem::path& path) {
     static constexpr const char* kSql = "SELECT bpm_user, key_root_user, key_scale_user, "
-                                        "       total_beats_user, beat_mode_user "
+                                        "       total_beats_user, beat_mode_user, bpm "
                                         "FROM media_file WHERE path = ?";
 
     sqlite3_stmt* stmt = nullptr;
@@ -165,6 +165,7 @@ std::optional<EffectiveMetadata> getUserMetadata(MediaDatabase& db,
         if (sqlite3_column_type(stmt, 4) != SQLITE_NULL) {
             m.beatMode = sqlite3_column_int(stmt, 4) != 0;
         }
+        m.detectedBpm = optDouble(stmt, 5);
         result = m;
     }
     sqlite3_finalize(stmt);
@@ -827,6 +828,40 @@ int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& 
     if (ok) {
         ok = rebuildFts(handle);
     }
+    sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
+    return ok ? updatedRows : 0;
+}
+
+int clearMediaRowMetadata(MediaDatabase& db, const std::vector<std::int64_t>& fileIds) {
+    auto* handle = db.handle();
+    if (fileIds.empty() ||
+        sqlite3_exec(handle, "BEGIN IMMEDIATE", nullptr, nullptr, nullptr) != SQLITE_OK) {
+        return 0;
+    }
+    sqlite3_stmt* stmt = nullptr;
+    bool ok = sqlite3_prepare_v2(handle,
+                                 "UPDATE media_file SET "
+                                 "bpm = NULL, key_root = NULL, key_scale = NULL, "
+                                 "bpm_user = NULL, key_root_user = NULL, key_scale_user = NULL, "
+                                 "total_beats_user = NULL, beat_mode_user = NULL, "
+                                 "warp_markers_json = NULL "
+                                 "WHERE id = ?",
+                                 -1, &stmt, nullptr) == SQLITE_OK;
+    int updatedRows = 0;
+    for (auto fileId : fileIds) {
+        if (!ok) {
+            break;
+        }
+        sqlite3_bind_int64(stmt, 1, fileId);
+        if (sqlite3_step(stmt) == SQLITE_DONE) {
+            updatedRows += sqlite3_changes(handle);
+        } else {
+            ok = false;
+        }
+        sqlite3_reset(stmt);
+        sqlite3_clear_bindings(stmt);
+    }
+    sqlite3_finalize(stmt);
     sqlite3_exec(handle, ok ? "COMMIT" : "ROLLBACK", nullptr, nullptr, nullptr);
     return ok ? updatedRows : 0;
 }

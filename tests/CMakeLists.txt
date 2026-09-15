@@ -9,9 +9,12 @@ set(TEST_SOURCES
     audio/test_audiobridge_plugin_cleanup_bug.cpp
     automation/test_auto_tempo.cpp
     audio/test_audio_clip_stretch.cpp
+    clips/test_audio_clip_source_display.cpp
     clips/test_clip_bpm_invariant.cpp
     audio/test_source_pool.cpp
     clips/test_clip_event_model.cpp
+    clips/test_clip_tempo_sequences.cpp
+    clips/test_clip_tempo_detection_sequences.cpp
     clips/test_clip_schema_migration.cpp
     audio/test_audio_source_length.cpp
     audio/test_audio_export.cpp
@@ -338,6 +341,12 @@ set(TEST_SOURCES
     media/test_media_db_roberta_tokenizer.cpp
     # Media database (issue #768) — Phase E1: MediaDbIndexer
     media/test_media_db_indexer.cpp
+    # What a producer called a file (#2674)
+    media/test_path_shape_hint.cpp
+    # Tempo measured from the audio, and what it scores on a real library
+    media/test_tempo_estimator.cpp
+    media/test_tempo_estimator_corpus.cpp
+    media/test_tempo_hints.cpp
     # Media database (issue #768) — Phase E2: MediaDbQuery (hybrid search)
     media/test_media_db_query.cpp
     # Media database (issue #1319) — CLAP zero-shot tagging
@@ -468,6 +477,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_take_across_swap.cpp)
     list(APPEND TEST_SOURCES engine/test_engine_taps.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_snapshot.cpp)
+    list(APPEND TEST_SOURCES engine/test_clip_tempo_engine_sequences.cpp)
     list(APPEND TEST_SOURCES engine/test_clip_voice.cpp)
     # The two edges of a voice (#2302): the step a start subtracts and the
     # one a stop carries down, which is what a section switch is made of.
@@ -493,6 +503,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES NullDiffNativeLeg.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_compare.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_corpus.cpp)
+    list(APPEND TEST_SOURCES engine/test_launch_first_hit_probe.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_native_leg.cpp)
 
     # The .mgd fixture rig (#2173): a real project turned into a case. Model

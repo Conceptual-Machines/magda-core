@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cmath>
+#include <juce_core/juce_core.h>
 
 #include "ClipInfo.hpp"
 #include "TempoUtils.hpp"
@@ -8,18 +8,12 @@
 namespace magda {
 
 /**
- * @brief Single source of truth for how an audio clip's source interpretation
- * (BPM / total beats) is shown in the inspectors, and which fields are live.
+ * @brief What the inspectors show for an audio clip's source BPM / beats, and
+ * which fields are live. Both inspectors derive from here so they cannot drift.
  *
- * Both the right-panel clip inspector and the audio-editor properties inspector
- * display the same Source BPM / Beats / Speed. Deriving those independently let
- * them drift (different BPM fallbacks, different greying rules). Everything that
- * decides what to show and whether a field is editable now flows through here,
- * so given the same ClipInfo every inspector renders identically by
- * construction.
- *
- * Pure (no singletons): the caller passes the analyzed-file BPM fallback
- * (AudioThumbnailManager::getCachedBPM) and the source file duration.
+ * The event's adopted interpretation is shown as is. Only an event with no tempo
+ * at all shows the cached analysis BPM as a hint, with beats derived from the
+ * file duration. Pure: the caller passes the cached BPM and the file duration.
  */
 struct AudioClipSourceDisplay {
     double bpm = 0.0;         ///< BPM to display; <= 0 means unknown ("--").
@@ -37,6 +31,7 @@ struct AudioClipSourceDisplay {
 inline AudioClipSourceDisplay computeAudioClipSourceDisplay(const ClipInfo& clip, double projectBpm,
                                                             double fileDurationSeconds,
                                                             double cachedSourceBpm) {
+    juce::ignoreUnused(projectBpm);
     AudioClipSourceDisplay d;
     const auto& event = audioEventRef(clip);
     d.speedActive = !event.autoTempo;
@@ -45,20 +40,14 @@ inline AudioClipSourceDisplay computeAudioClipSourceDisplay(const ClipInfo& clip
         return d;
 
     d.sourceFieldsActive = true;
+    d.bpm = event.interpBpm;
+    d.totalBeats = event.interpTotalBeats;
 
-    const double storedBpm = event.interpBpm;
-    const bool storedBpmLooksDefaulted =
-        storedBpm <= 0.0 || (!event.autoTempo && std::abs(storedBpm - projectBpm) < 0.1);
-
-    d.bpm = storedBpm;
-    if (storedBpmLooksDefaulted && cachedSourceBpm > 0.0)
+    if (!event.hasInterpretedBpm() && cachedSourceBpm > 0.0) {
         d.bpm = cachedSourceBpm;
-
-    if (d.bpm > 0.0 && fileDurationSeconds > 0.0 &&
-        (storedBpmLooksDefaulted || event.interpTotalBeats <= 0.0))
-        d.totalBeats = fileDurationSeconds * d.bpm / 60.0;
-    else
-        d.totalBeats = event.interpTotalBeats;
+        if (d.totalBeats <= 0.0)
+            d.totalBeats = beatCountForDuration(fileDurationSeconds, cachedSourceBpm);
+    }
 
     return d;
 }

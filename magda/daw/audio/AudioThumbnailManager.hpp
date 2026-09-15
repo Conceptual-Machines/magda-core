@@ -14,6 +14,9 @@
 namespace magda {
 
 class WaveformPeakCache;
+namespace media {
+class BeatTracker;
+}
 
 /**
  * @brief Notified when a file's cached transient set changes.
@@ -83,16 +86,6 @@ class AudioThumbnailManager {
     static void drawMissingFilePlaceholder(juce::Graphics& g, const juce::Rectangle<int>& bounds);
 
     /**
-     * @brief Detect BPM of an audio file.
-     *
-     * DSP detection is currently disabled because Tracktion/SoundTouch BPMDetect
-     * can crash inside its worker thread on some files.
-     * @param filePath Absolute path to the audio file
-     * @return Cached/external BPM, or 0.0 when unknown.
-     */
-    double detectBPM(const juce::String& filePath);
-
-    /**
      * @brief Get cached BPM for an audio file without triggering detection.
      * @return Cached BPM, or 0.0 if not yet detected.
      */
@@ -107,16 +100,19 @@ class AudioThumbnailManager {
     void cacheBPM(const juce::String& filePath, double bpm);
 
     /**
-     * @brief Request BPM detection.
+     * @brief Ask for the file's tempo: its name, its metadata, then the beat
+     * model when it is installed, else the autocorrelation (#2674).
      *
-     * If the result is already cached, @p onComplete fires synchronously on the
-     * calling (message) thread. Otherwise this currently returns 0.0
-     * synchronously because DSP BPM fallback is disabled.
-     *
-     * Must be called from the message thread.
+     * A cached answer fires @p onComplete synchronously. Otherwise the file is
+     * read on the background thread and the callback runs later on the message
+     * thread, with 0.0 when nothing could say. Requests for a file already in
+     * flight join it. Message thread only.
      */
-    void requestBPMDetection(const juce::String& filePath,
-                             const std::function<void(double)>& onComplete);
+    void requestBPMDetection(const juce::String& filePath, std::function<void(double)> onComplete);
+
+    /// Stop the background thread and drop what it was asked for. For tests
+    /// that own a message loop: the thread must not outlive it.
+    void stopBackgroundWork();
 
     /**
      * @brief Get cached transient times for an audio file
@@ -164,7 +160,8 @@ class AudioThumbnailManager {
 
   private:
     AudioThumbnailManager();
-    ~AudioThumbnailManager() = default;
+    // Out of line: beatTracker_ holds an incomplete type here.
+    ~AudioThumbnailManager();
 
     // Audio format manager for reading audio files
     juce::AudioFormatManager formatManager_;
@@ -181,6 +178,15 @@ class AudioThumbnailManager {
     // BPM detection cache (file path -> detected BPM).
     // Message-thread only — never touched from background detection threads.
     std::map<juce::String, double> bpmCache_;
+
+    // Files a detection is running for, with who asked. Message thread only.
+    std::map<juce::String, std::vector<std::function<void(double)>>> pendingBpm_;
+
+    // Background-thread only: the pool is one thread. Loaded on first use and
+    // kept, so a clip pays the model's load once a session, not once a click.
+    std::unique_ptr<media::BeatTracker> beatTracker_;
+    bool beatTrackerFailed_ = false;
+    double measureTempoOnBackgroundThread(const juce::String& filePath);
 
     // Background thread pool for peak-cache compute jobs. Lazy-initialized on first use.
     // Single thread — disk I/O serializes

@@ -250,10 +250,6 @@ class NullDiffCorpusTests : public juce::UnitTest {
         //    fixed offset is the one thing a single number can undo. So the
         //    mechanism is not a constant delay, and no bound goes in until
         //    something explains it.
-        //  - speed.ratio does not correlate at any offset with no shift at all,
-        //    so what differs is content rather than timing: the two disagree
-        //    about what a speed ratio means with stretching switched off. That
-        //    is a finding about the engine, not about the corpus.
         //  - fades.speedramp sits 20.6 samples out, which is too large to be a
         //    kernel and wants the same treatment rate.48k just had: find the
         //    mechanism, then pin it.
@@ -273,7 +269,6 @@ class NullDiffCorpusTests : public juce::UnitTest {
         //    place. No bound until the fork's own arithmetic is named.
         const std::set<std::string> underCalibration{
             "rate.48k",
-            "speed.ratio",
             "fades.speedramp",
             "tempo.auto",
             "warp.audio",

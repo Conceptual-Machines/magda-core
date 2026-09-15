@@ -375,3 +375,33 @@ TEST_CASE("A source with no end is not read past the end of a chunk", "[engine][
     CHECK(lastPosition > 0);
     fixture.requireHolds(lastPosition);
 }
+
+TEST_CASE("A retained session opening survives repeated seeks without a reader round",
+          "[prefetch][session][first-hit]") {
+    Fixture fixture;
+    fixture.stream->startAt(100, 150);
+    const auto diskReads = fixture.reader->reads;
+    for (int pass = 0; pass < 3; ++pass) {
+        REQUIRE(fixture.read(100) == kBlockSize);
+        fixture.requireHolds(100);
+        REQUIRE(fixture.read(164) == kBlockSize);
+        fixture.requireHolds(164);
+    }
+    CHECK(fixture.reader->reads == diskReads);
+    CHECK(fixture.stream->underruns() == 0);
+
+    // The last block crosses from retained samples into freshly prefetched ones.
+    REQUIRE(fixture.readPrefetched(228) == kBlockSize);
+    fixture.requireHolds(228);
+    REQUIRE(fixture.readPrefetched(292) == kBlockSize);
+    fixture.requireHolds(292);
+    CHECK(fixture.stream->underruns() == 0);
+
+    // An unrelated seek must still read its own position, not the cached head.
+    fixture.cue(2000);
+    fixture.stream->applyPendingCue();  // one idle callback lets the cue take effect
+    REQUIRE(fixture.readPrefetched(2000) == kBlockSize);
+    fixture.requireHolds(2000);
+    REQUIRE(fixture.read(100) == kBlockSize);
+    fixture.requireHolds(100);
+}

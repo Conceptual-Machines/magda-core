@@ -3,6 +3,7 @@
 
 target_sources(magda_daw PRIVATE
     AudioFeatures.cpp
+    BeatTracker.cpp
     ClapAudioEncoder.cpp
     ClapTextEncoder.cpp
     MediaDatabase.cpp
@@ -15,8 +16,9 @@ target_sources(magda_daw PRIVATE
     PathRules.cpp
     PresetDbIndexer.cpp
     RobertaTokenizer.cpp
-    SampleTaggerDownloader.cpp
+    MediaModelDownloader.cpp
     Scan.cpp
+    TempoEstimator.cpp
 )
 
 target_link_libraries(magda_daw PUBLIC sqlite3)

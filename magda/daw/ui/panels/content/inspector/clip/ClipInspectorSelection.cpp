@@ -17,11 +17,17 @@ void ClipInspector::setSelectedClip(magda::ClipId clipId) {
 }
 
 void ClipInspector::clipsChanged() {
+    if (clipBpmValue_.isBeingEdited())
+        return;
     updateFromSelectedClip();
 }
 
 void ClipInspector::clipPropertyChanged(magda::ClipId clipId) {
     if (selectedClipIds_.count(clipId) == 0)
+        return;
+    // A refresh rewrites the BPM label, and a juce::Label closes its editor
+    // when its text is set: a tempo landing mid-keystroke ate the entry.
+    if (clipBpmValue_.isBeingEdited())
         return;
 
     // When a draggable control triggers a value change, the round-trip is:

@@ -667,6 +667,28 @@ ClipInfo makeSessionClip(magda::ClipId id, int sceneIndex, double startBeat, dou
 
 }  // namespace
 
+// A loop dropped at the project tempo carries the file's seconds as its
+// placement; once interpreted, its cycle is the region (#2674).
+TEST_CASE("A session slot's cycle is its loop region, not its placement",
+          "[engine][clip][session]") {
+    auto clip = makeSessionClip(1, 0, 0.0, 10.971);
+    clip.loopEnabled = true;
+    auto& event = eventOf(clip);
+    event.interpBpm = 175.0;
+    event.interpTotalBeats = 16.0;
+    event.autoTempo = true;
+    event.loopStartSamples = 0;
+    event.setLoopLengthBeats(16.0);
+
+    const auto snapshot = compileSession({clip}, makeTempoMap());
+    REQUIRE(snapshot.tracks.size() == 1);
+    const auto* slot = snapshot.tracks.front().slot(0);
+    REQUIRE(slot != nullptr);
+    CHECK(slot->lengthBeats == Catch::Approx(16.0));
+    REQUIRE(slot->audio.size() == 1);
+    CHECK(slot->audio.front().span.beats.length() == Catch::Approx(16.0));
+}
+
 TEST_CASE("A session slot is compiled at the origin, whatever its placement says",
           "[engine][clip][session]") {
     // The leftover beat is the point: the scene index is a session clip's

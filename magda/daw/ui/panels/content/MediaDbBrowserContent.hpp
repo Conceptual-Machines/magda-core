@@ -145,6 +145,7 @@ class MediaDbBrowserContent : public juce::Component, private juce::Timer {
     void showEditRowDialog(std::int64_t fileId);
     void showBulkEditRowsDialog(std::vector<std::int64_t> fileIds);
     void resetRowsToDetected(const std::vector<std::int64_t>& fileIds);
+    void deleteRowMetadata(const std::vector<std::int64_t>& fileIds);
     void saveMatchingClipValuesToLibrary(std::int64_t fileId);
     void recoverMissingFile(std::int64_t fileId);
     // When `fileIds` has more than one entry the family/shape choice is

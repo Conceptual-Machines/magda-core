@@ -423,3 +423,20 @@ TEST_CASE("A reading composes mirror, tile and rate in that order", "[engine][cl
     const auto wrapped = readOut(*reading, 104 + 16, 1);
     CHECK(wrapped[0] == approx(47.0f));
 }
+
+// A pre-roll cues a stretcher before the first sample, and a session clip loops,
+// so its reader has no end. The subtraction that sized the read wrapped and the
+// prefetch stream stalled for good: every 44.1 kHz loop on a 48 kHz device was
+// silent (#2674).
+TEST_CASE("A resampling reader over a loop answers a read that starts before zero",
+          "[engine][clip][source]") {
+    ResamplingAudioFileReader reader(std::make_unique<LoopingAudioFileReader>(
+                                         std::make_unique<CountingReader>(1000, 44100.0), 0, 1000),
+                                     44100.0, 48000.0);
+    REQUIRE(reader.lengthInSamples() == std::numeric_limits<std::int64_t>::max());
+
+    juce::AudioBuffer<float> out(2, 512);
+    CHECK(reader.read(out, 0, -2048, 512) == 512);
+    CHECK(reader.read(out, 0, -300, 512) == 512);
+    CHECK(reader.read(out, 0, 0, 512) == 512);
+}

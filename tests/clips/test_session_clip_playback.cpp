@@ -192,8 +192,9 @@ TEST_CASE("ClipManager persists loop enabled and loop length", "[session][clip][
 
     SECTION("Default loop state") {
         REQUIRE(clip->loopEnabled == false);
-        // loopLength = length * speedRatio = 8.0 * 1.0 = 8.0
-        REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Catch::Approx(8.0));
+        // The whole source, which resolves to the clip's own extent.
+        REQUIRE(primaryEventOf(clip)->loopExtent == RegionExtent::WholeSource);
+        REQUIRE(primaryEventOf(clip)->sourceLengthSeconds(8.0) == Catch::Approx(8.0));
     }
 
     SECTION("Enable loop") {
@@ -1015,6 +1016,7 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
         // the playhead wraps at the original ~2.79s instead of 4s
         ClipInfo rawClip = clip;
         magda::test::audioEvent(rawClip).autoTempo = false;
+        rawClip.length = 8.0 * 60.0 / 172.0;  // the original ~2.79 s
         magda::test::audioEvent(rawClip).setLoopLengthSeconds(rawClip.length);
         auto [clipLen, loopLen] = computeTimeBasedTimings(rawClip);
         // Would wrap at ~2.79s — incorrect for a 120bpm playback

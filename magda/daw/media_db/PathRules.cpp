@@ -276,6 +276,48 @@ std::optional<std::string> pathFamilyHint(const std::filesystem::path& path) {
     return std::nullopt;
 }
 
+std::optional<std::string> pathShapeHint(const std::filesystem::path& path) {
+    static const std::unordered_set<std::string> kOneShot = {"oneshot", "oneshots", "shot", "shots",
+                                                             "stab",    "stabs",    "hit",  "hits"};
+    static const std::unordered_set<std::string> kLoop = {"loop", "loops", "loopz"};
+
+    auto resolved = resolveForInspection(path);
+
+    // The file's own name first, then its folders -- the reverse of
+    // chunksLeafFirst, which puts the stem last so a folder like /Snares/ can
+    // speak for a vaguely named file. Shape is the other way round: a loop
+    // filed under "One Shots" is still a loop.
+    std::vector<std::string> chunks{resolved.stem().string()};
+    for (const auto& chunk : chunksLeafFirst(resolved)) {
+        chunks.push_back(chunk);
+    }
+
+    // "Vocal_Shot135_A": packs glue the pack tempo onto the word, so a token is
+    // matched with any trailing digits taken off it too.
+    const auto withoutTrailingDigits = [](const std::string& token) {
+        auto end = token.size();
+        while (end > 0 && std::isdigit(static_cast<unsigned char>(token[end - 1])) != 0) {
+            --end;
+        }
+        return token.substr(0, end);
+    };
+
+    for (const auto& chunk : chunks) {
+        bool oneShot = false;
+        for (const auto& tok : tokenizeLower(chunk)) {
+            const auto word = withoutTrailingDigits(tok);
+            if (kLoop.count(tok) != 0U || kLoop.count(word) != 0U) {
+                return "loop";
+            }
+            oneShot = oneShot || kOneShot.count(tok) != 0U || kOneShot.count(word) != 0U;
+        }
+        if (oneShot) {
+            return "one-shot";
+        }
+    }
+    return std::nullopt;
+}
+
 std::vector<std::pair<std::string, float>> pathTags(const std::filesystem::path& path) {
     auto resolved = resolveForInspection(path);
     const auto& map = familyKeywords();

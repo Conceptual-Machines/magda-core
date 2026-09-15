@@ -411,10 +411,11 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
             // Nothing writes a session clip's placement: the scene index is its
             // position and the beat is leftover. Normalised rather than trusted,
-            // so a slot always compiles from the origin whatever is in the field.
+            // so a slot always compiles from the origin, and for one cycle: the
+            // loop region, which is what the launcher retriggers on (#2674).
             auto normalised = clip;
             normalised.view = ClipView::Arrangement;
-            normalised.setPlacementBeats(0.0, clip.placement.lengthBeats);
+            normalised.setPlacementBeats(0.0, clip.sessionCycleBeats(tempoMap.bpmAt(0.0)));
 
             ClipLane slotLane;
             slotLane.trackId = lane.trackId;
@@ -430,7 +431,7 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
             SessionSlotPlayback slot;
             slot.sceneIndex = clip.sceneIndex;
-            slot.lengthBeats = clip.placement.lengthBeats;
+            slot.lengthBeats = clip.sessionCycleBeats(tempoMap.bpmAt(0.0));
             slot.follow = compileFollow(clip);
             slot.audio = std::move(compiled.tracks.front().audio);
             slot.midi = std::move(compiled.tracks.front().midi);

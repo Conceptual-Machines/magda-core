@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "AudioFeatures.hpp"
+#include "BeatTracker.hpp"
 #include "ClapAudioEncoder.hpp"
 #include "ClapTextEncoder.hpp"
 #include "MediaDatabase.hpp"
@@ -24,6 +25,7 @@
 #include "PathRules.hpp"
 #include "RobertaTokenizer.hpp"
 #include "Scan.hpp"
+#include "TempoEstimator.hpp"
 #include "core/MidiChordMarkers.hpp"
 
 namespace magda::media {
@@ -183,12 +185,28 @@ std::optional<std::vector<float>> loadMono48k(const std::filesystem::path& path)
 
 constexpr float kFlatnessThreshold = 0.08F;
 
-std::string deriveShape(const AudioFeatures& f) {
+// What the file is, which decides whether anything musical may be read off its
+// length: a one-shot's BPM is cleared below.
+//
+// The name comes first, because the producer knew. Duration and transient
+// density were the whole rule and got it wrong for a quarter of a real library:
+// a 60 second "FX_Oneshot_Factory_Drones" came out a loop, and so did a 2.5
+// second "Vocal_Shot" for lasting more than two seconds (#2674).
+std::string deriveShape(const std::filesystem::path& path, const AudioFeatures& f) {
     if (f.durationS <= 0.0) {
         return "unknown";
     }
+
+    const auto named = pathShapeHint(path);
+    if (named && *named == "one-shot") {
+        return "one-shot";
+    }
+    // Nothing musical fits in less than two seconds, whatever it is called.
     if (f.durationS < 2.0) {
         return "one-shot";
+    }
+    if (named) {
+        return *named;
     }
     if (f.transientDensity < 0.5F) {
         return "sustained";
@@ -736,9 +754,9 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& scanned, MediaDbIndexer::
         }
 
         const std::string family = deriveFamily(f.path);
-        const std::string shape = midiFeats
-                                      ? deriveMidiShape(midiFeats->durationS)
-                                      : (feats ? deriveShape(*feats) : std::string{"unknown"});
+        const std::string shape =
+            midiFeats ? deriveMidiShape(midiFeats->durationS)
+                      : (feats ? deriveShape(f.path, *feats) : std::string{"unknown"});
         const int tonal = midiFeats ? static_cast<int>(midiFeats->hasNotes)
                           : feats   ? deriveTonal(*feats)
                                     : 0;
@@ -835,7 +853,7 @@ int decideThreadCount(int requested, size_t fileCount, const std::filesystem::pa
     return std::max(n, 1);
 }
 
-struct PendingEmbedding {
+struct PendingFile {
     std::int64_t fileId = -1;
     std::filesystem::path path;
 };
@@ -848,8 +866,8 @@ std::string placeholders(size_t count) {
     return out;
 }
 
-std::vector<PendingEmbedding> pendingEmbeddings(sqlite3* db, const std::string& modelId,
-                                                const std::filesystem::path& root) {
+std::vector<PendingFile> pendingEmbeddings(sqlite3* db, const std::string& modelId,
+                                           const std::filesystem::path& root) {
     std::string sql = "SELECT f.id, f.path "
                       "FROM media_file AS f "
                       "WHERE f.kind = 'audio' "
@@ -883,20 +901,167 @@ std::vector<PendingEmbedding> pendingEmbeddings(sqlite3* db, const std::string& 
         sqlite3_bind_text(stmt, 2, rootLike.c_str(), -1, SQLITE_TRANSIENT);
     }
 
-    std::vector<PendingEmbedding> out;
+    std::vector<PendingFile> out;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         if (!text) {
             continue;
         }
-        out.push_back(PendingEmbedding{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+        out.push_back(PendingFile{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
     }
     sqlite3_finalize(stmt);
     return out;
 }
 
-std::vector<PendingEmbedding> audioRowsForIds(sqlite3* db,
-                                              const std::vector<std::int64_t>& fileIds) {
+// Audio that no tier has given a tempo to yet. One-shots are excluded because
+// nothing musical is read off one's length -- the scan clears their BPM -- and
+// a row that already has one was answered by its filename or its ACID chunk,
+// both of which outrank what the model would say (#2674).
+std::vector<PendingFile> pendingTempo(sqlite3* db, const std::filesystem::path& root) {
+    std::string sql = "SELECT id, path FROM media_file "
+                      "WHERE kind = 'audio' AND bpm IS NULL AND shape != 'one-shot'";
+    const bool filterRoot = !root.empty();
+    if (filterRoot) {
+        sql += " AND path LIKE ?";
+    }
+    sql += " ORDER BY indexed_at DESC";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("prepare pending tempo: " + sqliteLastError(db));
+    }
+    std::string rootLike;
+    if (filterRoot) {
+        rootLike = root.string();
+        if (!rootLike.empty() && rootLike.back() != '/' && rootLike.back() != '\\') {
+            rootLike += static_cast<char>(std::filesystem::path::preferred_separator);
+        }
+        rootLike += '%';
+        sqlite3_bind_text(stmt, 1, rootLike.c_str(), -1, SQLITE_TRANSIENT);
+    }
+
+    std::vector<PendingFile> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (text) {
+            out.push_back(PendingFile{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+        }
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+void writeBpm(sqlite3* db, std::int64_t fileId, double bpm) {
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, "UPDATE media_file SET bpm = ? WHERE id = ?", -1, &stmt, nullptr) !=
+        SQLITE_OK) {
+        throw MediaDatabaseError("prepare tempo update: " + sqliteLastError(db));
+    }
+    sqlite3_bind_double(stmt, 1, bpm);
+    sqlite3_bind_int64(stmt, 2, fileId);
+    const int rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        throw MediaDatabaseError("tempo update failed: " + sqliteLastError(db));
+    }
+}
+
+std::vector<PendingFile> pendingTempoForIds(sqlite3* db, const std::vector<std::int64_t>& fileIds) {
+    if (fileIds.empty()) {
+        return {};
+    }
+    const std::string sql = "SELECT id, path FROM media_file "
+                            "WHERE kind = 'audio' AND bpm IS NULL AND shape != 'one-shot' "
+                            "AND id IN (" +
+                            placeholders(fileIds.size()) + ")";
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, nullptr) != SQLITE_OK) {
+        throw MediaDatabaseError("prepare selected tempo rows: " + sqliteLastError(db));
+    }
+    for (std::size_t i = 0; i < fileIds.size(); ++i) {
+        sqlite3_bind_int64(stmt, static_cast<int>(i + 1), fileIds[i]);
+    }
+
+    std::vector<PendingFile> out;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        if (text) {
+            out.push_back(PendingFile{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+        }
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+// One tracker for the pass, and one file through it at a time. The model reads
+// a whole file at once and each inference in flight holds its own working set,
+// around 0.8 GB for the 24 s window it is given: four at once is 3.2 GB, and
+// the scan's eleven workers were the machine (#2674).
+MediaDbIndexer::TempoStats trackTempos(sqlite3* db, const std::vector<PendingFile>& files,
+                                       const MediaDbIndexer::FailureFn& failure,
+                                       const MediaDbIndexer::ShouldCancelFn& shouldCancelFn,
+                                       const MediaDbIndexer::ProgressFn& progress) {
+    MediaDbIndexer::TempoStats stats;
+    if (files.empty() || !BeatTracker::isAvailable()) {
+        stats.skipped = static_cast<int>(files.size());
+        return stats;
+    }
+
+    std::unique_ptr<BeatTracker> tracker;
+    try {
+        tracker = std::make_unique<BeatTracker>(BeatTracker::defaultModelPath());
+    } catch (const std::exception& e) {
+        reportFailure(failure, BeatTracker::defaultModelPath(), e.what());
+        stats.skipped = static_cast<int>(files.size());
+        return stats;
+    }
+
+    const int total = static_cast<int>(files.size());
+    int done = 0;
+    for (const auto& f : files) {
+        if (shouldCancel(shouldCancelFn)) {
+            break;
+        }
+        try {
+            auto mono = loadMono48k(f.path);
+            if (!mono) {
+                throw MediaDatabaseError("audio decode failed for tempo");
+            }
+            if (shouldCancel(shouldCancelFn)) {
+                break;
+            }
+
+            const auto tracked =
+                tracker->track(mono->data(), static_cast<int>(mono->size()), 48000);
+            const double durationSeconds = static_cast<double>(mono->size()) / 48000.0;
+            const TempoHints hints{parseBpmFromPath(f.path), std::nullopt};
+            if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
+                const double refined = refineTempo(tracked->bpm, durationSeconds, hints);
+                writeBpm(db, f.fileId, refined);
+                ++stats.measured;
+            } else if (auto resolved = resolveTempo(measureTempo(f.path), durationSeconds, hints)) {
+                writeBpm(db, f.fileId, *resolved);
+                ++stats.measured;
+            } else {
+                ++stats.silent;
+            }
+        } catch (const std::exception& e) {
+            reportFailure(failure, f.path, e.what());
+            ++stats.failed;
+        } catch (...) {
+            reportFailure(failure, f.path, "unknown tempo error");
+            ++stats.failed;
+        }
+
+        ++done;
+        if (progress) {
+            progress(done, total, f.path);
+        }
+    }
+    return stats;
+}
+
+std::vector<PendingFile> audioRowsForIds(sqlite3* db, const std::vector<std::int64_t>& fileIds) {
     if (fileIds.empty()) {
         return {};
     }
@@ -910,12 +1075,11 @@ std::vector<PendingEmbedding> audioRowsForIds(sqlite3* db,
         sqlite3_bind_int64(stmt, static_cast<int>(i + 1), fileIds[i]);
     }
 
-    std::vector<PendingEmbedding> out;
+    std::vector<PendingFile> out;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
         const auto* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         if (text) {
-            out.push_back(
-                PendingEmbedding{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
+            out.push_back(PendingFile{sqlite3_column_int64(stmt, 0), std::filesystem::path(text)});
         }
     }
     sqlite3_finalize(stmt);
@@ -1323,6 +1487,19 @@ MediaDbIndexer::EmbeddingStats MediaDbIndexer::embedAudioFileIds(
         }
     }
     return stats;
+}
+
+MediaDbIndexer::TempoStats MediaDbIndexer::measureMissingTempo(const std::filesystem::path& root) {
+    sqlite3* sqlDb = db_.handle();
+    return trackTempos(sqlDb, pendingTempo(sqlDb, libraryPath(root)), failure_, shouldCancel_,
+                       progress_);
+}
+
+MediaDbIndexer::TempoStats MediaDbIndexer::measureTempoForFileIds(
+    const std::vector<std::int64_t>& fileIds) {
+    sqlite3* sqlDb = db_.handle();
+    return trackTempos(sqlDb, pendingTempoForIds(sqlDb, fileIds), failure_, shouldCancel_,
+                       progress_);
 }
 
 }  // namespace magda::media

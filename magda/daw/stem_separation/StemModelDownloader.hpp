@@ -1,5 +1,5 @@
 // Downloads stem-separation model weights from HuggingFace into the app's
-// data dir (issue #1288), mirroring media_db/SampleTaggerDownloader.
+// data dir (issue #1288), mirroring media_db/MediaModelDownloader.
 //
 // Weights are fetched at the user's explicit request, never bundled: the
 // Demucs weights are published by Meta for research use, so MAGDA ships no

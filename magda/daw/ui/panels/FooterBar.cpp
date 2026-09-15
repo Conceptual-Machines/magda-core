@@ -13,7 +13,7 @@
 #include "core/StringTable.hpp"
 #include "core/controllers/ControllerActivation.hpp"
 #include "media_db/MediaDbContext.hpp"
-#include "media_db/SampleTaggerDownloader.hpp"
+#include "media_db/MediaModelDownloader.hpp"
 
 namespace magda {
 
@@ -384,7 +384,8 @@ bool FooterBar::refreshLocalModelStatus() {
     }
 
     auto& mediaCtx = magda::media::MediaDbContext::getInstance();
-    const bool analyzerInstalled = magda::media::SampleTaggerDownloader::isInstalled();
+    const bool analyzerInstalled = magda::media::MediaModelDownloader::isInstalled(
+        magda::media::MediaModelDownloader::Bundle::SampleTagger);
     const bool analyzerLoaded = mediaCtx.isAudioEncoderLoaded() && mediaCtx.isTextEncoderLoaded() &&
                                 mediaCtx.isTokenizerLoaded();
 

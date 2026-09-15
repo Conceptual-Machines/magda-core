@@ -9,6 +9,7 @@
 #include <limits>
 #include <ranges>
 #include <unordered_map>
+#include <utility>
 
 #include "../project/ProjectManager.hpp"
 #include "ClipOperations.hpp"
@@ -36,58 +37,27 @@ double currentProjectTempoOrDefault() {
     return isValidBpm(bpm) ? bpm : DEFAULT_BPM;
 }
 
-/// Source seconds the event reads: its loop region when one is set, otherwise
-/// whatever its timeline extent asks for.
-double eventSourceLength(const ClipInfo& clip, const AudioEvent& event, double projectBPM) {
-    return event.sourceLengthSeconds(clip.getTimelineLength(projectBPM));
+/// The file length is what ties a tempo to a beat count, so fill it from the
+/// thumbnail when the source probe left it unknown.
+void ensureSourceDurationKnown(const AudioEvent& event) {
+    auto* source = SourcePool::getInstance().getMutable(event.sourceId);
+    if (source == nullptr || source->durationSeconds > 0.0)
+        return;
+
+    const auto filePath = event.sourceFilePath();
+    if (filePath.isEmpty() || !juce::File(filePath).existsAsFile())
+        return;
+    if (auto* thumbnail = AudioThumbnailManager::getInstance().getThumbnail(filePath))
+        source->durationSeconds = juce::jmax(0.0, thumbnail->getTotalLength());
 }
 
-bool interpretationBpmLooksDefaulted(const ClipInfo& clip, const AudioEvent& event,
-                                     double projectBPM) {
-    if (event.interpBpm <= 0.0)
-        return true;
-    if (projectBPM <= 0.0 || std::abs(event.interpBpm - projectBPM) >= 0.1)
-        return false;
-
-    const double sourceDuration = eventSourceLength(clip, event, projectBPM);
-    if (sourceDuration <= 0.0 || event.interpTotalBeats <= 0.0)
-        return true;
-
-    const double projectDefaultBeats = sourceDuration * projectBPM / 60.0;
-    return std::abs(event.interpTotalBeats - projectDefaultBeats) < 0.01;
-}
-
-bool seedSourceMetadataFromCachedDetection(ClipInfo& clip, double projectBPM) {
-    auto* event = clip.primaryEvent();
-    if (event == nullptr || event->sourceFilePath().isEmpty() ||
-        !interpretationBpmLooksDefaulted(clip, *event, projectBPM)) {
-        return false;
+/// With no probe yet, the interpretation is the only account of the length.
+void fillSourceDurationFromInterpretation(const AudioEvent& event) {
+    auto* source = SourcePool::getInstance().getMutable(event.sourceId);
+    if (source != nullptr && source->durationSeconds <= 0.0 && event.hasInterpretedBpm() &&
+        event.interpTotalBeats > 0.0) {
+        source->durationSeconds = event.interpTotalBeats * 60.0 / event.interpBpm;
     }
-
-    const auto filePath = event->sourceFilePath();
-    auto& thumbs = AudioThumbnailManager::getInstance();
-    double cachedBPM = thumbs.getCachedBPM(filePath);
-    if (cachedBPM <= 0.0)
-        return false;
-
-    event->interpBpm = cachedBPM;
-    double fileDuration = 0.0;
-    if (juce::File(filePath).existsAsFile()) {
-        if (auto* thumbnail = thumbs.getThumbnail(filePath)) {
-            fileDuration = thumbnail->getTotalLength();
-        }
-    }
-    if (fileDuration <= 0.0)
-        fileDuration = eventSourceLength(clip, *event, projectBPM);
-    if (fileDuration > 0.0) {
-        if (auto* source = SourcePool::getInstance().getMutable(event->sourceId);
-            source != nullptr && source->durationSeconds <= 0.0) {
-            source->durationSeconds = fileDuration;
-        }
-        event->interpTotalBeats = fileDuration * cachedBPM / 60.0;
-    }
-
-    return true;
 }
 
 juce::File midiLibraryFileForClip(const ClipInfo& clip, const juce::File& midiDir) {
@@ -382,24 +352,29 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
     clip.setPlacementBeats(startBeats, lengthBeats);
     clip.deriveTimesFromBeats(bpm);
 
-    // Read from the top of the file, over a region as long as the clip.
+    // Read from the top of the file, over the whole of it. Nothing has chosen
+    // a range yet, so nothing may look like the user did.
     newEvent.loopStartSamples = 0;
-    newEvent.setLoopLengthSeconds(newEvent.timelineToSource(clip.getTimelineLength(bpm)));
+    newEvent.setLoopExtent(RegionExtent::WholeSource);
 
-    // Scanner output in the media DB is a hint, but user-saved source
-    // interpretation is explicit library metadata and should restore when the
-    // same file is imported again.
+    // A drop loads what the library holds for the file and nothing else. What
+    // the user saved is the user's own; what the scan measured is analysis.
     std::optional<magda::media::EffectiveMetadata> savedMetadata;
     if (audioFilePath.isNotEmpty() && juce::File(audioFilePath).existsAsFile()) {
         savedMetadata = magda::media::getUserMetadataForFile(
             std::filesystem::path(audioFilePath.toStdString()));
         if (savedMetadata) {
             if (savedMetadata->bpm && isValidBpm(*savedMetadata->bpm)) {
-                newEvent.interpBpm = *savedMetadata->bpm;
+                newEvent.adoptBpm(*savedMetadata->bpm, Provenance::User);
+            } else if (savedMetadata->detectedBpm && isValidBpm(*savedMetadata->detectedBpm)) {
+                newEvent.adoptBpm(*savedMetadata->detectedBpm, Provenance::Analysis);
             }
             if (savedMetadata->totalBeats && *savedMetadata->totalBeats > 0.0) {
-                newEvent.interpTotalBeats = *savedMetadata->totalBeats;
-                newEvent.interpTotalBeatsLocked = true;
+                newEvent.adoptTotalBeats(*savedMetadata->totalBeats, Provenance::User);
+            } else if (newEvent.hasInterpretedBpm() && newEvent.sourceDurationSeconds() > 0.0) {
+                newEvent.adoptTotalBeats(
+                    beatCountForDuration(newEvent.sourceDurationSeconds(), newEvent.interpBpm),
+                    newEvent.bpmFrom);
             }
             if (savedMetadata->keyRoot && !savedMetadata->keyRoot->empty()) {
                 newEvent.keyRoot = *savedMetadata->keyRoot;
@@ -420,45 +395,27 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         }
     }
 
-    if (view == ClipView::Session) {
-        // Session clips loop by default. A zero-length loop region means "the
-        // whole source", which is what a slot plays until something says
-        // otherwise.
+    if (view == ClipView::Session)
         clip.loopEnabled = true;
-        newEvent.loopLengthSamples = 0;
-
-        // A session slot asks for beat mode; the event grants it only with a
-        // tempo behind it. seedInterpretationFromSource above fills one when
-        // the file said what it is (#2676).
-        newEvent.setBeatMode(true);
-    }
     clips_[clip.id] = clip;
 
     if (savedMetadata && savedMetadata->beatMode) {
         auto& savedClip = clips_[clip.id];
         auto* savedEvent = savedClip.primaryEvent();
         if (savedEvent != nullptr) {
-            savedEvent->autoTempo = *savedMetadata->beatMode;
+            savedEvent->setPlaybackIntent(*savedMetadata->beatMode ? PlaybackIntent::Beat
+                                                                   : PlaybackIntent::Free);
             if (savedEvent->autoTempo) {
                 savedClip.loopEnabled = true;
                 savedEvent->analogPitch = false;
                 savedEvent->speedRatio = 1.0;
                 if (savedEvent->interpTotalBeats > 0.0) {
-                    // A beat-mode clip's natural length is its musical length
-                    // (the saved beat count), not the raw audio-file duration
-                    // the caller derived the placement from. At a project tempo
-                    // different from the sample's, file-duration-in-beats is not
-                    // the real beat count, so snap both the timeline placement
-                    // and the loop region to the beat count and let autoTempo
-                    // stretch the audio to fit.
-                    // The region follows the placement unconditionally. The
-                    // event was seeded with a file-duration region above, so a
-                    // "not set yet" guard here never fires and the saved beat
-                    // count would be ignored for every arrangement drop.
-                    const double beats = savedEvent->interpTotalBeats;
-                    savedClip.setPlacementBeats(startBeats, beats);
+                    // A beat-mode clip's natural length is its saved beat count,
+                    // not the file duration the placement was derived from. The
+                    // region follows the interpretation so a later correction refits it.
+                    savedClip.setPlacementBeats(startBeats, savedEvent->interpTotalBeats);
                     if (savedEvent->interpBpm > 0.0)
-                        savedEvent->setLoopLengthSeconds(beats * 60.0 / savedEvent->interpBpm);
+                        savedEvent->setLoopExtent(RegionExtent::Interpretation);
                 }
                 savedClip.deriveTimesFromBeats(bpm);
             }
@@ -470,62 +427,8 @@ ClipId ClipManager::createAudioClipBeats(TrackId trackId, double startBeats, dou
         resolveOverlaps(clip.id);
     notifyClipsChanged();
 
-    // Tracktion loopInfo is authoritative when it carries real file metadata,
-    // but it can also report project-default values for freshly inserted clips.
-    // Run audio analysis as a fallback and let it replace only unset/defaulted
-    // source interpretation values. Session-only.
-    if (view == ClipView::Session && audioFilePath.isNotEmpty() &&
-        juce::File(audioFilePath).existsAsFile()) {
-        ClipId cid = clip.id;
-        const double creationProjectBPM = bpm;
-        auto applyDetectedBPM = [cid, creationProjectBPM](double detectedBPM) {
-            if (detectedBPM <= 0.0)
-                return;
-
-            auto& mgr = ClipManager::getInstance();
-            auto* c = mgr.getClip(cid);
-            auto* ev = c != nullptr ? c->primaryEvent() : nullptr;
-            if (ev == nullptr || !interpretationBpmLooksDefaulted(*c, *ev, creationProjectBPM))
-                return;
-
-            // The tempo arriving is what beat mode was waiting for. Without
-            // this a slot that came up in time mode for want of one could never
-            // leave it: applyAudioClipBeats below answers only for a clip
-            // already in beat mode (#1157), so the detection would be dropped
-            // by the very state it is meant to resolve (#2676).
-            ev->interpBpm = detectedBPM;
-            ev->setBeatMode(true);
-
-            double fileDuration = ev->sourceDurationSeconds();
-            if (auto* thumb =
-                    AudioThumbnailManager::getInstance().getThumbnail(ev->sourceFilePath())) {
-                if (thumb->getTotalLength() > 0.0)
-                    fileDuration = thumb->getTotalLength();
-            }
-            if (fileDuration <= 0.0)
-                fileDuration = eventSourceLength(*c, *ev, creationProjectBPM);
-
-            AudioClipBeatsUpdate u;
-            u.interpretationBpm = detectedBPM;
-            if (fileDuration > 0.0) {
-                u.sourceDurationSeconds = fileDuration;
-                const double srcBeats = fileDuration * detectedBPM / 60.0;
-                u.interpretationTotalBeats = srcBeats;
-                if (ev->autoTempo && ev->loopLengthSamples <= 0)
-                    u.loopLengthBeats = srcBeats;
-            }
-
-            double live = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
-            mgr.applyAudioClipBeats(cid, u, live);
-        };
-
-        auto& thumbs = AudioThumbnailManager::getInstance();
-        const double cachedBPM = thumbs.getCachedBPM(audioFilePath);
-        if (cachedBPM > 0.0) {
-            applyDetectedBPM(cachedBPM);
-        }
-    }
-
+    // A drop does nothing else. Detection runs when BEAT is pressed on a clip
+    // with no tempo, and the library is written only by Save to library.
     return clip.id;
 }
 
@@ -1293,12 +1196,14 @@ void ClipManager::resetLoopedClipLength(ClipInfo& clip) {
 
     if (loopBeats > 0.0) {
         ClipOperations::setBeatPlacement(clip, clip.placement.startBeat, loopBeats, bpm);
-    } else if (event != nullptr && event->loopLengthSamples > 0) {
+    } else if (event != nullptr) {
         // No usable beat view (interpretation BPM unknown): fall back to the
-        // region's timeline extent.
-        ClipOperations::setTimelinePlacement(clip, clip.getTimelineStart(bpm),
-                                             event->sourceToTimeline(event->loopLengthSeconds()),
-                                             bpm);
+        // region's timeline extent, the whole file for a whole-source region.
+        const double regionSeconds = event->loopLengthSamples > 0 ? event->loopLengthSeconds()
+                                                                  : event->sourceDurationSeconds();
+        if (regionSeconds > 0.0)
+            ClipOperations::setTimelinePlacement(clip, clip.getTimelineStart(bpm),
+                                                 event->sourceToTimeline(regionSeconds), bpm);
     }
     clip.loopEnabled = false;
 }
@@ -1585,7 +1490,8 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         if (enabled && event != nullptr && event->sourceFilePath().isNotEmpty()) {
             event->loopStartSamples = event->sourceAnchorSamples;
 
-            // Ensure the region has a length (preserves the source extent)
+            // Loop on a clip loops what it shows now: the span becomes a range
+            // of its own, so stretching the clip afterwards repeats it.
             if (event->loopLengthSamples <= 0) {
                 const double bpm =
                     isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
@@ -1703,30 +1609,60 @@ void ClipManager::setClipWarpEnabled(ClipId clipId, bool enabled) {
     }
 }
 
+void ClipManager::setPlaybackIntent(ClipId clipId, PlaybackIntent intent, double projectBPM) {
+    auto* clip = getClip(clipId);
+    if (clip == nullptr || !clip->isAudio())
+        return;
+
+    ClipOperations::setPlaybackIntent(*clip, intent, projectBPM);
+
+    auto* event = clip->primaryEvent();
+    if (event == nullptr)
+        return;
+
+    // Beat mode plays through a stretcher; keep an engine the user chose.
+    if (event->autoTempo && event->timeStretchMode == time_stretch_mode::kDisabled)
+        event->timeStretchMode = time_stretch_mode::kSignalsmith;
+
+    // Issue #1157: ClipOperations wrote the placement in beats at the mode
+    // boundary. Refresh the seconds cache from it rather than converting back.
+    refreshDerivedSeconds(clipId, projectBPM);
+    notifyClipPropertyChanged(clipId);
+}
+
 void ClipManager::setAutoTempo(ClipId clipId, bool enabled, double bpm) {
-    if (auto* clip = getClip(clipId)) {
-        if (clip->isAudio()) {
-            if (enabled)
-                seedSourceMetadataFromCachedDetection(*clip, bpm);
+    setPlaybackIntent(clipId, enabled ? PlaybackIntent::Beat : PlaybackIntent::Free, bpm);
+}
 
-            ClipOperations::setAutoTempo(*clip, enabled, bpm);
-
-            // Ensure time-stretching is enabled when beat mode is on
-            if (auto* event = clip->primaryEvent();
-                enabled && event != nullptr &&
-                event->timeStretchMode == time_stretch_mode::kDisabled) {
-                event->timeStretchMode = time_stretch_mode::kSignalsmith;
-            }
-
-            // Issue #1157: ClipOperations::setAutoTempo already wrote
-            // lengthBeats from clip.length × bpm / 60 (the legitimate
-            // one-time conversion at the autoTempo boundary). The previous
-            // code then called resizeClip(lengthBeats × 60 / bpm) — a pure
-            // beats→seconds→beats round-trip that accumulated FP drift each
-            // toggle. Just refresh the seconds cache from beats and notify.
-            refreshDerivedSeconds(clipId, bpm);
-            notifyClipPropertyChanged(clipId);
-        }
+void ClipManager::detectMissingTempo(const std::vector<ClipId>& clipIds, double /*projectBPM*/,
+                                     std::function<void()> onReady) {
+    std::vector<std::pair<ClipId, juce::String>> pending;
+    for (auto id : clipIds) {
+        const auto* event = primaryEventOf(getClip(id));
+        if (event == nullptr || event->hasInterpretedBpm())
+            continue;
+        if (auto path = event->sourceFilePath(); path.isNotEmpty())
+            pending.emplace_back(id, path);
+    }
+    if (pending.empty()) {
+        if (onReady)
+            onReady();
+        return;
+    }
+    // Counted before any request goes out: a cached answer calls back at once.
+    auto remaining = std::make_shared<size_t>(pending.size());
+    auto ready = std::make_shared<std::function<void()>>(std::move(onReady));
+    for (const auto& entry : pending) {
+        const ClipId id = entry.first;
+        const juce::String file = entry.second;
+        AudioThumbnailManager::getInstance().requestBPMDetection(
+            file, [id, file, remaining, ready](double bpm) {
+                // The answer belongs to the clip that asked; adoptAnalysis
+                // no-ops when it is gone, as it is after a test's teardown.
+                ClipManager::getInstance().adoptAnalysis(id, file, bpm);
+                if (--*remaining == 0 && *ready)
+                    (*ready)();
+            });
     }
 }
 
@@ -1783,6 +1719,19 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     }
 }
 
+void ClipManager::restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
+                                    double bpm) {
+    juce::ignoreUnused(bpm);
+    if (auto* clip = getClip(clipId)) {
+        auto* event = clip->primaryEvent();
+        if (event == nullptr)
+            return;
+        event->restoreLoopLength(loopLengthSamples, extent);
+        sanitizeAudioClip(*clip);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
 void ClipManager::setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm) {
     if (auto* clip = getClip(clipId)) {
         if (!clip->isMidi())
@@ -1835,14 +1784,14 @@ void ClipManager::setLengthBeats(ClipId clipId, double newBeats, double bpm) {
         return;
 
     // Issue #1157: the beat-length slider edits USER INTENT only — how many
-    // timeline beats the clip occupies. Source-file metadata (source interpretation BPM /
-    // source interpretation total beats) is NOT touched here. Stretch is determined by TE from
-    // (projectBPM / source interpretation BPM) at sync time.
-    //
-    AudioClipBeatsUpdate u;
-    u.lengthBeats = newBeats;
+    // timeline beats the clip occupies. The source interpretation is NOT
+    // touched here; the stretch follows from projectBPM / interpBpm at sync.
+    auto* clip = getClip(clipId);
+    const double minBeats = isValidBpm(bpm) ? (ClipInfo::MIN_CLIP_LENGTH * bpm / 60.0) : 0.0;
+    clip->setPlacementBeats(clip->placement.startBeat, juce::jmax(minBeats, newBeats));
 
-    applyAudioClipBeats(clipId, u, bpm);
+    refreshDerivedSeconds(clipId, bpm);
+    notifyClipPropertyChanged(clipId);
 }
 
 void ClipManager::recordUserBpm(ClipId clipId, double bpm) {
@@ -1999,72 +1948,120 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
                                                  beatMode, std::move(mediaMarkers));
 }
 
-void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate& update,
-                                      double projectBPM) {
+/// A tempo landing on a clip that asked for beat mode grants it, and the
+/// transition (loop, speed, stretch engine) has to follow the grant.
+static void settleBeatMode(ClipInfo& clip, double projectBpm, bool wasInBeatMode) {
+    auto* event = clip.primaryEvent();
+    if (event == nullptr || !event->autoTempo)
+        return;
+    ClipOperations::setPlaybackIntent(clip, event->playbackIntent, projectBpm, wasInBeatMode);
+    if (event->timeStretchMode == time_stretch_mode::kDisabled)
+        event->timeStretchMode = time_stretch_mode::kSignalsmith;
+}
+
+void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
     auto* clip = getClip(clipId);
     auto* event = primaryEventOf(clip);
     if (event == nullptr)
         return;
 
-    // (1) Interpretation. BPM and total beats describe the same fixed-duration
-    // source, so inspector edits may update both together.
-    //
-    // Not gated on beat mode, unlike the beat-domain intent below. What a file
-    // is, is a fact about the file, and a clip in time mode for want of one is
-    // exactly where a user supplies it: detection cannot answer for a pad or a
-    // one-shot, and refusing the edit there would leave beat mode unreachable
-    // by hand (#2676).
-    if (update.interpretationBpm)
-        event->interpBpm = juce::jmax(0.0, *update.interpretationBpm);
-    if (update.interpretationTotalBeats) {
-        event->interpTotalBeats = juce::jmax(0.0, *update.interpretationTotalBeats);
-        if (update.lockInterpretationTotalBeats)
-            event->interpTotalBeatsLocked = true;
-    }
-    // File duration is a Source fact. Fill it in only while it is unknown; a
-    // real probe always wins over a value inferred from the interpretation.
-    if (auto* source = SourcePool::getInstance().getMutable(event->sourceId);
-        source != nullptr && source->durationSeconds <= 0.0) {
-        if (update.sourceDurationSeconds)
-            source->durationSeconds = juce::jmax(0.0, *update.sourceDurationSeconds);
-        if (source->durationSeconds <= 0.0 && event->interpBpm > 0.0 &&
-            event->interpTotalBeats > 0.0) {
-            source->durationSeconds = event->interpTotalBeats * 60.0 / event->interpBpm;
-        }
-    }
-
-    // (2) User-intent fields — beat-domain canonicals. Views through the
-    // interpretation above, so they mean nothing without beat mode. The
-    // interpretation is what this path answered for; the timeline caches below
-    // depend on the project tempo and the placement, neither of which moved.
-    if (!event->autoTempo) {
-        notifyClipPropertyChanged(clipId);
+    // A tempo no file has is refused whole: a beat count typed into the wrong
+    // field implied 43,000 BPM and the engine played a 20 ms sliver of the loop.
+    if (!isValidBpm(bpm)) {
         return;
     }
 
-    if (update.lengthBeats) {
-        double minBeats =
-            isValidBpm(projectBPM) ? (ClipInfo::MIN_CLIP_LENGTH * projectBPM / 60.0) : 0.0;
-        clip->setPlacementBeats(clip->placement.startBeat,
-                                juce::jmax(minBeats, *update.lengthBeats));
+    ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
+
+    if (!event->adoptBpm(bpm, from)) {
+        return;
     }
-    // Beat-domain edits convert into the source domain through the (possibly
-    // just-updated) interpretation. A reinterpretation on its own moves no
-    // audio: the anchor and loop region are samples, so their beat views simply
-    // re-read at the new tempo. That is the whole reason they are stored in
-    // samples rather than beats.
-    if (update.loopStartBeats)
-        event->setLoopStartBeats(juce::jmax(0.0, *update.loopStartBeats));
-    if (update.loopLengthBeats)
-        event->setLoopLengthBeats(juce::jmax(0.0, *update.loopLengthBeats));
-    if (update.offsetBeats)
-        event->setAnchorBeats(juce::jmax(0.0, *update.offsetBeats));
-    if (update.startBeats)
-        clip->setPlacementBeats(juce::jmax(0.0, *update.startBeats), clip->placement.lengthBeats);
 
-    // (3) Recompute the seconds cache from beats atomically.
-    refreshDerivedSeconds(clipId, projectBPM);
+    // Tempo and beat count are one fact in two units, tied by the file length,
+    // so stating either restates the other.
+    const double fileSeconds = event->sourceDurationSeconds();
+    if (fileSeconds > 0.0)
+        event->adoptTotalBeats(beatCountForDuration(fileSeconds, bpm), from);
+    fillSourceDurationFromInterpretation(*event);
 
+    if (clip->loopEnabled)
+        event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
+
+    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance from) {
+    auto* clip = getClip(clipId);
+    auto* event = primaryEventOf(clip);
+    if (event == nullptr)
+        return;
+
+    if (!(beats > 0.0)) {
+        return;
+    }
+
+    ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
+    const double fileSeconds = event->sourceDurationSeconds();
+    const double impliedBpm = fileSeconds > 0.0 ? beats * 60.0 / fileSeconds : 0.0;
+    if (fileSeconds > 0.0 && !isValidBpm(impliedBpm)) {
+        return;
+    }
+
+    // Checked before either write, so the pair can never land half-applied.
+    if (!AudioEvent::provenanceAllows(event->beatsFrom, from) ||
+        (fileSeconds > 0.0 && !AudioEvent::provenanceAllows(event->bpmFrom, from))) {
+        return;
+    }
+
+    event->adoptTotalBeats(beats, from);
+    if (fileSeconds > 0.0)
+        event->adoptBpm(impliedBpm, from);
+    fillSourceDurationFromInterpretation(*event);
+
+    if (clip->loopEnabled)
+        event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
+
+    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
+    notifyClipPropertyChanged(clipId);
+}
+
+void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, double bpm) {
+    auto* clip = getClip(clipId);
+    auto* event = primaryEventOf(clip);
+    if (event == nullptr) {
+        return;
+    }
+    if (bpm <= 0.0) {
+        return;
+    }
+    // The request was for a file this clip no longer plays.
+    if (event->sourceFilePath() != sourcePath) {
+        return;
+    }
+
+    ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
+
+    if (!event->adoptBpm(bpm, Provenance::Analysis)) {
+        return;
+    }
+
+    const double fileSeconds = event->sourceDurationSeconds();
+    if (fileSeconds > 0.0)
+        event->adoptTotalBeats(beatCountForDuration(fileSeconds, bpm), Provenance::Analysis);
+    fillSourceDurationFromInterpretation(*event);
+
+    // A loop with a tempo is its beat count.
+    if (clip->loopEnabled)
+        event->followInterpretationIfWholeSource();
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
+
+    refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
 }
 
@@ -2098,9 +2095,10 @@ void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
                                              ClipOperations::MAX_SPEED_RATIO, speedRatio);
             double newSourceExtent = event->timelineToSource(clip->getTimelineLength(bpm));
 
-            // Keep the source region in sync when it covers the full extent
-            // (non-looped events, or looped ones the user has not shortened)
-            if (!clip->loopEnabled ||
+            // Only a range the user chose follows the speed. A non-looping
+            // clip reads to the file end, and a region sized by the
+            // interpretation follows its beat count instead.
+            if (clip->loopEnabled && event->loopExtent == RegionExtent::Explicit &&
                 std::abs(event->loopLengthSeconds() - oldSourceExtent) < 0.001) {
                 event->setLoopLengthSeconds(newSourceExtent);
             }
@@ -3234,12 +3232,7 @@ void ClipManager::sanitizeAudioClip(ClipInfo& clip) {
         if (fileDuration <= 0.0)
             continue;
 
-        event.setLoopStartSeconds(juce::jlimit(0.0, fileDuration, event.loopStartSeconds()));
-
-        const double availableFromLoop = fileDuration - event.loopStartSeconds();
-        if (event.loopLengthSeconds() > availableFromLoop)
-            event.setLoopLengthSeconds(juce::jmax(0.0, availableFromLoop));
-
+        event.clampLoopRegionToSource(fileDuration);
         event.setAnchorSeconds(juce::jlimit(0.0, fileDuration, event.anchorSeconds()));
 
         if (!clip.loopEnabled && !event.autoTempo) {
@@ -3475,10 +3468,8 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                             newEvent->timeStretchMode = srcEvent->timeStretchMode;
                         }
                         newEvent->warpMarkers = srcEvent->warpMarkers;
-                        if (srcEvent->interpBpm > 0.0)
-                            newEvent->interpBpm = srcEvent->interpBpm;
-                        if (srcEvent->interpTotalBeats > 0.0)
-                            newEvent->interpTotalBeats = srcEvent->interpTotalBeats;
+                        newEvent->adoptInterpretationFrom(*srcEvent);
+                        newEvent->setPlaybackIntent(srcEvent->playbackIntent);
                         newEvent->autoPitch = srcEvent->autoPitch;
                         newEvent->analogPitch = srcEvent->analogPitch;
                         newEvent->autoPitchMode = srcEvent->autoPitchMode;
@@ -3567,6 +3558,13 @@ std::vector<ClipId> ClipManager::pasteFromClipboardBeats(double pasteBeat, Track
                                 bpm);
                         }
                     }
+                }
+
+                // The slot loops (set just above), so a whole-source region
+                // follows the interpretation the paste adopted.
+                if (crossViewToSession && newClip->loopEnabled) {
+                    if (auto* pastedEvent = newClip->primaryEvent())
+                        pastedEvent->followInterpretationIfWholeSource();
                 }
 
                 // A whole-clip copy's snapshot may be stale: copy ghost A,

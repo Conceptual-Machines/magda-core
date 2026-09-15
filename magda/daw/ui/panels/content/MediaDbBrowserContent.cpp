@@ -10,6 +10,7 @@
 #include <unordered_map>
 
 #include "../../../audio/AudioBridge.hpp"
+#include "../../../audio/AudioThumbnailManager.hpp"
 #include "../../../core/ClipManager.hpp"
 #include "../../../core/TrackManager.hpp"
 #include "../../../engine/AudioEngine.hpp"
@@ -17,7 +18,7 @@
 #include "../../../media_db/MediaDbContext.hpp"
 #include "../../../media_db/MediaDbIndexer.hpp"
 #include "../../../media_db/MediaDbMetadata.hpp"
-#include "../../../media_db/SampleTaggerDownloader.hpp"
+#include "../../../media_db/MediaModelDownloader.hpp"
 #include "../../components/chain/layout/DeviceSlotHeaderLayout.hpp"
 #include "../../components/common/InternalFileDrag.hpp"
 #include "../../themes/DarkTheme.hpp"
@@ -283,6 +284,27 @@ juce::String formatAnalysisProgress(int done, int total, const std::filesystem::
         status += " - ETA " + formatEta(perFile * (total - done));
     }
     return status;
+}
+
+juce::String formatTempoProgress(int done, int total, const std::filesystem::path& current,
+                                 std::chrono::steady_clock::time_point startedAt) {
+    juce::String status = juce::String("Measuring tempo: ") +
+                          juce::String(current.filename().string()) + " (" + juce::String(done) +
+                          "/" + juce::String(total) + ")";
+    if (done > 0 && total > done) {
+        const auto elapsed = std::chrono::steady_clock::now() - startedAt;
+        status += " - ETA " + formatEta((elapsed / done) * (total - done));
+    }
+    return status;
+}
+
+juce::String formatTempoSummary(const magda::media::MediaDbIndexer::TempoStats& stats) {
+    juce::String summary = juce::String("Tempo: ") + juce::String(stats.measured) + " measured, " +
+                           juce::String(stats.silent) + " unclear";
+    if (stats.failed > 0) {
+        summary += ", " + juce::String(stats.failed) + " failed";
+    }
+    return summary;
 }
 
 juce::String prettyBpm(std::optional<double> bpm) {
@@ -682,6 +704,11 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
             menu.addItem(
                 6, selectedCount > 1 ? "Reset selected rows to detected" : "Reset to detected",
                 !owner_.indexing_);
+            menu.addItem(9,
+                         selectedCount > 1
+                             ? "Delete file metadata (" + juce::String(selectedCount) + ")"
+                             : "Delete file metadata",
+                         !owner_.indexing_);
             menu.addItem(7, "Save current clip values to library",
                          !owner_.indexing_ && selectedCount == 1 && hasMatchingClip);
             menu.addItem(8, "Recover missing file...",
@@ -715,6 +742,8 @@ class MediaDbBrowserContent::ResultsTableModel : public juce::TableListBoxModel 
                         }
                     } else if (choice == 5) {
                         self->deleteFileIdsWithConfirmation(std::move(selectedIds));
+                    } else if (choice == 9) {
+                        self->deleteRowMetadata(std::move(selectedIds));
                     } else if (choice == 6) {
                         self->resetRowsToDetected(std::move(selectedIds));
                     } else if (choice == 7) {
@@ -1523,6 +1552,27 @@ void MediaDbBrowserContent::resetRowsToDetected(const std::vector<std::int64_t>&
     restartSearch();
 }
 
+void MediaDbBrowserContent::deleteRowMetadata(const std::vector<std::int64_t>& fileIds) {
+    if (indexing_ || fileIds.empty()) {
+        return;
+    }
+    auto& ctx = magda::media::MediaDbContext::getInstance();
+    if (!ctx.ensureInitialized()) {
+        return;
+    }
+    // The session's cached answer for the file goes with it, so BEAT measures again.
+    for (auto fileId : fileIds) {
+        if (auto row = magda::media::getEditableMediaRow(ctx.db(), fileId)) {
+            AudioThumbnailManager::getInstance().invalidateFile(juce::String(row->path.string()));
+        }
+    }
+    if (magda::media::clearMediaRowMetadata(ctx.db(), fileIds) <= 0) {
+        return;
+    }
+    ctx.bumpMediaRevision();
+    restartSearch();
+}
+
 void MediaDbBrowserContent::saveMatchingClipValuesToLibrary(std::int64_t fileId) {
     if (indexing_) {
         return;
@@ -1892,6 +1942,21 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             const auto decodeStats =
                 indexer.indexFileIds(ids, magda::media::MediaDbIndexer::Mode::ForceAll);
 
+            magda::media::MediaDbIndexer::TempoStats tempoStats;
+            if (!(cancelToken && cancelToken->load())) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                tempoStats = indexer.measureTempoForFileIds(ids);
+            }
+
             magda::media::MediaDbIndexer::EmbeddingStats tagStats;
             if (encoder != nullptr && !(cancelToken && cancelToken->load())) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
@@ -1911,6 +1976,8 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             }
 
             finalStatus = formatAnalysisSummary(decodeStats, tagStats);
+            if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0)
+                finalStatus += " | " + formatTempoSummary(tempoStats);
             if (cancelToken && cancelToken->load()) {
                 finalStatus = "Analysis stopped: " + finalStatus;
             }
@@ -2062,7 +2129,8 @@ void MediaDbBrowserContent::runSearch() {
     resultsTable_.updateContent();
     resultsTable_.repaint();
     resultsTable_.setVisible(false);
-    const bool needsModelLoad = magda::media::SampleTaggerDownloader::isInstalled() &&
+    const bool needsModelLoad = magda::media::MediaModelDownloader::isInstalled(
+                                    magda::media::MediaModelDownloader::Bundle::SampleTagger) &&
                                 (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded());
     emptyState_.setText(needsModelLoad ? "Loading text-search model (~500 MB)..." : "Searching...",
                         juce::dontSendNotification);
@@ -2159,7 +2227,9 @@ void MediaDbBrowserContent::applySearchResultsToUi() {
         } else {
             text = "No results match the current filters.";
             if constexpr (magda::media::clapBackendAvailable()) {
-                if (!queryText_.isEmpty() && !magda::media::SampleTaggerDownloader::isInstalled()) {
+                if (!queryText_.isEmpty() &&
+                    !magda::media::MediaModelDownloader::isInstalled(
+                        magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
                     text += "\n\nText search is filename / tag only without the AI Sample "
                             "Analyzer.\nInstall it from AI Settings > Sample Analyzer.";
                 }
@@ -2221,7 +2291,8 @@ void MediaDbBrowserContent::visibilityChanged() {
     // so by the time they type a query it's likely already done. No-op when
     // the bundle isn't installed (preloadModels() returns immediately) or
     // when the encoder is already loaded.
-    if (magda::media::SampleTaggerDownloader::isInstalled()) {
+    if (magda::media::MediaModelDownloader::isInstalled(
+            magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
         auto& ctx = magda::media::MediaDbContext::getInstance();
         if (!ctx.isTextEncoderLoaded() || !ctx.isTokenizerLoaded()) {
             if (!searchPool_) {
@@ -2287,7 +2358,8 @@ void MediaDbBrowserContent::startIndexing(const juce::File& dir,
     };
 
     if constexpr (magda::media::clapBackendAvailable()) {
-        if (!magda::media::SampleTaggerDownloader::isInstalled()) {
+        if (!magda::media::MediaModelDownloader::isInstalled(
+                magda::media::MediaModelDownloader::Bundle::SampleTagger)) {
             const juce::Component::SafePointer<MediaDbBrowserContent> self(this);
             juce::AlertWindow::showAsync(
                 juce::MessageBoxOptions()
@@ -2472,7 +2544,33 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 }
             });
 
-            if (encoder != nullptr && !cancelledAfterScan) {
+            // The beat model, before the CLAP pass and separate from it: a
+            // different download, and useful on its own. Both run after the
+            // walk rather than inside it so the library is browsable first and
+            // no scan worker is holding a model's working set (#2674).
+            if (!cancelledAfterScan) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                const auto tempoStats = indexer.measureMissingTempo(path);
+                if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0) {
+                    const auto tempoStatus = formatTempoSummary(tempoStats);
+                    const bool stopped = cancelToken && cancelToken->load();
+                    finalStatus =
+                        scanStatus + (stopped ? " | Tempo stopped: " : " | ") + tempoStatus;
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + tempoStatus);
+                }
+            }
+
+            const bool cancelledAfterTempo = cancelToken && cancelToken->load();
+            if (encoder != nullptr && !cancelledAfterTempo) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
                 indexer.setProgress([self, analysisStartedAt](
                                         int done, int total, const std::filesystem::path& current) {
@@ -2490,10 +2588,10 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 const auto analysisStatus = formatAnalysisSummary(tagStats);
                 const bool cancelledAfterAnalysis = cancelToken && cancelToken->load();
                 finalStatus = cancelledAfterAnalysis
-                                  ? scanStatus + " | Analysis stopped: " + analysisStatus
-                                  : scanStatus + " | " + analysisStatus;
+                                  ? finalStatus + " | Analysis stopped: " + analysisStatus
+                                  : finalStatus + " | " + analysisStatus;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
-            } else if (!cancelledAfterScan) {
+            } else if (encoder == nullptr && !cancelledAfterTempo) {
                 // Encoder unavailable — most common reason is the Sample
                 // Tagger bundle isn't installed (or failed to load). Without
                 // this branch the user just sees the scan summary and has
@@ -2505,7 +2603,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                         : juce::String(juce::String::fromUTF8(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
                               "in AI Settings to enable semantic search."));
-                finalStatus = scanStatus + " | " + skipReason;
+                finalStatus = finalStatus + " | " + skipReason;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 

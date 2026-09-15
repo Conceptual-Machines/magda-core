@@ -37,10 +37,11 @@
  * and no file handle.
  *
  * Latency is answered here rather than reported upwards: every
- * implementation asks for @ref preRollSamples ending at its initial reading
- * cursor. Signalsmith uses history before the audible start; SoundTouch reads
- * ahead from that start to fill its output pipe. The pool cues the stream at
- * audible position + readAheadSamples - preRollSamples, and a
+ * implementation names its read-ahead and priming lengths. Signalsmith
+ * primes from a window beginning at the audible start, so its read-ahead is
+ * its priming length; SoundTouch primes from history and reads ahead from
+ * the start to fill its output pipe. The pool cues the stream at audible
+ * position + readAheadSamples - preRollSamples, and a
  * voice's first read is one contiguous read starting with the priming
  * samples -- so @ref process comes out aligned with an unstretched voice
  * on the same track, and a ClipAudio op keeps reporting no latency at all.
@@ -97,6 +98,7 @@ class ClipStretcher {
     /**
      * @brief How far ahead of the nominal position the reading is consumed.
      *
+     * Signalsmith needs a forward window to align its first output;
      * SoundTouch reads ahead to cover its processing latency. The resampling
      * path also reads ahead: its curve reaches
      * past the sample it lands on: a sequential stream can't be read twice,
@@ -109,11 +111,12 @@ class ClipStretcher {
     }
 
     /**
-     * @brief Material before the initial reading cursor that priming needs.
+     * @brief Material consumed during priming, ending at the read-ahead position.
      *
      * At @p rate, since what a stretcher holds back depends on how fast
-     * it's being asked to run. The pool includes readAheadSamples in that
-     * cursor, so the material may precede or follow the audible start.
+     * it's being asked to run. Subtracted from readAheadSamples() when cueing,
+     * so Signalsmith's window starts at the event while SoundTouch and the
+     * resampler consume history preceding it.
      */
     virtual int preRollSamples(double rate) const = 0;
 

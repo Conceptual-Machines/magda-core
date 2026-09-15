@@ -4,6 +4,7 @@
 #include "../../../../../audio/AudioThumbnailManager.hpp"
 #include "../../../../components/common/ColourSwatch.hpp"
 #include "../../../../components/common/SvgButton.hpp"
+#include "../../../../components/common/Toast.hpp"
 #include "../../../../state/TimelineController.hpp"
 #include "../../../../themes/DarkTheme.hpp"
 #include "../../../../themes/FontManager.hpp"
@@ -14,6 +15,7 @@
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
 #include "audio/CompService.hpp"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
@@ -462,43 +464,13 @@ void ClipInspector::initClipPropertiesSection() {
         // Parse BPM from text. Older builds stored the unit in the text, so strip it defensively.
         juce::String text = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
         double newBPM = text.getDoubleValue();
-        if (newBPM < 20.0 || newBPM > 999.0)
+        if (newBPM < 20.0 || newBPM > 999.0) {
+            updateFromSelectedClip();  // show what the clip holds, not the rejected text
             return;
-
-        double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-        // BPM and Beats are two editable views of the same fixed-duration source
-        // interpretation. Editing the BPM must keep totalBeats coherent against
-        // the same file duration so the inspector doesn't display the previous
-        // (often project-BPM-derived) beat count under the new tempo.
-        //
-        // The user setting the BPM is asserting "this file is N BPM" — that is
-        // the authoritative musical interpretation. totalBeats = fileDuration ×
-        // newBPM / 60, regardless of autoTempo (autoTempo controls playback
-        // stretching, not the interpretation metadata).
-        double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-        double thumbDuration = 0.0;
-        if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                magda::audioEventRef(*clip).sourceFilePath())) {
-            thumbDuration = thumb->getTotalLength();
-            if (thumbDuration > 0.0)
-                durationSeconds = thumbDuration;
         }
-        if (durationSeconds <= 0.0)
-            durationSeconds = magda::audioEventRef(*clip).sourceLengthSeconds(clip->length);
 
-        // One path in either mode: applyAudioClipBeats takes the interpretation
-        // whether or not the clip is in beat mode (#2676), and a second route
-        // here is how the two drifted apart before.
-        magda::ClipManager::AudioClipBeatsUpdate u;
-        u.interpretationBpm = newBPM;
-        if (thumbDuration > 0.0 && magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-            u.sourceDurationSeconds = thumbDuration;
-        if (durationSeconds > 0.0) {
-            u.interpretationTotalBeats = durationSeconds * newBPM / 60.0;
-            u.lockInterpretationTotalBeats = true;
-        }
-        magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u, bpm);
+        magda::UndoManager::getInstance().executeCommand(
+            std::make_unique<magda::SetSourceTempoCommand>(primaryClipId(), newBPM));
 
         clipBpmValue_.setText(juce::String(newBPM, 1), juce::dontSendNotification);
         updateFromSelectedClip();
@@ -525,28 +497,9 @@ void ClipInspector::initClipPropertiesSection() {
             auto* clip = magda::ClipManager::getInstance().getClip(primaryClipId());
             if (clip != nullptr && clip->isAudio()) {
                 double newSourceBeats = clipBeatsLengthValue_->getValue();
-                double projectBpm =
-                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
-
-                double durationSeconds = magda::audioEventRef(*clip).sourceDurationSeconds();
-                if (durationSeconds <= 0.0) {
-                    if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                            magda::audioEventRef(*clip).sourceFilePath())) {
-                        durationSeconds = thumb->getTotalLength();
-                    }
-                }
-
-                magda::ClipManager::AudioClipBeatsUpdate u;
-                u.interpretationTotalBeats = newSourceBeats;
-                u.lockInterpretationTotalBeats = true;
-                if (durationSeconds > 0.0)
-                    u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
-                if (durationSeconds > 0.0 &&
-                    magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
-                    u.sourceDurationSeconds = durationSeconds;
-
-                magda::ClipManager::getInstance().applyAudioClipBeats(primaryClipId(), u,
-                                                                      projectBpm);
+                magda::UndoManager::getInstance().executeCommand(
+                    std::make_unique<magda::SetSourceBeatCountCommand>(primaryClipId(),
+                                                                       newSourceBeats));
             }
         }
     };
@@ -793,62 +746,23 @@ void ClipInspector::initClipPropertiesSection() {
         return clipIds;
     };
 
-    auto seedSourceInterpretation = [](auto& clip, double bpm) {
-        // When enabling, seed source interpretation BPM/source interpretation total beats from
-        // cached metadata since the clip model may have stale metadata from TE's default loopInfo.
-        const bool sourceInterpretationBpmLooksDefaulted =
-            audioEventRef(clip).interpBpm <= 0.0 ||
-            (magda::isValidBpm(bpm) && std::abs(audioEventRef(clip).interpBpm - bpm) < 0.1);
-        if (!sourceInterpretationBpmLooksDefaulted)
-            return;
-
-        // Issue #1157: only seed from cached metadata when the file didn't
-        // carry tempo metadata. setSourceMetadata (from TE's loopInfo) is
-        // authoritative when present.
-        auto& thumbs = magda::AudioThumbnailManager::getInstance();
-        auto* event = clip.primaryEvent();
-        double cached = event != nullptr ? thumbs.getCachedBPM(event->sourceFilePath()) : 0.0;
-        if (event != nullptr && cached > 0.0) {
-            event->interpBpm = cached;
-            if (auto* thumb = thumbs.getThumbnail(event->sourceFilePath())) {
-                double fileDuration = thumb->getTotalLength();
-                if (fileDuration > 0.0) {
-                    if (auto* src = magda::SourcePool::getInstance().getMutable(event->sourceId);
-                        src != nullptr && src->durationSeconds <= 0.0) {
-                        src->durationSeconds = fileDuration;
-                    }
-                    event->interpTotalBeats = fileDuration * cached / 60.0;
-                }
-            }
-        }
-    };
-
     // Helper lambda: apply auto-tempo state change and sync
-    auto applyAutoTempo =
-        [this, seedSourceInterpretation](bool enable, const std::vector<magda::ClipId>& clipIds) {
-            double bpm = 120.0;
-            if (timelineController_) {
-                bpm = timelineController_->getState().tempo.bpm;
-            }
+    auto applyAutoTempo = [this](bool enable, const std::vector<magda::ClipId>& clipIds) {
+        double bpm = 120.0;
+        if (timelineController_) {
+            bpm = timelineController_->getState().tempo.bpm;
+        }
 
-            magda::ClipBatchEdit batch("Set Clip Beat Mode", clipIds.size());
-            for (auto cid : clipIds) {
-                auto* clip = magda::ClipManager::getInstance().getClip(cid);
-                if (!clip || !clip->isAudio())
-                    continue;
-                batch.execute(std::make_unique<magda::SetClipPropertyCommand>(
-                    cid, "Set Clip Beat Mode",
-                    [enable, bpm, seedSourceInterpretation](auto& manager, magda::ClipId id) {
-                        auto* targetClip = manager.getClip(id);
-                        if (!targetClip || !targetClip->isAudio())
-                            return;
-                        if (enable)
-                            seedSourceInterpretation(*targetClip, bpm);
-                        manager.setAutoTempo(id, enable, bpm);
-                    }));
-            }
-            updateFromSelectedClip();
-        };
+        magda::ClipBatchEdit batch("Set Clip Beat Mode", clipIds.size());
+        for (auto cid : clipIds) {
+            auto* clip = magda::ClipManager::getInstance().getClip(cid);
+            if (!clip || !clip->isAudio())
+                continue;
+            batch.execute(std::make_unique<magda::SetPlaybackIntentCommand>(
+                cid, enable ? magda::PlaybackIntent::Beat : magda::PlaybackIntent::Free, bpm));
+        }
+        updateFromSelectedClip();
+    };
 
     clipAutoTempoToggle_.onClick = [this, getSelectedAudioClipIds, applyAutoTempo]() {
         if (primaryClipId() == magda::INVALID_CLIP_ID)
@@ -862,43 +776,47 @@ void ClipInspector::initClipPropertiesSection() {
             return;
 
         bool newState = !magda::audioEventRef(*clip).autoTempo;
-
-        int clipsNeedingStretchReset = 0;
-        for (auto cid : targetClipIds) {
-            const auto* selectedClip = magda::ClipManager::getInstance().getClip(cid);
-            if (selectedClip &&
-                std::abs(magda::audioEventRef(*selectedClip).speedRatio - 1.0) > 0.001)
-                ++clipsNeedingStretchReset;
-        }
-
-        if (newState && clipsNeedingStretchReset > 0) {
-            // Show async warning — avoid re-entrancy from synchronous modal loop
-            juce::String message = "Auto-tempo mode requires speed ratio 1.0.\n";
-            if (clipsNeedingStretchReset == 1 && targetClipIds.size() == 1) {
-                message << "Current stretch ("
-                        << juce::String(magda::audioEventRef(*clip).speedRatio, 2)
-                        << "x) will be reset.\n\nContinue?";
-            } else {
-                message << juce::String(clipsNeedingStretchReset)
-                        << (clipsNeedingStretchReset == 1
-                                ? " selected clip will have stretch reset.\n\nContinue?"
-                                : " selected clips will have stretch reset.\n\nContinue?");
-            }
-            juce::NativeMessageBox::showAsync(
-                juce::MessageBoxOptions()
-                    .withIconType(juce::MessageBoxIconType::WarningIcon)
-                    .withTitle("Reset Time Stretch")
-                    .withMessage(message)
-                    .withButton("OK")
-                    .withButton("Cancel"),
-                [applyAutoTempo, targetClipIds](int result) {
-                    if (result == 0)
-                        applyAutoTempo(true, targetClipIds);
-                });
+        if (!newState) {
+            applyAutoTempo(false, targetClipIds);
             return;
         }
 
-        applyAutoTempo(newState, targetClipIds);
+        // Clips no tier could answer for stay out of beat mode; say so once.
+        auto applyAndReport = [applyAutoTempo](const std::vector<magda::ClipId>& clipIds) {
+            applyAutoTempo(true, clipIds);
+            for (auto cid : clipIds) {
+                const auto* c = magda::ClipManager::getInstance().getClip(cid);
+                if (!c || !c->isAudio() || magda::audioEventRef(*c).autoTempo)
+                    continue;
+                magda::daw::ui::Toast::showGlobal(
+                    "No tempo found for " +
+                    juce::File(magda::audioEventRef(*c).sourceFilePath()).getFileName() +
+                    ". Set the source BPM to use beat mode.");
+                break;
+            }
+        };
+
+        // Beat mode plays at speed 1.0; a stretch the clip carried is dropped
+        // without asking (#2674).
+        auto enableBeatMode = [applyAndReport](const std::vector<magda::ClipId>& clipIds) {
+            applyAndReport(clipIds);
+        };
+
+        double bpm = 120.0;
+        if (timelineController_)
+            bpm = timelineController_->getState().tempo.bpm;
+
+        // Beat mode needs a tempo the file may not have said yet, so ask for it
+        // first, then toggle (#2674).
+        clipAutoTempoToggle_.setEnabled(false);
+        juce::Component::SafePointer<juce::TextButton> button(&clipAutoTempoToggle_);
+        magda::ClipManager::getInstance().detectMissingTempo(
+            targetClipIds, bpm, [button, enableBeatMode, targetClipIds]() {
+                if (button == nullptr)
+                    return;
+                button->setEnabled(true);
+                enableBeatMode(targetClipIds);
+            });
     };
     clipPropsContainer_.addChildComponent(clipAutoTempoToggle_);
 
@@ -1013,19 +931,19 @@ void ClipInspector::initClipPropertiesSection() {
         const bool savingMidiClip = clip->isMidi();
         std::optional<std::vector<magda::WarpMarker>> markers;
         if (clip->isAudio()) {
-            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
-            const double displayedBpm = bpmText.getDoubleValue();
+            // Edits are already in the model; the widgets are rounded copies. Only a
+            // tempo-less event takes the cached detection it has been showing as a hint.
             auto* event = clip->primaryEvent();
-            if (event != nullptr && magda::isValidBpm(displayedBpm)) {
-                event->interpBpm = displayedBpm;
-            }
-            // Beats is shown in either mode now, so visibility no longer stands in
-            // for an interpretation: read it only when there is one to save (#2676).
-            if (event != nullptr && event->hasInterpretedBpm() && clipBeatsLengthValue_) {
-                const double displayedBeats = clipBeatsLengthValue_->getValue();
-                if (displayedBeats > 0.0) {
-                    event->interpTotalBeats = displayedBeats;
-                    event->interpTotalBeatsLocked = true;
+            if (event != nullptr && !event->hasInterpretedBpm()) {
+                const double projectBPM =
+                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+                const double cachedBpm = magda::AudioThumbnailManager::getInstance().getCachedBPM(
+                    audioEventRef(*clip).sourceFilePath());
+                const auto display = magda::computeAudioClipSourceDisplay(
+                    *clip, projectBPM, getAudioFileDurationForInspector(*clip), cachedBpm);
+                if (display.bpm > 0.0) {
+                    magda::ClipManager::getInstance().adoptAnalysis(
+                        primaryClipId(), event->sourceFilePath(), display.bpm);
                 }
             }
 

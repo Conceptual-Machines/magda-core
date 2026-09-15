@@ -49,6 +49,7 @@
 #include "io/LiveInput.hpp"
 #include "io/PrefetchThread.hpp"
 #include "plan/PlanCompiler.hpp"
+#include "trace/PlaybackTrace.hpp"
 
 namespace magda::daw::engine_host {
 
@@ -311,12 +312,29 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // write to it on this thread and the devices write to it on the audio
         // thread, and reading them in order is the whole point.
         factory_.traceInto(trace_);
+        engine::setPlaybackTraceSink(&Impl::onPlaybackTrace, this);
         EngineTrace::print("MIDI trace on. Publishes and what reached each device, in order.");
     }
 
     ~Impl() override {
+        engine::setPlaybackTraceSink(nullptr, nullptr);
         stopTimer();
         detach();
+    }
+
+    /// Audio thread: a slot's pass wrap or a voice's read window, into the
+    /// same stream as the notes (#2674).
+    static void onPlaybackTrace(const engine::PlaybackTraceEntry& entry, void* context) {
+        auto* self = static_cast<Impl*>(context);
+        self->trace_.write({.kind = entry.kind == engine::PlaybackTraceEntry::Kind::PassWrap
+                                        ? EngineTrace::Kind::PassWrap
+                                        : EngineTrace::Kind::VoiceWindow,
+                            .beat = entry.beat,
+                            .clip = entry.clip,
+                            .a = entry.a,
+                            .b = entry.b,
+                            .c = entry.c,
+                            .d = entry.d});
     }
 
     /// The meters, and the audio thread's side of the trace.

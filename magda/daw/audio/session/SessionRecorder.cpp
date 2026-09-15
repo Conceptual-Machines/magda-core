@@ -260,7 +260,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
             // re-spans the event over the arrangement clip.
             newClip->setPlacementBeats(startBeatPos.inBeats(),
                                        endBeatPos.inBeats() - startBeatPos.inBeats());
-            newEvent->autoTempo = true;
+            newEvent->setPlaybackIntent(PlaybackIntent::Beat);
         } else {
             double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
             if (bpm <= 0.0)

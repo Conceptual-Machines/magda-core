@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "trace/PlaybackTrace.hpp"
+
 namespace magda::engine {
 
 void LaunchHandle::noteRunEdges(SplitStatus& status, const RunEdges& edges,
@@ -370,6 +372,12 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
         if (wrap < range.monotonic.end) {
             eventBeat = wrap;
             fromPending = false;
+            playbackTrace({.kind = PlaybackTraceEntry::Kind::PassWrap,
+                           .beat = range.monotonic.start,
+                           .a = *loopBeats_,
+                           .b = wrap,
+                           .c = origin,
+                           .d = elapsed});
 
             // A second wrap inside the same block is one this cannot report.
             // Counted rather than swallowed: the run carries on past where it

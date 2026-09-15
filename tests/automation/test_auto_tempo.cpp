@@ -62,37 +62,50 @@ static ClipInfo makeCalibratedClip(double projectBPM = 120.0) {
 // AudioEvent::seedInterpretation
 // ─────────────────────────────────────────────────────────────
 
-TEST_CASE("AudioEvent::seedInterpretation - populates unset fields",
-          "[clip][auto-tempo][metadata]") {
+TEST_CASE("AudioEvent::seedInterpretation - fills gaps only", "[clip][auto-tempo][metadata]") {
     ClipInfo clip;
     magda::test::giveAudioEvent(clip, "seed.wav");
+    auto& event = magda::test::audioEvent(clip);
 
     SECTION("Sets both fields when unset") {
-        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
-        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 4.0);
-        REQUIRE(magda::test::audioEvent(clip).interpBpm == 120.0);
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
+        REQUIRE(event.interpTotalBeats == 4.0);
+        REQUIRE(event.interpBpm == 120.0);
+        REQUIRE(event.bpmFrom == Provenance::FileMetadata);
+        REQUIRE(event.beatsFrom == Provenance::FileMetadata);
     }
 
-    SECTION("Does not overwrite existing values") {
-        magda::test::audioEvent(clip).interpTotalBeats = 8.0;
-        magda::test::audioEvent(clip).interpBpm = 140.0;
-        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
-        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 8.0);
-        REQUIRE(magda::test::audioEvent(clip).interpBpm == 140.0);
+    // TE's loopInfo carries a project default for a file with no metadata, so
+    // a seed can never replace a detected value.
+    SECTION("Leaves values an analysis wrote") {
+        event.adoptTotalBeats(8.0, Provenance::Analysis);
+        event.adoptBpm(140.0, Provenance::Analysis);
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
+        REQUIRE(event.interpTotalBeats == 8.0);
+        REQUIRE(event.interpBpm == 140.0);
+        REQUIRE(event.bpmFrom == Provenance::Analysis);
+    }
+
+    SECTION("Leaves values the user set") {
+        event.adoptTotalBeats(8.0, Provenance::User);
+        event.adoptBpm(140.0, Provenance::User);
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
+        REQUIRE(event.interpTotalBeats == 8.0);
+        REQUIRE(event.interpBpm == 140.0);
     }
 
     SECTION("Ignores zero/negative input") {
-        magda::test::audioEvent(clip).seedInterpretation(0.0, -5.0);
-        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats == 0.0);
-        REQUIRE(magda::test::audioEvent(clip).interpBpm == 0.0);
+        event.seedInterpretation(0.0, -5.0, Provenance::FileMetadata);
+        REQUIRE(event.interpTotalBeats == 0.0);
+        REQUIRE(event.interpBpm == 0.0);
+        REQUIRE(event.bpmFrom == Provenance::None);
     }
 
-    SECTION("Sets one field independently of the other") {
-        magda::test::audioEvent(clip).interpBpm = 140.0;  // already set
-        magda::test::audioEvent(clip).seedInterpretation(4.0, 120.0);
-        REQUIRE(magda::test::audioEvent(clip).interpTotalBeats ==
-                4.0);                                               // was unset, gets populated
-        REQUIRE(magda::test::audioEvent(clip).interpBpm == 140.0);  // was set, not overwritten
+    SECTION("Each field keeps its own owner") {
+        event.adoptBpm(140.0, Provenance::User);
+        event.seedInterpretation(4.0, 120.0, Provenance::FileMetadata);
+        REQUIRE(event.interpTotalBeats == 4.0);
+        REQUIRE(event.interpBpm == 140.0);
     }
 }
 
@@ -379,6 +392,142 @@ TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-temp
         REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
         ClipOperations::setAutoTempo(clip, false, PROJECT_BPM);
         REQUIRE_FALSE(magda::test::audioEvent(clip).autoTempo);
+    }
+}
+
+// The #1157 calibration reads the clip's span through the speedRatio the
+// enable then resets, so a second enable must not run it again.
+TEST_CASE("setAutoTempo - enabling again does not recalibrate a clip that started sped up",
+          "[clip][auto-tempo]") {
+    constexpr double projectBpm = 60.0;
+
+    ClipInfo clip;
+    auto& event = magda::test::giveAudioEvent(clip, "sped_up.wav", 4.0);  // 8 beats at 120
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.deriveTimesFromBeats(projectBpm);
+    event.setAnchorSeconds(0.0);
+    event.speedRatio = 2.0;
+    event.interpBpm = 120.0;
+    event.interpTotalBeats = 8.0;
+
+    ClipOperations::setAutoTempo(clip, true, projectBpm);
+    REQUIRE(event.autoTempo);
+    REQUIRE(event.speedRatio == 1.0);
+    REQUIRE(clip.placement.lengthBeats == Approx(4.0));
+
+    const double lengthBeats = clip.placement.lengthBeats;
+    const auto loopLength = event.loopLengthSamples;
+    const auto extent = event.loopExtent;
+
+    ClipOperations::setAutoTempo(clip, true, projectBpm);
+
+    REQUIRE(clip.placement.lengthBeats == Approx(lengthBeats));
+    REQUIRE(event.loopLengthSamples == loopLength);
+    REQUIRE(event.loopExtent == extent);
+    REQUIRE(event.speedRatio == 1.0);
+}
+
+// ─────────────────────────────────────────────────────────────
+// setAutoTempo — beat mode already granted by a detection
+// ─────────────────────────────────────────────────────────────
+
+// A clip that asked for beat mode is granted it the moment a tempo is adopted
+// (ClipManager seeds a cached detection before calling setAutoTempo), so the
+// toggle finds autoTempo already on and must still run the transition.
+static ClipInfo makeDetectionGrantedClip() {
+    ClipInfo clip;
+    magda::test::giveAudioEvent(clip, "granted.wav");
+    clip.startTime = 0.0;
+    clip.length = 2.0;
+    auto& event = magda::test::audioEvent(clip);
+    event.speedRatio = 1.5;
+    event.setPlaybackIntent(PlaybackIntent::Beat);
+    REQUIRE_FALSE(event.autoTempo);
+    REQUIRE(event.adoptBpm(174.0, Provenance::Analysis));
+    REQUIRE(event.autoTempo);
+    REQUIRE_FALSE(clip.loopEnabled);
+    return clip;
+}
+
+TEST_CASE("setAutoTempo - transitions a clip a detection already granted", "[clip][auto-tempo]") {
+    auto clip = makeDetectionGrantedClip();
+    auto& event = magda::test::audioEvent(clip);
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+
+    SECTION("Loop, stretch engine and speed follow the grant") {
+        REQUIRE(event.autoTempo);
+        REQUIRE(event.playbackIntent == PlaybackIntent::Beat);
+        REQUIRE(clip.loopEnabled);
+        REQUIRE(event.loopLengthSamples > 0);
+        REQUIRE(event.timeStretchMode != time_stretch_mode::kDisabled);
+        REQUIRE(event.speedRatio == 1.0);
+    }
+
+    SECTION("Enabling again leaves the same state") {
+        const auto loopStart = event.loopStartSamples;
+        const auto loopLength = event.loopLengthSamples;
+        const auto extent = event.loopExtent;
+        const double startBeat = clip.placement.startBeat;
+        const double lengthBeats = clip.placement.lengthBeats;
+        const double length = clip.length;
+        const int stretchMode = event.timeStretchMode;
+
+        ClipOperations::setAutoTempo(clip, true, 120.0);
+
+        REQUIRE(clip.loopEnabled);
+        REQUIRE(event.loopStartSamples == loopStart);
+        REQUIRE(event.loopLengthSamples == loopLength);
+        REQUIRE(event.loopExtent == extent);
+        REQUIRE(clip.placement.startBeat == startBeat);
+        REQUIRE(clip.placement.lengthBeats == lengthBeats);
+        REQUIRE(clip.length == length);
+        REQUIRE(event.timeStretchMode == stretchMode);
+        REQUIRE(event.speedRatio == 1.0);
+        REQUIRE(event.interpBpm == 174.0);
+        REQUIRE(event.bpmFrom == Provenance::Analysis);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// stretchAbsolute — a beat-mode stretch is the user's interpretation
+// ─────────────────────────────────────────────────────────────
+
+TEST_CASE("stretchAbsolute - beat-mode stretch becomes the user's interpretation",
+          "[clip][auto-tempo][provenance]") {
+    ClipInfo clip;
+    magda::test::giveAudioEvent(clip, "stretched.wav");
+    clip.startTime = 0.0;
+    clip.length = 2.0;
+    auto& event = magda::test::audioEvent(clip);
+    event.speedRatio = 1.0;
+    REQUIRE(event.adoptBpm(120.0, Provenance::Analysis));
+    REQUIRE(event.adoptTotalBeats(4.0, Provenance::Analysis));
+    clip.loopEnabled = true;
+    event.setLoopExtent(RegionExtent::Interpretation);
+
+    ClipOperations::setAutoTempo(clip, true, 120.0);
+    REQUIRE(event.autoTempo);
+    REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+    const auto regionSamples = event.loopLengthSamples;
+    REQUIRE(regionSamples > 0);
+
+    // 2 s -> 4 s at 120 BPM doubles the beats: ratio 2.
+    ClipOperations::stretchAbsolute(clip, 1.0, 4.0, 120.0);
+
+    REQUIRE(event.interpTotalBeats == Approx(8.0));
+    REQUIRE(event.interpBpm == Approx(240.0));
+    REQUIRE(event.beatsFrom == Provenance::User);
+    REQUIRE(event.bpmFrom == Provenance::User);
+    REQUIRE(event.loopExtent == RegionExtent::Interpretation);
+    REQUIRE(event.loopLengthSamples == regionSamples);
+
+    SECTION("A later detection cannot replace it") {
+        REQUIRE_FALSE(event.adoptBpm(100.0, Provenance::Analysis));
+        REQUIRE_FALSE(event.adoptTotalBeats(3.0, Provenance::Analysis));
+        REQUIRE(event.interpBpm == Approx(240.0));
+        REQUIRE(event.interpTotalBeats == Approx(8.0));
+        REQUIRE(event.loopLengthSamples == regionSamples);
     }
 }
 

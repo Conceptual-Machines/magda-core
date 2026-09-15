@@ -279,7 +279,7 @@ void syncAudioSourceInterpretationToLoopInfo(te::WaveAudioClip& audioClip, const
 }
 
 /**
- * @brief Seed the interpretation from Tracktion's loopInfo, filling gaps only.
+ * @brief Adopt Tracktion's loopInfo as file metadata; values the user owns stay.
  *
  * The file duration is a Source fact, so it lands on the pooled source.
  */
@@ -288,7 +288,7 @@ void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, double bpm)
     if (event == nullptr)
         return;
 
-    event->seedInterpretation(numBeats, bpm);
+    event->seedInterpretation(numBeats, bpm, Provenance::FileMetadata);
 
     // A Source is shared by every clip on the file, so this estimate is only
     // ever a stand-in for facts we could not read: an unresolved source with no
@@ -305,7 +305,8 @@ void seedInterpretationFromLoopInfo(ClipInfo& clip, double numBeats, double bpm)
  * @brief Give an imported session clip a real source loop region.
  *
  * One imported before its source beat domain was known carries a zero-length
- * region, meaning "the whole source". The interpretation has arrived by now.
+ * region, meaning "the whole source". The interpretation has arrived by now,
+ * so the region follows it: a later detection or BPM correction refits it.
  */
 void initialiseSourceLoopRegionFromMetadata(ClipInfo& clip) {
     auto* event = clip.primaryEvent();
@@ -316,7 +317,7 @@ void initialiseSourceLoopRegionFromMetadata(ClipInfo& clip) {
 
     const double startBeats = juce::jmin(event->loopStartBeats(), event->interpTotalBeats);
     event->setLoopStartBeats(startBeats);
-    event->setLoopLengthBeats(juce::jmax(0.0, event->interpTotalBeats - startBeats));
+    event->setLoopExtent(RegionExtent::Interpretation);
 }
 }  // namespace
 
