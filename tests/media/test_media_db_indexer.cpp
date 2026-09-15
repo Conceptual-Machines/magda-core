@@ -8,6 +8,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
@@ -73,6 +74,32 @@ void writeMonoWav(const fs::path& out, double seconds, double freq, int sampleRa
     constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
     for (int i = 0; i < n; ++i) {
         data[i] = static_cast<float>(0.3 * std::sin(kTwoPi * freq * i / sampleRate));
+    }
+    writer->writeFromAudioSampleBuffer(buf, 0, n);
+}
+
+/// A quarter-note click train at @p bpm: audio whose tempo can be measured.
+void writeClickWav(const fs::path& out, double seconds, double bpm, int sampleRate = 44100) {
+    fs::create_directories(out.parent_path());
+    juce::File jf(juce::String(out.string()));
+    jf.deleteFile();
+    juce::WavAudioFormat wav;
+    juce::StringPairArray meta;
+    std::unique_ptr<juce::FileOutputStream> stream(jf.createOutputStream());
+    REQUIRE(stream != nullptr);
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(stream.get(), sampleRate, 1, 16, meta, 0));
+    REQUIRE(writer != nullptr);
+    stream.release();
+
+    const int n = static_cast<int>(seconds * sampleRate);
+    juce::AudioBuffer<float> buf(1, n);
+    buf.clear();
+    const int beat = static_cast<int>(60.0 / bpm * sampleRate);
+    for (int click = 0; click < n; click += beat) {
+        for (int i = click; i < std::min(n, click + 64); ++i) {
+            buf.setSample(0, i, 0.9F);
+        }
     }
     writer->writeFromAudioSampleBuffer(buf, 0, n);
 }
@@ -144,9 +171,8 @@ TEST_CASE("indexer: empty directory returns zero stats", "[media_db][indexer]") 
 
 TEST_CASE("indexer: inserts a single audio file with all expected rows", "[media_db][indexer]") {
     TempDir dir;
-    // 3-second loop, not a one-shot — so BPM survives the indexer's
-    // "one-shots have no tempo" policy.
-    writeMonoWav(dir.path() / "Vocals" / "MTVR_warm_120bpm_Cm.wav", 3.0, 440.0);
+    // An 8 s click train at 120: the audio measures the tempo, the name agrees.
+    writeClickWav(dir.path() / "Vocals" / "MTVR_warm_120bpm_Cm.wav", 8.0, 120.0);
 
     MediaDatabase db(":memory:");
     MediaDbIndexer indexer(db, nullptr);
@@ -167,7 +193,7 @@ TEST_CASE("indexer: inserts a single audio file with all expected rows", "[media
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0))) == "audio");
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "wav");
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2))) == "vocal");
-    REQUIRE(sqlite3_column_double(stmt, 3) == 120.0);  // bpm from filename
+    REQUIRE(sqlite3_column_double(stmt, 3) == 120.0);  // measured, the name agrees
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4))) == "C");
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5))) == "minor");
     sqlite3_finalize(stmt);
@@ -380,14 +406,14 @@ TEST_CASE("indexer: a .mid carrying CHORD markers indexes as kind='progression'"
 }
 
 // The learned BPM tier runs after the walk, not inside it (#2674). What it
-// looks at is what the cheap tiers left blank, which is what keeps it off the
-// 2000 one-shots and 3000 named files of a real library.
+// looks at is what the walk left blank: a name alone answers nothing, so a
+// named sine is as pending as an unnamed one; a one-shot is never looked at.
 TEST_CASE("indexer: the tempo pass only considers audio with no tempo yet",
           "[media_db][indexer][tempo]") {
     TempDir dir;
-    writeMonoWav(dir.path() / "MTVR_riff_128bpm.wav", 3.0, 220.0);  // named, answered already
-    writeMonoWav(dir.path() / "MTVR_kick_shot.wav", 3.0, 80.0);     // one-shot, never gets one
-    writeMonoWav(dir.path() / "MTVR_riff_loop.wav", 3.0, 330.0);    // the one file left to measure
+    writeClickWav(dir.path() / "MTVR_riff_128bpm.wav", 16.0 * 60.0 / 128.0, 128.0);  // 16 beats
+    writeMonoWav(dir.path() / "MTVR_kick_shot.wav", 3.0, 80.0);   // one-shot, never gets one
+    writeMonoWav(dir.path() / "MTVR_riff_loop.wav", 3.0, 330.0);  // the one file left to measure
 
     MediaDatabase db(":memory:");
     MediaDbIndexer indexer(db, nullptr);

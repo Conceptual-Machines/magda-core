@@ -144,13 +144,6 @@ std::optional<double> metadataBpm(const juce::StringPairArray& meta) {
     return std::nullopt;
 }
 
-// A tempo nothing is sure of is worse than none: the seeding rule fills gaps,
-// so a guess becomes a clip's interpretation and stays there. Measured against
-// a library of loops whose tempo is in their filenames, the autocorrelation
-// reaches 62% allowing an octave against the beat tracker's 96%, so it only
-// speaks where there is no model to run the tracker later (#2674).
-constexpr double kMinTempoConfidence = 0.6;
-
 // ---- Spectral stats ----------------------------------------------------
 
 struct SpectralStats {
@@ -384,23 +377,20 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
         f.keyConfidence = ck.confidence;
     }
 
-    // --- BPM: filename > metadata > measured ---
-    // The learned tier is not one of these: half a second and most of a
+    // --- BPM: measured, with the name and the ACID chunk only picking its
+    // octave (#2674). The learned tier is not here: half a second and most of a
     // gigabyte a file, which the scan's workers multiply until the machine has
     // no memory left, so it runs after the scan in
-    // MediaDbIndexer::measureMissingTempo (#2674). An empty field is what sends
-    // that pass a file, so the autocorrelation -- free, since it reads the flux
-    // the pass above already built -- only fills one where no model will.
-    if (auto p = parseBpmFromPath(path)) {
-        f.bpm = p;
-    } else if (auto m = metadataBpm(decoded->metadata)) {
-        f.bpm = m;
-    } else if (!BeatTracker::isAvailable()) {
-        if (auto measured = estimateTempo(
-                analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
-            measured && measured->confidence >= kMinTempoConfidence) {
-            f.bpm = measured->bpm;
-        }
+    // MediaDbIndexer::measureMissingTempo. An empty field is what sends that
+    // pass a file, so where a model will run only a hint-confirmed tempo is
+    // filled in and everything else is left to the tracker.
+    const TempoHints hints{parseBpmFromPath(path), metadataBpm(decoded->metadata)};
+    const auto estimate = estimateTempo(
+        analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
+    if (!BeatTracker::isAvailable()) {
+        f.bpm = resolveTempo(estimate, f.durationS, hints);
+    } else if (hintAgrees(estimate, hints)) {
+        f.bpm = refineTempo(estimate->bpm, f.durationS, hints);
     }
 
     // --- Always-DSP spectral stats ---
@@ -424,32 +414,26 @@ std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path) {
 }
 
 std::optional<double> detectTempo(const std::filesystem::path& path, const BeatTracker* tracker) {
-    if (auto p = parseBpmFromPath(path)) {
-        return p;
-    }
     auto decoded = decodeFile(path);
     if (!decoded) {
         return std::nullopt;
     }
-    if (auto m = metadataBpm(decoded->metadata)) {
-        return m;
-    }
+    const TempoHints hints{parseBpmFromPath(path), metadataBpm(decoded->metadata)};
+    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
+
     if (tracker != nullptr) {
         const auto tracked = tracker->track(decoded->mono.getReadPointer(0),
                                             decoded->mono.getNumSamples(), decoded->sampleRate);
         if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
-            return tracked->bpm;
+            return refineTempo(tracked->bpm, durationS, hints);
         }
-        return std::nullopt;
     }
+
+    // The beats were too ragged to call a tempo, or there is no model to ask.
     const auto analysis = computeSpectralAnalysis(decoded->mono, decoded->sampleRate, false);
-    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
-    if (auto measured = estimateTempo(
-            analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, durationS);
-        measured && measured->confidence >= kMinTempoConfidence) {
-        return measured->bpm;
-    }
-    return std::nullopt;
+    const auto estimate = estimateTempo(
+        analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, durationS);
+    return resolveTempo(estimate, durationS, hints);
 }
 
 }  // namespace magda::media

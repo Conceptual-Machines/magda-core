@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
@@ -22,10 +23,10 @@ namespace {
 constexpr double kProjectBpm = 120.0;
 constexpr double kFileBpm = 128.0;
 constexpr int kSampleRate = 44100;
-constexpr double kFileSeconds = 2.0;
+constexpr double kFileSeconds = 16.0 * 60.0 / kFileBpm;  // 16 beats
 
-/// Writes 2 s of a 440 Hz sine to @p file so every tier below the filename
-/// has real audio to read.
+/// Writes a 16-beat click train at kFileBpm to @p file: audio the detector
+/// can measure, and a name that agrees with it.
 void writeSineWav(const juce::File& file) {
     file.deleteFile();
     juce::WavAudioFormat wav;
@@ -39,9 +40,11 @@ void writeSineWav(const juce::File& file) {
 
     const int n = static_cast<int>(kFileSeconds * kSampleRate);
     juce::AudioBuffer<float> buf(1, n);
-    constexpr double kTwoPi = 2.0 * std::numbers::pi_v<double>;
-    for (int i = 0; i < n; ++i)
-        buf.setSample(0, i, static_cast<float>(0.5 * std::sin(kTwoPi * 440.0 * i / kSampleRate)));
+    buf.clear();
+    const int beat = static_cast<int>(60.0 / kFileBpm * kSampleRate);
+    for (int click = 0; click < n; click += beat)
+        for (int i = click; i < std::min(n, click + 64); ++i)
+            buf.setSample(0, i, 0.9F);
     REQUIRE(writer->writeFromAudioSampleBuffer(buf, 0, n));
 }
 
@@ -295,7 +298,7 @@ TEST_CASE("A beat count that implies a tempo no file has is refused whole",
     const double beats = eventOf(clipId)->interpTotalBeats;
     REQUIRE(beats > 0.0);
 
-    // 1434 beats over a 2 s file is 43,000 BPM — the typo this guards.
+    // 1434 beats over a 7.5 s file is 11,000 BPM — the typo this guards.
     clips.setSourceBeatCount(clipId, 1434.0);
 
     REQUIRE(eventOf(clipId)->interpTotalBeats == Approx(beats));

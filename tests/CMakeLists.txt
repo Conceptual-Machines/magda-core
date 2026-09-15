@@ -346,6 +346,7 @@ set(TEST_SOURCES
     # Tempo measured from the audio, and what it scores on a real library
     media/test_tempo_estimator.cpp
     media/test_tempo_estimator_corpus.cpp
+    media/test_tempo_hints.cpp
     # Media database (issue #768) — Phase E2: MediaDbQuery (hybrid search)
     media/test_media_db_query.cpp
     # Media database (issue #1319) — CLAP zero-shot tagging

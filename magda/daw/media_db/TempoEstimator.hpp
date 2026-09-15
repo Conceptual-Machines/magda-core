@@ -1,13 +1,14 @@
 // Tempo from the audio itself (issue #2674).
 //
-// The third BPM tier. The two above it read what a file says about itself --
-// the filename token, then the ACID chunk -- and both are silent for most
-// material and wrong for some of it: a 174 bpm pack whose names carry "174"
-// with no "bpm" after it answers nothing, and whose chunks answer 173 and 87.
+// The tempo source. What a file says about itself -- the filename token, then
+// the ACID chunk -- is a claim, not a measurement: a 174 bpm pack whose names
+// carry "174" with no "bpm" after it answers nothing, and whose chunks answer
+// 173 and 87. A claim only picks an octave of what the audio measured and is
+// dropped when the audio disagrees; alone it is never a tempo.
 //
-// This measures instead. It works off the spectral flux envelope the indexer
-// already computes for transient density, so a file pays one FFT pass for its
-// spectral statistics, its key and its tempo together.
+// The measurement works off the spectral flux envelope the indexer already
+// computes for transient density, so a file pays one FFT pass for its spectral
+// statistics, its key and its tempo together.
 
 #pragma once
 
@@ -53,5 +54,36 @@ inline constexpr double kMaxTempoBpm = 200.0;
  */
 std::optional<TempoEstimate> estimateTempo(const std::vector<float>& onsetEnvelope,
                                            double hopSeconds, double durationSeconds);
+
+/// Below this the autocorrelation alone is not believed: measured over a
+/// library of named loops it is right 62% of the time allowing an octave,
+/// against the beat tracker's 96% (#2674).
+inline constexpr double kMinTempoConfidence = 0.6;
+
+/// What a file's name or its ACID chunk claims. Never an answer by itself:
+/// both are typed by someone and both have been wrong. A claim only picks the
+/// octave of a tempo the audio measured, and is dropped when the audio
+/// disagrees with it.
+struct TempoHints {
+    std::optional<double> fromName;
+    std::optional<double> fromMetadata;
+};
+
+/// Settle a tempo the audio measured: take the octave (half, same, double,
+/// inside the search range) a hint agrees with to 2%, then snap to whole bars
+/// over @p durationSeconds where the file is one. Zero duration skips the snap.
+double refineTempo(double measuredBpm, double durationSeconds, const TempoHints& hints);
+
+/// True when a hint agrees, to 2%, with an octave of what the audio measured.
+/// What separates a confirmed tempo from a merely confident one, for callers
+/// that hold an unconfirmed file back for the beat tracker instead.
+bool hintAgrees(const std::optional<TempoEstimate>& estimate, const TempoHints& hints);
+
+/// The autocorrelation's answer after the hints. A hint that agrees with the
+/// measured period, at any octave, confirms it at any confidence; without one
+/// the estimate stands only above kMinTempoConfidence. nullopt when the audio
+/// measured nothing, whatever the hints say.
+std::optional<double> resolveTempo(const std::optional<TempoEstimate>& estimate,
+                                   double durationSeconds, const TempoHints& hints);
 
 }  // namespace magda::media

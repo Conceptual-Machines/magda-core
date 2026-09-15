@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <initializer_list>
 #include <numeric>
 
 namespace magda::media {
@@ -216,6 +217,41 @@ bool snapToWholeBars(double& bpm, double durationSeconds) {
     return false;
 }
 
+// How close a claimed tempo has to be to a measured one to be taken as the same
+// tempo. Wider than the rounding in a filename token, narrower than the gap
+// between two tempi anyone would write down.
+constexpr double kHintTolerance = 0.02;
+
+bool inTempoRange(double bpm) {
+    return bpm >= kMinTempoBpm && bpm <= kMaxTempoBpm;
+}
+
+/// The relation a hint picks out of half, two thirds, same, three halves and
+/// double -- name first, then metadata. A bare 16th grid measures at a
+/// dotted-eighth period, two thirds of its tempo, so 3:2 is as real as an
+/// octave. Nullopt when no hint lands on one: the audio then keeps what it
+/// measured. The measured tempo is always a candidate, in range or not.
+std::optional<double> hintedOctave(double measuredBpm, const TempoHints& hints) {
+    if (measuredBpm <= 0.0) {
+        return std::nullopt;
+    }
+    for (const auto& hint : {hints.fromName, hints.fromMetadata}) {
+        if (!hint || *hint <= 0.0) {
+            continue;
+        }
+        for (double candidate : {measuredBpm * 0.5, measuredBpm * 2.0 / 3.0, measuredBpm,
+                                 measuredBpm * 1.5, measuredBpm * 2.0}) {
+            if (candidate != measuredBpm && !inTempoRange(candidate)) {
+                continue;
+            }
+            if (std::abs(*hint - candidate) / candidate <= kHintTolerance) {
+                return candidate;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 std::optional<TempoEstimate> estimateTempo(const std::vector<float>& onsetEnvelope,
@@ -298,6 +334,30 @@ std::optional<TempoEstimate> estimateTempo(const std::vector<float>& onsetEnvelo
     estimate.confidence = peak * margin;
 
     return estimate;
+}
+
+double refineTempo(double measuredBpm, double durationSeconds, const TempoHints& hints) {
+    double bpm = hintedOctave(measuredBpm, hints).value_or(measuredBpm);
+    snapToWholeBars(bpm, durationSeconds);
+    return bpm;
+}
+
+bool hintAgrees(const std::optional<TempoEstimate>& estimate, const TempoHints& hints) {
+    return estimate.has_value() && hintedOctave(estimate->bpm, hints).has_value();
+}
+
+std::optional<double> resolveTempo(const std::optional<TempoEstimate>& estimate,
+                                   double durationSeconds, const TempoHints& hints) {
+    if (!estimate) {
+        return std::nullopt;
+    }
+    if (hintAgrees(estimate, hints)) {
+        return refineTempo(estimate->bpm, durationSeconds, hints);
+    }
+    if (estimate->confidence >= kMinTempoConfidence) {
+        return refineTempo(estimate->bpm, durationSeconds, {});
+    }
+    return std::nullopt;
 }
 
 }  // namespace magda::media

@@ -25,6 +25,7 @@
 #include "PathRules.hpp"
 #include "RobertaTokenizer.hpp"
 #include "Scan.hpp"
+#include "TempoEstimator.hpp"
 #include "core/MidiChordMarkers.hpp"
 
 namespace magda::media {
@@ -1032,12 +1033,21 @@ MediaDbIndexer::TempoStats trackTempos(sqlite3* db, const std::vector<PendingFil
 
             const auto tracked =
                 tracker->track(mono->data(), static_cast<int>(mono->size()), 48000);
+            const double durationSeconds = static_cast<double>(mono->size()) / 48000.0;
+            const TempoHints hints{parseBpmFromPath(f.path), std::nullopt};
             if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
-                writeBpm(db, f.fileId, tracked->bpm);
+                const double refined = refineTempo(tracked->bpm, durationSeconds, hints);
+                writeBpm(db, f.fileId, refined);
                 ++stats.measured;
                 juce::Logger::writeToLog("[tempo] db " + juce::String(f.fileId) + ": " +
-                                         juce::String(tracked->bpm, 3) + " BPM, steadiness " +
+                                         juce::String(refined, 3) + " BPM, steadiness " +
                                          juce::String(tracked->steadiness, 2) + ", " +
+                                         juce::String(f.path.filename().string()));
+            } else if (auto resolved = resolveTempo(measureTempo(f.path), durationSeconds, hints)) {
+                writeBpm(db, f.fileId, *resolved);
+                ++stats.measured;
+                juce::Logger::writeToLog("[tempo] db " + juce::String(f.fileId) + ": " +
+                                         juce::String(*resolved, 3) + " BPM by autocorrelation, " +
                                          juce::String(f.path.filename().string()));
             } else {
                 ++stats.silent;
