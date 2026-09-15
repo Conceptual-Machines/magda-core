@@ -183,12 +183,28 @@ std::optional<std::vector<float>> loadMono48k(const std::filesystem::path& path)
 
 constexpr float kFlatnessThreshold = 0.08F;
 
-std::string deriveShape(const AudioFeatures& f) {
+// What the file is, which decides whether anything musical may be read off its
+// length: a one-shot's BPM is cleared below.
+//
+// The name comes first, because the producer knew. Duration and transient
+// density were the whole rule and got it wrong for a quarter of a real library:
+// a 60 second "FX_Oneshot_Factory_Drones" came out a loop, and so did a 2.5
+// second "Vocal_Shot" for lasting more than two seconds (#2674).
+std::string deriveShape(const std::filesystem::path& path, const AudioFeatures& f) {
     if (f.durationS <= 0.0) {
         return "unknown";
     }
+
+    const auto named = pathShapeHint(path);
+    if (named && *named == "one-shot") {
+        return "one-shot";
+    }
+    // Nothing musical fits in less than two seconds, whatever it is called.
     if (f.durationS < 2.0) {
         return "one-shot";
+    }
+    if (named) {
+        return *named;
     }
     if (f.transientDensity < 0.5F) {
         return "sustained";
@@ -736,9 +752,9 @@ void processOneFile(sqlite3* sqlDb, const ScannedFile& scanned, MediaDbIndexer::
         }
 
         const std::string family = deriveFamily(f.path);
-        const std::string shape = midiFeats
-                                      ? deriveMidiShape(midiFeats->durationS)
-                                      : (feats ? deriveShape(*feats) : std::string{"unknown"});
+        const std::string shape =
+            midiFeats ? deriveMidiShape(midiFeats->durationS)
+                      : (feats ? deriveShape(f.path, *feats) : std::string{"unknown"});
         const int tonal = midiFeats ? static_cast<int>(midiFeats->hasNotes)
                           : feats   ? deriveTonal(*feats)
                                     : 0;
