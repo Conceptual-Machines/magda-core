@@ -47,10 +47,16 @@ constexpr std::size_t kMinBeats = 8;
 constexpr double kMinBpm = 60.0;
 constexpr double kMaxBpm = 200.0;
 
-// The model is trained on songs and a two-bar loop gives it two seconds to work
-// from. A loop repeats by definition, so repeating it up to this is the context
-// the material already implies.
-constexpr double kMinContextSeconds = 24.0;
+// How much audio the model reads, whatever it was handed. Short files are
+// repeated up to it, because the model is trained on songs and a two-bar loop
+// gives it two seconds to work from -- and a loop repeats by definition, so the
+// material already implies the context. Long ones are cropped to it, because
+// the model reads what it is given in one pass and the cost grows with the
+// length: 24 s needs 0.8 GB and half a second, 60 s needs 3.3 GB, 120 s needs
+// 6.6 GB and 24 s of CPU, and past ~200 s the partial-attention blocks throw.
+// A tempo does not need more -- it is one number for the whole file, and 24 s
+// of it measures the same as 30 (#2674).
+constexpr double kContextSeconds = 24.0;
 
 // A file's length is taken as a whole number of beats when it is within this of
 // one, which is what turns a 179.1 into the 175 the loop actually is.
@@ -258,8 +264,8 @@ std::optional<BeatTrack> BeatTracker::track(const float* mono, int numSamples,
     std::vector<float> context;
     const float* audioIn = mono;
     int audioSamples = numSamples;
-    if (sourceSeconds < kMinContextSeconds) {
-        const auto wanted = static_cast<std::size_t>(kMinContextSeconds * sampleRate);
+    if (sourceSeconds < kContextSeconds) {
+        const auto wanted = static_cast<std::size_t>(kContextSeconds * sampleRate);
         context.reserve(wanted);
         while (context.size() < wanted) {
             const auto chunk =
@@ -268,7 +274,13 @@ std::optional<BeatTrack> BeatTracker::track(const float* mono, int numSamples,
         }
         audioIn = context.data();
         audioSamples = static_cast<int>(context.size());
+    } else if (sourceSeconds > kContextSeconds) {
+        // From the middle, where a song is playing: the head of a long file is
+        // an intro or a count-in as often as it is the material.
+        audioSamples = static_cast<int>(kContextSeconds * sampleRate);
+        audioIn = mono + (numSamples - audioSamples) / 2;
     }
+    const bool readWhole = sourceSeconds <= kContextSeconds;
 
     const auto audio = resampleToModelRate(audioIn, audioSamples, sampleRate);
     int frames = 0;
@@ -361,7 +373,9 @@ std::optional<BeatTrack> BeatTracker::track(const float* mono, int numSamples,
         // A loop is a whole number of beats long. Snapping to that is exact
         // where the beat spacing is only close -- the model reads to a 20 ms
         // frame, and a seam in the repeated audio pulls the fit a little.
-        if (sourceSeconds > 0.0) {
+        // Only for a file read end to end: a track long enough to be sampled
+        // from the middle is not a loop, and its length says nothing.
+        if (sourceSeconds > 0.0 && readWhole) {
             const double beats = sourceSeconds * track.bpm / 60.0;
             const int perBar = track.beatsPerBar >= 2 ? track.beatsPerBar : 4;
 

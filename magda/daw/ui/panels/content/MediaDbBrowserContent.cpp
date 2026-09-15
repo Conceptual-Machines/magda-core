@@ -285,6 +285,27 @@ juce::String formatAnalysisProgress(int done, int total, const std::filesystem::
     return status;
 }
 
+juce::String formatTempoProgress(int done, int total, const std::filesystem::path& current,
+                                 std::chrono::steady_clock::time_point startedAt) {
+    juce::String status = juce::String("Measuring tempo: ") +
+                          juce::String(current.filename().string()) + " (" + juce::String(done) +
+                          "/" + juce::String(total) + ")";
+    if (done > 0 && total > done) {
+        const auto elapsed = std::chrono::steady_clock::now() - startedAt;
+        status += " - ETA " + formatEta((elapsed / done) * (total - done));
+    }
+    return status;
+}
+
+juce::String formatTempoSummary(const magda::media::MediaDbIndexer::TempoStats& stats) {
+    juce::String summary = juce::String("Tempo: ") + juce::String(stats.measured) + " measured, " +
+                           juce::String(stats.silent) + " unclear";
+    if (stats.failed > 0) {
+        summary += ", " + juce::String(stats.failed) + " failed";
+    }
+    return summary;
+}
+
 juce::String prettyBpm(std::optional<double> bpm) {
     if (!bpm) {
         return "-";
@@ -1892,6 +1913,21 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             const auto decodeStats =
                 indexer.indexFileIds(ids, magda::media::MediaDbIndexer::Mode::ForceAll);
 
+            magda::media::MediaDbIndexer::TempoStats tempoStats;
+            if (!(cancelToken && cancelToken->load())) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                tempoStats = indexer.measureTempoForFileIds(ids);
+            }
+
             magda::media::MediaDbIndexer::EmbeddingStats tagStats;
             if (encoder != nullptr && !(cancelToken && cancelToken->load())) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
@@ -1911,6 +1947,8 @@ void MediaDbBrowserContent::startAnalyzingFileIds(std::vector<std::int64_t> file
             }
 
             finalStatus = formatAnalysisSummary(decodeStats, tagStats);
+            if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0)
+                finalStatus += " | " + formatTempoSummary(tempoStats);
             if (cancelToken && cancelToken->load()) {
                 finalStatus = "Analysis stopped: " + finalStatus;
             }
@@ -2477,7 +2515,33 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 }
             });
 
-            if (encoder != nullptr && !cancelledAfterScan) {
+            // The beat model, before the CLAP pass and separate from it: a
+            // different download, and useful on its own. Both run after the
+            // walk rather than inside it so the library is browsable first and
+            // no scan worker is holding a model's working set (#2674).
+            if (!cancelledAfterScan) {
+                const auto tempoStartedAt = std::chrono::steady_clock::now();
+                indexer.setProgress([self, tempoStartedAt](int done, int total,
+                                                           const std::filesystem::path& current) {
+                    const auto status = formatTempoProgress(done, total, current, tempoStartedAt);
+                    juce::MessageManager::callAsync([self, status]() {
+                        if (self != nullptr && self->onIndexingStatus) {
+                            self->onIndexingStatus(status);
+                        }
+                    });
+                });
+                const auto tempoStats = indexer.measureMissingTempo(path);
+                if (tempoStats.measured + tempoStats.silent + tempoStats.failed > 0) {
+                    const auto tempoStatus = formatTempoSummary(tempoStats);
+                    const bool stopped = cancelToken && cancelToken->load();
+                    finalStatus =
+                        scanStatus + (stopped ? " | Tempo stopped: " : " | ") + tempoStatus;
+                    juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + tempoStatus);
+                }
+            }
+
+            const bool cancelledAfterTempo = cancelToken && cancelToken->load();
+            if (encoder != nullptr && !cancelledAfterTempo) {
                 const auto analysisStartedAt = std::chrono::steady_clock::now();
                 indexer.setProgress([self, analysisStartedAt](
                                         int done, int total, const std::filesystem::path& current) {
@@ -2495,10 +2559,10 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                 const auto analysisStatus = formatAnalysisSummary(tagStats);
                 const bool cancelledAfterAnalysis = cancelToken && cancelToken->load();
                 finalStatus = cancelledAfterAnalysis
-                                  ? scanStatus + " | Analysis stopped: " + analysisStatus
-                                  : scanStatus + " | " + analysisStatus;
+                                  ? finalStatus + " | Analysis stopped: " + analysisStatus
+                                  : finalStatus + " | " + analysisStatus;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + analysisStatus);
-            } else if (!cancelledAfterScan) {
+            } else if (encoder == nullptr && !cancelledAfterTempo) {
                 // Encoder unavailable — most common reason is the Sample
                 // Tagger bundle isn't installed (or failed to load). Without
                 // this branch the user just sees the scan summary and has
@@ -2510,7 +2574,7 @@ void MediaDbBrowserContent::runIndexing(const juce::File& dir,
                         : juce::String(juce::String::fromUTF8(
                               "Sample Tagger not installed — skipping audio analysis. Install it "
                               "in AI Settings to enable semantic search."));
-                finalStatus = scanStatus + " | " + skipReason;
+                finalStatus = finalStatus + " | " + skipReason;
                 juce::Logger::writeToLog(juce::String("[MediaDbIndexer] ") + skipReason);
             }
 

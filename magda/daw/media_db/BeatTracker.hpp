@@ -36,6 +36,11 @@ struct BeatTrack {
     double steadiness = 0.0;
 };
 
+/// Below this the beats are too ragged to call a tempo. Measured over a library
+/// of loops named with one, 0.8 answers for half of them and is right 96% of the
+/// time allowing an octave (#2674).
+inline constexpr double kMinBeatSteadiness = 0.8;
+
 class BeatTracker {
   public:
     /// Throws if the model is missing or will not load.

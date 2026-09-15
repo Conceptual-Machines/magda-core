@@ -378,3 +378,38 @@ TEST_CASE("indexer: a .mid carrying CHORD markers indexes as kind='progression'"
     REQUIRE(std::string(reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1))) == "mid");
     sqlite3_finalize(stmt);
 }
+
+// The learned BPM tier runs after the walk, not inside it (#2674). What it
+// looks at is what the cheap tiers left blank, which is what keeps it off the
+// 2000 one-shots and 3000 named files of a real library.
+TEST_CASE("indexer: the tempo pass only considers audio with no tempo yet",
+          "[media_db][indexer][tempo]") {
+    TempDir dir;
+    writeMonoWav(dir.path() / "MTVR_riff_128bpm.wav", 3.0, 220.0);  // named, answered already
+    writeMonoWav(dir.path() / "MTVR_kick_shot.wav", 3.0, 80.0);     // one-shot, never gets one
+    writeMonoWav(dir.path() / "MTVR_riff_loop.wav", 3.0, 330.0);    // the one file left to measure
+
+    MediaDatabase db(":memory:");
+    MediaDbIndexer indexer(db, nullptr);
+    REQUIRE(indexer.indexDirectory(dir.path()).inserted == 3);
+
+    const auto stats = indexer.measureMissingTempo(dir.path());
+    // One file was pending. Which counter it landed in depends on whether this
+    // machine has the model installed -- skipped without it, silent with it,
+    // since a sine has no beats -- but nothing else may be looked at at all.
+    REQUIRE(stats.measured + stats.silent + stats.skipped + stats.failed == 1);
+    REQUIRE(stats.measured == 0);
+
+    sqlite3_stmt* stmt = nullptr;
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT bpm FROM media_file WHERE path LIKE '%shot%'",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_type(stmt, 0) == SQLITE_NULL);
+    sqlite3_finalize(stmt);
+
+    REQUIRE(sqlite3_prepare_v2(db.handle(), "SELECT bpm FROM media_file WHERE path LIKE '%128bpm%'",
+                               -1, &stmt, nullptr) == SQLITE_OK);
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    REQUIRE(sqlite3_column_double(stmt, 0) == 128.0);
+    sqlite3_finalize(stmt);
+}

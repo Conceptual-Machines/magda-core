@@ -191,3 +191,18 @@ TEST_CASE("AudioFeatures: click train reports finite spectral stats and transien
 TEST_CASE("AudioFeatures returns nullopt for missing file", "[media_db][audio_features]") {
     REQUIRE_FALSE(magda::media::extractFeatures("/no/such/file.wav").has_value());
 }
+
+// The tier order a clip runs outside a scan: name, then metadata, then DSP (#2674).
+TEST_CASE("AudioFeatures: detectTempo answers from the name before reading, and nothing for a sine",
+          "[media_db][audio_features]") {
+    TempDir dir;
+    constexpr int kSr = 44100;
+
+    auto named = dir.path() / "riff_128bpm.wav";
+    writeMonoWav(named, generateSine(440.0, 2.0, kSr, 0.3F), kSr);
+    REQUIRE(magda::media::detectTempo(named, nullptr) == 128.0);
+
+    auto pad = dir.path() / "pad.wav";
+    writeMonoWav(pad, generateSine(220.0, 3.0, kSr, 0.3F), kSr);
+    REQUIRE_FALSE(magda::media::detectTempo(pad, nullptr).has_value());
+}

@@ -14,6 +14,10 @@
 // The cheap tiers run first, but nothing is saved by it: the DSP pass runs for
 // every file anyway for the spectral statistics the indexer derives shape from,
 // and the tempo tier reads the flux envelope that pass already built.
+//
+// The beat model is not one of these tiers: too expensive to run per file
+// during a scan, so MediaDbIndexer::measureMissingTempo runs it afterwards and
+// the autocorrelation above only answers where it cannot (#2674).
 
 #pragma once
 
@@ -54,5 +58,12 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path);
 // nullopt when the file cannot be read or nothing periodic explains it.
 struct TempoEstimate;
 std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path);
+
+// Every tier for one file, in order: name, metadata, then the beat model when
+// `tracker` is given, else the autocorrelation at its confidence gate. What a
+// clip asks for on its own, outside a scan (#2674). nullopt when nothing
+// answered. Safe on a background thread; `tracker` must not be shared with one.
+class BeatTracker;
+std::optional<double> detectTempo(const std::filesystem::path& path, const BeatTracker* tracker);
 
 }  // namespace magda::media

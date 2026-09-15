@@ -8,6 +8,9 @@
 //   policy rules (one-shot has no BPM, drum/fx has no key) ->
 //   write media_file + media_tag + media_fts row.
 //
+// Both model passes run after that walk, not inside it: measureMissingTempo
+// for the files no cheap tier gave a tempo, then embedMissingAudio.
+//
 // The encoder is intentionally nullable — when "AI Audio Pack" isn't
 // installed we still index path tags, features, and FTS keyword search. The
 // slower semantic embedding pass runs separately after the scan and
@@ -42,6 +45,12 @@ class MediaDbIndexer {
         int embedded = 0;  // embedding row written
         int skipped = 0;   // no encoder or no missing rows
         int failed = 0;    // decode/inference/write failed
+    };
+    struct TempoStats {
+        int measured = 0;  // the model called a tempo and it was written
+        int silent = 0;    // no beats steady enough to call one
+        int skipped = 0;   // needed a tempo, but there is no model to run
+        int failed = 0;    // decode / inference / write failed
     };
     struct ScanTagOptions {
         std::vector<std::string> customTags;
@@ -127,6 +136,16 @@ class MediaDbIndexer {
     // work finishes.
     EmbeddingStats embedMissingAudio(const std::filesystem::path& root = {});
     EmbeddingStats embedAudioFileIds(const std::vector<std::int64_t>& fileIds);
+
+    // Measure a tempo for indexed audio under `root` that no cheaper tier
+    // answered for. Separate from indexDirectory for the same reason the
+    // embedding pass is, and more so: the beat model reads a whole file at
+    // once, so one inference costs about half a second and most of a gigabyte.
+    // Run from the scan's workers that multiplied into a machine with no
+    // memory left, which is why this pass takes one file at a time (#2674).
+    // Does nothing when the model isn't installed.
+    TempoStats measureMissingTempo(const std::filesystem::path& root = {});
+    TempoStats measureTempoForFileIds(const std::vector<std::int64_t>& fileIds);
 
   private:
     MediaDatabase& db_;

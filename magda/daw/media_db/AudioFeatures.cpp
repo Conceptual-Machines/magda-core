@@ -145,34 +145,11 @@ std::optional<double> metadataBpm(const juce::StringPairArray& meta) {
 }
 
 // A tempo nothing is sure of is worse than none: the seeding rule fills gaps,
-// so a guess becomes a clip's interpretation and stays there. Both figures come
-// from measuring against a library of loops whose tempo is in their filenames.
-//
-// The beat tracker at 0.8 answers for half of that library and is right 96% of
-// the time allowing an octave. The autocorrelation behind it reaches 62% at
-// best, so it only speaks when the model is not installed (#2674).
-constexpr double kMinBeatSteadiness = 0.8;
+// so a guess becomes a clip's interpretation and stays there. Measured against
+// a library of loops whose tempo is in their filenames, the autocorrelation
+// reaches 62% allowing an octave against the beat tracker's 96%, so it only
+// speaks where there is no model to run the tracker later (#2674).
 constexpr double kMinTempoConfidence = 0.6;
-
-/// The learned tier. Nothing when the model was never downloaded, when it
-/// cannot read the file, or when the beats it found are not steady enough to
-/// call a tempo.
-std::optional<double> trackedBpm(const juce::AudioBuffer<float>& mono, int sampleRate) {
-    if (!BeatTracker::isAvailable()) {
-        return std::nullopt;
-    }
-    try {
-        static const BeatTracker tracker(BeatTracker::defaultModelPath());
-        const auto tracked =
-            tracker.track(mono.getReadPointer(0), mono.getNumSamples(), sampleRate);
-        if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
-            return tracked->bpm;
-        }
-    } catch (const std::exception&) {
-        // A model that will not load is a tier that does not answer.
-    }
-    return std::nullopt;
-}
 
 // ---- Spectral stats ----------------------------------------------------
 
@@ -408,18 +385,22 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     }
 
     // --- BPM: filename > metadata > measured ---
-    // The measured tier reads the flux envelope the pass above already built,
-    // so a file pays one FFT for its statistics, its key and its tempo.
+    // The learned tier is not one of these: half a second and most of a
+    // gigabyte a file, which the scan's workers multiply until the machine has
+    // no memory left, so it runs after the scan in
+    // MediaDbIndexer::measureMissingTempo (#2674). An empty field is what sends
+    // that pass a file, so the autocorrelation -- free, since it reads the flux
+    // the pass above already built -- only fills one where no model will.
     if (auto p = parseBpmFromPath(path)) {
         f.bpm = p;
     } else if (auto m = metadataBpm(decoded->metadata)) {
         f.bpm = m;
-    } else if (auto tracked = trackedBpm(decoded->mono, decoded->sampleRate)) {
-        f.bpm = tracked;
-    } else if (auto measured = estimateTempo(
-                   analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
-               measured && measured->confidence >= kMinTempoConfidence) {
-        f.bpm = measured->bpm;
+    } else if (!BeatTracker::isAvailable()) {
+        if (auto measured = estimateTempo(
+                analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
+            measured && measured->confidence >= kMinTempoConfidence) {
+            f.bpm = measured->bpm;
+        }
     }
 
     // --- Always-DSP spectral stats ---
@@ -440,6 +421,35 @@ std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path) {
     const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
     return estimateTempo(analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate,
                          durationS);
+}
+
+std::optional<double> detectTempo(const std::filesystem::path& path, const BeatTracker* tracker) {
+    if (auto p = parseBpmFromPath(path)) {
+        return p;
+    }
+    auto decoded = decodeFile(path);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    if (auto m = metadataBpm(decoded->metadata)) {
+        return m;
+    }
+    if (tracker != nullptr) {
+        const auto tracked = tracker->track(decoded->mono.getReadPointer(0),
+                                            decoded->mono.getNumSamples(), decoded->sampleRate);
+        if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
+            return tracked->bpm;
+        }
+        return std::nullopt;
+    }
+    const auto analysis = computeSpectralAnalysis(decoded->mono, decoded->sampleRate, false);
+    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
+    if (auto measured = estimateTempo(
+            analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, durationS);
+        measured && measured->confidence >= kMinTempoConfidence) {
+        return measured->bpm;
+    }
+    return std::nullopt;
 }
 
 }  // namespace magda::media
