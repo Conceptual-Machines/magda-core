@@ -503,6 +503,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES NullDiffNativeLeg.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_compare.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_corpus.cpp)
+    list(APPEND TEST_SOURCES engine/test_launch_first_hit_probe.cpp)
     list(APPEND TEST_SOURCES engine/test_null_diff_native_leg.cpp)
 
     # The .mgd fixture rig (#2173): a real project turned into a case. Model
