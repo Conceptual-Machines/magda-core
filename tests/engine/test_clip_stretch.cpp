@@ -1217,6 +1217,59 @@ TEST_CASE("A stretcher is the same DSP whatever block size it was built for",
     }
 }
 
+TEST_CASE("Signalsmith below half speed renders one timeline the same every time",
+          "[engine][clip][stretch][2700]") {
+    // Signalsmith randomises bin phases past a 2x stretch; a render must not depend on the seed.
+    constexpr auto kCell = magda::engine::kStretchCellSamples;
+    constexpr auto kCells = 120;
+    constexpr auto kRate = 0.3;
+    const auto readPerCell = static_cast<int>(std::llround(kCell * kRate));
+
+    juce::AudioBuffer<float> material(2, kCells * readPerCell);
+    for (auto channel = 0; channel < 2; ++channel)
+        for (auto sample = 0; sample < material.getNumSamples(); ++sample)
+            material.setSample(
+                channel, sample,
+                static_cast<float>(0.4 * std::sin(2.0 * juce::MathConstants<double>::pi * 330.0 *
+                                                  sample / 44100.0)));
+
+    StretchSetup setup;
+    setup.mode = mode::kSignalsmith;
+    setup.nominalRate = kRate;
+
+    const auto render = [&](magda::engine::ClipStretcher& stretcher) {
+        juce::AudioBuffer<float> rendered(2, kCells * kCell);
+        stretcher.reset();
+        for (auto cell = 0; cell < kCells; ++cell) {
+            juce::dsp::AudioBlock<const float> input(material);
+            juce::dsp::AudioBlock<float> output(rendered);
+            stretcher.process(input.getSubBlock(static_cast<std::size_t>(cell * readPerCell),
+                                                static_cast<std::size_t>(readPerCell)),
+                              0.0, kRate,
+                              output.getSubBlock(static_cast<std::size_t>(cell * kCell),
+                                                 static_cast<std::size_t>(kCell)));
+        }
+        return rendered;
+    };
+
+    auto first = magda::engine::makeStretcher(setup);
+    auto second = magda::engine::makeStretcher(setup);
+    REQUIRE(first != nullptr);
+
+    const auto reference = render(*first);
+    REQUIRE(reference.getMagnitude(0, reference.getNumSamples()) > 0.001f);
+
+    for (const auto* other : {&second, &first}) {
+        const auto again = render(**other);
+        auto worst = 0.0f;
+        for (auto channel = 0; channel < 2; ++channel)
+            for (auto sample = 0; sample < reference.getNumSamples(); ++sample)
+                worst = std::max(worst, std::abs(again.getSample(channel, sample) -
+                                                 reference.getSample(channel, sample)));
+        CHECK(worst == 0.0f);
+    }
+}
+
 TEST_CASE("Nothing a stretcher pushes is derived from the block size", "[engine][clip][stretch]") {
     // The invariant behind the test above, asserted as arithmetic rather than
     // as audio (#2078).

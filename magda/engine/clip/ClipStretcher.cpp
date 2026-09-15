@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
+#include <utility>
 #include <vector>
 
 #include "core/TimeStretchModes.hpp"
@@ -55,6 +57,49 @@ int samplesOf(juce::dsp::AudioBlock<const float> block) {
 constexpr double kPreRollHeadroom = 1.25;
 
 /**
+ * @brief The generator Signalsmith draws bin phases from below half speed.
+ *
+ * Its default seeds from std::random_device, so two renders of one timeline
+ * differ (#2700). The engine is a private member, so draws go through the
+ * generator the calling stretcher installs for the duration of each call.
+ */
+struct InstalledRandom {
+    using result_type = std::minstd_rand::result_type;
+
+    explicit InstalledRandom(long) {}
+
+    static constexpr result_type min() {
+        return std::minstd_rand::min();
+    }
+    static constexpr result_type max() {
+        return std::minstd_rand::max();
+    }
+
+    result_type operator()() {
+        jassert(installed != nullptr);
+        return installed != nullptr ? (*installed)() : min();
+    }
+
+    static inline thread_local std::minstd_rand* installed = nullptr;
+};
+
+/// Installs @p generator for Signalsmith calls made while this lives.
+class RandomScope {
+  public:
+    explicit RandomScope(std::minstd_rand& generator)
+        : previous_(std::exchange(InstalledRandom::installed, &generator)) {}
+    ~RandomScope() {
+        InstalledRandom::installed = previous_;
+    }
+
+    RandomScope(const RandomScope&) = delete;
+    RandomScope& operator=(const RandomScope&) = delete;
+
+  private:
+    std::minstd_rand* previous_;
+};
+
+/**
  * @brief Signalsmith Stretch, the default engine.
  *
  * A phase vocoder, so the ratio is whatever a call is handed: input samples in,
@@ -75,7 +120,7 @@ constexpr double kPreRollHeadroom = 1.25;
 class SignalsmithClipStretcher final : public ClipStretcher {
   public:
     explicit SignalsmithClipStretcher(const StretchSetup& setup)
-        : channels_(setup.numChannels), pointers_(setup.numChannels) {
+        : channels_(setup.numChannels), pointers_(setup.numChannels), stretch_(kRandomSeed) {
         // splitComputation: the FFT work is spread across calls rather than
         // landing in whichever block crosses a window boundary. This runs on the
         // audio thread, so the flat cost is the one that matters.
@@ -94,12 +139,14 @@ class SignalsmithClipStretcher final : public ClipStretcher {
 
     void reset() override {
         stretch_.reset();
+        random_.seed(kRandomSeed);
     }
 
     void prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
         const auto before = readPreRoll(stream, until, samples);
         const auto count = samplesOf(before);
 
+        random_.seed(kRandomSeed);
         if (count <= 0) {
             stretch_.reset();
             return;
@@ -107,6 +154,7 @@ class SignalsmithClipStretcher final : public ClipStretcher {
 
         // outputSeek resets on its way in, and infers the rate from how much it
         // was given, which is why preRollSamples above is the length to give it.
+        const RandomScope scope(random_);
         stretch_.outputSeek(pointers_.gather(before), count);
     }
 
@@ -124,13 +172,17 @@ class SignalsmithClipStretcher final : public ClipStretcher {
 
         const auto* const* sources = pointers_.gather(input);
         auto* const* destinations = pointers_.gather(output);
+        const RandomScope scope(random_);
         stretch_.process(sources, in, destinations, out);
     }
 
   private:
+    static constexpr long kRandomSeed = 2700;
+
     int channels_ = 2;
     ChannelPointers pointers_;
-    signalsmith::stretch::SignalsmithStretch<float> stretch_;
+    std::minstd_rand random_{kRandomSeed};
+    signalsmith::stretch::SignalsmithStretch<float, InstalledRandom> stretch_;
 };
 
 /**
@@ -567,7 +619,7 @@ juce::dsp::AudioBlock<const float> ClipStretcher::readPreRoll(PrefetchStream& st
     // Whatever the stream had. Short is the ordinary answer while a locate is
     // still being caught up with, and the silence in front of it primes as
     // silence, which is what it will sound like.
-    stream.read(until - count, region, count);
+    stream.read(until - count, region, count, ReadPurpose::priming);
 
     return region;
 }
