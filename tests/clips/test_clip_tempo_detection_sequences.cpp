@@ -214,6 +214,29 @@ TEST_CASE("A typed tempo completes a BEAT request made without one",
     REQUIRE(event->loopExtent == RegionExtent::Interpretation);
 }
 
+// The same whether BEAT or the tempo comes first: an untrimmed clip takes
+// its musical length on the way into beat mode.
+TEST_CASE("A typed tempo after a BEAT request sizes the clip as BEAT after the tempo would",
+          "[clip][tempo][sequence][detection]") {
+    DetectionFixture fx;
+    auto& clips = ClipManager::getInstance();
+    const double fileBeatsAtProject = kFileSeconds * kProjectBpm / 60.0;
+
+    const auto beatFirst = clips.createAudioClipBeats(1, 0.0, fileBeatsAtProject, fx.path,
+                                                      ClipView::Arrangement, kProjectBpm);
+    clips.setAutoTempo(beatFirst, true, kProjectBpm);
+    clips.setSourceTempo(beatFirst, 180.0);
+
+    const auto tempoFirst = clips.createAudioClipBeats(1, 32.0, fileBeatsAtProject, fx.path,
+                                                       ClipView::Arrangement, kProjectBpm);
+    clips.setSourceTempo(tempoFirst, 180.0);
+    clips.setAutoTempo(tempoFirst, true, kProjectBpm);
+
+    const double musicalBeats = kFileSeconds * 180.0 / 60.0;
+    REQUIRE(clips.getClip(tempoFirst)->placement.lengthBeats == Approx(musicalBeats).margin(0.01));
+    REQUIRE(clips.getClip(beatFirst)->placement.lengthBeats == Approx(musicalBeats).margin(0.01));
+}
+
 TEST_CASE("A detection answering for a file the clip no longer plays lands nowhere",
           "[clip][tempo][sequence][detection]") {
     DetectionFixture fx;

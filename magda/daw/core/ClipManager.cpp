@@ -1950,11 +1950,11 @@ bool ClipManager::saveClipToLibrary(ClipId clipId,
 
 /// A tempo landing on a clip that asked for beat mode grants it, and the
 /// transition (loop, speed, stretch engine) has to follow the grant.
-static void settleBeatMode(ClipInfo& clip, double projectBpm) {
+static void settleBeatMode(ClipInfo& clip, double projectBpm, bool wasInBeatMode) {
     auto* event = clip.primaryEvent();
     if (event == nullptr || !event->autoTempo)
         return;
-    ClipOperations::setPlaybackIntent(clip, event->playbackIntent, projectBpm);
+    ClipOperations::setPlaybackIntent(clip, event->playbackIntent, projectBpm, wasInBeatMode);
     if (event->timeStretchMode == time_stretch_mode::kDisabled)
         event->timeStretchMode = time_stretch_mode::kSignalsmith;
 }
@@ -1972,6 +1972,7 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
     }
 
     ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
 
     if (!event->adoptBpm(bpm, from)) {
         return;
@@ -1986,7 +1987,7 @@ void ClipManager::setSourceTempo(ClipId clipId, double bpm, Provenance from) {
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
-    settleBeatMode(*clip, currentProjectTempoOrDefault());
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
@@ -2003,6 +2004,7 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
     }
 
     ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
     const double fileSeconds = event->sourceDurationSeconds();
     const double impliedBpm = fileSeconds > 0.0 ? beats * 60.0 / fileSeconds : 0.0;
     if (fileSeconds > 0.0 && !isValidBpm(impliedBpm)) {
@@ -2022,7 +2024,7 @@ void ClipManager::setSourceBeatCount(ClipId clipId, double beats, Provenance fro
 
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
-    settleBeatMode(*clip, currentProjectTempoOrDefault());
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);
@@ -2043,6 +2045,7 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
     }
 
     ensureSourceDurationKnown(*event);
+    const bool wasInBeatMode = event->autoTempo;
 
     if (!event->adoptBpm(bpm, Provenance::Analysis)) {
         return;
@@ -2056,7 +2059,7 @@ void ClipManager::adoptAnalysis(ClipId clipId, const juce::String& sourcePath, d
     // A loop with a tempo is its beat count.
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();
-    settleBeatMode(*clip, currentProjectTempoOrDefault());
+    settleBeatMode(*clip, currentProjectTempoOrDefault(), wasInBeatMode);
 
     refreshDerivedSeconds(clipId, currentProjectTempoOrDefault());
     notifyClipPropertyChanged(clipId);

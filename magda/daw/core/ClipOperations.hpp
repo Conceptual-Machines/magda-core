@@ -771,14 +771,24 @@ class ClipOperations {
      *        when it can be granted (a tempo exists). Free leaves beat mode.
      */
     static inline void setPlaybackIntent(ClipInfo& clip, PlaybackIntent intent, double bpm) {
+        if (const auto* event = clip.primaryEvent())
+            setPlaybackIntent(clip, intent, bpm, event->autoTempo);
+    }
+
+    /**
+     * @brief The transition, told whether the clip was in beat mode before
+     *        the write that led here. A tempo adopted onto a pending request
+     *        resolves beat mode on before the transition runs, so the caller
+     *        has to say what it saw first.
+     */
+    static inline void setPlaybackIntent(ClipInfo& clip, PlaybackIntent intent, double bpm,
+                                         bool wasOn) {
         auto* event = clip.primaryEvent();
         if (event == nullptr)
             return;
         const bool enabled = intent != PlaybackIntent::Free;
-
         // Placement is calibrated once, on the way into beat mode; the rest of
         // the enable path is safe to repeat.
-        const bool wasOn = event->autoTempo;
 
         // The request is kept even when it cannot be granted yet, so a tempo
         // landing later honours it.
