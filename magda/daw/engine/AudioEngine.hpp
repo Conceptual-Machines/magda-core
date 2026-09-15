@@ -426,6 +426,20 @@ class AudioEngine : public AudioEngineListener {
     // state above. Message thread; each answers whether the window is showing
     // afterwards, which is what the slot draws.
 
+    /// Plugin programs and preset files belong to the instance that renders.
+    virtual std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath&) {
+        return std::nullopt;
+    }
+    virtual bool setPluginCurrentProgram(const ChainNodePath&, int) {
+        return false;
+    }
+    virtual bool loadPluginPresetFile(const ChainNodePath&, const juce::File&) {
+        return false;
+    }
+    virtual bool savePluginPresetFile(const ChainNodePath&, const juce::File&) {
+        return false;
+    }
+
     virtual bool showDeviceEditor(const ChainNodePath& devicePath) = 0;
     virtual bool hideDeviceEditor(const ChainNodePath& devicePath) = 0;
     virtual bool toggleDeviceEditor(const ChainNodePath& devicePath) = 0;

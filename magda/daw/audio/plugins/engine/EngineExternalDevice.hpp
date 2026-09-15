@@ -30,6 +30,9 @@
 
 namespace magda::daw::audio::engine_adapter {
 
+struct PresetRequest;
+struct PresetOutcome;
+
 /**
  * @brief One external plugin instance bound to one Device op.
  *
@@ -107,6 +110,9 @@ class EngineExternalDevice final : public magda::engine::EngineDevice {
 
     /// False for a plugin with no editor of its own.
     bool showEditor();
+
+    /// Control executor only; excludes rendering while accessing program/state data.
+    PresetOutcome pluginPreset(const PresetRequest& request);
 
     void hideEditor();
 

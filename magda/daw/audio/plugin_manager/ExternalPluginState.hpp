@@ -64,6 +64,12 @@
 
 namespace magda {
 
+/// The factory programs reported by the rendering plugin, in plugin index order.
+struct PluginPrograms {
+    juce::StringArray names;
+    int current = -1;
+};
+
 /**
  * @brief The plugin's parameters in the order a project's indices address them.
  *

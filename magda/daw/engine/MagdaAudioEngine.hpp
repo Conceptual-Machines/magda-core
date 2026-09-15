@@ -148,6 +148,11 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     void captureAllPluginStates() override;
     void capturePluginStateAt(const ChainNodePath& devicePath) override;
     void applyPluginStateAt(const ChainNodePath& devicePath) override;
+    std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath) override;
+    bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex) override;
+    bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;
+    bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& file) override;
+
     bool showDeviceEditor(const ChainNodePath& devicePath) override;
     bool hideDeviceEditor(const ChainNodePath& devicePath) override;
     bool toggleDeviceEditor(const ChainNodePath& devicePath) override;
