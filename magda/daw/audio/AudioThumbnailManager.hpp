@@ -83,12 +83,13 @@ class AudioThumbnailManager {
     static void drawMissingFilePlaceholder(juce::Graphics& g, const juce::Rectangle<int>& bounds);
 
     /**
-     * @brief Detect BPM of an audio file.
+     * @brief Work out the BPM of an audio file, blocking until it answers.
      *
-     * DSP detection is currently disabled because Tracktion/SoundTouch BPMDetect
-     * can crash inside its worker thread on some files.
+     * Goes through the media DB, which is where a tempo is worked out: the
+     * filename token, then the ACID chunk, then the DSP tier. Indexes the file
+     * on demand, so a file no scan has ever seen still answers (#2674).
      * @param filePath Absolute path to the audio file
-     * @return Cached/external BPM, or 0.0 when unknown.
+     * @return The BPM, or 0.0 when nothing can tell.
      */
     double detectBPM(const juce::String& filePath);
 
@@ -107,11 +108,13 @@ class AudioThumbnailManager {
     void cacheBPM(const juce::String& filePath, double bpm);
 
     /**
-     * @brief Request BPM detection.
+     * @brief Request a file's BPM, off the message thread.
      *
      * If the result is already cached, @p onComplete fires synchronously on the
-     * calling (message) thread. Otherwise this currently returns 0.0
-     * synchronously because DSP BPM fallback is disabled.
+     * calling thread. Otherwise the file is decoded and indexed on the
+     * background pool and @p onComplete fires on the message thread when it
+     * lands, with 0.0 when nothing can tell. Repeated requests for one file
+     * share the single pass in flight.
      *
      * Must be called from the message thread.
      */
@@ -178,9 +181,15 @@ class AudioThumbnailManager {
     // Create a new thumbnail for a file
     juce::AudioThumbnail* createThumbnail(const juce::String& audioFilePath);
 
-    // BPM detection cache (file path -> detected BPM).
+    // BPM detection cache (file path -> detected BPM). A cached 0.0 means
+    // "nothing could tell", which is an answer worth keeping: it is what stops
+    // a pad or a vocal take being re-analysed on every press.
     // Message-thread only — never touched from background detection threads.
     std::map<juce::String, double> bpmCache_;
+
+    // Detection passes in flight, with the callbacks waiting on each. Message
+    // thread only, like the cache it fills.
+    std::map<juce::String, std::vector<std::function<void(double)>>> pendingBpmDetections_;
 
     // Background thread pool for peak-cache compute jobs. Lazy-initialized on first use.
     // Single thread — disk I/O serializes

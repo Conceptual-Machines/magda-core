@@ -1,7 +1,13 @@
 #include "AudioThumbnailManager.hpp"
 
+#include <filesystem>
+
 #include "WaveformPeakCache.hpp"
 #include "core/BlockMath.hpp"
+#include "media_db/MediaDatabase.hpp"
+#include "media_db/MediaDbContext.hpp"
+#include "media_db/MediaDbIndexer.hpp"
+#include "media_db/MediaDbMetadata.hpp"
 
 // clang-format off
 #include <tracktion_engine/tracktion_engine.h>
@@ -169,10 +175,32 @@ void AudioThumbnailManager::drawWaveform(juce::Graphics& g, const juce::Rectangl
 namespace {
 // BPM DSP fallback is disabled. Tracktion/SoundTouch BPMDetect is crashing on
 // some files inside its worker thread; return unknown BPM instead of risking the app.
+// The media DB is where a tempo is worked out -- the filename token, then the
+// ACID chunk, then the DSP tier -- so this asks it rather than being a fourth
+// route to the same fact. An unscanned file has no row and so no tier ever ran
+// for it, hence the on-demand index (#2674).
+//
+// Blocking, and called from the background pool: it opens its own connection
+// rather than sharing the context's handle across threads.
 double runBpmDetection(const juce::String& filePath) {
-    juce::ignoreUnused(filePath);
-    constexpr double result = 0.0;
-    return result;
+    if (!juce::File(filePath).existsAsFile())
+        return 0.0;
+
+    const auto path = std::filesystem::path(filePath.toStdString());
+    try {
+        magda::media::MediaDatabase db(magda::media::MediaDbContext::dbPath());
+        if (!magda::media::isFileIndexed(db, path)) {
+            magda::media::MediaDbIndexer indexer(db, nullptr);
+            indexer.indexFile(path, magda::media::MediaDbIndexer::Mode::ForceAll);
+        }
+        if (const auto row = magda::media::getEffectiveMetadata(db, path);
+            row && row->bpm && *row->bpm > 0.0) {
+            return *row->bpm;
+        }
+    } catch (const std::exception&) {
+        // A library that will not open cannot answer. Neither can a one-shot.
+    }
+    return 0.0;
 }
 }  // namespace
 
@@ -211,10 +239,30 @@ void AudioThumbnailManager::requestBPMDetection(const juce::String& filePath,
         return;
     }
 
-    const double result = runBpmDetection(filePath);
-    bpmCache_[filePath] = result;
+    // Decoding and indexing a file is not message-thread work. One pass per
+    // file: a second press joins the first rather than queueing another.
+    auto [it, started] = pendingBpmDetections_.try_emplace(filePath);
     if (onComplete)
-        onComplete(result);
+        it->second.push_back(onComplete);
+    if (!started)
+        return;
+
+    getOrCreateBackgroundPool().addJob([filePath]() {
+        const double result = runBpmDetection(filePath);
+        juce::MessageManager::callAsync([filePath, result]() {
+            auto& self = AudioThumbnailManager::getInstance();
+            // Kept even at 0.0, so a file nothing can tell is analysed once.
+            self.bpmCache_[filePath] = result;
+
+            auto pending = self.pendingBpmDetections_.find(filePath);
+            if (pending == self.pendingBpmDetections_.end())
+                return;
+            auto callbacks = std::move(pending->second);
+            self.pendingBpmDetections_.erase(pending);
+            for (const auto& callback : callbacks)
+                callback(result);
+        });
+    });
 }
 
 const juce::Array<double>* AudioThumbnailManager::getCachedTransients(
@@ -480,6 +528,7 @@ void AudioThumbnailManager::clearCache() {
     readerLru_.clear();
     peakCaches_.clear();
     pendingPeakComputes_.clear();
+    pendingBpmDetections_.clear();
 }
 
 void AudioThumbnailManager::invalidateFile(const juce::String& audioFilePath) {
@@ -550,6 +599,7 @@ void AudioThumbnailManager::shutdown() {
         backgroundThreadPool_.reset();
     }
     pendingPeakComputes_.clear();
+    pendingBpmDetections_.clear();
     peakCaches_.clear();
 
     // Clear the cache first — this cancels any pending background thumbnail jobs
