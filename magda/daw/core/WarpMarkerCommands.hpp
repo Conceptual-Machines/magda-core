@@ -2,9 +2,10 @@
 
 #include <juce_core/juce_core.h>
 
+#include <optional>
 #include <vector>
 
-#include "ClipTypes.hpp"
+#include "ClipInfo.hpp"
 #include "UndoManager.hpp"
 
 namespace magda {
@@ -12,13 +13,9 @@ namespace magda {
 // Forward declare AudioBridge
 class AudioBridge;
 
-/**
- * @brief Warp marker info for state capture
- */
-struct WarpMarkerState {
-    double sourceTime;
-    double warpTime;
-};
+// Native marker reads include identity boundaries when the event has no authored map.
+// Both coordinates are seconds, including for clips trimmed into their source.
+std::vector<WarpMarker> getClipWarpMarkers(ClipId clipId);
 
 /**
  * @brief Command for adding a warp marker
@@ -39,6 +36,7 @@ class AddWarpMarkerCommand : public UndoableCommand {
     }
 
   private:
+    std::optional<std::vector<WarpMarker>> oldMarkers_;
     AudioBridge* bridge_;
     ClipId clipId_;
     double sourceTime_;
@@ -64,6 +62,7 @@ class MoveWarpMarkerCommand : public UndoableCommand {
     void mergeWith(const UndoableCommand* other) override;
 
   private:
+    std::optional<std::vector<WarpMarker>> oldMarkers_;
     AudioBridge* bridge_;
     ClipId clipId_;
     int index_;
@@ -87,6 +86,7 @@ class RemoveWarpMarkerCommand : public UndoableCommand {
     void undo() override;
 
   private:
+    std::optional<std::vector<WarpMarker>> oldMarkers_;
     AudioBridge* bridge_;
     ClipId clipId_;
     int index_;
