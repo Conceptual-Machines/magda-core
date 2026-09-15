@@ -1244,7 +1244,7 @@ void NodeComponent::chainNodeSelectionChanged(const magda::ChainNodePath& /*path
 }
 
 void NodeComponent::chainNodeReselected(const magda::ChainNodePath& /*path*/) {
-    // Not used - we handle collapse toggle directly in mouseUp
+    // Reselection has no layout side effects.
 }
 
 void NodeComponent::paramSelectionChanged(const magda::ParamSelection& /*selection*/) {}
@@ -1371,13 +1371,8 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
         return;
     }
 
-    // While a macro/mod is in link mode, clicks bouncing up from a non-link-
-    // target child (a tab strip, the device meter, the empty space between
-    // params) shouldn't change selection or toggle the device's collapsed
-    // state — that interrupts the linking gesture and visibly collapses the
-    // device the user is trying to link into. Bail out of the selection /
-    // collapse path; the actual link target widget (ParamSlot,
-    // LinkableTextSlider) consumes its own click separately.
+    // Background clicks must not interrupt an active linking gesture by changing
+    // selection. Link targets consume their own clicks separately.
     auto& linkMgr = magda::LinkModeManager::getInstance();
     if (linkMgr.getMacroInLinkMode().isValid() || linkMgr.getModInLinkMode().isValid()) {
         mouseDownForSelection_ = false;
@@ -1390,12 +1385,15 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
 
         // Check if mouse is still within bounds (not a drag-away)
         if (getLocalBounds().contains(e.getPosition())) {
+            // Collapse is an explicit double-click action on the node background.
+            // Forwarded child-control events and modified selection clicks must
+            // never change layout. Do not dispatch selection for this action.
+            if (selected_ && e.getNumberOfClicks() == 2 && e.eventComponent == this &&
+                !e.mods.isAnyModifierKeyDown()) {
+                setCollapsed(!collapsed_);
+                return;
+            }
             if (nodePath_.isValid()) {
-                // Capture state BEFORE calling selectChainNode
-                // (callbacks may change these values synchronously)
-                bool wasAlreadySelected = selected_;
-                bool wasCollapsed = collapsed_;
-
                 // selectChainNode fans out to every SelectionManagerListener —
                 // some listener paths can trigger rebuildNodeComponents, which
                 // would delete *this* while we're still inside mouseUp. Guard
@@ -1405,21 +1403,6 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                 const bool toggle = magda::isToggleSelectClick(e.mods) ||
                                     (e.mods.isCtrlDown() && !e.mods.isShiftDown());
                 const bool range = magda::isRangeSelectClick(e.mods);
-                // The header *background* is the collapse affordance, so a plain
-                // click there is a collapse gesture whether or not the node was
-                // already selected. Flag it across the selection dispatch:
-                // selecting a node normally auto-opens its macro panel, which
-                // on this click reads as "I asked to collapse and got macros".
-                //
-                // eventComponent must be this node. Header controls forward
-                // their events here via addMouseListener so a click on them also
-                // selects the device (the step sequencer's Export button, the
-                // drum pad's name label); those arrive with coordinates relative
-                // to the *child*, so a y of 0..buttonHeight would otherwise
-                // always land inside the header and fold the device away.
-                const bool headerClick = !toggle && !range && e.eventComponent == this &&
-                                         e.getPosition().y < getHeaderHeight();
-                collapseGestureActive_ = headerClick;
                 if (range)
                     rangeSelectFromAnchor();
                 else if (toggle)
@@ -1428,14 +1411,6 @@ void NodeComponent::mouseUp(const juce::MouseEvent& e) {
                     selection.selectChainNode(nodePath_);
                 if (safeThis == nullptr)
                     return;
-                collapseGestureActive_ = false;
-
-                // Header-bar click collapses/expands outright. Elsewhere on the
-                // node, only a collapsed one expands, and only once selected —
-                // so clicking into a device to work on it never folds it away.
-                if (headerClick || (!toggle && !range && wasAlreadySelected && wasCollapsed)) {
-                    setCollapsed(!wasCollapsed);
-                }
             }
 
             // Also call legacy callback for backward compatibility

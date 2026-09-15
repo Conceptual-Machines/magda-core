@@ -414,6 +414,44 @@ magda::EditStatus LocalDeviceControlPlane::editParameter(magda::engine::DeviceKe
     return magda::EditStatus::Closing;
 }
 
+bool LocalDeviceControlPlane::pluginPreset(magda::engine::DeviceKey key, PresetRequest request,
+                                           PresetCallback completed) {
+    if (!completed || executor() == nullptr)
+        return false;
+    return runAtBatchBoundary([devices = devices_, waiting = waiting_, key,
+                               request = std::move(request), completed](ExecutionState state) {
+        if (state == ExecutionState::Cancelled) {
+            completed({.failure = "the control plane closed before the preset request ran"});
+            return;
+        }
+        if (request.assignment &&
+            (request.assignment->key != key || !request.assignment->isStillWanted())) {
+            completed({.failure = "the plugin assignment changed before the preset request ran"});
+            return;
+        }
+        const auto registry = devices.lock();
+        const auto device = registry ? registry->find(key) : nullptr;
+        if (!device) {
+            completed({.failure = "no plugin is bound for " + describeKey(key)});
+            return;
+        }
+        if (request.action == PresetAction::SelectProgram ||
+            request.action == PresetAction::LoadFile) {
+            // Earlier parameter edits belong to the old patch.
+            device->discardParameterEdits();
+            settle(*waiting, devices, false);
+        } else if (request.action == PresetAction::SaveFile) {
+            if (!device->fenceParameterEdits()) {
+                completed(
+                    {.failure = "pending edits could not be applied before saving the preset"});
+                return;
+            }
+            settle(*waiting, devices, false);
+        }
+        completed(device->pluginPreset(request));
+    });
+}
+
 bool LocalDeviceControlPlane::editorWindow(magda::engine::DeviceKey key, EditorAction action,
                                            EditorCallback completed) {
     if (!completed || executor() == nullptr)

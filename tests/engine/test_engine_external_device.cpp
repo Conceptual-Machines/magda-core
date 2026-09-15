@@ -4,6 +4,7 @@
 #include <atomic>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -313,18 +314,29 @@ class StubPlugin final : public juce::AudioPluginInstance {
     }
 
     int getNumPrograms() override {
-        return 1;
+        return programNames.size();
     }
-
     int getCurrentProgram() override {
-        return 0;
+        return selectedProgram;
     }
-
-    void setCurrentProgram(int) override {}
-
-    const juce::String getProgramName(int) override {
-        return {};
+    void setCurrentProgram(int index) override {
+        if (throwsSelectingProgram)
+            throw std::runtime_error("program failed");
+        if (whileSelectingProgram)
+            whileSelectingProgram();
+        selectedProgram = index;
+        if (programNames.size() > 1) {
+            tone->setValue(index == 0 ? 0.2f : 0.8f);
+            fixed->setValue(index == 0 ? 0.25f : 0.75f);
+        }
     }
+    const juce::String getProgramName(int index) override {
+        return programNames[index];
+    }
+    juce::StringArray programNames{juce::String{}};
+    int selectedProgram = 0;
+    bool throwsSelectingProgram = false;
+    std::function<void()> whileSelectingProgram;
 
     void changeProgramName(int, const juce::String&) override {}
 
@@ -4581,4 +4593,161 @@ TEST_CASE("An external device is not reported as one no catalog could build",
     // executor renders as a pass-through.
     CHECK(factory.createDevice(keyFor(externalDevice())) == nullptr);
     CHECK(factory.unbuilt().empty());
+}
+
+namespace {
+adapter::PresetOutcome presetRequest(adapter::DeviceControlPlane& plane,
+                                     magda::engine::DeviceKey key, adapter::PresetRequest request) {
+    std::promise<adapter::PresetOutcome> answer;
+    auto future = answer.get_future();
+    REQUIRE(plane.pluginPreset(key, std::move(request), [&](adapter::PresetOutcome outcome) {
+        answer.set_value(std::move(outcome));
+    }));
+    return future.get();
+}
+}  // namespace
+
+TEST_CASE("Native factory programs return the selected patch for project saving",
+          "[engine][external][control][2582]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->programNames = {"Soft", "Bright"};
+    auto model = externalDevice();
+    auto adapted = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    auto external = ownedExternalDevice(adapted);
+    REQUIRE(external);
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+
+    const auto listed = presetRequest(plane, key, {.action = adapter::PresetAction::Programs});
+    REQUIRE(listed.ok());
+    REQUIRE(listed.programs);
+    CHECK(listed.programs->names == juce::StringArray{"Soft", "Bright"});
+    CHECK(listed.programs->current == 0);
+
+    const auto renderingExcluded = [raw] {
+        return std::async(std::launch::async,
+                          [raw] {
+                              if (!raw->getCallbackLock().tryEnter())
+                                  return true;
+                              raw->getCallbackLock().exit();
+                              return false;
+                          })
+            .get();
+    };
+    bool excludedDuringChange = false;
+    bool excludedDuringCapture = false;
+    raw->whileSelectingProgram = [&] { excludedDuringChange = renderingExcluded(); };
+    raw->whileDescribingItself = [&] { excludedDuringCapture = renderingExcluded(); };
+    const auto selected = presetRequest(
+        plane, key, {.action = adapter::PresetAction::SelectProgram, .programIndex = 1});
+    CHECK(excludedDuringChange);
+    CHECK(excludedDuringCapture);
+    raw->whileSelectingProgram = {};
+    raw->whileDescribingItself = {};
+    REQUIRE(selected.ok());
+    REQUIRE(selected.snapshot);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.8f));
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.75f));
+    CHECK(
+        presetRequest(plane, key, {.action = adapter::PresetAction::Programs}).programs->current ==
+        1);
+
+    adapter::PluginAssignments assignments;
+    assignments.ensureAssignment(key);
+    REQUIRE(
+        adapter::commitCapturedState(assignments.request(key), *selected.snapshot,
+                                     [&](auto asked) { return asked == key ? &model : nullptr; }));
+    REQUIRE(model.pluginState.isNotEmpty());
+    StubPlugin reloaded;
+    REQUIRE(magda::applySavedPluginState(reloaded, model) != magda::SavedStateOutcome::Failed);
+    CHECK(reloaded.tone->getValue() == Catch::Approx(0.8f));
+    CHECK(reloaded.fixed->getValue() == Catch::Approx(0.75f));
+
+    CHECK_FALSE(presetRequest(plane, key,
+                              {.action = adapter::PresetAction::SelectProgram, .programIndex = 3})
+                    .ok());
+    CHECK(raw->selectedProgram == 1);
+    raw->throwsSelectingProgram = true;
+    auto failed = presetRequest(
+        plane, key, {.action = adapter::PresetAction::SelectProgram, .programIndex = 0});
+    CHECK_FALSE(failed.ok());
+    CHECK_FALSE(failed.snapshot);
+}
+
+TEST_CASE("Native preset files round trip and return the loaded state",
+          "[engine][external][control][2582]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->isVst3 = true;
+    auto model = externalDevice();
+    auto adapted = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    auto external = ownedExternalDevice(adapted);
+    REQUIRE(external);
+    const magda::engine::DeviceKey key{magda::ChainSegment::PostFx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+    const auto extension = GENERATE(".vstpreset", ".aupreset");
+    juce::TemporaryFile file(extension);
+    raw->tone->setValue(0.65f);
+    raw->fixed->setValue(0.35f);
+    REQUIRE(presetRequest(plane, key,
+                          {.action = adapter::PresetAction::SaveFile, .file = file.getFile()})
+                .ok());
+    REQUIRE(file.getFile().getSize() > 0);
+    raw->tone->setValue(0.1f);
+    raw->fixed->setValue(0.9f);
+    const auto loaded = presetRequest(
+        plane, key, {.action = adapter::PresetAction::LoadFile, .file = file.getFile()});
+    REQUIRE(loaded.ok());
+    REQUIRE(loaded.snapshot);
+    CHECK(raw->tone->getValue() == Catch::Approx(0.65f));
+    CHECK(raw->fixed->getValue() == Catch::Approx(0.35f));
+    magda::applyCapturedPluginState(model, *loaded.snapshot);
+    StubPlugin reloaded;
+    REQUIRE(magda::applySavedPluginState(reloaded, model) != magda::SavedStateOutcome::Failed);
+    CHECK(reloaded.tone->getValue() == Catch::Approx(0.65f));
+    CHECK(reloaded.fixed->getValue() == Catch::Approx(0.35f));
+
+    CHECK_FALSE(presetRequest(plane, {magda::ChainSegment::Fx, model.id},
+                              {.action = adapter::PresetAction::Programs})
+                    .ok());
+    juce::TemporaryFile missing(".vstpreset");
+    CHECK_FALSE(
+        presetRequest(plane, key,
+                      {.action = adapter::PresetAction::LoadFile, .file = missing.getFile()})
+            .ok());
+    if (juce::String(extension) == ".vstpreset") {
+        raw->acceptsPreset = false;
+        const auto refused = presetRequest(
+            plane, key, {.action = adapter::PresetAction::LoadFile, .file = file.getFile()});
+        CHECK_FALSE(refused.ok());
+        CHECK_FALSE(refused.snapshot);
+    }
+}
+
+TEST_CASE("A preset request cannot change a replacement plugin assignment",
+          "[engine][external][control][2582]") {
+    auto plugin = std::make_unique<StubPlugin>();
+    auto* raw = plugin.get();
+    raw->programNames = {"Soft", "Bright"};
+    auto model = externalDevice();
+    auto adapted = adapter::adaptExternalPluginInstance(std::move(plugin), model);
+    auto external = ownedExternalDevice(adapted);
+    const magda::engine::DeviceKey key{magda::ChainSegment::Fx, model.id};
+    const auto registry = std::make_shared<const OneDeviceRegistry>(key, external);
+    adapter::LocalDeviceControlPlane plane(std::make_shared<adapter::SerialControlThread>(),
+                                           registry);
+    adapter::PluginAssignments assignments;
+    assignments.ensureAssignment(key);
+    auto old = assignments.request(key);
+    assignments.replaceAssignment(key);
+    const auto result = presetRequest(
+        plane, key,
+        {.action = adapter::PresetAction::SelectProgram, .programIndex = 1, .assignment = old});
+    CHECK_FALSE(result.ok());
+    CHECK(raw->selectedProgram == 0);
 }

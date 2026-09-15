@@ -1263,6 +1263,32 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         control_->drain();
     }
 
+    // Message-thread menu operations. Drain before returning to the caller;
+    // commit the resulting patch only onto the assignment that requested it.
+    adapter::PresetOutcome pluginPreset(const ChainNodePath& path,
+                                        adapter::PresetRequest operation) {
+        const auto key = keyOfDeviceAt(path);
+        if (!key || !factory_.isExternalKey(*key))
+            return {.failure = "no hosted plugin at this path"};
+        operation.assignment = loader_.request(*key);
+        const auto assignment = *operation.assignment;
+        adapter::PresetOutcome result{.failure = "the control plane rejected the preset request"};
+        if (plane_.pluginPreset(*key, std::move(operation), [&](adapter::PresetOutcome outcome) {
+                if (outcome.ok() && outcome.snapshot) {
+                    if (!adapter::commitCapturedState(assignment, *outcome.snapshot, modelDeviceAt))
+                        outcome.failure =
+                            "the plugin assignment changed before its state was captured";
+                    else
+                        TrackManager::getInstance().notifyDevicePropertyChanged(path);
+                }
+                result = std::move(outcome);
+            }))
+            control_->drain();
+        if (!result.ok())
+            juce::Logger::writeToLog("[engine] preset: " + result.failure);
+        return result;
+    }
+
     /**
      * @brief The editor of the device at @p devicePath, and what it is now (#2580).
      *
@@ -1715,6 +1741,24 @@ void EngineHost::captureExternalPluginStateAt(const ChainNodePath& devicePath) {
 
 void EngineHost::applyExternalPluginStateAt(const ChainNodePath& devicePath) {
     impl_->applyExternalPluginStateAt(devicePath);
+}
+
+std::optional<PluginPrograms> EngineHost::getPluginPrograms(const ChainNodePath& path) {
+    return impl_->pluginPreset(path, {.action = adapter::PresetAction::Programs}).programs;
+}
+bool EngineHost::setPluginCurrentProgram(const ChainNodePath& path, int index) {
+    return impl_
+        ->pluginPreset(path,
+                       {.action = adapter::PresetAction::SelectProgram, .programIndex = index})
+        .ok();
+}
+bool EngineHost::loadPluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return impl_->pluginPreset(path, {.action = adapter::PresetAction::LoadFile, .file = file})
+        .ok();
+}
+bool EngineHost::savePluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return impl_->pluginPreset(path, {.action = adapter::PresetAction::SaveFile, .file = file})
+        .ok();
 }
 
 bool EngineHost::showDeviceEditor(const ChainNodePath& devicePath) {

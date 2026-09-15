@@ -134,6 +134,23 @@ enum class EditorAction {
     Query,
 };
 
+/// Programs and portable preset files, serialized with other state operations.
+enum class PresetAction { Programs, SelectProgram, LoadFile, SaveFile };
+struct PresetRequest {
+    PresetAction action = PresetAction::Programs;
+    int programIndex = -1;
+    juce::File file;
+    std::optional<AssignmentRequest> assignment;
+};
+struct PresetOutcome {
+    std::optional<magda::PluginPrograms> programs;
+    std::optional<magda::ExternalPluginSnapshot> snapshot;
+    juce::String failure;
+    bool ok() const {
+        return failure.isEmpty();
+    }
+};
+
 /**
  * @brief Where a host asks a device for anything that is not a block.
  *
@@ -177,6 +194,11 @@ class DeviceControlPlane {
      * there when it runs, or held weakly and checked.
      */
     virtual bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) = 0;
+
+    using PresetCallback = std::function<void(PresetOutcome)>;
+    /// Mutations return the resulting snapshot; saving a file fences preceding edits.
+    virtual bool pluginPreset(magda::engine::DeviceKey key, PresetRequest request,
+                              PresetCallback completed) = 0;
 
     /**
      * @brief Write @p saved into the plugin at @p key, then read the plugin back.
@@ -293,6 +315,8 @@ class LocalDeviceControlPlane final : public DeviceControlPlane {
                             std::weak_ptr<const DeviceRegistry> devices);
 
     bool captureState(magda::engine::DeviceKey key, CaptureCallback completed) override;
+    bool pluginPreset(magda::engine::DeviceKey key, PresetRequest request,
+                      PresetCallback completed) override;
     bool applyState(magda::engine::DeviceKey key, magda::DeviceInfo saved,
                     CaptureCallback completed) override;
     bool editorWindow(magda::engine::DeviceKey key, EditorAction action,

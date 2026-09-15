@@ -11,6 +11,7 @@
 #include <limits>
 #include <utility>
 
+#include "DeviceControl.hpp"
 #include "core/ParameterUtils.hpp"
 #include "plugin_manager/ExternalPluginState.hpp"
 
@@ -865,6 +866,74 @@ void EngineExternalDevice::process(magda::engine::DeviceBlock& block) {
     awaitingBlock_.store(false, std::memory_order_release);
     if (editsApplied)
         edits_->wakeHost();
+}
+
+PresetOutcome EngineExternalDevice::pluginPreset(const PresetRequest& request) {
+    juce::MemoryBlock fileData;
+    const auto extension = request.file.getFileExtension().toLowerCase();
+    if (request.action == PresetAction::LoadFile || request.action == PresetAction::SaveFile) {
+        if (extension != ".vstpreset" && extension != ".aupreset")
+            return {.failure = "unsupported preset file extension"};
+        if (request.action == PresetAction::LoadFile &&
+            (!request.file.loadFileAsData(fileData) || fileData.getSize() == 0 ||
+             fileData.getSize() > static_cast<size_t>(std::numeric_limits<int>::max())))
+            return {.failure = "could not read the preset file"};
+    }
+
+    // process() takes this lock with tryEnter, so audio skips the plugin while
+    // control owns it. Capture stays inside the same lock as the patch change.
+    try {
+        const juce::ScopedLock lock(instance_->getCallbackLock());
+        if (request.action == PresetAction::Programs) {
+            magda::PluginPrograms programs;
+            const auto count = instance_->getNumPrograms();
+            programs.current = count > 0 ? instance_->getCurrentProgram() : -1;
+            for (int i = 0; i < count; ++i)
+                programs.names.add(instance_->getProgramName(i));
+            return {.programs = std::move(programs)};
+        }
+
+        if (request.action == PresetAction::SelectProgram) {
+            if (request.programIndex < 0 || request.programIndex >= instance_->getNumPrograms())
+                return {.failure = "the requested program does not exist"};
+            instance_->setCurrentProgram(request.programIndex);
+        } else if (request.action == PresetAction::LoadFile) {
+            if (extension == ".vstpreset") {
+                if (magda::writeVst3Preset(*instance_, fileData) !=
+                    magda::Vst3PresetOutcome::Applied)
+                    return {.failure = "the plugin refused the VST3 preset"};
+            } else {
+                instance_->setCurrentProgramStateInformation(fileData.getData(),
+                                                             static_cast<int>(fileData.getSize()));
+            }
+        } else {
+            if (extension == ".vstpreset")
+                fileData = magda::readVst3Preset(*instance_).preset;
+            else
+                instance_->getCurrentProgramStateInformation(fileData);
+            if (fileData.getSize() == 0)
+                return {.failure = "the plugin did not provide a preset"};
+        }
+
+        if (request.action != PresetAction::SaveFile) {
+            catalogStale_.store(true, std::memory_order_release);
+            auto snapshot = captureState();
+            if (!snapshot)
+                return {.failure = "the plugin changed patch but could not describe its state"};
+            // Keep the delivery cache until the new model values are published:
+            // re-sending the previous plan here would overwrite the new patch.
+            reportEveryParameter();
+            return {.snapshot = std::move(snapshot)};
+        }
+    } catch (...) {
+        return {.failure = "the plugin threw while accessing its programs or preset"};
+    }
+
+    // File I/O need not keep the audio callback out of the plugin.
+    if (request.file.getParentDirectory().createDirectory().failed() ||
+        !request.file.replaceWithData(fileData.getData(), fileData.getSize()))
+        return {.failure = "could not write the preset file"};
+    return {};
 }
 
 bool EngineExternalDevice::showEditor() {

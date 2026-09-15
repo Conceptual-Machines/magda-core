@@ -187,7 +187,6 @@ class DeviceSlotComponent : public NodeComponent,
     // SelectionManagerListener overrides — chain-node + binding/controller
     // listeners now live on NodeComponent (the base class), which fans
     // refreshControllerIndicators() out for us.
-    void chainNodeSelectionChanged(const magda::ChainNodePath& path) override;
     void selectionTypeChanged(magda::SelectionType newType) override;
     void modSelectionChanged(const magda::ModSelection& selection) override;
     void macroSelectionChanged(const magda::MacroSelection& selection) override;
@@ -309,7 +308,7 @@ class DeviceSlotComponent : public NodeComponent,
 
     // Plugin presets button helpers (disk-scanned .vstpreset / .aupreset).
     void refreshPresetsButton();             // re-paint label + recompute visibility
-    bool hasPluginPresetsAvailable() const;  // disk presets OR >1 built-in programs
+    bool hasPluginPresetsAvailable() const;  // loaded external plugin with scanned presets
     void showPluginPresetMenu();
     void loadPluginPresetFile(const juce::File& file);
     void showSavePluginPresetDialog();

@@ -27,6 +27,7 @@ namespace magda {
 class OfflineRenderSession;
 class TempoMap;
 struct HostParameters;
+struct PluginPrograms;
 struct OfflineRenderRequest;
 }  // namespace magda
 
@@ -233,6 +234,11 @@ class EngineHost {
     //
     // Message thread, each answering what the window is afterwards, which is
     // what the slot draws. False for a device this is not rendering.
+
+    std::optional<PluginPrograms> getPluginPrograms(const ChainNodePath& devicePath);
+    bool setPluginCurrentProgram(const ChainNodePath& devicePath, int programIndex);
+    bool loadPluginPresetFile(const ChainNodePath& devicePath, const juce::File& file);
+    bool savePluginPresetFile(const ChainNodePath& devicePath, const juce::File& file);
 
     bool showDeviceEditor(const ChainNodePath& devicePath);
     bool hideDeviceEditor(const ChainNodePath& devicePath);

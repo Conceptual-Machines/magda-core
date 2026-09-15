@@ -375,6 +375,19 @@ void MagdaAudioEngine::applyPluginStateAt(const ChainNodePath& devicePath) {
 
 // The window opens onto the instance this renders through, and the fork holds
 // no copy of it any more (#2580).
+std::optional<PluginPrograms> MagdaAudioEngine::getPluginPrograms(const ChainNodePath& path) {
+    return host_->getPluginPrograms(path);
+}
+bool MagdaAudioEngine::setPluginCurrentProgram(const ChainNodePath& path, int index) {
+    return host_->setPluginCurrentProgram(path, index);
+}
+bool MagdaAudioEngine::loadPluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return host_->loadPluginPresetFile(path, file);
+}
+bool MagdaAudioEngine::savePluginPresetFile(const ChainNodePath& path, const juce::File& file) {
+    return host_->savePluginPresetFile(path, file);
+}
+
 bool MagdaAudioEngine::showDeviceEditor(const ChainNodePath& devicePath) {
     return host_->showDeviceEditor(devicePath);
 }

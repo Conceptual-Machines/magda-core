@@ -131,6 +131,8 @@ void applyFilled(ParamSlotComponent& slot, const magda::ParameterInfo& param, co
 
 void applyPlaceholder(ParamSlotComponent& slot) {
     slot.cancelGesture();
+    slot.setParamIndex(-1);
+    slot.setSelected(false);
     slot.setParamName("-");
     slot.setShowEmptyText(true);
     slot.setEnabled(false);
@@ -140,6 +142,8 @@ void applyPlaceholder(ParamSlotComponent& slot) {
 
 void applyHidden(ParamSlotComponent& slot) {
     slot.cancelGesture();
+    slot.setParamIndex(-1);
+    slot.setSelected(false);
     slot.setVisible(false);
     slot.onValueChanged = nullptr;
 }

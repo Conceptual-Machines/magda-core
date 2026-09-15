@@ -1145,14 +1145,6 @@ class Config {
         autoMonitorSelectedTrack = enabled;
     }
 
-    // Device chain behaviour
-    bool getOpenMacrosOnSelect() const {
-        return openMacrosOnSelect;
-    }
-    void setOpenMacrosOnSelect(bool enabled) {
-        openMacrosOnSelect = enabled;
-    }
-
     // Mixer view-toggle rail: per-toggle visibility for the mixer's optional
     // panes. All default off; the user opts in via the left rail.
     bool getMixerShowSends() const {
@@ -1451,7 +1443,6 @@ class Config {
     bool autoMonitorSelectedTrack = false;  // Auto-enable input monitor on selected track
 
     // Device chain behaviour
-    bool openMacrosOnSelect = true;  // Open macro panel when selecting a device/rack
 
     // Mixer view-toggle rail (default all off; users opt in via the rail)
     bool mixerShowSends_ = false;

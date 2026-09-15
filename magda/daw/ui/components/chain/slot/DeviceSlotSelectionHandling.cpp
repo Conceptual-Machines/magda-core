@@ -1,10 +1,8 @@
 #include "slot/DeviceSlotSelectionHandling.hpp"
 
-#include "core/Config.hpp"
 #include "modulation/MacroPanelComponent.hpp"
 #include "modulation/ModsPanelComponent.hpp"
 #include "params/ParamHostComponent.hpp"
-#include "ui/components/common/SvgButton.hpp"
 
 namespace magda::daw::ui {
 
@@ -26,26 +24,6 @@ void updateMacroPanel(const DeviceSlotSelectionCallbacks& callbacks) {
 }
 
 }  // namespace
-
-void openDeviceSlotMacroPanelForSelectionIfNeeded(const magda::ChainNodePath& nodePath,
-                                                  bool paramPanelVisible,
-                                                  bool exposesDeviceModulation,
-                                                  magda::SvgButton* macroButton,
-                                                  const DeviceSlotSelectionCallbacks& callbacks) {
-    if (!magda::Config::getInstance().getOpenMacrosOnSelect() || paramPanelVisible ||
-        macroButton == nullptr || !nodePath.isValid() || !exposesDeviceModulation) {
-        return;
-    }
-
-    const auto& selectedPath = magda::SelectionManager::getInstance().getSelectedChainNode();
-    if (selectedPath != nodePath)
-        return;
-
-    macroButton->setToggleState(true, juce::dontSendNotification);
-    macroButton->setActive(true);
-    if (callbacks.setParamPanelVisible)
-        callbacks.setParamPanelVisible(true);
-}
 
 void applyDeviceSlotSelectionTypeChange(magda::SelectionType newType, ParamHostComponent& paramGrid,
                                         const DeviceSlotSelectionCallbacks& callbacks) {
@@ -97,8 +75,10 @@ void applyDeviceSlotParamSelectionChange(const magda::ChainNodePath& nodePath,
     updateMacroPanel(callbacks);
 
     for (int i = 0; i < paramGrid.getSlotCount(); ++i) {
-        const bool isSelected =
-            selection.isValid() && selection.devicePath == nodePath && selection.paramIndex == i;
+        // Grid positions change with filtering, ordering and pagination. Selection
+        // names the parameter bound to the cell, not its position in the grid.
+        const bool isSelected = selection.isValid() && selection.devicePath == nodePath &&
+                                selection.paramIndex == paramGrid.getSlot(i)->getParamIndex();
         paramGrid.setSlotSelected(i, isSelected);
     }
 }

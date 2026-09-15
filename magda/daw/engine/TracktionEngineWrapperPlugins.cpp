@@ -882,6 +882,28 @@ void TracktionEngineWrapper::applyPluginStateAt(const ChainNodePath& devicePath)
         processor->populateParameters(*live, DeviceProcessor::ValueSource::Engine);
 }
 
+std::optional<PluginPrograms> TracktionEngineWrapper::getPluginPrograms(const ChainNodePath& path) {
+    if (!audioBridge_)
+        return std::nullopt;
+    PluginPrograms programs;
+    const int count = audioBridge_->getPluginNumPrograms(path);
+    programs.current = count > 0 ? audioBridge_->getPluginCurrentProgram(path) : -1;
+    for (int i = 0; i < count; ++i)
+        programs.names.add(audioBridge_->getPluginProgramName(path, i));
+    return programs;
+}
+bool TracktionEngineWrapper::setPluginCurrentProgram(const ChainNodePath& path, int index) {
+    return audioBridge_ && audioBridge_->setPluginCurrentProgram(path, index);
+}
+bool TracktionEngineWrapper::loadPluginPresetFile(const ChainNodePath& path,
+                                                  const juce::File& file) {
+    return audioBridge_ && audioBridge_->loadPluginPresetFile(path, file);
+}
+bool TracktionEngineWrapper::savePluginPresetFile(const ChainNodePath& path,
+                                                  const juce::File& file) {
+    return audioBridge_ && audioBridge_->savePluginPresetFile(path, file);
+}
+
 bool TracktionEngineWrapper::showDeviceEditor(const ChainNodePath& devicePath) {
     if (audioBridge_ == nullptr)
         return false;
