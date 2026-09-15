@@ -151,62 +151,6 @@ void ClipInspector::updateFromSelectedClip() {
         clipNameValue_.setEditable(true);
     }
 
-    // Sanitize stale audio clip values (e.g. offset past file end from old model)
-    // Only for single-clip selection to avoid sanitization conflicts
-    if (!isMulti) {
-        auto* mutableClip = magda::ClipManager::getInstance().getClip(pid);
-        if (mutableClip && mutableClip->isAudio() &&
-            !magda::audioEventRef(*mutableClip).sourceFilePath().isEmpty()) {
-            auto* thumbnail = magda::AudioThumbnailManager::getInstance().getThumbnail(
-                magda::audioEventRef(*mutableClip).sourceFilePath());
-            if (thumbnail) {
-                const double fileDur = thumbnail->getTotalLength();
-                if (fileDur > 0.0) {
-                    double newOffset = magda::audioEventRef(*mutableClip).anchorSeconds();
-                    double newLoopStart = magda::audioEventRef(*mutableClip).loopStartSeconds();
-                    double newLoopLength = magda::audioEventRef(*mutableClip).loopLengthSeconds();
-
-                    bool fixed = false;
-
-                    if (newOffset > fileDur) {
-                        newOffset = juce::jmin(newOffset, fileDur);
-                        fixed = true;
-                    }
-
-                    if (newLoopStart > fileDur) {
-                        newLoopStart = 0.0;
-                        fixed = true;
-                    }
-
-                    const double avail = fileDur - newLoopStart;
-                    if (newLoopLength > avail) {
-                        newLoopLength = avail;
-                        fixed = true;
-                    }
-
-                    if (fixed) {
-                        auto& clipManager = magda::ClipManager::getInstance();
-
-                        if (newOffset != magda::audioEventRef(*mutableClip).anchorSeconds()) {
-                            clipManager.setOffset(pid, newOffset);
-                        }
-
-                        if (newLoopStart != magda::audioEventRef(*mutableClip).loopStartSeconds()) {
-                            clipManager.setLoopStart(pid, newLoopStart);
-                        }
-
-                        if (newLoopLength !=
-                            magda::audioEventRef(*mutableClip).loopLengthSeconds()) {
-                            clipManager.setLoopLength(pid, newLoopLength);
-                        }
-
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
     const auto* clip = magda::ClipManager::getInstance().getClip(pid);
     if (clip) {
         // Multi-selection has no single meaningful name — show a placeholder

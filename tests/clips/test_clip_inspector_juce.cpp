@@ -1,7 +1,9 @@
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "JuceTestStateGuard.hpp"
+#include "magda/daw/audio/AudioThumbnailManager.hpp"
 #include "magda/daw/core/ClipInfo.hpp"
 #include "magda/daw/core/ClipManager.hpp"
 
@@ -44,6 +46,22 @@ ClipInfo makeInspectorAudioClip(ClipId id = 9001) {
     return clip;
 }
 
+/// A real, decodable WAV: AudioThumbnailManager only hands out a thumbnail
+/// (and so a file duration) for a file it can open.
+bool writeSilentWav(const juce::File& file, double sampleRate, double seconds) {
+    const int numSamples = static_cast<int>(sampleRate * seconds);
+    juce::AudioBuffer<float> buffer(1, numSamples);
+    buffer.clear();
+    juce::WavAudioFormat wav;
+    JUCE_BEGIN_IGNORE_WARNINGS_MSVC(4996)
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE("-Wdeprecated-declarations")
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(new juce::FileOutputStream(file), sampleRate, 1, 16, {}, 0));
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
+    JUCE_END_IGNORE_WARNINGS_MSVC
+    return writer != nullptr && writer->writeFromAudioSampleBuffer(buffer, 0, numSamples);
+}
+
 void applySourceBeats(ClipId clipId, double beats) {
     ClipManager::AudioClipBeatsUpdate update;
     update.interpretationTotalBeats = beats;
@@ -84,6 +102,8 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testBpmAndBeatsDisplaysRefreshTogether(); });
         magda::test::runWithCleanJuceState(
             [this] { testLoopEndUsesLoopLengthNotPlacementLength(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testSelectingInterpretationLoopLeavesRegionAlone(); });
     }
 
   private:
@@ -172,6 +192,54 @@ class ClipInspectorJuceTest final : public juce::UnitTest {
         inspector.setSelectedClip(seed.id);
         expectSourceBeatsDisplay(*this, inspector, 16.0);
         expectLoopEnd(*this, inspector, 12.0);
+    }
+
+    // A region sized by the interpretation may overrun the file by rounding;
+    // selecting the clip is a read and must not shorten it or make it Explicit.
+    void testSelectingInterpretationLoopLeavesRegionAlone() {
+        beginTest("Selecting an interpretation-sized loop does not rewrite the region");
+
+        constexpr double fileRate = 48000.0;
+        constexpr double fileSeconds = 5.0;  // 16 beats at 174 is 5.517 s: longer than the file
+        juce::TemporaryFile temp(".wav");
+        expect(writeSilentWav(temp.getFile(), fileRate, fileSeconds), "Fixture WAV should write");
+        const auto path = temp.getFile().getFullPathName();
+        AudioThumbnailManager::getInstance().clearCache();
+
+        ClipInfo seed;
+        seed.id = 9002;
+        seed.trackId = INVALID_TRACK_ID;
+        seed.view = ClipView::Session;
+        seed.name = "InterpretationLoop";
+        auto& event = magda::test::giveAudioEvent(seed, path, fileSeconds, fileRate);
+        event.setPlaybackIntent(PlaybackIntent::Beat);
+        event.adoptBpm(174.0, Provenance::User);
+        event.adoptTotalBeats(16.0, Provenance::User);
+        seed.loopEnabled = true;
+        event.setLoopExtent(RegionExtent::Interpretation);
+        seed.setPlacementBeats(0.0, 16.0);
+        seed.length = 16.0 * 60.0 / projectBPM;
+
+        const int64_t regionSamples = event.loopLengthSamples;
+        expect(regionSamples > static_cast<int64_t>(fileSeconds * fileRate),
+               "Fixture region should overrun the file");
+        ClipManager::getInstance().restoreClip(seed);
+
+        ClipInspector inspector;
+        inspector.setBounds(0, 0, 360, 640);
+        inspector.setSelectedClip(seed.id);
+
+        const auto* clip = ClipManager::getInstance().getClip(seed.id);
+        expect(clip != nullptr && clip->primaryEvent() != nullptr, "Clip should survive selection");
+        if (clip != nullptr && clip->primaryEvent() != nullptr) {
+            expect(clip->primaryEvent()->loopExtent == RegionExtent::Interpretation,
+                   "Selection must not retag the region Explicit");
+            expectEquals(clip->primaryEvent()->loopLengthSamples, regionSamples,
+                         "Selection must not shorten the region to the file");
+        }
+
+        ClipManager::getInstance().clearAllClips();
+        AudioThumbnailManager::getInstance().clearCache();
     }
 };
 

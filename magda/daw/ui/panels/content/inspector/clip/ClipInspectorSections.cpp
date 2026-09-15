@@ -15,6 +15,7 @@
 #include "BinaryData.h"
 #include "audio/AudioBridge.hpp"
 #include "audio/CompService.hpp"
+#include "core/AudioClipSourceDisplay.hpp"
 #include "core/ClipBatchEdit.hpp"
 #include "core/ClipCommands.hpp"
 #include "core/ClipDisplayInfo.hpp"
@@ -970,24 +971,20 @@ void ClipInspector::initClipPropertiesSection() {
         const bool savingMidiClip = clip->isMidi();
         std::optional<std::vector<magda::WarpMarker>> markers;
         if (clip->isAudio()) {
-            const auto bpmText = clipBpmValue_.getText().trimCharactersAtEnd(" BPMbpm");
-            const double displayedBpm = bpmText.getDoubleValue();
+            // Edits are already in the model; the widgets are rounded copies. Only a
+            // tempo-less event takes the cached detection it has been showing as a hint.
             auto* event = clip->primaryEvent();
-            // A displayed hint on a tempo-less event is the cached detection, not a
-            // user statement; an edited label is. An unchanged value keeps its provenance.
-            const bool hadTempo = event != nullptr && event->hasInterpretedBpm();
-            const auto from = hadTempo ? magda::Provenance::User : magda::Provenance::Analysis;
-            if (event != nullptr && magda::isValidBpm(displayedBpm) &&
-                (!hadTempo || std::abs(displayedBpm - event->interpBpm) > 1e-6)) {
-                event->adoptBpm(displayedBpm, from);
-            }
-            // Beats is shown in either mode now, so visibility no longer stands in
-            // for an interpretation: read it only when there is one to save (#2676).
-            if (event != nullptr && event->hasInterpretedBpm() && clipBeatsLengthValue_) {
-                const double displayedBeats = clipBeatsLengthValue_->getValue();
-                if (displayedBeats > 0.0 &&
-                    (!hadTempo || std::abs(displayedBeats - event->interpTotalBeats) > 1e-6)) {
-                    event->adoptTotalBeats(displayedBeats, from);
+            if (event != nullptr && !event->hasInterpretedBpm()) {
+                const double projectBPM =
+                    timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
+                const double cachedBpm = magda::AudioThumbnailManager::getInstance().getCachedBPM(
+                    audioEventRef(*clip).sourceFilePath());
+                const auto display = magda::computeAudioClipSourceDisplay(
+                    *clip, projectBPM, getAudioFileDurationForInspector(*clip), cachedBpm);
+                if (display.bpm > 0.0) {
+                    event->adoptBpm(display.bpm, magda::Provenance::Analysis);
+                    if (display.totalBeats > 0.0)
+                        event->adoptTotalBeats(display.totalBeats, magda::Provenance::Analysis);
                 }
             }
 

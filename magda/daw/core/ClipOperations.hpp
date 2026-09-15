@@ -767,6 +767,10 @@ class ClipOperations {
         if (event == nullptr)
             return;
 
+        // Placement is calibrated once, on the way into beat mode; the rest of
+        // the enable path is safe to repeat.
+        const bool wasOn = event->autoTempo;
+
         // The request is kept even when it cannot be granted yet, so a tempo
         // landing later honours it.
         event->playbackIntent = enabled ? PlaybackIntent::Beat : PlaybackIntent::Free;
@@ -812,32 +816,27 @@ class ClipOperations {
                         event->timelineToSource(clip.getTimelineLength(bpm)));
             }
 
-            // Issue #1157: when a full, untrimmed source file carries source
-            // interpretation beats, default placement length to that musical
-            // extent so a freshly-dropped loop becomes exactly its natural
-            // length on toggling BEAT. If the user has already trimmed the
-            // clip, preserve the edited timeline span instead of expanding
-            // back to the full source loop.
-            //
-            // Prefer interpretation-derived duration (totalBeats × 60 /
-            // interpBpm) — the interpretation is the calibrated musical view of
-            // the file, while the pooled source duration is the raw file fact
-            // and may predate a later detection pass.
-            double naturalSourceDuration = 0.0;
-            if (event->interpBpm > 0.0 && event->interpTotalBeats > 0.0) {
-                naturalSourceDuration = event->interpTotalBeats * 60.0 / event->interpBpm;
-            } else if (event->sourceDurationSeconds() > 0.0) {
-                naturalSourceDuration = event->sourceDurationSeconds();
-            }
-            const auto sourceSpan = event->timelineToSource(clip.getTimelineLength(bpm));
-            const bool coversFullSource = naturalSourceDuration > 0.0 &&
-                                          event->anchorSeconds() <= 0.001 &&
-                                          std::abs(sourceSpan - naturalSourceDuration) <= 0.001;
+            // Issue #1157: a full, untrimmed source becomes its beat count on
+            // entering beat mode; a trimmed clip keeps its span. Once only: the
+            // span is read through the pre-reset speedRatio, so a repeat would
+            // recalibrate a clip that started sped up. Phase 3 of #2674 deletes it.
+            if (!wasOn) {
+                double naturalSourceDuration = 0.0;
+                if (event->interpBpm > 0.0 && event->interpTotalBeats > 0.0) {
+                    naturalSourceDuration = event->interpTotalBeats * 60.0 / event->interpBpm;
+                } else if (event->sourceDurationSeconds() > 0.0) {
+                    naturalSourceDuration = event->sourceDurationSeconds();
+                }
+                const auto sourceSpan = event->timelineToSource(clip.getTimelineLength(bpm));
+                const bool coversFullSource = naturalSourceDuration > 0.0 &&
+                                              event->anchorSeconds() <= 0.001 &&
+                                              std::abs(sourceSpan - naturalSourceDuration) <= 0.001;
 
-            if (coversFullSource && event->interpTotalBeats > 0.0)
-                clip.setPlacementBeats(clip.placement.startBeat, event->interpTotalBeats);
-            else
-                clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
+                if (coversFullSource && event->interpTotalBeats > 0.0)
+                    clip.setPlacementBeats(clip.placement.startBeat, event->interpTotalBeats);
+                else
+                    clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
+            }
 
             // A region that still spans the whole source becomes the beat
             // count, or the placement when the count is unknown.
@@ -850,6 +849,9 @@ class ClipOperations {
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
             event->speedRatio = 1.0;
+            // A stale seconds cache would make the next enable re-seed the
+            // placement from it.
+            clip.deriveTimesFromBeats(bpm);
         } else if (clip.loopEnabled && event->loopLengthSamples > 0) {
             // Timeline placement remains beat-domain. The source region is
             // already in samples and survives the mode change untouched; only

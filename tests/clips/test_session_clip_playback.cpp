@@ -1016,6 +1016,7 @@ TEST_CASE("AutoTempo session clip timing: 172bpm clip in 120bpm project",
         // the playhead wraps at the original ~2.79s instead of 4s
         ClipInfo rawClip = clip;
         magda::test::audioEvent(rawClip).autoTempo = false;
+        rawClip.length = 8.0 * 60.0 / 172.0;  // the original ~2.79 s
         magda::test::audioEvent(rawClip).setLoopLengthSeconds(rawClip.length);
         auto [clipLen, loopLen] = computeTimeBasedTimings(rawClip);
         // Would wrap at ~2.79s — incorrect for a 120bpm playback

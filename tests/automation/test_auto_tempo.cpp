@@ -395,6 +395,38 @@ TEST_CASE("setAutoTempo - no-op when already in target state", "[clip][auto-temp
     }
 }
 
+// The #1157 calibration reads the clip's span through the speedRatio the
+// enable then resets, so a second enable must not run it again.
+TEST_CASE("setAutoTempo - enabling again does not recalibrate a clip that started sped up",
+          "[clip][auto-tempo]") {
+    constexpr double projectBpm = 60.0;
+
+    ClipInfo clip;
+    auto& event = magda::test::giveAudioEvent(clip, "sped_up.wav", 4.0);  // 8 beats at 120
+    clip.setPlacementBeats(0.0, 4.0);
+    clip.deriveTimesFromBeats(projectBpm);
+    event.setAnchorSeconds(0.0);
+    event.speedRatio = 2.0;
+    event.interpBpm = 120.0;
+    event.interpTotalBeats = 8.0;
+
+    ClipOperations::setAutoTempo(clip, true, projectBpm);
+    REQUIRE(event.autoTempo);
+    REQUIRE(event.speedRatio == 1.0);
+    REQUIRE(clip.placement.lengthBeats == Approx(4.0));
+
+    const double lengthBeats = clip.placement.lengthBeats;
+    const auto loopLength = event.loopLengthSamples;
+    const auto extent = event.loopExtent;
+
+    ClipOperations::setAutoTempo(clip, true, projectBpm);
+
+    REQUIRE(clip.placement.lengthBeats == Approx(lengthBeats));
+    REQUIRE(event.loopLengthSamples == loopLength);
+    REQUIRE(event.loopExtent == extent);
+    REQUIRE(event.speedRatio == 1.0);
+}
+
 // ─────────────────────────────────────────────────────────────
 // setAutoTempo — beat mode already granted by a detection
 // ─────────────────────────────────────────────────────────────

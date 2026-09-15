@@ -404,20 +404,16 @@ void AudioClipPropertiesContent::createControls() {
         if (clip == nullptr || !clip->isAudio()) {
             return;
         }
+        // Edits are already in the model; the widgets may show placeholders. Only a
+        // tempo-less event takes the cached detection it has been showing as a hint.
         auto* event = clip->primaryEvent();
-        // A displayed hint on a tempo-less event is the cached detection, not a
-        // user statement; an edited label is. An unchanged value keeps its provenance.
-        const bool hadTempo = event != nullptr && event->hasInterpretedBpm();
-        const auto from = hadTempo ? magda::Provenance::User : magda::Provenance::Analysis;
-        const double displayedBpm = bpmValue_ ? bpmValue_->getValue() : 0.0;
-        if (event != nullptr && magda::isValidBpm(displayedBpm) &&
-            (!hadTempo || std::abs(displayedBpm - event->interpBpm) > 1e-6)) {
-            event->adoptBpm(displayedBpm, from);
-        }
-        const double displayedBeats = beatsValue_ ? beatsValue_->getValue() : 0.0;
-        if (event != nullptr && displayedBeats > 0.0 &&
-            (!hadTempo || std::abs(displayedBeats - event->interpTotalBeats) > 1e-6)) {
-            event->adoptTotalBeats(displayedBeats, from);
+        if (event != nullptr && !event->hasInterpretedBpm()) {
+            const auto display = resolveSourceDisplay(*clip);
+            if (display.bpm > 0.0) {
+                event->adoptBpm(display.bpm, magda::Provenance::Analysis);
+                if (display.totalBeats > 0.0)
+                    event->adoptTotalBeats(display.totalBeats, magda::Provenance::Analysis);
+            }
         }
 
         std::optional<std::vector<magda::WarpMarker>> markers;
