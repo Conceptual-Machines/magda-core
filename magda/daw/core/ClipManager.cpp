@@ -2104,38 +2104,43 @@ void ClipManager::applyAudioClipBeats(ClipId clipId, const AudioClipBeatsUpdate&
             " beats, beat mode " + (event->autoTempo ? "on" : "off"));
     }
 
-    // (1) Interpretation. Not gated on beat mode: a clip in time mode for
-    // want of a tempo is exactly where the user supplies one (#2676). The
+    // File duration is a Source fact. A probe wins over anything inferred.
+    if (auto* source = SourcePool::getInstance().getMutable(event->sourceId);
+        source != nullptr && source->durationSeconds <= 0.0 && update.sourceDurationSeconds) {
+        source->durationSeconds = juce::jmax(0.0, *update.sourceDurationSeconds);
+    }
+
+    // (1) Interpretation. Tempo and beat count are one fact in two units,
+    // tied by the file length: stating either restates the other, and the
+    // loop region stays where it is. Not gated on beat mode (#2676). The
     // event refuses a write over a value the user owns.
-    if (update.interpretationBpm &&
-        !event->adoptBpm(*update.interpretationBpm, update.provenance)) {
+    std::optional<double> bpm = update.interpretationBpm;
+    std::optional<double> beats = update.interpretationTotalBeats;
+    const double fileSeconds = event->sourceDurationSeconds();
+    if (bpm && !beats && fileSeconds > 0.0)
+        beats = beatCountForDuration(fileSeconds, *bpm);
+    if (beats && !bpm && *beats > 0.0 && fileSeconds > 0.0) {
+        bpm = *beats * 60.0 / fileSeconds;
+        if (!isValidBpm(*bpm)) {
+            juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": refused " +
+                                     juce::String(*beats, 3) + " beats, it implies " +
+                                     juce::String(*bpm, 3) + " BPM");
+            return;
+        }
+    }
+    if (bpm && !event->adoptBpm(*bpm, update.provenance)) {
         juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": kept the user's " +
                                  juce::String(event->interpBpm, 3) + " BPM");
     }
-    if (update.interpretationTotalBeats &&
-        !event->adoptTotalBeats(*update.interpretationTotalBeats, update.provenance)) {
+    if (beats && !event->adoptTotalBeats(*beats, update.provenance)) {
         juce::Logger::writeToLog("[tempo] clip " + juce::String(clipId) + ": kept the user's " +
                                  juce::String(event->interpTotalBeats, 3) + " beats");
     }
-    // File duration is a Source fact. Fill it in only while it is unknown; a
-    // real probe always wins over a value inferred from the interpretation.
+    // With no probe yet, the interpretation is the only account of the length.
     if (auto* source = SourcePool::getInstance().getMutable(event->sourceId);
-        source != nullptr && source->durationSeconds <= 0.0) {
-        if (update.sourceDurationSeconds)
-            source->durationSeconds = juce::jmax(0.0, *update.sourceDurationSeconds);
-        if (source->durationSeconds <= 0.0 && event->interpBpm > 0.0 &&
-            event->interpTotalBeats > 0.0) {
-            source->durationSeconds = event->interpTotalBeats * 60.0 / event->interpBpm;
-        }
-    }
-    // A tempo arriving on a clip with no beat count gets one from the file
-    // length. That count is an inference, whoever typed the tempo.
-    if (update.interpretationBpm && !update.interpretationTotalBeats &&
-        event->interpTotalBeats <= 0.0 && event->hasInterpretedBpm() &&
-        event->sourceDurationSeconds() > 0.0) {
-        event->adoptTotalBeats(
-            beatCountForDuration(event->sourceDurationSeconds(), event->interpBpm),
-            Provenance::Analysis);
+        source != nullptr && source->durationSeconds <= 0.0 && event->interpBpm > 0.0 &&
+        event->interpTotalBeats > 0.0) {
+        source->durationSeconds = event->interpTotalBeats * 60.0 / event->interpBpm;
     }
     if (clip->loopEnabled)
         event->followInterpretationIfWholeSource();

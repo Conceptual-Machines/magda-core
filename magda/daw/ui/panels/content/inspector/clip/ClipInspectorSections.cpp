@@ -473,9 +473,8 @@ void ClipInspector::initClipPropertiesSection() {
 
         double bpm = timelineController_ ? timelineController_->getState().tempo.bpm : 120.0;
 
-        // What the user types is the fact. The manager keeps the beat count the
-        // clip has and derives one from the file length only when there is
-        // none yet (#2674).
+        // What the user types is the fact; the manager restates the beat count
+        // from the file length.
         double thumbDuration = 0.0;
         if (auto* thumb = magda::AudioThumbnailManager::getInstance().getThumbnail(
                 magda::audioEventRef(*clip).sourceFilePath())) {
@@ -527,12 +526,9 @@ void ClipInspector::initClipPropertiesSection() {
                     }
                 }
 
-                // The beat count keeps the BPM the clip has; one is derived
-                // from the file length only when there is none yet (#2674).
+                // The manager restates the BPM from the file length.
                 magda::ClipManager::AudioClipBeatsUpdate u;
                 u.interpretationTotalBeats = newSourceBeats;
-                if (durationSeconds > 0.0 && !magda::audioEventRef(*clip).hasInterpretedBpm())
-                    u.interpretationBpm = newSourceBeats * 60.0 / durationSeconds;
                 if (durationSeconds > 0.0 &&
                     magda::audioEventRef(*clip).sourceDurationSeconds() <= 0.0)
                     u.sourceDurationSeconds = durationSeconds;

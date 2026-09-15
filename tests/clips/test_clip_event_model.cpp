@@ -651,9 +651,9 @@ TEST_CASE("ClipManager: applyAudioClipBeats refuses an interpretation no file co
     AudioThumbnailManager::getInstance().clearCache();
 }
 
-// A typed BPM keeps the beat count and a typed beat count keeps the BPM: the
-// two are facts the user states, not views of the file length (#2674).
-TEST_CASE("ClipManager: applyAudioClipBeats leaves the field it was not given alone",
+// Tempo and beat count are one fact in two units, tied by the file length:
+// stating either restates the other (#2674).
+TEST_CASE("ClipManager: applyAudioClipBeats restates the unit it was not given",
           "[clip][event][interpretation]") {
     EventModelFixture fixture;
     auto& clips = ClipManager::getInstance();
@@ -668,16 +668,18 @@ TEST_CASE("ClipManager: applyAudioClipBeats leaves the field it was not given al
     const auto clipId = clips.createAudioClipBeats(1, 0.0, 4.0, path, ClipView::Session, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
 
+    // 5.486 s at 174 is 15.909 beats, too far from a whole beat to snap.
     ClipManager::AudioClipBeatsUpdate bpmOnly;
     bpmOnly.interpretationBpm = 174.0;
     clips.applyAudioClipBeats(clipId, bpmOnly, 120.0);
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
-    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(16.0).margin(0.01));
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats ==
+            Approx(5.486 * 174.0 / 60.0));
 
     ClipManager::AudioClipBeatsUpdate beatsOnly;
     beatsOnly.interpretationTotalBeats = 32.0;
     clips.applyAudioClipBeats(clipId, beatsOnly, 120.0);
-    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(174.0));
+    REQUIRE(clips.getClip(clipId)->primaryEvent()->interpBpm == Approx(32.0 * 60.0 / 5.486));
     REQUIRE(clips.getClip(clipId)->primaryEvent()->interpTotalBeats == Approx(32.0));
 
     clips.clearAllClips();

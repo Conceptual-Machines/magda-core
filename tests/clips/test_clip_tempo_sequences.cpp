@@ -101,6 +101,45 @@ TEST_CASE("A dropped loop's region is the whole source until a tempo lands",
     REQUIRE(arrangementEvent->loopLengthSeconds() == Approx(2.0));
 }
 
+// Typing 116 on a 32-beat file and then halving the beat count reinterprets
+// the file as 16 beats long; the loop region is still the whole file.
+TEST_CASE("Changing the beat count at a typed tempo keeps the loop region",
+          "[clip][tempo][sequence]") {
+    TempoSequenceFixture fixture;
+    auto& clips = ClipManager::getInstance();
+    constexpr double kSeconds = 32.0 * 60.0 / 116.0;
+    juce::TemporaryFile temp(".wav");
+    temp.getFile().replaceWithText("not audio");
+    SourcePool::getInstance().seedFactsForTesting(temp.getFile().getFullPathName(), kSeconds,
+                                                  kFileRate);
+
+    const auto clipId = clips.createAudioClipBeats(1, 0.0, kSeconds * kProjectBpm / 60.0,
+                                                   temp.getFile().getFullPathName(),
+                                                   ClipView::Session, kProjectBpm);
+    clips.setAutoTempo(clipId, true, kProjectBpm);
+
+    ClipManager::AudioClipBeatsUpdate typed;
+    typed.interpretationBpm = 116.0;
+    clips.applyAudioClipBeats(clipId, typed, kProjectBpm);
+
+    const auto* clip = clips.getClip(clipId);
+    const auto* event = clip->primaryEvent();
+    REQUIRE(event->interpTotalBeats == Approx(32.0));
+    REQUIRE(event->loopExtent == RegionExtent::Interpretation);
+    const auto wholeFile = event->loopLengthSamples;
+    REQUIRE(event->loopLengthSeconds() == Approx(kSeconds).margin(0.001));
+
+    ClipManager::AudioClipBeatsUpdate halved;
+    halved.interpretationTotalBeats = 16.0;
+    clips.applyAudioClipBeats(clipId, halved, kProjectBpm);
+
+    REQUIRE(event->interpTotalBeats == Approx(16.0));
+    REQUIRE(event->interpBpm == Approx(58.0));
+    REQUIRE(event->bpmFrom == Provenance::User);
+    REQUIRE(event->loopLengthSamples == wholeFile);
+    REQUIRE(clip->sessionCycleBeats() == Approx(16.0));
+}
+
 // The file is 5.516 s: 15.996 beats at 174, a few samples short of the 16 it
 // was exported as. The derived count is the whole beat, so the cycle is exact.
 TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from the file",
@@ -126,8 +165,8 @@ TEST_CASE("A tempo typed on a loop with no beat count derives a whole count from
     const auto* event = clip->primaryEvent();
     REQUIRE(event->autoTempo);
     REQUIRE(event->interpTotalBeats == Approx(16.0));
-    // The count was read off the file, whoever typed the tempo.
-    REQUIRE(event->beatsFrom == Provenance::Analysis);
+    // The count is the typed tempo in other units, so it is the user's too.
+    REQUIRE(event->beatsFrom == Provenance::User);
     REQUIRE(event->loopLengthSeconds() == Approx(16.0 * 60.0 / 174.0).margin(0.001));
     REQUIRE(clip->sessionCycleBeats() == Approx(16.0));
 
@@ -186,16 +225,17 @@ TEST_CASE("Correcting the tempo on an explicit region moves its beat view, not i
 
     event = clips.getClip(clipId)->primaryEvent();
     REQUIRE(event->interpBpm == Approx(174.0));
-    REQUIRE(event->interpTotalBeats == Approx(kFileBeats));
+    // The file is 5.486 s: at 174 it holds 15.91 beats, not the 16 it held at 175.
+    REQUIRE(event->interpTotalBeats == Approx(kFileSeconds * 174.0 / 60.0));
     REQUIRE(event->loopStartSamples == startSamples);
     REQUIRE(event->loopLengthSamples == lengthSamples);
     REQUIRE(event->loopLengthSeconds() == Approx(2.0));
     REQUIRE(event->loopLengthBeats() == Approx(2.0 * 174.0 / 60.0));
 }
 
-// A region sized by the interpretation is its beat count; a tempo correction
-// refits it rather than leaving 15.9 beats at 174 to wrap early.
-TEST_CASE("Correcting the tempo on a whole-file loop keeps its beat count and follows it",
+// A tempo correction restates the beat count from the file length, so a
+// region sized by the interpretation is still the whole file afterwards.
+TEST_CASE("Correcting the tempo on a whole-file loop restates its beat count and keeps the file",
           "[clip][tempo][sequence]") {
     TempoSequenceFixture fixture;
     auto& clips = ClipManager::getInstance();
@@ -211,11 +251,11 @@ TEST_CASE("Correcting the tempo on a whole-file loop keeps its beat count and fo
     const auto* clip = clips.getClip(clipId);
     const auto* event = clip->primaryEvent();
     REQUIRE(event->interpBpm == Approx(174.0));
-    REQUIRE(event->interpTotalBeats == Approx(kFileBeats));
-
-    // A whole-file loop is its beat count; the region re-reads at the new tempo.
-    REQUIRE(event->loopLengthSeconds() == Approx(kFileBeats * 60.0 / 174.0).margin(0.001));
-    REQUIRE(clip->sessionCycleBeats() == Approx(kFileBeats).margin(0.01));
+    const double beatsAt174 = kFileSeconds * 174.0 / 60.0;  // 15.91, not a loop at 174
+    REQUIRE(event->interpTotalBeats == Approx(beatsAt174));
+    REQUIRE(event->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(event->loopLengthSeconds() == Approx(kFileSeconds).margin(0.001));
+    REQUIRE(clip->sessionCycleBeats() == Approx(beatsAt174).margin(0.01));
 }
 
 TEST_CASE("A loop's interpretation, region and cycle survive save and reload",

@@ -126,7 +126,7 @@ TEST_CASE("applyAudioClipBeats - BPM correction preserves source region seconds"
 
 // The user typed a tempo, not a beat count: the count read off the file is an
 // inference a later analysis may still refine.
-TEST_CASE("applyAudioClipBeats - a beat count derived from the file is an inference",
+TEST_CASE("applyAudioClipBeats - a typed tempo restates the beat count from the file",
           "[clip][bpm][issue-2674]") {
     ClipManager::getInstance().shutdown();
 
@@ -148,10 +148,11 @@ TEST_CASE("applyAudioClipBeats - a beat count derived from the file is an infere
     REQUIRE(event != nullptr);
     REQUIRE(event->bpmFrom == Provenance::User);
     REQUIRE(event->interpTotalBeats == Approx(DETECTED_NUM_BEATS));
-    REQUIRE(event->beatsFrom == Provenance::Analysis);
+    // The count is the same statement in other units, so it is the user's.
+    REQUIRE(event->beatsFrom == Provenance::User);
 
-    REQUIRE(event->adoptTotalBeats(8.0, Provenance::Analysis));
-    REQUIRE(event->interpTotalBeats == Approx(8.0));
+    REQUIRE_FALSE(event->adoptTotalBeats(8.0, Provenance::Analysis));
+    REQUIRE(event->interpTotalBeats == Approx(DETECTED_NUM_BEATS));
     REQUIRE_FALSE(event->adoptBpm(90.0, Provenance::Analysis));
     REQUIRE(event->interpBpm == Approx(DETECTED_BPM));
 }
