@@ -41,41 +41,6 @@ double timelineLengthBeats(const ClipInfo& clip, double bpm) {
 double timelineEndBeats(const ClipInfo& clip, double bpm) {
     return clip.getEndBeats(bpm);
 }
-
-// Audio clips reach this grid too (PianoRollContent and DrumGridClipContent
-// both route them here), so the loop has to come back in timeline beats for
-// either content type rather than off one domain's field.
-double effectiveLoopStartBeats(const ClipInfo& clip, double bpm) {
-    return juce::jmax(0.0, clip.loopStartInBeats(bpm));
-}
-
-double effectiveLoopLengthBeats(const ClipInfo& clip, double bpm) {
-    const double loopBeats = clip.loopLengthInBeats(bpm);
-    return loopBeats > 0.0 ? loopBeats : timelineLengthBeats(clip, bpm);
-}
-
-// Grid clicks use the same relative-loop contract as the ruler: display beat is
-// loop phase, and the global target stays in the current playhead cycle.
-double globalBeatForRelativeLoopClick(double displayBeat, double currentGlobalBeat,
-                                      const ClipInfo& clip, double bpm) {
-    const double clipStart = timelineStartBeats(clip, bpm);
-    const double loopStart = effectiveLoopStartBeats(clip, bpm);
-    const double loopLength = effectiveLoopLengthBeats(clip, bpm);
-    const double phase = wrapPhase(displayBeat - loopStart, loopLength);
-    const double currentElapsed = currentGlobalBeat - clipStart;
-    const double cycle =
-        currentElapsed >= loopStart ? std::floor((currentElapsed - loopStart) / loopLength) : 0.0;
-
-    double target = clipStart + loopStart + cycle * loopLength + phase;
-
-    const double clipEnd = timelineEndBeats(clip, bpm);
-    while (target < clipStart)
-        target += loopLength;
-    while (target > clipEnd)
-        target -= loopLength;
-
-    return juce::jlimit(clipStart, clipEnd, target);
-}
 }  // namespace
 
 PianoRollGridComponent::PianoRollGridComponent() {
@@ -1996,6 +1961,11 @@ double PianoRollGridComponent::displayBeatForClipBeat(ClipId clipId, double clip
     return clipStartBeats_ + clipBeat;
 }
 
+double PianoRollGridComponent::clipBeatForDisplayBeat(ClipId clipId, double displayBeat) const {
+    // displayBeatForClipBeat is a shift, so its value at zero is the whole inverse.
+    return displayBeat - displayBeatForClipBeat(clipId, 0.0);
+}
+
 double PianoRollGridComponent::clipBeatForDisplayX(ClipId clipId, int mouseX,
                                                    bool floorToCell) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
@@ -2042,26 +2012,32 @@ double PianoRollGridComponent::absolutePlayheadBeatForDisplayX(int mouseX) const
     // transport position (#1706 follow-up).
     double beat = pixelToBeat(mouseX);
 
-    if (relativeMode_) {
-        const auto* clip =
-            clipId_ != INVALID_CLIP_ID ? ClipManager::getInstance().getClip(clipId_) : nullptr;
-
-        if (clip && clip->loopEnabled) {
-            double bpm = 120.0;
-            double currentGlobalBeat = 0.0;
-            if (auto* controller = TimelineController::getCurrent()) {
-                const auto& state = controller->getState();
-                bpm = state.tempo.bpm > 0.0 ? state.tempo.bpm : bpm;
-                currentGlobalBeat = state.playhead.getCurrentPositionBeats();
-            }
-
-            const double loopLength = effectiveLoopLengthBeats(*clip, bpm);
-            if (loopLength > 0.0)
-                return globalBeatForRelativeLoopClick(beat, currentGlobalBeat, *clip, bpm);
+    // The inverse of getPlayheadDisplayX for the clip being edited, so a click lands where the
+    // playhead would be drawn. A looped clip only answers inside the span it is drawn over.
+    const auto* clip = selectedClipIds_.size() <= 1 && clipId_ != INVALID_CLIP_ID
+                           ? ClipManager::getInstance().getClip(clipId_)
+                           : nullptr;
+    if (clip) {
+        double bpm = 120.0;
+        double currentGlobalBeat = 0.0;
+        if (auto* controller = TimelineController::getCurrent()) {
+            const auto& state = controller->getState();
+            bpm = state.tempo.bpm > 0.0 ? state.tempo.bpm : bpm;
+            currentGlobalBeat = state.playhead.getCurrentPositionBeats();
         }
-
-        return juce::jmax(0.0, beat + clipStartBeats_);
+        const double drawnStart =
+            displayBeatForClipBeat(clipId_, ClipOperations::getMidiVisibleRange(*clip).startBeat);
+        const bool insideDrawnLoop =
+            beat >= drawnStart && beat <= drawnStart + clip->placement.lengthBeats;
+        if (!clip->loopEnabled || insideDrawnLoop) {
+            const double target = ClipOperations::timelineBeatForContentBeat(
+                *clip, clipBeatForDisplayBeat(clipId_, beat), currentGlobalBeat, bpm);
+            return juce::jlimit(0.0, timelineLengthBeats_, target);
+        }
     }
+
+    if (relativeMode_)
+        return juce::jmax(0.0, beat + clipStartBeats_);
 
     return juce::jlimit(0.0, timelineLengthBeats_, beat);
 }
@@ -2612,42 +2588,34 @@ void PianoRollGridComponent::setPhasePreview(double beats, bool active) {
     repaint();
 }
 
-void PianoRollGridComponent::setPlayheadPosition(double positionSeconds) {
-    if (playheadPosition_ != positionSeconds) {
-        playheadPosition_ = positionSeconds;
+void PianoRollGridComponent::setPlayheadBeat(double timelineBeat) {
+    if (playheadBeat_ != timelineBeat) {
+        playheadBeat_ = timelineBeat;
         repaint();
     }
 }
 
 bool PianoRollGridComponent::getPlayheadDisplayX(int& gridLocalX) const {
-    if (playheadPosition_ < 0.0 || clipLengthBeats_ <= 0.0)
+    if (playheadBeat_ < 0.0)
         return false;
 
-    // Convert seconds to beats
-    double tempo = 120.0;
+    double bpm = 120.0;
     if (auto* controller = TimelineController::getCurrent())
-        tempo = controller->getState().tempo.bpm;
-    double secondsPerBeat = 60.0 / tempo;
-    double playheadBeats = playheadPosition_ / secondsPerBeat;
+        bpm = controller->getState().tempo.bpm;
 
-    // Only visible when the playhead falls within the clip's time range
-    double relBeat = playheadBeats - clipStartBeats_;
-    if (relBeat < 0.0 || relBeat > clipLengthBeats_)
-        return false;
-
-    double displayBeat = relativeMode_ ? (playheadBeats - clipStartBeats_) : playheadBeats;
-
-    // Wrap playhead within loop region when looping is enabled
-    if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-        double beatPos = relativeMode_ ? displayBeat : (displayBeat - clipStartBeats_);
-        beatPos = std::fmod(beatPos, loopLengthBeats_);
-        if (beatPos < 0.0)
-            beatPos += loopLengthBeats_;
-        displayBeat = relativeMode_ ? beatPos : (clipStartBeats_ + beatPos);
+    // Drawn where the note being heard is drawn, in whichever selected clip is sounding.
+    auto& clipManager = ClipManager::getInstance();
+    for (const auto clipId : selectedClipIds_) {
+        const auto* clip = clipManager.getClip(clipId);
+        if (!clip)
+            continue;
+        if (const auto contentBeat =
+                ClipOperations::contentBeatAtTimelineBeat(*clip, playheadBeat_, bpm)) {
+            gridLocalX = beatToPixel(displayBeatForClipBeat(clipId, *contentBeat));
+            return true;
+        }
     }
-
-    gridLocalX = beatToPixel(displayBeat);
-    return true;
+    return false;
 }
 
 void PianoRollGridComponent::setEditCursorPosition(double positionSeconds, bool blinkVisible) {

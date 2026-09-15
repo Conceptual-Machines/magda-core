@@ -169,11 +169,8 @@ class PianoRollGridComponent : public juce::Component,
         return pitchExpressionMode_;
     }
 
-    // Playhead position (for drawing playhead line during playback)
-    void setPlayheadPosition(double positionSeconds);
-    double getPlayheadPosition() const {
-        return playheadPosition_;
-    }
+    // Transport position in timeline beats while playing; negative hides the playhead.
+    void setPlayheadBeat(double timelineBeat);
     // Grid-local x of the playhead exactly as drawn over the note grid (incl.
     // loop wrap / relative-mode mapping). Lets the chord lane above the grid
     // draw a matching playhead line that stays locked while scrolling. Returns
@@ -355,7 +352,7 @@ class PianoRollGridComponent : public juce::Component,
     bool relativeMode_ = true;  // true = notes at beat 0, false = notes at absolute position
 
     // Playhead position (in seconds)
-    double playheadPosition_ = -1.0;  // -1 = not playing, hide playhead
+    double playheadBeat_ = -1.0;
 
     // Edit cursor position (in seconds)
     double editCursorPosition_ = -1.0;  // -1 = hidden
@@ -563,6 +560,7 @@ class PianoRollGridComponent : public juce::Component,
     };
     std::optional<NoteInsertPosition> getNoteInsertPosition(juce::Point<int> localPos) const;
     double displayBeatForClipBeat(ClipId clipId, double clipBeat) const;
+    double clipBeatForDisplayBeat(ClipId clipId, double displayBeat) const;
     double clipBeatForDisplayX(ClipId clipId, int mouseX, bool floorToCell = false) const;
     double absolutePlayheadBeatForDisplayX(int mouseX) const;
     void updateEmptyGridCursor(const juce::ModifierKeys& mods, int mouseX);

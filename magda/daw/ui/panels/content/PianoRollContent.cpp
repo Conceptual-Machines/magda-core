@@ -892,9 +892,9 @@ void PianoRollContent::setGridPixelsPerBeat(double ppb) {
         repaint();
 }
 
-void PianoRollContent::setGridPlayheadPosition(double position) {
+void PianoRollContent::setGridPlayheadBeat(double timelineBeat) {
     if (gridComponent_)
-        gridComponent_->setPlayheadPosition(position);
+        gridComponent_->setPlayheadBeat(timelineBeat);
     // The chord-band playhead is painted by this component (over the chord row),
     // so repaint that strip to keep it in step with the grid's playhead.
     if (showChordRow_)

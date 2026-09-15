@@ -122,8 +122,8 @@ class DrumGridClipGrid : public juce::Component,
             repaint();
         }
     }
-    void setPlayheadPosition(double pos) {
-        playheadPosition_ = pos;
+    void setPlayheadBeat(double timelineBeat) {
+        playheadBeat_ = timelineBeat;
         repaint();
     }
     void setGridResolutionBeats(double beats) {
@@ -144,12 +144,6 @@ class DrumGridClipGrid : public juce::Component,
             timeSigNumerator_ = n;
             repaint();
         }
-    }
-    void setLoopRegion(double offsetBeats, double lengthBeats, bool enabled) {
-        loopOffsetBeats_ = offsetBeats;
-        loopLengthBeats_ = lengthBeats;
-        loopEnabled_ = enabled;
-        repaint();
     }
     void setPhasePreview(double beats, bool active) {
         phasePreviewBeats_ = beats;
@@ -612,28 +606,17 @@ class DrumGridClipGrid : public juce::Component,
             }
         }
 
-        // Draw playhead — only when within the clip's time range
-        if (playheadPosition_ >= 0.0 && clipLengthBeats_ > 0.0) {
+        // Draw playhead where the note being heard is drawn
+        const auto* playheadClip =
+            playheadBeat_ >= 0.0 ? magda::ClipManager::getInstance().getClip(clipId_) : nullptr;
+        if (playheadClip) {
             double tempo = 120.0;
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
-            double playheadBeat = playheadPosition_ * (tempo / 60.0);
-            double relBeat = playheadBeat - clipStartBeats_;
-
-            if (relBeat >= 0.0 && relBeat <= clipLengthBeats_) {
-                double displayBeat = relativeMode_ ? relBeat : playheadBeat;
-
-                // Wrap playhead within loop region when looping is enabled
-                if (loopEnabled_ && loopLengthBeats_ > 0.0) {
-                    double beatPos = std::fmod(relBeat - loopOffsetBeats_, loopLengthBeats_);
-                    if (beatPos < 0.0)
-                        beatPos += loopLengthBeats_;
-                    displayBeat = clipBeatToDisplayBeat(loopOffsetBeats_ + beatPos);
-                }
-
-                int playheadX = beatToPixel(displayBeat);
-
+            if (const auto contentBeat = magda::ClipOperations::contentBeatAtTimelineBeat(
+                    *playheadClip, playheadBeat_, tempo)) {
+                int playheadX = beatToPixel(clipBeatToDisplayBeat(*contentBeat));
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));
                     g.fillRect(playheadX - 1, 0, 2, numRows * rowHeight_);
@@ -1140,7 +1123,7 @@ class DrumGridClipGrid : public juce::Component,
     double clipStartBeats_ = 0.0;
     double clipLengthBeats_ = 0.0;
     double timelineLengthBeats_ = 0.0;
-    double playheadPosition_ = -1.0;
+    double playheadBeat_ = -1.0;
     double editCursorPosition_ = -1.0;  // seconds, -1 = hidden
     bool editCursorVisible_ = true;     // blink state
     double gridResolutionBeats_ = 0.25;
@@ -1148,10 +1131,6 @@ class DrumGridClipGrid : public juce::Component,
     int timeSigNumerator_ = 4;
     bool relativeMode_ = true;
 
-    // Loop region
-    double loopOffsetBeats_ = 0.0;
-    double loopLengthBeats_ = 0.0;
-    bool loopEnabled_ = false;
     bool nearPhaseMarker_ = false;
 
     // Phase preview during drag
@@ -2426,9 +2405,9 @@ void DrumGridClipContent::setGridPixelsPerBeat(double ppb) {
         gridComponent_->setPixelsPerBeat(ppb);
 }
 
-void DrumGridClipContent::setGridPlayheadPosition(double position) {
+void DrumGridClipContent::setGridPlayheadBeat(double timelineBeat) {
     if (gridComponent_)
-        gridComponent_->setPlayheadPosition(position);
+        gridComponent_->setPlayheadBeat(timelineBeat);
 }
 
 void DrumGridClipContent::setGridEditCursorPosition(double pos, bool visible) {
@@ -2797,25 +2776,7 @@ void DrumGridClipContent::updateGridSize() {
     gridComponent_->setClipLengthBeats(clipLengthBeats);
     gridComponent_->setTimelineLengthBeats(displayLengthBeats);
 
-    // Pass loop region data to grid
-    if (clip) {
-        // Both values are timeline beats, which is what the grid draws in. A
-        // MIDI clip keeps them on the container; an audio clip's loop is a
-        // source region that has to come back through the project tempo.
-        const double loopOffsetBeats = clip->loopStartInBeats(tempo);
-        const double sourceLengthBeats = clip->loopLengthInBeats(tempo);
-        gridComponent_->setLoopRegion(loopOffsetBeats, sourceLengthBeats, clip->loopEnabled);
-    } else {
-        gridComponent_->setLoopRegion(0.0, 0.0, false);
-    }
-
     clampViewportVerticalScroll();
-}
-
-void DrumGridClipContent::updateGridLoopRegion() {
-    if (draggingLoopRegion_) {
-        gridComponent_->setLoopRegion(previewLoopStartBeats_, previewLoopLengthBeats_, true);
-    }
 }
 
 void DrumGridClipContent::setGridPhasePreview(double beats, bool active) {

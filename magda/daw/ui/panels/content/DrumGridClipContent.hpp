@@ -77,11 +77,10 @@ class DrumGridClipContent : public MidiEditorContent, private juce::Timer {
     }
     void updateGridSize() final;
     void setGridPixelsPerBeat(double ppb) override;
-    void setGridPlayheadPosition(double position) override;
+    void setGridPlayheadBeat(double timelineBeat) override;
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() final;
-    void updateGridLoopRegion() override;
     void setGridPhasePreview(double beats, bool active) override;
     void applyOverlayTracks() final;
 

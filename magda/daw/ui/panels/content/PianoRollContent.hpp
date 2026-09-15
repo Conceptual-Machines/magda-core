@@ -164,7 +164,7 @@ class PianoRollContent : public MidiEditorContent,
     }
     void updateGridSize() final;
     void setGridPixelsPerBeat(double ppb) override;
-    void setGridPlayheadPosition(double position) override;
+    void setGridPlayheadBeat(double timelineBeat) override;
     void setGridEditCursorPosition(double positionSeconds, bool visible) override;
     void onScrollPositionChanged(int scrollX, int scrollY) override;
     void onGridResolutionChanged() final;
