@@ -2,7 +2,7 @@
 # kSoundTouchBetter (magda/daw/core/TimeStretchModes.hpp). Vendored for the native
 # engine (#1882), which may not reach into the Tracktion fork for it.
 #
-# Its own target, from unmodified sources, on purpose: SoundTouch is LGPL-2.1 and MAGDA
+# Its own target, with local changes documented in SOURCES.md: SoundTouch is LGPL-2.1 and MAGDA
 # is GPL-3.0, which is compatible, but keeping it as one replaceable archive is what
 # leaves the relink option open. See SOURCES.md.
 #
@@ -39,7 +39,7 @@ target_include_directories(soundtouch SYSTEM PUBLIC
 # calls to prove the library links. The Tracktion fork compiles its own copy of these
 # sources into its unity build, so while both exist that symbol is defined twice and the
 # final link refuses it. Renaming ours through the preprocessor keeps the vendored source
-# unmodified and costs nothing; it can go when the fork does.
+# free of a symbol-only patch; it can go when the fork does.
 target_compile_definitions(soundtouch PRIVATE soundtouch_ac_test=magda_soundtouch_ac_test)
 
 # Vendored third-party C++; suppress upstream warnings rather than chasing them, the way

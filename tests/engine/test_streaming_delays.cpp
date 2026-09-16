@@ -59,6 +59,7 @@ constexpr double kSampleRate = 44100.0;
 constexpr double kSecondsPerBeat = 0.5;
 constexpr magda::TrackId kTrack = 9;
 constexpr int kScene = 0;
+constexpr std::int64_t kImpulseFrame = 4410 + 37;
 
 /// Room for a Signalsmith priming window with reading to spare.
 constexpr PrefetchSettings kPool{2048, 8};
@@ -70,6 +71,12 @@ enum class Material {
     /// Not DC: after any gap Signalsmith settles DC at another level. Not a steady
     /// tone either: a render that came back late would match one.
     tone,
+    /// One source impulse. A looping event repeats it without hiding its timing
+    /// behind a periodic test signal.
+    impulse,
+    /// Periodic body with a sharp loop-top transient, so correlation has many
+    /// plausible overlaps but the correct source time remains observable.
+    drumLoop,
 };
 
 constexpr int kLevelStep = 4096;
@@ -83,9 +90,13 @@ float levelAt(std::int64_t frame) {
 
 class SourceFile final : public AudioFileReader {
   public:
-    SourceFile(Material material, std::int64_t length, ReaderGate* gate,
+    SourceFile(Material material, std::int64_t length, std::int64_t impulseFrame, ReaderGate* gate,
                std::atomic<std::int64_t>& furthest)
-        : material_(material), length_(length), gate_(gate), furthest_(furthest) {}
+        : material_(material),
+          length_(length),
+          impulseFrame_(impulseFrame),
+          gate_(gate),
+          furthest_(furthest) {}
 
     std::int64_t lengthInSamples() const override {
         return length_;
@@ -121,6 +132,19 @@ class SourceFile final : public AudioFileReader {
             return 0.0f;
         if (material_ == Material::counting)
             return static_cast<float>(frame + 1);
+        if (material_ == Material::impulse)
+            return frame == impulseFrame_ ? 1.0f : 0.0f;
+        if (material_ == Material::drumLoop) {
+            const auto at = frame - impulseFrame_;
+            const auto phase = 2.0 * juce::MathConstants<double>::pi * 174.0 *
+                               static_cast<double>(at) / kSampleRate;
+            const auto body = 0.18 * std::sin(phase) + 0.08 * std::sin(phase * 3.0);
+            const auto attack =
+                at >= 0 && at < 1024
+                    ? 0.7 * std::exp(-static_cast<double>(at) / 140.0) * (at % 2 == 0 ? 1.0 : -1.0)
+                    : 0.0;
+            return static_cast<float>(body + attack);
+        }
         return levelAt(frame) *
                static_cast<float>(std::cos(2.0 * juce::MathConstants<double>::pi * 882.0 *
                                            static_cast<double>(frame) / kSampleRate));
@@ -128,6 +152,7 @@ class SourceFile final : public AudioFileReader {
 
     Material material_;
     std::int64_t length_;
+    std::int64_t impulseFrame_;
     ReaderGate* gate_;
     std::atomic<std::int64_t>& furthest_;
 };
@@ -135,11 +160,12 @@ class SourceFile final : public AudioFileReader {
 class Files final : public magda::engine::AudioFileReaderFactory {
   public:
     std::unique_ptr<AudioFileReader> open(const std::string&) override {
-        return std::make_unique<SourceFile>(material, length, gate, furthest);
+        return std::make_unique<SourceFile>(material, length, impulseFrame, gate, furthest);
     }
 
     Material material = Material::tone;
     std::int64_t length = 100000000;
+    std::int64_t impulseFrame = kImpulseFrame;
     ReaderGate* gate = nullptr;
 
     /// The end of the furthest read the worker has made.
@@ -967,6 +993,109 @@ TEST_CASE("A prepared arrangement loop retains its destination while the reader 
         CHECK(incomingDamage.worstDifference == 0.0f);
         CHECK(incomingDamage.zeroWhereAudible == 0);
         CHECK(incomingDamage.silentWhereAudible == 0);
+    }
+}
+
+TEST_CASE("SoundTouch does not play a source-loop onset before an arrangement transport wrap",
+          "[engine][clip][streaming][loop][soundtouch-probe]") {
+    for (const auto stretch : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        for (const auto sourceRate : {kSampleRate, kSampleRate * 44100.0 / 48000.0}) {
+            const Playback playback{stretch, 1.0, 128};
+            auto clip = clipFor(playback);
+            auto& event = clip.events.front();
+            event.autoTempo = true;
+            event.interpBpm = 120.0;
+            event.sourceSampleRate = sourceRate;
+            event.loopStartSamples =
+                static_cast<std::int64_t>(std::llround(kLoopStart * sourceRate / kSampleRate));
+            event.loopLengthSamples = static_cast<std::int64_t>(
+                std::llround((kLoopEnd - kLoopStart) * sourceRate / kSampleRate));
+
+            Rig rig(playback);
+            rig.files.material = Material::impulse;
+            rig.files.impulseFrame = event.loopStartSamples;
+            rig.prepareLoop(kLoopStart, kLoopEnd);
+            rig.arrange(clip);
+            rig.pool.fillNow();
+            playThroughWrap(rig, 4096);
+
+            const auto peakIn = [&](std::int64_t from, std::int64_t to) {
+                float peak = 0.0f;
+                for (auto sample = from; sample < to; ++sample)
+                    peak = std::max(peak, std::abs(rig.heard[static_cast<std::size_t>(sample)]));
+                return peak;
+            };
+            const auto before = peakIn(kLoopEnd - 4096, kLoopEnd);
+            const auto after = peakIn(kLoopEnd, kLoopEnd + 4096);
+            const auto energyIn = [&](std::int64_t from, std::int64_t to) {
+                double energy = 0.0;
+                for (auto sample = from; sample < to; ++sample)
+                    energy += std::abs(rig.heard[static_cast<std::size_t>(sample)]);
+                return energy;
+            };
+            const auto firstEnergy = energyIn(kLoopStart - 2048, kLoopStart + 4096);
+            const auto wrapEnergy = energyIn(kLoopEnd - 2048, kLoopEnd + 4096);
+            INFO("mode=" << stretch << " sourceRate=" << sourceRate << " before=" << before
+                         << " after=" << after << " firstEnergy=" << firstEnergy
+                         << " wrapEnergy=" << wrapEnergy);
+            CHECK(before < 0.05f);
+            CHECK(after > 0.5f);
+            CHECK(wrapEnergy < firstEnergy * 1.2);
+        }
+    }
+}
+
+TEST_CASE("SoundTouch keeps a periodic transient at its source time across a transport wrap",
+          "[engine][clip][streaming][loop][soundtouch-timing]") {
+    for (const auto stretch : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        for (const auto sourceRate : {kSampleRate, kSampleRate * 44100.0 / 48000.0}) {
+            const Playback playback{stretch, 1.0, 128};
+            auto clip = clipFor(playback);
+            auto& event = clip.events.front();
+            event.autoTempo = true;
+            event.interpBpm = 120.0;
+            event.sourceSampleRate = sourceRate;
+            event.loopStartSamples =
+                static_cast<std::int64_t>(std::llround(kLoopStart * sourceRate / kSampleRate));
+            event.loopLengthSamples = static_cast<std::int64_t>(
+                std::llround((kLoopEnd - kLoopStart) * sourceRate / kSampleRate));
+
+            Rig rig(playback);
+            rig.files.material = Material::drumLoop;
+            rig.files.impulseFrame = event.loopStartSamples;
+            rig.prepareLoop(kLoopStart, kLoopEnd);
+            rig.arrange(clip);
+            rig.pool.fillNow();
+            playThroughWrap(rig, 4096);
+
+            const Playback plain{mode::kDisabled, 1.0, 128};
+            auto plainClip = clip;
+            plainClip.events.front().autoTempo = false;
+            plainClip.events.front().timeStretchMode = mode::kDisabled;
+            Rig control(plain);
+            control.files.material = Material::drumLoop;
+            control.files.impulseFrame = event.loopStartSamples;
+            control.prepareLoop(kLoopStart, kLoopEnd);
+            control.arrange(plainClip);
+            control.pool.fillNow();
+            playThroughWrap(control, 4096);
+
+            float worst = 0.0f;
+            float sourceWorst = 0.0f;
+            for (auto sample = 0; sample < 4096; ++sample) {
+                const auto first = rig.heard[static_cast<std::size_t>(kLoopStart + sample)];
+                const auto wrapped = rig.heard[static_cast<std::size_t>(kLoopEnd + sample)];
+                worst = std::max(worst, std::abs(first - wrapped));
+                const auto before = kLoopEnd - 4096 + sample;
+                sourceWorst = std::max(sourceWorst,
+                                       std::abs(rig.heard[static_cast<std::size_t>(before)] -
+                                                control.heard[static_cast<std::size_t>(before)]));
+            }
+            INFO("mode=" << stretch << " sourceRate=" << sourceRate << " worst=" << worst
+                         << " sourceWorst=" << sourceWorst);
+            CHECK(worst < 0.001f);
+            CHECK(sourceWorst < 0.001f);
+        }
     }
 }
 
