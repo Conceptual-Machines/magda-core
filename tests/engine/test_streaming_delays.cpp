@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -243,13 +244,16 @@ struct Rig {
     };
 
     explicit Rig(const Playback& playbackIn, Section sectionIn = Section::Arrangement,
-                 PrefetchSettings settings = kPool, ReaderGate* gate = nullptr)
+                 PrefetchSettings settings = kPool, ReaderGate* gate = nullptr, int slotCount = 1)
         : playback(playbackIn), section(sectionIn), pool(files, reader, context(), settings) {
         files.material = playback.material();
         files.gate = gate;
 
-        table.entries.push_back(
-            LaunchHandleTable::Entry{.key = SlotKey{kTrack, kScene}, .handle = &handle});
+        launches.resize(static_cast<std::size_t>(slotCount));
+        for (auto scene = 0; scene < slotCount; ++scene)
+            table.entries.push_back(
+                LaunchHandleTable::Entry{.key = SlotKey{kTrack, scene},
+                                         .handle = &launches[static_cast<std::size_t>(scene)]});
         handles.publish(std::make_shared<const LaunchHandleTable>(table));
 
         source = section == Section::Session
@@ -272,15 +276,23 @@ struct Rig {
         publish(std::move(track));
     }
 
+    /// One slot per handle, scene by scene, each holding its own clip.
     void slot(const AudioClipPlayback& clip, double lengthBeats) {
-        SessionSlotPlayback slot;
-        slot.sceneIndex = kScene;
-        slot.lengthBeats = lengthBeats;
-        slot.audio.push_back(clip);
-
         TrackClipPlayback track;
         track.trackId = kTrack;
-        track.session.push_back(std::move(slot));
+
+        for (std::size_t scene = 0; scene < launches.size(); ++scene) {
+            auto own = clip;
+            own.clipId = static_cast<magda::ClipId>(scene + 1);
+            own.events.front().eventId = own.clipId;
+
+            SessionSlotPlayback slot;
+            slot.sceneIndex = static_cast<int>(scene);
+            slot.lengthBeats = lengthBeats;
+            slot.audio.push_back(std::move(own));
+            track.session.push_back(std::move(slot));
+        }
+
         publish(std::move(track));
     }
 
@@ -344,15 +356,19 @@ struct Rig {
         play(timeline, false, false);
     }
 
-    ClipStreamTable::Entry entry() {
+    ClipStreamTable::Entry entry(int index = 0) {
         const ClipStreamFeed::Reader published(pool.feed());
         REQUIRE(published);
-        REQUIRE(!published->entries.empty());
-        return published->entries.front();
+        REQUIRE(std::ssize(published->entries) > index);
+        return published->entries[static_cast<std::size_t>(index)];
     }
 
-    std::int64_t missing(ReadPurpose purpose) {
-        return entry().stream->missingFrames(purpose);
+    std::int64_t missing(ReadPurpose purpose, int index = 0) {
+        return entry(index).stream->missingFrames(purpose);
+    }
+
+    LaunchHandle& handle(int scene = 0) {
+        return launches[static_cast<std::size_t>(scene)];
     }
 
     Playback playback;
@@ -361,7 +377,7 @@ struct Rig {
     PrefetchThread reader{false};
     ClipVoicePool pool;
     ClipSnapshotFeed clips;
-    LaunchHandle handle;
+    std::deque<LaunchHandle> launches;
     LaunchHandleTable table;
     LaunchHandleFeed handles;
     magda::engine::LaunchRequestQueue requests;
@@ -807,16 +823,46 @@ constexpr double kSlotBeats = 4.0;
 constexpr double kWrapBeats = 1.0;
 constexpr std::int64_t kWrapSamples = 22050;
 
-TEST_CASE("A session launch is complete once the worker has filled, and counted when it has not",
-          "[engine][clip][streaming][session][2700]") {
+/// Where the retained opening runs out, from what startAt read before any round.
+struct Retained {
+    /// Output samples the opening certainly covers, and where it certainly does not.
+    std::int64_t within = 0;
+    std::int64_t beyond = 0;
+};
+
+Retained retainedOutput(Rig& rig) {
+    const auto entry = rig.entry();
+    const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+    const auto resident = rig.files.furthest.load() - ahead;
+    const auto block = rig.playback.blockSize;
+
+    Retained retained;
+    while (mostReading(rig.playback, retained.within + block) <= resident)
+        retained.within += block;
+    for (retained.beyond = retained.within; leastReading(rig.playback, retained.beyond) <= resident;
+         retained.beyond += block) {
+    }
+    return retained;
+}
+
+/// Launches @p rig's slot at kLaunch, @p inside the callback or on its first sample.
+void launchAt(Rig& rig, bool inside, bool fill) {
+    const auto block = rig.playback.blockSize;
+    for (std::int64_t position = 0; position < kLaunch; position += block)
+        rig.play(position, position > 0, fill);
+
+    const auto beat = static_cast<double>(kLaunch + 37) / kSampleRate / kSecondsPerBeat;
+    rig.handle().play(inside ? std::optional<double>(beat) : std::nullopt);
+    rig.play(kLaunch, true, fill);
+}
+
+TEST_CASE("A session launch plays its opening whether the worker has filled or not",
+          "[engine][clip][streaming][session][2698][2700]") {
     for (const auto& playback : playbackMatrix()) {
         for (const auto inside : {false, true}) {
             INFO(describe(playback) << (inside ? ", inside a callback" : ", on a callback"));
             const auto block = playback.blockSize;
             const auto launchSample = kLaunch + (inside ? 37 : 0);
-            const auto launchBeat =
-                static_cast<double>(launchSample) / kSampleRate / kSecondsPerBeat;
-            const auto after = roundUp(16384, block);
 
             Rig filled(playback, Section::Session);
             Rig paused(playback, Section::Session);
@@ -824,32 +870,113 @@ TEST_CASE("A session launch is complete once the worker has filled, and counted 
                 rig->slot(clipFor(playback, 2.0), kSlotBeats);
             filled.pool.fillNow();
 
-            for (std::int64_t position = 0; position < kLaunch; position += block) {
-                filled.play(position, position > 0, true);
-                paused.play(position, position > 0, false);
-            }
+            // Half the retained opening with no round at all, then the worker back.
+            const auto silentFor = retainedOutput(paused).within / 2 / block * block;
+            launchAt(filled, inside, true);
+            launchAt(paused, inside, false);
+            for (std::int64_t done = block; done < silentFor; done += block)
+                paused.play(kLaunch + done, true, false);
+            filled.playOn(kLaunch + block, silentFor);
             for (auto* rig : {&filled, &paused})
-                rig->handle.play(inside ? std::optional<double>(launchBeat) : std::nullopt);
-            filled.play(kLaunch, true, true);
-            paused.play(kLaunch, true, false);
-            for (auto* rig : {&filled, &paused})
-                rig->playOn(kLaunch + block, after);
+                rig->playOn(kLaunch + silentFor, roundUp(8192, block));
 
-            CHECK(filled.missing(ReadPurpose::playback) == 0);
-            CHECK(filled.missing(ReadPurpose::priming) == 0);
+            for (auto* rig : {&filled, &paused}) {
+                CHECK(rig->missing(ReadPurpose::playback) == 0);
+                CHECK(rig->missing(ReadPurpose::priming) == 0);
+                CHECK(rig->entry().stream->underruns() == 0);
+            }
+
             if (!playback.stretched()) {
                 CHECK(filled.heard[static_cast<std::size_t>(launchSample - 1)] == 0.0f);
                 CHECK(filled.heard[static_cast<std::size_t>(launchSample)] == 1.0f);
             }
 
-            const auto launchOffset = launchSample - kLaunch;
-            CHECK(paused.missing(ReadPurpose::priming) == primingFramesAt(paused, 0));
-            if (!playback.stretched())
-                CHECK(paused.missing(ReadPurpose::playback) == block - launchOffset);
-            checkAccounted(paused,
-                           compare(paused.heard, launchSample, filled.heard, launchSample,
-                                   after - launchOffset),
-                           block - launchOffset);
+            const auto length = std::ssize(paused.heard) - launchSample;
+            CHECK(compare(paused.heard, launchSample, filled.heard, launchSample, length)
+                      .worstDifference == 0.0f);
+        }
+    }
+}
+
+TEST_CASE("A session slot hands its retained opening over to the reader",
+          "[engine][clip][streaming][session][2698][2700]") {
+    for (const auto& playback : playbackMatrix()) {
+        const auto block = playback.blockSize;
+        const auto after = roundUp(16384, block);
+
+        // What the opening covers, before any round has added to it.
+        Rig probe(playback, Section::Session);
+        probe.slot(clipFor(playback, 2.0), kSlotBeats);
+        const auto covered = retainedOutput(probe);
+
+        Rig control(playback, Section::Session);
+        control.slot(clipFor(playback, 2.0), kSlotBeats);
+        control.pool.fillNow();
+        launchAt(control, false, true);
+        control.playOn(kLaunch + block, covered.beyond + after + 8 * block);
+
+        // The worker back before the retained opening runs out, at the last
+        // callback it covers, and once playback is past it.
+        for (const auto resume : {covered.within - block, covered.within, covered.beyond + block}) {
+            INFO(describe(playback) << ", worker back at " << resume << " of " << covered.within
+                                    << " to " << covered.beyond);
+            Rig heard(playback, Section::Session);
+            heard.slot(clipFor(playback, 2.0), kSlotBeats);
+            launchAt(heard, false, false);
+
+            for (std::int64_t done = block; done < resume; done += block)
+                heard.play(kLaunch + done, true, false);
+            heard.playOn(kLaunch + resume, after);
+
+            const auto damage =
+                compare(heard.heard, kLaunch, control.heard, kLaunch, resume + after);
+            INFO(summary(heard, damage));
+
+            if (resume <= covered.within) {
+                CHECK(heard.missing(ReadPurpose::playback) == 0);
+                CHECK(heard.missing(ReadPurpose::priming) == 0);
+                CHECK(damage.worstDifference == 0.0f);
+            } else {
+                checkAccounted(heard, damage, resume);
+            }
+        }
+    }
+}
+
+TEST_CASE("Several launched slots hand over from their own retained openings",
+          "[engine][clip][streaming][session][2698][2700]") {
+    constexpr int kSlots = 3;
+
+    for (const auto& playback :
+         {Playback{mode::kDisabled, 1.0, 128}, Playback{mode::kSoundTouchNormal, 1.2, 128},
+          Playback{mode::kSignalsmith, 0.8, 128}}) {
+        INFO(describe(playback));
+        const auto block = playback.blockSize;
+
+        Rig rig(playback, Section::Session, kPool, nullptr, kSlots);
+        rig.slot(clipFor(playback, 2.0), kSlotBeats);
+
+        const auto covered = retainedOutput(rig);
+        for (auto scene = 0; scene < kSlots; ++scene)
+            rig.handle(scene).play(std::nullopt);
+
+        // Every slot plays its own opening while the worker is still paused.
+        for (std::int64_t done = 0; done < covered.within; done += block)
+            rig.play(kLaunch + done, done > 0, false);
+
+        for (auto slot = 0; slot < kSlots; ++slot) {
+            INFO("slot " << slot);
+            CHECK(rig.missing(ReadPurpose::playback, slot) == 0);
+            CHECK(rig.missing(ReadPurpose::priming, slot) == 0);
+        }
+
+        // And past it every slot is counted, then back together.
+        rig.playOn(kLaunch + covered.beyond, roundUp(16384, block));
+        for (auto slot = 0; slot < kSlots; ++slot) {
+            INFO("slot " << slot);
+            CHECK(rig.missing(ReadPurpose::playback, slot) ==
+                  rig.missing(ReadPurpose::playback, 0));
+            CHECK(rig.entry(slot).stream->underruns() == rig.entry(0).stream->underruns());
         }
     }
 }
@@ -860,75 +987,62 @@ struct LoopingSlot {
         rig.slot(clipFor(playback, 2.0), kSlotBeats);
         rig.pool.fillNow();
         rig.playOn(0, kLaunch);
-        rig.handle.setLooping(kWrapBeats);
-        rig.handle.play(std::nullopt);
+        rig.handle().setLooping(kWrapBeats);
+        rig.handle().play(std::nullopt);
         rig.playOn(kLaunch, kWrapSamples * wraps + roundUp(16384, playback.blockSize));
     }
 
     Rig rig;
 };
 
-TEST_CASE("A session wrap loses its top until the reader returns, every pass",
-          "[engine][clip][streaming][session][2700]") {
+TEST_CASE("A session wrap plays its top from the retained opening, every pass",
+          "[engine][clip][streaming][session][2698][2700]") {
     constexpr int kWraps = 3;
 
     for (const auto& playback : playbackMatrix()) {
         INFO(describe(playback));
-        const auto block = playback.blockSize;
         LoopingSlot looping(playback, kWraps);
         auto& rig = looping.rig;
 
-        std::int64_t expectedLost = 0;
+        CHECK(rig.missing(ReadPurpose::playback) == 0);
+        CHECK(rig.missing(ReadPurpose::priming) == 0);
+
         for (auto wrap = 1; wrap <= kWraps; ++wrap) {
             INFO("wrap " << wrap);
             const auto at = kLaunch + wrap * kWrapSamples;
-            const auto returns = block - at % block;
-            expectedLost += returns;
 
-            // The pass is its own control: the first one ran from a filled pool.
+            // The first pass is the control: it ran from a filled pool.
             const auto damage = compare(rig.heard, at, rig.heard, kLaunch,
                                         std::min<std::int64_t>(kWrapSamples, 16384));
             INFO(summary(rig, damage));
-            if (!playback.stretched()) {
-                CHECK(damage.zeroWhereAudible == returns);
-                CHECK(damage.lastDifference < returns);
-            } else {
-                CHECK(damage.lastEnvelopeDifference <=
-                      returns + flushSamples(playback, rig.entry().preRollSamples));
-            }
+            CHECK(damage.zeroWhereAudible == 0);
+            CHECK(damage.silentWhereAudible == 0);
         }
-
-        CHECK(rig.missing(ReadPurpose::priming) == kWraps * primingFramesAt(rig, 0));
-        if (!playback.stretched())
-            CHECK(rig.missing(ReadPurpose::playback) == expectedLost);
-        else
-            CHECK(rig.missing(ReadPurpose::playback) <= kWraps * mostReading(playback, block));
     }
 }
 
-TEST_CASE("A session wrap plays its top complete while the reader keeps up",
-          "[engine][clip][streaming][session][2700][!shouldfail]") {
-    // Pending the retained session opening in #2698.
-    for (const auto blockSize : {64, 128, 512}) {
-        LoopingSlot looping({mode::kDisabled, 1.0, blockSize}, 2);
-        CHECK(looping.rig.missing(ReadPurpose::playback) == 0);
-    }
-}
+TEST_CASE("A session re-trigger plays its top from the retained opening",
+          "[engine][clip][streaming][session][2698][2700]") {
+    for (const auto& playback : playbackMatrix()) {
+        INFO(describe(playback));
+        const auto block = playback.blockSize;
 
-TEST_CASE("A session re-trigger plays its top complete while the reader keeps up",
-          "[engine][clip][streaming][session][2700][!shouldfail]") {
-    // Pending the retained session opening in #2698.
-    for (const auto blockSize : {64, 128, 512}) {
-        const Playback playback{mode::kDisabled, 1.0, blockSize};
         Rig rig(playback, Section::Session);
         rig.slot(clipFor(playback, 2.0), kSlotBeats);
         rig.pool.fillNow();
         rig.playOn(0, kLaunch);
-        rig.handle.play(std::nullopt);
-        const auto position = rig.playOn(kLaunch, 16384);
-        rig.handle.play(std::nullopt);
-        rig.playOn(position, 4096);
+        rig.handle().play(std::nullopt);
+        const auto position = rig.playOn(kLaunch, roundUp(16384, block));
+
+        rig.handle().play(std::nullopt);
+        rig.playOn(position, roundUp(8192, block));
+
         CHECK(rig.missing(ReadPurpose::playback) == 0);
+        CHECK(rig.missing(ReadPurpose::priming) == 0);
+        const auto damage = compare(rig.heard, position - kLaunch, rig.heard, 0,
+                                    std::ssize(rig.heard) - (position - kLaunch));
+        INFO(summary(rig, damage));
+        CHECK(damage.silentWhereAudible == 0);
     }
 }
 

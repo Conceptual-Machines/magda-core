@@ -6,7 +6,7 @@ Analysis only; no playback changes. Recorded 2026-09-15.
 
 - [Issue #2699](https://github.com/Conceptual-Machines/magda-core/issues/2699).
 - Development baseline: `f6543da38`, including the SoundTouch/Stop/Play fix in #2697.
-- Pending dependency: [PR #2698](https://github.com/Conceptual-Machines/magda-core/pull/2698), inspected at `356156ae9715e0a58cb9242f7640bad6b87531a7`. Still open at inspection. Its retained session opening and Signalsmith priming changes are not in the development baseline.
+- Dependency: [PR #2698](https://github.com/Conceptual-Machines/magda-core/pull/2698), inspected at `356156ae9715e0a58cb9242f7640bad6b87531a7` and open at the time. It has since merged, and the measurements below include its retained session opening and Signalsmith priming.
 - Existing prefetch tests passed: 10 cases, 5,246 assertions. This establishes existing behaviour, not the delayed-reader acceptance criteria below. The pending PR was inspected, not built or tested in this audit.
 
 ## Findings
@@ -135,8 +135,9 @@ No dependency code has been cherry-picked, and no implementation is proposed as 
 
 ## Measurements (#2700)
 
-Deterministic delayed-reader tests on the development baseline, 44.1 kHz, plain playback, both
-SoundTouch modes and Signalsmith at 0.8x and 1.2x, 64/128/512-sample callbacks. Sources:
+Deterministic delayed-reader tests, 44.1 kHz, plain playback, both SoundTouch modes and
+Signalsmith at 0.8x and 1.2x, 64/128/512-sample callbacks. Measured with #2698 merged, so the
+retained session opening is in. Sources:
 [test_prefetch_delays.cpp](../../tests/audio/test_prefetch_delays.cpp) and
 [test_streaming_delays.cpp](../../tests/engine/test_streaming_delays.cpp).
 `PrefetchStream::missingFrames` counts undelivered source frames per read purpose (playback or
@@ -151,17 +152,17 @@ render that came back late fails the envelope comparison rather than passing it 
 | Stream catch-up after a long stall | Rounds = ceil(behind / (coverage - block)), confirming finding 7 |
 | Stopped locate then Play, one worker round | Complete, on and inside a stretch cell |
 | Stopped locate with no round, playing locate, arrangement wrap | Plain loses exactly the rest of that callback. Stretchers lose 102 to 768 playback frames plus the priming window (up to 7.5k frames): up to 8.2k output samples (186 ms) of silence, although the reader answered on the next callback |
-| Session launch, filled pool | Complete |
-| Session launch, paused worker | Counted as above; recovers like a missed prime |
-| Session wrap or re-trigger, worker keeping up | Every pass loses the reading after the wrap in that callback; expected to change with #2698 |
+| Session launch, on or inside a callback | Complete whether the worker has filled or is paused: the retained opening covers it |
+| Retained opening handing over | Complete when the worker is back before or at the last callback the opening covers; past it, counted and recovering like any stall. Same for three slots launched together, each from its own opening |
+| Session wrap or re-trigger, worker keeping up | Complete, every pass |
 | Locate inside resident audio | Pool still dropped (finding 1) |
 | Seek during an in-flight fill | The worker finishes the whole old pool first; the new position sounds two callbacks later |
 | One held read, three streams | Streams registered after the held one starve for the whole hold; earlier ones lose nothing |
 | Partial prime | Priming shortfall counted exactly and apart from playback; `ClipAudioSource::starvedVoices` stays 0 |
 
-Cases whose intended outcome is known but not yet met are `[!shouldfail]`: locate inside resident
-audio, arrangement wrap first block, session wrap and re-trigger. The #2698 retained-opening handoff
-is not on this baseline and is not measured here.
+Two cases whose intended outcome is known but not met are `[!shouldfail]`: a locate inside resident
+audio, and an arrangement loop wrap's first block. Both are the same gap, which the session cache
+does not cover: nothing prepares an arrangement destination before the transport reaches it.
 
 Two things the harness found: Signalsmith drew bin phases from `std::random_device` below 0.5x,
 so two renders of one timeline differed (now reseeded on every prime); and a DC source through
