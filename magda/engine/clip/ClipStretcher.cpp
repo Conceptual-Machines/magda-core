@@ -57,11 +57,13 @@ int samplesOf(juce::dsp::AudioBlock<const float> block) {
 constexpr double kPreRollHeadroom = 1.25;
 
 /**
- * @brief The generator Signalsmith draws bin phases from below half speed.
+ * @brief The generator Signalsmith draws from when it jitters bin phases.
  *
- * Its default seeds from std::random_device, so two renders of one timeline
- * differ (#2700). The engine is a private member, so draws go through the
- * generator the calling stretcher installs for the duration of each call.
+ * Past a 2x stretch, so below half speed, it predicts each bin's phase from a
+ * randomly spread stretch factor rather than the true one, and its own engine
+ * seeds from std::random_device: one timeline rendered twice comes out
+ * differently (#2700). That engine is private, so every draw is forwarded to
+ * the generator the calling stretcher installs and reseeds on each prime.
  */
 struct InstalledRandom {
     using result_type = std::minstd_rand::result_type;
