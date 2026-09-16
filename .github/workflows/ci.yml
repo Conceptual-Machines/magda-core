@@ -9,7 +9,9 @@ on:
     # 'dependabot/**' so Dependabot bumps never auto-start CI (especially the
     # self-hosted macOS/Windows build jobs). Validate a bump on demand via the
     # workflow_dispatch button instead.
-    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**' ]
+    # 'dev/**' because a merge to a dev branch only lands commits whose PR
+    # already ran the full build; the release PR (dev -> main) runs it again.
+    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**', 'dev/**' ]
     tags-ignore: [ '**' ]
     # Belt-and-suspenders: also skip when a push only touches translation files.
     paths-ignore:
