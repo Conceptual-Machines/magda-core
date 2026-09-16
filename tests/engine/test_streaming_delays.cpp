@@ -695,6 +695,51 @@ TEST_CASE("A stall during a speed ramp that resident reading covers leaves playb
         checkCoveredStall(playback, kPool);
 }
 
+TEST_CASE("Catching up after a long stall does not re-read the stall",
+          "[engine][clip][streaming][2704]") {
+    // The reader fills forward from where it last read, and after a stall the
+    // callback is a long way past that. Every chunk it then comes back with is
+    // behind the cursor and thrown away, so a gap used to cost as much reading
+    // again before anything audible arrived -- the stall twice over. The stream
+    // now tells the reader where the callback actually got to.
+    for (const auto& playback :
+         {Playback{mode::kDisabled, 1.0, 128}, Playback{mode::kSoundTouchNormal, 1.2, 128},
+          Playback{mode::kSignalsmith, 0.8, 128}}) {
+        INFO(describe(playback));
+        const auto block = playback.blockSize;
+        const auto coverage = coverageOf(playback, kPool);
+
+        // Four pool windows, so catch-up proportional to the stall is four times
+        // anything that can be in flight when the callback says where it is.
+        std::int64_t stall = 0;
+        while (leastReading(playback, stall) < 4 * coverage)
+            stall += block;
+
+        Rig heard(playback, Section::Arrangement, kPool);
+        Rig control(playback, Section::Arrangement, kPool);
+        for (auto* rig : {&heard, &control}) {
+            rig->arrange(clipFor(playback));
+            rig->pool.fillNow();
+        }
+
+        const auto warm = roundUp(8192, block);
+        const auto after =
+            roundUp(std::max<std::int64_t>(
+                        16384, flushSamples(playback, heard.entry().preRollSamples) + 8192),
+                    block);
+        renderStall(heard, control, warm, stall, after);
+
+        const auto obsolete = heard.entry().stream->obsoleteFrames();
+        INFO("obsolete " << obsolete << ", stall reading " << leastReading(playback, stall));
+        CHECK(obsolete <= coverage);
+        CHECK(obsolete < leastReading(playback, stall));
+
+        // And it comes back where it left off rather than where it ran dry.
+        checkAccounted(heard, compare(heard.heard, warm, control.heard, warm, stall + after),
+                       stall);
+    }
+}
+
 TEST_CASE("A stall across the end of the file counts only frames the file has",
           "[engine][clip][streaming][2700]") {
     constexpr std::int64_t kLength = 60000;

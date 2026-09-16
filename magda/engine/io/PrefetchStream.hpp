@@ -198,6 +198,18 @@ class PrefetchStream {
         return missingFrames_[static_cast<std::size_t>(purpose)].load(std::memory_order_relaxed);
     }
 
+    /**
+     * @brief Frames the worker read that playback had already gone past.
+     *
+     * The cost of catching up rather than of falling behind, and a separate
+     * number from @ref missingFrames because it is paid after the reader is
+     * working again: every one of these is a disk read standing between the
+     * callback and the audio it is waiting for (#2704).
+     */
+    std::int64_t obsoleteFrames() const {
+        return obsoleteFrames_.load(std::memory_order_relaxed);
+    }
+
     /// Samples in the file. The one thing the audio thread reads from the
     /// reader, and it reads it from a copy taken before anything played.
     std::int64_t lengthInSamples() const {
@@ -309,6 +321,7 @@ class PrefetchStream {
 
     std::atomic<int> underruns_{0};
     std::array<std::atomic<std::int64_t>, 2> missingFrames_{};
+    std::atomic<std::int64_t> obsoleteFrames_{0};
 };
 
 }  // namespace magda::engine

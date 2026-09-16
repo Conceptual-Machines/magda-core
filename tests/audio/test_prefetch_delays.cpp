@@ -197,13 +197,11 @@ TEST_CASE("Sequential playback survives a stall while resident audio lasts",
             CHECK(stream.missing() == lost);
             CHECK(stream.stream->underruns() == shortReads);
 
-            // One worker round per callback from here. Each round refills the
-            // whole pool from where the last one stopped, behind the cursor.
-            const auto behind = position - stream.coverage;
-            const auto expectedRounds =
-                behind <= 0 ? 1
-                            : static_cast<int>((behind + stream.coverage - blockSize - 1) /
-                                               (stream.coverage - blockSize));
+            // One round, however long the stall was. A short read tells the
+            // reader where the callback got to, so the round after it reads the
+            // material being waited for rather than the distance back to where
+            // the reader stopped (#2704).
+            constexpr auto expectedRounds = 1;
             auto rounds = 0;
             for (;; position += blockSize) {
                 stream.fill();
@@ -251,8 +249,8 @@ TEST_CASE("A read held in flight delays only what lies behind it", "[engine][io]
     CHECK(stream.missing() == 768 - 512);
 }
 
-TEST_CASE("A seek during an in-flight fill waits for the worker to finish the old pool",
-          "[engine][io][prefetch][2700]") {
+TEST_CASE("A seek during an in-flight fill costs only the read already in flight",
+          "[engine][io][prefetch][2704]") {
     Gate gate;
     Stream stream(64, {256, 4}, 1000000, 0.0f, &gate);
     gate.closeFrom(256);
@@ -266,15 +264,15 @@ TEST_CASE("A seek during an in-flight fill waits for the worker to finish the ol
         CHECK(stream.read(kTarget) == 0);
     }
 
-    // The held read and three more chunks, all for the position abandoned.
-    CHECK(readsBefore(*stream.reader, kTarget) == 5);
-    CHECK(std::ssize(stream.reader->starts) == 5);
+    // The chunk that landed before the gate closed, and the one held across the
+    // seek. A read already inside the reader cannot be called back; the rest of
+    // the pool is read for the new position, because the request is looked at
+    // between chunks rather than once on the way in.
+    CHECK(readsBefore(*stream.reader, kTarget) == 2);
 
-    CHECK(stream.read(kTarget + 64) == 0);
-    stream.fill();
-    REQUIRE(stream.read(kTarget + 128) == 64);
-    CHECK(stream.holds(kTarget + 128, 64));
-    CHECK(stream.missing() == 128);
+    REQUIRE(stream.read(kTarget + 64) == 64);
+    CHECK(stream.holds(kTarget + 64, 64));
+    CHECK(stream.missing() == 64);
 }
 
 TEST_CASE("A held read starves the streams the worker has not reached",
