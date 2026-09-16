@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 #include <vector>
 
 #include "transport/TransportClock.hpp"
@@ -802,4 +803,32 @@ TEST_CASE("A stopped transport publishes the cursor it stands on",
     const auto standing = clock.syncPoint();
     CHECK(standing.beat == approx(8.0));
     CHECK(standing.monotonicBeat == approx(0.0));
+}
+
+TEST_CASE("A loop whose end is not a whole sample away still wraps",
+          "[engine][transport][clock][loop]") {
+    // Four beats at 175 bpm and 48 kHz is 65828.57 samples. Rounding the cut
+    // up put one sample past the loop end into the block, and the wrap then
+    // took the cursor for one put there on purpose and let it run (#2691).
+    constexpr double kRate = 48000.0;
+    TransportClock clock;
+    auto snapshot = playing(0.0);
+    snapshot.tempo = TempoMap(
+        {magda::engine::TempoChange{.startBeat = 0.0, .bpm = 175.0}},
+        {magda::engine::TimeSignatureChange{.startBeat = 0.0, .numerator = 4, .denominator = 4}});
+    snapshot.loop = {true, 0.0, 4.0};
+
+    const auto samplesPerBeat = kRate * 60.0 / 175.0;
+    const auto blocks = static_cast<int>(std::ceil(12.5 * samplesPerBeat / 512.0));
+    auto wraps = 0;
+    for (auto block = 0; block < blocks; ++block) {
+        for (const auto& segment : clock.advance(snapshot, kRate, 512)) {
+            REQUIRE(segment.block.beats.end <= 4.0 + 1.0e-9);
+            if (block > 0 && !segment.block.continuous)
+                ++wraps;
+        }
+        REQUIRE(clock.positionBeats() < 4.0 + 1.0e-9);
+    }
+    CHECK(wraps == 3);
+    CHECK(clock.loopWrapOverflows() == 0);
 }

@@ -138,9 +138,9 @@ class TransportClock {
     double secondsAfter(std::int64_t samples) const;
     double beatAfter(const TempoMap& tempo, std::int64_t samples) const;
 
-    /// Samples from the cursor until the timeline reaches @p beat, rounded up
-    /// so the answer is the first sample at or past it. Negative when it is
-    /// already behind.
+    /// Whole samples from the cursor until the timeline reaches @p beat, so a
+    /// cut at the answer lands on or before the beat, never past it. Negative
+    /// when it is already behind.
     std::int64_t samplesUntil(const TempoMap& tempo, double beat) const;
 
     /// @brief Publish @p beat beside the monotonic count as one reading.

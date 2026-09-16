@@ -682,6 +682,23 @@ TEST_CASE("A session block is the block with its beats moved onto the run",
     CHECK(material.beatAtTime(material.seconds.end) == Approx(material.beats.end));
 }
 
+TEST_CASE("A run carries on through an arrangement wrap", "[engine][clip][session]") {
+    // The transport looped back at the start of this block, so the arrangement
+    // is discontinuous. The run began a block earlier and its material beats
+    // carry on, so the voice must not start over (#2691).
+    auto block = blockAt(41, false);
+    const magda::engine::MaterialOrigin origin{blockAt(40).beats.start, blockAt(40).seconds.start};
+    const magda::engine::BeatRange range{block.monotonicBeats.start, block.monotonicBeats.end};
+
+    const auto material = magda::engine::materialBlock(block, range, origin);
+    CHECK(material.continuous);
+    CHECK(material.beats.start == Approx(kBeatsPerBlock));
+
+    // The run beginning on this block is still a beginning.
+    const magda::engine::MaterialOrigin here{block.beats.start, block.seconds.start};
+    CHECK_FALSE(magda::engine::materialBlock(block, range, here).continuous);
+}
+
 TEST_CASE("A session block answers about beats through the map, not its own line",
           "[engine][clip][session]") {
     // 120 held to beat 4, which is two seconds in, then 60. Two changes at the
