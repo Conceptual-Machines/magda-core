@@ -107,6 +107,94 @@ Validation of this follow-up on 16 September:
   of the loop-repeat fix, separate from the automated results above. Flickering
   was not explicitly addressed in that reply, so its status remains unconfirmed.
 
+## Follow-up after #2710: doubled SoundTouch attack at the wrap
+
+After #2710 merged, the user reported a different symptom: SoundTouch's first
+hit sounds doubled when the Arrangement loop wraps. The retained-destination
+fix had already passed the user's live listening check. Do not remove that fix
+or reclassify this report as the same missing-priming failure.
+
+Read-only inspection found the same eight-beat Arrangement clip and transport
+loop at 175 BPM. The source file is 120,960 frames at 44.1 kHz; the device log
+reports 48 kHz / 512 frames. An isolated impulse did not reproduce the suspected
+early hit. That negative control cannot establish correct timing for complex
+drum material, because SoundTouch's overlap search depends on its input.
+
+A standalone probe using the actual drum sample and the native SoundTouch
+library at unity tempo found an absolute timing error. The initial output
+aligned with the source, but near the loop end SoundTouch Normal matched source
+audio 398 frames ahead, and Better matched 532 frames ahead (about 9 and 12 ms
+at 44.1 kHz). A transport reset that plays source sample zero again can therefore
+repeat an attack already exposed in the outgoing tail. Comparing only the
+incoming section with another identically primed render would miss this.
+
+The same standalone comparison after cubic resampling to 48 kHz measured
+433 frames of advance in Normal and 578 in Better (again about 9 and 12 ms).
+Selecting the neutral overlap position reduced the fitted lag to zero in both
+modes at both sample rates. These are source-alignment measurements, not a
+claim that a listener has accepted the modified application.
+
+`TDStretch::processSamples()` searches for a new overlap offset even at neutral
+tempo. Periodic material can select a positive offset although no time stretch
+is required. A probe that kept the normal overlap/FIFO path and selected zero
+offset at neutral tempo removed the measured advance in both modes. This is
+different from the old nominal-tempo bypass, which upstream disabled because
+switching paths could click when the tempo crossed unity. Do not discard the
+whole priming output: that would reintroduce the missing opening transient.
+
+The native regression uses harmonic/transient material as well as an isolated
+impulse. It compares the outgoing tail with an independent plain source/resampler
+control and the incoming attack with its first passage. Removing the correction
+fails all four Normal/Better and equal-rate/resampling-ratio cases, with waveform
+errors of 0.63–0.72. With it, the timing cases pass. The resampling fixture uses
+the same 44.1-to-48 ratio at scaled sample rates; the actual-file 48 kHz
+measurement above is a separate standalone probe.
+
+The tempo-transition check holds exact unity and unity plus arithmetic epsilon
+for longer than a SoundTouch batch. Constant input verifies that entering and
+leaving the corrected branch does not empty its FIFO or change the level; it
+does not prove click-free transitions for every waveform.
+
+Focused validation: `[soundtouch-timing]` passed 14 assertions in two cases,
+the impulse probe passed 12 in one, `[first-hit]` passed 1,416 in five,
+`[2683]` passed 302 in five, and `[2700]` passed 6,960 in 25. The full
+`[engine][clip][stretch]` selection passed 688 assertions in 33 cases. The normal
+Debug application was built without launching it. **The user then rejected this
+build in live listening: “I still hear a kind of flam on the very first hit.”**
+The neutral-tempo timing correction fixes the measured regression, but it has
+not resolved the user's report and must not be described as an accepted fix.
+The next diagnostic must capture the live device buffer before and after the
+wrap and record the actual clip's stretch settings and rate. Do not infer those
+settings solely from an earlier run or from a source-relative offline test.
+
+The next build added only temporary device-output capture and settings logging;
+it did not change playback processing. The user then reported “yeah this works”.
+Keep both listening results: the earlier rejection and this successful run.
+Do not attribute the improvement to a new audio fix between those builds.
+
+The diagnostic armed before the clip was ready: its snapshot had zero tracks,
+and only 128 ms of its 12-second recording contained nonzero audio. Its two
+backward transport movements did not provide a valid first-pass/repeated-loop
+comparison. The later read-only project inspection showed the intended 175 BPM,
+eight-beat loop, but that does not retroactively identify the captured material.
+The capture therefore cannot explain the successful listening result.
+
+Temporary capture code was removed and the normal Debug application rebuilt,
+preserving the neutral-tempo correction. The user then confirmed the clean build:
+“this sounds correct”, adding that stretching is audible when reducing BPM but
+that this is normal. **The SoundTouch follow-up is accepted in live listening
+with diagnostics removed.** This confirms the final build's behavior; it does
+not explain why the earlier build with the same audio correction was rejected.
+Keep that uncertainty and the unusable capture in the record.
+
+The fix preserves timing at neutral tempo. It does not remove SoundTouch's
+normal time-stretch character at other ratios; do not treat the user's expected
+lower-BPM stretching as a remaining flam regression.
+
+The user also mentioned a transient UI blink, most apparent with the right
+panel expanded, then explicitly deferred it. No UI changes were made for that
+report; its cause and resolution remain unconfirmed.
+
 ## Outcome and scope
 
 The listening comparison identified the Signalsmith random-generator replacement

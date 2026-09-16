@@ -1073,6 +1073,58 @@ TEST_CASE("SoundTouch holds the tempo when a cell consumes a fractional number o
     }
 }
 
+TEST_CASE("SoundTouch stays continuous when tempo crosses unity",
+          "[engine][clip][stretch][first-hit][soundtouch-timing]") {
+    constexpr auto cell = magda::engine::kStretchCellSamples;
+    for (const auto which : {mode::kSoundTouchNormal, mode::kSoundTouchBetter}) {
+        StretchSetup setup;
+        setup.mode = which;
+        setup.nominalRate = 1.0;
+        setup.followsTempo = true;
+        auto stretcher = magda::engine::makeStretcher(setup);
+        REQUIRE(stretcher != nullptr);
+        const auto ahead = stretcher->readAheadSamples();
+        const auto preRoll = stretcher->preRollSamples(1.0);
+        PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
+        stream.startAt(ahead - preRoll);
+        while (stream.fill()) {
+        }
+        stretcher->prime(stream, ahead, preRoll, 1.0);
+
+        juce::AudioBuffer<float> input(2, magda::engine::maxReadingSamples(cell));
+        juce::AudioBuffer<float> output(2, cell);
+        double source = 0.0;
+        float worstError = 0.0f;
+        // Hold neutral for longer than one SoundTouch batch, including the
+        // arithmetic jitter its own setting comparison treats as unity. The
+        // constant material makes a FIFO gap or level discontinuity exact; it
+        // does not claim to measure every possible waveform's transition.
+        for (auto index = 0; index < 600; ++index) {
+            while (stream.fill()) {
+            }
+            const auto rate = index < 150   ? 0.8 + 0.2 * index / 150.0
+                              : index < 225 ? 1.0
+                              : index < 300 ? 1.0 + 1.0e-12
+                              : index < 450 ? 1.0 + 0.2 * (index - 300) / 150.0
+                                            : 1.2 - 0.4 * (index - 450) / 150.0;
+            const auto from = static_cast<std::int64_t>(std::llround(source)) + ahead;
+            source += cell * rate;
+            const auto to = static_cast<std::int64_t>(std::llround(source)) + ahead;
+            const auto count = static_cast<int>(to - from);
+            auto reading = juce::dsp::AudioBlock<float>(input).getSubBlock(0, count);
+            stream.read(from, reading, count);
+            stretcher->process(reading, 0.0, rate, juce::dsp::AudioBlock<float>(output));
+            for (int channel = 0; channel < 2; ++channel)
+                for (int sample = 0; sample < cell; ++sample)
+                    worstError =
+                        std::max(worstError, std::abs(output.getSample(channel, sample) - 1.0f));
+        }
+        INFO("mode=" << which);
+        CHECK(stream.underruns() == 0);
+        CHECK(worstError < 0.001f);
+    }
+}
+
 TEST_CASE("SoundTouch primes its lookahead without allocating on the audio thread",
           "[engine][clip][stretch][2683]") {
     if (!magda::test::allocationWatchWorks())
