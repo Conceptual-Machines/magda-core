@@ -999,7 +999,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     magda::test::setSourceDuration(clip, 2.7907);
     magda::test::audioEvent(clip).interpBpm = 172.0;
     magda::test::audioEvent(clip).interpTotalBeats = 8.0;
-    magda::test::audioEvent(clip).interpTotalBeatsLocked = true;
+    magda::test::audioEvent(clip).beatsFrom = Provenance::User;
     magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartBeats(0.0);
@@ -1049,7 +1049,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(static_cast<int>(eventObj->getProperty("sourceId")) ==
             static_cast<int>(sourceObj->getProperty("id")));
     REQUIRE(static_cast<double>(eventObj->getProperty("interpTotalBeats")) == Approx(8.0));
-    REQUIRE(static_cast<bool>(eventObj->getProperty("interpTotalBeatsLocked")));
+    REQUIRE(eventObj->getProperty("beatsFrom").toString() == "user");
     // The loop toggle is a clip property and did not move onto the event.
     REQUIRE(static_cast<bool>(clipObj->getProperty("loopEnabled")));
 
@@ -1069,7 +1069,7 @@ TEST_CASE("Audio clip serialization separates source facts from interpretation",
     REQUIRE(restored->placement.lengthBeats == Approx(16.0));
     REQUIRE(primaryEventOf(restored)->sourceDurationSeconds() == Approx(2.7907));
     REQUIRE(primaryEventOf(restored)->interpTotalBeats == Approx(8.0));
-    REQUIRE(primaryEventOf(restored)->interpTotalBeatsLocked);
+    REQUIRE(primaryEventOf(restored)->beatsFrom == Provenance::User);
     REQUIRE(primaryEventOf(restored)->loopLengthBeats() == Approx(8.0));
 }
 
@@ -1361,7 +1361,7 @@ TEST_CASE("Saved audio library warp markers survive BPM mismatch re-import",
     primaryEventOf(clip)->autoTempo = true;
     primaryEventOf(clip)->interpBpm = 140.0;
     primaryEventOf(clip)->interpTotalBeats = 9.3333333333;
-    primaryEventOf(clip)->interpTotalBeatsLocked = true;
+    primaryEventOf(clip)->beatsFrom = Provenance::User;
     primaryEventOf(clip)->warpEnabled = true;
     primaryEventOf(clip)->warpMarkers = {{0.0, 0.0}, {1.234, 1.75}, {3.5, 4.0}};
 

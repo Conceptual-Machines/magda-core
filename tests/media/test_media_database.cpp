@@ -273,6 +273,33 @@ TEST_CASE("User metadata read does not promote scanner values to saved clip prop
     REQUIRE_FALSE(saved->beatMode);
 }
 
+TEST_CASE("User metadata separates the scan's tempo from the user's own", "[media_db][metadata]") {
+    MediaDatabase db(":memory:");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm) "
+               "VALUES ('detected-only.wav', 'audio', 'wav', 0, 0, 0, 172.0)");
+    db.execute("INSERT INTO media_file "
+               "(path, kind, format, size_bytes, mtime_ns, indexed_at, bpm, bpm_user) "
+               "VALUES ('both.wav', 'audio', 'wav', 0, 0, 0, 172.0, 128.0)");
+
+    SECTION("Detected only: bpm is empty, detectedBpm carries the scan") {
+        auto meta = magda::media::getUserMetadata(db, "detected-only.wav");
+        REQUIRE(meta);
+        REQUIRE_FALSE(meta->bpm);
+        REQUIRE(meta->detectedBpm);
+        REQUIRE(*meta->detectedBpm == Approx(172.0));
+    }
+
+    SECTION("Both set: each stays in its own field") {
+        auto meta = magda::media::getUserMetadata(db, "both.wav");
+        REQUIRE(meta);
+        REQUIRE(meta->bpm);
+        REQUIRE(*meta->bpm == Approx(128.0));
+        REQUIRE(meta->detectedBpm);
+        REQUIRE(*meta->detectedBpm == Approx(172.0));
+    }
+}
+
 TEST_CASE("Editable media rows update display fields and delete cleanly", "[media_db][metadata]") {
     MediaDatabase db(":memory:");
     db.execute("INSERT INTO media_file "

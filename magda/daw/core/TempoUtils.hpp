@@ -35,4 +35,16 @@ inline int clampTimeSignatureValue(int value) {
     return value;
 }
 
+/// Beats a file of @p seconds holds at @p bpm. A loop exported at a tempo
+/// lands within a few samples of a whole beat; snapping there makes its cycle
+/// exact instead of 15.996. Anything further off is not a loop and keeps the
+/// fraction. Callers pass the result to adoption; the event never infers.
+inline double beatCountForDuration(double seconds, double bpm) {
+    if (seconds <= 0.0 || bpm <= 0.0)
+        return 0.0;
+    const double beats = seconds * bpm / 60.0;
+    const double whole = std::round(beats);
+    return whole > 0.0 && std::abs(beats - whole) < 0.02 ? whole : beats;
+}
+
 }  // namespace magda

@@ -204,14 +204,14 @@ void TracktionEngineWrapper::recordingFinished(
             ClipId clipId = clipManager.createAudioClip(trackId, startSeconds, lengthSeconds,
                                                         audioFilePath, ClipView::Arrangement);
 
-            // Set source interpretation BPM to the project tempo — we know the exact BPM the clip
-            // was recorded at, so skip unreliable auto-detection in syncClipToEngine.
+            // Recorded at the project tempo, so the interpretation is exact and
+            // the user owns it: no detection may replace it.
             if (auto* newClip = clipManager.getClip(clipId)) {
                 double projectBPM = ProjectManager::getInstance().getCurrentProjectInfo().tempo;
                 if (isValidBpm(projectBPM)) {
                     if (auto* event = newClip->primaryEvent()) {
-                        event->interpBpm = projectBPM;
-                        event->interpTotalBeats = lengthSeconds * projectBPM / 60.0;
+                        event->adoptBpm(projectBPM, Provenance::User);
+                        event->adoptTotalBeats(lengthSeconds * projectBPM / 60.0, Provenance::User);
                     }
                 }
                 if (!takes.empty()) {
@@ -661,11 +661,11 @@ bool TracktionEngineWrapper::finalizeSessionSlotAudioRecording(
         clipInfo->deriveTimesFromBeats(projectBpm);
         if (auto* event = clipInfo->primaryEvent()) {
             // Recorded at the project tempo, so the interpretation is exact
-            // rather than detected.
-            event->interpBpm = projectBpm;
-            event->interpTotalBeats = lengthBeats;
-            event->interpTotalBeatsLocked = true;
-            event->autoTempo = true;
+            // and the user owns it. Beat mode is asked for after the tempo is
+            // there to grant it.
+            event->adoptBpm(projectBpm, Provenance::User);
+            event->adoptTotalBeats(lengthBeats, Provenance::User);
+            event->setPlaybackIntent(PlaybackIntent::Beat);
             clipInfo->loopEnabled = true;
             event->loopStartSamples = 0;
             event->setLoopLengthSeconds(lengthBeats * 60.0 / projectBpm);

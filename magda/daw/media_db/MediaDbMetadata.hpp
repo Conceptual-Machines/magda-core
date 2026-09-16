@@ -28,6 +28,9 @@ class MediaDatabase;
 
 struct EffectiveMetadata {
     std::optional<double> bpm;
+    /// What the scan measured, filled by getUserMetadataForFile only, so a
+    /// drop can tell the user's tempo from the library's.
+    std::optional<double> detectedBpm;
     std::optional<std::string> keyRoot;
     std::optional<std::string> keyScale;
     std::optional<double> totalBeats;
@@ -107,6 +110,11 @@ int updateEditableMediaRows(MediaDatabase& db, const std::vector<std::int64_t>& 
                             const BulkEditableMediaUpdate& update);
 
 int resetMediaRowsToDetected(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
+
+// Forget everything musical the library holds for these rows: the scan's
+// tempo and key as well as the user's overrides and warp markers. The row
+// stays; the next scan or BEAT press measures again. Returns rows changed.
+int clearMediaRowMetadata(MediaDatabase& db, const std::vector<std::int64_t>& fileIds);
 
 [[nodiscard]] std::vector<MissingFileCandidate> findMissingFileCandidates(MediaDatabase& db,
                                                                           std::int64_t fileId,

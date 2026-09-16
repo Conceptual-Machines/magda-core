@@ -59,6 +59,7 @@ struct Candidate {
     /// Where the reader is pointed: the entry's own first sample, or where the
     /// cursor already is for a clip the transport is standing inside.
     double cueSeconds = 0.0;
+    bool session = false;
 };
 
 /**
@@ -258,7 +259,8 @@ std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEve
 }
 
 ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
-                                          const AudioEventPlayback& event, double cueSeconds) {
+                                          const AudioEventPlayback& event, double cueSeconds,
+                                          bool session) {
     // What this event asks of its file, and how what comes back is turned into
     // playback. Both from EventPlacement.hpp, which is also where the voice
     // asks: a reversed event is read in a mirrored file's coordinates and a
@@ -266,6 +268,7 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     // and read by another would play a clip's material from somewhere neither of
     // them named.
     Reader reader;
+    reader.session = session;
     reader.path = event.filePath;
     reader.read = sourceReadFor(event, context_.sampleRate);
     reader.setup = stretchSetupFor(clip, event, context_);
@@ -304,7 +307,14 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     //
     // Where playback will pick it up rather than where the event begins: a clip
     // the transport is already standing inside is read from where the cursor is.
-    reader.stream->startAt(cueFor(clip, event, cueSeconds, reader));
+    // Keep the priming window and 100 ms of playback in memory. Each session
+    // wrap can then restart immediately while the worker refills beyond it.
+    const auto cacheSamples = session ? reader.preRoll +
+                                            static_cast<int>(std::ceil(context_.sampleRate * 0.1 *
+                                                                       reader.setup.nominalRate)) +
+                                            maxReadingSamples(context_.maxBlockSize)
+                                      : 0;
+    reader.stream->startAt(cueFor(clip, event, cueSeconds, reader), cacheSamples);
 
     reader_.add(*reader.stream);
     return reader;
@@ -387,9 +397,8 @@ void ClipVoicePool::service() {
 
                 // Every slot, every round: a slot has no position, so there is
                 // no window it comes into and a launch can arrive on any block
-                // (#2301). Cued at its own origin and never moved, so the
-                // launch costs no seek. A slot stopped part way and relaunched
-                // does seek; the cue that avoids it is #2305's.
+                // (#2301). Its retained opening covers launches and re-triggers
+                // while the worker returns to the continuation of that opening.
                 //
                 // Its own budget, taken after the arrangement's rather than out
                 // of it (kMaxSessionReadersPerTrack).
@@ -400,7 +409,7 @@ void ClipVoicePool::service() {
                         for (const auto& event : clip.events)
                             slots.push_back(Candidate{clip.clipId, event.eventId, &clip, &event,
                                                       SecondsRange{windowStart, windowStart}, true,
-                                                      event.span.seconds.start});
+                                                      event.span.seconds.start, true});
 
                 // In scene order, so which slots a project past the budget
                 // keeps is a property of the project. The rest are counted: a
@@ -428,12 +437,19 @@ void ClipVoicePool::service() {
                     // same path (io/SourceReaders.hpp), and that is built into
                     // the reader rather than asked of it per block, so the
                     // reader has to be built again.
+                    // A session's retained opening also depends on its cue and
+                    // priming length; replace it rather than keeping stale audio.
                     const auto how = sourceReadFor(event, context_.sampleRate);
                     const auto setup = stretchSetupFor(*candidate.clip, event, context_);
 
                     if (const auto found = streams_.find(key);
                         found != streams_.end() && found->second.path == event.filePath &&
-                        found->second.read == how) {
+                        found->second.read == how && found->second.session == candidate.session &&
+                        (!candidate.session ||
+                         (found->second.setup == setup &&
+                          found->second.cueSamples == cueFor(*candidate.clip, event,
+                                                             event.span.seconds.start,
+                                                             found->second)))) {
                         auto reuse = found->second;
 
                         // A stretch setting changed, which the file did not.
@@ -472,7 +488,8 @@ void ClipVoicePool::service() {
                         continue;
                     }
 
-                    auto reader = open(*candidate.clip, event, candidate.cueSeconds);
+                    auto reader =
+                        open(*candidate.clip, event, candidate.cueSeconds, candidate.session);
                     if (reader.stream == nullptr)
                         ++unreadable;
 

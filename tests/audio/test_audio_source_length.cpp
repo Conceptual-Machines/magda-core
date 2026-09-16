@@ -266,16 +266,20 @@ TEST_CASE("ClipManager - setClipLoopEnabled preserves loopLength", "[audio][clip
 
     ClipManager::getInstance().shutdown();
 
-    SECTION("Enabling loop keeps the loop length set at creation") {
+    SECTION("Enabling loop fixes the region at the clip's span") {
         ClipId clipId = ClipManager::getInstance().createAudioClip(1, 0.0, 4.0, "test.wav");
         auto* clip = ClipManager::getInstance().getClip(clipId);
         REQUIRE(clip != nullptr);
 
+        // A fresh clip has chosen no range: the whole source, resolving to
+        // its own extent.
         primaryEventOf(clip)->speedRatio = 1.0;
-        REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Catch::Approx(4.0));
+        REQUIRE(primaryEventOf(clip)->loopExtent == RegionExtent::WholeSource);
+        REQUIRE(primaryEventOf(clip)->sourceLengthSeconds(4.0) == Catch::Approx(4.0));
 
         ClipManager::getInstance().setClipLoopEnabled(clipId, true, 120.0);
 
+        REQUIRE(primaryEventOf(clip)->loopExtent == RegionExtent::Explicit);
         REQUIRE(primaryEventOf(clip)->loopLengthSeconds() == Catch::Approx(4.0));
         REQUIRE(clip->loopEnabled == true);
     }

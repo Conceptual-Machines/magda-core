@@ -125,7 +125,7 @@ void SlotLauncher::launch(ClipId clipId) {
         // Before the play and on the same lane, so the length is in place when
         // the run begins: the handle re-triggers on it, and the pass it defines
         // is what the playhead below is wrapped against (LaunchRequests.hpp).
-        gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+        gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
 
         // On the same beat as the launch below, so the track hands over on one
         // sample rather than sounding two slots across the gap.
@@ -133,6 +133,7 @@ void SlotLauncher::launch(ClipId clipId) {
 
         gesture.play(keyOf(*clip), due);
     }
+    noteAsked(*clip);
 
     // The user's intent, which outlives any one run and is what a transport
     // stop and start re-launches from.
@@ -171,6 +172,7 @@ void SlotLauncher::stop(ClipId clipId) {
     }
 
     lastState_.erase(clipId);
+    asked_.erase(clipId);
     stopping_.erase(clip->trackId);
 
     if (auto* mutableClip = clips.getClip(clipId); mutableClip != nullptr)
@@ -229,7 +231,8 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         const auto leader = keyOf(*launching.front());
 
         for (const auto* clip : launching) {
-            gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+            gesture.setLooping(keyOf(*clip),
+                               clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
             handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
         }
 
@@ -247,6 +250,7 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
         if (auto* track = tracks.getTrack(clip->trackId); track != nullptr)
             track->activeSessionClipId = clip->id;
 
+        noteAsked(*clip);
         stopping_.erase(clip->trackId);
         lastState_[clip->id] = SessionClipPlayState::Queued;
         clips.notifyClipPlaybackStateChanged(clip->id);
@@ -285,6 +289,7 @@ void SlotLauncher::stopTrack(TrackId trackId) {
         engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
         gesture.stop(keyOf(*clip), due);
     }
+    asked_.erase(clipId);
 
     // Cleared here, so the sweep in processStateEvents knows this track is
     // winding down; the mode stays Session until the handle actually stops, or
@@ -336,6 +341,20 @@ void SlotLauncher::stopEverything() {
     syncPlaybackModes();
 }
 
+void SlotLauncher::noteAsked(const ClipInfo& clip) {
+    // Everything else on the track is being handed over, so its mark is stale.
+    for (const auto other :
+         ClipManager::getInstance().getClipsOnTrack(clip.trackId, ClipView::Session))
+        asked_.erase(other);
+
+    const auto* tap = tapFor(clip);
+    const auto reading = tap != nullptr ? tap->read() : engine::LaunchTap::Reading{};
+    asked_[clip.id] = Asked{.playing = reading.playing,
+                            .queued = static_cast<int>(reading.queued),
+                            .holdsSection = reading.holdsSection,
+                            .elapsedBeats = reading.elapsedBeats};
+}
+
 SessionClipPlayState SlotLauncher::playState(ClipId clipId) const {
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip == nullptr || clip->view != ClipView::Session)
@@ -346,6 +365,16 @@ SessionClipPlayState SlotLauncher::playState(ClipId clipId) const {
         return SessionClipPlayState::Stopped;
 
     const auto reading = tap->read();
+    if (const auto asked = asked_.find(clipId); asked != asked_.end()) {
+        const auto& at = asked->second;
+        const bool unanswered =
+            reading.playing == at.playing && static_cast<int>(reading.queued) == at.queued &&
+            reading.holdsSection == at.holdsSection && reading.elapsedBeats == at.elapsedBeats;
+        if (unanswered)
+            return SessionClipPlayState::Queued;
+        asked_.erase(asked);
+    }
+
     if (reading.playing)
         return SessionClipPlayState::Playing;
 
@@ -370,7 +399,7 @@ double SlotLauncher::playheadSeconds(ClipId clipId) const {
     if (!reading.playing)
         return -1.0;
 
-    const auto material = materialOf(*clip);
+    const auto material = materialOf(*clip, host_.launchTempo().bpmAt(0.0));
     auto beats = reading.elapsedBeats;
 
     if (material.looping && material.passBeats > 0.0)
@@ -464,6 +493,7 @@ void SlotLauncher::processStateEvents() {
 
 void SlotLauncher::forget() {
     lastState_.clear();
+    asked_.clear();
     stopping_.clear();
     playheadClip_ = INVALID_CLIP_ID;
     wasPlaying_ = false;
@@ -512,12 +542,11 @@ bool SlotLauncher::hasHandle(const ClipInfo& clip) const {
     return false;
 }
 
-SlotLauncher::Material SlotLauncher::materialOf(const ClipInfo& clip) {
-    // The placed length, which is what the engine re-triggers the slot on
-    // (ClipSnapshot.hpp) and so the only modulus a playhead can wrap against
-    // without drifting away from what is sounding. The clip's own loop region
-    // is a separate thing that happens inside one pass.
-    return {.passBeats = clip.placement.lengthBeats, .looping = clip.loopEnabled};
+SlotLauncher::Material SlotLauncher::materialOf(const ClipInfo& clip, double projectBpm) {
+    // The cycle the engine re-triggers the slot on (ClipSnapshot.hpp), so the
+    // only modulus a playhead can wrap against without drifting from what is
+    // sounding.
+    return {.passBeats = clip.sessionCycleBeats(projectBpm), .looping = clip.loopEnabled};
 }
 
 void SlotLauncher::stopForTransport() {
@@ -542,6 +571,7 @@ void SlotLauncher::stopForTransport() {
     }
 
     lastState_.clear();
+    asked_.clear();
     stopping_.clear();
 }
 
@@ -572,7 +602,7 @@ void SlotLauncher::relaunchActive() {
     engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
 
     for (const auto* clip : relaunching) {
-        gesture.setLooping(keyOf(*clip), clip->placement.lengthBeats);
+        gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
         gesture.play(keyOf(*clip));
     }
 }

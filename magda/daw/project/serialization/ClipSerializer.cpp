@@ -32,6 +32,92 @@ double getValidProjectTempo(double projectTempo) {
     return isValidBpm(projectTempo) ? projectTempo : DEFAULT_BPM;
 }
 
+const char* toString(Provenance from) {
+    switch (from) {
+        case Provenance::FileMetadata:
+            return "fileMetadata";
+        case Provenance::Analysis:
+            return "analysis";
+        case Provenance::User:
+            return "user";
+        case Provenance::None:
+            break;
+    }
+    return "none";
+}
+
+const char* toString(RegionExtent extent) {
+    switch (extent) {
+        case RegionExtent::Interpretation:
+            return "interpretation";
+        case RegionExtent::Explicit:
+            return "explicit";
+        case RegionExtent::WholeSource:
+            break;
+    }
+    return "wholeSource";
+}
+
+const char* toString(PlaybackIntent intent) {
+    switch (intent) {
+        case PlaybackIntent::Beat:
+            return "beat";
+        case PlaybackIntent::Free:
+            break;
+    }
+    return "free";
+}
+
+Provenance provenanceFromString(const juce::String& text, Provenance fallback) {
+    if (text == "none")
+        return Provenance::None;
+    if (text == "fileMetadata")
+        return Provenance::FileMetadata;
+    if (text == "analysis")
+        return Provenance::Analysis;
+    if (text == "user")
+        return Provenance::User;
+    return fallback;
+}
+
+RegionExtent regionExtentFromString(const juce::String& text, RegionExtent fallback) {
+    if (text == "wholeSource")
+        return RegionExtent::WholeSource;
+    if (text == "interpretation")
+        return RegionExtent::Interpretation;
+    if (text == "explicit")
+        return RegionExtent::Explicit;
+    return fallback;
+}
+
+PlaybackIntent playbackIntentFromString(const juce::String& text, PlaybackIntent fallback) {
+    if (text == "free")
+        return PlaybackIntent::Free;
+    if (text == "beat")
+        return PlaybackIntent::Beat;
+    if (text == "beatWhenKnown")  // a project saved while waiting for a tempo
+        return fallback;
+    return fallback;
+}
+
+/// Defaults for a project saved before ownership existed (#2674): a stored
+/// tempo came from detection, a locked beat count from the user, a non-zero
+/// region was drawn by hand, and autoTempo on was a request for beat mode.
+Provenance legacyBpmProvenance(double interpBpm) {
+    return interpBpm > 0.0 ? Provenance::Analysis : Provenance::None;
+}
+Provenance legacyBeatsProvenance(double interpTotalBeats, bool locked) {
+    if (interpTotalBeats <= 0.0)
+        return Provenance::None;
+    return locked ? Provenance::User : Provenance::Analysis;
+}
+RegionExtent legacyLoopExtent(int64_t loopLengthSamples) {
+    return loopLengthSamples > 0 ? RegionExtent::Explicit : RegionExtent::WholeSource;
+}
+PlaybackIntent legacyPlaybackIntent(bool autoTempo) {
+    return autoTempo ? PlaybackIntent::Beat : PlaybackIntent::Free;
+}
+
 juce::var serializeAudioEvent(const AudioEvent& event) {
     auto* obj = new juce::DynamicObject();
     obj->setProperty("id", event.id);
@@ -46,15 +132,18 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("anchorSamples", juce::String(event.sourceAnchorSamples));
     obj->setProperty("loopStartSamples", juce::String(event.loopStartSamples));
     obj->setProperty("loopLengthSamples", juce::String(event.loopLengthSamples));
+    obj->setProperty("loopExtent", toString(event.loopExtent));
 
     obj->setProperty("interpBpm", event.interpBpm);
+    obj->setProperty("bpmFrom", toString(event.bpmFrom));
     obj->setProperty("interpTotalBeats", event.interpTotalBeats);
-    obj->setProperty("interpTotalBeatsLocked", event.interpTotalBeatsLocked);
+    obj->setProperty("beatsFrom", toString(event.beatsFrom));
     if (!event.keyRoot.empty())
         obj->setProperty("keyRoot", juce::String(event.keyRoot));
     if (!event.keyScale.empty())
         obj->setProperty("keyScale", juce::String(event.keyScale));
 
+    obj->setProperty("playbackIntent", toString(event.playbackIntent));
     obj->setProperty("autoTempo", event.autoTempo);
     obj->setProperty("speedRatio", event.speedRatio);
     if (event.timeStretchMode != 0)
@@ -122,14 +211,25 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
     event.sourceAnchorSamples = readSamples(*obj, "anchorSamples");
     event.loopStartSamples = readSamples(*obj, "loopStartSamples");
     event.loopLengthSamples = readSamples(*obj, "loopLengthSamples");
+    event.loopExtent = regionExtentFromString(obj->getProperty("loopExtent").toString(),
+                                              legacyLoopExtent(event.loopLengthSamples));
 
     event.interpBpm = obj->getProperty("interpBpm");
     event.interpTotalBeats = obj->getProperty("interpTotalBeats");
-    event.interpTotalBeatsLocked = static_cast<bool>(obj->getProperty("interpTotalBeatsLocked"));
+    // interpTotalBeatsLocked is read, never written: it only feeds the default.
+    const bool legacyLocked = static_cast<bool>(obj->getProperty("interpTotalBeatsLocked"));
+    event.bpmFrom = provenanceFromString(obj->getProperty("bpmFrom").toString(),
+                                         legacyBpmProvenance(event.interpBpm));
+    event.beatsFrom =
+        provenanceFromString(obj->getProperty("beatsFrom").toString(),
+                             legacyBeatsProvenance(event.interpTotalBeats, legacyLocked));
     event.keyRoot = obj->getProperty("keyRoot").toString().toStdString();
     event.keyScale = obj->getProperty("keyScale").toString().toStdString();
 
+    // autoTempo is restored as stored, not re-resolved: load must not move it.
     event.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));
+    event.playbackIntent = playbackIntentFromString(obj->getProperty("playbackIntent").toString(),
+                                                    legacyPlaybackIntent(event.autoTempo));
     event.speedRatio = obj->getProperty("speedRatio");
     if (event.speedRatio <= 0.0)
         event.speedRatio = 1.0;
@@ -258,8 +358,10 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
 
     event.interpBpm = v1.interpBpm;
     event.interpTotalBeats = v1.interpTotalBeats;
-    event.interpTotalBeatsLocked = v1.interpTotalBeatsLocked;
+    event.bpmFrom = legacyBpmProvenance(v1.interpBpm);
+    event.beatsFrom = legacyBeatsProvenance(v1.interpTotalBeats, v1.interpTotalBeatsLocked);
     event.autoTempo = legacy.autoTempo;
+    event.playbackIntent = legacyPlaybackIntent(legacy.autoTempo);
     event.speedRatio = v1.speedRatio > 0.0 ? v1.speedRatio : 1.0;
     event.timeStretchMode = v1.timeStretchMode;
     event.warpEnabled = v1.warpEnabled;
@@ -283,6 +385,8 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
                                                  : v1.loopStartSeconds);
     event.setLoopLengthSeconds(beatsAuthoritative ? v1.loopLengthBeats * secondsPerBeat
                                                   : v1.loopLengthSeconds);
+    // The setter tags Explicit; a zero-length v1 region meant the whole file.
+    event.loopExtent = legacyLoopExtent(event.loopLengthSamples);
 
     event.autoPitch = legacy.autoPitch;
     event.autoPitchMode = legacy.autoPitchMode;

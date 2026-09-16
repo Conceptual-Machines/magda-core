@@ -66,8 +66,9 @@ class PrefetchStream {
      *
      * A start that isn't where the last read left off is a seek: what's
      * been read ahead is for somewhere else, so it's dropped and the reader
-     * is pointed at the new position. Nothing plays until it catches up,
-     * which is what @ref underruns counts.
+     * is pointed at the new position. A seek into the retained opening plays
+     * immediately while the worker fills its continuation; other seeks wait
+     * for the reader, which is what @ref underruns counts.
      */
     int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples);
 
@@ -93,7 +94,10 @@ class PrefetchStream {
      * up until a callback has run (@ref applyPendingCue), so those reads
      * would be thrown away and the reader would start again from behind.
      */
-    void startAt(std::int64_t sourceStart);
+    // Optionally retain the opening samples for repeated session launches.
+    // Reads and allocates here, before registration with the reader thread;
+    // the cache is immutable during playback.
+    void startAt(std::int64_t sourceStart, int cacheSamples = 0);
 
     /**
      * @brief Point the reader at a position before anything asks for it.
@@ -146,8 +150,8 @@ class PrefetchStream {
     /**
      * @brief Blocks the callback could not be given the samples for.
      *
-     * A seek costs at least one, since a disk can't be read inside a
-     * callback. Anything beyond that is the reader failing to keep up -- a
+     * A seek outside the retained opening costs at least one, since a disk
+     * can't be read inside a callback. Anything beyond that is the reader failing to keep up -- a
      * property of the machine rather than the music -- and has to be
      * visible, since silence nobody counted is indistinguishable from a gap
      * in the material.
@@ -207,6 +211,10 @@ class PrefetchStream {
     double sourceSampleRate_ = 0.0;
     int numChannels_ = 2;
     int chunkSamples_ = 0;
+
+    juce::AudioBuffer<float> startCache_;
+    std::int64_t cacheStart_ = 0;
+    int cacheCount_ = 0;
 
     std::vector<std::unique_ptr<Chunk>> pool_;
     ChunkFifo filled_;
