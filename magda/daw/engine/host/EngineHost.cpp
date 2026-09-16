@@ -46,6 +46,7 @@
 #include "clip/ClipVoicePool.hpp"
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
+#include "io/AudioFileSink.hpp"
 #include "io/LiveInput.hpp"
 #include "io/PrefetchThread.hpp"
 #include "plan/PlanCompiler.hpp"
@@ -305,14 +306,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // something takes it, so this is how smooth a meter looks.
         startTimer(kMeterIntervalMs);
 
-        if (!EngineTrace::enabled())
+        // Keep the sparse startup diagnostic available in ordinary app runs.
+        const auto fullTrace = EngineTrace::enabled();
+        engine::setPlaybackTraceSink(&Impl::onPlaybackTrace, this);
+        if (!fullTrace)
             return;
 
         // Both ends of the race into one stream (#2568): the publishes below
         // write to it on this thread and the devices write to it on the audio
         // thread, and reading them in order is the whole point.
         factory_.traceInto(trace_);
-        engine::setPlaybackTraceSink(&Impl::onPlaybackTrace, this);
         EngineTrace::print("MIDI trace on. Publishes and what reached each device, in order.");
     }
 
@@ -326,7 +329,22 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// same stream as the notes (#2674).
     static void onPlaybackTrace(const engine::PlaybackTraceEntry& entry, void* context) {
         auto* self = static_cast<Impl*>(context);
-        self->trace_.write({.kind = entry.kind == engine::PlaybackTraceEntry::Kind::PassWrap
+        const auto priming = entry.kind == engine::PlaybackTraceEntry::Kind::Prime;
+        const auto opening = entry.kind == engine::PlaybackTraceEntry::Kind::OpeningAudio;
+        // Temporary first-hit diagnostic: capture the device output beginning
+        // with the callback containing this clip's first sample.
+        if (opening && entry.a == 0.0 &&
+            self->liveCaptureState_.load(std::memory_order_acquire) == 0) {
+            self->liveCaptureSamples_ = 0;
+            self->liveCaptureClip_ = entry.clip;
+            self->liveCaptureRate_ = self->context_.sampleRate;
+            self->liveCaptureState_.store(1, std::memory_order_release);
+        }
+        if (!priming && !opening && !EngineTrace::enabled())
+            return;
+        self->trace_.write({.kind = priming   ? EngineTrace::Kind::Prime
+                                    : opening ? EngineTrace::Kind::OpeningAudio
+                                    : entry.kind == engine::PlaybackTraceEntry::Kind::PassWrap
                                         ? EngineTrace::Kind::PassWrap
                                         : EngineTrace::Kind::VoiceWindow,
                             .beat = entry.beat,
@@ -339,6 +357,25 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
+        if (liveCaptureState_.load(std::memory_order_acquire) == 2) {
+            const auto directory = juce::File::getSpecialLocation(juce::File::tempDirectory)
+                                       .getChildFile("magda-live-first-hit");
+            if (directory.createDirectory()) {
+                const auto file =
+                    directory.getChildFile("clip-" + juce::String(liveCaptureClip_) + "-" +
+                                           juce::String(juce::Time::currentTimeMillis()) + ".wav");
+                engine::AudioFileSpec spec;
+                spec.bitDepth = 32;
+                const engine::RenderContext context{liveCaptureRate_, liveCaptureSamples_, 2};
+                if (auto sink = engine::AudioFileSink::create(file, spec, context)) {
+                    sink->write(liveCapture_, liveCaptureSamples_);
+                    if (sink->close())
+                        EngineTrace::print("LIVE CAPTURE " + file.getFullPathName() +
+                                           " rate=" + juce::String(liveCaptureRate_));
+                }
+            }
+            liveCaptureState_.store(0, std::memory_order_release);
+        }
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
@@ -1173,6 +1210,17 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                               done == 0 ? engine::LiveInputBlock{{}, streams}
                                         : engine::LiveInputBlock{});
 
+            if (liveCaptureState_.load(std::memory_order_acquire) == 1) {
+                const auto target =
+                    std::min(liveCapture_.getNumSamples(), static_cast<int>(liveCaptureRate_));
+                const auto take = std::min(piece, target - liveCaptureSamples_);
+                for (int channel = 0; channel < kChannels; ++channel)
+                    liveCapture_.copyFrom(channel, liveCaptureSamples_, block, channel, 0, take);
+                liveCaptureSamples_ += take;
+                if (liveCaptureSamples_ == target)
+                    liveCaptureState_.store(2, std::memory_order_release);
+            }
+
             for (auto channel = 0; channel < outputs; ++channel)
                 juce::FloatVectorOperations::copy(output[channel] + done,
                                                   scratch_.getReadPointer(channel), piece);
@@ -1679,6 +1727,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     std::vector<juce::String> unbuilt_;
     EngineTrace trace_;
+    // Preallocated; the callback never allocates or writes files. State 0 is
+    // idle, 1 belongs to the callback, and 2 belongs to the timer until saved.
+    juce::AudioBuffer<float> liveCapture_{2, 192000};
+    std::atomic<int> liveCaptureState_{0};
+    int liveCaptureSamples_ = 0;
+    std::int64_t liveCaptureClip_ = 0;
+    double liveCaptureRate_ = 48000.0;
 
     /// Where the levels go. Null until a caller asks (#2570).
     EngineHost::MeterSink meters_;

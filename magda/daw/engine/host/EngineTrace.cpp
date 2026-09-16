@@ -32,6 +32,18 @@ juce::String describe(const EngineTrace::Entry& entry) {
                  << juce::String(entry.b, 3) << ", run origin " << juce::String(entry.c, 3)
                  << ", elapsed " << juce::String(entry.d, 3);
             break;
+        case EngineTrace::Kind::OpeningAudio:
+            line << "OPENING clip " << juce::String(entry.clip)
+                 << " ms=" << juce::String(entry.a, 2) << " beforeGain=" << juce::String(entry.b, 6)
+                 << " afterGain=" << juce::String(entry.c, 6)
+                 << " missingPlayback=" << juce::String(entry.d, 0);
+            break;
+        case EngineTrace::Kind::Prime:
+            line << "PRIME clip " << juce::String(entry.clip)
+                 << " sourceStart=" << juce::String(entry.a, 0)
+                 << " requested=" << juce::String(entry.b, 0)
+                 << " missing=" << juce::String(entry.c, 0) << " rate=" << juce::String(entry.d, 6);
+            break;
         case EngineTrace::Kind::VoiceWindow: {
             // The reading is monotonic; the loop folds it below the stream.
             const auto fold = [&](double x) {

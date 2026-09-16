@@ -42,7 +42,16 @@ class EngineTrace {
      */
     static void print(const juce::String& line);
 
-    enum class Kind : std::uint8_t { NoteOn, NoteOff, Publish, Swap, PassWrap, VoiceWindow };
+    enum class Kind : std::uint8_t {
+        NoteOn,
+        NoteOff,
+        Publish,
+        Swap,
+        PassWrap,
+        VoiceWindow,
+        Prime,
+        OpeningAudio
+    };
 
     struct Entry {
         Kind kind = Kind::NoteOn;

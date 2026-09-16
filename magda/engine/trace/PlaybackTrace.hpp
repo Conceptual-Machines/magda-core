@@ -10,7 +10,7 @@
 namespace magda::engine {
 
 struct PlaybackTraceEntry {
-    enum class Kind : std::uint8_t { PassWrap, VoiceWindow };
+    enum class Kind : std::uint8_t { PassWrap, VoiceWindow, Prime, OpeningAudio };
     Kind kind = Kind::VoiceWindow;
     std::int64_t clip = 0;
     double beat = 0.0;  // timeline beat at the start of the block

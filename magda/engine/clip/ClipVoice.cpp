@@ -136,7 +136,16 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             // the stretcher is primed with is the material leading up to a
             // fixed instant. Read out of the same stream in the same pass, so
             // the cell's own read continues it rather than seeking again.
+            const auto missingBefore = stream.missingFrames(ReadPurpose::priming);
             stretcher.prime(stream, readFrom, preRoll, step);
+            playbackTrace({.kind = PlaybackTraceEntry::Kind::Prime,
+                           .clip = clip.clipId,
+                           .beat = block.beats.start,
+                           .a = static_cast<double>(readFrom - preRoll),
+                           .b = static_cast<double>(preRoll),
+                           .c = static_cast<double>(stream.missingFrames(ReadPurpose::priming) -
+                                                    missingBefore),
+                           .d = step});
             needsPrime = false;
         }
 
@@ -327,10 +336,18 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // it asked for. What "everything" counts in differs: the plain path asks
     // the reader for a block's worth of samples, and the grid asks it for
     // whatever a cell consumes and then measures what it produced.
+    const auto opening = windowStart - event.span.seconds.start < 0.2;
+    const auto missingBefore = stream.missingFrames(ReadPurpose::playback);
     const auto full = stretcher != nullptr
                           ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll,
                                                scratch, region, windowStart, count)
                           : stream.read(readFrom, reading, wanted) == wanted;
+
+    const auto peak = [&region] {
+        const auto range = region.findMinAndMax();
+        return std::max(std::abs(range.getStart()), std::abs(range.getEnd()));
+    };
+    const auto openingPeak = opening ? peak() : 0.0f;
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {
@@ -432,6 +449,16 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     } else {
         deClick_.advance(region);
     }
+
+    if (opening)
+        playbackTrace({.kind = PlaybackTraceEntry::Kind::OpeningAudio,
+                       .clip = clip.clipId,
+                       .beat = block.beats.start,
+                       .a = (windowStart - event.span.seconds.start) * 1000.0,
+                       .b = openingPeak,
+                       .c = peak(),
+                       .d = static_cast<double>(stream.missingFrames(ReadPurpose::playback) -
+                                                missingBefore)});
 
     // Before it is summed with anything else, and before any correction is
     // added to it: what is remembered has to be this voice's own signal, or a
