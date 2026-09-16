@@ -140,12 +140,14 @@ SoundTouch modes and Signalsmith at 0.8x and 1.2x, 64/128/512-sample callbacks. 
 [test_prefetch_delays.cpp](../../tests/audio/test_prefetch_delays.cpp) and
 [test_streaming_delays.cpp](../../tests/engine/test_streaming_delays.cpp).
 `PrefetchStream::missingFrames` counts undelivered source frames per read purpose (playback or
-priming), excluding frames past the end and before sample zero of a bounded reading.
+priming), excluding frames past the end and before sample zero of a bounded reading. Stretched
+cases play a tone whose level steps every 4096 frames through a sequence that never repeats, so a
+render that came back late fails the envelope comparison rather than passing it a step behind.
 
 | Case | Result |
 | --- | --- |
 | Stall within resident reading | No loss, output bit-identical to the fully supplied control, including at rates 0.1 and 10 and through a speed ramp |
-| Stall past resident reading | Loss counted; plain playback silent for exactly the counted frames and correct from the resume callback; stretchers back within 6.1k to 8.2k output samples of input returning; priming never re-runs |
+| Stall past resident reading | Loss counted; plain playback silent for exactly the counted frames and correct from the resume callback; stretchers back within 6.1k to 9.2k output samples of input returning; priming never re-runs |
 | Stream catch-up after a long stall | Rounds = ceil(behind / (coverage - block)), confirming finding 7 |
 | Stopped locate then Play, one worker round | Complete, on and inside a stretch cell |
 | Stopped locate with no round, playing locate, arrangement wrap | Plain loses exactly the rest of that callback. Stretchers lose 102 to 768 playback frames plus the priming window (up to 7.5k frames): up to 8.2k output samples (186 ms) of silence, although the reader answered on the next callback |

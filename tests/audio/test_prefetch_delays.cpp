@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <thread>
 #include <vector>
 
 #include "ReaderGate.hpp"
@@ -22,6 +21,7 @@ using magda::engine::PrefetchThread;
 using magda::engine::ReadPurpose;
 using magda::engine::RenderContext;
 using Gate = magda::test::ReaderGate;
+using Worker = magda::test::GatedWorker;
 
 namespace {
 
@@ -231,21 +231,20 @@ TEST_CASE("A read held in flight delays only what lies behind it", "[engine][io]
     Stream stream(64, {256, 4}, 1000000, 0.0f, &gate);
     gate.closeFrom(512);
 
-    std::thread worker([&] { stream.fill(); });
-    gate.waitUntilHeld();
-
-    // Two chunks landed before the held read.
     std::int64_t position = 0;
-    for (; position < 768; position += 64) {
-        const auto expected =
-            static_cast<int>(std::clamp<std::int64_t>(512 - position, 0, stream.blockSize));
-        REQUIRE(stream.read(position) == expected);
-        REQUIRE(stream.holds(position, expected));
-    }
-    CHECK(stream.missing() == 768 - 512);
+    {
+        Worker worker(gate, [&] { stream.fill(); });
+        REQUIRE(gate.waitUntilHeld());
 
-    gate.open();
-    worker.join();
+        // Two chunks landed before the held read.
+        for (; position < 768; position += 64) {
+            const auto expected =
+                static_cast<int>(std::clamp<std::int64_t>(512 - position, 0, stream.blockSize));
+            REQUIRE(stream.read(position) == expected);
+            REQUIRE(stream.holds(position, expected));
+        }
+        CHECK(stream.missing() == 768 - 512);
+    }
 
     REQUIRE(stream.read(position) == 64);
     CHECK(stream.holds(position, 64));
@@ -258,16 +257,14 @@ TEST_CASE("A seek during an in-flight fill waits for the worker to finish the ol
     Stream stream(64, {256, 4}, 1000000, 0.0f, &gate);
     gate.closeFrom(256);
 
-    std::thread worker([&] { stream.fill(); });
-    gate.waitUntilHeld();
-
-    REQUIRE(stream.read(0) == 64);
-
     constexpr std::int64_t kTarget = 50000;
-    CHECK(stream.read(kTarget) == 0);
+    {
+        Worker worker(gate, [&] { stream.fill(); });
+        REQUIRE(gate.waitUntilHeld());
 
-    gate.open();
-    worker.join();
+        REQUIRE(stream.read(0) == 64);
+        CHECK(stream.read(kTarget) == 0);
+    }
 
     // The held read and three more chunks, all for the position abandoned.
     CHECK(readsBefore(*stream.reader, kTarget) == 5);
@@ -299,24 +296,23 @@ TEST_CASE("A held read starves the streams the worker has not reached",
             reader.add(*stream->stream);
 
         gate.closeFrom(256);
-        std::thread worker([&] { reader.fillOnce(); });
-        gate.waitUntilHeld();
+        {
+            Worker worker(gate, [&] { reader.fillOnce(); });
+            REQUIRE(gate.waitUntilHeld());
 
-        for (auto block = 0; block < kBlocks; ++block)
-            for (auto& stream : streams) {
-                const auto delivered = stream->read(block * 64);
-                REQUIRE(stream->holds(block * 64, delivered));
+            for (auto block = 0; block < kBlocks; ++block)
+                for (auto& stream : streams) {
+                    const auto delivered = stream->read(block * 64);
+                    REQUIRE(stream->holds(block * 64, delivered));
+                }
+
+            for (auto index = 0; index < kStreams; ++index) {
+                INFO("stream " << index);
+                const auto resident = index < held ? 1024 : (index == held ? 256 : 0);
+                CHECK(streams[static_cast<std::size_t>(index)]->missing() ==
+                      std::max(0, kBlocks * 64 - resident));
             }
-
-        for (auto index = 0; index < kStreams; ++index) {
-            INFO("stream " << index);
-            const auto resident = index < held ? 1024 : (index == held ? 256 : 0);
-            CHECK(streams[static_cast<std::size_t>(index)]->missing() ==
-                  std::max(0, kBlocks * 64 - resident));
         }
-
-        gate.open();
-        worker.join();
 
         for (auto& stream : streams) {
             REQUIRE(stream->read(kBlocks * 64) == 64);

@@ -65,9 +65,20 @@ constexpr PrefetchSettings kPool{2048, 8};
 enum class Material {
     /// Frame n reads back as n + 1, so plain playback shows its position exactly.
     counting,
-    /// 0.5 cos at 882 Hz. Not DC: after any gap Signalsmith settles DC at another level.
+    /// 882 Hz at a level that steps every kLevelStep frames, never the same way twice.
+    /// Not DC: after any gap Signalsmith settles DC at another level. Not a steady
+    /// tone either: a render that came back late would match one.
     tone,
 };
+
+constexpr int kLevelStep = 4096;
+
+/// The level of the step @p frame falls in, between 0.2 and 0.5.
+float levelAt(std::int64_t frame) {
+    const auto step = static_cast<std::uint64_t>(frame / kLevelStep);
+    const auto scrambled = (step * 6364136223846793005ULL + 1442695040888963407ULL) >> 33;
+    return 0.2f + 0.3f * static_cast<float>(scrambled % 4096) / 4096.0f;
+}
 
 class SourceFile final : public AudioFileReader {
   public:
@@ -109,8 +120,9 @@ class SourceFile final : public AudioFileReader {
             return 0.0f;
         if (material_ == Material::counting)
             return static_cast<float>(frame + 1);
-        return 0.5f * static_cast<float>(std::cos(2.0 * juce::MathConstants<double>::pi * 882.0 *
-                                                  static_cast<double>(frame) / kSampleRate));
+        return levelAt(frame) *
+               static_cast<float>(std::cos(2.0 * juce::MathConstants<double>::pi * 882.0 *
+                                           static_cast<double>(frame) / kSampleRate));
     }
 
     Material material_;
@@ -467,13 +479,20 @@ std::string summary(Rig& rig, const Damage& damage) {
            std::to_string(damage.lastEnvelopeDifference);
 }
 
+/// Output samples a stretcher takes to flush a gap once input is back: its priming
+/// window, and four envelope windows for the measure itself. Measured at 6.1k to
+/// 9.2k output samples at 0.8x and 1.2x.
+std::int64_t flushSamples(const Playback& playback, int preRoll) {
+    return static_cast<std::int64_t>(std::ceil(preRoll / playback.speed)) + 4 * kEnvelopeWindow;
+}
+
 /**
  * @brief Every silent output sample is explained by counted missing frames, and
  *        the render returns to its control once input is back at @p inputReturns.
  *
- * Plain playback shows its position, so it must match exactly from there.
- * A stretcher needs its priming window to flush the gap: measured at 5.7k to
- * 8.2k output samples at 0.8x and 1.2x, within preRoll / speed + three windows.
+ * Plain playback shows its position, so it must match exactly from there. The
+ * material's level steps never repeat, so a stretched render that matched the
+ * control's envelope late would fail this too.
  */
 void checkAccounted(Rig& rig, const Damage& damage, std::int64_t inputReturns) {
     INFO(summary(rig, damage));
@@ -494,9 +513,8 @@ void checkAccounted(Rig& rig, const Damage& damage, std::int64_t inputReturns) {
         std::ceil(static_cast<double>(lost + primingLost) / playback.speed));
     CHECK(damage.silentWhereAudible <= lostOutput + kStretchCellSamples + 2 * kSilenceWindow);
 
-    const auto flush = static_cast<std::int64_t>(std::ceil(entry.preRollSamples / playback.speed)) +
-                       3 * kEnvelopeWindow;
-    CHECK(damage.lastEnvelopeDifference <= inputReturns + flush);
+    CHECK(damage.lastEnvelopeDifference <=
+          inputReturns + flushSamples(playback, entry.preRollSamples));
 }
 
 /// Renders @p heard and @p control from zero, withholding @p heard's worker for @p stall samples.
@@ -578,6 +596,24 @@ void checkExhaustedStall(const Playback& playback, PrefetchSettings settings) {
 }
 
 }  // namespace
+
+TEST_CASE("A render that is merely late fails the recovery measure",
+          "[engine][clip][streaming][2700]") {
+    // The bound checkAccounted applies means nothing unless a shifted render breaks it.
+    for (const auto& playback :
+         {Playback{mode::kSignalsmith, 1.2, 128}, Playback{mode::kSoundTouchNormal, 0.8, 128}}) {
+        Rig rig(playback);
+        rig.arrange(clipFor(playback));
+        rig.pool.fillNow();
+        rig.playOn(0, 49152);
+
+        for (const std::int64_t late : {441, 4410}) {
+            INFO(describe(playback) << ", late by " << late);
+            const auto damage = compare(rig.heard, late, rig.heard, 0, 32768);
+            CHECK(damage.lastEnvelopeDifference > 16384);
+        }
+    }
+}
 
 TEST_CASE("A stall the resident reading covers leaves playback untouched",
           "[engine][clip][streaming][2700]") {
@@ -857,10 +893,8 @@ TEST_CASE("A session wrap loses its top until the reader returns, every pass",
                 CHECK(damage.zeroWhereAudible == returns);
                 CHECK(damage.lastDifference < returns);
             } else {
-                const auto flush = static_cast<std::int64_t>(
-                                       std::ceil(rig.entry().preRollSamples / playback.speed)) +
-                                   3 * kEnvelopeWindow;
-                CHECK(damage.lastEnvelopeDifference <= returns + flush);
+                CHECK(damage.lastEnvelopeDifference <=
+                      returns + flushSamples(playback, rig.entry().preRollSamples));
             }
         }
 
@@ -923,12 +957,11 @@ TEST_CASE("A prime the reader half supplied is counted apart from playback, and 
             const auto preRoll = heard.entry().preRollSamples;
             const auto chunks = std::max(1, preRoll / 2 / kSmallChunks.chunkSamples);
             gate.closeAfter(chunks);
-            std::thread worker([&] { heard.reader.fillOnce(); });
-            gate.waitUntilHeld();
-
-            heard.play(kTarget, false, false);
-            gate.open();
-            worker.join();
+            {
+                magda::test::GatedWorker worker(gate, [&] { heard.reader.fillOnce(); });
+                REQUIRE(gate.waitUntilHeld());
+                heard.play(kTarget, false, false);
+            }
 
             control.preparedLocate(kTarget);
             for (auto* rig : {&heard, &control})
