@@ -721,6 +721,51 @@ TEST_CASE("A stall during a speed ramp that resident reading covers leaves playb
         checkCoveredStall(playback, kPool);
 }
 
+TEST_CASE("Catching up after a long stall does not re-read the stall",
+          "[engine][clip][streaming][2704]") {
+    // The reader fills forward from where it last read, and after a stall the
+    // callback is a long way past that. Every chunk it then comes back with is
+    // behind the cursor and thrown away, so a gap used to cost as much reading
+    // again before anything audible arrived -- the stall twice over. The stream
+    // now tells the reader where the callback actually got to.
+    for (const auto& playback :
+         {Playback{mode::kDisabled, 1.0, 128}, Playback{mode::kSoundTouchNormal, 1.2, 128},
+          Playback{mode::kSignalsmith, 0.8, 128}}) {
+        INFO(describe(playback));
+        const auto block = playback.blockSize;
+        const auto coverage = coverageOf(playback, kPool);
+
+        // Four pool windows, so catch-up proportional to the stall is four times
+        // anything that can be in flight when the callback says where it is.
+        std::int64_t stall = 0;
+        while (leastReading(playback, stall) < 4 * coverage)
+            stall += block;
+
+        Rig heard(playback, Section::Arrangement, kPool);
+        Rig control(playback, Section::Arrangement, kPool);
+        for (auto* rig : {&heard, &control}) {
+            rig->arrange(clipFor(playback));
+            rig->pool.fillNow();
+        }
+
+        const auto warm = roundUp(8192, block);
+        const auto after =
+            roundUp(std::max<std::int64_t>(
+                        16384, flushSamples(playback, heard.entry().preRollSamples) + 8192),
+                    block);
+        renderStall(heard, control, warm, stall, after);
+
+        const auto obsolete = heard.entry().stream->obsoleteFrames();
+        INFO("obsolete " << obsolete << ", stall reading " << leastReading(playback, stall));
+        CHECK(obsolete <= coverage);
+        CHECK(obsolete < leastReading(playback, stall));
+
+        // And it comes back where it left off rather than where it ran dry.
+        checkAccounted(heard, compare(heard.heard, warm, control.heard, warm, stall + after),
+                       stall);
+    }
+}
+
 TEST_CASE("A stall across the end of the file counts only frames the file has",
           "[engine][clip][streaming][2700]") {
     constexpr std::int64_t kLength = 60000;
@@ -1349,6 +1394,60 @@ TEST_CASE("A session re-trigger plays its top from the retained opening",
         INFO(summary(rig, damage));
         CHECK(damage.silentWhereAudible == 0);
     }
+}
+
+TEST_CASE("A prime the reader missed is not made good by priming again",
+          "[engine][clip][streaming][2703]") {
+    // Priming reads behind the position it aligns to, so a voice that primed
+    // again whenever it came up short would send a reader that is already late
+    // further back still, and the audio it recovered would arrive after the
+    // moment it belonged to. The loss is reported and the position is kept.
+    constexpr PrefetchSettings kSmallChunks{256, 64};
+    constexpr std::int64_t kTarget = 44160;
+
+    for (const auto stretch :
+         {mode::kSoundTouchNormal, mode::kSoundTouchBetter, mode::kSignalsmith})
+        for (const auto speed : {0.8, 1.2}) {
+            const Playback playback{stretch, speed, 128};
+            INFO(describe(playback));
+            const auto after = roundUp(16384, playback.blockSize);
+
+            ReaderGate gate;
+            Rig heard(playback, Section::Arrangement, kSmallChunks, &gate);
+            Rig control(playback, Section::Arrangement, kSmallChunks);
+            for (auto* rig : {&heard, &control}) {
+                rig->arrange(clipFor(playback));
+                rig->pool.fillNow();
+                rig->playOn(0, 8192);
+            }
+
+            // Held before it fills anything, so the prime aligns against silence.
+            heard.stopped(kTarget, true);
+            const auto preRoll = heard.entry().preRollSamples;
+            gate.closeAfter(0);
+            {
+                magda::test::GatedWorker worker(gate, [&] { heard.reader.fillOnce(); });
+                REQUIRE(gate.waitUntilHeld());
+                heard.play(kTarget, false, false);
+            }
+
+            const auto primingLost = heard.missing(ReadPurpose::priming);
+            CHECK(primingLost > 0);
+            CHECK(primingLost <= preRoll);
+
+            control.preparedLocate(kTarget);
+            for (auto* rig : {&heard, &control})
+                rig->playOn(kTarget + playback.blockSize, after);
+
+            // The reader was back for the whole of that, and nothing went back
+            // for what it had missed: one prime, and one window of loss.
+            CHECK(heard.missing(ReadPurpose::priming) == primingLost);
+
+            const auto from = roundUp(8192, playback.blockSize);
+            checkAccounted(
+                heard, compare(heard.heard, from, control.heard, from, playback.blockSize + after),
+                playback.blockSize);
+        }
 }
 
 TEST_CASE("A prime the reader half supplied is counted apart from playback, and recovers",

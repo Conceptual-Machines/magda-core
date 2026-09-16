@@ -149,8 +149,16 @@ class ClipStretcher {
      * this, as does a locate while the reader is still catching up.
      * Alignment is then as good as the available material allows, matching
      * the incumbent.
+     *
+     * Returns the source frames the stream owed the priming read and did not
+     * give it. Zero is the ordinary answer, including for a pre-roll cut
+     * short by the start or the end of the file, where the silence is the
+     * material. Anything else is audio the listener was meant to hear
+     * leading into the first sample and did not, and the voice treats the
+     * block it aligned as not having sounded (#2703).
      */
-    virtual void prime(PrefetchStream& stream, std::int64_t until, int samples, double rate) = 0;
+    [[nodiscard]] virtual std::int64_t prime(PrefetchStream& stream, std::int64_t until,
+                                             int samples, double rate) = 0;
 
     /**
      * @brief Turn @p input into exactly @p output.
@@ -179,10 +187,15 @@ class ClipStretcher {
      */
     void allocatePreRoll(int numChannels, int numSamples);
 
+    /// What a priming read took up, and what it was owed and did not get.
+    struct PreRoll {
+        juce::dsp::AudioBlock<const float> audio;
+        std::int64_t missing = 0;
+    };
+
     /// @p wanted samples ending at @p until, or as many as fit and the
     /// stream had. On the audio thread.
-    juce::dsp::AudioBlock<const float> readPreRoll(PrefetchStream& stream, std::int64_t until,
-                                                   int wanted);
+    PreRoll readPreRoll(PrefetchStream& stream, std::int64_t until, int wanted);
 
   private:
     juce::AudioBuffer<float> preRoll_;

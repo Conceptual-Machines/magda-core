@@ -44,6 +44,7 @@ using magda::engine::ClipStreamFeed;
 using magda::engine::ClipStreamTable;
 using magda::engine::ClipStretcher;
 using magda::engine::PrefetchStream;
+using magda::engine::ReadPurpose;
 using magda::engine::RenderContext;
 using magda::engine::SnapshotSpan;
 using magda::engine::StretchSetup;
@@ -54,6 +55,10 @@ namespace mode = magda::time_stretch_mode;
 namespace {
 
 constexpr double kSampleRate = 44100.0;
+
+/// Far enough in that a priming window sits wholly inside the file, so what a
+/// stream cannot give is audio rather than the padding in front of sample zero.
+constexpr std::int64_t kFarIntoTheFile = 1000000;
 
 /// Long enough that a block holds a dozen cycles of the test tone, because one
 /// of the questions here is what happened to the pitch.
@@ -171,8 +176,9 @@ class CountingStretcher final : public magda::engine::ClipStretcher {
         ++resets;
     }
 
-    void prime(PrefetchStream&, std::int64_t, int, double) override {
+    std::int64_t prime(PrefetchStream&, std::int64_t, int, double) override {
         ++primes;
+        return primeMissing;
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double, double,
@@ -189,6 +195,10 @@ class CountingStretcher final : public magda::engine::ClipStretcher {
     int primes = 0;
     int resets = 0;
     int processes = 0;
+
+    /// What @ref prime answers, so a voice can be asked what it does about a
+    /// prime the reader came up short on.
+    std::int64_t primeMissing = 0;
 };
 
 SnapshotSpan seconds(double start, double end) {
@@ -1038,7 +1048,7 @@ TEST_CASE("SoundTouch holds the tempo when a cell consumes a fractional number o
         stream.startAt(ahead - preRoll);
         while (stream.fill()) {
         }
-        stretcher->prime(stream, ahead, preRoll, rate);
+        CHECK(stretcher->prime(stream, ahead, preRoll, rate) == 0);
 
         juce::AudioBuffer<float> input(2, cell);
         juce::AudioBuffer<float> output(2, cell);
@@ -1140,10 +1150,11 @@ TEST_CASE("SoundTouch primes its lookahead without allocating on the audio threa
                 juce::AudioBuffer<float> input(2, magda::engine::maxReadingSamples(cell));
                 juce::AudioBuffer<float> output(2, cell);
                 std::size_t heapOperations = 0;
+                std::int64_t missing = 0;
                 {
                     const magda::test::AllocationWatch watch;
                     stretcher->reset();
-                    stretcher->prime(stream, ahead, preRoll, rate);
+                    missing = stretcher->prime(stream, ahead, preRoll, rate);
                     for (int index = 0; index < 32; ++index) {
                         const auto from = std::llround(index * cell * rate) + ahead;
                         const auto to = std::llround((index + 1) * cell * rate) + ahead;
@@ -1157,10 +1168,128 @@ TEST_CASE("SoundTouch primes its lookahead without allocating on the audio threa
                 }
                 INFO("mode=" << which << " rate=" << rate << " pitch=" << pitch);
                 CHECK(stream.underruns() == 0);
+                CHECK(missing == 0);
                 CHECK(heapOperations == 0);
             }
         }
     }
+}
+
+TEST_CASE("A prime says what the reader owed it and did not give",
+          "[engine][clip][stretch][2703]") {
+    // Priming silence is not the same thing as priming the silence in front of a
+    // file. One is material the listener was meant to hear leading into the
+    // first sample and a reader that is behind, the other is the padding every
+    // clip trimmed past its own start reads through.
+    constexpr double rate = 1.2;
+    for (const auto which :
+         {mode::kSoundTouchNormal, mode::kSoundTouchBetter, mode::kSignalsmith}) {
+        StretchSetup setup;
+        setup.mode = which;
+        setup.nominalRate = rate;
+
+        const auto build = [&] {
+            auto stretcher = magda::engine::makeStretcher(setup);
+            REQUIRE(stretcher != nullptr);
+            return stretcher;
+        };
+
+        INFO("mode=" << which);
+
+        {
+            auto stretcher = build();
+            const auto ahead = stretcher->readAheadSamples();
+            const auto preRoll = stretcher->preRollSamples(rate);
+            PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
+            stream.startAt(kFarIntoTheFile + ahead - preRoll);
+            while (stream.fill()) {
+            }
+            CHECK(stretcher->prime(stream, kFarIntoTheFile + ahead, preRoll, rate) == 0);
+        }
+
+        {
+            // Nothing filled, so the whole window is audio that was owed.
+            auto stretcher = build();
+            const auto ahead = stretcher->readAheadSamples();
+            const auto preRoll = stretcher->preRollSamples(rate);
+            PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
+            stream.startAt(kFarIntoTheFile + ahead - preRoll);
+            const auto missing = stretcher->prime(stream, kFarIntoTheFile + ahead, preRoll, rate);
+            CHECK(missing > 0);
+            CHECK(missing <= preRoll);
+            CHECK(missing == stream.missingFrames(ReadPurpose::priming));
+        }
+
+        {
+            // The same empty queue at the front of the file. Everything before
+            // sample zero is padding, so only what the file has is owed.
+            auto stretcher = build();
+            const auto ahead = stretcher->readAheadSamples();
+            const auto preRoll = stretcher->preRollSamples(rate);
+            PrefetchStream stream(std::make_unique<ConstantReader>(), context(), {8192, 8});
+            stream.startAt(ahead - preRoll);
+            const auto missing = stretcher->prime(stream, ahead, preRoll, rate);
+            CHECK(missing == std::max(0, std::min(preRoll, ahead)));
+        }
+    }
+}
+
+TEST_CASE("A block primed against audio the reader owed is not a block that sounded",
+          "[engine][clip][stretch][2703]") {
+    // A short prime aligns an engine against silence, so the window it covers
+    // comes out damaged whether or not the block's own read arrived. That is the
+    // case a voice used to miss: it measures what it read, the read was whole,
+    // and the block counted as having carried on. The next block then steps out
+    // of the damage with nothing to take the step out of it.
+    //
+    // Driven directly rather than through a track, because the question is what
+    // the voice does with the answer and not what a phase vocoder sounds like.
+    const auto firstSampleAfter = [](std::int64_t missing) {
+        magda::engine::ClipVoice voice;
+        voice.prepare(context());
+
+        auto clip = clipOver(1, blocks(0, 400), 0);
+        clip.launchFadeSamples = 64;
+        const auto& event = clip.events.front();
+
+        // Filled through, so what the block reads is never what is being asked
+        // about: the only thing short here is the prime.
+        PrefetchStream stream(std::make_unique<CountingReader>(), context(), {8192, 8});
+        stream.startAt(10 * kBlockSize);
+        while (stream.fill()) {
+        }
+
+        juce::AudioBuffer<float> scratch(2, magda::engine::stretchScratchSamples(kBlockSize));
+        juce::AudioBuffer<float> out(2, kBlockSize);
+        scratch.clear();
+
+        CountingStretcher stretcher;
+        stretcher.primeMissing = missing;
+
+        const auto render = [&](int block, bool continuous) {
+            out.clear();
+            voice.render(clip, event, blockFrom(blockTime(block), continuous), stream, &stretcher,
+                         0, juce::dsp::AudioBlock<float>(scratch),
+                         juce::dsp::AudioBlock<float>(out));
+        };
+
+        render(10, false);
+        REQUIRE(stretcher.primes == 1);
+        REQUIRE(stream.underruns() == 0);
+
+        // Carrying on, and not primed again: a reader that is behind would be
+        // sent further back still, and what it recovered would play late.
+        render(11, true);
+        REQUIRE(stretcher.primes == 1);
+        REQUIRE(stream.underruns() == 0);
+
+        return out.getSample(0, 0);
+    };
+
+    // The material is its own sample index, so a block that carries on opens at
+    // a large number and one that takes a step out of itself opens at nothing.
+    CHECK(firstSampleAfter(0) > 1.0f);
+    CHECK(firstSampleAfter(1) == approx(0.0f));
 }
 
 TEST_CASE("A stretcher is the same DSP whatever block size it was built for",
