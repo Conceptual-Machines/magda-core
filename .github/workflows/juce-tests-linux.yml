@@ -5,8 +5,9 @@ on:
     # Never run on the Crowdin localization branch (see ci.yml for the rationale):
     # the sync force-pushes onto the latest HEAD, so paths-ignore can't catch it.
     # 'dependabot/**' so Dependabot bumps never auto-start these tests; run via
-    # workflow_dispatch when validating a bump.
-    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**' ]
+    # workflow_dispatch when validating a bump. 'dev/**' for the same reason as
+    # ci.yml: a merge to dev already passed these on its PR.
+    branches-ignore: [ 'l10n_crowdin_**', 'dependabot/**', 'dev/**' ]
     tags-ignore: [ '**' ]
     paths-ignore:
       - 'lang/**'
