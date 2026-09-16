@@ -72,39 +72,7 @@ void PrefetchStream::moveTo(std::int64_t sourceStart) {
     if (sourceStart == nextSample_)
         return;
 
-    if (!seekWithinResident(sourceStart))
-        requestSeek(sourceStart);
-}
-
-bool PrefetchStream::seekWithinResident(std::int64_t sourceStart) {
-    // The retained opening plays from memory wherever the cursor is, but its
-    // continuation is the reader's to fill: requestSeek is what points the
-    // reader past the cache, and a cursor moved without it would walk out of
-    // the cache into chunks read for somewhere else.
-    if (cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_)
-        return false;
-
-    if (current_ != nullptr) {
-        // Behind the chunk in hand is audio the reader has already taken back.
-        if (sourceStart < current_->startSample)
-            return false;
-
-        if (sourceStart < current_->startSample + current_->numSamples) {
-            currentOffset_ = static_cast<int>(sourceStart - current_->startSample);
-            nextSample_ = sourceStart;
-            return true;
-        }
-
-        releaseCurrent();
-    }
-
-    // Everything queued was read for one forward run, so a position inside it
-    // is a position this stream is already on its way to: the chunks in front
-    // of it are spent either way, and the reader keeps filling from the end of
-    // the queue, which is where the continuation is. No generation changes, so
-    // nothing in flight becomes stale.
-    nextSample_ = sourceStart;
-    return takeNextChunk();
+    requestSeek(sourceStart);
 }
 
 void PrefetchStream::applyPendingCue() {
@@ -129,7 +97,7 @@ void PrefetchStream::applyPendingCue() {
         return;
 
     appliedCue_ = cue->generation;
-    moveTo(cue->sourceStart);
+    requestSeek(cue->sourceStart);
 }
 
 void PrefetchStream::requestSeek(std::int64_t sourceStart) {

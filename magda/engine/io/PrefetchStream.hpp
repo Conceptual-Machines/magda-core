@@ -68,13 +68,9 @@ class PrefetchStream {
      * On the audio thread. Returns how many samples were there to give; the
      * rest of the destination is silent.
      *
-     * A start that isn't where the last read left off is a seek. One the
-     * read-ahead already holds is served from it: a jump forward within
-     * buffered audio, or back into the chunk in hand, costs nothing. A seek
-     * into the retained opening plays immediately while the worker fills its
-     * continuation. Anywhere else what was read ahead is for somewhere else,
-     * so it's dropped, the reader is pointed at the new position, and the
-     * block waits for it -- which is what @ref underruns counts.
+     * This comparison branch uses PR 2698's seek behaviour: a changed position
+     * discards the read-ahead and requests a refill. The retained session
+     * opening remains available immediately while the worker fills beyond it.
      */
     int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples,
              ReadPurpose purpose = ReadPurpose::playback);
@@ -218,13 +214,8 @@ class PrefetchStream {
     /// Hand a spent chunk back to the reader. Audio thread.
     void releaseCurrent();
 
-    /// Point the cursor at a position, keeping what was read ahead if it
-    /// already holds that position. Audio thread.
+    /// Point the cursor at a position, requesting a seek when it changes. Audio thread.
     void moveTo(std::int64_t sourceStart);
-
-    /// Take the cursor to a position the read-ahead holds, without changing
-    /// generation or disturbing the reader. False if it does not hold it.
-    bool seekWithinResident(std::int64_t sourceStart);
 
     void requestSeek(std::int64_t sourceStart);
 
