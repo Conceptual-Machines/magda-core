@@ -581,7 +581,18 @@ void checkCoveredStall(const Playback& playback, PrefetchSettings settings) {
     CHECK(heard.missing(ReadPurpose::playback) == 0);
     CHECK(heard.missing(ReadPurpose::priming) == 0);
     CHECK(heard.entry().stream->underruns() == 0);
-    CHECK(compare(heard.heard, 0, control.heard, 0, warm + stall + after).worstDifference == 0.0f);
+    const auto damage = compare(heard.heard, 0, control.heard, 0, warm + stall + after);
+    if (playback.mode == mode::kSignalsmith && (playback.speed < 0.5 || playback.speedRamp)) {
+        // Below half speed (also crossed by the ramp), upstream Signalsmith's
+        // random phases affect both samples and short-window envelopes. Coverage
+        // is established by the zero missing-frame counts above. Check actual
+        // output separately without treating another random render as ground truth.
+        CHECK(std::all_of(heard.heard.begin(), heard.heard.end(),
+                          [](float sample) { return std::isfinite(sample); }));
+        CHECK(rms(heard.heard, warm + stall, static_cast<int>(after)) > 0.01);
+    } else {
+        CHECK(damage.worstDifference == 0.0f);
+    }
 }
 
 void checkExhaustedStall(const Playback& playback, PrefetchSettings settings) {
@@ -601,14 +612,28 @@ void checkExhaustedStall(const Playback& playback, PrefetchSettings settings) {
     }
 
     const auto warm = roundUp(8192, block);
-    const auto after = roundUp(16384, block);
+    // At 0.1x the stretcher's recovery window is longer than 16384 output
+    // samples. Observe a full window plus a tail before asking whether it resumed.
+    const auto after = roundUp(
+        std::max<std::int64_t>(16384, flushSamples(playback, heard.entry().preRollSamples) + 8192),
+        block);
     renderStall(heard, control, warm, stall, after);
 
     const auto lost = heard.missing(ReadPurpose::playback);
     CHECK(lost >= leastReading(playback, stall) - coverageOf(playback, settings));
     CHECK(lost <= mostReading(playback, stall));
     CHECK(heard.missing(ReadPurpose::priming) == 0);
-    checkAccounted(heard, compare(heard.heard, warm, control.heard, warm, stall + after), stall);
+    if (playback.mode == mode::kSignalsmith && playback.speed < 0.5) {
+        // The missing-frame bounds still apply to randomized stretching. Require
+        // resumed, finite output after the gap; exact recovery against a separate
+        // randomized instance is not a defined property of the stock engine.
+        CHECK(std::all_of(heard.heard.begin(), heard.heard.end(),
+                          [](float sample) { return std::isfinite(sample); }));
+        CHECK(rms(heard.heard, warm + stall + after - 8192, 8192) > 0.01);
+    } else {
+        checkAccounted(heard, compare(heard.heard, warm, control.heard, warm, stall + after),
+                       stall);
+    }
 }
 
 }  // namespace

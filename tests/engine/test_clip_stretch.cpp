@@ -1223,12 +1223,14 @@ TEST_CASE("A stretcher is the same DSP whatever block size it was built for",
     }
 }
 
-TEST_CASE("Signalsmith below half speed renders one timeline the same every time",
+TEST_CASE("Signalsmith in its clean stretch range repeats after reset",
           "[engine][clip][stretch][2700]") {
-    // Signalsmith randomises bin phases past a 2x stretch; a render must not depend on the seed.
+    // Below half speed the upstream engine deliberately randomises phases. Do not
+    // change production playback solely to make independent renders bit-identical.
+    // See docs/issues/first-hit-signalsmith-regression.md.
     constexpr auto kCell = magda::engine::kStretchCellSamples;
     constexpr auto kCells = 120;
-    constexpr auto kRate = 0.3;
+    constexpr auto kRate = 120.0 / 175.0;
     const auto readPerCell = static_cast<int>(std::llround(kCell * kRate));
 
     juce::AudioBuffer<float> material(2, kCells * readPerCell);
@@ -1343,27 +1345,108 @@ TEST_CASE("Signalsmith places the opening transient on time after each restart",
         }
     };
 
-    for (double rate : {0.5, 1.25, 2.0}) {
-        CAPTURE(rate);
-        Rig rig;
-        rig.lane.audio.push_back(clipOver(1, blocks(100, 400)));
-        rig.event(1).timeStretchMode = mode::kSignalsmith;
-        rig.event(1).speedRatio = rate;
-        auto& stream = rig.give(1, 1, std::make_unique<ImpulseReader>());
-        const auto& entry = rig.table.entries.front();
-        const auto cue = entry.stretcher->readAheadSamples() - entry.preRollSamples;
-        stream.startAt(cue, entry.preRollSamples + 8192);
-        rig.publish();
+    for (const bool beat : {false, true}) {
+        for (double rate : {0.5, 120.0 / 175.0, 1.0, 1.25, 2.0}) {
+            if (!beat && rate == 1.0)
+                continue;  // The source-relative test below covers the unstretched path.
+            CAPTURE(beat, rate);
+            Rig rig;
+            rig.lane.audio.push_back(clipOver(1, blocks(100, 400)));
+            rig.event(1).timeStretchMode = mode::kSignalsmith;
+            rig.event(1).autoTempo = beat;
+            rig.event(1).speedRatio = beat ? 1.0 : rate;
+            rig.event(1).interpBpm = kBpm / rate;
+            auto& stream = rig.give(1, 1, std::make_unique<ImpulseReader>());
+            const auto& entry = rig.table.entries.front();
+            const auto cue = entry.stretcher->readAheadSamples() - entry.preRollSamples;
+            stream.startAt(cue, entry.preRollSamples + 8192);
+            rig.publish();
 
+            for (int pass = 0; pass < 3; ++pass) {
+                // No fill(): a session wrap must prime from retained audio while
+                // the disk worker is still servicing the previous playback run.
+                auto block = blockFrom(blockTime(100), false);
+                rig.output.clear();
+                magda::test::renderBlock(rig.source, rig.clips, block,
+                                         juce::dsp::AudioBlock<float>(rig.output));
+                CHECK(rig.at(0) > 0.7f);
+                CHECK(stream.underruns() == 0);
+            }
+        }
+    }
+}
+
+TEST_CASE("The first 200 ms at unity matches the source with BEAT on and off",
+          "[engine][clip][stretch][first-hit]") {
+    // Source-relative checks: a block peak can survive even when the beginning
+    // of the attack is attenuated. No gain normalisation or alignment is fitted.
+    // This exercises callback-sized clip rendering, not the OS/device output;
+    // the listening regression is documented separately.
+    class AttackReader final : public magda::engine::AudioFileReader {
+      public:
+        static float value(int channel, std::int64_t sample) {
+            if (sample < 0)
+                return 0.0f;
+            const auto t = static_cast<double>(sample) / kSampleRate;
+            const auto attack =
+                std::exp(-t * 18.0) *
+                (0.5 * std::cos(2.0 * juce::MathConstants<double>::pi * 83.0 * t) +
+                 0.3 * std::cos(2.0 * juce::MathConstants<double>::pi * 2100.0 * t));
+            return static_cast<float>(attack * (channel == 0 ? 1.0 : -0.7));
+        }
+        std::int64_t lengthInSamples() const override {
+            return 1000000;
+        }
+        double sampleRate() const override {
+            return kSampleRate;
+        }
+        int numChannels() const override {
+            return 2;
+        }
+        int read(juce::AudioBuffer<float>& destination, int offset, std::int64_t start,
+                 int count) override {
+            for (int channel = 0; channel < destination.getNumChannels(); ++channel)
+                for (int sample = 0; sample < count; ++sample)
+                    destination.setSample(channel, offset + sample, value(channel, start + sample));
+            return count;
+        }
+    };
+
+    for (const bool beat : {false, true}) {
+        CAPTURE(beat);
+        Rig rig;
+        rig.lane.audio.push_back(clipOver(1, seconds(0.0, 10.0)));
+        rig.event(1).timeStretchMode = mode::kSignalsmith;
+        rig.event(1).autoTempo = beat;
+        rig.event(1).interpBpm = kBpm;
+        auto& stream = rig.give(1, 1, std::make_unique<AttackReader>());
+        REQUIRE((rig.table.entries.front().stretcher != nullptr) == beat);
+        stream.startAt(0, 32768);
+        rig.publish();
+        constexpr int openingSamples = static_cast<int>(0.2 * kSampleRate);
         for (int pass = 0; pass < 3; ++pass) {
-            // No fill(): a session wrap must prime from retained audio while
-            // the disk worker is still servicing the previous playback run.
-            auto block = blockFrom(blockTime(100), false);
-            rig.output.clear();
-            magda::test::renderBlock(rig.source, rig.clips, block,
-                                     juce::dsp::AudioBlock<float>(rig.output));
-            CHECK(rig.at(0) > 0.7f);
-            CHECK(stream.underruns() == 0);
+            CAPTURE(pass);
+            float largestError = 0.0f;
+            bool allFinite = true;
+            for (int start = 0; start < openingSamples; start += kBlockSize) {
+                auto block = blockFrom(static_cast<double>(start) / kSampleRate, start != 0);
+                rig.output.clear();
+                magda::test::renderBlock(rig.source, rig.clips, block,
+                                         juce::dsp::AudioBlock<float>(rig.output));
+                for (int channel = 0; channel < 2; ++channel)
+                    for (int sample = 0; sample < std::min(kBlockSize, openingSamples - start);
+                         ++sample) {
+                        allFinite =
+                            allFinite && std::isfinite(rig.output.getSample(channel, sample));
+                        largestError = std::max(
+                            largestError, std::abs(rig.output.getSample(channel, sample) -
+                                                   AttackReader::value(channel, start + sample)));
+                    }
+            }
+            CHECK(allFinite);
+            CHECK(largestError < 0.0001f);
+            CHECK(stream.missingFrames(magda::engine::ReadPurpose::playback) == 0);
+            CHECK(stream.missingFrames(magda::engine::ReadPurpose::priming) == 0);
         }
     }
 }

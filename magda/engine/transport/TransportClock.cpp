@@ -29,12 +29,13 @@ double TransportClock::beatAfter(const TempoMap& tempo, std::int64_t samples) co
 }
 
 std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) const {
-    // A boundary within the epsilon of the cursor is the cursor: rounding up to
-    // the first sample at or past a musical position would otherwise turn the
-    // position just anchored to into a boundary one sample ahead of itself.
+    // Rounded down, so a cut here lands on or before the position and never a
+    // sample past it: the loop's wrap relies on that, since a cursor past the
+    // end reads as one put there on purpose (#2691). The epsilon keeps a
+    // boundary a rounding error short of a whole sample from landing one early.
     const auto now = secondsAfter(samplesSinceAnchor_);
     const auto target = tempo.beatToTime(beat);
-    return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
+    return static_cast<std::int64_t>(std::floor((target - now) * sampleRate_ + kSampleEpsilon));
 }
 
 // A seqlock: the reader retries, so the audio thread's side is two stores and

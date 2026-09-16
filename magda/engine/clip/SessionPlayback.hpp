@@ -25,8 +25,11 @@ namespace magda::engine {
 
 /// Whether the material runs on from the last block. Material beat zero is a
 /// run beginning here (LaunchHandle::virtualStart), which is a discontinuity.
-inline bool runsOn(const BlockInfo& block, const BeatRange& range, const MaterialOrigin& origin) {
-    return block.continuous && (range.start - origin.beat) > 0.0;
+/// The block's own flag is not consulted: a run is measured on the monotonic
+/// axis, which a loop wrap or a locate does not move, so the arrangement
+/// jumping is not the run restarting (#2691).
+inline bool runsOn(const BlockInfo&, const BeatRange& range, const MaterialOrigin& origin) {
+    return (range.start - origin.beat) > 0.0;
 }
 
 /**
