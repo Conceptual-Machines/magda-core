@@ -60,6 +60,7 @@ struct Candidate {
     /// cursor already is for a clip the transport is standing inside.
     double cueSeconds = 0.0;
     bool session = false;
+    bool loopDestination = false;
 };
 
 /**
@@ -226,6 +227,12 @@ void ClipVoicePool::setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot) {
     snapshot_ = std::move(snapshot);
 }
 
+void ClipVoicePool::setTransport(const LoopRange& loop, const TempoMap& tempo) {
+    const std::scoped_lock guard(snapshotLock_);
+    loop_ = loop;
+    tempo_ = tempo;
+}
+
 std::size_t ClipVoicePool::streamCount() const {
     const std::scoped_lock guard(streamsLock_);
     return streams_.size();
@@ -320,15 +327,74 @@ ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
     return reader;
 }
 
+void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayback& clip,
+                                           const AudioEventPlayback& event, double loopSeconds,
+                                           const TempoMap& tempo) {
+    if (reader.stream == nullptr)
+        return;
+
+    const auto eventStart =
+        static_cast<std::int64_t>(std::llround(event.span.seconds.start * context_.sampleRate));
+    const auto loopSample =
+        static_cast<std::int64_t>(std::llround(loopSeconds * context_.sampleRate));
+    const auto cueSeconds =
+        reader.stretcher != nullptr
+            ? static_cast<double>(eventStart + static_cast<std::int64_t>(std::floor(
+                                                   static_cast<double>(loopSample - eventStart) /
+                                                   kStretchCellSamples)) *
+                                                   kStretchCellSamples) /
+                  context_.sampleRate
+            : loopSeconds;
+    const auto readingAt = [&](double seconds) {
+        return readingPositionAt(clip, event, seconds, tempo.timeToBeat(seconds),
+                                 context_.sampleRate);
+    };
+    const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
+    const auto start =
+        static_cast<std::int64_t>(std::llround(readingAt(cueSeconds))) + ahead - reader.preRoll;
+    const auto maxRetainedReading = maxReadingSamples(
+        static_cast<int>(std::ceil(context_.sampleRate * kReadAheadBridgeSeconds)));
+    const auto retainedReading = static_cast<int>(
+        std::clamp(std::ceil(std::abs(readingAt(cueSeconds + kReadAheadBridgeSeconds) -
+                                      readingAt(cueSeconds))),
+                   0.0, static_cast<double>(maxRetainedReading)));
+    const auto count = reader.preRoll + retainedReading + maxReadingSamples(context_.maxBlockSize);
+
+    if (reader.retainedStart == start && reader.retainedCount == count)
+        return;
+    if (!reader.stream->canRetain())
+        return;
+
+    auto source = files_.open(event.filePath);
+    if (source == nullptr)
+        return;
+    source = readThrough(std::move(source), reader.read);
+
+    auto retained = std::make_shared<PrefetchStream::RetainedRegion>();
+    retained->startSample = start;
+    retained->audio.setSize(context_.numChannels, count);
+    retained->audio.clear();
+    retained->count = std::clamp(source->read(retained->audio, 0, start, count), 0, count);
+    if (reader.stream->retain(std::move(retained))) {
+        reader.retainedStart = start;
+        reader.retainedCount = count;
+    }
+}
+
 void ClipVoicePool::service() {
     std::shared_ptr<const ClipSnapshot> snapshot;
+    LoopRange loop;
+    TempoMap tempo;
     {
         const std::scoped_lock guard(snapshotLock_);
         snapshot = snapshot_;
+        loop = loop_;
+        tempo = tempo_;
     }
 
     const auto windowStart = position_.load(std::memory_order_relaxed);
     const auto windowEnd = windowStart + kCueAheadSeconds;
+    const auto loopSeconds = loop.valid() ? tempo.beatToTime(loop.startBeat) : -1.0;
 
     // The largest callback the plan was prepared for, which is the resolution
     // voices are claimed and released at.
@@ -365,6 +431,35 @@ void ClipVoicePool::service() {
                     }
                 }
 
+                // The destination is retained independently of the moving
+                // window. A short clip at the top must still own its reader
+                // when a long loop reaches the far end.
+                if (loop.valid())
+                    for (const auto& clip : track.audio) {
+                        if (!reachesInto(clip.span, loopSeconds,
+                                         loopSeconds + kReadAheadBridgeSeconds))
+                            continue;
+                        for (const auto& event : clip.events) {
+                            if (!reachesInto(event.span, loopSeconds,
+                                             loopSeconds + kReadAheadBridgeSeconds))
+                                continue;
+                            const auto already =
+                                std::ranges::any_of(candidates, [&](const Candidate& candidate) {
+                                    return candidate.clipId == clip.clipId &&
+                                           candidate.eventId == event.eventId;
+                                });
+                            if (!already)
+                                candidates.push_back(Candidate{
+                                    clip.clipId, event.eventId, &clip, &event, event.span.seconds,
+                                    false, event.span.seconds.start, false, true});
+                            else
+                                for (auto& candidate : candidates)
+                                    if (candidate.clipId == clip.clipId &&
+                                        candidate.eventId == event.eventId)
+                                        candidate.loopDestination = true;
+                        }
+                    }
+
                 // What this track is being asked to sound at once, which is the
                 // only count worth reporting. How many clips are in the window
                 // is a different number and usually a much larger one.
@@ -382,6 +477,8 @@ void ClipVoicePool::service() {
                           [](const Candidate& a, const Candidate& b) {
                               if (a.sounding != b.sounding)
                                   return a.sounding;
+                              if (a.loopDestination != b.loopDestination)
+                                  return a.loopDestination;
                               if (a.seconds.start != b.seconds.start)
                                   return a.seconds.start < b.seconds.start;
                               if (a.clipId != b.clipId)
@@ -484,12 +581,32 @@ void ClipVoicePool::service() {
                         if (reuse.stream == nullptr)
                             ++unreadable;
 
+                        if (reuse.stream != nullptr) {
+                            if (!candidate.loopDestination) {
+                                if (reuse.retainedCount > 0) {
+                                    if (reuse.stream->retain({})) {
+                                        reuse.retainedStart =
+                                            std::numeric_limits<std::int64_t>::min();
+                                        reuse.retainedCount = 0;
+                                    }
+                                }
+                            } else {
+                                prepareLoopDestination(
+                                    reuse, *candidate.clip, event,
+                                    std::max(loopSeconds, event.span.seconds.start), tempo);
+                            }
+                        }
+
                         wanted.emplace(key, std::move(reuse));
                         continue;
                     }
 
                     auto reader =
                         open(*candidate.clip, event, candidate.cueSeconds, candidate.session);
+                    if (candidate.loopDestination)
+                        prepareLoopDestination(reader, *candidate.clip, event,
+                                               std::max(loopSeconds, event.span.seconds.start),
+                                               tempo);
                     if (reader.stream == nullptr)
                         ++unreadable;
 

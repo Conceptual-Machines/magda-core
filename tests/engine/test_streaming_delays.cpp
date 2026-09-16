@@ -276,6 +276,14 @@ struct Rig {
         publish(std::move(track));
     }
 
+    void prepareLoop(std::int64_t start, std::int64_t end) {
+        const magda::engine::TempoMap tempo({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
+        pool.setTransport({.enabled = true,
+                           .startBeat = static_cast<double>(start) / kSampleRate / kSecondsPerBeat,
+                           .endBeat = static_cast<double>(end) / kSampleRate / kSecondsPerBeat},
+                          tempo);
+    }
+
     /// One slot per handle, scene by scene, each holding its own clip.
     void slot(const AudioClipPlayback& clip, double lengthBeats) {
         TrackClipPlayback track;
@@ -864,8 +872,9 @@ int playThroughWrap(Rig& rig, std::int64_t after) {
     return head;
 }
 
-TEST_CASE("An arrangement loop wrap keeps its tail and loses the top until the reader returns",
-          "[engine][clip][streaming][2700]") {
+TEST_CASE(
+    "An unprepared arrangement loop wrap keeps its tail and loses the top until the reader returns",
+    "[engine][clip][streaming][2700]") {
     for (const auto& playback : playbackMatrix()) {
         INFO(describe(playback));
         const auto block = playback.blockSize;
@@ -895,16 +904,94 @@ TEST_CASE("An arrangement loop wrap keeps its tail and loses the top until the r
 }
 
 TEST_CASE("An arrangement loop wrap plays its first block complete",
-          "[engine][clip][streaming][2700][!shouldfail]") {
-    // Finding 2 of the audit: nothing prepares the loop start while playing.
+          "[engine][clip][streaming][2700]") {
     for (const auto blockSize : {64, 128, 512}) {
         const Playback playback{mode::kDisabled, 1.0, blockSize};
         Rig rig(playback);
+        rig.prepareLoop(kLoopStart, kLoopEnd);
         rig.arrange(clipFor(playback));
         rig.pool.fillNow();
         playThroughWrap(rig, roundUp(4096, blockSize));
         CHECK(rig.missing(ReadPurpose::playback) == 0);
+
+        // The retained destination remains reusable after it has handed off to
+        // the ordinary stream. Exercise two more transport folds without a
+        // preparation round at either boundary.
+        auto position = kLoopStart + blockSize - (kLoopEnd % blockSize) + roundUp(4096, blockSize);
+        for (auto repeat = 0; repeat < 2; ++repeat) {
+            while (position + blockSize <= kLoopEnd) {
+                rig.play(position, true, true);
+                position += blockSize;
+            }
+            const auto tail = static_cast<int>(kLoopEnd - position);
+            rig.callback({{position, tail, true}, {kLoopStart, blockSize - tail, false}}, true);
+            position = kLoopStart + blockSize - tail;
+        }
+        CHECK(rig.missing(ReadPurpose::playback) == 0);
     }
+}
+
+TEST_CASE("A prepared arrangement loop retains its destination while the reader is elsewhere",
+          "[engine][clip][streaming][loop][2700]") {
+    std::vector<Playback> cases;
+    for (const auto blockSize : {64, 128, 512}) {
+        cases.push_back({mode::kDisabled, 1.0, blockSize});
+        cases.push_back({mode::kSignalsmith, 1.0, blockSize});
+        cases.push_back({mode::kSignalsmith, 120.0 / 175.0, blockSize});
+    }
+    cases.push_back({mode::kSoundTouchNormal, 0.8, 512});
+    cases.push_back({mode::kSoundTouchBetter, 1.2, 512});
+
+    for (const auto& playback : cases) {
+        INFO(describe(playback));
+        Rig rig(playback);
+        Rig straight(playback);
+        Rig incoming(playback);
+        rig.prepareLoop(kLoopStart, kLoopEnd);
+        for (auto* prepared : {&rig, &straight, &incoming}) {
+            prepared->arrange(clipFor(playback));
+            prepared->pool.fillNow();
+        }
+
+        const auto after = roundUp(4096, playback.blockSize);
+        playThroughWrap(rig, after);
+        straight.playOn(0, kLoopEnd + playback.blockSize);
+        incoming.preparedLocate(kLoopStart);
+        incoming.playOn(kLoopStart + playback.blockSize, after);
+
+        CHECK(rig.missing(ReadPurpose::playback) == 0);
+        CHECK(rig.missing(ReadPurpose::priming) == 0);
+        CHECK(compare(rig.heard, 0, straight.heard, 0, kLoopEnd).worstDifference == 0.0f);
+        const auto incomingDamage = compare(rig.heard, kLoopEnd, incoming.heard, 0, after);
+        INFO(summary(rig, incomingDamage));
+        CHECK(incomingDamage.worstDifference == 0.0f);
+        CHECK(incomingDamage.zeroWhereAudible == 0);
+        CHECK(incomingDamage.silentWhereAudible == 0);
+    }
+}
+
+TEST_CASE("A short clip at the loop destination keeps its prepared reader",
+          "[engine][clip][streaming][loop][2700]") {
+    const Playback playback{mode::kDisabled, 1.0, 128};
+    auto clip = clipFor(playback);
+    const auto starts = static_cast<double>(kLoopStart) / kSampleRate;
+    clip.span = spanOf(starts, starts + 0.25);
+    clip.events.front().span = clip.span;
+
+    Rig rig(playback);
+    rig.prepareLoop(kLoopStart, kLoopEnd);
+    rig.arrange(clip);
+    rig.pool.fillNow();
+
+    // The moving arrangement window is now at the far end, where this short
+    // clip would ordinarily have handed its only reader back.
+    rig.pool.setPosition(static_cast<double>(kLoopEnd) / kSampleRate);
+    rig.pool.service();
+    CHECK(rig.pool.streamCount() == 1);
+
+    const auto position = kLoopEnd - 37;
+    rig.callback({{position, 37, true}, {kLoopStart, playback.blockSize - 37, false}}, false);
+    CHECK(rig.missing(ReadPurpose::playback) == 0);
 }
 
 constexpr std::int64_t kLaunch = 8192;

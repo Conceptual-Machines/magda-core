@@ -223,6 +223,8 @@ EngineSession::Result EngineSession::publishValues(PlanValues values) {
 }
 
 void EngineSession::publishTransport(TransportSnapshot transport) {
+    if (voices_ != nullptr)
+        voices_->setTransport(transport.loop, transport.tempo);
     transport_.nonRealtimeReplace(std::move(transport));
 }
 

@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -20,6 +21,7 @@
 #include "io/PrefetchStream.hpp"
 #include "io/PrefetchThread.hpp"
 #include "io/SourceReaders.hpp"
+#include "transport/TransportState.hpp"
 
 /**
  * @file ClipVoicePool.hpp
@@ -159,6 +161,9 @@ class ClipVoicePool {
      * points at are the same clips.
      */
     void setSnapshot(std::shared_ptr<const ClipSnapshot> snapshot);
+
+    /// The active transport loop, used only to prepare its destination.
+    void setTransport(const LoopRange& loop, const TempoMap& tempo);
 
     /**
      * @brief Where the transport is, in seconds.
@@ -345,11 +350,14 @@ class ClipVoicePool {
         std::shared_ptr<ClipStretcher> stretcher;
         StretchSetup setup;
         int preRoll = 0;
+        std::int64_t retainedStart = std::numeric_limits<std::int64_t>::min();
+        int retainedCount = 0;
 
         bool operator==(const Reader& other) const {
             return stream == other.stream && path == other.path && read == other.read &&
                    cueSamples == other.cueSamples && stretcher == other.stretcher &&
-                   setup == other.setup && preRoll == other.preRoll && session == other.session;
+                   setup == other.setup && preRoll == other.preRoll && session == other.session &&
+                   retainedStart == other.retainedStart && retainedCount == other.retainedCount;
         }
     };
 
@@ -357,6 +365,9 @@ class ClipVoicePool {
 
     Reader open(const AudioClipPlayback& clip, const AudioEventPlayback& event, double cueSeconds,
                 bool session);
+    void prepareLoopDestination(Reader& reader, const AudioClipPlayback& clip,
+                                const AudioEventPlayback& event, double loopSeconds,
+                                const TempoMap& tempo);
 
     /// Where a stream playing @p event is pointed to pick it up at @p seconds:
     /// the reading position of that moment, forward by whatever its stretcher
@@ -375,6 +386,8 @@ class ClipVoicePool {
     /// is the audio thread, so a lock is the plain answer.
     mutable std::mutex snapshotLock_;
     std::shared_ptr<const ClipSnapshot> snapshot_;
+    LoopRange loop_;
+    TempoMap tempo_;
 
     std::atomic<double> position_{0.0};
 
