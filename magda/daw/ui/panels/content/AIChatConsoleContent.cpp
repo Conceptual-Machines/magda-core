@@ -1958,7 +1958,7 @@ juce::String formatClipAsDrummerContext(magda::ClipId clipId) {
     double tempo = 120.0;
     if (auto* controller = magda::TimelineController::getCurrent())
         tempo = controller->getState().tempo.bpm;
-    const double lengthBeats = clip->getLengthInBeats(tempo);
+    const double lengthBeats = clip->getLengthInBeats();
 
     constexpr double kBarBeats = 4.0;
     constexpr int kCellsPerBar = 16;

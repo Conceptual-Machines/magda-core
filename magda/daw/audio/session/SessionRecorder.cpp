@@ -92,7 +92,7 @@ void SessionRecorder::updatePreviews() {
         double bpm = tempoSeq.getBpmAt(te::TimePosition());
         if (bpm <= 0.0)
             bpm = 120.0;
-        double clipLengthBeats = sessionClip->getLengthInBeats(bpm);
+        double clipLengthBeats = sessionClip->getLengthInBeats();
         if (clipLengthBeats <= 0.0)
             clipLengthBeats = 4.0;
 
@@ -266,7 +266,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
             if (bpm <= 0.0)
                 bpm = 120.0;
             newClip->setPlacementBeats(newClip->placement.startBeat,
-                                       sessionClip->getLengthInBeats(bpm));
+                                       sessionClip->getLengthInBeats());
         }
 
         // For looping audio: enable loop if duration exceeds one pass
@@ -282,7 +282,7 @@ void SessionRecorder::finalizeRecording(const ActiveRecording& rec, double stopT
         double bpm = edit_.tempoSequence.getBpmAt(te::TimePosition());
         if (bpm <= 0.0)
             bpm = 120.0;
-        double clipLengthBeats = sessionClip->getLengthInBeats(bpm);
+        double clipLengthBeats = sessionClip->getLengthInBeats();
         if (clipLengthBeats <= 0.0)
             clipLengthBeats = 4.0;
 

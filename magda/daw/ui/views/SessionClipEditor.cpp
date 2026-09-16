@@ -351,7 +351,7 @@ void SessionClipEditor::updateControls() {
     const double bpm = TimelineController::getCurrent()
                            ? TimelineController::getCurrent()->getState().tempo.bpm
                            : 120.0;
-    lengthLabel_->setText(juce::String(clip->getLengthInBeats(bpm), 2) + " beats",
+    lengthLabel_->setText(juce::String(clip->getLengthInBeats(), 2) + " beats",
                           juce::dontSendNotification);
 
     // Update offset slider

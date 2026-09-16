@@ -43,13 +43,14 @@ te::TimeStretcher::Mode stretchModeFor(const ClipInfo& clip, bool forceOn) {
     return mode == te::TimeStretcher::disabled && forceOn ? te::TimeStretcher::defaultMode : mode;
 }
 
-double timelineLengthBeats(const ClipInfo& clip, double bpm) {
-    if (clip.placement.lengthBeats > 0.0)
-        return clip.placement.lengthBeats;
-    if (clip.lengthBeats > 0.0)
-        return clip.lengthBeats;
-    const double resolvedBpm = isValidBpm(bpm) ? bpm : DEFAULT_BPM;
-    return clip.getTimelineLength(resolvedBpm) * resolvedBpm / 60.0;
+/// Both fallbacks this used to carry were dead, and provably so (#2563).
+/// ClipInfo::lengthBeats is written in one place, setPlacementBeats, where it
+/// mirrors placement.lengthBeats, so it is non-zero only where that already
+/// was. The seconds branch read the cache deriveTimesFromBeats fills from the
+/// same beats, so a zero length reached it as a zero duration. A clip whose
+/// length deserialised as zero got zero from all three.
+double timelineLengthBeats(const ClipInfo& clip) {
+    return clip.getLengthInBeats();
 }
 
 te::FollowAction toTracktionFollowAction(FollowAction action) {
@@ -98,7 +99,7 @@ double followActionBaseLengthBeats(const ClipInfo& clip, double bpm) {
             return (sourceLength / speed) * bpm / 60.0;
     }
 
-    return timelineLengthBeats(clip, bpm);
+    return timelineLengthBeats(clip);
 }
 
 bool syncFollowActionToTracktionClip(te::Clip& teClip, const ClipInfo& clip, double bpm) {
@@ -455,7 +456,7 @@ void syncSessionTimeBasedLoop(te::Edit& edit, te::Clip& teClip, const ClipInfo& 
     if (clip.loopEnabled && clip.isMidi()) {
         // MIDI loops in clip beats. Routing it through the audio event's source
         // region reads an empty one and loops the whole container instead.
-        const double loopBeats = clip.effectiveLoopLengthBeats(projectBpm);
+        const double loopBeats = clip.effectiveLoopLengthBeats();
         teClip.setLoopRangeBeats({te::BeatPosition::fromBeats(clip.loopStartBeats),
                                   te::BeatPosition::fromBeats(clip.loopStartBeats + loopBeats)});
     } else if (clip.loopEnabled) {
@@ -501,7 +502,7 @@ void syncSessionLaunchLooping(te::Edit& edit, te::Clip& teClip, const ClipInfo& 
 
     if (clip.isMidi()) {
         // Already clip beats, same as launchSessionClip.
-        const double loopBeats = clip.effectiveLoopLengthBeats(projectBpmAtClip(edit, clip));
+        const double loopBeats = clip.effectiveLoopLengthBeats();
         launchHandle->setLooping(te::BeatDuration::fromBeats(loopBeats));
         return;
     }
@@ -572,11 +573,11 @@ bool syncSessionAudioProperties(te::WaveAudioClip& audioClip, const ClipInfo& cl
  *
  * Clipped to the clip's own beat length when it loops.
  */
-void rewriteSessionMidiSequence(te::Edit& edit, te::MidiClip& midiClip, const ClipInfo& clip) {
+void rewriteSessionMidiSequence(te::MidiClip& midiClip, const ClipInfo& clip) {
     auto& sequence = midiClip.getSequence();
     sequence.clear(nullptr);
 
-    const double clipLengthBeats = timelineLengthBeats(clip, projectBpmAtClip(edit, clip));
+    const double clipLengthBeats = timelineLengthBeats(clip);
 
     for (const auto& note : clip.midiNotes) {
         double start = note.startBeat;
@@ -650,7 +651,7 @@ bool ClipSynchronizer::syncSessionClipPropertyToEngine(ClipId clipId, const Clip
 
     if (clip.isMidi()) {
         if (auto* midiClip = dynamic_cast<te::MidiClip*>(teClip))
-            rewriteSessionMidiSequence(edit_, *midiClip, clip);
+            rewriteSessionMidiSequence(*midiClip, clip);
     }
 
     return needsGraphReallocation;
@@ -1107,7 +1108,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // Set looping if enabled. A v1 project can still carry the 0
         // sentinel, which would otherwise ask TE to loop nothing.
         if (clip->loopEnabled) {
-            const double rangeLengthBeats = clip->effectiveLoopLengthBeats(bpm);
+            const double rangeLengthBeats = clip->effectiveLoopLengthBeats();
             midiClipPtr->setLoopRangeBeats(
                 {te::BeatPosition::fromBeats(loopStartBeat),
                  te::BeatPosition::fromBeats(loopStartBeat + rangeLengthBeats)});
@@ -1126,7 +1127,7 @@ bool ClipSynchronizer::syncSessionClipToSlot(ClipId clipId) {
         // and stop after a single pass.
         if (auto lh = midiClipPtr->getLaunchHandle()) {
             if (clip->loopEnabled) {
-                const double handleBeats = clip->effectiveLoopLengthBeats(bpm);
+                const double handleBeats = clip->effectiveLoopLengthBeats();
                 if (handleBeats > 0.0)
                     lh->setLooping(te::BeatDuration::fromBeats(handleBeats));
             }
@@ -1182,7 +1183,7 @@ void ClipSynchronizer::launchSessionClip(ClipId clipId, bool forceImmediate) {
             } else if (clip->isMidi()) {
                 // Already clip beats, with the whole-clip fallback for the 0
                 // sentinel a legacy project can still carry.
-                const double handleBeats = clip->effectiveLoopLengthBeats(bpm);
+                const double handleBeats = clip->effectiveLoopLengthBeats();
                 if (handleBeats > 0.0)
                     launchHandle->setLooping(te::BeatDuration::fromBeats(handleBeats));
             }

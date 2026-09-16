@@ -447,17 +447,17 @@ TEST_CASE("A zero loop length means the whole clip, not no loop", "[clip][event]
 
     SECTION("A set length is its own answer") {
         clip.loopLengthBeats = 3.0;
-        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(3.0));
+        REQUIRE(clip.effectiveLoopLengthBeats() == Approx(3.0));
     }
 
     SECTION("A zero falls back to the clip's own length") {
         clip.loopLengthBeats = 0.0;
-        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(8.0));
+        REQUIRE(clip.effectiveLoopLengthBeats() == Approx(8.0));
     }
 
     SECTION("The fallback is the clip length, not a zero passed through") {
         clip.loopLengthBeats = 0.0;
-        REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) > 0.0);
+        REQUIRE(clip.effectiveLoopLengthBeats() > 0.0);
     }
 }
 
@@ -486,7 +486,7 @@ TEST_CASE("effectiveLoopLengthBeats and loopLengthInBeats are different question
     // Two seconds at the project's own tempo is four beats; the field carries
     // the sentinel, so the other accessor answers with the whole clip.
     REQUIRE(clip.loopLengthInBeats(kProjectBpm) == Approx(4.0));
-    REQUIRE(clip.effectiveLoopLengthBeats(kProjectBpm) == Approx(8.0));
+    REQUIRE(clip.effectiveLoopLengthBeats() == Approx(8.0));
 }
 
 TEST_CASE("A warped loop reports its warped timeline span", "[clip][event][loop][warp]") {

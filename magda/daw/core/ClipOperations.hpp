@@ -854,7 +854,7 @@ class ClipOperations {
                 if (coversFullSource && event->interpTotalBeats > 0.0)
                     clip.setPlacementBeats(clip.placement.startBeat, event->interpTotalBeats);
                 else
-                    clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats(bpm));
+                    clip.setPlacementBeats(clip.placement.startBeat, clip.getLengthInBeats());
             }
 
             // A region that still spans the whole source becomes the beat

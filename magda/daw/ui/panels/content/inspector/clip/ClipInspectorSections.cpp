@@ -585,7 +585,7 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 double newLength =
-                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats() + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
                     cid, magda::BeatDuration{newLength}, false, bpm));
             }
@@ -618,7 +618,7 @@ void ClipInspector::initClipPropertiesSection() {
             const auto* c = magda::ClipManager::getInstance().getClip(cid);
             if (c && c->view != magda::ClipView::Session) {
                 const double newLength =
-                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats(bpm) + deltaBeats);
+                    juce::jmax(minClipLengthBeats(bpm), c->getLengthInBeats() + deltaBeats);
                 batch.execute(std::make_unique<magda::ResizeClipCommand>(
                     cid, magda::BeatDuration{newLength}, false, bpm));
             }

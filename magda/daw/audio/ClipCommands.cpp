@@ -1251,7 +1251,7 @@ void RenderClipCommand::execute() {
     // Capture original clip properties before deletion
     const double projectBPM = currentProjectBpm();
     double startBeats = clip->getStartBeats(projectBPM);
-    double lengthBeats = clip->getLengthInBeats(projectBPM);
+    double lengthBeats = clip->getLengthInBeats();
     double startTime = clip->getTimelineStart(projectBPM);
     double length = clip->getTimelineLength(projectBPM);
     TrackId trackId = clip->trackId;
