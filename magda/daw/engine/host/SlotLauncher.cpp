@@ -98,7 +98,8 @@ void SlotLauncher::launch(ClipId clipId) {
 
     // Toggle mode: clicking what is already playing stops it. Trigger mode
     // re-launches, which is what a re-click means there.
-    if (clip->launchMode == LaunchMode::Toggle && track->activeSessionClipId == clipId) {
+    if (clip->launchMode == LaunchMode::Toggle && host_.launchTransportPlaying() &&
+        track->activeSessionClipId == clipId) {
         stop(clipId);
         return;
     }
@@ -143,8 +144,10 @@ void SlotLauncher::launch(ClipId clipId) {
     // A launch supersedes a stop the same track was waiting out.
     stopping_.erase(clip->trackId);
 
-    if (!host_.launchTransportPlaying())
+    if (!host_.launchTransportPlaying()) {
         host_.startLaunchTransport();
+        wasPlaying_ = true;
+    }
 
     lastState_[clipId] = SessionClipPlayState::Queued;
     playheadClip_ = clipId;
@@ -259,8 +262,10 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
     playheadClip_ = launching.front()->id;
     syncPlaybackModes();
 
-    if (!host_.launchTransportPlaying())
+    if (!host_.launchTransportPlaying()) {
         host_.startLaunchTransport();
+        wasPlaying_ = true;
+    }
 
     for (const auto trackId : stopped)
         stopTrack(trackId);
@@ -278,6 +283,13 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     const auto* clip = clips.getClip(clipId);
     if (clip == nullptr)
         return;
+
+    // There is no run to wait out while transport is stopped, and therefore
+    // no later tap acknowledgement that could return this track to Arrangement.
+    if (!host_.launchTransportPlaying()) {
+        stop(clipId);
+        return;
+    }
 
     auto* session = host_.launchSession();
     if (session == nullptr)
@@ -356,6 +368,9 @@ void SlotLauncher::noteAsked(const ClipInfo& clip) {
 }
 
 SessionClipPlayState SlotLauncher::playState(ClipId clipId) const {
+    if (!host_.launchTransportPlaying())
+        return SessionClipPlayState::Stopped;
+
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip == nullptr || clip->view != ClipView::Session)
         return SessionClipPlayState::Stopped;
@@ -387,6 +402,9 @@ bool SlotLauncher::stopPending(TrackId trackId) const {
 }
 
 double SlotLauncher::playheadSeconds(ClipId clipId) const {
+    if (!host_.launchTransportPlaying())
+        return -1.0;
+
     const auto* clip = ClipManager::getInstance().getClip(clipId);
     if (clip == nullptr || clip->view != ClipView::Session)
         return -1.0;
@@ -429,16 +447,19 @@ void SlotLauncher::processStateEvents() {
 
     const auto playing = host_.launchTransportPlaying();
 
-    if (wasPlaying_ && !playing) {
-        wasPlaying_ = playing;
-        stopForTransport();
-        return;
-    }
-
-    if (!wasPlaying_ && playing)
-        relaunchActive();
+    // EngineHost delivers ordinary transport edges synchronously. Keep this
+    // fallback for hosts that change transport state independently.
+    if (wasPlaying_ && !playing)
+        transportStopped();
+    else if (!wasPlaying_ && playing)
+        transportStarted();
 
     wasPlaying_ = playing;
+
+    // A stopped tap can take an audio callback to acknowledge its stop. The
+    // active clip remains the intent to restore on the next transport start.
+    if (!playing)
+        return;
 
     auto modesChanged = false;
 
@@ -497,6 +518,16 @@ void SlotLauncher::forget() {
     stopping_.clear();
     playheadClip_ = INVALID_CLIP_ID;
     wasPlaying_ = false;
+}
+
+void SlotLauncher::transportStopped() {
+    stopForTransport();
+    wasPlaying_ = false;
+}
+
+void SlotLauncher::transportStarted() {
+    relaunchActive();
+    wasPlaying_ = true;
 }
 
 std::optional<double> SlotLauncher::dueBeat(const ClipInfo& clip) const {
@@ -577,22 +608,31 @@ void SlotLauncher::stopForTransport() {
 
 void SlotLauncher::relaunchActive() {
     auto& clips = ClipManager::getInstance();
+    auto& tracks = TrackManager::getInstance();
     auto* session = host_.launchSession();
     if (session == nullptr)
         return;
 
     std::vector<const ClipInfo*> relaunching;
 
-    for (const auto& track : TrackManager::getInstance().getTracks()) {
+    auto repairedStaleIntent = false;
+    for (const auto& track : tracks.getTracks()) {
         if (track.activeSessionClipId == INVALID_CLIP_ID)
             continue;
 
-        if (playState(track.activeSessionClipId) != SessionClipPlayState::Stopped)
+        const auto* clip = clips.getClip(track.activeSessionClipId);
+        if (clip == nullptr || clip->view != ClipView::Session || clip->trackId != track.id) {
+            if (auto* mutableTrack = tracks.getTrack(track.id); mutableTrack != nullptr)
+                mutableTrack->activeSessionClipId = INVALID_CLIP_ID;
+            repairedStaleIntent = true;
             continue;
+        }
 
-        if (const auto* clip = clips.getClip(track.activeSessionClipId); clip != nullptr)
-            relaunching.push_back(clip);
+        relaunching.push_back(clip);
     }
+
+    if (repairedStaleIntent)
+        syncPlaybackModes();
 
     if (relaunching.empty())
         return;
@@ -604,6 +644,7 @@ void SlotLauncher::relaunchActive() {
     for (const auto* clip : relaunching) {
         gesture.setLooping(keyOf(*clip), clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
         gesture.play(keyOf(*clip));
+        noteAsked(*clip);
     }
 }
 

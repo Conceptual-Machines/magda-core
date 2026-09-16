@@ -1829,11 +1829,17 @@ EditReceipt EngineHost::editHostedParameter(const ChainNodePath& devicePath, int
 }
 
 void EngineHost::play() {
+    const auto starting = !impl_->request_.playing;
     impl_->publishRequest({.playing = true, .locate = false});
+    if (starting)
+        impl_->launcher_.transportStarted();
 }
 
 void EngineHost::stopPlaying() {
+    const auto stopping = impl_->request_.playing;
     impl_->publishRequest({.playing = false, .locate = false});
+    if (stopping)
+        impl_->launcher_.transportStopped();
 }
 
 void EngineHost::locateSeconds(double seconds) {

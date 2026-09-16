@@ -153,7 +153,22 @@ struct Rig {
     /// Roll the transport, which is what advances a handle.
     void roll() {
         launchHost.playing = true;
-        session.publishTransport({.tempo = tempo, .request = {.generation = 1, .playing = true}});
+        session.publishTransport(
+            {.tempo = tempo, .request = {.generation = ++transportGeneration, .playing = true}});
+    }
+
+    void stopTransport() {
+        launchHost.playing = false;
+        session.publishTransport(
+            {.tempo = tempo, .request = {.generation = ++transportGeneration, .playing = false}});
+        launcher.transportStopped();
+    }
+
+    void restartTransport() {
+        launchHost.playing = true;
+        session.publishTransport(
+            {.tempo = tempo, .request = {.generation = ++transportGeneration, .playing = true}});
+        launcher.transportStarted();
     }
 
     /// Render @p blocks of 512 samples: 512 at 44100 is a little under
@@ -162,6 +177,17 @@ struct Rig {
         juce::AudioBuffer<float> output(2, context.maxBlockSize);
         for (auto block = 0; block < blocks; ++block)
             session.process(context.maxBlockSize, output);
+    }
+
+    float renderPeak(int blocks) {
+        juce::AudioBuffer<float> output(2, context.maxBlockSize);
+        auto peak = 0.0f;
+        for (auto block = 0; block < blocks; ++block) {
+            output.clear();
+            session.process(context.maxBlockSize, output);
+            peak = std::max(peak, output.getMagnitude(0, output.getNumSamples()));
+        }
+        return peak;
     }
 
     /// What the block that last advanced @p sceneIndex's handle on @p trackId
@@ -190,6 +216,7 @@ struct Rig {
 
     TestLaunchHost launchHost{session, tempo};
     host::SlotLauncher launcher{launchHost};
+    std::uint64_t transportGeneration = 0;
 
     /// Last, so the feeds are attached before anything publishes into them.
     struct Attach {
@@ -211,6 +238,15 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testASceneStartsTogether(); });
         magda::test::runWithCleanJuceState([this] { testStoppingReturnsTheTrack(); });
         magda::test::runWithCleanJuceState([this] { testThePlayheadWrapsOnThePass(); });
+        magda::test::runWithCleanJuceState([this] { testTransportRestartsSessionState(); });
+        magda::test::runWithCleanJuceState([this] { testRapidTransportRestartIsNotMissed(); });
+        magda::test::runWithCleanJuceState([this] { testInitialLaunchIsNotRelaunchedByTimer(); });
+        magda::test::runWithCleanJuceState([this] { testInitialSceneIsNotRelaunchedByTimer(); });
+        magda::test::runWithCleanJuceState([this] { testSelectionDoesNotBecomeLaunchIntent(); });
+        magda::test::runWithCleanJuceState([this] { testStaleRememberedClipIsIgnored(); });
+        magda::test::runWithCleanJuceState([this] { testMovedRememberedClipIsIgnored(); });
+        magda::test::runWithCleanJuceState([this] { testExplicitStopClearsStoppedIntent(); });
+        magda::test::runWithCleanJuceState([this] { testStoppedToggleClickRelaunches(); });
     }
 
   private:
@@ -391,6 +427,217 @@ class SlotLauncherTest final : public juce::UnitTest {
         const auto playing = rig.launcher.playheads();
         expect(playing.size() == 1 && playing.contains(clipId),
                "Every sounding slot is in the set the view draws");
+    }
+
+    void testTransportRestartsSessionState() {
+        beginTest("Transport Stop keeps session mode and Play relaunches every active track");
+
+        Rig rig(2);
+        const auto first = rig.slotClip(rig.trackIds[0], 0);
+        const auto second = rig.slotClip(rig.trackIds[1], 0, magda::LaunchQuantize::OneBar);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launchScene(rig.trackIds, 0);
+        expect(rig.renderPeak(8) > 0.0f, "The launched scene produces engine output");
+        const auto elapsedBeforeStop = rig.reading(rig.trackIds[0], 0).elapsedBeats;
+
+        rig.stopTransport();
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Stopped,
+               "The UI reports stopped before the audio callback acknowledges it");
+        expect(rig.launcher.playheadSeconds(first) < 0.0,
+               "The UI hides the stale playhead before acknowledgement");
+        rig.render(1);
+
+        rig.launcher.processStateEvents();
+        rig.launcher.processStateEvents();
+        for (const auto trackId : rig.trackIds) {
+            const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+            expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Session,
+                   "Session mode survives stopped state-event ticks");
+        }
+
+        rig.restartTransport();
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Queued &&
+                   rig.launcher.playState(second) == magda::SessionClipPlayState::Queued,
+               "Both retained scene slots are queued before acknowledgement");
+        expect(rig.renderPeak(2) > 0.0f, "Play relaunches both tracks into engine output");
+        const auto firstRestarted = rig.reading(rig.trackIds[0], 0);
+        const auto secondRestarted = rig.reading(rig.trackIds[1], 0);
+        expect(firstRestarted.playing && secondRestarted.playing,
+               "Both scene handles are playing after restart");
+        expectWithinAbsoluteError(firstRestarted.elapsedBeats, secondRestarted.elapsedBeats, 1.0e-9,
+                                  "Both tracks restart on the same engine beat");
+        expect(firstRestarted.elapsedBeats > 0.0 && firstRestarted.elapsedBeats < elapsedBeforeStop,
+               "The restarted scene advances again from its beginning");
+    }
+
+    void testRapidTransportRestartIsNotMissed() {
+        beginTest("Stop and Play between state-event ticks still relaunches");
+
+        Rig rig(1);
+        const auto clipId = rig.slotClip(rig.trackIds.front(), 0);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(10);
+        const auto elapsedBeforeStop = rig.reading(rig.trackIds.front(), 0).elapsedBeats;
+
+        rig.stopTransport();
+        rig.restartTransport();
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Queued,
+               "The restart is queued despite the stale playing tap");
+        expect(rig.renderPeak(2) > 0.0f, "The rapid restart produces engine output");
+        expect(rig.reading(rig.trackIds.front(), 0).elapsedBeats < elapsedBeforeStop,
+               "The rapid restart begins a new run from the start");
+    }
+
+    void testInitialLaunchIsNotRelaunchedByTimer() {
+        beginTest("A launch that starts transport is not relaunched by the next UI tick");
+
+        Rig rig(1);
+        const auto clipId = rig.slotClip(rig.trackIds.front(), 0);
+        expect(rig.publish(), "The project is published");
+
+        rig.launcher.launch(clipId);
+        rig.roll();
+        rig.render(2);
+        const auto before = rig.reading(rig.trackIds.front(), 0).elapsedBeats;
+        rig.launcher.processStateEvents();
+        rig.render(2);
+        const auto after = rig.reading(rig.trackIds.front(), 0).elapsedBeats;
+
+        expect(before > 0.0 && after > before,
+               "The existing run advances instead of restarting on the first state tick");
+    }
+
+    void testInitialSceneIsNotRelaunchedByTimer() {
+        beginTest("A scene that starts transport is not relaunched by the next UI tick");
+
+        Rig rig(2);
+        rig.slotClip(rig.trackIds[0], 0);
+        rig.slotClip(rig.trackIds[1], 0);
+        expect(rig.publish(), "The project is published");
+
+        rig.launcher.launchScene(rig.trackIds, 0);
+        rig.roll();
+        rig.render(2);
+        const auto firstBefore = rig.reading(rig.trackIds[0], 0).elapsedBeats;
+        const auto secondBefore = rig.reading(rig.trackIds[1], 0).elapsedBeats;
+        rig.launcher.processStateEvents();
+        rig.render(2);
+
+        expect(rig.reading(rig.trackIds[0], 0).elapsedBeats > firstBefore &&
+                   rig.reading(rig.trackIds[1], 0).elapsedBeats > secondBefore,
+               "Both existing scene runs advance instead of restarting");
+    }
+
+    void testSelectionDoesNotBecomeLaunchIntent() {
+        beginTest("Transport Play does not launch a merely selected Session clip");
+
+        Rig rig(1);
+        const auto selected = rig.slotClip(rig.trackIds.front(), 0);
+        magda::ClipManager::getInstance().setSelectedClip(selected);
+        expect(rig.publish(), "The project is published");
+
+        rig.restartTransport();
+        expect(rig.renderPeak(2) == 0.0f, "The selected clip produces no engine output");
+        expect(rig.launcher.playState(selected) == magda::SessionClipPlayState::Stopped &&
+                   !rig.reading(rig.trackIds.front(), 0).playing,
+               "The UI and engine both report the selected clip stopped");
+    }
+
+    void testStaleRememberedClipIsIgnored() {
+        beginTest("A deleted remembered slot is not replaced by another selection");
+
+        Rig rig(1);
+        const auto active = rig.slotClip(rig.trackIds.front(), 0);
+        const auto other = rig.slotClip(rig.trackIds.front(), 1);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(active);
+        rig.render(1);
+        rig.stopTransport();
+        rig.render(1);
+
+        magda::ClipManager::getInstance().setSelectedClip(other);
+        magda::ClipManager::getInstance().deleteClip(active);
+        expect(rig.publish(), "The deleted slot is removed from the published model");
+        rig.restartTransport();
+        rig.render(2);
+
+        expect(!rig.reading(rig.trackIds.front(), 1).playing,
+               "The unrelated selected slot remains stopped");
+        const auto* track = magda::TrackManager::getInstance().getTrack(rig.trackIds.front());
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The stale intent is cleared and its track returns to Arrangement");
+    }
+
+    void testMovedRememberedClipIsIgnored() {
+        beginTest("A remembered slot moved to another track is not relaunched");
+
+        Rig rig(2);
+        const auto active = rig.slotClip(rig.trackIds[0], 0);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(active);
+        rig.render(1);
+        rig.stopTransport();
+        rig.render(1);
+
+        magda::ClipManager::getInstance().moveClipToTrack(active, rig.trackIds[1]);
+        expect(rig.publish(), "The moved slot is republished on its new track");
+        rig.restartTransport();
+        rig.render(2);
+
+        expect(!rig.reading(rig.trackIds[1], 0).playing,
+               "The moved slot is not launched from stale source-track intent");
+        const auto* source = magda::TrackManager::getInstance().getTrack(rig.trackIds[0]);
+        expect(source != nullptr && source->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   source->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The stale source-track intent is repaired");
+    }
+
+    void testExplicitStopClearsStoppedIntent() {
+        beginTest("An explicit track stop while transport is stopped clears restart intent");
+
+        Rig rig(1);
+        const auto clipId = rig.slotClip(rig.trackIds.front(), 0);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(1);
+        rig.stopTransport();
+        rig.render(1);
+
+        rig.launcher.stopTrack(rig.trackIds.front());
+        const auto* track = magda::TrackManager::getInstance().getTrack(rig.trackIds.front());
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The explicit stop returns the track immediately");
+        rig.restartTransport();
+        rig.render(2);
+        expect(!rig.reading(rig.trackIds.front(), 0).playing,
+               "Play does not relaunch the explicitly stopped slot");
+    }
+
+    void testStoppedToggleClickRelaunches() {
+        beginTest("Clicking a retained Toggle slot while stopped relaunches it");
+
+        Rig rig(1);
+        const auto clipId = rig.slotClip(rig.trackIds.front(), 0);
+        if (auto* clip = magda::ClipManager::getInstance().getClip(clipId); clip != nullptr)
+            clip->launchMode = magda::LaunchMode::Toggle;
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(1);
+        rig.stopTransport();
+        rig.render(1);
+
+        rig.launcher.launch(clipId);
+        rig.roll();
+        expect(rig.renderPeak(2) > 0.0f, "The stopped Toggle slot starts again on click");
     }
 };
 

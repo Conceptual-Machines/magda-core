@@ -81,6 +81,12 @@ class SlotLauncher {
     /** @brief Stop every slot and return every track to its arrangement. */
     void stopEverything();
 
+    /** @brief End every session run for an explicit transport stop. */
+    void transportStopped();
+
+    /** @brief Re-launch the session state retained across a transport stop. */
+    void transportStarted();
+
     // ===== What the UI reads =====
 
     /** @brief What @p clipId's slot is doing, as the last block left it. */
