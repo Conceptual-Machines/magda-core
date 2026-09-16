@@ -1222,6 +1222,60 @@ TEST_CASE("A session re-trigger plays its top from the retained opening",
     }
 }
 
+TEST_CASE("A prime the reader missed is not made good by priming again",
+          "[engine][clip][streaming][2703]") {
+    // Priming reads behind the position it aligns to, so a voice that primed
+    // again whenever it came up short would send a reader that is already late
+    // further back still, and the audio it recovered would arrive after the
+    // moment it belonged to. The loss is reported and the position is kept.
+    constexpr PrefetchSettings kSmallChunks{256, 64};
+    constexpr std::int64_t kTarget = 44160;
+
+    for (const auto stretch :
+         {mode::kSoundTouchNormal, mode::kSoundTouchBetter, mode::kSignalsmith})
+        for (const auto speed : {0.8, 1.2}) {
+            const Playback playback{stretch, speed, 128};
+            INFO(describe(playback));
+            const auto after = roundUp(16384, playback.blockSize);
+
+            ReaderGate gate;
+            Rig heard(playback, Section::Arrangement, kSmallChunks, &gate);
+            Rig control(playback, Section::Arrangement, kSmallChunks);
+            for (auto* rig : {&heard, &control}) {
+                rig->arrange(clipFor(playback));
+                rig->pool.fillNow();
+                rig->playOn(0, 8192);
+            }
+
+            // Held before it fills anything, so the prime aligns against silence.
+            heard.stopped(kTarget, true);
+            const auto preRoll = heard.entry().preRollSamples;
+            gate.closeAfter(0);
+            {
+                magda::test::GatedWorker worker(gate, [&] { heard.reader.fillOnce(); });
+                REQUIRE(gate.waitUntilHeld());
+                heard.play(kTarget, false, false);
+            }
+
+            const auto primingLost = heard.missing(ReadPurpose::priming);
+            CHECK(primingLost > 0);
+            CHECK(primingLost <= preRoll);
+
+            control.preparedLocate(kTarget);
+            for (auto* rig : {&heard, &control})
+                rig->playOn(kTarget + playback.blockSize, after);
+
+            // The reader was back for the whole of that, and nothing went back
+            // for what it had missed: one prime, and one window of loss.
+            CHECK(heard.missing(ReadPurpose::priming) == primingLost);
+
+            const auto from = roundUp(8192, playback.blockSize);
+            checkAccounted(
+                heard, compare(heard.heard, from, control.heard, from, playback.blockSize + after),
+                playback.blockSize);
+        }
+}
+
 TEST_CASE("A prime the reader half supplied is counted apart from playback, and recovers",
           "[engine][clip][streaming][2700]") {
     constexpr PrefetchSettings kSmallChunks{256, 64};

@@ -99,18 +99,22 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.reset();
     }
 
-    void prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
+    std::int64_t prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
         const auto before = readPreRoll(stream, until, samples);
-        const auto count = samplesOf(before);
+        const auto count = samplesOf(before.audio);
 
         if (count <= 0) {
             stretch_.reset();
-            return;
+            return before.missing;
         }
 
         // outputSeek resets on its way in, and infers the rate from how much it
         // was given, which is why preRollSamples above is the length to give it.
-        stretch_.outputSeek(pointers_.gather(before), count);
+        // The window's length, not the material in it: a read the reader was
+        // behind on comes back with silence at the end of the window and the
+        // same length, so the rate it infers is still the rate it is playing.
+        stretch_.outputSeek(pointers_.gather(before.audio), count);
+        return before.missing;
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double, double,
@@ -253,19 +257,21 @@ class SoundTouchClipStretcher final : public ClipStretcher {
         touch_.clear();
     }
 
-    void prime(PrefetchStream& stream, std::int64_t until, int samples, double rate) override {
+    std::int64_t prime(PrefetchStream& stream, std::int64_t until, int samples,
+                       double rate) override {
         touch_.clear();
         touch_.setTempo(std::clamp(rate, kMinStretchRate, kMaxStretchRate));
 
         const auto before = readPreRoll(stream, until, samples);
-        const auto count = samplesOf(before);
+        const auto count = samplesOf(before.audio);
         if (count <= 0)
-            return;
+            return before.missing;
 
         // until includes readAhead_; samples also includes the filter history.
         // Retain the output from the audible start, and leave the stream where
         // the next cell will continue reading.
-        writeAll(before, count);
+        writeAll(before.audio, count);
+        return before.missing;
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double, double rate,
@@ -467,24 +473,26 @@ class ResamplingClipStretcher final : public ClipStretcher {
         history_.clear();
     }
 
-    void prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
+    std::int64_t prime(PrefetchStream& stream, std::int64_t until, int samples, double) override {
         history_.clear();
 
         const auto before = readPreRoll(stream, until, std::min(samples, kHistory));
-        const auto count = samplesOf(before);
+        const auto count = samplesOf(before.audio);
         const auto taken = std::min(count, kHistory);
         if (taken <= 0)
-            return;
+            return before.missing;
 
         // The last of it, and pushed to the end: what a curve reaches back for
         // is the material immediately before where it lands, so a short pre-roll
         // leaves the silence at the far end rather than under the first sample.
         for (auto channel = 0; channel < channels_; ++channel) {
             const auto source =
-                std::min(static_cast<std::size_t>(channel), before.getNumChannels() - 1);
+                std::min(static_cast<std::size_t>(channel), before.audio.getNumChannels() - 1);
             history_.copyFrom(channel, kHistory - taken,
-                              before.getChannelPointer(source) + count - taken, taken);
+                              before.audio.getChannelPointer(source) + count - taken, taken);
         }
+
+        return before.missing;
     }
 
     void process(juce::dsp::AudioBlock<const float> input, double offset, double step,
@@ -559,8 +567,8 @@ void ClipStretcher::allocatePreRoll(int numChannels, int numSamples) {
     preRoll_.clear();
 }
 
-juce::dsp::AudioBlock<const float> ClipStretcher::readPreRoll(PrefetchStream& stream,
-                                                              std::int64_t until, int wanted) {
+ClipStretcher::PreRoll ClipStretcher::readPreRoll(PrefetchStream& stream, std::int64_t until,
+                                                  int wanted) {
     // What fits, and taken from the end: the samples that matter are the ones
     // immediately before the first one to be heard, so a pre-roll that has to be
     // cut short is cut at the far end rather than at the near one.
@@ -575,9 +583,15 @@ juce::dsp::AudioBlock<const float> ClipStretcher::readPreRoll(PrefetchStream& st
     // Whatever the stream had. Short is the ordinary answer while a locate is
     // still being caught up with, and the silence in front of it primes as
     // silence, which is what it will sound like.
+    //
+    // What was missing is taken from the stream rather than from the count it
+    // returns: only the stream knows which of the frames it withheld were
+    // material a reader is behind on and which were padding either side of the
+    // file, where there is no sample to be late with (PrefetchStream::read).
+    const auto owed = stream.missingFrames(ReadPurpose::priming);
     stream.read(until - count, region, count, ReadPurpose::priming);
 
-    return region;
+    return {region, stream.missingFrames(ReadPurpose::priming) - owed};
 }
 
 std::unique_ptr<ClipStretcher> makeStretcher(const StretchSetup& setup) {
