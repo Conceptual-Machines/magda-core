@@ -36,13 +36,25 @@ PrefetchStream::PrefetchStream(std::unique_ptr<AudioFileReader> reader,
     }
 }
 
-void PrefetchStream::startAt(std::int64_t sourceStart) {
+void PrefetchStream::startAt(std::int64_t sourceStart, int cacheSamples) {
     // Both cursors, and neither generation. Nothing has been read for the
     // position this leaves behind, so there is nothing to invalidate; leaving
     // the two sides on the generation they were born with is exactly what keeps
     // the first fill from being read for one position and dropped for another.
     nextSample_ = sourceStart;
     fillPosition_ = sourceStart;
+    cacheStart_ = sourceStart;
+    cacheCount_ = 0;
+    if (reader_ != nullptr && cacheSamples > 0 && sourceStart < length_) {
+        if (sourceStart >= 0)
+            cacheSamples =
+                static_cast<int>(std::min<std::int64_t>(cacheSamples, length_ - sourceStart));
+        startCache_.setSize(numChannels_, cacheSamples);
+        startCache_.clear();
+        cacheCount_ =
+            std::clamp(reader_->read(startCache_, 0, sourceStart, cacheSamples), 0, cacheSamples);
+        fillPosition_ += cacheCount_;
+    }
 }
 
 void PrefetchStream::seek(std::int64_t sourceStart) {
@@ -105,7 +117,12 @@ void PrefetchStream::requestSeek(std::int64_t sourceStart) {
     farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
         ScopedAccess<farbot::ThreadType::realtime>
             request(request_);
-    request->sourceStart = sourceStart;
+    // While the callback plays the retained opening, refill its continuation.
+    // A wrap must not wait for the disk to return to the first transient.
+    request->sourceStart =
+        cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_
+            ? cacheStart_ + cacheCount_
+            : sourceStart;
     request->generation = generation_;
 }
 
@@ -187,6 +204,19 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     auto done = 0;
 
     while (done < numSamples) {
+        if (cacheCount_ > 0 && nextSample_ >= cacheStart_ &&
+            nextSample_ < cacheStart_ + cacheCount_) {
+            const auto offset = static_cast<int>(nextSample_ - cacheStart_);
+            const auto count = std::min(numSamples - done, cacheCount_ - offset);
+            for (std::size_t channel = 0; channel < destination.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::copy(
+                    destination.getChannelPointer(channel) + done,
+                    startCache_.getReadPointer(static_cast<int>(channel) % numChannels_, offset),
+                    count);
+            nextSample_ += count;
+            done += count;
+            continue;
+        }
         if (current_ == nullptr && !takeNextChunk())
             break;
 

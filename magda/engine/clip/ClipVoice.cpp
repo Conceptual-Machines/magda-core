@@ -7,6 +7,7 @@
 
 #include "clip/EventPlacement.hpp"
 #include "clip/FadeCurves.hpp"
+#include "trace/PlaybackTrace.hpp"
 
 namespace magda::engine {
 
@@ -266,6 +267,14 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
         readingPositionAt(clip, event, windowStart, block.beatAtTime(windowStart), sampleRate_);
     const auto closes =
         readingPositionAt(clip, event, windowEnd, block.beatAtTime(windowEnd), sampleRate_);
+
+    playbackTrace({.kind = PlaybackTraceEntry::Kind::VoiceWindow,
+                   .clip = clip.clipId,
+                   .beat = block.beatAtTime(windowStart),
+                   .a = opens,
+                   .b = closes,
+                   .c = static_cast<double>(event.loopStartSamples),
+                   .d = static_cast<double>(event.loopLengthSamples)});
 
     // How much of the reading one output sample of this block costs. Not the
     // event's nominal rate: under a tempo curve or through a speed ramp the two

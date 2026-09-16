@@ -111,11 +111,9 @@ class RandomScope {
  * particular way through the fork has to go on sounding that way.
  *
  * Priming is `outputSeek`, which is the library's own answer to starting in the
- * middle of a file: hand it the material leading up to the first sample wanted
- * and it pre-computes the output that would have led there, so the next call
- * begins aligned rather than fading in over a window. The incumbent primes with
- * the material *after* the start instead, and so begins every stretched clip
- * about a preset window late; that is the one place this deliberately differs.
+ * middle of a file: hand it a window beginning at the first sample wanted.
+ * It pre-computes the opening output from that lookahead. Feeding it history
+ * instead delays the attack by the entire seek window.
  */
 class SignalsmithClipStretcher final : public ClipStretcher {
   public:
@@ -128,6 +126,7 @@ class SignalsmithClipStretcher final : public ClipStretcher {
         stretch_.setFormantBase(static_cast<float>(200.0 / setup.sampleRate));
         stretch_.setTransposeSemitones(setup.semitones);
         stretch_.setFormantFactor(1.0f, true);
+        readAhead_ = preRollSamples(setup.nominalRate);
 
         allocatePreRoll(channels_, static_cast<int>(std::ceil(preRollSamples(setup.nominalRate) *
                                                               kPreRollHeadroom)));
@@ -135,6 +134,10 @@ class SignalsmithClipStretcher final : public ClipStretcher {
 
     int preRollSamples(double rate) const override {
         return static_cast<int>(std::ceil(stretch_.outputSeekLength(static_cast<float>(rate))));
+    }
+
+    int readAheadSamples() const override {
+        return readAhead_;
     }
 
     void reset() override {
@@ -179,6 +182,7 @@ class SignalsmithClipStretcher final : public ClipStretcher {
   private:
     static constexpr long kRandomSeed = 2700;
 
+    int readAhead_ = 0;
     int channels_ = 2;
     ChannelPointers pointers_;
     std::minstd_rand random_{kRandomSeed};

@@ -2887,8 +2887,9 @@ void SessionView::onPlayButtonClicked(int trackIndex, int sceneIndex) {
         // Filled-slot strip is "trigger this clip". Re-clicking a playing
         // clip re-triggers (or, for Toggle-mode clips, the scheduler still
         // honours toggle — that's a per-clip setting, not a UI default).
-        // Stopping is the empty-slot affordance now.
-        SelectionManager::getInstance().selectClip(clipId);
+        // Stopping is the empty-slot affordance now. Selected when it sounds,
+        // in clipPlaybackStateChanged, not here.
+        pendingEditorClip_ = clipId;
         ClipManager::getInstance().triggerClip(clipId);
     }
 }
@@ -3283,6 +3284,12 @@ void SessionView::clipPlaybackStateChanged(ClipId clipId) {
 
     auto playState = audioEngine_ ? audioEngine_->getSessionClipPlayState(clipId)
                                   : SessionClipPlayState::Stopped;
+
+    if (clipId == pendingEditorClip_ && playState != SessionClipPlayState::Queued) {
+        pendingEditorClip_ = INVALID_CLIP_ID;
+        if (playState == SessionClipPlayState::Playing)
+            SelectionManager::getInstance().selectClip(clipId);
+    }
     DBG("SessionView::clipPlaybackStateChanged: clip "
         << clipId << " playState=" << (int)playState
         << " sessionPlayheadPos=" << clip->sessionPlayheadPos);
@@ -3835,7 +3842,8 @@ void SessionView::filesDropped(const juce::StringArray& files, int x, int y) {
         if (newClipId != INVALID_CLIP_ID) {
             UndoManager::getInstance().executeCommand(std::make_unique<SetClipNameCommand>(
                 newClipId, audioFile.getFileNameWithoutExtension()));
-            clipManager.setClipLoopEnabled(newClipId, true, bpm);
+            // Creation already loops a session clip over the whole source;
+            // enabling loop again would freeze the span into a chosen range.
             clipManager.setClipSceneIndex(newClipId, sceneSlot);
         }
     };

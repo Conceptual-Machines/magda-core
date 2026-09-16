@@ -1,17 +1,20 @@
 // Deterministic per-file audio features (issue #768).
 //
 // Mirrors prototypes/media_db/.../features/audio_features.py — same fields,
-// same output ranges, same null semantics. Implementation differs: BPM currently
-// uses filename/metadata only; spectral / chroma analysis uses juce::dsp::FFT
-// instead of librosa.
+// same output ranges, same null semantics. Implementation differs: spectral /
+// chroma analysis uses juce::dsp::FFT instead of librosa.
 //
-// Source-of-truth precedence for BPM and key, in order:
-//   1. Filename token (parseBpmFromPath / parseKeyFromPath in PathRules)
-//   2. Audio metadata chunks (ACID tempo, ACID root note via JUCE reader
-//      metadataValues)
-//   3. DSP fallback for key (chroma + Krumhansl); BPM DSP fallback is disabled.
+// Key is the filename token first (parseKeyFromPath in PathRules), then chroma
+// + Krumhansl.
 //
-// The cheap tiers run first so a well-named sample never pays the DSP cost.
+// BPM is measured from the audio (TempoEstimator). What a file claims -- the
+// filename token, then the ACID chunk -- only picks an octave of that
+// measurement and is dropped when the audio disagrees; a claim alone is never a
+// tempo (#2674).
+//
+// The beat model is not part of this: too expensive to run per file during a
+// scan, so MediaDbIndexer::measureMissingTempo runs it afterwards over the
+// files left without a tempo.
 
 #pragma once
 
@@ -26,9 +29,9 @@ struct AudioFeatures {
     int sampleRate = 0;
     int channels = 0;
 
-    // Source tier: filename > metadata > DSP. BPM DSP fallback is disabled.
-    // nullopt if no source produced a
-    // sensible value (silence, no key marker on atonal content, etc.).
+    // nullopt where nothing answered: no key marker on atonal content, nothing
+    // periodic enough to call a tempo, or a measured tempo no claim confirmed
+    // while a beat tracker is installed to read the file properly later.
     std::optional<double> bpm;
     std::optional<std::string> keyRoot;   // "C", "C#", "D", ...
     std::optional<std::string> keyScale;  // "major" | "minor"
@@ -45,5 +48,20 @@ struct AudioFeatures {
 // can't be opened or read. Safe to call from a background thread; uses its
 // own juce::AudioFormatManager (not thread-safe to share).
 std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path);
+
+// Measure the tempo of the file at `path` from its audio alone, before any
+// claim picks an octave of it. What a detector is scored on against material
+// whose tempo is already known.
+// nullopt when the file cannot be read or nothing periodic explains it.
+struct TempoEstimate;
+std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path);
+
+// The tempo of one file: the beat model when `tracker` is given and its beats
+// are steady, else the autocorrelation, in both cases settled by the name and
+// the ACID chunk. What a clip asks for on its own, outside a scan (#2674).
+// nullopt when nothing answered. Safe on a background thread; `tracker` must
+// not be shared with one.
+class BeatTracker;
+std::optional<double> detectTempo(const std::filesystem::path& path, const BeatTracker* tracker);
 
 }  // namespace magda::media

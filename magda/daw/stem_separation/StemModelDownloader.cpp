@@ -189,7 +189,7 @@ class StemModelDownloader::Worker : public juce::Thread {
 
   private:
     // Stream `entry.url` into place via a temp file, verifying the SHA-256
-    // before the atomic rename; mirrors SampleTaggerDownloader.
+    // before the atomic rename; mirrors MediaModelDownloader.
     bool downloadOne(const ManifestEntry& entry, Progress& p) {
         const auto dest = StemModelDownloader::modelsDir().getChildFile(entry.filename);
 

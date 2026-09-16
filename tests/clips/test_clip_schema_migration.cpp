@@ -82,6 +82,11 @@ juce::DynamicObject& interpretationOf(juce::var& clip) {
     return *obj(audio)->getProperty("interpretation").getDynamicObject();
 }
 
+juce::DynamicObject& firstEventOf(juce::var& clip) {
+    auto audio = obj(clip)->getProperty("audio");
+    return *obj(audio)->getProperty("events").getArray()->getReference(0).getDynamicObject();
+}
+
 ClipInfo load(const juce::var& clipJson) {
     ClipInfo out;
     REQUIRE(ProjectSerializer::deserializeClipInfo(clipJson, out, kProjectTempo));
@@ -341,9 +346,11 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
 
     event.interpBpm = 174.0;
     event.interpTotalBeats = 12.0;
-    event.interpTotalBeatsLocked = true;
+    event.bpmFrom = Provenance::FileMetadata;
+    event.beatsFrom = Provenance::User;
     event.keyRoot = "A";
     event.keyScale = "minor";
+    event.playbackIntent = PlaybackIntent::Beat;
     event.autoTempo = true;
     event.warpEnabled = true;
     event.warpMarkers.push_back({0.5, 0.75});
@@ -376,15 +383,18 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
         REQUIRE(restoredEvent.sourceAnchorSamples == event.sourceAnchorSamples);
         REQUIRE(restoredEvent.loopStartSamples == event.loopStartSamples);
         REQUIRE(restoredEvent.loopLengthSamples == event.loopLengthSamples);
+        REQUIRE(restoredEvent.loopExtent == RegionExtent::Explicit);
         REQUIRE(restored.loopEnabled);
     }
 
     SECTION("Interpretation and per-event mix") {
         REQUIRE(restoredEvent.interpBpm == Approx(174.0));
         REQUIRE(restoredEvent.interpTotalBeats == Approx(12.0));
-        REQUIRE(restoredEvent.interpTotalBeatsLocked);
+        REQUIRE(restoredEvent.bpmFrom == Provenance::FileMetadata);
+        REQUIRE(restoredEvent.beatsFrom == Provenance::User);
         REQUIRE(restoredEvent.keyRoot == "A");
         REQUIRE(restoredEvent.keyScale == "minor");
+        REQUIRE(restoredEvent.playbackIntent == PlaybackIntent::Beat);
         REQUIRE(restoredEvent.autoTempo);
         REQUIRE(restoredEvent.transpose == 3);
         REQUIRE(restoredEvent.pitchChange == Approx(-1.5f));
@@ -491,5 +501,254 @@ TEST_CASE("v1 migration stages its source instead of pooling it",
         ClipInfo direct;
         REQUIRE(ProjectSerializer::deserializeClipInfo(v1, direct, kProjectTempo));
         REQUIRE(pool.findByPath("/tmp/legacy-staged.wav") != INVALID_SOURCE_ID);
+    }
+}
+
+// =============================================================================
+// Ownership defaults for a project saved before it existed (#2674)
+// =============================================================================
+
+TEST_CASE("A v1 clip's stored tempo loads as analysis-owned",
+          "[clip][serialization][migration][ownership]") {
+    MigrationFixture fixture;
+    SourcePool::getInstance().seedFactsForTesting("/tmp/v1.wav", 4.0, kSourceRate);
+    auto json = makeV1Clip("/tmp/v1.wav", 4.0);
+
+    SECTION("A stored bpm is Analysis") {
+        interpretationOf(json).setProperty("bpm", 128.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->interpBpm == Approx(128.0));
+        REQUIRE(clip.primaryEvent()->bpmFrom == Provenance::Analysis);
+    }
+
+    SECTION("No bpm is owned by nobody") {
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->bpmFrom == Provenance::None);
+    }
+}
+
+TEST_CASE("A v1 clip's beat count loads as the user's when locked, else analysis",
+          "[clip][serialization][migration][ownership]") {
+    MigrationFixture fixture;
+    SourcePool::getInstance().seedFactsForTesting("/tmp/v1.wav", 4.0, kSourceRate);
+    auto json = makeV1Clip("/tmp/v1.wav", 4.0);
+    interpretationOf(json).setProperty("bpm", 120.0);
+    interpretationOf(json).setProperty("totalBeats", 16.0);
+
+    SECTION("Locked is User") {
+        interpretationOf(json).setProperty("totalBeatsLocked", true);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->interpTotalBeats == Approx(16.0));
+        REQUIRE(clip.primaryEvent()->beatsFrom == Provenance::User);
+    }
+
+    SECTION("Unlocked is Analysis") {
+        interpretationOf(json).setProperty("totalBeatsLocked", false);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->beatsFrom == Provenance::Analysis);
+    }
+
+    SECTION("No beat count is owned by nobody, locked or not") {
+        interpretationOf(json).setProperty("totalBeats", 0.0);
+        interpretationOf(json).setProperty("totalBeatsLocked", true);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->beatsFrom == Provenance::None);
+    }
+}
+
+TEST_CASE("A v1 clip's loop region loads as explicit when it has a length",
+          "[clip][serialization][migration][ownership]") {
+    MigrationFixture fixture;
+    SourcePool::getInstance().seedFactsForTesting("/tmp/v1.wav", 4.0, kSourceRate);
+    auto json = makeV1Clip("/tmp/v1.wav", 4.0);
+
+    SECTION("A stored length is Explicit") {
+        playbackOf(json).setProperty("loopLengthSeconds", 2.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->loopLengthSeconds() == Approx(2.0));
+        REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::Explicit);
+    }
+
+    SECTION("A zero length is the whole source") {
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->loopLengthSamples == 0);
+        REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::WholeSource);
+    }
+
+    SECTION("Under autoTempo the beat length decides") {
+        obj(json)->setProperty("autoTempo", true);
+        interpretationOf(json).setProperty("bpm", 120.0);
+        playbackOf(json).setProperty("loopLengthBeats", 4.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::Explicit);
+    }
+}
+
+TEST_CASE("A v1 clip's autoTempo loads as the Beat intent and is kept as stored",
+          "[clip][serialization][migration][ownership]") {
+    MigrationFixture fixture;
+    SourcePool::getInstance().seedFactsForTesting("/tmp/v1.wav", 4.0, kSourceRate);
+    auto json = makeV1Clip("/tmp/v1.wav", 4.0);
+
+    SECTION("On is Beat") {
+        obj(json)->setProperty("autoTempo", true);
+        interpretationOf(json).setProperty("bpm", 120.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+        REQUIRE(clip.primaryEvent()->autoTempo);
+    }
+
+    SECTION("Off is Free") {
+        obj(json)->setProperty("autoTempo", false);
+        interpretationOf(json).setProperty("bpm", 120.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->playbackIntent == PlaybackIntent::Free);
+        REQUIRE_FALSE(clip.primaryEvent()->autoTempo);
+    }
+
+    SECTION("On with no tempo is still on: load does not resolve") {
+        obj(json)->setProperty("autoTempo", true);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->interpBpm == Approx(0.0));
+        REQUIRE(clip.primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+        REQUIRE(clip.primaryEvent()->autoTempo);
+    }
+}
+
+TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
+          "[clip][serialization][ownership]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/v2-legacy.wav", 4.0, kSourceRate);
+    original.setPlacementBeats(0.0, 8.0);
+    event.interpBpm = 174.0;
+    event.interpTotalBeats = 16.0;
+    event.bpmFrom = Provenance::User;
+    event.beatsFrom = Provenance::User;
+    event.playbackIntent = PlaybackIntent::Beat;
+    event.autoTempo = true;
+    event.setLoopLengthSeconds(2.0);
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    auto& eventJson = firstEventOf(json);
+    for (const char* key : {"bpmFrom", "beatsFrom", "loopExtent", "playbackIntent"})
+        eventJson.removeProperty(key);
+
+    SECTION("A stored tempo is Analysis; a locked beat count is User") {
+        eventJson.setProperty("interpTotalBeatsLocked", true);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->bpmFrom == Provenance::Analysis);
+        REQUIRE(clip.primaryEvent()->beatsFrom == Provenance::User);
+    }
+
+    SECTION("An unlocked beat count is Analysis") {
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->beatsFrom == Provenance::Analysis);
+    }
+
+    SECTION("A stored region is Explicit; none is the whole source") {
+        REQUIRE(load(json).primaryEvent()->loopExtent == RegionExtent::Explicit);
+        eventJson.setProperty("loopLengthSamples", "0");
+        REQUIRE(load(json).primaryEvent()->loopExtent == RegionExtent::WholeSource);
+    }
+
+    SECTION("autoTempo on is Beat, off is Free, and the flag is kept as stored") {
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+        REQUIRE(load(json).primaryEvent()->autoTempo);
+        eventJson.setProperty("autoTempo", false);
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Free);
+        REQUIRE_FALSE(load(json).primaryEvent()->autoTempo);
+    }
+
+    SECTION("autoTempo on with no tempo is kept on: load does not resolve") {
+        eventJson.setProperty("interpBpm", 0.0);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->autoTempo);
+        REQUIRE(clip.primaryEvent()->bpmFrom == Provenance::None);
+    }
+}
+
+// A project saved while BeatWhenKnown still existed stored that string; it has
+// no successor, so the fallback reads the era's autoTempo flag instead.
+TEST_CASE("A v2 event's beatWhenKnown string falls back to autoTempo",
+          "[clip][serialization][ownership]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/legacy-intent.wav", 4.0, kSourceRate);
+    original.setPlacementBeats(0.0, 8.0);
+    event.interpBpm = 120.0;
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    auto& eventJson = firstEventOf(json);
+    eventJson.setProperty("playbackIntent", "beatWhenKnown");
+
+    SECTION("autoTempo true loads as Beat") {
+        eventJson.setProperty("autoTempo", true);
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+    }
+
+    SECTION("autoTempo false loads as Free") {
+        eventJson.setProperty("autoTempo", false);
+        REQUIRE(load(json).primaryEvent()->playbackIntent == PlaybackIntent::Free);
+    }
+}
+
+TEST_CASE("A v2 event stores its ownership as strings", "[clip][serialization][ownership]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/own.wav", 4.0, kSourceRate);
+    original.setPlacementBeats(0.0, 8.0);
+    // Every value here differs from its legacy default, so a field that is
+    // written but not read back would still fail.
+    event.interpBpm = 120.0;
+    event.interpTotalBeats = 8.0;
+    event.autoTempo = true;
+    event.bpmFrom = Provenance::User;
+    event.beatsFrom = Provenance::None;
+    event.loopExtent = RegionExtent::Interpretation;
+    event.playbackIntent = PlaybackIntent::Beat;
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    const auto& eventJson = firstEventOf(json);
+    REQUIRE(eventJson.getProperty("bpmFrom").toString() == "user");
+    REQUIRE(eventJson.getProperty("beatsFrom").toString() == "none");
+    REQUIRE(eventJson.getProperty("loopExtent").toString() == "interpretation");
+    REQUIRE(eventJson.getProperty("playbackIntent").toString() == "beat");
+
+    const auto restored = load(json);
+    REQUIRE(restored.primaryEvent()->bpmFrom == Provenance::User);
+    REQUIRE(restored.primaryEvent()->beatsFrom == Provenance::None);
+    REQUIRE(restored.primaryEvent()->loopExtent == RegionExtent::Interpretation);
+    REQUIRE(restored.primaryEvent()->playbackIntent == PlaybackIntent::Beat);
+
+    SECTION("Every provenance round-trips") {
+        for (const auto from :
+             {Provenance::None, Provenance::FileMetadata, Provenance::Analysis, Provenance::User}) {
+            event.bpmFrom = from;
+            event.beatsFrom = from;
+            const auto clip = load(ProjectSerializer::serializeClipInfo(original));
+            REQUIRE(clip.primaryEvent()->bpmFrom == from);
+            REQUIRE(clip.primaryEvent()->beatsFrom == from);
+        }
+    }
+
+    SECTION("Every extent round-trips") {
+        for (const auto extent :
+             {RegionExtent::WholeSource, RegionExtent::Interpretation, RegionExtent::Explicit}) {
+            event.loopExtent = extent;
+            const auto clip = load(ProjectSerializer::serializeClipInfo(original));
+            REQUIRE(clip.primaryEvent()->loopExtent == extent);
+        }
+    }
+
+    SECTION("Every intent round-trips") {
+        for (const auto intent : {PlaybackIntent::Free, PlaybackIntent::Beat}) {
+            event.playbackIntent = intent;
+            const auto clip = load(ProjectSerializer::serializeClipInfo(original));
+            REQUIRE(clip.primaryEvent()->playbackIntent == intent);
+        }
     }
 }

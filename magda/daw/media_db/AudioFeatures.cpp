@@ -10,7 +10,9 @@
 #include <memory>
 #include <vector>
 
+#include "BeatTracker.hpp"
 #include "PathRules.hpp"
+#include "TempoEstimator.hpp"
 
 namespace magda::media {
 
@@ -142,11 +144,6 @@ std::optional<double> metadataBpm(const juce::StringPairArray& meta) {
     return std::nullopt;
 }
 
-std::optional<double> dspBpm(const std::filesystem::path& path) {
-    (void)path;
-    return std::nullopt;
-}
-
 // ---- Spectral stats ----------------------------------------------------
 
 struct SpectralStats {
@@ -249,6 +246,9 @@ std::array<signed char, kFftBins> makePitchClassLookup(int sampleRate) {
 struct SpectralAnalysis {
     SpectralStats stats{0.0F, 0.0F, 0.0F};
     std::optional<ChromaKey> key;
+    /// One spectral flux value per hop. Transient density is a count of its
+    /// peaks; the tempo tier reads the shape (#2674).
+    std::vector<float> flux;
 };
 
 SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, int sampleRate,
@@ -339,6 +339,7 @@ SpectralAnalysis computeSpectralAnalysis(const juce::AudioBuffer<float>& mono, i
     if (analyseKey) {
         out.key = computeKey(chroma);
     }
+    out.flux = std::move(flux);
     return out;
 }
 
@@ -354,15 +355,6 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     f.sampleRate = decoded->sampleRate;
     f.channels = decoded->channels;
     f.durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
-
-    // --- BPM: filename > metadata ---
-    if (auto p = parseBpmFromPath(path)) {
-        f.bpm = p;
-    } else if (auto m = metadataBpm(decoded->metadata)) {
-        f.bpm = m;
-    } else if (auto d = dspBpm(path)) {
-        f.bpm = d;
-    }
 
     // --- Key: filename > DSP ---
     // Metadata-encoded keys (ACID root note) exist but are rare and decode
@@ -385,6 +377,22 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
         f.keyConfidence = ck.confidence;
     }
 
+    // --- BPM: measured, with the name and the ACID chunk only picking its
+    // octave (#2674). The learned tier is not here: half a second and most of a
+    // gigabyte a file, which the scan's workers multiply until the machine has
+    // no memory left, so it runs after the scan in
+    // MediaDbIndexer::measureMissingTempo. An empty field is what sends that
+    // pass a file, so where a model will run only a hint-confirmed tempo is
+    // filled in and everything else is left to the tracker.
+    const TempoHints hints{parseBpmFromPath(path), metadataBpm(decoded->metadata)};
+    const auto estimate = estimateTempo(
+        analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, f.durationS);
+    if (!BeatTracker::isAvailable()) {
+        f.bpm = resolveTempo(estimate, f.durationS, hints);
+    } else if (hintAgrees(estimate, hints)) {
+        f.bpm = refineTempo(estimate->bpm, f.durationS, hints);
+    }
+
     // --- Always-DSP spectral stats ---
     f.rms = decoded->mono.getRMSLevel(0, 0, decoded->mono.getNumSamples());
     f.spectralCentroid = analysis.stats.centroid;
@@ -392,6 +400,40 @@ std::optional<AudioFeatures> extractFeatures(const std::filesystem::path& path) 
     f.transientDensity = analysis.stats.transientDensity;
 
     return f;
+}
+
+std::optional<TempoEstimate> measureTempo(const std::filesystem::path& path) {
+    auto decoded = decodeFile(path);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    const auto analysis = computeSpectralAnalysis(decoded->mono, decoded->sampleRate, false);
+    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
+    return estimateTempo(analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate,
+                         durationS);
+}
+
+std::optional<double> detectTempo(const std::filesystem::path& path, const BeatTracker* tracker) {
+    auto decoded = decodeFile(path);
+    if (!decoded) {
+        return std::nullopt;
+    }
+    const TempoHints hints{parseBpmFromPath(path), metadataBpm(decoded->metadata)};
+    const double durationS = static_cast<double>(decoded->lengthSamples) / decoded->sampleRate;
+
+    if (tracker != nullptr) {
+        const auto tracked = tracker->track(decoded->mono.getReadPointer(0),
+                                            decoded->mono.getNumSamples(), decoded->sampleRate);
+        if (tracked && tracked->bpm > 0.0 && tracked->steadiness >= kMinBeatSteadiness) {
+            return refineTempo(tracked->bpm, durationS, hints);
+        }
+    }
+
+    // The beats were too ragged to call a tempo, or there is no model to ask.
+    const auto analysis = computeSpectralAnalysis(decoded->mono, decoded->sampleRate, false);
+    const auto estimate = estimateTempo(
+        analysis.flux, static_cast<double>(kHopSize) / decoded->sampleRate, durationS);
+    return resolveTempo(estimate, durationS, hints);
 }
 
 }  // namespace magda::media

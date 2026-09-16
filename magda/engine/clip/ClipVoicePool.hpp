@@ -326,6 +326,7 @@ class ClipVoicePool {
         std::shared_ptr<PrefetchStream> stream;
         std::string path;
         SourceRead read;
+        bool session = false;
 
         /// The sample of that reading the stream is pointed at: where the
         /// event starts, less whatever its stretcher wants in front of it.
@@ -338,9 +339,9 @@ class ClipVoicePool {
         /// ahead of the event it wants to be handed. Null and zero for a
         /// clip asking for neither.
         ///
-        /// Kept across an edit that leaves the setup alone, and replaced
-        /// without touching the stream when only the setup changed: a
-        /// pitch change shouldn't close a file and pay for a seek.
+        /// Kept across an edit that leaves the setup alone. Arrangement
+        /// readers survive setup changes; session readers are replaced too,
+        /// because their retained opening includes the priming window.
         std::shared_ptr<ClipStretcher> stretcher;
         StretchSetup setup;
         int preRoll = 0;
@@ -348,13 +349,14 @@ class ClipVoicePool {
         bool operator==(const Reader& other) const {
             return stream == other.stream && path == other.path && read == other.read &&
                    cueSamples == other.cueSamples && stretcher == other.stretcher &&
-                   setup == other.setup && preRoll == other.preRoll;
+                   setup == other.setup && preRoll == other.preRoll && session == other.session;
         }
     };
 
     using Streams = std::map<Key, Reader>;
 
-    Reader open(const AudioClipPlayback& clip, const AudioEventPlayback& event, double cueSeconds);
+    Reader open(const AudioClipPlayback& clip, const AudioEventPlayback& event, double cueSeconds,
+                bool session);
 
     /// Where a stream playing @p event is pointed to pick it up at @p seconds:
     /// the reading position of that moment, forward by whatever its stretcher

@@ -324,6 +324,10 @@ class SessionView : public juce::Component,
 
     // Session playhead position (looped, seconds). -1.0 = inactive.
     std::unordered_map<ClipId, double> clipPlayheadPositions_;
+    /// The clip a play click launched, selected once it sounds rather than at
+    /// the click: the editor follows the clip that is playing, not the one
+    /// waiting for its bar (#2674).
+    ClipId pendingEditorClip_ = INVALID_CLIP_ID;
 
     // Timeline controller for tempo access (not owned)
     TimelineController* timelineController_ = nullptr;

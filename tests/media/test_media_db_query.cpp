@@ -9,6 +9,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <sqlite3.h>
 
+#include <algorithm>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
@@ -79,13 +80,39 @@ void writeMonoWav(const fs::path& out, double seconds, double freq, int sampleRa
     writer->writeFromAudioSampleBuffer(buf, 0, n);
 }
 
+/// A quarter-note click train at @p bpm: audio whose tempo can be measured.
+void writeClickWav(const fs::path& out, double seconds, double bpm, int sampleRate = 44100) {
+    fs::create_directories(out.parent_path());
+    juce::File jf(juce::String(out.string()));
+    jf.deleteFile();
+    juce::WavAudioFormat wav;
+    juce::StringPairArray meta;
+    std::unique_ptr<juce::FileOutputStream> stream(jf.createOutputStream());
+    REQUIRE(stream != nullptr);
+    std::unique_ptr<juce::AudioFormatWriter> writer(
+        wav.createWriterFor(stream.get(), sampleRate, 1, 16, meta, 0));
+    REQUIRE(writer != nullptr);
+    stream.release();
+
+    const int n = static_cast<int>(seconds * sampleRate);
+    juce::AudioBuffer<float> buf(1, n);
+    buf.clear();
+    const int beat = static_cast<int>(60.0 / bpm * sampleRate);
+    for (int click = 0; click < n; click += beat) {
+        for (int i = click; i < std::min(n, click + 64); ++i) {
+            buf.setSample(0, i, 0.9F);
+        }
+    }
+    writer->writeFromAudioSampleBuffer(buf, 0, n);
+}
+
 // Standard fixture used across the test cases below.
 void populateCorpus(const fs::path& root, MediaDatabase& db) {
     writeMonoWav(root / "Drums" / "Kicks" / "kick_punchy_120bpm.wav", 0.4, 80.0);
     writeMonoWav(root / "Drums" / "Snares" / "snare_tight.wav", 0.5, 200.0);
     writeMonoWav(root / "Vocals" / "Adlibs" / "vocal_dry_Cm.wav", 3.0, 440.0);
     writeMonoWav(root / "Pads" / "warm_analog.wav", 4.0, 220.0);
-    writeMonoWav(root / "Bass" / "808_140bpm.wav", 3.5, 60.0);
+    writeClickWav(root / "Bass" / "808_140bpm.wav", 16.0 * 60.0 / 140.0, 140.0);  // 16 beats
 
     MediaDbIndexer indexer(db, nullptr);
     auto stats = indexer.indexDirectory(root);

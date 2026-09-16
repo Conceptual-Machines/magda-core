@@ -19,6 +19,7 @@ add_library(magda_engine STATIC
     clip/ClipStreamFeed.cpp
     clip/ClipStretcher.cpp
     clip/ClipVoice.cpp
+    trace/PlaybackTrace.cpp
     clip/ClipVoicePool.cpp
     clip/EventPlacement.cpp
     clip/FadeCurves.cpp
@@ -228,7 +229,7 @@ endforeach()
 
 set(MAGDA_ENGINE_ALLOWED_QUOTED_PREFIXES
     "core/" "clip/" "param/" "plan/" "exec/" "transport/" "io/" "tap/" "analysis/"
-    "launch/" "insert/")
+    "launch/" "insert/" "trace/")
 
 file(GLOB_RECURSE MAGDA_ENGINE_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/*.cpp"
