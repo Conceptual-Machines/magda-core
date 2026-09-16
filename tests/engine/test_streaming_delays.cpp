@@ -759,6 +759,70 @@ TEST_CASE("A playing locate is lost until the reader reaches it, then recovers",
     }
 }
 
+/// The first locate at or after @p from, @p offset samples into a cell, whose
+/// whole reading the pool already holds: priming window, lookahead and a callback.
+std::int64_t residentLocate(Rig& rig, std::int64_t from, std::int64_t offset) {
+    const auto& playback = rig.playback;
+    const auto entry = rig.entry();
+    const auto ahead = entry.stretcher != nullptr ? entry.stretcher->readAheadSamples() : 0;
+
+    // The most of the file playback can have consumed, and so the earliest frame
+    // the pool can still be holding.
+    const auto consumed = mostReading(playback, from) + ahead;
+    const auto resident = rig.files.furthest.load();
+
+    const auto sourceAt = [&](std::int64_t timeline) {
+        return std::llround(static_cast<double>(timeline) * playback.speed) + ahead;
+    };
+
+    for (auto target = from + playback.blockSize + offset;; target += playback.blockSize) {
+        const auto cell = target / kStretchCellSamples * kStretchCellSamples;
+        const auto primed = sourceAt(playback.stretched() ? cell : target) - entry.preRollSamples;
+        REQUIRE(sourceAt(target) + mostReading(playback, playback.blockSize) <= resident);
+        if (primed >= consumed)
+            return target;
+    }
+}
+
+TEST_CASE("A playing locate the pool already holds plays complete",
+          "[engine][clip][streaming][2701]") {
+    for (const auto& playback : playbackMatrix()) {
+        const auto settings = playback.stretched() ? poolFor(playback) : kPool;
+
+        // On a stretch cell boundary, and inside one.
+        for (const std::int64_t offset : {0, 37}) {
+            INFO(describe(playback) << ", offset " << offset);
+            const auto block = playback.blockSize;
+            const auto warm = roundUp(8192, block);
+            const auto after = roundUp(16384, block);
+
+            Rig heard(playback, Section::Arrangement, settings);
+            Rig control(playback, Section::Arrangement, settings);
+            for (auto* rig : {&heard, &control}) {
+                rig->arrange(clipFor(playback));
+                rig->pool.fillNow();
+                rig->playOn(0, warm);
+            }
+
+            const auto target = residentLocate(heard, warm, offset);
+            INFO("target " << target);
+
+            // The locate itself gets no worker round; the control's has one and
+            // is otherwise the same callback, so the two renders have to agree.
+            heard.play(target, false, false);
+            control.play(target, false, true);
+            for (auto* rig : {&heard, &control})
+                rig->playOn(target + block, after);
+
+            CHECK(heard.missing(ReadPurpose::playback) == 0);
+            CHECK(heard.missing(ReadPurpose::priming) == 0);
+            CHECK(heard.entry().stream->underruns() == 0);
+            CHECK(compare(heard.heard, warm, control.heard, warm, block + after).worstDifference ==
+                  0.0f);
+        }
+    }
+}
+
 constexpr std::int64_t kLoopStart = 4410 + 37;
 constexpr std::int64_t kLoopEnd = 22050 + 11;
 
