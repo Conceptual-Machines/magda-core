@@ -39,9 +39,16 @@ std::size_t PrefetchThread::streamCount() const {
 bool PrefetchThread::fillOnce() {
     const std::scoped_lock guard(lock_);
 
+    // A chunk each, then round again. A stream is entitled to a full pool and
+    // takes one whatever the order it was registered in: filling one to the top
+    // before looking at the next spends the whole round on the clip that
+    // happened to be first, and a clip further down the list waits for it plus
+    // every disk read in between. The work is the same either way, so the only
+    // thing bounded here is how long a stream can be made to wait for its turn
+    // (#2705).
     auto worked = false;
     for (auto* stream : streams_)
-        worked = stream->fill() || worked;
+        worked = stream->fill(kChunksPerVisit) || worked;
 
     return worked;
 }

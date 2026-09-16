@@ -90,8 +90,13 @@ class PrefetchStream {
      *
      * Returns true if it did anything, so a caller servicing several streams
      * can tell a busy round from an idle one and sleep on the difference.
+     *
+     * @p maxChunks bounds what one visit reads, so a stream with a whole pool
+     * to refill cannot hold a worker away from the streams behind it in the
+     * round (#2705). Zero is as much as the pool has room for, which is what a
+     * caller driving a single stream to completion wants.
      */
-    bool fill();
+    bool fill(int maxChunks = 0);
 
     /**
      * @brief Point the reader before anything is reading it at all.
