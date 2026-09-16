@@ -213,7 +213,9 @@ TEST_CASE("Beat tracker against the library", "[.beat-corpus]") {
         }
     }
     labelled = sample(std::move(labelled), 200);
-    const auto reportPath = std::filesystem::temp_directory_path() / "magda_beat_tracker.csv";
+    // A narrow string: path::c_str() is wide on Windows.
+    const auto reportPath =
+        (std::filesystem::temp_directory_path() / "magda_beat_tracker.csv").string();
     std::FILE* csv = std::fopen(reportPath.c_str(), "w");
     if (csv != nullptr) {
         std::fprintf(csv, "verdict,name_bpm,tracked_bpm,ratio,steadiness,beats,downbeats,"
