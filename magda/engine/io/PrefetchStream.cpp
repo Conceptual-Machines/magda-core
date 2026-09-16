@@ -168,7 +168,7 @@ bool PrefetchStream::takeNextChunk() {
 }
 
 int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination,
-                         int numSamples) {
+                         int numSamples, ReadPurpose purpose) {
     if (numSamples <= 0)
         return 0;
 
@@ -249,6 +249,14 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
         const auto wanted = std::min<std::int64_t>(sourceStart + numSamples, length_);
         if (sourceStart + done < wanted)
             underruns_.fetch_add(1, std::memory_order_relaxed);
+
+        // A bounded reading pads before sample zero; a looping one has material there.
+        const auto bounded = length_ != std::numeric_limits<std::int64_t>::max();
+        const auto firstMissing =
+            bounded ? std::max<std::int64_t>(sourceStart + done, 0) : sourceStart + done;
+        if (firstMissing < wanted)
+            missingFrames_[static_cast<std::size_t>(purpose)].fetch_add(wanted - firstMissing,
+                                                                        std::memory_order_relaxed);
 
         // The cursor moves whether or not the samples arrived. A stream that
         // resumed where it ran dry would play the missing audio late and stay

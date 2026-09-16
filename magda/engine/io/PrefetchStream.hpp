@@ -6,6 +6,7 @@
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <juce_dsp/juce_dsp.h>
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -53,6 +54,9 @@ struct PrefetchSettings {
     int chunkCount = 8;
 };
 
+/// What a read is for, so missing frames can be attributed (#2700).
+enum class ReadPurpose { playback, priming };
+
 class PrefetchStream {
   public:
     PrefetchStream(std::unique_ptr<AudioFileReader> reader, const RenderContext& context,
@@ -70,7 +74,8 @@ class PrefetchStream {
      * immediately while the worker fills its continuation; other seeks wait
      * for the reader, which is what @ref underruns counts.
      */
-    int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples);
+    int read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> destination, int numSamples,
+             ReadPurpose purpose = ReadPurpose::playback);
 
     /**
      * @brief Read ahead. On the prefetch thread.
@@ -161,6 +166,13 @@ class PrefetchStream {
      */
     int underruns() const {
         return underruns_.load(std::memory_order_relaxed);
+    }
+
+    /// Source frames a short read of @p purpose did not deliver. Frames past
+    /// the end, and before sample zero of a bounded reading, are padding and
+    /// not counted.
+    std::int64_t missingFrames(ReadPurpose purpose) const {
+        return missingFrames_[static_cast<std::size_t>(purpose)].load(std::memory_order_relaxed);
     }
 
     /// Samples in the file. The one thing the audio thread reads from the
@@ -257,6 +269,7 @@ class PrefetchStream {
     bool stalled_ = false;
 
     std::atomic<int> underruns_{0};
+    std::array<std::atomic<std::int64_t>, 2> missingFrames_{};
 };
 
 }  // namespace magda::engine
