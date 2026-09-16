@@ -1426,7 +1426,13 @@ TEST_CASE("A prime the reader missed is not made good by priming again",
             const auto preRoll = heard.entry().preRollSamples;
             gate.closeAfter(0);
             {
-                magda::test::GatedWorker worker(gate, [&] { heard.reader.fillOnce(); });
+                // Rounds until one blocks, as the worker's own loop does: a
+                // round serves each stream a chunk, so a gate several chunks in
+                // is reached over several of them (#2705).
+                magda::test::GatedWorker worker(gate, [&] {
+                    while (heard.reader.fillOnce()) {
+                    }
+                });
                 REQUIRE(gate.waitUntilHeld());
                 heard.play(kTarget, false, false);
             }
@@ -1476,7 +1482,13 @@ TEST_CASE("A prime the reader half supplied is counted apart from playback, and 
             const auto chunks = std::max(1, preRoll / 2 / kSmallChunks.chunkSamples);
             gate.closeAfter(chunks);
             {
-                magda::test::GatedWorker worker(gate, [&] { heard.reader.fillOnce(); });
+                // Rounds until one blocks, as the worker's own loop does: a
+                // round serves each stream a chunk, so a gate several chunks in
+                // is reached over several of them (#2705).
+                magda::test::GatedWorker worker(gate, [&] {
+                    while (heard.reader.fillOnce()) {
+                    }
+                });
                 REQUIRE(gate.waitUntilHeld());
                 heard.play(kTarget, false, false);
             }

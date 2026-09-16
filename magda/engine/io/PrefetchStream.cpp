@@ -369,14 +369,15 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     return done;
 }
 
-bool PrefetchStream::fill() {
+bool PrefetchStream::fill(int maxChunks) {
     if (reader_ == nullptr)
         return false;
 
     auto worked = false;
+    auto read = 0;
     Chunk* chunk = nullptr;
 
-    while (true) {
+    while (maxChunks <= 0 || read < maxChunks) {
         // Between chunks rather than once on the way in. A seek that arrives
         // while this thread is inside a read would otherwise be seen only after
         // the whole pool had been refilled for the position the callback has
@@ -437,6 +438,7 @@ bool PrefetchStream::fill() {
 
         fillPosition_ += chunk->numSamples;
         worked = true;
+        ++read;
 
         // A reader that gives nothing at a position inside its own file has
         // stopped being able to answer: a file truncated under us, a device

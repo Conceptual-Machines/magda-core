@@ -275,8 +275,13 @@ TEST_CASE("A seek during an in-flight fill costs only the read already in flight
     CHECK(stream.missing() == 64);
 }
 
-TEST_CASE("A held read starves the streams the worker has not reached",
-          "[engine][io][prefetch][2700]") {
+TEST_CASE("A held read costs the other streams one round, not their whole turn",
+          "[engine][io][prefetch][2705]") {
+    // A disk read that blocks cannot be called back, so whichever stream is
+    // inside one holds the round it is in. What it must not do is hold the
+    // rounds before it: every stream gets a chunk per round, so a stream is
+    // waiting for one read of every stream in front of it rather than for all
+    // four of everyone's.
     constexpr int kStreams = 3;
     constexpr int kBlocks = 6;
 
@@ -293,9 +298,15 @@ TEST_CASE("A held read starves the streams the worker has not reached",
         for (auto& stream : streams)
             reader.add(*stream->stream);
 
+        // The second chunk of whichever stream is gated, so the first round
+        // serves every stream and the second one blocks.
         gate.closeFrom(256);
         {
-            Worker worker(gate, [&] { reader.fillOnce(); });
+            // Rounds until one blocks, which is what the worker's own loop does.
+            Worker worker(gate, [&] {
+                while (reader.fillOnce()) {
+                }
+            });
             REQUIRE(gate.waitUntilHeld());
 
             for (auto block = 0; block < kBlocks; ++block)
@@ -304,9 +315,12 @@ TEST_CASE("A held read starves the streams the worker has not reached",
                     REQUIRE(stream->holds(block * 64, delivered));
                 }
 
+            // One chunk each from the round that completed. The streams ahead of
+            // the held one got a second from the round it blocked in; the ones
+            // behind it are a chunk down rather than empty.
             for (auto index = 0; index < kStreams; ++index) {
                 INFO("stream " << index);
-                const auto resident = index < held ? 1024 : (index == held ? 256 : 0);
+                const auto resident = index < held ? 512 : 256;
                 CHECK(streams[static_cast<std::size_t>(index)]->missing() ==
                       std::max(0, kBlocks * 64 - resident));
             }
