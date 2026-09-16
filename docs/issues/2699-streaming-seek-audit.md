@@ -29,6 +29,14 @@ The voice pool receives the current position, not a second read position reserve
 
 Source: [ClipAudioSource.cpp](../../magda/engine/clip/ClipAudioSource.cpp), `renderMaterial`; [TransportClock.cpp](../../magda/engine/transport/TransportClock.cpp), `advance`; [EngineSession.cpp](../../magda/engine/exec/EngineSession.cpp), `voices_->setPosition`; [ClipVoice.cpp](../../magda/engine/clip/ClipVoice.cpp), `renderThroughCells`.
 
+Follow-up, 2026-09-16: the Arrangement repeat failure was captured in live
+device-buffer diagnostics. The current fix prepares a separate retained loop
+destination, including stretcher priming, without discarding the outgoing tail.
+Its first-block requirement is now a normal passing test; an explicitly
+unprepared test preserves the original failure characterization below. The user
+confirmed the normal Debug build works in live playback on 16 September. See the [live evidence and implementation
+notes](first-hit-signalsmith-regression.md#live-trace-arrangement-transport-wraps-lose-the-priming-input).
+
 ### 3. Priming availability is lost at the stretcher interface
 
 `ClipStretcher::readPreRoll()` clears its destination, calls `stream.read()`, ignores the delivered count, and returns the entire requested buffer. `prime()` returns `void`. A partial read therefore becomes material containing zeros, with no availability result passed to the voice.
@@ -162,7 +170,7 @@ render that came back late fails the envelope comparison rather than passing it 
 | One held read, three streams | Streams registered after the held one starve for the whole hold; earlier ones lose nothing |
 | Partial prime | Priming shortfall counted exactly and apart from playback; `ClipAudioSource::starvedVoices` stays 0 |
 
-One case whose intended outcome is known but not met is `[!shouldfail]`: an arrangement loop wrap's
+At the time of these measurements, one unmet outcome was `[!shouldfail]`: an arrangement loop wrap's
 first block. Nothing prepares an arrangement destination before the transport reaches it, and the
 session cache does not cover one. A locate inside resident audio was the other, and #2701 closed it;
 a wrap does not benefit, because the loop start is behind everything the pool holds.

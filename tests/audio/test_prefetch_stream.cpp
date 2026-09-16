@@ -209,6 +209,57 @@ TEST_CASE("A stream plays what was read ahead of it", "[engine][io][prefetch]") 
     }
 }
 
+TEST_CASE("A retained loop destination is used only after a seek and hands off cleanly",
+          "[engine][io][prefetch][loop]") {
+    Fixture fixture;
+    fixture.stream->startAt(0);
+
+    auto retained = std::make_shared<PrefetchStream::RetainedRegion>();
+    retained->startSample = 256;
+    retained->count = 128;
+    retained->audio.setSize(2, retained->count);
+    for (auto channel = 0; channel < 2; ++channel)
+        for (auto sample = 0; sample < retained->count; ++sample)
+            retained->audio.setSample(
+                channel, sample, CountingReader::valueAt(retained->startSample + sample, channel));
+    REQUIRE(fixture.stream->retain(retained));
+
+    // Forward playback crosses the retained address through ordinary chunks;
+    // installing a destination must not disturb its cursor.
+    for (std::int64_t position = 0; position < 512; position += kBlockSize) {
+        REQUIRE(fixture.readPrefetched(position) == kBlockSize);
+        fixture.requireHolds(position);
+    }
+
+    // The backwards jump activates the retained region. Its continuation is
+    // filled while those immutable samples play, then takes over at the end.
+    REQUIRE(fixture.read(256) == kBlockSize);
+    fixture.requireHolds(256);
+    REQUIRE_FALSE(fixture.stream->retain({}));
+    while (fixture.stream->fill()) {
+    }
+    REQUIRE(fixture.read(320) == kBlockSize);
+    fixture.requireHolds(320);
+    REQUIRE(fixture.read(384) == kBlockSize);
+    fixture.requireHolds(384);
+
+    // A seek into the ordinary resident continuation also releases an active
+    // retained crossing, without requiring the cache to be consumed first.
+    REQUIRE(fixture.read(256) == kBlockSize);
+    fixture.requireHolds(256);
+    REQUIRE_FALSE(fixture.stream->retain({}));
+    while (fixture.stream->fill()) {
+    }
+    REQUIRE(fixture.read(512) == kBlockSize);
+    fixture.requireHolds(512);
+    CHECK(fixture.stream->retain({}));
+
+    // Leaving a retained crossing releases its publication pin, so a loop
+    // edit can replace it without abandoning a live cache.
+    fixture.readPrefetched(1024);
+    CHECK(fixture.stream->retain({}));
+}
+
 TEST_CASE("A reader that has not caught up renders silence and says so", "[engine][io][prefetch]") {
     Fixture fixture;
 

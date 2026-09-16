@@ -65,24 +65,40 @@ void PrefetchStream::seek(std::int64_t sourceStart) {
 }
 
 void PrefetchStream::prepareRead(std::int64_t sourceStart) {
-    moveTo(sourceStart);
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retained(retained_);
+    moveTo(sourceStart, retained->get());
 }
 
-void PrefetchStream::moveTo(std::int64_t sourceStart) {
+void PrefetchStream::moveTo(std::int64_t sourceStart, const RetainedRegion* retained) {
     if (sourceStart == nextSample_)
         return;
 
-    if (!seekWithinResident(sourceStart))
-        requestSeek(sourceStart);
+    if (retainedActive_ && (retained == nullptr || sourceStart < retained->startSample ||
+                            sourceStart >= retainedEnd_)) {
+        retainedActive_ = false;
+        retainedUse_.store(0, std::memory_order_release);
+    }
+
+    if (!seekWithinResident(sourceStart, retained))
+        requestSeek(sourceStart, retained);
 }
 
-bool PrefetchStream::seekWithinResident(std::int64_t sourceStart) {
+bool PrefetchStream::seekWithinResident(std::int64_t sourceStart, const RetainedRegion* retained) {
     // The retained opening plays from memory wherever the cursor is, but its
     // continuation is the reader's to fill: requestSeek is what points the
     // reader past the cache, and a cursor moved without it would walk out of
     // the cache into chunks read for somewhere else.
     if (cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_)
         return false;
+    if (retained != nullptr && retained->count > 0 && sourceStart >= retained->startSample &&
+        sourceStart < retained->startSample + retained->count) {
+        auto idle = 0;
+        if (retainedUse_.compare_exchange_strong(idle, 1, std::memory_order_acq_rel)) {
+            retainedActive_ = true;
+            retainedEnd_ = retained->startSample + retained->count;
+        }
+        return false;
+    }
 
     if (current_ != nullptr) {
         // Behind the chunk in hand is audio the reader has already taken back.
@@ -129,10 +145,16 @@ void PrefetchStream::applyPendingCue() {
         return;
 
     appliedCue_ = cue->generation;
-    moveTo(cue->sourceStart);
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retained(retained_);
+    moveTo(cue->sourceStart, retained->get());
 }
 
-void PrefetchStream::requestSeek(std::int64_t sourceStart) {
+void PrefetchStream::requestSeek(std::int64_t sourceStart, const RetainedRegion* retained) {
+    if (retainedActive_ && (retained == nullptr || sourceStart < retained->startSample ||
+                            sourceStart >= retainedEnd_)) {
+        retainedActive_ = false;
+        retainedUse_.store(0, std::memory_order_release);
+    }
     nextSample_ = sourceStart;
     ++generation_;
 
@@ -157,10 +179,14 @@ void PrefetchStream::requestSeek(std::int64_t sourceStart) {
             request(request_);
     // While the callback plays the retained opening, refill its continuation.
     // A wrap must not wait for the disk to return to the first transient.
-    request->sourceStart =
-        cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_
-            ? cacheStart_ + cacheCount_
-            : sourceStart;
+    if (cacheCount_ > 0 && sourceStart >= cacheStart_ && sourceStart < cacheStart_ + cacheCount_)
+        request->sourceStart = cacheStart_ + cacheCount_;
+    else if (retainedActive_ && retained != nullptr && retained->count > 0 &&
+             sourceStart >= retained->startSample &&
+             sourceStart < retained->startSample + retained->count)
+        request->sourceStart = retained->startSample + retained->count;
+    else
+        request->sourceStart = sourceStart;
     request->generation = generation_;
 }
 
@@ -236,7 +262,9 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
     // that is not playing at all.
     readSinceCueCheck_ = true;
 
-    moveTo(sourceStart);
+    PublishedRetained::ScopedAccess<farbot::ThreadType::realtime> retainedAccess(retained_);
+    const auto* retained = retainedAccess->get();
+    moveTo(sourceStart, retained);
 
     auto done = 0;
 
@@ -252,6 +280,25 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
                     count);
             nextSample_ += count;
             done += count;
+            continue;
+        }
+        if (retainedActive_ && retained != nullptr && retained->count > 0 &&
+            nextSample_ >= retained->startSample &&
+            nextSample_ < retained->startSample + retained->count) {
+            const auto offset = static_cast<int>(nextSample_ - retained->startSample);
+            const auto count = std::min(numSamples - done, retained->count - offset);
+            for (std::size_t channel = 0; channel < destination.getNumChannels(); ++channel)
+                juce::FloatVectorOperations::copy(
+                    destination.getChannelPointer(channel) + done,
+                    retained->audio.getReadPointer(static_cast<int>(channel) % numChannels_,
+                                                   offset),
+                    count);
+            nextSample_ += count;
+            done += count;
+            if (nextSample_ >= retainedEnd_) {
+                retainedActive_ = false;
+                retainedUse_.store(0, std::memory_order_release);
+            }
             continue;
         }
         if (current_ == nullptr && !takeNextChunk())

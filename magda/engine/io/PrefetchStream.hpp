@@ -59,6 +59,12 @@ enum class ReadPurpose { playback, priming };
 
 class PrefetchStream {
   public:
+    struct RetainedRegion {
+        juce::AudioBuffer<float> audio;
+        std::int64_t startSample = 0;
+        int count = 0;
+    };
+
     PrefetchStream(std::unique_ptr<AudioFileReader> reader, const RenderContext& context,
                    const PrefetchSettings& settings = {});
 
@@ -105,6 +111,21 @@ class PrefetchStream {
     // Reads and allocates here, before registration with the reader thread;
     // the cache is immutable during playback.
     void startAt(std::int64_t sourceStart, int cacheSamples = 0);
+
+    /// Publish a prepared loop destination. The replaced region is destroyed
+    /// here, after any callback reading it has left.
+    bool retain(std::shared_ptr<const RetainedRegion> region) {
+        auto idle = 0;
+        if (!retainedUse_.compare_exchange_strong(idle, -1, std::memory_order_acq_rel))
+            return false;
+        retained_.nonRealtimeReplace(std::move(region));
+        retainedUse_.store(0, std::memory_order_release);
+        return true;
+    }
+
+    bool canRetain() const {
+        return retainedUse_.load(std::memory_order_acquire) == 0;
+    }
 
     /**
      * @brief Point the reader at a position before anything asks for it.
@@ -220,13 +241,13 @@ class PrefetchStream {
 
     /// Point the cursor at a position, keeping what was read ahead if it
     /// already holds that position. Audio thread.
-    void moveTo(std::int64_t sourceStart);
+    void moveTo(std::int64_t sourceStart, const RetainedRegion* retained = nullptr);
 
     /// Take the cursor to a position the read-ahead holds, without changing
     /// generation or disturbing the reader. False if it does not hold it.
-    bool seekWithinResident(std::int64_t sourceStart);
+    bool seekWithinResident(std::int64_t sourceStart, const RetainedRegion* retained);
 
-    void requestSeek(std::int64_t sourceStart);
+    void requestSeek(std::int64_t sourceStart, const RetainedRegion* retained);
 
     std::unique_ptr<AudioFileReader> reader_;
     std::int64_t length_ = 0;
@@ -237,6 +258,12 @@ class PrefetchStream {
     juce::AudioBuffer<float> startCache_;
     std::int64_t cacheStart_ = 0;
     int cacheCount_ = 0;
+
+    using PublishedRetained =
+        farbot::RealtimeObject<std::shared_ptr<const RetainedRegion>,
+                               farbot::RealtimeObjectOptions::nonRealtimeMutatable>;
+    PublishedRetained retained_;
+    std::atomic<int> retainedUse_{0};  // -1 publisher, 0 idle, 1 callback crossing it
 
     std::vector<std::unique_ptr<Chunk>> pool_;
     ChunkFifo filled_;
@@ -261,6 +288,8 @@ class PrefetchStream {
     std::int64_t nextSample_ = 0;
     std::uint32_t generation_ = 0;
     std::uint32_t appliedCue_ = 0;
+    bool retainedActive_ = false;
+    std::int64_t retainedEnd_ = 0;
 
     /// Whether anything could have played out of this stream since the last
     /// cue check. What separates a stream waiting to be given somewhere to go

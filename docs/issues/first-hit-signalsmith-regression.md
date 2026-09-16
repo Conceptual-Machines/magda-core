@@ -2,6 +2,111 @@
 
 Date: 16 September 2026.
 
+## Reopened after the integrated listening check
+
+Later on 16 September, the user reported a quiet first hit / audible fade again
+while testing the session-transport work for #2692/#2693. That uncommitted patch
+was saved separately and removed, and the normal Debug application was rebuilt
+from the merged #2709 baseline (`fa994995`). The user confirmed that this
+comparison build still sounded broken. The session-transport patch is therefore
+not required to reproduce this report. The earlier positive listening results
+remain observations of those runs, not proof that every affected case was fixed.
+
+A read-only inspection of the running comparison instance found one arrangement
+audio clip, `TEDDY_KILLERZ_drum_loop_full_19_174`, starting at beat zero with a
+length of eight beats. Transport looping was disabled at inspection time. This
+is a snapshot of that instance, not an assertion about all the user's listening
+cases. The remote clip summary does not expose its fade or stretch settings.
+
+The user subsequently clarified that the current failure is in Arrangement on
+the loop repeat, **not on the initial Play**. Do not collapse this distinction
+into another startup-only test. The clean first pass and the failing repeat are
+the relevant comparison.
+
+### Live trace: Arrangement transport wraps lose the priming input
+
+The `FIRST-HIT-DIAGNOSTIC-2026-09-16-A` run established that the affected repeat
+was the transport wrapping from beat eight to zero, with looping enabled. The
+device ran at 48 kHz with 512-frame callbacks. The clip's explicit fade-in and
+fade-out were both zero, and the launch de-click correction was bypassed at the
+wrap because playback began at the event's own start.
+
+On the clean start at device callback 2410, clip 2's first sample was -0.719710,
+its block RMS was 0.632344, and no priming or playback input was missing. The
+same values reached the device buffer. On two following wraps:
+
+- Callback 2667: 7,200 priming frames and 512 playback frames were missing.
+- Callback 2924: 7,200 priming frames and 384 playback frames were missing.
+
+At the second wrap the new segment began with zero output. Subsequent reads
+were full, but the stretcher continued producing effectively zero output until
+the block starting 7,534 samples after the restart (about 157 ms). The final
+device-buffer measurements showed the same loss. A later de-click invocation
+on the next block cannot explain the already missing priming input and output.
+
+This directly identifies a different failure from the earlier fresh-start
+listening comparison: Arrangement has no prepared destination for a transport
+wrap. It resets the stretcher and primes it with missing input. A worker that
+returns on the next callback cannot recover the attack already replaced with
+zeros. The existing streaming audit and expected-failure test described this
+gap, but those tests had not fixed it.
+
+The temporary diagnostic output was saved, then removed from the source after
+the user reported UI flickering. Logging may contribute to that flicker; its
+cause was not separately established. The loop-input loss is directly measured
+and also has an independent deterministic regression case. Do not use this
+finding to retroactively explain the earlier unity-rate captures that matched.
+
+The required fix is to prepare and retain Arrangement loop-destination audio
+before the boundary, including the stretcher's priming window, without
+discarding the outgoing tail or doing file I/O in the callback. Acceptance must
+compare the first pass and repeated passes, including a loop start inside a
+stretch cell, and must include a live listening check with diagnostics disabled.
+
+### Arrangement destination preparation
+
+The follow-up implementation passes the transport loop and tempo map to the
+voice pool. Its non-audio worker keeps readers for the loop's opening window
+and builds a separate immutable region containing priming input and a bounded
+playback bridge. It reads through the same resampling, reverse and source-loop
+transformations as ordinary playback. A second file reader prepares that region
+without seeking the reader still serving the outgoing tail.
+
+For stretched playback, the destination begins on the same event-relative
+processing cell as `ClipVoice`, including a loop marker inside a cell. Source
+positions are derived from the transport tempo map. A wrap reads retained audio
+immediately and asks the ordinary disk worker for its continuation.
+
+The retained region must only take over on a seek. Letting it intercept an
+ordinary forward read without advancing the stream's existing chunk cursor can
+replay stale samples at the handoff, even when missing-frame counters stay zero.
+Likewise, an edit must not discard a retained region while playback is consuming
+it: the worker has already been sent to its end. Publication is deferred while
+that region is active, and retirement occurs off the audio thread. These are
+audio-continuity requirements, not just memory-lifetime requirements.
+
+Preparation is bounded by the reader budget and bridge size. It is not a promise
+that an arbitrary new loop destination can be read instantly if a user moves a
+marker at the boundary or disk preparation has not completed. It introduces no
+hidden transport delay. Prepared loops must preserve the attack while their
+resident window covers the reader's refill time.
+
+Validation of this follow-up on 16 September:
+
+- Streaming-delay suite `[2700]`: 25 cases, 6,960 assertions passed. Prepared
+  incoming audio matches the supplied reference exactly, and the outgoing tail
+  remains intact, for plain playback, Signalsmith and SoundTouch. Coverage also
+  includes repeated wraps, nonzero loop starts inside processing cells and
+  short clips retained at the destination.
+- Prefetch suite: 20 cases, 8,114 assertions passed, including sequential reads,
+  retained-to-stream handoff and deferred replacement of active retained audio.
+- Existing `[first-hit]` suite: four cases, 1,410 assertions passed.
+- The normal Debug application was built with temporary diagnostics removed.
+  After being asked to run `make run-console` and listen to repeated Arrangement
+  loops, the user confirmed: **“yes this works”**. This is the live acceptance
+  of the loop-repeat fix, separate from the automated results above. Flickering
+  was not explicitly addressed in that reply, so its status remains unconfirmed.
+
 ## Outcome and scope
 
 The listening comparison identified the Signalsmith random-generator replacement
