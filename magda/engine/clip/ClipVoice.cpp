@@ -136,7 +136,17 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
             // the stretcher is primed with is the material leading up to a
             // fixed instant. Read out of the same stream in the same pass, so
             // the cell's own read continues it rather than seeking again.
-            stretcher.prime(stream, readFrom, preRoll, step);
+            //
+            // A prime the reader was behind on aligned against silence, and
+            // what comes out of the cells that window covers is damaged whether
+            // or not their own reads arrived. Said here and not primed again:
+            // priming reads behind the position wanted, so a second attempt
+            // would send a reader that is already late further back still, and
+            // the material it recovered would then play after the moment it
+            // belonged to.
+            if (stretcher.prime(stream, readFrom, preRoll, step) > 0)
+                full = false;
+
             needsPrime = false;
         }
 

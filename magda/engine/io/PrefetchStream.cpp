@@ -211,6 +211,12 @@ bool PrefetchStream::takeNextChunk() {
         // asked for, and the fifo behind it might be.
         if (chunk->generation != generation_ ||
             chunk->startSample + chunk->numSamples <= nextSample_) {
+            // Counted only where the callback outran it. A chunk left behind by
+            // a seek was read for a position somebody changed their mind about,
+            // which is the cost of the locate and not of catching up.
+            if (chunk->generation == generation_)
+                obsoleteFrames_.fetch_add(chunk->numSamples, std::memory_order_relaxed);
+
             spent_.push(std::move(chunk));
             continue;
         }
@@ -346,6 +352,18 @@ int PrefetchStream::read(std::int64_t sourceStart, juce::dsp::AudioBlock<float> 
         // resumed where it ran dry would play the missing audio late and stay
         // late for the rest of the take; the gap is the honest cost.
         nextSample_ = sourceStart + numSamples;
+
+        // And the reader is told, because it cannot work this out for itself: it
+        // fills forward from where it last read, which is now behind the
+        // callback by the whole length of the stall. Left alone it would come
+        // back and read that distance one chunk at a time, every one of them
+        // thrown away here for being behind the cursor, so the gap would go on
+        // sounding for as long again as the stall itself. Through requestSeek
+        // rather than by assignment, so a cursor inside the retained opening
+        // still points the reader at the continuation rather than at the
+        // material already in memory (#2704).
+        if (firstMissing < wanted)
+            requestSeek(nextSample_, retained);
     }
 
     return done;
@@ -355,25 +373,30 @@ bool PrefetchStream::fill() {
     if (reader_ == nullptr)
         return false;
 
-    {
-        farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
-            ScopedAccess<farbot::ThreadType::nonRealtime>
-                request(request_);
-
-        if (request->generation != fillGeneration_) {
-            fillGeneration_ = request->generation;
-            fillPosition_ = request->sourceStart;
-            stalled_ = false;
-        }
-    }
-
-    if (stalled_)
-        return false;
-
     auto worked = false;
     Chunk* chunk = nullptr;
 
-    while (fillPosition_ < length_ && spent_.pop(chunk)) {
+    while (true) {
+        // Between chunks rather than once on the way in. A seek that arrives
+        // while this thread is inside a read would otherwise be seen only after
+        // the whole pool had been refilled for the position the callback has
+        // already left, and every one of those chunks thrown away on arrival --
+        // which is the catch-up a short read now asks to be spared (#2704).
+        {
+            farbot::RealtimeObject<SeekRequest, farbot::RealtimeObjectOptions::realtimeMutatable>::
+                ScopedAccess<farbot::ThreadType::nonRealtime>
+                    request(request_);
+
+            if (request->generation != fillGeneration_) {
+                fillGeneration_ = request->generation;
+                fillPosition_ = request->sourceStart;
+                stalled_ = false;
+            }
+        }
+
+        if (stalled_ || fillPosition_ >= length_ || !spent_.pop(chunk))
+            break;
+
         // How much of the stream is left, saturating rather than wrapping.
         //
         // The subtraction on its own overflows, and the way it overflows is
