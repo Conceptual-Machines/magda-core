@@ -350,16 +350,103 @@ TEST_CASE("A playing locate to unread audio costs the callbacks until the reader
 }
 
 TEST_CASE("A playing locate inside resident audio does not wait for the reader",
-          "[engine][io][prefetch][2700][!shouldfail]") {
-    // Finding 1 of docs/issues/2699-streaming-seek-audit.md: a discontinuity
-    // drops the pool even when the destination is already in it.
+          "[engine][io][prefetch][2701]") {
+    // Finding 1 of docs/issues/2699-streaming-seek-audit.md: the pool used to go
+    // even when the destination was already in it. Chunks of 256, so the reader
+    // holds [0,256) [256,512) [512,768) [768,1024) and never runs here.
     Stream stream(64, {256, 4});
     stream.fill();
     REQUIRE(stream.read(0) == 64);
+    const auto reads = std::ssize(stream.reader->starts);
 
-    CHECK(stream.read(512) == 64);
-    stream.fill();
-    CHECK(stream.read(576) == 64);
+    SECTION("forward into a queued chunk, and on from there") {
+        REQUIRE(stream.read(512) == 64);
+        CHECK(stream.holds(512, 64));
+        REQUIRE(stream.read(576) == 64);
+        CHECK(stream.holds(576, 64));
+    }
+
+    SECTION("forward inside the chunk in hand") {
+        REQUIRE(stream.read(192) == 64);
+        CHECK(stream.holds(192, 64));
+    }
+
+    SECTION("back into the chunk in hand") {
+        REQUIRE(stream.read(0) == 64);
+        CHECK(stream.holds(0, 64));
+    }
+
+    SECTION("over and over, forward and back within a chunk") {
+        for (const std::int64_t target : {704, 832, 768, 960}) {
+            INFO("target " << target);
+            REQUIRE(stream.read(target) == 64);
+            REQUIRE(stream.holds(target, 64));
+        }
+    }
+
     CHECK(stream.missing() == 0);
-    CHECK(readsBefore(*stream.reader, 1024) == 4);
+    CHECK(stream.stream->underruns() == 0);
+
+    // Nothing above sent the reader back over audio it had already read: it is
+    // still where the queue ends, and its next round carries on from there.
+    CHECK(std::ssize(stream.reader->starts) == reads);
+    stream.fill();
+    CHECK(readsBefore(*stream.reader, 1024) == reads);
+}
+
+TEST_CASE("A locate outside resident audio still costs a round", "[engine][io][prefetch][2701]") {
+    Stream stream(64, {256, 4});
+    stream.fill();
+    for (std::int64_t position = 0; position < 320; position += 64)
+        REQUIRE(stream.read(position) == 64);
+
+    SECTION("behind what the reader has taken back") {
+        // 0 is in the chunk the callback finished with two blocks ago.
+        CHECK(stream.read(0) == 0);
+        CHECK(stream.missing() == 64);
+
+        stream.fill();
+        REQUIRE(stream.read(64) == 64);
+        CHECK(stream.holds(64, 64));
+    }
+
+    SECTION("past the end of the queue") {
+        CHECK(stream.read(1024) == 0);
+        CHECK(stream.missing() == 64);
+
+        stream.fill();
+        REQUIRE(stream.read(1088) == 64);
+        CHECK(stream.holds(1088, 64));
+    }
+
+    // The gap is the whole cost: playback carries on from where it asked to be.
+    CHECK(stream.stream->underruns() == 1);
+}
+
+TEST_CASE("A resident locate while a fill is in flight keeps both sides of it",
+          "[engine][io][prefetch][2701]") {
+    Gate gate;
+    Stream stream(64, {256, 4}, 1000000, 0.0f, &gate);
+
+    // Two chunks queued, the worker held inside the read for the third.
+    gate.closeFrom(512);
+    {
+        Worker worker(gate, [&] { stream.fill(); });
+        REQUIRE(gate.waitUntilHeld());
+
+        REQUIRE(stream.read(0) == 64);
+        REQUIRE(stream.read(320) == 64);
+        CHECK(stream.holds(320, 64));
+    }
+
+    // The read that was in flight was made for the generation the locate left in
+    // force, so it plays on from the locate instead of being dropped as stale.
+    for (std::int64_t position = 384; position <= 576; position += 64) {
+        INFO("position " << position);
+        REQUIRE(stream.read(position) == 64);
+        REQUIRE(stream.holds(position, 64));
+    }
+
+    CHECK(stream.missing() == 0);
+    CHECK(stream.stream->underruns() == 0);
 }

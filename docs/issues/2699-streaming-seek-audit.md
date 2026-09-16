@@ -19,6 +19,8 @@ Thus an arbitrary locate can miss its first block even with a full buffer and a 
 
 Source: [PrefetchStream.cpp](../../magda/engine/io/PrefetchStream.cpp), `read`, `requestSeek`, `takeNextChunk`; [test_prefetch_stream.cpp](../../tests/audio/test_prefetch_stream.cpp), “A seek drops what was read for somewhere else”.
 
+Fixed in #2701: a position the queue already holds, or one inside the chunk in hand, now moves the cursor without changing generation or disturbing the reader. Everything else still takes the invalidation path.
+
 ### 2. Stopped preparation does not cover playing locates or arrangement wraps
 
 #2697 prepares the next read while stopped. `ClipAudioSource::prepareForPlay()` is not called while playing. `TransportClock` splits callbacks at arrangement loop boundaries and marks the next segment discontinuous. `ClipVoice` then resets and primes the stretcher at the destination.
@@ -155,14 +157,15 @@ render that came back late fails the envelope comparison rather than passing it 
 | Session launch, on or inside a callback | Complete whether the worker has filled or is paused: the retained opening covers it |
 | Retained opening handing over | Complete when the worker is back before or at the last callback the opening covers; past it, counted and recovering like any stall. Same for three slots launched together, each from its own opening |
 | Session wrap or re-trigger, worker keeping up | Complete, every pass |
-| Locate inside resident audio | Pool still dropped (finding 1) |
+| Locate inside resident audio | Complete without a reader round after #2701: plain and stretched, on a cell boundary and inside one. Behind the chunk in hand, or past the queue, still costs a round |
 | Seek during an in-flight fill | The worker finishes the whole old pool first; the new position sounds two callbacks later |
 | One held read, three streams | Streams registered after the held one starve for the whole hold; earlier ones lose nothing |
 | Partial prime | Priming shortfall counted exactly and apart from playback; `ClipAudioSource::starvedVoices` stays 0 |
 
-Two cases whose intended outcome is known but not met are `[!shouldfail]`: a locate inside resident
-audio, and an arrangement loop wrap's first block. Both are the same gap, which the session cache
-does not cover: nothing prepares an arrangement destination before the transport reaches it.
+One case whose intended outcome is known but not met is `[!shouldfail]`: an arrangement loop wrap's
+first block. Nothing prepares an arrangement destination before the transport reaches it, and the
+session cache does not cover one. A locate inside resident audio was the other, and #2701 closed it;
+a wrap does not benefit, because the loop start is behind everything the pool holds.
 
 Two things the harness found: Signalsmith drew bin phases from `std::random_device` below 0.5x,
 so two renders of one timeline differed (now reseeded on every prime); and a DC source through
