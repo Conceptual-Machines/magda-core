@@ -86,6 +86,51 @@ TEST_CASE("Editor playhead follows the engine fold", "[pianoroll][playhead]") {
     }
 }
 
+TEST_CASE("Session playhead fold is independent of Arrangement placement",
+          "[pianoroll][playhead][session]") {
+    auto clip = midiClip(20.0, 4.0);
+    clip.view = magda::ClipView::Session;
+
+    REQUIRE_FALSE(ClipOperations::contentBeatAtSessionBeat(clip, -0.01, kBpm).has_value());
+
+    SECTION("a cycle longer than the placement keeps mapping elapsed beats") {
+        clip.loopEnabled = true;
+        clip.loopStartBeats = 2.0;
+        clip.loopLengthBeats = 16.0;
+        clip.midiOffset = 1.5;
+
+        const auto content = ClipOperations::contentBeatAtSessionBeat(clip, 8.0, kBpm);
+        REQUIRE(content.has_value());
+        REQUIRE(*content == Approx(11.5));
+
+        // Arrangement mapping keeps rejecting the same absolute position: its
+        // four-beat placement still ends at beat 24.
+        REQUIRE_FALSE(ClipOperations::contentBeatAtTimelineBeat(clip, 28.0, kBpm).has_value());
+    }
+
+    SECTION("a shorter cycle wraps with the same loop start and MIDI offset") {
+        clip.loopEnabled = true;
+        clip.loopStartBeats = 1.0;
+        clip.loopLengthBeats = 2.0;
+        clip.midiOffset = 0.5;
+
+        const auto content = ClipOperations::contentBeatAtSessionBeat(clip, 5.0, kBpm);
+        REQUIRE(content.has_value());
+        REQUIRE(*content == Approx(2.5));
+    }
+
+    SECTION("a non-looped position uses trim and offset without placement start") {
+        clip.loopEnabled = false;
+        clip.midiTrimOffset = 2.0;
+        clip.midiOffset = 0.5;
+
+        const auto content = ClipOperations::contentBeatAtSessionBeat(clip, 3.0, kBpm);
+        REQUIRE(content.has_value());
+        REQUIRE(*content == Approx(5.5));
+        REQUIRE_FALSE(ClipOperations::contentBeatAtSessionBeat(clip, 4.01, kBpm).has_value());
+    }
+}
+
 TEST_CASE("A seek into a looped clip stays in the pass the transport is in",
           "[pianoroll][playhead]") {
     auto clip = midiClip(20.0, 16.0);

@@ -869,6 +869,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # reason the publish tests are: it reads the model's singletons.
         engine/test_slot_launcher_juce.cpp
 
+        # A Session playhead and the timeline notification from the same UI timer tick.
+        ../magda/daw/engine/PlaybackPositionTimer.cpp
+        engine/test_playback_position_timer_juce.cpp
+
         # The message-thread half of the control executor (#2581). Here because
         # magda_tests has no message loop to run it on.
         engine/test_control_executor_juce.cpp

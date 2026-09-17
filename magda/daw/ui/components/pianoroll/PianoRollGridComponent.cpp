@@ -2609,8 +2609,12 @@ bool PianoRollGridComponent::getPlayheadDisplayX(int& gridLocalX) const {
         const auto* clip = clipManager.getClip(clipId);
         if (!clip)
             continue;
-        if (const auto contentBeat =
-                ClipOperations::contentBeatAtTimelineBeat(*clip, playheadBeat_, bpm)) {
+        const auto contentBeat =
+            clip->view == ClipView::Session
+                ? ClipOperations::contentBeatAtSessionBeat(
+                      *clip, clip->sessionPlayheadPos * bpm / 60.0, bpm)
+                : ClipOperations::contentBeatAtTimelineBeat(*clip, playheadBeat_, bpm);
+        if (contentBeat) {
             gridLocalX = beatToPixel(displayBeatForClipBeat(clipId, *contentBeat));
             return true;
         }

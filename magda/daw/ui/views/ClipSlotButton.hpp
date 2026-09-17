@@ -33,6 +33,8 @@ class ClipSlotButton : public juce::TextButton {
     bool hasClip = false;
     bool clipIsPlaying = false;
     bool clipIsQueued = false;
+    bool clipHasLaunchIntent = false;  // Remembered active slot, including while transport stopped
+    bool transportIsPlaying = false;   // Visual state supplied by SessionView
     bool stopIsQueued = false;  // Empty slot blinks its stop icon while a row-stop is pending
     bool blinkOn = false;       // Toggled by SessionView timer for queued blink
     bool isSelected = false;
@@ -207,7 +209,7 @@ class ClipSlotButton : public juce::TextButton {
         if (isGroupSlot) {
             if (hasChildClips) {
                 auto centre = getLocalBounds().getCentre().toFloat();
-                if (childClipIsPlaying) {
+                if (transportIsPlaying && childClipIsPlaying) {
                     // Stop square
                     float size = 5.0f;
                     g.setColour(juce::Colours::white.withAlpha(0.9f));
@@ -235,13 +237,16 @@ class ClipSlotButton : public juce::TextButton {
             auto playArea = getLocalBounds().removeFromLeft(PLAY_BUTTON_WIDTH);
             auto centre = playArea.getCentre().toFloat();
 
-            // Cyan when selected OR when the clip is actually running —
-            // launching from the scene button should light the track's play
-            // icon the same way as a direct click. Idle non-selected slots
-            // stay black against the grey strip for contrast.
-            const auto iconColour = (isSelected || clipIsPlaying || clipIsQueued)
-                                        ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
-                                        : juce::Colours::black;
+            // Blue is live transport state. Selection and a remembered launch intent remain
+            // visible while stopped, but in neutral grey so they cannot read as sounding.
+            const bool running =
+                transportIsPlaying && (isSelected || clipIsPlaying || clipIsQueued);
+            const bool stoppedCue =
+                isSelected || clipHasLaunchIntent || clipIsPlaying || clipIsQueued;
+            const auto iconColour =
+                running      ? DarkTheme::getColour(DarkTheme::ACCENT_INFO)
+                : stoppedCue ? (isSelected ? juce::Colour(0xFFA0A0A0) : juce::Colour(0xFF505050))
+                             : juce::Colours::black;
 
             juce::Path triangle;
             float size = 6.0f;
@@ -249,7 +254,7 @@ class ClipSlotButton : public juce::TextButton {
                                  centre.getX() - size * 0.7f, centre.getY() + size,
                                  centre.getX() + size, centre.getY());
             auto playColour = iconColour;
-            if (clipIsQueued && !blinkOn)
+            if (transportIsPlaying && clipIsQueued && !blinkOn)
                 playColour = playColour.withAlpha(0.15f);
             g.setColour(playColour);
             g.fillPath(triangle);

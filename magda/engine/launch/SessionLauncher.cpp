@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "clip/ClipSnapshot.hpp"
 #include "launch/FollowActions.hpp"
 
 namespace magda::engine {
@@ -173,7 +174,7 @@ void publishRunEdges(SlotRunQueue& runs, const LaunchHandleTable::Entry& entry,
 }  // namespace
 
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
-                          const BlockInfo& block, SlotRunQueue* runs) {
+                          const BlockInfo& block, SlotRunQueue* runs, const ClipSnapshot* clips) {
     const LaunchHandleFeed::Reader table(handles);
 
     // Drained whether or not there is a table to apply it to: a queue left
@@ -189,6 +190,16 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
 
         return;
     }
+
+    // The same pinned snapshot the sources render below. Adopt it before the
+    // request lane, so an explicit setLooping made after the publish remains
+    // the last word for this block and every unchanged block after it.
+    if (clips != nullptr)
+        for (const auto& entry : table->entries)
+            if (entry.handle != nullptr)
+                if (const auto* track = clips->find(entry.key.trackId); track != nullptr)
+                    if (const auto* slot = track->slot(entry.key.sceneIndex); slot != nullptr)
+                        entry.handle->adoptPublishedLooping(slot->loopBeats);
 
     // Every request before any advance, so a scene reaches all of its handles
     // on the same block.

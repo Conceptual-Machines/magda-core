@@ -38,6 +38,8 @@
 
 namespace magda::engine {
 
+struct ClipSnapshot;
+
 /// Which of a track's two bodies of material a source plays (#2302). Stated
 /// rather than inferred from having a handle feed, because both sources need
 /// one: the arrangement's reads it to know when the session has taken the track.
@@ -177,8 +179,14 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
  *
  * @p runs takes the edges each handle reported, for the capture off the audio
  * thread (SlotRuns.hpp). Null for a caller that does not capture.
+ *
+ * @p clips is the snapshot pinned around the sources that render this block.
+ * When present, its loop configuration is adopted before requests are drained,
+ * so the handle and its material change cycle on the same block. Null keeps
+ * the generic/manual handle API unchanged.
  */
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
-                          const BlockInfo& block, SlotRunQueue* runs = nullptr);
+                          const BlockInfo& block, SlotRunQueue* runs = nullptr,
+                          const ClipSnapshot* clips = nullptr);
 
 }  // namespace magda::engine

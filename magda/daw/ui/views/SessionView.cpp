@@ -3327,6 +3327,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
     // Always set slot identity for drag-and-drop
     slot->trackId = trackId;
     slot->sceneIndex = sceneIndex;
+    slot->transportIsPlaying = audioEngine_ != nullptr && audioEngine_->isPlaying();
 
     // Mirror record-arm state so empty slots can render the record glyph.
     if (const auto* trackInfo = TrackManager::getInstance().getTrack(trackId))
@@ -3363,6 +3364,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
 
         slot->hasChildClips = anyClips;
         slot->childClipIsPlaying = anyPlaying;
+        slot->clipHasLaunchIntent = false;
         slot->hasClip = false;
         slot->slotRecordArmed = false;
         slot->slotIsRecording = false;
@@ -3391,6 +3393,10 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
             slot->clipId = clipId;
             slot->clipIsPlaying = (playState == SessionClipPlayState::Playing);
             slot->clipIsQueued = (playState == SessionClipPlayState::Queued);
+            if (const auto* track = TrackManager::getInstance().getTrack(trackId))
+                slot->clipHasLaunchIntent = track->activeSessionClipId == clipId;
+            else
+                slot->clipHasLaunchIntent = false;
             slot->slotRecordArmed = false;
             slot->slotIsRecording = false;
             slot->isSelected = SelectionManager::getInstance().isClipSelected(clipId);
@@ -3433,6 +3439,7 @@ void SessionView::updateClipSlotAppearance(int trackIndex, int sceneIndex) {
         slot->clipId = INVALID_CLIP_ID;
         slot->clipIsPlaying = false;
         slot->clipIsQueued = false;
+        slot->clipHasLaunchIntent = false;
         slot->slotRecordArmed =
             audioEngine_ != nullptr && audioEngine_->isSessionSlotRecordArmed(trackId, sceneIndex);
         slot->slotIsRecording =
@@ -3696,6 +3703,10 @@ void SessionView::timerCallback() {
                 auto* slot = dynamic_cast<ClipSlotButton*>(slotBtn.get());
                 if (!slot)
                     continue;
+                if (slot->transportIsPlaying != transportPlaying) {
+                    slot->transportIsPlaying = transportPlaying;
+                    slot->repaint();
+                }
                 if (slot->clipIsQueued) {
                     slot->blinkOn = newBlinkOn;
                     slot->repaint();

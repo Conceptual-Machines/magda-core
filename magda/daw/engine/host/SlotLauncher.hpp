@@ -2,7 +2,6 @@
 
 #include <optional>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 #include "../../core/ClipTypes.hpp"
@@ -147,8 +146,12 @@ class SlotLauncher {
     /// Re-launch what the model still says each track is playing.
     void relaunchActive();
 
-    /// Session where a track has an active clip, Arrangement everywhere else.
-    static void syncPlaybackModes();
+    /// Whether a slot is active or still winding down on a quantized stop.
+    bool anythingActive() const;
+
+    /// Session where a track has an active or winding-down clip, Arrangement
+    /// everywhere else.
+    void syncPlaybackModes();
 
     LaunchHost& host_;
 
@@ -168,8 +171,15 @@ class SlotLauncher {
     mutable std::unordered_map<ClipId, Asked> asked_;
     void noteAsked(const ClipInfo& clip);
 
-    /// Tracks with a quantized stop in flight (@ref stopPending).
-    std::unordered_set<TrackId> stopping_;
+    /// The exact slot each track is waiting to stop. The due beat distinguishes
+    /// an untouched tap from acknowledgement when a queued launch is stopped
+    /// before it ever sounds.
+    struct PendingStop {
+        ClipId clipId = INVALID_CLIP_ID;
+        int sceneIndex = -1;
+        double dueMonotonicBeat = 0.0;
+    };
+    std::unordered_map<TrackId, PendingStop> stopping_;
 
     /// The most recently launched clip, which is the one a clip editor draws.
     ClipId playheadClip_ = INVALID_CLIP_ID;
