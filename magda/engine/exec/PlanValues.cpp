@@ -488,6 +488,9 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         // input op and its meter are compiled either way, so this flag is the
         // whole of what the monitor switch moves (#2612).
         case OpRole::LiveInputGate:
+        // And the same for a route from another track, whether that route is
+        // an ordering edge or a carry: both compile whatever the switch says.
+        case OpRole::InputRouteGate:
             if (!track->monitorsInput())
                 value.silent = true;
             break;
@@ -503,6 +506,10 @@ void Resolver::resolveOp(OpId id, OpValue& value) {
         case OpRole::SessionMidi:
         case OpRole::TrackAudioInput:
         case OpRole::TrackMidiInput:
+        // A carry passes its block on unchanged. Whether the track hears it is
+        // the gate's business, which is where the switch already lands.
+        case OpRole::FeedbackSend:
+        case OpRole::FeedbackReturn:
         case OpRole::DeviceMeter:
         case OpRole::ChainMidiMerge:
         // A note gate's range and transposition are topology, compiled into the

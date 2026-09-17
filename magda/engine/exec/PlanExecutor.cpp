@@ -148,6 +148,53 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
     }
 }
 
+void FeedbackCarry::prepare(int numChannels, int maxBlockSize, int midiCapacityBytes) {
+    audio_.setSize(numChannels, maxBlockSize, false, true, false);
+    audio_.clear();
+    midi_.clear();
+    midi_.ensureSize(static_cast<std::size_t>(midiCapacityBytes));
+}
+
+void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::copy(
+            block.getChannelPointer(static_cast<std::size_t>(channel)),
+            audio_.getReadPointer(channel), samples);
+
+    // A block longer than the carry, or wider, is one the carry was not
+    // prepared for; the rest is silence rather than whatever was there before.
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::clear(
+            block.getChannelPointer(static_cast<std::size_t>(channel)) + samples,
+            numSamples - samples);
+    for (auto channel = static_cast<std::size_t>(channels); channel < block.getNumChannels();
+         ++channel)
+        juce::FloatVectorOperations::clear(block.getChannelPointer(channel), numSamples);
+}
+
+void FeedbackCarry::write(juce::dsp::AudioBlock<const float> block, int numSamples) {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::copy(
+            audio_.getWritePointer(channel),
+            block.getChannelPointer(static_cast<std::size_t>(channel)), samples);
+
+    for (int channel = channels; channel < audio_.getNumChannels(); ++channel)
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), samples);
+}
+
+void FeedbackCarry::clear() {
+    audio_.clear();
+    midi_.clear();
+}
+
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     delay_ = delaySamples;
     capacity_ = capacityBytes;
@@ -252,6 +299,12 @@ const std::shared_ptr<CrossfadeRamp>& PlanExecutor::crossfadeFor(OpId op) const 
     return ramp < 0 ? none : crossfades_[static_cast<std::size_t>(ramp)];
 }
 
+const std::shared_ptr<FeedbackCarry>& PlanExecutor::feedbackCarryFor(OpId op) const {
+    static const std::shared_ptr<FeedbackCarry> none;
+    const auto carry = feedbackForOp_[static_cast<std::size_t>(op)];
+    return carry < 0 ? none : feedbackCarries_[static_cast<std::size_t>(carry)];
+}
+
 std::vector<char> PlanExecutor::unfinishedCrossfades() const {
     std::vector<char> running(plan_ == nullptr ? 0 : plan_->ops.size(), 0);
     for (std::size_t i = 0; i < running.size(); ++i) {
@@ -277,6 +330,9 @@ void PlanExecutor::reset() {
     carriedCrossfades_ = 0;
     crossfadeForOp_.clear();
     crossfades_.clear();
+    carriedFeedbackCarries_ = 0;
+    feedbackForOp_.clear();
+    feedbackCarries_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
     midiSlotPanic_.clear();
@@ -995,6 +1051,42 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
         crossfadeForOp_[i] = static_cast<int>(crossfades_.size());
         crossfades_.push_back(std::move(ramp));
+    }
+
+    // Both halves of one cut route share a carry, paired by the track that
+    // reads it and the signal its key names. Adopted across a recompile the way
+    // a delay line is: a loop that is still sounding should not restart from
+    // silence because something elsewhere in the project changed.
+    feedbackForOp_.assign(numOps, -1);
+    std::map<std::pair<TrackId, int>, int> carryForRoute;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::FeedbackSend && op.kind != OpKind::FeedbackReturn)
+            continue;
+
+        const std::pair route{op.key.trackId, op.key.index};
+        if (const auto found = carryForRoute.find(route); found != carryForRoute.end()) {
+            feedbackForOp_[i] = found->second;
+            continue;
+        }
+
+        std::shared_ptr<FeedbackCarry> carry;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->feedbackCarryFor(from);
+                adopted != nullptr &&
+                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize)) {
+                carry = adopted;
+                ++carriedFeedbackCarries_;
+            }
+
+        if (carry == nullptr) {
+            carry = std::make_shared<FeedbackCarry>();
+            carry->prepare(context_.numChannels, context_.maxBlockSize, kMaxMidiBytesPerPort);
+        }
+
+        feedbackForOp_[i] = static_cast<int>(feedbackCarries_.size());
+        carryForRoute.emplace(route, feedbackForOp_[i]);
+        feedbackCarries_.push_back(std::move(carry));
     }
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
@@ -1883,6 +1975,50 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
             }
+            break;
+        }
+
+        case OpKind::FeedbackReturn: {
+            // Read before this block's send fills it, which is the whole of the
+            // one-block carry: a return has no dependencies and its send waits
+            // on the source track, so the schedule cannot put them the other
+            // way round (#2612).
+            const auto carry = feedbackForOp_[i];
+            const bool audio = op.outputs[0].kind == SignalKind::Audio;
+
+            if (audio) {
+                auto out = audioOut(id, 0, numSamples);
+                if (carry < 0)
+                    out.clear();
+                else
+                    feedbackCarries_[static_cast<std::size_t>(carry)]->read(out, numSamples);
+            } else {
+                auto& out = midiOut(id, 0);
+                out.clear();
+                if (carry >= 0)
+                    feedbackCarries_[static_cast<std::size_t>(carry)]->read(out);
+
+                jassert(out.data.size() <= kMaxMidiBytesPerPort);
+            }
+            break;
+        }
+
+        case OpKind::FeedbackSend: {
+            const auto carry = feedbackForOp_[i];
+            if (carry < 0)
+                break;
+
+            auto& storage = *feedbackCarries_[static_cast<std::size_t>(carry)];
+            if (!op.inputs[0].valid()) {
+                storage.clear();
+                break;
+            }
+
+            if (op.key.index == 1)
+                storage.write(midiIn(op.inputs[0]));
+            else
+                storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
+                              numSamples);
             break;
         }
 

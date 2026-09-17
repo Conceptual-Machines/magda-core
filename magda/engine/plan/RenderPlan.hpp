@@ -137,6 +137,15 @@ enum class OpKind : std::uint8_t {
     // things that consume a signal and things that produce one.
     InsertSend,    ///< audio or MIDI leaving the machine; consumes, produces nothing
     InsertReturn,  ///< what comes back, and where the round trip's latency is declared
+
+    // A routing loop's one-block carry, in the same two halves. An internal
+    // input route that closes a cycle cannot be an ordering edge, and every
+    // plan input references an earlier op, so the edge is cut and rejoined
+    // through storage: the return hands on what the send wrote last block
+    // (#2612). Which of the two a track gets is decided by topology alone, so
+    // the monitor switch never moves it.
+    FeedbackSend,    ///< the source's signal into the carry; consumes, produces nothing
+    FeedbackReturn,  ///< last block's carry, read a block before the send fills it
 };
 
 /**
@@ -179,6 +188,17 @@ enum class OpRole : std::uint8_t {
     HardwareOutput,       ///< the master's hardware output
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
+
+    // Both halves of a demoted input route, keyed to the track that reads it.
+    // OpKey::index is the signal: 0 audio, 1 MIDI. A track has one input route
+    // of each kind, so that is also what keeps the two pairs apart.
+    FeedbackSend,    ///< the source's signal into the track's carry
+    FeedbackReturn,  ///< the carry, as the track's input mix reads it
+
+    /// Where the monitor switch lands on a route from another track, the way
+    /// LiveInputGate carries it for a hardware input (#2612). Keyed the same
+    /// way: index 0 audio, 1 MIDI.
+    InputRouteGate,
 
     // Latency compensation. A delay sits on one edge, so its identity is the
     // op it feeds plus the input slot it fills: the role says which op that is,

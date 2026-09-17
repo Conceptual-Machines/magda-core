@@ -45,6 +45,10 @@ int arityOf(OpKind kind) {
             return 2;  // what leaves the machine: audio, MIDI
         case OpKind::InsertReturn:
             return 0;  // what comes back is a source, like a live input
+        case OpKind::FeedbackSend:
+            return 1;  // the one signal the carry holds
+        case OpKind::FeedbackReturn:
+            return 0;  // last block's carry, which nothing in this block produced
     }
     return -1;
 }
@@ -93,6 +97,10 @@ const char* toString(OpKind kind) {
             return "InsertSend";
         case OpKind::InsertReturn:
             return "InsertReturn";
+        case OpKind::FeedbackSend:
+            return "FeedbackSend";
+        case OpKind::FeedbackReturn:
+            return "FeedbackReturn";
     }
     return "?";
 }
@@ -161,6 +169,12 @@ const char* toString(OpRole role) {
             return "insertSend";
         case OpRole::InsertReturn:
             return "insertReturn";
+        case OpRole::FeedbackSend:
+            return "feedbackSend";
+        case OpRole::FeedbackReturn:
+            return "feedbackReturn";
+        case OpRole::InputRouteGate:
+            return "inputRouteGate";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
         case OpRole::MixInputDelay:
@@ -384,8 +398,10 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         // An insert's send is a sink for the same reason the hardware output is:
         // what it writes leaves the machine, so nothing downstream reads it and
         // an op with no outputs is exactly what it is.
+        // A feedback send is a sink on the same terms: what it writes is read a
+        // block later, so nothing downstream of it reads it in this one.
         const bool sink = op.kind == OpKind::Output || op.kind == OpKind::ModSource ||
-                          op.kind == OpKind::InsertSend;
+                          op.kind == OpKind::InsertSend || op.kind == OpKind::FeedbackSend;
         if (op.outputs.empty() != sink)
             problems.push_back(label + (op.outputs.empty() ? "no output port"
                                                            : "is a sink and must have no ports"));
@@ -418,7 +434,10 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             }
             // A delay carries whatever reaches it, so its own output port is
             // what its input has to agree with.
+            // A feedback send carries one signal and its key says which, the
+            // same number the return's own port declares.
             const bool midiSlot = op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
+                                  (op.kind == OpKind::FeedbackSend && op.key.index == 1) ||
                                   ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
                                     op.kind == OpKind::ModSource) &&
                                    slot == 1);

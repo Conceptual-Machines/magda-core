@@ -65,6 +65,41 @@ class AudioDelayLine {
 };
 
 /**
+ * @brief One block of storage between the two halves of a cut routing loop.
+ *
+ * The return reads before the send writes, because a return has no
+ * dependencies and its send waits on the source track, so what comes out is
+ * always the block before (#2612). Audio or MIDI, never both: a track's audio
+ * and MIDI input routes are separate carries.
+ */
+class FeedbackCarry {
+  public:
+    void prepare(int numChannels, int maxBlockSize, int midiCapacityBytes);
+
+    /// What the send left last block, into @p block. Short blocks read what
+    /// they are given and leave the rest of the carry alone.
+    void read(juce::dsp::AudioBlock<float> block, int numSamples) const;
+    void write(juce::dsp::AudioBlock<const float> block, int numSamples);
+
+    void read(juce::MidiBuffer& out) const {
+        out = midi_;
+    }
+    void write(const juce::MidiBuffer& in) {
+        midi_ = in;
+    }
+
+    void clear();
+
+    bool hasConfiguration(int numChannels, int maxBlockSize) const {
+        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize;
+    }
+
+  private:
+    juce::AudioBuffer<float> audio_;
+    juce::MidiBuffer midi_;
+};
+
+/**
  * @brief The same delay for one MIDI port.
  *
  * Events move by sample position, and ones falling past the end of a block
@@ -446,6 +481,12 @@ class PlanExecutor {
         return carriedCrossfades_;
     }
 
+    /// Routing loops whose carry this executor took over from the one it
+    /// replaced, rather than restarting them from silence.
+    int carriedFeedbackCarries() const {
+        return carriedFeedbackCarries_;
+    }
+
     /// Modifiers this executor took over mid-cycle from the one it replaced
     /// -- an LFO that didn't restart because a device was inserted
     /// elsewhere in the project (#2119).
@@ -572,6 +613,7 @@ class PlanExecutor {
     const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
     const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
+    const std::shared_ptr<FeedbackCarry>& feedbackCarryFor(OpId op) const;
 
     const RenderPlan* plan_ = nullptr;
 
@@ -634,6 +676,14 @@ class PlanExecutor {
     std::vector<int> crossfadeForOp_;
     std::vector<std::shared_ptr<CrossfadeRamp>> crossfades_;
     int carriedCrossfades_ = 0;
+
+    /// Per op: the carry a FeedbackSend fills or a FeedbackReturn reads, or
+    /// -1. Both halves of one cut route index the same carry. Shared with the
+    /// executor taking over for the reason the delay lines are: a loop that
+    /// survives a recompile should not restart from silence.
+    std::vector<int> feedbackForOp_;
+    std::vector<std::shared_ptr<FeedbackCarry>> feedbackCarries_;
+    int carriedFeedbackCarries_ = 0;
 
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.
