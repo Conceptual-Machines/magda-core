@@ -144,7 +144,8 @@ class ClipManager {
      */
     ClipId createRecordedMidiClip(
         TrackId trackId, RecordedMidiClipData recording,
-        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps);
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        ClipView view = ClipView::Arrangement, int sceneIndex = -1);
 
     /**
      * @brief Create an empty MIDI clip from seconds.

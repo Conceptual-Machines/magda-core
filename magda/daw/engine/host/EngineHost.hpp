@@ -271,6 +271,12 @@ class EngineHost {
     /// Whether this host currently owns any live Arrangement MIDI take.
     bool isRecording() const;
 
+    void armSessionSlotRecording(TrackId trackId, int sceneIndex);
+    void beginArmedSessionSlotRecordings();
+    void beginArmedSessionSlotRecordings(double positionSeconds);
+    bool isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const;
+    bool isSessionSlotRecording(TrackId trackId, int sceneIndex) const;
+
     /** @brief Arrangement MIDI passes as the record taps last published them. */
     const std::unordered_map<TrackId, RecordingPreview>& recordingPreviews();
 

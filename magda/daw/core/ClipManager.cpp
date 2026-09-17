@@ -499,8 +499,9 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
 }
 
 ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData recording,
-                                           ClipOverlapPolicy overlapPolicy) {
-    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+                                           ClipOverlapPolicy overlapPolicy, ClipView view,
+                                           int sceneIndex) {
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
         recording.startBeat = findNonOverlappingStartBeats(
             trackId, recording.startBeat, recording.lengthBeats, ClipView::Arrangement);
     }
@@ -509,7 +510,8 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.id = nextClipId_++;
     clip.trackId = trackId;
     clip.setMidiContent();
-    clip.view = ClipView::Arrangement;
+    clip.view = view;
+    clip.sceneIndex = sceneIndex;
     clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
     clip.name = generateClipName(ClipType::MIDI);
     if (Config::getInstance().getClipColourMode() == 0) {
@@ -525,11 +527,15 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     clip.midiCCData = std::move(recording.active.cc);
     clip.midiPitchBendData = std::move(recording.active.pitchBend);
     clip.midi() = std::move(recording.takeModel);
+    if (view == ClipView::Session) {
+        clip.loopEnabled = true;
+        clip.loopLengthBeats = clip.placement.lengthBeats;
+    }
 
     const auto clipId = clip.id;
     clips_[clipId] = std::move(clip);
     addToSessionSlotIndex(clips_[clipId]);
-    if (overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clipId);
     notifyClipsChanged();
     return clipId;

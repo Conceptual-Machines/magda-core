@@ -1,6 +1,7 @@
 #include <juce_core/juce_core.h>
 
 #include <memory>
+#include <unordered_map>
 
 #include "JuceTestStateGuard.hpp"
 #include "clip/ClipVoicePool.hpp"
@@ -79,11 +80,19 @@ class TestLaunchHost final : public host::LaunchHost {
         return playing;
     }
 
+    std::optional<engine::SlotKey> launchRecordTarget(magda::TrackId trackId) const override {
+        const auto found = recordTargets.find(trackId);
+        return found == recordTargets.end()
+                   ? std::nullopt
+                   : std::optional<engine::SlotKey>{{trackId, found->second}};
+    }
+
     void startLaunchTransport() override {
         playing = true;
     }
 
     bool playing = false;
+    std::unordered_map<magda::TrackId, int> recordTargets;
 
   private:
     engine::EngineSession& session_;
@@ -144,8 +153,13 @@ struct Rig {
         const auto published = session.publish(
             plan, context, engine::collectRuntimeStateIds(tracks, *master), std::move(values));
 
+        auto lanes = host::clipLanesFor(tracks);
+        for (auto& lane : lanes)
+            if (const auto recording = launchHost.recordTargets.find(lane.trackId);
+                recording != launchHost.recordTargets.end())
+                lane.recordSlots.push_back(recording->second);
         session.publishClips(std::make_shared<const engine::ClipSnapshot>(
-            engine::compileClipSnapshot(host::clipLanesFor(tracks), host::clipSources(), tempo)));
+            engine::compileClipSnapshot(lanes, host::clipSources(), tempo)));
 
         return published.published;
     }
@@ -264,9 +278,57 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testFollowActionAdoptsNextSlot(); });
         magda::test::runWithCleanJuceState([this] { testExtendedCycleBeforeLaunch(); });
         magda::test::runWithCleanJuceState([this] { testExtendedCycleWhilePlaying(); });
+        magda::test::runWithCleanJuceState([this] { testRecordTargetHandsOverAtClipBoundary(); });
+        magda::test::runWithCleanJuceState([this] { testEmptySceneStopsARecordTarget(); });
     }
 
   private:
+    void testRecordTargetHandsOverAtClipBoundary() {
+        beginTest("Launching a clip ends its track's recording on the same quantized boundary");
+        Rig rig(1);
+        const auto trackId = rig.trackIds[0];
+        const auto destination = rig.slotClip(trackId, 1, magda::LaunchQuantize::OneBar);
+        rig.launchHost.recordTargets[trackId] = 0;
+        expect(rig.publish());
+        rig.roll();
+        {
+            engine::LaunchRequestQueue::Gesture gesture(rig.session.launchRequests());
+            gesture.play({trackId, 0});
+        }
+        rig.render(rig.blocksFor(0.5));
+        expect(rig.reading(trackId, 0).playing);
+
+        rig.launcher.launch(destination);
+        rig.render(1);
+        expect(rig.reading(trackId, 0).playing, "Capture continues until the launch boundary");
+        expect(rig.launcher.playState(destination) == magda::SessionClipPlayState::Queued);
+
+        rig.render(rig.blocksFor(4.0));
+        expect(!rig.reading(trackId, 0).playing, "The empty recording slot gives way");
+        expect(rig.launcher.playState(destination) == magda::SessionClipPlayState::Playing);
+    }
+
+    void testEmptySceneStopsARecordTarget() {
+        beginTest("An empty scene stops a recording target that has no active clip ID");
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        rig.launchHost.recordTargets[trackId] = 0;
+        expect(rig.publish());
+        rig.roll();
+        {
+            engine::LaunchRequestQueue::Gesture gesture(rig.session.launchRequests());
+            gesture.play({trackId, 0});
+        }
+        rig.render(1);
+        expect(rig.reading(trackId, 0).playing);
+
+        rig.launcher.launchScene(rig.trackIds, 1);
+        rig.render(1);
+        expect(!rig.reading(trackId, 0).playing);
+        expect(!rig.reading(trackId, 0).holdsSection,
+               "An empty scene returns the track to Arrangement");
+    }
+
     void testUnquantizedLaunchSounds() {
         beginTest("A launch with nothing to wait for starts on the next block");
 

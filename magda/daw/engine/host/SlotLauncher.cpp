@@ -122,6 +122,8 @@ void SlotLauncher::launch(ClipId clipId) {
 
         // On the same beat as the launch below, so the track hands over on one
         // sample rather than sounding two slots across the gap.
+        if (const auto recording = host_.launchRecordTarget(clip->trackId))
+            gesture.stop(*recording, due);
         handOver(*this, gesture, clip->trackId, keyOf(*clip), due);
 
         gesture.play(keyOf(*clip), due);
@@ -225,6 +227,11 @@ void SlotLauncher::launchScene(const std::vector<TrackId>& trackIds, int sceneIn
 
         const auto leader = keyOf(*launching.front());
 
+        for (const auto trackId : trackIds)
+            if (const auto recording = host_.launchRecordTarget(trackId);
+                recording && recording->sceneIndex != sceneIndex)
+                gesture.stop(*recording, due);
+
         for (const auto* clip : launching) {
             gesture.setLooping(keyOf(*clip),
                                clip->sessionCycleBeats(host_.launchTempo().bpmAt(0.0)));
@@ -268,7 +275,18 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     auto& tracks = TrackManager::getInstance();
 
     auto* track = tracks.getTrack(trackId);
-    if (track == nullptr || track->activeSessionClipId == INVALID_CLIP_ID)
+    if (track == nullptr)
+        return;
+
+    if (const auto recording = host_.launchRecordTarget(trackId)) {
+        auto* session = host_.launchSession();
+        if (session != nullptr) {
+            engine::LaunchRequestQueue::Gesture gesture(session->launchRequests());
+            gesture.backToArrangement(*recording);
+        }
+    }
+
+    if (track->activeSessionClipId == INVALID_CLIP_ID)
         return;
 
     const auto clipId = track->activeSessionClipId;
@@ -685,8 +703,10 @@ bool SlotLauncher::anythingActive() const {
         return true;
 
     const auto& tracks = TrackManager::getInstance().getTracks();
-    return std::ranges::any_of(
-        tracks, [](const auto& track) { return track.activeSessionClipId != INVALID_CLIP_ID; });
+    return std::ranges::any_of(tracks, [this](const auto& track) {
+        return track.activeSessionClipId != INVALID_CLIP_ID ||
+               host_.launchRecordTarget(track.id).has_value();
+    });
 }
 
 void SlotLauncher::syncPlaybackModes() {

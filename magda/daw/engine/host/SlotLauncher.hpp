@@ -6,6 +6,7 @@
 
 #include "../../core/ClipTypes.hpp"
 #include "../../core/TypeIds.hpp"
+#include "launch/LaunchHandle.hpp"
 
 namespace magda {
 struct ClipInfo;
@@ -54,6 +55,9 @@ class LaunchHost {
     virtual double launchBeatsPerBar() const = 0;
 
     virtual bool launchTransportPlaying() const = 0;
+
+    /// The empty slot currently capturing @p trackId, if one has launched.
+    virtual std::optional<engine::SlotKey> launchRecordTarget(TrackId trackId) const = 0;
 
     /// Start the transport, since a launch made while stopped starts one.
     virtual void startLaunchTransport() = 0;

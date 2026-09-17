@@ -6,8 +6,10 @@ capture, and as the hands-on pass #1895 budgets for the cutover.
 
 For the first native app recording slice (#2553), use the focused
 [Arrangement MIDI recording checks](../issues/native-arrangement-midi-recording.md).
-The wider checklist below also covers audio, Session capture, count-in, and
-latency work that is not yet connected to the native app.
+The next slice has separate
+[Session MIDI slot recording checks](../issues/native-session-midi-recording.md).
+The wider checklist below also covers audio, Session-to-Arrangement capture,
+count-in, and latency work that is not yet connected to the native app.
 
 This checklist covers only what needs a human and an interface. Everything
 that can be asserted offline already is, in `test_take_recorder`,
