@@ -457,11 +457,6 @@ TrackInspector::TrackInspector() {
     noSendsLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
     addAndMakeVisible(noSendsLabel_);
 
-    receivesLabel_.setText(tr("inspector.no_receives"), juce::dontSendNotification);
-    receivesLabel_.setFont(FontManager::getInstance().getUIFont(10.0f));
-    receivesLabel_.setColour(juce::Label::textColourId, DarkTheme::getSecondaryTextColour());
-    addAndMakeVisible(receivesLabel_);
-
     // Clips section
     clipsSectionLabel_.setText(tr("inspector.clips"), juce::dontSendNotification);
     clipsSectionLabel_.setFont(FontManager::getInstance().getUIFont(11.0f));
@@ -486,9 +481,9 @@ TrackInspector::TrackInspector() {
 
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
+          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
+          &latencyValue_}) {
         useLocalizedLabelPainter(*label);
     }
 
@@ -501,10 +496,9 @@ void TrackInspector::applyThemeColours() {
     const auto surface = DarkTheme::getColour(DarkTheme::SURFACE);
     const auto border = DarkTheme::getBorderColour();
 
-    for (auto* label :
-         {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_, &midiColumnLabel_,
-          &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_, &clipsSectionLabel_,
-          &automatedSectionLabel_, &latencyLabel_})
+    for (auto* label : {&trackNameLabel_, &routingSectionLabel_, &audioColumnLabel_,
+                        &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_,
+                        &clipsSectionLabel_, &automatedSectionLabel_, &latencyLabel_})
         label->setColour(juce::Label::textColourId, secondary);
 
     for (auto* label : {&automatedParamsLabel_, &clipCountLabel_, &latencyValue_})
@@ -570,9 +564,9 @@ void TrackInspector::midiDeviceListChanged() {
 TrackInspector::~TrackInspector() {
     for (auto* label :
          {&trackNameLabel_, &trackNameValue_, &routingSectionLabel_, &audioColumnLabel_,
-          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &receivesLabel_,
-          &clipsSectionLabel_, &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_,
-          &latencyLabel_, &latencyValue_}) {
+          &midiColumnLabel_, &sendReceiveSectionLabel_, &noSendsLabel_, &clipsSectionLabel_,
+          &clipCountLabel_, &automatedSectionLabel_, &automatedParamsLabel_, &latencyLabel_,
+          &latencyValue_}) {
         clearLocalizedLabelPainter(*label);
     }
     for (auto& label : sendDestLabels_)
@@ -764,18 +758,45 @@ void TrackInspector::resized() {
             noSendsLabel_.setVisible(true);
         } else {
             noSendsLabel_.setVisible(false);
-            for (size_t i = 0; i < sendDestLabels_.size(); ++i) {
+
+            // Two columns rather than one long one. A track is capped at
+            // MAX_SENDS_PER_TRACK, so this is four rows at worst and cannot
+            // grow past the panel (#2425). One column where two will not fit,
+            // because the name is the part that pays for the second.
+            constexpr int columnGap = 8;
+            constexpr int levelWidth = 44;
+            constexpr int deleteWidth = 18;
+            constexpr int leastName = 40;
+            constexpr int entryLeast = leastName + levelWidth + deleteWidth + 8;
+
+            const auto columns = bounds.getWidth() >= 2 * entryLeast + columnGap ? 2 : 1;
+            const auto entryWidth = (bounds.getWidth() - (columns - 1) * columnGap) / columns;
+
+            for (size_t i = 0; i < sendDestLabels_.size(); i += static_cast<size_t>(columns)) {
                 auto sendRow = bounds.removeFromTop(18);
-                sendDestLabels_[i]->setBounds(sendRow.removeFromLeft(60));
-                sendRow.removeFromLeft(4);
-                sendLevelLabels_[i]->setBounds(sendRow.removeFromLeft(50));
-                sendRow.removeFromLeft(4);
-                sendDeleteButtons_[i]->setBounds(sendRow.removeFromLeft(18));
+
+                for (auto column = 0; column < columns; ++column) {
+                    const auto index = i + static_cast<size_t>(column);
+                    if (index >= sendDestLabels_.size())
+                        break;
+
+                    auto entry = sendRow.removeFromLeft(entryWidth);
+                    sendRow.removeFromLeft(columnGap);
+
+                    // Right to left: the delete button and the level keep their
+                    // widths and the name takes what is left, so a long track
+                    // name elides instead of pushing the controls off the edge.
+                    sendDeleteButtons_[index]->setBounds(entry.removeFromRight(deleteWidth));
+                    entry.removeFromRight(4);
+                    sendLevelLabels_[index]->setBounds(entry.removeFromRight(levelWidth));
+                    entry.removeFromRight(4);
+                    sendDestLabels_[index]->setBounds(entry);
+                }
+
                 bounds.removeFromTop(2);
             }
         }
 
-        receivesLabel_.setBounds(bounds.removeFromTop(16));
         bounds.removeFromTop(separatorPadding);
         sectionSeparatorYs_.push_back(bounds.getY());
         bounds.removeFromTop(separatorPadding);
@@ -1412,8 +1433,8 @@ void TrackInspector::showTrackControls(bool show) {
 
     sendReceiveSectionLabel_.setVisible(p.sends);
     addSendButton_->setVisible(p.sends);
+    updateAddSendEnabled();
     noSendsLabel_.setVisible(p.sends);
-    receivesLabel_.setVisible(p.sends);
     for (auto& l : sendDestLabels_)
         l->setVisible(p.sends);
     for (auto& l : sendLevelLabels_)
@@ -1430,9 +1451,35 @@ void TrackInspector::showTrackControls(bool show) {
         automatedSectionLabel_.setVisible(false);
         automatedParamsLabel_.setVisible(false);
     }
+
+    // Every section above decides its own visibility, and resized() lays out
+    // only the sections that are visible -- so the bounds this just invalidated
+    // have to be worked out again here. Without it a section that has become
+    // visible keeps whatever bounds it last had, and the ones after it are
+    // still placed for the height it used to take: sends landed on top of the
+    // receives and clips text, and stayed there until the panel was resized by
+    // hand, which is what ran the layout again.
+    resized();
+}
+
+void TrackInspector::updateAddSendEnabled() {
+    if (addSendButton_ == nullptr)
+        return;
+
+    // TrackManager::addSend refuses past the aux limit, so a full track's
+    // button says so rather than being pressed for nothing.
+    const auto* track = selectedTrackId_ == magda::INVALID_TRACK_ID
+                            ? nullptr
+                            : magda::TrackManager::getInstance().getTrack(selectedTrackId_);
+
+    const auto full = track != nullptr && static_cast<int>(track->sends.size()) >=
+                                              magda::TrackManager::MAX_SENDS_PER_TRACK;
+    addSendButton_->setEnabled(!full);
 }
 
 void TrackInspector::rebuildSendsUI() {
+    updateAddSendEnabled();
+
     // Remove existing send UI components
     for (auto& l : sendDestLabels_) {
         clearLocalizedLabelPainter(*l);
@@ -1446,16 +1493,30 @@ void TrackInspector::rebuildSendsUI() {
     sendLevelLabels_.clear();
     sendDeleteButtons_.clear();
 
-    if (selectedTrackId_ == magda::INVALID_TRACK_ID)
+    // The rows above are gone whichever way this returns, and the sections
+    // below them move up, so the layout runs on every path rather than only
+    // the one that rebuilds something.
+    const auto relayout = [this] {
+        resized();
+        repaint();
+    };
+
+    if (selectedTrackId_ == magda::INVALID_TRACK_ID) {
+        relayout();
         return;
+    }
 
     const auto* track = magda::TrackManager::getInstance().getTrack(selectedTrackId_);
-    if (!track)
+    if (!track) {
+        relayout();
         return;
+    }
 
     // Aux tracks don't have sends
-    if (track->type == magda::TrackType::Aux)
+    if (track->type == magda::TrackType::Aux) {
+        relayout();
         return;
+    }
 
     for (const auto& send : track->sends) {
         // Destination name label
@@ -1539,8 +1600,7 @@ void TrackInspector::rebuildSendsUI() {
         sendDeleteButtons_.push_back(std::move(deleteBtn));
     }
 
-    resized();
-    repaint();
+    relayout();
 }
 
 void TrackInspector::showAddSendMenu() {

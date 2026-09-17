@@ -35,7 +35,7 @@ double timelineStartBeats(const ClipInfo& clip, double bpm) {
 }
 
 double timelineLengthBeats(const ClipInfo& clip, double bpm) {
-    return clip.getLengthInBeats(bpm);
+    return clip.getLengthInBeats();
 }
 
 double timelineEndBeats(const ClipInfo& clip, double bpm) {

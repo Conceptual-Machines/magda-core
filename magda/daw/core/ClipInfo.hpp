@@ -952,8 +952,8 @@ struct ClipInfo {
      * loopLengthInBeats() above: the callers are MIDI clips, whose loop is
      * already in clip beats and needs no source-region mapping.
      */
-    double effectiveLoopLengthBeats(double bpm) const {
-        return loopLengthBeats > 0.0 ? loopLengthBeats : getLengthInBeats(bpm);
+    double effectiveLoopLengthBeats() const {
+        return loopLengthBeats > 0.0 ? loopLengthBeats : getLengthInBeats();
     }
 
     // =========================================================================
@@ -1197,9 +1197,11 @@ struct ClipInfo {
         return placement.endBeat();
     }
 
-    /// Convert clip length to beats (using current tempo)
-    double getLengthInBeats(double bpm) const {
-        juce::ignoreUnused(bpm);
+    /// The clip's length, which is already in beats. No tempo: beats are what
+    /// this model places things in, and deriveTimesFromBeats runs the other way
+    /// (#2563). It used to take one and ignore it, which had callers computing
+    /// a tempo for nothing.
+    double getLengthInBeats() const {
         return placement.lengthBeats;
     }
 

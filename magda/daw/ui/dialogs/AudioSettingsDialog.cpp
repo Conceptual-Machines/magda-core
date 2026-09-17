@@ -69,6 +69,13 @@ juce::ComboBox* findDriverTypeComboBox(juce::Component& root,
 // CustomChannelSelector Implementation
 // ============================================================================
 
+namespace {
+
+constexpr int kToggleHeight = 24;
+constexpr int kRowSpacing = 4;
+
+}  // namespace
+
 CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceManager, bool isInput,
                                              AudioEngine* audioEngine)
     : deviceManager_(deviceManager), audioEngine_(audioEngine), isInput_(isInput) {
@@ -76,6 +83,10 @@ CustomChannelSelector::CustomChannelSelector(juce::AudioDeviceManager* deviceMan
     titleLabel_.setText(isInput ? "Audio Inputs:" : "Audio Outputs:", juce::dontSendNotification);
     titleLabel_.setFont(FontManager::getInstance().getUIFontBold(14.0f));
     addAndMakeVisible(titleLabel_);
+
+    viewport_.setViewedComponent(&list_, false);
+    viewport_.setScrollBarsShown(true, false);
+    addAndMakeVisible(viewport_);
 
     updateFromDevice();
 }
@@ -137,7 +148,7 @@ void CustomChannelSelector::updateFromDevice() {
             toggle.button->setToggleState(pairActive, juce::dontSendNotification);
 
             toggle.button->onClick = [this, i]() { onChannelToggled(i, true); };
-            addAndMakeVisible(*toggle.button);
+            list_.addAndMakeVisible(*toggle.button);
 
             // For output channels, add a "Preview" toggle next to each stereo pair
             if (!isInput_) {
@@ -145,7 +156,7 @@ void CustomChannelSelector::updateFromDevice() {
                 toggle.previewButton->setToggleState(i == previewOffset,
                                                      juce::dontSendNotification);
                 toggle.previewButton->setRadioGroupId(9999);  // Mutual exclusion
-                toggle.previewButton->onClick = [this, button = toggle.previewButton.get(), i]() {
+                toggle.previewButton->onClick = [button = toggle.previewButton.get(), i]() {
                     // Prevent unchecking — always keep one preview destination selected
                     if (!button->getToggleState()) {
                         button->setToggleState(true, juce::dontSendNotification);
@@ -153,7 +164,7 @@ void CustomChannelSelector::updateFromDevice() {
                     }
                     onPreviewToggled(i);
                 };
-                addAndMakeVisible(*toggle.previewButton);
+                list_.addAndMakeVisible(*toggle.previewButton);
             }
 
             channelToggles_.push_back(std::move(toggle));
@@ -179,7 +190,7 @@ void CustomChannelSelector::updateFromDevice() {
 
         toggle.button->setToggleState(monoActive, juce::dontSendNotification);
         toggle.button->onClick = [this, i]() { onChannelToggled(i, false); };
-        addAndMakeVisible(*toggle.button);
+        list_.addAndMakeVisible(*toggle.button);
         channelToggles_.push_back(std::move(toggle));
     }
 
@@ -324,24 +335,53 @@ void CustomChannelSelector::paint(juce::Graphics& g) {
     g.fillAll(DarkTheme::getColour(DarkTheme::SURFACE));
 }
 
+int CustomChannelSelector::rowsHeight() const {
+    return static_cast<int>(channelToggles_.size()) * (kToggleHeight + kRowSpacing);
+}
+
+void CustomChannelSelector::layOutRows(int width) {
+    constexpr auto toggleHeight = kToggleHeight;
+
+    auto top = 0;
+    for (auto& toggle : channelToggles_) {
+        auto row = juce::Rectangle<int>(0, top, std::max(0, width), toggleHeight);
+        if (toggle.previewButton != nullptr) {
+            // Measured rather than left at a round number, which is what cut the
+            // label off: the tick is drawn at the row's height and the text
+            // follows it, so both have to be paid for.
+            const auto text = juce::GlyphArrangement::getStringWidthInt(
+                FontManager::getInstance().getUIFont(static_cast<float>(toggleHeight) * 0.6f),
+                "Preview");
+            toggle.previewButton->setBounds(row.removeFromRight(text + toggleHeight + 8));
+            row.removeFromRight(4);
+        }
+        toggle.button->setBounds(row);
+        top += toggleHeight + kRowSpacing;
+    }
+}
+
 void CustomChannelSelector::resized() {
     auto bounds = getLocalBounds().reduced(10);
 
     titleLabel_.setBounds(bounds.removeFromTop(20));
     bounds.removeFromTop(5);
+    viewport_.setBounds(bounds);
 
-    const int toggleHeight = 24;
-    const int spacing = 4;
+    // Height first, then width, and in that order for a reason: sizing the list
+    // is what brings the scrollbar in, and the scrollbar takes width away from
+    // the rows. Measuring first lays them out for a column that is about to get
+    // narrower, which puts the Preview control underneath it on any device with
+    // more channels than the column can show.
+    //
+    // Two sizes rather than a loop because the height does not depend on the
+    // width: the first settles whether there is a scrollbar at all, so the
+    // width read after it is final.
+    const auto height = rowsHeight();
+    list_.setSize(bounds.getWidth(), height);
 
-    for (auto& toggle : channelToggles_) {
-        auto row = bounds.removeFromTop(toggleHeight);
-        if (toggle.previewButton != nullptr) {
-            toggle.previewButton->setBounds(row.removeFromRight(70));
-            row.removeFromRight(4);  // spacing
-        }
-        toggle.button->setBounds(row);
-        bounds.removeFromTop(spacing);
-    }
+    const auto width = std::max(0, viewport_.getMaximumVisibleWidth());
+    list_.setSize(width, height);
+    layOutRows(width);
 }
 
 // ============================================================================

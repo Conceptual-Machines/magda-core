@@ -576,6 +576,8 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         return found == map.end() ? nullptr : found->second;
     };
 
+    liveSession_ = bindings.liveSession;
+
     for (std::size_t i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[i];
         const auto trackId = op.key.trackId;
@@ -623,9 +625,12 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
                                        std::to_string(trackId) + ", it renders nothing");
                 break;
 
+            // Only where a live input was ever going to arrive. An offline
+            // render binds no hardware by definition, so an unbound input op is
+            // its correct answer rather than a defect to report (#2628).
             case OpKind::MidiInput:
                 midiSourceForOp_[i] = findMidiSource(bindings.midiInputs, trackId);
-                if (midiSourceForOp_[i] == nullptr)
+                if (midiSourceForOp_[i] == nullptr && bindings.liveSession)
                     messages.push_back(describe(i) + "no live MIDI input bound for track " +
                                        std::to_string(trackId) + ", it renders nothing");
                 break;
@@ -1021,7 +1026,7 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
 std::vector<std::string> PlanExecutor::reportUnboundInputs(const PlanValues* values) {
     std::vector<std::string> messages;
-    if (plan_ == nullptr)
+    if (plan_ == nullptr || !liveSession_)
         return messages;
 
     for (std::size_t i = 0; i < plan_->ops.size(); ++i) {

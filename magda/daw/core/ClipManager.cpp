@@ -1482,7 +1482,7 @@ void ClipManager::setClipLoopEnabled(ClipId clipId, bool enabled, double project
         if (enabled && clip->isMidi()) {
             double bpm = isValidBpm(projectBPM) ? projectBPM : currentProjectTempoOrDefault();
             if (clip->loopLengthBeats <= 0.0)
-                clip->loopLengthBeats = clip->getLengthInBeats(bpm);
+                clip->loopLengthBeats = clip->getLengthInBeats();
         }
 
         // When enabling loop on audio, the current read position becomes the

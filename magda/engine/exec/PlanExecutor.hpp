@@ -578,6 +578,11 @@ class PlanExecutor {
     /// The unbound inputs reportUnboundInputs has already answered for, so a
     /// fader move does not say it again. Publishing thread only.
     std::set<OpId> reportedUnboundInputs_;
+
+    /// PlanBindings::liveSession, kept from the prepare that read it: the
+    /// values arrive again without one, and an offline render has nothing to
+    /// say about a hardware input at any of them (#2628).
+    bool liveSession_ = true;
     RenderContext context_;
 
     /// The arena. Ports share these where no schedule can want both at

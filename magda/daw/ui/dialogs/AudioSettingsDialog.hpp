@@ -39,8 +39,22 @@ class CustomChannelSelector : public juce::Component {
         bool isStereo;  // true = pair (e.g., 0-1), false = mono (e.g., 0)
     };
 
+    /// Positions the rows inside @ref list_ across @p width.
+    void layOutRows(int width);
+
+    /// How tall the rows are. Independent of how wide they are, which is what
+    /// lets the scrollbar be settled before the width is measured.
+    int rowsHeight() const;
+
     std::vector<ChannelToggle> channelToggles_;
     juce::Label titleLabel_;
+
+    /// A device has more rows than the dialog has room for: eight channels is
+    /// four pairs plus eight monos against space for about seven. The rows are
+    /// children of a component the viewport scrolls, rather than of this one,
+    /// because a viewport moves a single component and not a set of siblings.
+    juce::Viewport viewport_;
+    juce::Component list_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CustomChannelSelector)
 };

@@ -116,6 +116,10 @@ constexpr int TH_MONITOR_W = 26;  // monitor button width, matching M/S/R
 // (no longer tied to the 0dB meter fraction, which the old colour bar used) so
 // the controls below get the rest of the track height at every size.
 constexpr int TH_NAME_STRIP_H = 24;
+// Sends per row once there are more than a row's worth. Four rather than the
+// five a narrow header fits, so the two rows are even and a track at the
+// maximum of eight reads as four and four (#2425).
+constexpr int kSendsPerRow = 4;
 
 float gainToDb(float gain) {
     return level_meter_scale::gainToDb(gain);
@@ -2355,6 +2359,13 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
     const bool showIn = reserveRow(wantIn);
     const bool showSends = reserveRow(wantSends);
 
+    // Sends past the fourth go on a second row. A single row fits five at the
+    // narrowest header and silently dropped the rest, which is what made a
+    // track with eight sends show five (#2425). The second row is reserved
+    // like any other: it shows iff it fits.
+    const auto sendCount = static_cast<int>(header.sendLabels.size());
+    const bool showSecondSendRow = showSends && sendCount > kSendsPerRow && reserveRow(true);
+
     if (showButtons) {
         tcpArea.removeFromTop(m.rowGap);
         track_controls::layoutButtonRow(paddedRow(tcpArea.removeFromTop(m.rowH)), mix, m);
@@ -2362,15 +2373,25 @@ void TrackHeadersPanel::layoutControlArea(TrackHeader& header, juce::Rectangle<i
 
     if (showSends) {
         constexpr int sendLabelWidth = 28;
-        tcpArea.removeFromTop(m.rowGap);
-        auto sendRow = paddedRow(tcpArea.removeFromTop(m.rowH));
-        for (auto& sendLabel : header.sendLabels) {
-            if (sendRow.getWidth() >= sendLabelWidth) {
-                sendLabel->setBounds(sendRow.removeFromLeft(sendLabelWidth));
-                sendLabel->setVisible(true);
+        const auto perRow = showSecondSendRow ? kSendsPerRow : sendCount;
+
+        auto placeRow = [&](int from, int to) {
+            tcpArea.removeFromTop(m.rowGap);
+            auto sendRow = paddedRow(tcpArea.removeFromTop(m.rowH));
+            for (auto index = from; index < to; ++index) {
+                if (sendRow.getWidth() < sendLabelWidth)
+                    return;
+
+                header.sendLabels[static_cast<std::size_t>(index)]->setBounds(
+                    sendRow.removeFromLeft(sendLabelWidth));
+                header.sendLabels[static_cast<std::size_t>(index)]->setVisible(true);
                 sendRow.removeFromLeft(2);
             }
-        }
+        };
+
+        placeRow(0, std::min(perRow, sendCount));
+        if (showSecondSendRow)
+            placeRow(perRow, std::min(2 * perRow, sendCount));
     }
 
     // I/O routing rows — pinned to the bottom (output lowest, input above it).

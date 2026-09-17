@@ -60,6 +60,20 @@ struct PlanBindings {
     std::unordered_map<TrackId, EngineAudioSource*> audioInputs;
     std::unordered_map<TrackId, EngineMidiSource*> midiInputs;
 
+    /**
+     * @brief Whether anything was ever going to be listening to a microphone.
+     *
+     * An input op with nothing bound is a defect in a live session and the
+     * correct answer in an offline render, which binds no hardware by
+     * definition: a bounce, an export, the null-difference corpus. Said here
+     * rather than inferred from an empty map, because an empty map is a guess
+     * at what the host meant and this is the host saying it (#2628).
+     *
+     * Live by default, so a host that has not thought about it is the one that
+     * gets told.
+     */
+    bool liveSession = true;
+
     /// The outside world behind each hardware insert (InsertSend / InsertReturn
     /// ops, #2245). Keyed by DeviceKey like the devices are, and for the same
     /// reason: an insert is a thing in the project at a place in a chain, and

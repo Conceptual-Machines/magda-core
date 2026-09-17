@@ -523,7 +523,10 @@ NativeRender renderNative(const Case& value, const InstalledPlugins& installed) 
 
     std::map<TrackId, std::unique_ptr<ChainMidiTap>> taps;
 
+    // The corpus renders offline and binds no hardware, so a track naming a
+    // live input is not a fixture defect (#2628).
     PlanBindings bindings;
+    bindings.liveSession = false;
 
     for (const auto& op : plan.ops) {
         switch (op.kind) {

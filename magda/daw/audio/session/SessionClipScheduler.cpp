@@ -449,7 +449,7 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
 
     const auto* event = clip->primaryEvent();
     if (event != nullptr && event->autoTempo) {
-        data.clipLengthBeats = clip->getLengthInBeats(bpm);
+        data.clipLengthBeats = clip->getLengthInBeats();
         const double loopBeats = event->loopLengthBeats();
         data.loopLengthBeats = loopBeats > 0.0 ? loopBeats : data.clipLengthBeats;
     } else if (event != nullptr) {
@@ -459,7 +459,7 @@ void SessionClipScheduler::updateLaunchTimings(ClipId clipId, const ClipInfo* cl
         data.loopLengthBeats = data.clipLengthBeats;
     } else {
         // MIDI: the launch cycle is the clip length.
-        data.clipLengthBeats = clip->getLengthInBeats(bpm);
+        data.clipLengthBeats = clip->getLengthInBeats();
         data.loopLengthBeats = data.clipLengthBeats;
     }
 }

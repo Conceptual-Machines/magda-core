@@ -1622,6 +1622,35 @@ TEST_CASE("MIDI is aligned against the audio it travels with", "[engine][exec][p
     CHECK(probe.positionsOf(40) == std::vector<int>{80, 144, 208});
 }
 
+TEST_CASE("An unbound live input is a defect in a session and an answer in a render",
+          "[engine][exec][2628]") {
+    // The same plan and the same empty bindings both times. What changes is
+    // whether anything was ever going to arrive: a host that meant to bind an
+    // input and did not still hears about it, and a bounce does not.
+    RenderPlan plan;
+    magda::engine::PlanOp op;
+    op.kind = magda::engine::OpKind::MidiInput;
+    op.key.trackId = 2;
+    op.outputs = {magda::engine::SignalKind::Midi};
+    plan.ops.push_back(op);
+
+    const auto reportFor = [&plan](bool liveSession) {
+        PlanBindings bindings;
+        bindings.liveSession = liveSession;
+
+        PlanExecutor executor;
+        const auto messages = executor.prepare(plan, bindings, RenderContext{44100.0, 64, 2});
+        REQUIRE(executor.isPrepared());
+
+        return std::ranges::any_of(messages, [](const std::string& message) {
+            return message.find("no live MIDI input bound for track 2") != std::string::npos;
+        });
+    };
+
+    CHECK(reportFor(true));
+    CHECK_FALSE(reportFor(false));
+}
+
 TEST_CASE("A malformed plan is refused, and the executor renders silence", "[engine][exec]") {
     RenderPlan plan;
     magda::engine::PlanOp op;

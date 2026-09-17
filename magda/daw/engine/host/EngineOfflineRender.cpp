@@ -391,8 +391,12 @@ struct OfflineRuntime {
                                                    model.automation,
                                                    AutomationManager::getInstance().getClips()));
 
-        const auto messages =
-            executor.prepare(*plan, store.realise(*plan, context), context, nullptr, &values);
+        // Nothing here binds hardware, so an input op with no source is this
+        // render's correct answer rather than something to report (#2628).
+        auto bindings = store.realise(*plan, context);
+        bindings.liveSession = false;
+
+        const auto messages = executor.prepare(*plan, bindings, context, nullptr, &values);
         report("prepare", messages);
 
         if (executor.isPrepared())

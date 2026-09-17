@@ -130,7 +130,6 @@ class TrackInspector : public BaseInspector,
     std::vector<std::unique_ptr<magda::DraggableValueLabel>> sendLevelLabels_;
     std::vector<std::unique_ptr<juce::TextButton>> sendDeleteButtons_;
     juce::Label noSendsLabel_;
-    juce::Label receivesLabel_;
 
     // Clips section
     juce::Label clipsSectionLabel_;
@@ -151,6 +150,10 @@ class TrackInspector : public BaseInspector,
     void updateAutomatedParametersSummary();
     void showTrackControls(bool show);
     void rebuildSendsUI();
+
+    /// Greys the add-send button on a track that is already at the aux limit.
+    void updateAddSendEnabled();
+
     void showAddSendMenu();
     void populateRoutingSelectors();
     void populateAudioInputOptions();

@@ -357,9 +357,11 @@ std::vector<MgdFixture> build() {
             "the break is warped, which forces a stretcher on, and the two stretchers prime "
             "from different material";
 
+        // The monitored synth track names a MIDI input the corpus never binds,
+        // and an offline render no longer reports one: it binds no hardware by
+        // definition, so nothing was late (#2628).
         fixture.declaration.expectedDiagnostics = {
             "warp marker(s) that do not run forwards",
-            "no live MIDI input bound for track 2",
         };
 
         fixture.sources = {
