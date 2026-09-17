@@ -107,25 +107,10 @@ float gainFromNormalized(float normalized, const ParameterInfo& info);
 float normalizedFromGain(float gain, const ParameterInfo& info);
 
 /**
- * @brief True when ParameterInfo real/display range matches the value range
- *        stored by the owning Tracktion AutomatableParameter.
- */
-bool infoMatchesTeRange(const ParameterInfo& info);
-
-/**
- * @brief True for MAGDA internal parameters that expose a normalized TE param
- *        but store/display a scaled real value in DeviceInfo.currentValue.
- */
-bool isDisplayMappedInternalValue(const ParameterInfo& info);
-
-/**
  * @brief Convert a MAGDA-normalized lane/controller value to the model value
  *        stored in DeviceInfo.currentValue and passed through TrackManager.
  *
- * For normal internal params and compiled/interpreted Faust params this returns
- * the scaled real/display value. For external plugin params with an AI-detect
- * display range override it returns the TE-native value, so UI preview and
- * automation echo do not fight ExternalPluginProcessor's native listener.
+ * The result follows ParameterInfo::valueConvention.
  */
 ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
                                            const ParameterInfo& info);
@@ -156,33 +141,17 @@ ParameterModelValue realToModelValue(float real, const ParameterInfo& info);
  * @brief Convert a DeviceInfo/model value to the raw value stored by the
  *        owning Tracktion AutomatableParameter.
  *
- * Display-mapped internal parameters (for example a compiled snare decay in
- * milliseconds backed by a 0..1 host parameter) are projected into the TE
- * range. Parameters whose model and TE ranges already match pass through.
+ * The model convention and TE storage range are independent. A real model
+ * value passes through when TE uses that same real range; otherwise its
+ * normalized position is projected into the TE range.
  */
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info);
 
 /**
- * @brief True when DeviceInfo::currentValue for @p info is the TE-native value
- *        rather than a scaled real one.
- *
- * This is the external-plugin case: a saved parameter config or AI-Detect gave
- * the parameter a display range (or a choice list) while TE keeps storing it
- * normalized, and normalizedToModelValue() deliberately leaves the model in
- * TE's domain so it cannot fight the plugin's own listener. Everything else
- * (internal devices, external params without an override) carries the scaled
- * value the display range describes.
- */
-bool modelHoldsTeNativeValue(const ParameterInfo& info);
-
-/**
  * @brief The choice a Discrete parameter's model value selects.
  *
- * Internal devices store the choice index itself, so this is a rounding. An
- * external parameter whose saved config marks it discrete stores TE's
- * normalized value (see modelHoldsTeNativeValue), which has to be spread over
- * the choice list: Serum's Bend Up at 0.54167 with 49 choices is "+2", not
- * choice 1. Returns -1 when there are no choices.
+ * Real values store the choice index itself. Normalized values are spread over
+ * the choice list. Returns -1 when there are no choices.
  */
 int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info);
 

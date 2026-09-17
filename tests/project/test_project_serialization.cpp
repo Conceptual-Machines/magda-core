@@ -2949,8 +2949,9 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     param.unit = "dB";
     param.minValue = -48.0f;
     param.maxValue = 12.0f;
-    param.defaultValue = -6.0f;
-    param.currentValue = -12.0f;
+    param.valueConvention = ParameterValueConvention::Normalized;
+    param.defaultValue = 0.5f;
+    param.currentValue = 0.25f;
     param.teMinValue = 0.0f;
     param.teMaxValue = 1.0f;
     param.scale = ParameterScale::Logarithmic;
@@ -3000,6 +3001,7 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(paramObj != nullptr);
     REQUIRE(paramObj->hasProperty("teMinValue"));
     REQUIRE(paramObj->hasProperty("teMaxValue"));
+    REQUIRE(paramObj->hasProperty("valueConvention"));
     REQUIRE(paramObj->hasProperty("scaleAnchor"));
     REQUIRE(paramObj->hasProperty("displayFormat"));
     REQUIRE(paramObj->hasProperty("labelTicks"));
@@ -3023,8 +3025,9 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(loaded.unit == "dB");
     REQUIRE(loaded.minValue == Approx(-48.0f));
     REQUIRE(loaded.maxValue == Approx(12.0f));
-    REQUIRE(loaded.defaultValue == Approx(-6.0f));
-    REQUIRE(loaded.currentValue == Approx(-12.0f));
+    REQUIRE(loaded.valueConvention == ParameterValueConvention::Normalized);
+    REQUIRE(loaded.defaultValue == Approx(0.5f));
+    REQUIRE(loaded.currentValue == Approx(0.25f));
     REQUIRE(loaded.teMinValue == Approx(0.0f));
     REQUIRE(loaded.teMaxValue == Approx(1.0f));
     REQUIRE(loaded.scale == ParameterScale::Logarithmic);
@@ -3045,6 +3048,59 @@ TEST_CASE("ParameterInfo display metadata roundtrip", "[project][serialization][
     REQUIRE(loaded.hidden);
     REQUIRE(loaded.momentary);
     REQUIRE_FALSE(static_cast<bool>(loaded.displayText));
+}
+
+TEST_CASE("Parameter value conventions migrate at their owning device boundary",
+          "[project][serialization][parameter][2623]") {
+    DeviceInfo device;
+    device.format = PluginFormat::VST3;
+    device.parameters.emplace_back(2, "Cutoff", "Hz", 20.0f, 20000.0f, 0.5f);
+    device.parameters.back().valueConvention = ParameterValueConvention::Normalized;
+
+    auto json = ProjectSerializer::serializeDeviceInfo(device);
+    auto* obj = json.getDynamicObject();
+    REQUIRE(obj != nullptr);
+    auto* params = obj->getProperty("parameters").getArray();
+    REQUIRE(params != nullptr);
+    REQUIRE(params->size() == 1);
+    auto* parameter = params->getReference(0).getDynamicObject();
+    REQUIRE(parameter != nullptr);
+
+    SECTION("an explicit convention roundtrips") {
+        DeviceInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+        REQUIRE(loaded.parameters.size() == 1);
+        CHECK(loaded.parameters[0].valueConvention == ParameterValueConvention::Normalized);
+    }
+
+    SECTION("legacy hosted values are inferred as normalized") {
+        parameter->removeProperty("valueConvention");
+        DeviceInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+        REQUIRE(loaded.parameters.size() == 1);
+        CHECK(loaded.parameters[0].valueConvention == ParameterValueConvention::Normalized);
+    }
+
+    SECTION("legacy internal values are inferred as real") {
+        obj->setProperty("format", static_cast<int>(PluginFormat::Internal));
+        parameter->removeProperty("valueConvention");
+        DeviceInfo loaded;
+        REQUIRE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+        REQUIRE(loaded.parameters.size() == 1);
+        CHECK(loaded.parameters[0].valueConvention == ParameterValueConvention::Real);
+    }
+
+    SECTION("an unknown explicit convention is rejected") {
+        parameter->setProperty("valueConvention", 99);
+        DeviceInfo loaded;
+        CHECK_FALSE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    }
+
+    SECTION("a malformed explicit convention is rejected") {
+        parameter->setProperty("valueConvention", "normalized");
+        DeviceInfo loaded;
+        CHECK_FALSE(ProjectSerializer::deserializeDeviceInfo(json, loaded));
+    }
 }
 
 TEST_CASE("MIDI controller curve metadata roundtrip", "[project][serialization][midi]") {

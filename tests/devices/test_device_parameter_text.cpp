@@ -38,6 +38,7 @@ DeviceInfo deviceNamed(DeviceId id, const juce::String& name) {
     device.format = PluginFormat::VST3;
 
     ParameterInfo parameter;
+    parameter.valueConvention = ParameterValueConvention::Normalized;
     parameter.paramIndex = 2;
     parameter.name = "Gain";
     device.parameters.push_back(parameter);

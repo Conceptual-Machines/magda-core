@@ -252,6 +252,7 @@ const magda::ParameterUtils::ParameterDomain& MagdaCompiledEffect::domainForSlot
 
 magda::ParameterInfo MagdaCompiledEffect::infoForSlot(int slotIndex) const {
     magda::ParameterInfo info;
+    info.valueConvention = magda::ParameterValueConvention::Real;
     if (slotIndex < 0 || slotIndex >= hostSlotCountValue())
         return info;
 

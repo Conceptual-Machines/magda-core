@@ -636,6 +636,7 @@ juce::var ProjectSerializer::serializeParameterInfo(const ParameterInfo& data) {
     SER(unit);
     SER(minValue);
     SER(maxValue);
+    SER(valueConvention);
     SER(defaultValue);
     SER(currentValue);
     SER(teMinValue);
@@ -687,6 +688,20 @@ bool ProjectSerializer::deserializeParameterInfo(const juce::var& json, Paramete
     DESER(unit);
     DESER(minValue);
     DESER(maxValue);
+    if (obj->hasProperty("valueConvention")) {
+        const auto saved = obj->getProperty("valueConvention");
+        if (!saved.isInt() && !saved.isInt64()) {
+            lastError_ = "Parameter value convention is not an integer";
+            return false;
+        }
+        const int savedConvention = saved;
+        if (savedConvention < static_cast<int>(ParameterValueConvention::Real) ||
+            savedConvention > static_cast<int>(ParameterValueConvention::Normalized)) {
+            lastError_ = "Parameter has an invalid value convention";
+            return false;
+        }
+        data.valueConvention = static_cast<ParameterValueConvention>(savedConvention);
+    }
     DESER(defaultValue);
     DESER(currentValue);
     DESER(scale);

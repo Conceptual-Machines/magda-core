@@ -128,6 +128,7 @@ class ExternalPluginStateRestoreTest final : public juce::UnitTest {
                 if (!ps[j]->isAutomatable())
                     continue;
                 magda::ParameterInfo pi;
+                pi.valueConvention = magda::ParameterValueConvention::Normalized;
                 pi.paramIndex = j;
                 pi.currentValue = ps[j]->getValue();
                 pi.minValue = 0.0f;

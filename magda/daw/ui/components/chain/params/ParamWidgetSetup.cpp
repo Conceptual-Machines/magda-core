@@ -21,17 +21,10 @@ void configureSliderFormatting(TextSlider& slider, const magda::ParameterInfo& i
     if (info.displayText) {
         auto provider = info.displayText;
         const magda::ParameterInfo& infoCopy = info;
-        const float teMin = info.teMinValue;
-        const float teSpan = info.teMaxValue - info.teMinValue;
-        const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                        std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-        auto projectToTe = [provider, infoCopy, teMin, teSpan,
-                            infoMatchesTeRange](double normalized) -> float {
-            if (infoMatchesTeRange && infoCopy.maxValue > infoCopy.minValue) {
-                return magda::ParameterUtils::normalizedToReal(static_cast<float>(normalized),
-                                                               infoCopy);
-            }
-            return teMin + static_cast<float>(normalized) * teSpan;
+        auto projectToTe = [infoCopy](double normalized) -> float {
+            const auto model = magda::ParameterUtils::normalizedToModelValue(
+                magda::ParameterNormalizedValue::clamped(static_cast<float>(normalized)), infoCopy);
+            return magda::ParameterUtils::modelToTeValue(model, infoCopy);
         };
         // Reverse-lookup parser: strip unit suffix, parse number, find closest
         // normalized value by querying the plugin at sample points.

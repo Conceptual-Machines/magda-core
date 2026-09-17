@@ -551,15 +551,15 @@ TEST_CASE("configured external parameters project model values into display unit
           "[remote-api][contract]") {
     // The realistic external-override shape: the plugin's TE parameter runs
     // 0..1 and keeps storing TE-native values, while a saved config gave the
-    // parameter a real display range. The live display provider is what marks
-    // the model as TE-native (isDisplayMappedInternalValue requires its
-    // absence), same as ExternalPluginProcessor::getParameterInfo.
+    // parameter a real display range. Its explicit convention keeps the model
+    // in normalized TE-native values even when no live display provider is
+    // available (the shape of a parameter mirrored into project state).
     DeviceInfo device;
     device.format = PluginFormat::VST3;
     ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
     gain.teMinValue = 0.0f;
     gain.teMaxValue = 1.0f;
-    gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    gain.valueConvention = ParameterValueConvention::Normalized;
     gain.currentValue = 0.75f;  // model / TE domain
     gain.defaultValue = 0.5f;   // model / TE domain
     device.parameters.push_back(gain);

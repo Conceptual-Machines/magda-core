@@ -229,6 +229,7 @@ void MagdaCompiledPolyInstrument::rebuildEngineState(int sampleRate) {
 
 magda::ParameterInfo MagdaCompiledPolyInstrument::infoForSlot(int slotIndex) const {
     magda::ParameterInfo info;
+    info.valueConvention = magda::ParameterValueConvention::Real;
     const auto& s =
         hostSlotInfo_[static_cast<size_t>(juce::jlimit(0, hostSlotCountValue() - 1, slotIndex))];
     info.minValue = s.minValue;

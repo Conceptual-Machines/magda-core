@@ -686,6 +686,17 @@ bool ProjectSerializer::deserializeDeviceInfo(const juce::var& json, DeviceInfo&
             if (!deserializeParameterInfo(paramVar, param)) {
                 return false;
             }
+            // Older projects predate an explicit value-domain tag. Their
+            // hosted parameter arrays were already written in the plugin's
+            // normalised domain; internal devices have always used display
+            // values. Infer that historical contract here, where the owning
+            // format is known, and persist it explicitly on the next save.
+            if (const auto* paramObj = paramVar.getDynamicObject();
+                paramObj != nullptr && !paramObj->hasProperty("valueConvention")) {
+                param.valueConvention = outDevice.format == PluginFormat::Internal
+                                            ? ParameterValueConvention::Real
+                                            : ParameterValueConvention::Normalized;
+            }
             // Builds before the version string was wired to the tag wrote every
             // parameter with paramIndex -1: the index was its position in the
             // array and was never stored. Restore it, or nothing that addresses

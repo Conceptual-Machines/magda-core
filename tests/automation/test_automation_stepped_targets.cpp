@@ -1,5 +1,9 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <cmath>
 
+#include "../../magda/daw/audio/automation/AutomationBake.hpp"
+#include "../../magda/daw/audio/automation/ControlTargetResolver.hpp"
 #include "../../magda/daw/core/AutomationInfo.hpp"
 #include "../../magda/daw/core/AutomationManager.hpp"
 #include "../../magda/daw/core/DeviceInfo.hpp"
@@ -53,6 +57,20 @@ AutomationTarget targetForParamWithScale(ParameterScale scale) {
     return target;
 }
 
+AutomationTarget targetForParameter(ParameterInfo param, PluginFormat format) {
+    auto& tm = TrackManager::getInstance();
+    const auto trackId = tm.createTrack("T", TrackType::Media);
+
+    DeviceInfo device;
+    device.name = "Parameter host";
+    device.format = format;
+    device.parameters.push_back(std::move(param));
+    const auto deviceId = tm.addDeviceToTrack(trackId, device);
+    REQUIRE(deviceId != INVALID_DEVICE_ID);
+
+    return ControlTarget::pluginParam(ChainNodePath::topLevelDevice(trackId, deviceId), 0);
+}
+
 }  // namespace
 
 TEST_CASE("Boolean plugin params want stepped automation", "[automation][stepped]") {
@@ -92,4 +110,44 @@ TEST_CASE("An unresolvable target does not want stepped automation", "[automatio
     target.kind = ControlTarget::Kind::PluginParam;
     target.paramIndex = 0;
     CHECK_FALSE(targetWantsSteppedAutomation(target));
+}
+
+TEST_CASE("Automation preserves a nonlinear real TE parameter round trip",
+          "[automation][value-convention][2623]") {
+    resetState();
+    ParameterInfo param;
+    param.paramIndex = 0;
+    param.name = "Cutoff";
+    param.minValue = 20.0f;
+    param.maxValue = 20000.0f;
+    param.teMinValue = param.minValue;
+    param.teMaxValue = param.maxValue;
+    param.scale = ParameterScale::Logarithmic;
+    param.valueConvention = ParameterValueConvention::Real;
+    const auto target = targetForParameter(param, PluginFormat::Internal);
+
+    const auto toTe = makeParameterValueConverter(target, nullptr);
+    const float teValue = toTe(0.5);
+    CHECK(teValue == Catch::Approx(std::sqrt(20.0f * 20000.0f)).epsilon(1.0e-5));
+    CHECK(laneNormalizedFromTEValue(target, nullptr, teValue) == Catch::Approx(0.5).margin(1.0e-5));
+}
+
+TEST_CASE("Hosted configured parameters use their explicit normalized convention",
+          "[automation][value-convention][2623]") {
+    resetState();
+    ParameterInfo param;
+    param.paramIndex = 0;
+    param.name = "Pitch";
+    param.minValue = -48.0f;
+    param.maxValue = 48.0f;
+    param.teMinValue = 0.0f;
+    param.teMaxValue = 1.0f;
+    param.valueConvention = ParameterValueConvention::Normalized;
+    REQUIRE(param.displayText == nullptr);
+    const auto target = targetForParameter(param, PluginFormat::VST3);
+
+    const auto toTe = makeParameterValueConverter(target, nullptr);
+    const float teValue = toTe(0.75);
+    CHECK(teValue == Catch::Approx(0.75f));
+    CHECK(laneNormalizedFromTEValue(target, nullptr, teValue) == Catch::Approx(0.75));
 }

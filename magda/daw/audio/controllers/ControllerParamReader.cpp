@@ -94,7 +94,6 @@ std::optional<float> DefaultControllerParamReader::readPluginParam(const Control
     // unmirrored slot falls back to the live catalog value.
     std::vector<ParameterInfo> described;
     const ParameterInfo* parameter = device->findParameterByIndex(target.paramIndex);
-    const bool mirrored = parameter != nullptr;
     if (parameter == nullptr) {
         described = deviceParameterList(*device, target.devicePath);
         const auto found =
@@ -103,9 +102,6 @@ std::optional<float> DefaultControllerParamReader::readPluginParam(const Control
             return std::nullopt;
         parameter = &*found;
     }
-
-    if (mirrored && device->format != PluginFormat::Internal)
-        return juce::jlimit(0.0f, 1.0f, parameter->currentValue);
 
     return ParameterUtils::modelToNormalizedValue(ParameterModelValue{parameter->currentValue},
                                                   *parameter)

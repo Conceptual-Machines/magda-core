@@ -34,6 +34,7 @@ magda::ParameterInfo externalDiscreteParam(float currentValue) {
         param.choices.push_back(juce::String(semitones));
     param.minValue = 0.0f;
     param.maxValue = 48.0f;
+    param.valueConvention = magda::ParameterValueConvention::Normalized;
     param.teMinValue = 0.0f;
     param.teMaxValue = 1.0f;
     param.displayText = std::make_shared<magda::ParameterInfo::DisplayTextProvider>();

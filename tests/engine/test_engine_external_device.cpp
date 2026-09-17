@@ -717,6 +717,7 @@ magda::DeviceInfo externalDevice() {
         magda::ParameterInfo info;
         info.paramIndex = index;
         info.name = name;
+        info.valueConvention = magda::ParameterValueConvention::Normalized;
         info.minValue = 0.0f;
         info.maxValue = 1.0f;
         info.currentValue = 0.0f;
@@ -724,8 +725,10 @@ magda::DeviceInfo externalDevice() {
     };
 
     auto dry = normalised(0, "Dry Level");
+    dry.valueConvention = magda::ParameterValueConvention::Real;
     dry.wrapperRole = magda::WrapperRole::DryGain;
     auto wet = normalised(1, "Wet Level");
+    wet.valueConvention = magda::ParameterValueConvention::Real;
     wet.wrapperRole = magda::WrapperRole::WetGain;
 
     device.wrapperParameters = {dry, wet};
