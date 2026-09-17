@@ -323,18 +323,6 @@ void MagdaCompiledPolyInstrument::releasePolyVoicesForPitch(int pitch) {
     }
 }
 
-void MagdaCompiledPolyInstrument::releaseAllVoices() {
-    auto* impl = static_cast<mydsp_poly*>(poly_.get());
-    if (impl != nullptr)
-        for (auto* voice : impl->fVoiceTable)
-            if (voice != nullptr)
-                voice->keyOff(/*hard*/ false);
-
-    heldNotes_.clear();
-    if (monoGateZone_)
-        *monoGateZone_ = 0.0f;
-}
-
 void MagdaCompiledPolyInstrument::snapshotVoiceStates() {
     auto* impl = static_cast<mydsp_poly*>(poly_.get());
     if (impl == nullptr)
@@ -568,13 +556,6 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
     // the Mono retrigger gate edge) is sample-accurate within the block.
     int cursor = 0;
     if (context.midiIn != nullptr) {
-        // All-notes-off arrives beside the events rather than among them: a
-        // juce::MidiBuffer has nowhere to put it, so the engine carries it on
-        // the port (#2418). Whatever raised it has taken the note-offs away
-        // with it, so anything still sounding will never be told to stop.
-        if (context.midiIn->isAllNotesOff())
-            releaseAllVoices();
-
         for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
             const auto& m = context.midiIn->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);

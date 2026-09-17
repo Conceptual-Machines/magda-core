@@ -193,10 +193,6 @@ class MagdaCompiledPolyInstrument : public CompiledFaustDevice {
     // never strand a sounding voice.
     void releasePolyVoicesForPitch(int pitch);
 
-    /// Let go of everything, in either voice mode. What an all-notes-off has
-    /// to do: the note-offs for what is sounding are not coming.
-    void releaseAllVoices();
-
     /// Records what each voice was before a compute() call, so a voice the
     /// engine frees inside the window can be put back until the window closes.
     void snapshotVoiceStates();
