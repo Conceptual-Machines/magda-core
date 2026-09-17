@@ -1,11 +1,12 @@
 #include "controllers/ControllerParamReader.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "../../core/AutomationInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
-#include "AudioBridge.hpp"
+#include "../DeviceParameterList.hpp"
 
 namespace magda {
 
@@ -85,36 +86,30 @@ std::optional<float> DefaultControllerParamReader::readMacro(const ControlTarget
 
 std::optional<float> DefaultControllerParamReader::readPluginParam(const ControlTarget& target) {
     auto& trackMgr = TrackManager::getInstance();
+    const auto* device = trackMgr.getDeviceInChainByPath(target.devicePath);
+    if (device == nullptr)
+        return std::nullopt;
 
-    // The writer's own branch, taken on the same condition: a display-mapped
-    // internal parameter never reached TE's value range on the way in, so it
-    // must not be read back through it either.
-    if (const auto* device = trackMgr.getDeviceInChainByPath(target.devicePath)) {
-        if (const auto* info = device->findParameterByIndex(target.paramIndex);
-            info != nullptr && device->format == PluginFormat::Internal &&
-            ParameterUtils::isDisplayMappedInternalValue(*info)) {
-            return ParameterUtils::modelToNormalizedValue(ParameterModelValue{info->currentValue},
-                                                          *info)
-                .value;
-        }
+    // Mirror the writer's fast path. Addressed slots read the model base; an
+    // unmirrored slot falls back to the live catalog value.
+    std::vector<ParameterInfo> described;
+    const ParameterInfo* parameter = device->findParameterByIndex(target.paramIndex);
+    const bool mirrored = parameter != nullptr;
+    if (parameter == nullptr) {
+        described = deviceParameterList(*device, target.devicePath);
+        const auto found =
+            std::ranges::find(described, target.paramIndex, &ParameterInfo::paramIndex);
+        if (found == described.end())
+            return std::nullopt;
+        parameter = &*found;
     }
 
-    auto* param = bridge_.resolveControlTarget(target);
-    if (param == nullptr)
-        return std::nullopt;
+    if (mirrored && device->format != PluginFormat::Internal)
+        return juce::jlimit(0.0f, 1.0f, parameter->currentValue);
 
-    const auto range = param->getValueRange();
-    const auto span = static_cast<float>(range.getLength());
-    if (span <= 0.0f)
-        return std::nullopt;
-
-    // The base value rather than the current one. A parameter with an LFO or a
-    // macro on it has a value that moves every block, and echoing that would
-    // both flood the surface and put its fader somewhere the user cannot have
-    // put it. What a control surface owns is the value underneath the
-    // modulation, which is what it wrote.
-    const auto base = static_cast<float>(param->getCurrentBaseValue());
-    return juce::jlimit(0.0f, 1.0f, (base - static_cast<float>(range.getStart())) / span);
+    return ParameterUtils::modelToNormalizedValue(ParameterModelValue{parameter->currentValue},
+                                                  *parameter)
+        .value;
 }
 
 }  // namespace magda

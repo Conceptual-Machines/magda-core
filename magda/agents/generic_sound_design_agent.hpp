@@ -4,9 +4,30 @@
 
 #include <vector>
 
+#include "../daw/core/ParameterInfo.hpp"
 #include "sound_design_agent.hpp"
 
 namespace magda {
+
+namespace sound_design_detail {
+
+struct ParameterSnapshot {
+    ParameterInfo described;
+    juce::String promptName;
+    juce::String normalizedName;
+    float currentRealValue = 0.0f;
+};
+
+using ParameterWrite = std::pair<ParameterInfo, ParameterModelValue>;
+
+std::vector<ParameterSnapshot> snapshotParameters(std::vector<ParameterInfo> described,
+                                                  const std::vector<int>& includedIndices);
+
+std::vector<ParameterWrite> resolveParameterWrites(
+    const std::vector<ParameterSnapshot>& parameters,
+    const std::vector<std::pair<juce::String, juce::var>>& requested, int& skipped);
+
+}  // namespace sound_design_detail
 
 /**
  * @brief Device-agnostic "design me a preset" agent driven by parameter

@@ -1,9 +1,15 @@
 #include "ChainContext.hpp"
 
+#include "../../audio/DeviceParameterList.hpp"
 #include "../SelectionManager.hpp"
 #include "../TrackManager.hpp"
 
 namespace magda {
+
+std::vector<ParameterInfo> ChainContext::parametersAt(const ChainNodePath& path) const {
+    const auto* device = deviceAt(path);
+    return device != nullptr ? device->parameters : std::vector<ParameterInfo>{};
+}
 
 // ============================================================================
 // DefaultChainContext
@@ -82,6 +88,11 @@ ChainNodePath DefaultChainContext::focusedMacroOwner() const {
 
 const DeviceInfo* DefaultChainContext::deviceAt(const ChainNodePath& path) const {
     return TrackManager::getInstance().getDeviceInChainByPath(path);
+}
+
+std::vector<ParameterInfo> DefaultChainContext::parametersAt(const ChainNodePath& path) const {
+    const auto* device = deviceAt(path);
+    return device != nullptr ? deviceParameterList(*device, path) : std::vector<ParameterInfo>{};
 }
 
 std::vector<ChainContext::DeviceWithPath> DefaultChainContext::devicesInFocusedChain() const {

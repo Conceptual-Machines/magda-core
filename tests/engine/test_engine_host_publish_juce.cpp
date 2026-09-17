@@ -25,6 +25,7 @@
 #include "magda/daw/core/ClipManager.hpp"
 #include "magda/daw/core/DeviceState.hpp"
 #include "magda/daw/core/TrackManager.hpp"
+#include "magda/daw/core/controllers/BindingRegistry.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
 #include "magda/daw/engine/host/EngineProject.hpp"
 #include "magda/daw/engine/host/EngineRuntimeFactory.hpp"
@@ -1185,6 +1186,21 @@ class EngineHostPublishTest final : public juce::UnitTest {
             magda::ControlTarget::pluginParam(devicePath, 2), magda::AutomationLaneType::Absolute);
         expect(laneId != magda::INVALID_AUTOMATION_LANE_ID, "The lane was created");
         expect(asked() > beforeLane, "Drawing a lane asks for one");
+
+        // Bindings also choose the hosted parameters whose base values the
+        // model owns. A learned MIDI/OSC binding added after startup therefore
+        // needs the same addressing republish as a newly drawn lane.
+        magda::Binding binding;
+        binding.id = juce::Uuid();
+        binding.source.portKey = "publish-test-controller";
+        binding.target = magda::ControlTarget::pluginParam(devicePath, 2);
+        const auto beforeBinding = asked();
+        magda::BindingRegistry::getInstance().add(magda::BindingScope::Project, binding);
+        expect(asked() > beforeBinding, "So does adding a controller binding");
+
+        const auto beforeRemoval = asked();
+        magda::BindingRegistry::getInstance().remove(magda::BindingScope::Project, binding.id);
+        expect(asked() > beforeRemoval, "Removing one releases the model-owned base too");
 
         engine.stop();
     }

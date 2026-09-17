@@ -53,6 +53,7 @@ set(TEST_SOURCES
     utilities/test_parameter_utils.cpp
     agents/test_openai_url.cpp
     agents/test_llm_tool_calls.cpp
+    agents/test_generic_sound_design_parameters.cpp
     project/test_update_checker.cpp
     devices/test_plugin_loading.cpp
     devices/test_plugin_format.cpp
@@ -871,6 +872,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # Which of a plugin's own edits reach the model (#2633). Same reason:
         # the report is queued from the callback and delivered on the loop.
         engine/test_hosted_parameter_edits_juce.cpp
+
+        # Controllers, OSC and sound design use the native hosted parameter path (#2655).
+        controllers/test_native_controller_parameters_juce.cpp
     )
 endif()
 
