@@ -202,6 +202,10 @@ class Compiler {
     TrackRoute activeAudioInputRoute(const TrackInfo& track) const;
     TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
 
+    /// The MIDI route the track names, switch or no switch. What decides
+    /// whether the source track compiles MIDI ops at all (#2612).
+    TrackRoute configuredMidiInputRoute(const TrackInfo& track) const;
+
     /**
      * @brief The op the live audio input reaches @p trackId's chain through.
      *
@@ -403,10 +407,16 @@ TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
     return route;
 }
 
-TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    if (!carriesClips(track) || !track.monitorsInput() || track.midiInputDevice.isEmpty())
+TrackRoute Compiler::configuredMidiInputRoute(const TrackInfo& track) const {
+    if (!carriesClips(track) || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
+}
+
+TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
+    if (!track.monitorsInput())
+        return {RouteKind::None, INVALID_TRACK_ID};
+    return configuredMidiInputRoute(track);
 }
 
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
@@ -1630,10 +1640,10 @@ RenderPlan Compiler::run() {
     // nothing in its own chain consumes it, so this is collected up front.
     for (const auto& track : tracks_) {
         collectSidechainSources(track, SidechainConfig::Type::MIDI, midiSourceTracks_);
-        // Gated the same way the route itself is: an unmonitored route reads
-        // nothing, so making its source compile MIDI ops would leave ops in the
-        // plan that no one reads.
-        if (const auto route = activeMidiInputRoute(track); route.namesTrack())
+        // Ungated on purpose: reading the monitor here would let one track's
+        // switch decide whether another track compiles MIDI ops at all (#2612).
+        // A MIDI sidechain and a note-triggered modifier already work this way.
+        if (const auto route = configuredMidiInputRoute(track); route.namesTrack())
             midiSourceTracks_.insert(route.trackId);
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);

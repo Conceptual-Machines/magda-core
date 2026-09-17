@@ -1273,7 +1273,7 @@ TEST_CASE("An inactive internal route is not an ordering dependency", "[engine][
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
 
-TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
+TEST_CASE("An unmonitored MIDI route still makes its source compile MIDI",
           "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
     tracks[1].midiInputDevice = "track:1";
@@ -1282,10 +1282,12 @@ TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
     const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
     requireWellFormed(plan);
 
-    // Track 1 has no MIDI consumer of its own and nothing reads its MIDI, so
-    // compiling clip MIDI for it would leave ops no one consumes.
-    CHECK(countRole(plan, OpRole::ClipMidi) == 0);
-    CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
+    // Track 2's switch decides what track 2 hears, never what track 1 compiles
+    // (#2612). Track 1 is a MIDI source because someone routes from it.
+    CHECK(countRole(plan, OpRole::ClipMidi) == 1);
+    const auto midiInputs = opsWithRole(plan, OpRole::TrackMidiInput);
+    REQUIRE(midiInputs.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(midiInputs.front())].key.trackId == 1);
 }
 
 TEST_CASE("A rack-level sidechain is an edge to the modulation system",
