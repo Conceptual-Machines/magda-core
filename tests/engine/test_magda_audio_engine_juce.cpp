@@ -94,12 +94,16 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         expect(engine.getSessionPlayheadClipId() == magda::INVALID_CLIP_ID, "and no clip under it");
         expect(engine.getActiveClipPlayheadPositions().empty(), "and nothing launched");
 
-        // Recording and slot recording, #2553. Arming has to answer false: the
-        // fork kept it in a map nothing renders from, so the slot lit up and
-        // the UI went on to ask the transport to record.
+        // Arrangement MIDI recording is wired, but with no armed MIDI input it
+        // refuses the request and leaves the transport stopped.
         engine.record();
         engine.onTransportRecord(0.0);
+        expect(!engine.isRecording(), "No eligible input does not start recording");
         engine.onTransportStopRecording();
+
+        // Slot recording remains #2553 follow-up work. Arming has to answer
+        // false: a remembered target nothing renders would light the slot and
+        // invite another recording request that cannot succeed.
         engine.armSessionSlotRecording(trackId, sceneIndex);
         expect(!engine.isSessionSlotRecordArmed(trackId, sceneIndex), "Arming a slot does not");
         expect(!engine.isSessionSlotRecording(trackId, sceneIndex), "and it is not recording");
@@ -118,11 +122,13 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
                "and no ripple command");
 
         const auto named = magda::MagdaAudioEngine::unwiredMethods();
+        for (const auto* wired :
+             {"record", "onTransportRecord", "onTransportStopRecording", "getRecordingPreviews"})
+            expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
         for (const auto* method :
-             {"record", "onTransportRecord", "onTransportStopRecording", "armSessionSlotRecording",
-              "isSessionSlotRecordArmed", "isSessionSlotRecording",
-              "beginArmedSessionSlotRecordings", "getRecordingPreviews", "onPunchRegionChanged",
-              "onPunchEnabledChanged", "getPluginWindowManager", "getInsertRenderCaptureService",
+             {"armSessionSlotRecording", "isSessionSlotRecordArmed", "isSessionSlotRecording",
+              "beginArmedSessionSlotRecordings", "onPunchRegionChanged", "onPunchEnabledChanged",
+              "getPluginWindowManager", "getInsertRenderCaptureService",
               "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
             expect(named.contains(method), juce::String(method) + " says it is not wired");
 

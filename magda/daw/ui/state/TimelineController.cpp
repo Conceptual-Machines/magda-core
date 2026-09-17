@@ -430,6 +430,12 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const MovePlayhe
 TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybackStateEvent& e) {
     bool changed = false;
 
+    // This event reports the engine's authoritative state. A stopped engine
+    // cannot still be waiting to punch in; the optimistic armed state is only
+    // preserved while playback itself remains in flight or active.
+    if (!e.isPlaying)
+        punchArmed_ = false;
+
     if (state.playhead.isPlaying != e.isPlaying) {
         state.playhead.isPlaying = e.isPlaying;
         // Both edges do the same thing: starting syncs the playback position to

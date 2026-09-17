@@ -71,6 +71,11 @@ struct MidiTakeRecorderSettings {
     /// Which input the take listens to, or kAnyLiveMidiSource for all of them.
     LiveMidiSourceId source = kAnyLiveMidiSource;
 
+    /// An explicit set of inputs. When present this takes precedence over
+    /// @ref source; an empty set records nothing. A host uses this for an
+    /// "all devices" route that excludes track audition streams.
+    std::optional<std::vector<LiveMidiSourceId>> sources;
+
     /// The input's declared latency, in samples (#2459). An event's place on
     /// the timeline is `arrival - latency`.
     int latencySamples = 0;

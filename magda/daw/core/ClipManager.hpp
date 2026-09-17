@@ -58,6 +58,21 @@ class ClipManagerListener {
 };
 
 /**
+ * @brief A finished MIDI recording ready to become one Arrangement clip.
+ *
+ * Kept in the model layer so an engine host can translate its recorder result
+ * without making ClipManager depend on an engine implementation. `active` is
+ * the content that plays now; `takeModel` preserves every recorded pass and
+ * the take/comp selection that produced it.
+ */
+struct RecordedMidiClipData {
+    double startBeat = 0.0;
+    double lengthBeats = 0.0;
+    MidiTake active;
+    MidiClipModel takeModel;
+};
+
+/**
  * @brief Singleton manager for all clips in the project
  *
  * Provides CRUD operations for clips and notifies listeners of changes.
@@ -119,6 +134,17 @@ class ClipManager {
         TrackId trackId, double startBeats, double lengthBeats,
         ClipView view = ClipView::Arrangement,
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
+
+    /**
+     * @brief Insert a completed Arrangement MIDI recording atomically (#2553).
+     *
+     * The clip's placement, active notes/controllers, takes and comp state are
+     * all installed before the sole clipsChanged notification. An empty active
+     * take is still a valid recorded clip.
+     */
+    ClipId createRecordedMidiClip(
+        TrackId trackId, RecordedMidiClipData recording,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps);
 
     /**
      * @brief Create an empty MIDI clip from seconds.

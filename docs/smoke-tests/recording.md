@@ -4,6 +4,11 @@ Manual verification for live input, monitoring and recording. Run before
 merging changes that touch the input path, the take recorders or the session
 capture, and as the hands-on pass #1895 budgets for the cutover.
 
+For the first native app recording slice (#2553), use the focused
+[Arrangement MIDI recording checks](../issues/native-arrangement-midi-recording.md).
+The wider checklist below also covers audio, Session capture, count-in, and
+latency work that is not yet connected to the native app.
+
 This checklist covers only what needs a human and an interface. Everything
 that can be asserted offline already is, in `test_take_recorder`,
 `test_midi_take_recorder`, `test_session_capture` and `test_take_across_swap`;
