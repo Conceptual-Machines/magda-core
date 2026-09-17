@@ -437,14 +437,10 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             }
             // A delay carries whatever reaches it, so its own output port is
             // what its input has to agree with.
-            // A feedback send carries one signal and its key says which, the
-            // same number the return's own port declares.
-            const bool midiSlot =
-                op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
-                (op.kind == OpKind::FeedbackSend && feedbackSignal(op.key.index) == 1) ||
-                ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
-                  op.kind == OpKind::ModSource) &&
-                 slot == 1);
+            const bool midiSlot = op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
+                                  ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
+                                    op.kind == OpKind::ModSource) &&
+                                   slot == 1);
             const auto expected =
                 op.kind == OpKind::Delay
                     ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front().kind)

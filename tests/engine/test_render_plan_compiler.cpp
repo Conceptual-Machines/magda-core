@@ -2723,6 +2723,51 @@ TEST_CASE("A track routed from itself is carried rather than reported",
     CHECK(countRole(plan, OpRole::FeedbackSend) == 1);
 }
 
+TEST_CASE("A MIDI loop is refused rather than carried", "[engine][plan][compiler]") {
+    // A block of delay works for audio because whatever gain is in the loop
+    // scales what goes round, so it dies away. A note has no gain: every event
+    // that came back would be sent round again, so the carry would grow for as
+    // long as the transport ran. The route is refused and said so instead.
+    const auto refuses = [](const RenderPlan& plan) {
+        return anyDiagnosticContains(plan, "a MIDI loop repeats every note it carries");
+    };
+
+    SECTION("a track taking MIDI from itself") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+        tracks[0].midiInputDevice = "track:1";
+        tracks[0].inputMonitor = InputMonitorMode::In;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(refuses(plan));
+        CHECK(countRole(plan, OpRole::FeedbackReturn) == 0);
+        CHECK(countRole(plan, OpRole::FeedbackSend) == 0);
+    }
+
+    SECTION("two tracks taking MIDI from each other") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        for (auto& track : tracks) {
+            track.chain.fxChainElements.push_back(
+                makeDeviceElement(makeInstrument(track.id == 1 ? 3 : 4)));
+            track.midiInputDevice = "track:" + juce::String(track.id == 1 ? 2 : 1);
+            track.inputMonitor = InputMonitorMode::In;
+        }
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(refuses(plan));
+        CHECK(countRole(plan, OpRole::FeedbackSend) == 0);
+
+        // Only the one that closes the loop goes; the other still reads its
+        // source, and nothing is forced ahead of its sources.
+        CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+        CHECK(countRole(plan, OpRole::InputRouteGate) == 1);
+    }
+}
+
 TEST_CASE("A device with more pairs than one op can carry says so", "[engine][plan][compiler]") {
     const auto overBudget = magda::engine::kMaxMultiOutPairs + 2;
 

@@ -65,47 +65,33 @@ class AudioDelayLine {
 };
 
 /**
- * @brief One block of storage between the two halves of a cut routing loop.
+ * @brief One block of audio between the two halves of a cut routing loop.
  *
  * The return reads before the send writes, because a return has no
  * dependencies and its send waits on the source track, so what comes out is
- * always the block before (#2612). Audio or MIDI, never both: a track's audio
- * and MIDI input routes are separate carries.
+ * always the block before (#2612).
+ *
+ * Audio only. A block of delay makes an audio loop renderable because whatever
+ * gain is in the loop scales what goes round, so it dies away; a note carries
+ * no gain, so a MIDI loop would send every event round again for ever and no
+ * reservation would be large enough. The compiler refuses those instead.
  */
 class FeedbackCarry {
   public:
-    void prepare(int numChannels, int maxBlockSize, int midiCapacityBytes);
+    void prepare(int numChannels, int maxBlockSize);
 
     /// What the send left last block, into @p block.
     void read(juce::dsp::AudioBlock<float> block, int numSamples) const;
     void write(juce::dsp::AudioBlock<const float> block, int numSamples);
 
-    /// Events are copied rather than the buffers assigned: assignment
-    /// replaces the storage prepare() reserved, which is an allocation on the
-    /// audio thread.
-    void read(juce::MidiBuffer& out) const;
-    void write(const juce::MidiBuffer& in, bool panic);
-
-    /// The all-notes-off the send was handed, delivered with the events it
-    /// belongs to rather than a block ahead of them.
-    bool panic() const {
-        return panic_;
-    }
-
     void clear();
 
-    /// A carry whose MIDI reservation is smaller than this plan's ports need
-    /// would grow on the callback, so the capacity counts as configuration.
-    bool hasConfiguration(int numChannels, int maxBlockSize, int midiCapacityBytes) const {
-        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize &&
-               midiCapacity_ >= midiCapacityBytes;
+    bool hasConfiguration(int numChannels, int maxBlockSize) const {
+        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize;
     }
 
   private:
     juce::AudioBuffer<float> audio_;
-    juce::MidiBuffer midi_;
-    int midiCapacity_ = 0;
-    bool panic_ = false;
 };
 
 /**
@@ -624,10 +610,10 @@ class PlanExecutor {
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
     const std::shared_ptr<FeedbackCarry>& feedbackCarryFor(OpId op) const;
 
-    /// Whether a note gate of this executor's plan passed anything last block,
-    /// for the executor replacing it to take over.
-    bool notePassedLastBlock(OpId op) const {
-        return notePassing_[static_cast<std::size_t>(op)] != 0;
+    /// The flag a note gate of this executor's plan keeps, for the executor
+    /// replacing it to share. Null where the op is not a note gate.
+    const std::shared_ptr<std::atomic<char>>& notePassingFor(OpId op) const {
+        return notePassing_[static_cast<std::size_t>(op)];
     }
 
     const RenderPlan* plan_ = nullptr;
@@ -700,10 +686,14 @@ class PlanExecutor {
     std::vector<std::shared_ptr<FeedbackCarry>> feedbackCarries_;
     int carriedFeedbackCarries_ = 0;
 
-    /// Per op: whether a note gate passed anything last block. A gate that
-    /// stops has to raise an all-notes-off, since the note-offs for what it
-    /// already let through will never arrive.
-    std::vector<char> notePassing_;
+    /// Per op: whether a note gate passed anything last block, or null for an
+    /// op that is not one. A gate that stops has to raise an all-notes-off,
+    /// since the note-offs for what it already let through will never arrive.
+    ///
+    /// Shared with the executor taking over rather than copied out of it, the
+    /// way a delay line is: prepare runs while the executor it replaces may
+    /// still be rendering, so reading its flag would be a race.
+    std::vector<std::shared_ptr<std::atomic<char>>> notePassing_;
 
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.

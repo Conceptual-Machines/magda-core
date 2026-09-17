@@ -148,12 +148,9 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
     }
 }
 
-void FeedbackCarry::prepare(int numChannels, int maxBlockSize, int midiCapacityBytes) {
+void FeedbackCarry::prepare(int numChannels, int maxBlockSize) {
     audio_.setSize(numChannels, maxBlockSize, false, true, false);
     audio_.clear();
-    midi_.clear();
-    midi_.ensureSize(static_cast<std::size_t>(midiCapacityBytes));
-    midiCapacity_ = midiCapacityBytes;
 }
 
 void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
@@ -197,24 +194,8 @@ void FeedbackCarry::write(juce::dsp::AudioBlock<const float> block, int numSampl
         juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), audio_.getNumSamples());
 }
 
-void FeedbackCarry::read(juce::MidiBuffer& out) const {
-    for (const auto metadata : midi_)
-        out.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
-}
-
-void FeedbackCarry::write(const juce::MidiBuffer& in, bool panic) {
-    // clear() keeps the storage prepare() reserved. Assigning the buffer would
-    // replace it, which is an allocation on the audio thread.
-    midi_.clear();
-    for (const auto metadata : in)
-        midi_.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
-    panic_ = panic;
-}
-
 void FeedbackCarry::clear() {
     audio_.clear();
-    midi_.clear();
-    panic_ = false;
 }
 
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
@@ -845,15 +826,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
-    // A carry's return is a producer whose real budget is whatever its send is
-    // handed, and the send comes after it: one forward pass cannot see it. So
-    // the pass is a sweep, repeated while a return grows. Bounds only ever rise
-    // and every port is bounded by the plan's producers, so this settles; a
-    // sweep per carry is enough for carries feeding carries.
-    int carries = 0;
-    for (const auto& op : plan.ops)
-        carries += op.kind == OpKind::FeedbackSend ? 1 : 0;
-
     const auto sweep = [&] {
         for (std::size_t i = 0; i < numOps; ++i) {
             const auto& op = plan.ops[i];
@@ -926,28 +898,6 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     };
 
     sweep();
-    for (int pass = 0; pass < carries; ++pass) {
-        // A send's second input is its own return, so the port to raise is
-        // named by the op that knows what will be written into it.
-        bool grew = false;
-        for (std::size_t i = 0; i < numOps; ++i) {
-            const auto& op = plan.ops[i];
-            if (op.kind != OpKind::FeedbackSend || feedbackSignal(op.key.index) != 1)
-                continue;
-            if (!op.inputs[0].valid() || !op.inputs[1].valid())
-                continue;
-
-            auto& bound = portMidiBytes[flatPort(op.inputs[1])];
-            if (const auto needed = portMidiBytes[flatPort(op.inputs[0])]; needed > bound) {
-                bound = needed;
-                grew = true;
-            }
-        }
-
-        if (!grew)
-            break;
-        sweep();
-    }
 
     midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
     midiSlotPanic_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
@@ -1081,16 +1031,19 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto fadeSamples =
         std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * context_.sampleRate)));
 
-    // Carried from the executor this one replaces, so a gate that was passing
+    // Shared with the executor this one replaces, so a gate that was passing
     // still raises its all-notes-off when the same publish that changed the
     // shape also turned the monitor off. Starting every gate closed would call
     // that "already silent" and let the notes hang (#2612).
-    notePassing_.assign(numOps, 0);
+    notePassing_.assign(numOps, nullptr);
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind != OpKind::MidiNoteGate)
             continue;
+
         if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
-            notePassing_[i] = previous->notePassedLastBlock(from) ? 1 : 0;
+            notePassing_[i] = previous->notePassingFor(from);
+        if (notePassing_[i] == nullptr)
+            notePassing_[i] = std::make_shared<std::atomic<char>>(0);
     }
 
     crossfadeForOp_.assign(numOps, -1);
@@ -1141,28 +1094,18 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             continue;
         }
 
-        // What the send will be handed, which for a route off another track is
-        // that track's whole MIDI merge rather than one producer's budget.
-        // Sizing from the constant is how the first busy block grows a buffer
-        // on the callback.
-        const auto midiPort =
-            op.kind == OpKind::FeedbackSend ? op.inputs[1] : PortRef{static_cast<OpId>(i), 0};
-        const auto midiBytes = feedbackSignal(op.key.index) == 1
-                                   ? midiByteBounds_[static_cast<std::size_t>(slotFor(midiPort))]
-                                   : 0;
-
         std::shared_ptr<FeedbackCarry> carry;
         if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
             if (const auto& adopted = previous->feedbackCarryFor(from);
                 adopted != nullptr &&
-                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize, midiBytes)) {
+                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize)) {
                 carry = adopted;
                 ++carriedFeedbackCarries_;
             }
 
         if (carry == nullptr) {
             carry = std::make_shared<FeedbackCarry>();
-            carry->prepare(context_.numChannels, context_.maxBlockSize, midiBytes);
+            carry->prepare(context_.numChannels, context_.maxBlockSize);
         }
 
         feedbackForOp_[i] = static_cast<int>(feedbackCarries_.size());
@@ -1771,8 +1714,9 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // ever see the note-offs for what already went through, and the
             // monitor switch over an input route no longer recompiles, so the
             // reroute machinery is not there to cover it either (#2612).
-            const bool wasPassing = notePassing_[i] != 0;
-            notePassing_[i] = value.silent ? 0 : 1;
+            auto& passing = *notePassing_[i];
+            const bool wasPassing =
+                passing.exchange(value.silent ? 0 : 1, std::memory_order_relaxed) != 0;
 
             if (value.silent) {
                 setMidiOutPanic(id, 0, wasPassing);
@@ -2088,31 +2032,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // on the source track, so the schedule cannot put them the other
             // way round (#2612).
             const auto carry = feedbackForOp_[i];
-            const bool audio = op.outputs[0].kind == SignalKind::Audio;
-
-            if (audio) {
-                auto out = audioOut(id, 0, numSamples);
-                if (carry < 0)
-                    out.clear();
-                else
-                    feedbackCarries_[static_cast<std::size_t>(carry)]->read(out, numSamples);
-            } else {
-                auto& out = midiOut(id, 0);
+            auto out = audioOut(id, 0, numSamples);
+            if (carry < 0)
                 out.clear();
-
-                // The panic travels with the events it belongs to, a block
-                // behind like them: delivering it when the send took it would
-                // put the all-notes-off ahead of the notes it silences.
-                bool panic = false;
-                if (carry >= 0) {
-                    const auto& storage = *feedbackCarries_[static_cast<std::size_t>(carry)];
-                    storage.read(out);
-                    panic = storage.panic();
-                }
-                setMidiOutPanic(id, 0, panic);
-
-                jassert(out.data.size() <= kMaxMidiBytesPerPort);
-            }
+            else
+                feedbackCarries_[static_cast<std::size_t>(carry)]->read(out, numSamples);
             break;
         }
 
@@ -2127,11 +2051,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 break;
             }
 
-            if (feedbackSignal(op.key.index) == 1)
-                storage.write(midiIn(op.inputs[0]), midiInPanic(op.inputs[0]));
-            else
-                storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
-                              numSamples);
+            storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
+                          numSamples);
             break;
         }
 

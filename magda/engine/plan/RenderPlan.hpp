@@ -193,9 +193,12 @@ enum class OpRole : std::uint8_t {
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
 
-    // Both halves of a demoted input route, keyed to the track that reads it.
-    // OpKey::index is the signal: 0 audio, 1 MIDI. A track has one input route
-    // of each kind, so that is also what keeps the two pairs apart.
+    // Both halves of a cut input route, keyed to the track that reads it, with
+    // OpKey::index naming the track it reads from. The source is in the
+    // identity because nothing else about the carry carries it: the return's
+    // inputs are empty, so a route moved between sources would otherwise
+    // compile to the same ops and the differ would hand the new route the old
+    // one's carry.
     FeedbackSend,    ///< the source's signal into the track's carry
     FeedbackReturn,  ///< the carry, as the track's input mix reads it
 
@@ -225,25 +228,6 @@ enum class OpRole : std::uint8_t {
     // the index of their slot.
     EdgeCrossfade,  ///< ramps one input slot of the op it is keyed to
 };
-
-/**
- * @brief A carry's OpKey::index: the signal in bit 0, the source track above it.
- *
- * The source is in the identity because nothing else about the carry carries
- * it. A cut route's destination reads the return op, whose inputs say nothing
- * about where the signal came from, so moving a route from one source to
- * another would compile to the same ops: the differ would hand the new route
- * the old one's carry, and the pass that panics a device whose MIDI source was
- * taken away would never see the change (#2418, #2612).
- */
-inline int feedbackIndex(int signal, TrackId source) {
-    return signal | (static_cast<int>(source) << 1);
-}
-
-/// Which signal a carry holds: 0 audio, 1 MIDI.
-inline int feedbackSignal(int index) {
-    return index & 1;
-}
 
 // The four things that identify a fade, packed into OpKey::index, low bits
 // first. Everything about the edge it sits on is in there, because the location

@@ -335,10 +335,15 @@ class Compiler {
     /// their own chain has nothing that consumes MIDI.
     std::set<TrackId> midiSourceTracks_;
 
-    /// Input routes the ordering pass could not give an edge to, by the track
-    /// that reads them and the signal: 0 audio, 1 MIDI. These compile to a
-    /// carry, so what the destination hears is the source's previous block.
+    /// Audio input routes the ordering pass could not give an edge to, by the
+    /// track that reads them. The signal is always 0; a MIDI route on a loop is
+    /// refused rather than carried. These compile to a carry, so what the
+    /// destination hears is the source's previous block.
     std::set<std::pair<TrackId, int>> cutRoutes_;
+
+    /// Tracks whose MIDI input route closes a loop. Reported where the loop is
+    /// found and left unconnected: see the ordering pass for why.
+    std::set<TrackId> refusedMidiRoutes_;
 
     /// The return half of each cut route, so the send can take it as the edge
     /// that orders the read before the write.
@@ -528,9 +533,16 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
                 return;
 
             // A track routed from itself is a loop of one and has nothing to
-            // wait for, so it is carried from the start rather than cut later.
+            // wait for, so it is settled here rather than cut later.
             if (static_cast<std::size_t>(source) == i) {
-                cutRoutes_.insert({track.id, signal});
+                if (signal == 0) {
+                    cutRoutes_.insert({track.id, 0});
+                } else {
+                    refusedMidiRoutes_.insert(track.id);
+                    diagnose("track " + std::to_string(track.id) +
+                             ": MIDI input is the track itself, and a MIDI loop repeats every note "
+                             "it carries, so the input is not connected");
+                }
                 return;
             }
 
@@ -581,25 +593,43 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
             //
             // Which edge yields is decided from the graph alone, so the plan is
             // the same whether or not anyone is monitoring.
-            bool carried = false;
-            for (std::size_t i = 0; i < numTracks && !carried; ++i) {
-                if (skipped[i] || emitted[i])
-                    continue;
-
-                for (auto& edge : routeEdges[i]) {
-                    if (edge.cut || emitted[edge.source] || skipped[edge.source])
+            // Audio first, and MIDI only when there is no audio edge left on
+            // the loop: a block of delay is a carry for audio and a multiplier
+            // for MIDI. Audio going round a loop is scaled by whatever gain is
+            // in it and dies away; a note has no gain, so every event that came
+            // back would be sent round again and the carry would grow without
+            // bound. A MIDI loop is refused instead, and said so.
+            const auto yieldEdge = [&](int signal) {
+                for (std::size_t i = 0; i < numTracks; ++i) {
+                    if (skipped[i] || emitted[i])
                         continue;
 
-                    edge.cut = true;
-                    cutRoutes_.insert({tracks_[i].id, edge.signal});
-                    if (--indegree[i] == 0)
-                        ready.insert(i);
-                    carried = true;
-                    break;
-                }
-            }
+                    for (auto& edge : routeEdges[i]) {
+                        if (edge.cut || edge.signal != signal || emitted[edge.source] ||
+                            skipped[edge.source])
+                            continue;
 
-            if (carried)
+                        edge.cut = true;
+                        if (signal == 0) {
+                            cutRoutes_.insert({tracks_[i].id, 0});
+                        } else {
+                            refusedMidiRoutes_.insert(tracks_[i].id);
+                            diagnose("track " + std::to_string(tracks_[i].id) +
+                                     ": MIDI input track " +
+                                     std::to_string(tracks_[edge.source].id) +
+                                     " is downstream of it, and a MIDI loop repeats every note it "
+                                     "carries, so the input is not connected");
+                        }
+
+                        if (--indegree[i] == 0)
+                            ready.insert(i);
+                        return true;
+                    }
+                }
+                return false;
+            };
+
+            if (yieldEdge(0) || yieldEdge(1))
                 continue;
 
             // Nothing left to carry: the cycle is made of sends, outputs and
@@ -665,7 +695,7 @@ PortRef Compiler::emitInputRouteGate(TrackId trackId, int signal, PortRef source
 
 PortRef Compiler::emitFeedbackReturn(TrackId trackId, int signal, TrackId source) {
     const OpKey key{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
-                    INVALID_DEVICE_ID, OpRole::FeedbackReturn, feedbackIndex(signal, source)};
+                    INVALID_DEVICE_ID, OpRole::FeedbackReturn, source};
     const auto kind = signal == 1 ? SignalKind::Midi : SignalKind::Audio;
     const PortRef port{addOp(OpKind::FeedbackReturn, key, {}, {kind}), 0};
     feedbackReturns_[{trackId, signal}] = port;
@@ -699,9 +729,8 @@ void Compiler::emitFeedbackSends() {
         if (ret == feedbackReturns_.end())
             continue;
 
-        const OpKey key{
-            trackId,           INVALID_RACK_ID,      INVALID_CHAIN_ID,
-            INVALID_DEVICE_ID, OpRole::FeedbackSend, feedbackIndex(signal, route.trackId)};
+        const OpKey key{trackId,           INVALID_RACK_ID,      INVALID_CHAIN_ID,
+                        INVALID_DEVICE_ID, OpRole::FeedbackSend, route.trackId};
         addOp(OpKind::FeedbackSend, key, {source->second, ret->second}, {});
     }
 }
@@ -1565,9 +1594,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
         case RouteKind::Track: {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
-            if (cutRoutes_.contains({track.id, 1})) {
-                midiSources.push_back(emitInputRouteGate(
-                    track.id, 1, emitFeedbackReturn(track.id, 1, route.trackId)));
+            if (refusedMidiRoutes_.contains(track.id)) {
+                // Reported where the loop was found.
             } else if (const auto source = trackMidiInput_.find(route.trackId);
                        source != trackMidiInput_.end()) {
                 midiSources.push_back(emitInputRouteGate(track.id, 1, source->second));
