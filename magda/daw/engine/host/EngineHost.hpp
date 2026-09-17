@@ -26,6 +26,7 @@ class String;
 namespace magda {
 class OfflineRenderSession;
 class TempoMap;
+struct RecordingPreview;
 struct HostParameters;
 struct PluginPrograms;
 struct OfflineRenderRequest;
@@ -254,6 +255,24 @@ class EngineHost {
     void stopPlaying();
     void locateSeconds(double seconds);
     bool isPlaying() const;
+
+    /**
+     * @brief Begin an Arrangement MIDI take on every eligible armed track.
+     *
+     * Locates first when playback is stopped, then starts the transport. While
+     * rolling, begins at the current cursor. False means no eligible input was
+     * available and nothing changed.
+     */
+    bool startMidiRecording(double positionSeconds);
+
+    /// Finish every Arrangement MIDI take without stopping playback.
+    void stopMidiRecording();
+
+    /// Whether this host currently owns any live Arrangement MIDI take.
+    bool isRecording() const;
+
+    /** @brief Arrangement MIDI passes as the record taps last published them. */
+    const std::unordered_map<TrackId, RecordingPreview>& recordingPreviews();
 
     /// Where the cursor is. Readable from any thread; what a playhead is drawn
     /// from.

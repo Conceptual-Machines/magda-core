@@ -790,9 +790,6 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
     if (previews.empty())
         return;
 
-    static int paintCount = 0;
-    paintCount++;
-
     constexpr int HEADER_HEIGHT = 16;
     constexpr float CORNER_RADIUS = 4.0f;
     constexpr int MIDI_MAX = 127;
@@ -830,12 +827,6 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
         juce::Colour baseColour = juce::Colour(Config::getDefaultColour(
             static_cast<int>(ClipManager::getInstance().getArrangementClips().size())));
 
-        if (paintCount % 60 == 1) {
-            DBG("RecPreview::paint: track=" << trackId << " bounds=" << bounds.toString()
-                                            << " notes=" << preview.notes.size()
-                                            << " lenBeats=" << preview.currentLengthBeats);
-        }
-
         // Background fill
         g.setColour(baseColour.darker(0.3f));
         g.fillRoundedRectangle(bounds.toFloat(), CORNER_RADIUS);
@@ -865,11 +856,15 @@ void TrackContentPanel::paintRecordingPreviews(juce::Graphics& g) {
 
                 g.drawVerticalLine(px, centerY - lineHalf, centerY + lineHalf);
             }
-        } else if (!preview.notes.empty() && noteArea.getHeight() > 5) {
+        } else if (!preview.notes.empty() && preview.currentLengthBeats > 0.0 &&
+                   noteArea.getHeight() > 5) {
             g.setColour(baseColour.brighter(0.3f));
 
             double clipLengthInBeats = preview.currentLengthBeats;
-            double beatRange = juce::jmax(1.0, clipLengthInBeats);
+            // The preview's width already represents its captured duration,
+            // including during the first beat. A one-beat minimum would
+            // compress the notes until the pass had recorded a whole beat.
+            double beatRange = clipLengthInBeats;
 
             for (const auto& note : preview.notes) {
                 double displayStart = note.startBeat;

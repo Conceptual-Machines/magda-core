@@ -16,6 +16,7 @@
 
 #include "../../audio/DeviceParameterDisplayTextProvider.hpp"
 #include "../../audio/DeviceParameterList.hpp"
+#include "../../audio/midi/RecordingNoteQueue.hpp"
 #include "../../audio/plugin_manager/ExternalPluginState.hpp"
 #include "../../audio/plugins/engine/ControlExecutor.hpp"
 #include "../../audio/plugins/engine/DeviceControl.hpp"
@@ -48,7 +49,9 @@
 #include "exec/EngineSession.hpp"
 #include "exec/PlanValues.hpp"
 #include "io/LiveInput.hpp"
+#include "io/MidiTakeRecorder.hpp"
 #include "io/PrefetchThread.hpp"
+#include "io/RecordThread.hpp"
 #include "plan/PlanCompiler.hpp"
 #include "trace/PlaybackTrace.hpp"
 
@@ -64,6 +67,9 @@ constexpr int kChannels = 2;
 
 /// 30 fps, which is what the fork's own metering timer runs at.
 constexpr int kMeterIntervalMs = 33;
+
+/// Per live MIDI pass. Fixed before the audio thread sees the tap.
+constexpr std::size_t kRecordingPreviewNotes = 2048;
 
 /// Anything a publish could not honour, named by the half that reported it.
 void report(const juce::String& what, const std::vector<std::string>& messages) {
@@ -524,6 +530,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // through, and removeAudioCallback returns only once the audio thread
         // is out of here.
         devices_->removeAudioCallback(this);
+        stopMidiRecording();
         BindingRegistry::getInstance().removeListener(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
@@ -571,6 +578,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         const auto tracks = playedTracks();
 
+        // Recording follows the new model before that model can reach an
+        // audio block. A newly armed key is ignored by the old epoch; a
+        // removed or rerouted key is closed before the new epoch/routing is
+        // visible, so no block can fall between model and recorder state.
+        reconcileMidiRecording();
+
         // Before the swap, so the new plan's first block renders against
         // routing resolved from the same reading of the model (#2592).
         publishRouting(tracks);
@@ -592,6 +605,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         livePlan_ = std::move(plan);
+        publishedTakeKeys_ = ids.takes;
+        harvestClosedMidiTakes();
         traceEdit(EngineTrace::Kind::Swap);
         tracePlan(*livePlan_);
         reportUnbuiltDevices();
@@ -646,6 +661,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             }
         }
 
+        // Arming is permission for an existing input op to feed a take. With
+        // Monitor In it changes no topology, but the epoch still needs the
+        // new TakeKey set before the next block. This follows the topology
+        // check above so Monitor Auto can first add its input op.
+        const auto ids =
+            engine::collectRuntimeStateIds(TrackManager::getInstance().getTracks(), *master);
+        if (ids.takes != publishedTakeKeys_) {
+            publishPlan(livePlan_);
+            return;
+        }
+
+        reconcileMidiRecording();
+
         engine::PlanValues values;
         report("values",
                resolveValues(*livePlan_, TrackManager::getInstance().getTracks(), *master, values));
@@ -680,7 +708,253 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// would resolve to a source nothing pushes under.
     void refreshLiveMidiDevices() {
         sources_.registerAvailableDevices();
+        reconcileMidiRecording();
         publishRouting(playedTracks());
+    }
+
+    // ===== Arrangement MIDI recording (#2553) =====
+
+    struct ActiveMidiRoute {
+        juce::String input;
+        std::vector<engine::LiveMidiSourceId> sources;
+
+        bool operator==(const ActiveMidiRoute&) const = default;
+    };
+
+    bool frozen(TrackId trackId) const {
+        return std::ranges::any_of(
+            frozen_, [trackId](const FrozenTrack& track) { return track.trackId == trackId; });
+    }
+
+    std::optional<std::vector<engine::LiveMidiSourceId>> recordingSources(
+        const TrackInfo& track, const std::vector<engine::LiveMidiSourceId>& devices) {
+        if (!track.recordArmed || !track.takesExternalInput() || frozen(track.id) ||
+            track.midiInputDevice.isEmpty() || track.midiInputDevice.startsWith("track:"))
+            return std::nullopt;
+
+        if (track.midiInputDevice == "all") {
+            if (devices.empty())
+                return std::nullopt;
+            return devices;
+        }
+
+        const auto source = sources_.resolveRoute(track.midiInputDevice);
+        if (source == LiveMidiSources::kNoSource ||
+            std::ranges::find(devices, source) == devices.end())
+            return std::nullopt;
+
+        return std::vector<engine::LiveMidiSourceId>{source};
+    }
+
+    void startMidiTake(const TrackInfo& track, std::vector<engine::LiveMidiSourceId> sources) {
+        if (session_ == nullptr)
+            return;
+
+        recordingRoutes_[track.id] =
+            ActiveMidiRoute{.input = track.midiInputDevice, .sources = sources};
+        previewReadings_.erase(track.id);
+        recordingPreviews_.erase(track.id);
+        const engine::TakeKey key{track.id, engine::RecordMaterial::midi};
+        session_->startTake(
+            key, {.target = engine::RecordTarget::arrangement, .maxNotes = kRecordingPreviewNotes},
+            [this, sources = std::move(sources)](engine::RecordTap& tap) mutable {
+                engine::MidiTakeRecorderSettings settings;
+                settings.sources = std::move(sources);
+                auto recorder = std::make_unique<engine::MidiTakeRecorder>(session_->liveInputs(),
+                                                                           tap, settings);
+                recordThread_.add(recorder->stream());
+                return recorder;
+            });
+    }
+
+    void materialize(engine::ClosedTake closed, bool createClip = true) {
+        if (closed.take == nullptr)
+            return;
+
+        recordThread_.remove(closed.take->stream());
+        auto* recorder = dynamic_cast<engine::MidiTakeRecorder*>(closed.take.get());
+        if (recorder == nullptr)
+            return;
+
+        auto take = recorder->finish(map_);
+        if (take.eventsLost > 0 || take.messagesDropped > 0 || take.passesLost > 0)
+            juce::Logger::writeToLog("[engine] MIDI take track " +
+                                     juce::String(closed.key.trackId) + ": " +
+                                     juce::String(take.eventsLost) + " events lost, " +
+                                     juce::String(take.messagesDropped) + " messages dropped, " +
+                                     juce::String(take.passesLost) + " pass boundaries lost");
+
+        if (take.empty() || !createClip)
+            return;
+
+        if (TrackManager::getInstance().getTrack(closed.key.trackId) == nullptr) {
+            juce::Logger::writeToLog("[engine] discarded MIDI take for deleted track " +
+                                     juce::String(closed.key.trackId));
+            return;
+        }
+
+        RecordedMidiClipData data{.startBeat = take.startBeat,
+                                  .lengthBeats = take.lengthBeats,
+                                  .active = std::move(take.active),
+                                  .takeModel = std::move(take.clip)};
+        ClipManager::getInstance().createRecordedMidiClip(closed.key.trackId, std::move(data));
+    }
+
+    void harvestClosedMidiTakes(bool createClips = true) {
+        if (session_ == nullptr)
+            return;
+
+        for (auto& closed : session_->takeClosedTakes()) {
+            recordingRoutes_.erase(closed.key.trackId);
+            previewReadings_.erase(closed.key.trackId);
+            recordingPreviews_.erase(closed.key.trackId);
+            materialize(std::move(closed), createClips);
+        }
+    }
+
+    void stopMidiTake(TrackId trackId, bool createClip = true) {
+        if (session_ == nullptr)
+            return;
+
+        recordingRoutes_.erase(trackId);
+        previewReadings_.erase(trackId);
+        recordingPreviews_.erase(trackId);
+        materialize(session_->stopTake({trackId, engine::RecordMaterial::midi}), createClip);
+    }
+
+    void stopMidiRecording(bool createClips = true) {
+        recording_ = false;
+        const auto active = recordingRoutes_;
+        for (const auto& [trackId, unused] : active) {
+            juce::ignoreUnused(unused);
+            stopMidiTake(trackId, createClips);
+        }
+        harvestClosedMidiTakes(createClips);
+    }
+
+    void reconcileMidiRecording() {
+        if (session_ == nullptr)
+            return;
+
+        harvestClosedMidiTakes();
+        if (!recording_)
+            return;
+
+        sources_.registerAvailableDevices();
+        auto devices = sources_.deviceSources();
+        std::erase_if(devices, [this](auto source) {
+            return sources_.slotFor(source) == LiveMidiSources::kNoSlot;
+        });
+        std::ranges::sort(devices);
+        devices.erase(std::unique(devices.begin(), devices.end()), devices.end());
+        std::set<TrackId> eligible;
+        for (const auto& track : TrackManager::getInstance().getTracks()) {
+            auto sources = recordingSources(track, devices);
+            if (!sources.has_value())
+                continue;
+
+            eligible.insert(track.id);
+            const auto active = recordingRoutes_.find(track.id);
+            const ActiveMidiRoute wanted{.input = track.midiInputDevice, .sources = *sources};
+            if (active != recordingRoutes_.end() && active->second == wanted)
+                continue;
+
+            if (active != recordingRoutes_.end())
+                stopMidiTake(track.id);
+            startMidiTake(track, std::move(*sources));
+        }
+
+        const auto active = recordingRoutes_;
+        for (const auto& [trackId, unused] : active) {
+            juce::ignoreUnused(unused);
+            if (!eligible.contains(trackId))
+                stopMidiTake(trackId);
+        }
+
+        if (recordingRoutes_.empty())
+            recording_ = false;
+    }
+
+    bool startMidiRecording(double positionSeconds) {
+        if (recording_)
+            return recording_;
+
+        // Arm and route edits are coalesced. Record is a boundary: the live
+        // epoch must name the takes before its next callback can feed them.
+        handleUpdateNowIfNeeded();
+        if (session_ == nullptr || !audioRunning_.load(std::memory_order_acquire) ||
+            offlineRenders_ > 0)
+            return false;
+
+        recording_ = true;
+        reconcileMidiRecording();
+        if (!recording_)
+            return false;
+
+        if (!request_.playing)
+            publishRequest({.playing = true,
+                            .locate = true,
+                            .positionBeat = map_.timeToBeat(positionSeconds)});
+        return true;
+    }
+
+    const std::unordered_map<TrackId, RecordingPreview>& recordingPreviews() {
+        if (session_ == nullptr || !recording_) {
+            previewReadings_.clear();
+            recordingPreviews_.clear();
+            return recordingPreviews_;
+        }
+
+        for (auto at = recordingPreviews_.begin(); at != recordingPreviews_.end();) {
+            if (!recordingRoutes_.contains(at->first))
+                at = recordingPreviews_.erase(at);
+            else
+                ++at;
+        }
+        for (auto at = previewReadings_.begin(); at != previewReadings_.end();) {
+            if (!recordingRoutes_.contains(at->first))
+                at = previewReadings_.erase(at);
+            else
+                ++at;
+        }
+
+        for (const auto& [trackId, route] : recordingRoutes_) {
+            juce::ignoreUnused(route);
+            const auto* tap = session_->takeTap({trackId, engine::RecordMaterial::midi});
+            if (tap == nullptr) {
+                previewReadings_.erase(trackId);
+                recordingPreviews_.erase(trackId);
+                continue;
+            }
+
+            auto& reading = previewReadings_[trackId];
+            if (!tap->read(reading))
+                continue;
+
+            if (reading.pass == 0 || reading.material != engine::RecordMaterial::midi ||
+                reading.target != engine::RecordTarget::arrangement) {
+                recordingPreviews_.erase(trackId);
+                continue;
+            }
+
+            auto& preview = recordingPreviews_[trackId];
+            preview.trackId = trackId;
+            preview.target = RecordingTargetKind::Arrangement;
+            preview.sceneIndex = -1;
+            preview.startBeat = reading.startBeat;
+            preview.currentLengthBeats = reading.lengthBeats;
+            preview.isAudioRecording = false;
+            preview.audioPeaks.clear();
+            preview.notes.resize(reading.notes.size());
+            std::ranges::transform(reading.notes, preview.notes.begin(), [](const auto& note) {
+                return MidiNote{.noteNumber = note.noteNumber,
+                                .velocity = note.velocity,
+                                .startBeat = note.startBeat,
+                                .lengthBeats = note.lengthBeats};
+            });
+        }
+
+        return recordingPreviews_;
     }
 
     /// What every track plays, resolved against the tempo the transport is
@@ -747,6 +1021,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     void forgetProject() {
+        stopMidiRecording(false);
         factory_.forgetBuiltDevices();
         routing_.reset();
         devicePaths_.clear();
@@ -876,6 +1151,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // Held rather than dropped: the flags stay set, and the end of the render asks again.
         if (offlineRenders_ > 0)
             return;
+
+        // A physical device stop has no block in which a take can close. An
+        // intentional remove/add during rebuild reaches this handler only
+        // after the callback has been installed again.
+        if (recording_ && !audioRunning_.load(std::memory_order_acquire))
+            stopMidiRecording();
 
         const engine::RenderContext wanted{.sampleRate = rate_.load(),
                                            .maxBlockSize = blockSize_.load(),
@@ -1031,6 +1312,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void rebuild(const engine::RenderContext& context) {
         devices_->removeAudioCallback(this);
 
+        const auto resumeRecording = recording_;
+        stopMidiRecording();
+
         session_.reset();
         voiceThread_.reset();
         voices_.reset();
@@ -1071,6 +1355,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         publishPlan();
         publishClips();
 
+        if (resumeRecording) {
+            recording_ = true;
+            reconcileMidiRecording();
+        }
+
         devices_->addAudioCallback(this);
     }
 
@@ -1080,6 +1369,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (offlineRenders_++ > 0)
             return;
 
+        stopMidiRecording();
         if (request_.playing)
             publishRequest({.playing = false, .locate = false});
 
@@ -1584,6 +1874,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     EngineFileReaders files_;
     engine::PrefetchThread reader_;
+    engine::RecordThread recordThread_;
 
     /// Who is playing, what they played, and which track hears it. The message
     /// thread and the MIDI threads share the registry; the queue carries
@@ -1637,6 +1928,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::unique_ptr<engine::ClipVoicePool> voices_;
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
     std::unique_ptr<engine::EngineSession> session_;
+
+    /// Arrangement MIDI takes owned by the live session. The resolved source
+    /// set is part of the identity so a hot-plug or route edit closes one take
+    /// before another begins.
+    std::map<TrackId, ActiveMidiRoute> recordingRoutes_;
+    std::set<engine::TakeKey> publishedTakeKeys_;
+    bool recording_ = false;
+    std::unordered_map<TrackId, engine::RecordTap::Reading> previewReadings_;
+    std::unordered_map<TrackId, RecordingPreview> recordingPreviews_;
 
     /// What the session grid asks of the launcher, and what it reads back
     /// (#2552). Holds this rather than the session, which is rebuilt whenever
@@ -1844,6 +2144,7 @@ void EngineHost::play() {
 }
 
 void EngineHost::stopPlaying() {
+    impl_->stopMidiRecording();
     const auto stopping = impl_->request_.playing;
     impl_->publishRequest({.playing = false, .locate = false});
     if (stopping)
@@ -1851,6 +2152,7 @@ void EngineHost::stopPlaying() {
 }
 
 void EngineHost::locateSeconds(double seconds) {
+    impl_->stopMidiRecording();
     impl_->publishRequest({.playing = impl_->request_.playing,
                            .locate = true,
                            .positionBeat = impl_->tempoMap().timeToBeat(seconds)});
@@ -1858,6 +2160,22 @@ void EngineHost::locateSeconds(double seconds) {
 
 bool EngineHost::isPlaying() const {
     return impl_->request_.playing;
+}
+
+bool EngineHost::startMidiRecording(double positionSeconds) {
+    return impl_->startMidiRecording(positionSeconds);
+}
+
+void EngineHost::stopMidiRecording() {
+    impl_->stopMidiRecording();
+}
+
+bool EngineHost::isRecording() const {
+    return impl_->recording_;
+}
+
+const std::unordered_map<TrackId, RecordingPreview>& EngineHost::recordingPreviews() {
+    return impl_->recordingPreviews();
 }
 
 double EngineHost::positionBeats() const {
@@ -1869,6 +2187,11 @@ double EngineHost::positionSeconds() const {
 }
 
 void EngineHost::setTempo(double bpm) {
+    if (impl_->bpm_ == bpm)
+        return;
+
+    const auto resumeRecording = impl_->recording_;
+    impl_->stopMidiRecording();
     impl_->bpm_ = bpm;
     impl_->refreshTempoMap();
     impl_->publishTransport();
@@ -1876,6 +2199,10 @@ void EngineHost::setTempo(double bpm) {
     // The snapshot's seconds were derived through the map that just changed, so
     // it is compiled again rather than left placing clips at the old tempo.
     impl_->publishClips();
+    if (resumeRecording) {
+        impl_->recording_ = true;
+        impl_->reconcileMidiRecording();
+    }
 }
 
 double EngineHost::tempo() const {
@@ -1883,10 +2210,19 @@ double EngineHost::tempo() const {
 }
 
 void EngineHost::setTimeSignature(int numerator, int denominator) {
+    if (impl_->numerator_ == numerator && impl_->denominator_ == denominator)
+        return;
+
+    const auto resumeRecording = impl_->recording_;
+    impl_->stopMidiRecording();
     impl_->numerator_ = numerator;
     impl_->denominator_ = denominator;
     impl_->refreshTempoMap();
     impl_->publishTransport();
+    if (resumeRecording) {
+        impl_->recording_ = true;
+        impl_->reconcileMidiRecording();
+    }
 }
 
 void EngineHost::getTimeSignature(int& numerator, int& denominator) const {
@@ -1895,8 +2231,18 @@ void EngineHost::getTimeSignature(int& numerator, int& denominator) const {
 }
 
 void EngineHost::setLoop(bool enabled, double startBeat, double endBeat) {
-    impl_->loop_ = {.enabled = enabled, .startBeat = startBeat, .endBeat = endBeat};
+    const engine::LoopRange wanted{.enabled = enabled, .startBeat = startBeat, .endBeat = endBeat};
+    if (impl_->loop_ == wanted)
+        return;
+
+    const auto resumeRecording = impl_->recording_;
+    impl_->stopMidiRecording();
+    impl_->loop_ = wanted;
     impl_->publishTransport();
+    if (resumeRecording) {
+        impl_->recording_ = true;
+        impl_->reconcileMidiRecording();
+    }
 }
 
 void EngineHost::setMetronomeEnabled(bool enabled) {

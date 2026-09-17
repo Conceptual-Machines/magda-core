@@ -498,6 +498,43 @@ ClipId ClipManager::createMidiClipBeats(TrackId trackId, double startBeats, doub
     return clip.id;
 }
 
+ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData recording,
+                                           ClipOverlapPolicy overlapPolicy) {
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        recording.startBeat = findNonOverlappingStartBeats(
+            trackId, recording.startBeat, recording.lengthBeats, ClipView::Arrangement);
+    }
+
+    ClipInfo clip;
+    clip.id = nextClipId_++;
+    clip.trackId = trackId;
+    clip.setMidiContent();
+    clip.view = ClipView::Arrangement;
+    clip.overlapPlaysBoth = Config::getInstance().getClipOverlapPlaysBoth();
+    clip.name = generateClipName(ClipType::MIDI);
+    if (Config::getInstance().getClipColourMode() == 0) {
+        const auto* track = TrackManager::getInstance().getTrack(trackId);
+        clip.colour = track ? track->colour : juce::Colour(Config::getDefaultColour(0));
+    } else {
+        clip.colour = juce::Colour(Config::getDefaultColour(static_cast<int>(clips_.size())));
+    }
+
+    clip.setPlacementBeats(recording.startBeat, recording.lengthBeats);
+    clip.deriveTimesFromBeats(currentProjectTempoOrDefault());
+    clip.midiNotes = std::move(recording.active.notes);
+    clip.midiCCData = std::move(recording.active.cc);
+    clip.midiPitchBendData = std::move(recording.active.pitchBend);
+    clip.midi() = std::move(recording.takeModel);
+
+    const auto clipId = clip.id;
+    clips_[clipId] = std::move(clip);
+    addToSessionSlotIndex(clips_[clipId]);
+    if (overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
+        resolveOverlaps(clipId);
+    notifyClipsChanged();
+    return clipId;
+}
+
 ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length, ClipView view,
                                    ClipOverlapPolicy overlapPolicy) {
     // Seconds → beats once, at the boundary, using project tempo. Then

@@ -193,7 +193,9 @@ bool MidiTakeSink::writeMidi(std::span<const RecordedMidiEvent> events) {
 MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
                                    const MidiTakeRecorderSettings& settings)
     : settings_(settings),
-      input_(feed, settings_.source, settings_.latencySamples),
+      input_(settings_.sources.has_value()
+                 ? LiveMidiInput(feed, *settings_.sources, settings_.latencySamples)
+                 : LiveMidiInput(feed, settings_.source, settings_.latencySamples)),
       stream_(sink_, queueFor(settings_)),
       tap_(tap) {
     // Sized once, so a block's events are copied into it and never allocate.

@@ -126,6 +126,7 @@ set(TEST_SOURCES
     project/test_project_dirty_tracking.cpp
     project/test_project_teardown.cpp
     clips/test_session_clip_playback.cpp
+    clips/test_recorded_midi_clip_creation.cpp
     devices/test_sidechain_triggers.cpp
     devices/test_sidechain_device.cpp
     automation/test_curve_snapshot.cpp
@@ -858,6 +859,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+        engine/test_engine_host_midi_recording_juce.cpp
 
         # Export, bounce and analysis renders on the native engine, read off disk (#2555).
         engine/test_engine_offline_render_juce.cpp

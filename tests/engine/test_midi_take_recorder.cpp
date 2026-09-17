@@ -38,6 +38,7 @@ using magda::engine::LaunchRequestQueue;
 using magda::engine::LiveInputBlock;
 using magda::engine::LiveInputFeed;
 using magda::engine::LiveMidiInput;
+using magda::engine::LiveMidiSourceId;
 using magda::engine::LiveMidiStream;
 using magda::engine::LoopRange;
 using magda::engine::MidiTakeRecorder;
@@ -72,22 +73,26 @@ TempoMap halvedAtBeatTwo() {
 struct Played {
     std::int64_t arrival = 0;
     juce::MidiMessage message;
+    LiveMidiSourceId source = 0;
 };
 
-Played noteOn(std::int64_t arrival, int note, int velocity = 100, int channel = 1) {
-    return {arrival, juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(velocity))};
+Played noteOn(std::int64_t arrival, int note, int velocity = 100, int channel = 1,
+              LiveMidiSourceId source = 0) {
+    return {arrival, juce::MidiMessage::noteOn(channel, note, static_cast<juce::uint8>(velocity)),
+            source};
 }
 
-Played noteOff(std::int64_t arrival, int note, int channel = 1) {
-    return {arrival, juce::MidiMessage::noteOff(channel, note)};
+Played noteOff(std::int64_t arrival, int note, int channel = 1, LiveMidiSourceId source = 0) {
+    return {arrival, juce::MidiMessage::noteOff(channel, note), source};
 }
 
-Played controller(std::int64_t arrival, int number, int value, int channel = 1) {
-    return {arrival, juce::MidiMessage::controllerEvent(channel, number, value)};
+Played controller(std::int64_t arrival, int number, int value, int channel = 1,
+                  LiveMidiSourceId source = 0) {
+    return {arrival, juce::MidiMessage::controllerEvent(channel, number, value), source};
 }
 
-Played pitchBend(std::int64_t arrival, int value, int channel = 1) {
-    return {arrival, juce::MidiMessage::pitchWheel(channel, value)};
+Played pitchBend(std::int64_t arrival, int value, int channel = 1, LiveMidiSourceId source = 0) {
+    return {arrival, juce::MidiMessage::pitchWheel(channel, value), source};
 }
 
 /// What the track's instrument was handed.
@@ -174,12 +179,16 @@ class Rig {
 
   private:
     void deliver(int numSamples) {
-        juce::MidiBuffer arriving;
+        std::map<LiveMidiSourceId, juce::MidiBuffer> arriving;
         for (const auto& event : schedule_)
             if (event.arrival >= arrival_ && event.arrival < arrival_ + numSamples)
-                arriving.addEvent(event.message, static_cast<int>(event.arrival - arrival_));
+                arriving[event.source].addEvent(event.message,
+                                                static_cast<int>(event.arrival - arrival_));
 
-        const std::array streams{LiveMidiStream{0, &arriving}};
+        std::vector<LiveMidiStream> streams;
+        streams.reserve(arriving.size());
+        for (const auto& [source, events] : arriving)
+            streams.push_back({source, &events});
         const LiveInputBlock block{{}, streams};
 
         feed_.beginCallback(block, numSamples);
@@ -395,6 +404,92 @@ TEST_CASE("A note lands on the beat it was played on", "[engine][io][record][mid
     CHECK(take.clip.takes.empty());
     CHECK(take.startBeat == 0.0);
     CHECK(take.lengthBeats == Catch::Approx(2.0));
+}
+
+TEST_CASE("An explicit empty MIDI source list records no input",
+          "[engine][io][record][midi][2553]") {
+    auto settings = takeOf();
+    settings.sources = std::vector<LiveMidiSourceId>{};
+
+    Rig rig(std::move(settings));
+    rig.schedule({noteOn(kBeatSamples, 60, 100, 1, 10), noteOff(kBeatSamples + 500, 60, 1, 10),
+                  controller(kBeatSamples + 600, 74, 96, 1, 20),
+                  pitchBend(kBeatSamples + 700, 10000, 1, 20)});
+    rig.play();
+    rig.run(kBeatSamples * 2);
+
+    const auto take = rig.finish();
+    REQUIRE_FALSE(take.empty());
+    CHECK(take.active.notes.empty());
+    CHECK(take.active.cc.empty());
+    CHECK(take.active.pitchBend.empty());
+}
+
+TEST_CASE("A MIDI take merges each selected input exactly once",
+          "[engine][io][record][midi][2553]") {
+    auto settings = takeOf();
+    settings.sources = std::vector<LiveMidiSourceId>{20, 10, 20, 10};
+
+    Rig rig(std::move(settings));
+    rig.schedule({noteOn(kBeatSamples, 60, 100, 1, 10), noteOff(kBeatSamples + 500, 60, 1, 10),
+                  noteOn(kBeatSamples + 1000, 64, 90, 1, 20),
+                  noteOff(kBeatSamples + 1500, 64, 1, 20),
+                  controller(kBeatSamples + 2000, 74, 96, 1, 10),
+                  pitchBend(kBeatSamples + 2500, 10000, 1, 20)});
+    rig.play();
+    rig.run(kBeatSamples * 2);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.active.notes[1].noteNumber == 64);
+    REQUIRE(take.active.cc.size() == 1);
+    CHECK(take.active.cc[0].controller == 74);
+    REQUIRE(take.active.pitchBend.size() == 1);
+    CHECK(take.active.pitchBend[0].value == 10000);
+}
+
+TEST_CASE("A MIDI take excludes unselected and audition sources",
+          "[engine][io][record][midi][2553]") {
+    constexpr LiveMidiSourceId kSelected = 10;
+    constexpr LiveMidiSourceId kUnrelated = 30;
+    constexpr LiveMidiSourceId kAudition = 99;
+
+    auto settings = takeOf();
+    settings.sources = std::vector<LiveMidiSourceId>{kSelected};
+
+    Rig rig(std::move(settings));
+    rig.schedule({noteOn(kBeatSamples, 60, 100, 1, kSelected),
+                  noteOff(kBeatSamples + 500, 60, 1, kSelected),
+                  noteOn(kBeatSamples, 64, 100, 1, kUnrelated),
+                  noteOff(kBeatSamples + 500, 64, 1, kUnrelated),
+                  noteOn(kBeatSamples, 67, 100, 1, kAudition),
+                  noteOff(kBeatSamples + 500, 67, 1, kAudition)});
+    rig.play();
+    rig.run(kBeatSamples * 2);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 1);
+    CHECK(take.active.notes.front().noteNumber == 60);
+}
+
+TEST_CASE("The legacy scalar MIDI source still defaults to every input",
+          "[engine][io][record][midi][2553]") {
+    auto settings = takeOf();
+    REQUIRE_FALSE(settings.sources.has_value());
+    REQUIRE(settings.source == kAnyLiveMidiSource);
+
+    Rig rig(std::move(settings));
+    rig.schedule({noteOn(kBeatSamples, 60, 100, 1, 10), noteOff(kBeatSamples + 500, 60, 1, 10),
+                  noteOn(kBeatSamples + 1000, 64, 100, 1, 20),
+                  noteOff(kBeatSamples + 1500, 64, 1, 20)});
+    rig.play();
+    rig.run(kBeatSamples * 2);
+
+    const auto take = rig.finish();
+    REQUIRE(take.active.notes.size() == 2);
+    CHECK(take.active.notes[0].noteNumber == 60);
+    CHECK(take.active.notes[1].noteNumber == 64);
 }
 
 TEST_CASE("A note recorded across a tempo change lands where it was played",

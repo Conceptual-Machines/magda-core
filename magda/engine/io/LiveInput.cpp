@@ -1,6 +1,7 @@
 #include "io/LiveInput.hpp"
 
 #include <algorithm>
+#include <ranges>
 
 namespace magda::engine {
 
@@ -171,8 +172,25 @@ void LiveAudioInput::render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<fl
 LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source, int latencySamples)
     : feed_(feed), source_(source), latencySamples_(latencySamples) {}
 
+LiveMidiInput::LiveMidiInput(const LiveInputFeed& feed, std::span<const LiveMidiSourceId> sources,
+                             int latencySamples)
+    : feed_(feed),
+      sources_(sources.begin(), sources.end()),
+      explicitSources_(true),
+      latencySamples_(latencySamples) {
+    std::ranges::sort(sources_);
+    sources_.erase(std::unique(sources_.begin(), sources_.end()), sources_.end());
+}
+
 void LiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& out) {
-    if (const auto dropped = feed_.appendEvents(source_, out, kMaxMidiBytesPerPort); dropped > 0)
+    auto dropped = 0;
+    if (!explicitSources_)
+        dropped = feed_.appendEvents(source_, out, kMaxMidiBytesPerPort);
+    else
+        for (const auto source : sources_)
+            dropped += feed_.appendEvents(source, out, kMaxMidiBytesPerPort);
+
+    if (dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
 }
 

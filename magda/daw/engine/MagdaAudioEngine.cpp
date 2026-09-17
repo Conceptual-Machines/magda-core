@@ -195,7 +195,7 @@ void MagdaAudioEngine::pause() {
     host_->stopPlaying();
 }
 void MagdaAudioEngine::record() {
-    reportUnwired("record", "#2553");
+    host_->startMidiRecording(getCurrentPosition());
 }
 void MagdaAudioEngine::locate(double positionSeconds) {
     host_->locateSeconds(positionSeconds);
@@ -207,9 +207,7 @@ bool MagdaAudioEngine::isPlaying() const {
     return host_->isPlaying();
 }
 bool MagdaAudioEngine::isRecording() const {
-    // Unwired like record(), but not reported: while nothing records, false is
-    // the true answer rather than a silence (#2553).
-    return tracktion_->isRecording();
+    return host_->isRecording();
 }
 // The session launcher, off the handle the engine publishes per slot and the
 // tap the block that advanced it wrote (#2552). SlotLauncher.hpp is the whole
@@ -621,11 +619,10 @@ void MagdaAudioEngine::onTransportPause() {
     pause();
 }
 void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
-    juce::ignoreUnused(positionSeconds);
-    reportUnwired("onTransportRecord", "#2553");
+    host_->startMidiRecording(positionSeconds);
 }
 void MagdaAudioEngine::onTransportStopRecording() {
-    reportUnwired("onTransportStopRecording", "#2553");
+    host_->stopMidiRecording();
 }
 void MagdaAudioEngine::onEditPositionChanged(double positionSeconds) {
     // Only while stopped, which is the fork's rule and the right one: this
@@ -680,10 +677,7 @@ bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) c
 
 const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()
     const {
-    reportUnwired("getRecordingPreviews", "#2553");
-
-    static const std::unordered_map<TrackId, RecordingPreview> none;
-    return none;
+    return host_->recordingPreviews();
 }
 
 void MagdaAudioEngine::onPunchRegionChanged(double startSeconds, double endSeconds,

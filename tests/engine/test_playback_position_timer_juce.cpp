@@ -23,7 +23,7 @@ class TimerEngine final : public magda::TracktionEngineWrapper {
     }
 
     bool isRecording() const override {
-        return false;
+        return recording;
     }
 
     std::unordered_map<magda::ClipId, double> getActiveClipPlayheadPositions() const override {
@@ -39,6 +39,7 @@ class TimerEngine final : public magda::TracktionEngineWrapper {
     }
 
     bool playing = true;
+    bool recording = false;
     double transportSeconds = 0.0;
     std::unordered_map<magda::ClipId, double> clipPositions;
     int triggerUpdates = 0;
@@ -87,9 +88,119 @@ class PlaybackPositionTimerTest final : public juce::UnitTest {
     void runTest() override {
         magda::test::runWithCleanJuceState(
             [this] { testClipPositionPrecedesTimelineNotification(); });
+        magda::test::runWithCleanJuceState([this] { testRejectedRecordReconciles(); });
+        magda::test::runWithCleanJuceState([this] { testPendingPlayIsNotRejected(); });
+        magda::test::runWithCleanJuceState([this] { testAcceptedRecordAndPunchOutReconcile(); });
+        magda::test::runWithCleanJuceState([this] { testPunchArmedStateSurvivesPolling(); });
     }
 
   private:
+    void testPendingPlayIsNotRejected() {
+        beginTest("An in-flight asynchronous Play request remains optimistic");
+
+        TimerEngine engine;
+        engine.playing = false;
+        magda::TimelineController timeline;
+        timeline.dispatch(magda::StartPlaybackEvent{});
+
+        magda::PlaybackPositionTimer timer(engine, timeline);
+        timer.start();
+        expect(waitForNextTimerTick(engine, 0), "The polling tick arrives");
+        expect(timeline.getState().playhead.isPlaying,
+               "An unchanged stopped engine does not reject an ordinary Play request");
+        timer.stop();
+    }
+
+    void testRejectedRecordReconciles() {
+        beginTest("A rejected recording request clears optimistic transport state");
+
+        TimerEngine engine;
+        engine.playing = false;
+        magda::TimelineController timeline;
+        timeline.dispatch(magda::StartRecordEvent{});
+        expect(timeline.getState().playhead.isPlaying && timeline.getState().playhead.isRecording,
+               "The request begins optimistically");
+
+        magda::PlaybackPositionTimer timer(engine, timeline);
+        std::vector<bool> playCallbacks;
+        std::vector<bool> recordCallbacks;
+        timer.onPlayStateChanged = [&](bool state) { playCallbacks.push_back(state); };
+        timer.onRecordStateChanged = [&](bool state) { recordCallbacks.push_back(state); };
+        timer.start();
+        expect(waitForNextTimerTick(engine, 0), "The reconciliation tick arrives");
+        expect(!timeline.getState().playhead.isPlaying && !timeline.getState().playhead.isRecording,
+               "The engine's rejected state replaces the optimistic request");
+        expect(playCallbacks == std::vector<bool>{false} &&
+                   recordCallbacks == std::vector<bool>{false},
+               "Direct transport-panel callbacks receive the reconciled false states");
+        timer.stop();
+    }
+
+    void testAcceptedRecordAndPunchOutReconcile() {
+        beginTest("Accepted recording and engine punch-out reconcile independently of playback");
+
+        TimerEngine engine;
+        engine.playing = true;
+        engine.recording = true;
+        magda::TimelineController timeline;
+        magda::PlaybackPositionTimer timer(engine, timeline);
+        timer.start();
+        expect(waitForNextTimerTick(engine, 0), "The accepted recording tick arrives");
+        expect(timeline.getState().playhead.isPlaying && timeline.getState().playhead.isRecording,
+               "The timeline adopts active engine recording");
+
+        engine.recording = false;
+        const auto beforeStop = engine.sessionPolls;
+        expect(waitForNextTimerTick(engine, beforeStop), "The punch-out tick arrives");
+        expect(timeline.getState().playhead.isPlaying && !timeline.getState().playhead.isRecording,
+               "Punch-out clears Record while playback continues");
+        timer.stop();
+    }
+
+    void testPunchArmedStateSurvivesPolling() {
+        beginTest("Punch-armed UI state survives until its boundary or an explicit stop");
+
+        TimerEngine engine;
+        engine.playing = false;
+        magda::TimelineController timeline;
+        timeline.dispatch(magda::SetPunchRegionBeatsEvent{4.0, 8.0});
+        timeline.dispatch(magda::StartRecordEvent{});
+        expect(timeline.isPunchArmed(), "Punch-in is waiting for beat four");
+
+        magda::PlaybackPositionTimer timer(engine, timeline);
+        timer.start();
+        expect(waitForNextTimerTick(engine, 0), "The armed-state tick arrives");
+        expect(timeline.isPunchArmed() && timeline.getState().playhead.isRecording,
+               "Engine Record false does not cancel the armed state");
+
+        engine.playing = true;
+        auto previousPoll = engine.sessionPolls;
+        expect(waitForNextTimerTick(engine, previousPoll), "The punch playback start is observed");
+        expect(timeline.isPunchArmed(), "Starting playback keeps the punch armed");
+
+        engine.playing = false;
+        previousPoll = engine.sessionPolls;
+        expect(waitForNextTimerTick(engine, previousPoll), "The external stop is observed");
+        expect(!timeline.isPunchArmed() && !timeline.getState().playhead.isRecording,
+               "An authoritative engine stop cancels the waiting punch");
+
+        timeline.dispatch(magda::StartRecordEvent{});
+        expect(timeline.isPunchArmed(), "Punch can be armed again after the external stop");
+        timeline.dispatch(magda::SetPlaybackPositionBeatsEvent{4.0});
+        expect(!timeline.isPunchArmed() && timeline.getState().playhead.isRecording,
+               "Reaching the punch boundary consumes the arm and begins recording intent");
+        timer.stop();
+
+        timeline.dispatch(magda::StartRecordEvent{});  // punch out
+        timeline.dispatch(magda::StopPlaybackEvent{});
+        timeline.dispatch(magda::SetEditPositionBeatsEvent{0.0});
+        timeline.dispatch(magda::StartRecordEvent{});
+        expect(timeline.isPunchArmed(), "A second punch is armed for the stop case");
+        timeline.dispatch(magda::StopPlaybackEvent{});
+        expect(!timeline.isPunchArmed() && !timeline.getState().playhead.isRecording,
+               "An explicit stop cancels the waiting punch");
+    }
+
     void testClipPositionPrecedesTimelineNotification() {
         beginTest("Timeline listeners observe the current Session playhead on every timer tick");
 

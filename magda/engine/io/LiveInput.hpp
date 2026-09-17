@@ -234,6 +234,8 @@ class LiveMidiInput final : public EngineMidiSource {
   public:
     explicit LiveMidiInput(const LiveInputFeed& feed, LiveMidiSourceId source = kAnyLiveMidiSource,
                            int latencySamples = 0);
+    LiveMidiInput(const LiveInputFeed& feed, std::span<const LiveMidiSourceId> sources,
+                  int latencySamples = 0);
 
     void render(const BlockInfo& /*block*/, juce::MidiBuffer& out) override;
 
@@ -251,6 +253,8 @@ class LiveMidiInput final : public EngineMidiSource {
   private:
     const LiveInputFeed& feed_;
     LiveMidiSourceId source_ = kAnyLiveMidiSource;
+    std::vector<LiveMidiSourceId> sources_;
+    bool explicitSources_ = false;
     int latencySamples_ = 0;
     std::atomic<std::uint32_t> dropped_{0};
 };
