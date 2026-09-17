@@ -190,11 +190,42 @@ void TrackLiveMidiInput::render(const BlockInfo& /*block*/, juce::MidiBuffer& ou
     if (dropped > 0)
         dropped_.fetch_add(static_cast<std::uint32_t>(dropped), std::memory_order_relaxed);
 
+    for (const auto metadata : out) {
+        const auto message = metadata.getMessage();
+        if (message.isNoteOn())
+            held_.set(heldIndex(message.getChannel(), message.getNoteNumber()));
+        else if (message.isNoteOff())
+            held_.reset(heldIndex(message.getChannel(), message.getNoteNumber()));
+    }
+
     // Only a loss raises all-notes-off, which keeps held notes sounding when a
     // source arrives.
     panicked_ = started_ && routing->sourcesLost != lost_;
     lost_ = routing->sourcesLost;
     started_ = true;
+
+    // The device that left owes a note-off for everything it was holding, and
+    // it is no longer here to send one. Sent as ordinary events rather than
+    // left to the panic flag beside them: an instrument that reads its MIDI and
+    // nothing else still stops (#2612).
+    if (!panicked_ || held_.none())
+        return;
+
+    for (int channel = 1; channel <= 16; ++channel)
+        for (int note = 0; note < 128; ++note) {
+            if (!held_.test(heldIndex(channel, note)))
+                continue;
+
+            // The budget is the port's, and a release that does not fit would
+            // grow the buffer on the callback. Counted like any other drop.
+            if (out.data.size() + 3 > kMaxMidiBytesPerPort) {
+                dropped_.fetch_add(1, std::memory_order_relaxed);
+                continue;
+            }
+            out.addEvent(juce::MidiMessage::noteOff(channel, note), 0);
+        }
+
+    held_.reset();
 }
 
 }  // namespace magda::engine

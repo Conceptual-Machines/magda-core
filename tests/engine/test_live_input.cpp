@@ -563,6 +563,105 @@ TEST_CASE("A source a track has lost panics the block that follows it", "[engine
     CHECK(!input.raisedAllNotesOff());
 }
 
+TEST_CASE("A source that leaves sends the note-offs it owes", "[engine][live-input][2612]") {
+    // A device that stops being routed to a track is not going to release what
+    // it was holding, and an instrument reading this input has no way to know
+    // that happened. So the release is sent from here, as ordinary note-offs.
+    juce::MidiBuffer keyboard;
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 0);
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 64, 0.8f), 0);
+
+    std::array<LiveMidiStream, 1> streams{LiveMidiStream{1, &keyboard}};
+
+    LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
+
+    const auto routing = [](std::vector<LiveMidiSourceId> sources, std::uint32_t lost) {
+        auto snapshot = std::make_shared<LiveRouting>();
+        snapshot->tracks.push_back(
+            {.trackId = 1, .audition = 9, .sources = std::move(sources), .sourcesLost = lost});
+        return snapshot;
+    };
+
+    TrackLiveMidiInput input(feed, 1);
+    juce::MidiBuffer out;
+
+    const auto renderBlock = [&] {
+        out.clear();
+        feed.beginCallback({{}, streams}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+        input.render(blockInfo(kBlockSize), out);
+        feed.endCallback();
+    };
+
+    // Two notes held down, delivered from the device routed to the track.
+    feed.publishRouting(routing({1}, 0));
+    renderBlock();
+    REQUIRE(out.getNumEvents() == 2);
+
+    // Nothing more arrives while they are held.
+    keyboard.clear();
+    renderBlock();
+    REQUIRE(out.getNumEvents() == 0);
+
+    // The device leaves. Both notes are released, on the channel they sounded.
+    feed.publishRouting(routing({}, 1));
+    renderBlock();
+
+    std::vector<int> released;
+    for (const auto metadata : out) {
+        const auto message = metadata.getMessage();
+        CHECK(message.isNoteOff());
+        CHECK(message.getChannel() == 1);
+        released.push_back(message.getNoteNumber());
+    }
+    std::ranges::sort(released);
+    CHECK(released == std::vector<int>{60, 64});
+
+    // Once. There is nothing left to release afterwards.
+    renderBlock();
+    CHECK(out.getNumEvents() == 0);
+}
+
+TEST_CASE("A note already released is not released twice", "[engine][live-input][2612]") {
+    juce::MidiBuffer keyboard;
+    keyboard.addEvent(juce::MidiMessage::noteOn(1, 60, 0.8f), 0);
+    keyboard.addEvent(juce::MidiMessage::noteOff(1, 60), 8);
+
+    std::array<LiveMidiStream, 1> streams{LiveMidiStream{1, &keyboard}};
+
+    LiveInputFeed feed;
+    feed.prepare(2, kBlockSize);
+
+    const auto routing = [](std::vector<LiveMidiSourceId> sources, std::uint32_t lost) {
+        auto snapshot = std::make_shared<LiveRouting>();
+        snapshot->tracks.push_back(
+            {.trackId = 1, .audition = 9, .sources = std::move(sources), .sourcesLost = lost});
+        return snapshot;
+    };
+
+    TrackLiveMidiInput input(feed, 1);
+    juce::MidiBuffer out;
+
+    const auto renderBlock = [&] {
+        out.clear();
+        feed.beginCallback({{}, streams}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+        input.render(blockInfo(kBlockSize), out);
+        feed.endCallback();
+    };
+
+    feed.publishRouting(routing({1}, 0));
+    renderBlock();
+    REQUIRE(out.getNumEvents() == 2);
+
+    keyboard.clear();
+    feed.publishRouting(routing({}, 1));
+    renderBlock();
+
+    CHECK(out.getNumEvents() == 0);
+}
+
 TEST_CASE("A live MIDI burst past the port's budget is dropped and counted",
           "[engine][live-input]") {
     juce::MidiBuffer flood;
