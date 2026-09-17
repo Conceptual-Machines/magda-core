@@ -685,8 +685,19 @@ TEST_CASE("A session slot's cycle is its loop region, not its placement",
     const auto* slot = snapshot.tracks.front().slot(0);
     REQUIRE(slot != nullptr);
     CHECK(slot->lengthBeats == Catch::Approx(16.0));
+    REQUIRE(slot->loopBeats.has_value());
+    CHECK(*slot->loopBeats == Catch::Approx(16.0));
     REQUIRE(slot->audio.size() == 1);
     CHECK(slot->audio.front().span.beats.length() == Catch::Approx(16.0));
+
+    // Material duration alone does not enable handle retriggering.
+    clip.loopEnabled = false;
+    const auto nonLooping = compileSession({clip}, makeTempoMap());
+    REQUIRE(nonLooping.tracks.size() == 1);
+    const auto* nonLoopingSlot = nonLooping.tracks.front().slot(0);
+    REQUIRE(nonLoopingSlot != nullptr);
+    CHECK(nonLoopingSlot->lengthBeats > 0.0);
+    CHECK_FALSE(nonLoopingSlot->loopBeats.has_value());
 }
 
 TEST_CASE("A session slot is compiled at the origin, whatever its placement says",

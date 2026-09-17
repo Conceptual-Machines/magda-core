@@ -294,6 +294,11 @@ struct SessionSlotPlayback {
     /// happens inside this.
     double lengthBeats = 0.0;
 
+    /// The handle's re-trigger interval, or none for a slot that does not
+    /// loop. Kept separate from lengthBeats: one describes the material and
+    /// the other whether the launcher repeats it.
+    std::optional<double> loopBeats;
+
     /// What the slot does when its run reaches the end (#2304). Carried into
     /// the handle table, which is what the audio thread reads it from.
     SlotFollow follow;

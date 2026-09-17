@@ -355,6 +355,15 @@ class LaunchHandle {
     void setLooping(std::optional<double> beats);
 
     /**
+     * @brief Adopt the loop configuration of the pinned clip snapshot.
+     *
+     * Repeated every block but applied only when the published configuration
+     * changes. That lets a request-layer setLooping override survive an
+     * unchanged snapshot while a later clip edit still replaces it.
+     */
+    void adoptPublishedLooping(std::optional<double> beats);
+
+    /**
      * @brief Move the played position without restarting.
      *
      * Both axes are given rather than one converted from the other: a map says
@@ -588,6 +597,11 @@ class LaunchHandle {
     std::optional<BeatRange> lastPlayed_;
 
     std::optional<double> loopBeats_;
+
+    /// Outer absence means no snapshot configuration has been adopted yet;
+    /// an engaged outer optional containing none is an explicitly non-looping
+    /// slot.
+    std::optional<std::optional<double>> publishedLoopBeats_;
 
     /// Whether this slot has sounded since the last release (#2302).
     bool holdsSection_ = false;

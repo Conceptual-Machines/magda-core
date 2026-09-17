@@ -152,9 +152,12 @@ struct Rig {
 
     /// Roll the transport, which is what advances a handle.
     void roll() {
+        const auto alreadyPlaying = launchHost.playing;
         launchHost.playing = true;
         session.publishTransport(
             {.tempo = tempo, .request = {.generation = ++transportGeneration, .playing = true}});
+        if (!alreadyPlaying)
+            launcher.transportStarted();
     }
 
     void stopTransport() {
@@ -247,6 +250,20 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMovedRememberedClipIsIgnored(); });
         magda::test::runWithCleanJuceState([this] { testExplicitStopClearsStoppedIntent(); });
         magda::test::runWithCleanJuceState([this] { testStoppedToggleClickRelaunches(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testQuantizedStopWaitsForAcknowledgement(false); });
+        magda::test::runWithCleanJuceState(
+            [this] { testQuantizedStopWaitsForAcknowledgement(true); });
+        magda::test::runWithCleanJuceState([this] { testTransportStopClearsPendingStopIntent(); });
+        magda::test::runWithCleanJuceState(
+            [this] { testLaunchSupersedesPendingQuantizedStop(false); });
+        magda::test::runWithCleanJuceState(
+            [this] { testLaunchSupersedesPendingQuantizedStop(true); });
+        magda::test::runWithCleanJuceState([this] { testQueuedLaunchStopWaitsForItsBoundary(); });
+        magda::test::runWithCleanJuceState([this] { testMovedPendingStopDoesNotFollowClip(); });
+        magda::test::runWithCleanJuceState([this] { testFollowActionAdoptsNextSlot(); });
+        magda::test::runWithCleanJuceState([this] { testExtendedCycleBeforeLaunch(); });
+        magda::test::runWithCleanJuceState([this] { testExtendedCycleWhilePlaying(); });
     }
 
   private:
@@ -638,6 +655,325 @@ class SlotLauncherTest final : public juce::UnitTest {
         rig.launcher.launch(clipId);
         rig.roll();
         expect(rig.renderPeak(2) > 0.0f, "The stopped Toggle slot starts again on click");
+    }
+
+    void testQuantizedStopWaitsForAcknowledgement(bool inactiveCreatedFirst) {
+        beginTest(inactiveCreatedFirst
+                      ? "An earlier inactive sibling cannot acknowledge a quantized stop"
+                      : "A later inactive sibling cannot acknowledge a quantized stop");
+
+        Rig rig(2);
+        const auto trackId = rig.trackIds[0];
+        magda::ClipId active = magda::INVALID_CLIP_ID;
+        magda::ClipId inactive = magda::INVALID_CLIP_ID;
+        if (inactiveCreatedFirst) {
+            inactive = rig.slotClip(trackId, 0);
+            active = rig.slotClip(trackId, 1, magda::LaunchQuantize::OneBar);
+        } else {
+            active = rig.slotClip(trackId, 0, magda::LaunchQuantize::OneBar);
+            inactive = rig.slotClip(trackId, 1);
+        }
+        const auto unrelated = rig.slotClip(rig.trackIds[1], 0);
+
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(active);
+        rig.render(rig.blocksFor(0.5));
+        expect(rig.launcher.playState(active) == magda::SessionClipPlayState::Playing,
+               "The selected slot is sounding before its stop is requested");
+
+        rig.launcher.stopTrack(trackId);
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(rig.launcher.stopPending(trackId), "The track exposes its pending stop");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID,
+               "The cleared launch intent cannot restart during wind-down");
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Session,
+               "The arrangement remains held until the audio thread acknowledges the stop");
+        expect(rig.launcher.playheadClip() == active,
+               "The winding-down slot remains the Session playhead owner");
+
+        rig.launcher.processStateEvents();
+        rig.launcher.processStateEvents();
+        expect(rig.launcher.stopPending(trackId),
+               "Repeated UI polls cannot treat an inactive sibling as acknowledgement");
+        expect(rig.launcher.playState(inactive) == magda::SessionClipPlayState::Stopped,
+               "The sibling remains inactive throughout the wind-down");
+
+        expect(rig.renderPeak(rig.blocksFor(1.0)) > 0.0f,
+               "The pending slot continues sounding before the bar boundary");
+        const auto beforeUnrelated = rig.reading(trackId, inactiveCreatedFirst ? 1 : 0);
+        expect(beforeUnrelated.playing && beforeUnrelated.elapsedBeats > 0.5,
+               "The target slot itself advances while its stop is pending");
+        rig.launcher.processStateEvents();
+        rig.launcher.processStateEvents();
+        expect(rig.launcher.stopPending(trackId),
+               "Polling after more audio still waits for the due boundary");
+
+        rig.launcher.launch(unrelated);
+        rig.launcher.processStateEvents();
+        track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(rig.launcher.stopPending(trackId),
+               "Launching another track does not consume this track's acknowledgement");
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Session,
+               "Unrelated mode synchronisation does not expose the arrangement early");
+
+        rig.render(rig.blocksFor(3.0));
+        rig.launcher.processStateEvents();
+        track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(!rig.launcher.stopPending(trackId),
+               "The stopped clip's tap acknowledges the request at the boundary");
+        expect(rig.launcher.playState(active) == magda::SessionClipPlayState::Stopped,
+               "The original slot is stopped after acknowledgement");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID,
+               "Acknowledgement does not restore cleared launch intent");
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The acknowledged track returns to Arrangement");
+    }
+
+    void testTransportStopClearsPendingStopIntent() {
+        beginTest("Transport Stop while a quantized stop is pending preserves cleared intent");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto clipId = rig.slotClip(trackId, 0, magda::LaunchQuantize::OneBar);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(rig.blocksFor(0.5));
+        rig.launcher.stopTrack(trackId);
+        expect(rig.launcher.stopPending(trackId), "The quantized stop is pending");
+
+        rig.stopTransport();
+        rig.render(1);
+        rig.launcher.processStateEvents();
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(!rig.launcher.stopPending(trackId), "Transport Stop settles the pending request");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The explicitly cleared intent leaves the stopped track in Arrangement");
+
+        rig.restartTransport();
+        rig.render(2);
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Stopped &&
+                   !rig.reading(trackId, 0).playing,
+               "Transport restart does not queue or relaunch the explicitly stopped slot");
+        track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "Restart preserves the cleared intent and Arrangement mode");
+    }
+
+    void testLaunchSupersedesPendingQuantizedStop(bool quantizedReplacement) {
+        beginTest(quantizedReplacement
+                      ? "A quantized launch supersedes a pending stop without starting early"
+                      : "An immediate launch supersedes a pending quantized stop");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto first = rig.slotClip(trackId, 0, magda::LaunchQuantize::OneBar);
+        const auto second = rig.slotClip(trackId, 1,
+                                         quantizedReplacement ? magda::LaunchQuantize::OneBar
+                                                              : magda::LaunchQuantize::None);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(first);
+        rig.render(rig.blocksFor(0.5));
+        rig.launcher.stopTrack(trackId);
+        expect(rig.launcher.stopPending(trackId), "The old run is winding down");
+
+        rig.launcher.launch(second);
+        rig.render(1);
+        rig.launcher.processStateEvents();
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(!rig.launcher.stopPending(trackId), "The replacement cancels the pending stop");
+        expect(rig.launcher.playState(second) == (quantizedReplacement
+                                                      ? magda::SessionClipPlayState::Queued
+                                                      : magda::SessionClipPlayState::Playing),
+               quantizedReplacement
+                   ? "The pending run still counts as activity, so its replacement stays quantized"
+                   : "The unquantized replacement starts on the next audio block");
+        expect(track != nullptr && track->activeSessionClipId == second &&
+                   track->playbackMode == magda::TrackPlaybackMode::Session,
+               "The replacement remains the track's active Session intent");
+
+        if (quantizedReplacement) {
+            rig.render(rig.blocksFor(1.0));
+            expect(rig.launcher.playState(second) == magda::SessionClipPlayState::Queued &&
+                       !rig.reading(trackId, 1).playing,
+                   "The replacement is still queued and silent before the bar boundary");
+
+            rig.render(rig.blocksFor(3.0));
+            expect(rig.launcher.playState(second) == magda::SessionClipPlayState::Playing,
+                   "The replacement starts at the requested bar boundary");
+        }
+    }
+
+    void testQueuedLaunchStopWaitsForItsBoundary() {
+        beginTest("Stopping a queued launch waits for the boundary that can acknowledge it");
+
+        Rig rig(2);
+        const auto rolling = rig.slotClip(rig.trackIds[0], 0);
+        const auto queued = rig.slotClip(rig.trackIds[1], 0, magda::LaunchQuantize::OneBar);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(rolling);
+        rig.render(rig.blocksFor(0.5));
+
+        rig.launcher.launch(queued);
+        expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Queued,
+               "The launch is queued before the audio thread sees it");
+        rig.launcher.stopTrack(rig.trackIds[1]);
+        rig.launcher.processStateEvents();
+        rig.launcher.processStateEvents();
+
+        const auto* track = magda::TrackManager::getInstance().getTrack(rig.trackIds[1]);
+        expect(rig.launcher.stopPending(rig.trackIds[1]),
+               "The old stopped tap cannot acknowledge a queued run's stop early");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Session,
+               "The queued intent is cleared while Session retains the track");
+
+        rig.render(rig.blocksFor(1.0));
+        rig.launcher.processStateEvents();
+        expect(rig.launcher.stopPending(rig.trackIds[1]),
+               "The cancellation remains pending before its quantized boundary");
+
+        rig.render(rig.blocksFor(3.0));
+        rig.launcher.processStateEvents();
+        track = magda::TrackManager::getInstance().getTrack(rig.trackIds[1]);
+        expect(!rig.launcher.stopPending(rig.trackIds[1]),
+               "The boundary acknowledges the queued launch cancellation");
+        expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Stopped,
+               "The cancelled queued clip never becomes active");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The acknowledged cancellation returns its track to Arrangement");
+    }
+
+    void testMovedPendingStopDoesNotFollowClip() {
+        beginTest("A pending stop remains tied to the slot the clip moved out of");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto clipId = rig.slotClip(trackId, 0, magda::LaunchQuantize::OneBar);
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(rig.blocksFor(0.5));
+        rig.launcher.stopTrack(trackId);
+        expect(rig.launcher.stopPending(trackId), "The old slot has a quantized stop in flight");
+
+        magda::ClipManager::getInstance().setClipSceneIndex(clipId, 1);
+        expect(rig.publish(), "The same clip is republished in another slot on its track");
+        rig.launcher.processStateEvents();
+
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(!rig.launcher.stopPending(trackId),
+               "Moving the clip clears the obsolete old-slot acknowledgement wait");
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The moved clip is not adopted through its new tap and the track returns");
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Stopped,
+               "The moved clip remains stopped in its new slot");
+    }
+
+    void testFollowActionAdoptsNextSlot() {
+        beginTest("A follow action adopts the slot selected by the audio thread");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto first = rig.slotClip(trackId, 0);
+        const auto second = rig.slotClip(trackId, 1);
+        if (auto* clip = magda::ClipManager::getInstance().getClip(first); clip != nullptr) {
+            clip->followAction = magda::FollowAction::PlayNext;
+            clip->followActionDelayBeats = 0.0;
+            clip->followActionLoopCount = 1;
+        }
+
+        expect(rig.publish(), "The project is published");
+        rig.roll();
+        rig.launcher.launch(first);
+        rig.render(rig.blocksFor(4.25));
+        rig.launcher.processStateEvents();
+
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(rig.launcher.playState(first) == magda::SessionClipPlayState::Stopped,
+               "The completed slot is stopped after its follow action");
+        expect(rig.launcher.playState(second) == magda::SessionClipPlayState::Playing,
+               "The next slot selected by the engine is sounding");
+        expect(track != nullptr && track->activeSessionClipId == second &&
+                   track->playbackMode == magda::TrackPlaybackMode::Session,
+               "The host adopts the followed slot as the track's active Session intent");
+        expect(rig.launcher.playheadClip() == second,
+               "The Session playhead follows the engine-selected slot");
+    }
+
+    void testExtendedCycleBeforeLaunch() {
+        beginTest("A Session clip plays and wraps on a cycle longer than its placement");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto clipId = rig.slotClip(trackId, 0);
+        magda::ClipManager::getInstance().setMidiLoopLengthBeats(clipId, 16.0, Rig::kTempo);
+        expect(rig.publish(), "The extended cycle is published before launch");
+        rig.roll();
+        rig.launcher.launch(clipId);
+
+        rig.render(rig.blocksFor(5.0));
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
+               "The slot is still playing beyond its four-beat placement");
+        expect(rig.launcher.playheadSeconds(clipId) > 2.0,
+               "Its playhead advances beyond the old four-beat endpoint");
+
+        rig.render(rig.blocksFor(12.0));
+        const auto wrapped = rig.launcher.playheadSeconds(clipId);
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
+               "The slot remains active into its next sixteen-beat pass");
+        expect(wrapped >= 0.0 && wrapped < 1.0,
+               "The playhead wraps at sixteen beats rather than four");
+    }
+
+    void testExtendedCycleWhilePlaying() {
+        beginTest("Extending a playing Session clip updates its live cycle");
+
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        const auto clipId = rig.slotClip(trackId, 0);
+        auto& clips = magda::ClipManager::getInstance();
+        clips.setMidiLoopLengthBeats(clipId, 16.0, Rig::kTempo);
+        expect(clips.addMidiNote(clipId, magda::MidiNote{.noteNumber = 67,
+                                                         .velocity = 100,
+                                                         .startBeat = 8.0,
+                                                         .lengthBeats = 1.0}),
+               "The later note is stored while it is inside the visible cycle");
+        clips.setMidiLoopLengthBeats(clipId, 4.0, Rig::kTempo);
+        expect(rig.publish(), "The original four-beat cycle is published");
+        rig.roll();
+        rig.launcher.launch(clipId);
+        rig.render(rig.blocksFor(2.0));
+
+        clips.setMidiLoopLengthBeats(clipId, 16.0, Rig::kTempo);
+        expect(rig.publish(), "The extended cycle is republished while the slot plays");
+        rig.render(rig.blocksFor(5.0));
+
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
+               "The edit does not stop the running slot");
+        expect(rig.reading(trackId, 0).elapsedBeats > 4.0,
+               "The live handle advances past its former four-beat wrap");
+        expect(rig.launcher.playheadSeconds(clipId) > 2.0,
+               "The visible playhead follows the extended live pass");
+        const auto quietPeak = rig.renderPeak(rig.blocksFor(0.4));
+        expect(quietPeak < 0.001f, "The original note's release is quiet before the later note");
+        const auto lateNotePeak = rig.renderPeak(rig.blocksFor(1.0));
+        expect(lateNotePeak > 0.01f && lateNotePeak > quietPeak * 10.0f,
+               "The extended pass reaches and distinctly sounds the note at beat eight");
+
+        rig.render(rig.blocksFor(8.0));
+        const auto wrapped = rig.launcher.playheadSeconds(clipId);
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
+               "The edited slot remains active into its next pass");
+        expect(wrapped >= 0.0 && wrapped < 1.0,
+               "The edited live handle eventually wraps at sixteen beats");
     }
 };
 

@@ -1,8 +1,10 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <map>
 #include <memory>
 #include <vector>
 
+#include "clip/ClipSnapshot.hpp"
 #include "launch/SessionLauncher.hpp"
 
 /**
@@ -61,8 +63,8 @@ struct Rig {
     /// Nothing published at all, which is a session whose slots have no handles.
     Rig() = default;
 
-    void roll(int index) {
-        advanceLaunchHandles(feed, requests, blockAt(index));
+    void roll(int index, const ClipSnapshot* clips = nullptr) {
+        advanceLaunchHandles(feed, requests, blockAt(index), nullptr, clips);
     }
 
     /// Republish under @p incarnation and tell the queue: the pair
@@ -102,6 +104,139 @@ bool playing(const LaunchHandle& handle) {
 }
 
 }  // namespace
+
+namespace {
+
+ClipSnapshot snapshotWithLoop(std::optional<double> loopBeats) {
+    ClipSnapshot snapshot;
+    TrackClipPlayback track;
+    track.trackId = kTrack;
+    track.session.push_back(SessionSlotPlayback{
+        .sceneIndex = 0, .lengthBeats = loopBeats.value_or(4.0), .loopBeats = loopBeats});
+    snapshot.tracks.push_back(std::move(track));
+    return snapshot;
+}
+
+}  // namespace
+
+TEST_CASE("a pinned clip snapshot updates a live handle's loop without restarting it",
+          "[engine][session][launch]") {
+    Rig rig(1);
+    auto oneBeat = snapshotWithLoop(1.0);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+
+    rig.roll(0, &oneBeat);
+    REQUIRE(rig.slot(0).playedRange());
+    CHECK(rig.slot(0).loopBeats() == 1.0);
+
+    rig.roll(1, &oneBeat);
+    rig.roll(2, &oneBeat);
+    rig.roll(3, &oneBeat);
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(1.0));
+
+    auto fourBeats = snapshotWithLoop(4.0);
+    rig.roll(4, &fourBeats);
+    CHECK(rig.slot(0).loopBeats() == 4.0);
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(1.25));
+
+    auto noLoop = snapshotWithLoop(std::nullopt);
+    rig.roll(5, &noLoop);
+    CHECK_FALSE(rig.slot(0).loopBeats());
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(1.5));
+}
+
+TEST_CASE("shortening a pinned loop keeps phase until the next new boundary",
+          "[engine][session][launch]") {
+    Rig rig(1);
+    auto fourBeats = snapshotWithLoop(4.0);
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+
+    for (int block = 0; block < 6; ++block)
+        rig.roll(block, &fourBeats);
+    REQUIRE(rig.slot(0).playedRange());
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(1.5));
+
+    auto oneBeat = snapshotWithLoop(1.0);
+    rig.roll(6, &oneBeat);
+    rig.roll(7, &oneBeat);
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(2.0));
+
+    // The original launch grid's beat 2 is the next one-beat boundary. The
+    // edit does not restart immediately at beat 1.5.
+    rig.roll(8, &oneBeat);
+    CHECK(rig.slot(0).playedRange()->length() == Catch::Approx(0.25));
+}
+
+TEST_CASE("an unchanged pinned loop does not overwrite a request-layer override",
+          "[engine][session][launch]") {
+    Rig rig(1);
+    auto published = snapshotWithLoop(1.0);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+        gesture.setLooping(Rig::key(0), 2.0);
+    }
+
+    // Snapshot adoption precedes requests, so the explicit request wins.
+    rig.roll(0, &published);
+    CHECK(rig.slot(0).loopBeats() == 2.0);
+
+    // The same published value is not adopted again on later blocks.
+    rig.roll(1, &published);
+    CHECK(rig.slot(0).loopBeats() == 2.0);
+
+    // A real model edit becomes authoritative once.
+    auto edited = snapshotWithLoop(4.0);
+    rig.roll(2, &edited);
+    CHECK(rig.slot(0).loopBeats() == 4.0);
+
+    // Explicitly non-looping is a published configuration too. Once adopted,
+    // its unchanged empty value must not erase a later request-layer override.
+    auto nonLooping = snapshotWithLoop(std::nullopt);
+    rig.roll(3, &nonLooping);
+    CHECK_FALSE(rig.slot(0).loopBeats());
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.setLooping(Rig::key(0), 2.0);
+    }
+    rig.roll(4, &nonLooping);
+    CHECK(rig.slot(0).loopBeats() == 2.0);
+    rig.roll(5, &nonLooping);
+    CHECK(rig.slot(0).loopBeats() == 2.0);
+}
+
+TEST_CASE("a pinned loop edit does not replace a queued stop", "[engine][session][launch]") {
+    Rig rig(1);
+    auto oneBeat = snapshotWithLoop(1.0);
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+    rig.roll(0, &oneBeat);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.stop(Rig::key(0), 1.0);
+    }
+
+    auto fourBeats = snapshotWithLoop(4.0);
+    rig.roll(1, &fourBeats);
+    REQUIRE(rig.slot(0).queuedState());
+    CHECK(*rig.slot(0).queuedState() == LaunchHandle::QueueState::stopQueued);
+
+    rig.roll(2, &fourBeats);
+    rig.roll(3, &fourBeats);
+    rig.roll(4, &fourBeats);
+    CHECK_FALSE(playing(rig.slot(0)));
+}
 
 TEST_CASE("A request reaches its handle on the next block and no earlier",
           "[engine][session][launch]") {

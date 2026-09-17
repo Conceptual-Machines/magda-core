@@ -37,6 +37,19 @@ void PlaybackPositionTimer::timerCallback() {
 
     bool isPlaying = engine_.isPlaying();
 
+    // Establish the per-clip half of this tick before dispatching any timeline event. Timeline
+    // listeners update synchronous UI such as the ruler, while grids may repaint later; both must
+    // observe the same Session positions rather than opposite sides of this timer callback.
+    auto clipPositions =
+        isPlaying ? engine_.getActiveClipPlayheadPositions() : std::unordered_map<ClipId, double>{};
+    if (!clipPositions.empty()) {
+        auto& cm = ClipManager::getInstance();
+        for (const auto& [clipId, pos] : clipPositions) {
+            if (auto* clip = cm.getClip(clipId))
+                clip->sessionPlayheadPos = pos;
+        }
+    }
+
     // Detect engine play/stop transitions that happened outside the UI
     // (e.g. SessionClipScheduler starting transport for clip playback)
     bool isRecording = engine_.isRecording();
@@ -56,18 +69,8 @@ void PlaybackPositionTimer::timerCallback() {
         double transportPos = engine_.getCurrentPosition();
         timeline_.dispatch(SetPlaybackPositionEvent{transportPos});
 
-        // Write per-clip playhead positions into ClipInfo and notify UI
-        auto clipPositions = engine_.getActiveClipPlayheadPositions();
-        if (!clipPositions.empty()) {
-            auto& cm = ClipManager::getInstance();
-            for (const auto& [clipId, pos] : clipPositions) {
-                if (auto* clip = cm.getClip(clipId))
-                    clip->sessionPlayheadPos = pos;
-            }
-
-            if (onSessionPlayheadUpdate)
-                onSessionPlayheadUpdate(clipPositions);
-        }
+        if (!clipPositions.empty() && onSessionPlayheadUpdate)
+            onSessionPlayheadUpdate(clipPositions);
     }
 
     // CPU usage + xrun update (throttled)
