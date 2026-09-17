@@ -147,3 +147,31 @@ TEST_CASE("a short block does not leave the tail of a long one in the carry",
     CHECK(allOf({afterShort.begin(), afterShort.begin() + kMaxBlock / 4}, 2.0f));
     CHECK(allOf({afterShort.begin() + kMaxBlock / 4, afterShort.end()}, 0.0f));
 }
+
+TEST_CASE("A carry and its return must agree about liveness", "[engine][plan][2612]") {
+    // The compiler settles the two together, so this is the validator's job
+    // alone: a return that says deterministic while its send fills it with a
+    // hardware input would let every op downstream claim it may be rendered
+    // ahead of the outside world.
+    AudioCarryHarness harness;
+    auto& plan = harness.plan;
+
+    // Nothing is live yet, so both agree and the plan is well formed.
+    CHECK(magda::engine::validatePlan(plan).empty());
+
+    // Make what fills the carry live, and leave the return as it was.
+    plan.ops[2].kind = OpKind::AudioInput;
+    plan.ops[2].key.role = OpRole::LiveAudioInput;
+    plan.ops[2].liveness = magda::engine::LivenessDomain::Live;
+
+    const auto problems = magda::engine::validatePlan(plan);
+    CHECK(std::ranges::any_of(problems, [](const std::string& problem) {
+        return problem.find("its send fills it with live audio") != std::string::npos;
+    }));
+
+    // And it is well formed again once the return says the same, and the ops
+    // reading it follow: that is the propagation this rule exists to protect.
+    for (auto& op : plan.ops)
+        op.liveness = magda::engine::LivenessDomain::Live;
+    CHECK(magda::engine::validatePlan(plan).empty());
+}

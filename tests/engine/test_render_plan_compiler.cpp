@@ -2820,6 +2820,55 @@ TEST_CASE("A route merely downstream of a cycle is left alone", "[engine][plan][
     CHECK(inputOp(plan, gate, 0) == sourceMidi);
 }
 
+TEST_CASE("A cycle report does not claim a connection that survives it",
+          "[engine][plan][compiler]") {
+    // Tracks 1 and 2 feed each other, and track 2 also keys off track 1. The
+    // cycle is real and has to be broken, but withdrawing an edge is not the
+    // same as losing what it ordered: the sidechain still orders track 1 first,
+    // so track 1's output into track 2 is connected after all.
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 1;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[0].audioOutputDevice = "track:2";
+    tracks[1].audioOutputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // The cycle is reported, and so is the one connection it really costs:
+    // track 2 compiles second, so its output into track 1 arrives too late.
+    CHECK(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK(anyDiagnosticContains(plan, "arrived after it was compiled"));
+
+    // The other direction survives. Track 1 compiled first because the
+    // sidechain still says so, so its output did reach track 2 after all, and
+    // no cycle report may say otherwise.
+    CHECK_FALSE(anyDiagnosticContains(plan, "the connection is not made"));
+
+    magda::engine::OpId sourceMute = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 1)
+            sourceMute = op;
+    REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
+
+    // Through whatever delay aligns it against track 2's own sections.
+    const auto behindDelay = [&plan](magda::engine::PortRef ref) {
+        const auto& producer = plan.ops[static_cast<std::size_t>(ref.op)];
+        return producer.kind == OpKind::Delay ? producer.inputs.front() : ref;
+    };
+
+    const auto input = trackInput(plan, 2);
+    REQUIRE(input != magda::engine::INVALID_OP_ID);
+    const auto& inputs = plan.ops[static_cast<std::size_t>(input)].inputs;
+    CHECK(std::ranges::any_of(inputs, [&](const magda::engine::PortRef& ref) {
+        return ref.valid() && behindDelay(ref).op == sourceMute;
+    }));
+}
+
 TEST_CASE("A MIDI loop is refused rather than carried", "[engine][plan][compiler]") {
     // A block of delay works for audio because whatever gain is in the loop
     // scales what goes round, so it dies away. A note has no gain: every event

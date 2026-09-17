@@ -707,11 +707,18 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
         if (any == nullptr)
             break;
 
+        // Says that the cycle exists and that an ordering was forced, not what
+        // that costs. Withdrawing an edge is not the same as losing the
+        // connection it ordered: another edge between the same two tracks can
+        // still order them the right way round, and then emission connects it.
+        // What is actually lost is reported where it is discovered, by the
+        // track that finds its source uncompiled and by the sweep over what
+        // arrived too late.
         any->active = false;
-        diagnose("routing cycle: track " + std::to_string(tracks_[any->to].id) + " reads track " +
-                 std::to_string(tracks_[any->from].id) +
-                 ", which is downstream of it, and neither is an input route that could carry a "
-                 "block, so the connection is not made");
+        diagnose("routing cycle: track " + std::to_string(tracks_[any->from].id) + " and track " +
+                 std::to_string(tracks_[any->to].id) +
+                 " each have to compile first, and neither is joined by an input route that could "
+                 "carry a block, so one is compiled before its sources");
     }
 
     std::vector<std::vector<std::size_t>> successors(numTracks);

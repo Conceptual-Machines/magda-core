@@ -580,6 +580,17 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             problems.push_back(label + "is deterministic but reads live op " +
                                std::to_string(liveInput->op));
 
+        // The same rule for the one op that reads nothing and still carries
+        // something: a return whose send fills it with live audio is live, and
+        // saying otherwise would let every deterministic op downstream of it
+        // claim it may be rendered ahead of a hardware input.
+        if (op.kind == OpKind::FeedbackReturn &&
+            liveCarries.contains(op.key) != (op.liveness == LivenessDomain::Live))
+            problems.push_back(label +
+                               (op.liveness == LivenessDomain::Live
+                                    ? "is live but its send fills it with deterministic audio"
+                                    : "is deterministic but its send fills it with live audio"));
+
         // The converse matters just as much and is harder to notice, because
         // over-tagging is semantically harmless: it only shrinks what the
         // anticipative executor is allowed to precompute. Liveness has to come
