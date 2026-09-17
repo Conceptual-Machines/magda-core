@@ -8,9 +8,11 @@
 #include <unordered_set>
 #include <vector>
 
+#include "../daw/audio/DeviceParameterList.hpp"
 #include "../daw/core/Config.hpp"
 #include "core/DeviceInfo.hpp"
 #include "core/ParameterInfo.hpp"
+#include "core/ParameterUtils.hpp"
 #include "core/PresetManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/aliases/ParamNameNormalize.hpp"
@@ -25,17 +27,7 @@ namespace {
 // Parameter snapshot (message-thread read → worker-thread prompt build)
 // ---------------------------------------------------------------------------
 
-struct ParamSnapshot {
-    int index = -1;
-    juce::String name;
-    juce::String normalized;
-    juce::String unit;
-    float minValue = 0.0f;
-    float maxValue = 1.0f;
-    float currentValue = 0.0f;
-    ParameterScale scale = ParameterScale::Linear;
-    std::vector<juce::String> choices;
-};
+using sound_design_detail::ParameterSnapshot;
 
 // Runs `fn` on the message thread and blocks until it finishes, polling in
 // short slices so a cancel returns promptly. Returns false if cancelled or the
@@ -82,25 +74,26 @@ juce::String tidyNumber(float v) {
 }
 
 // One human-readable line per parameter for the system prompt.
-juce::String describeParam(const ParamSnapshot& p) {
-    juce::String line = "  " + p.name;
-    if (p.unit.isNotEmpty())
-        line += " [" + p.unit + "]";
-    if (p.scale == ParameterScale::Discrete && !p.choices.empty()) {
-        line += " options: " + p.choices[0];
-        for (size_t i = 1; i < p.choices.size(); ++i)
-            line += " | " + p.choices[i];
+juce::String describeParam(const ParameterSnapshot& p) {
+    const auto& info = p.described;
+    juce::String line = "  " + p.promptName;
+    if (info.unit.isNotEmpty())
+        line += " [" + info.unit + "]";
+    if (info.scale == ParameterScale::Discrete && !info.choices.empty()) {
+        line += " options: " + info.choices[0];
+        for (size_t i = 1; i < info.choices.size(); ++i)
+            line += " | " + info.choices[i];
     } else {
-        line += " range " + tidyNumber(p.minValue) + ".." + tidyNumber(p.maxValue);
+        line += " range " + tidyNumber(info.minValue) + ".." + tidyNumber(info.maxValue);
     }
-    line += " (now " + tidyNumber(p.currentValue) + ")";
+    line += " (now " + tidyNumber(p.currentRealValue) + ")";
     return line;
 }
 
 juce::String buildSystemPrompt(const juce::String& displayName, const juce::String& description,
                                const juce::String& categoryOverride,
                                const juce::String& customPrompt,
-                               const std::vector<ParamSnapshot>& params) {
+                               const std::vector<ParameterSnapshot>& params) {
     juce::String prompt;
     prompt << "You are a sound designer for the \"" << displayName << "\" audio plugin.";
     if (description.isNotEmpty())
@@ -170,7 +163,7 @@ struct ParsedPreset {
 // Resolve a discrete parameter's incoming value (choice label or index) to the
 // real value the device expects. Choices are laid out evenly across the param's
 // real range, matching ParameterUtils' discrete mapping.
-float discreteRealValue(const ParamSnapshot& p, const juce::var& value) {
+float discreteRealValue(const ParameterInfo& p, const juce::var& value) {
     const int count = static_cast<int>(p.choices.size());
     const float step = count > 1 ? (p.maxValue - p.minValue) / static_cast<float>(count - 1) : 0.0f;
 
@@ -186,6 +179,70 @@ float discreteRealValue(const ParamSnapshot& p, const juce::var& value) {
 }
 
 }  // namespace
+
+namespace sound_design_detail {
+
+std::vector<ParameterSnapshot> snapshotParameters(std::vector<ParameterInfo> described,
+                                                  const std::vector<int>& includedIndices) {
+    const std::unordered_set<int> included(includedIndices.begin(), includedIndices.end());
+    std::vector<ParameterSnapshot> result;
+    result.reserve(included.empty() ? described.size() : included.size());
+    for (size_t listIndex = 0; listIndex < described.size(); ++listIndex) {
+        auto& info = described[listIndex];
+        // Legacy internal descriptions used their vector position as the slot.
+        // Live hosted descriptions always carry the host slot explicitly.
+        if (info.paramIndex < 0)
+            info.paramIndex = static_cast<int>(listIndex);
+        if (!included.empty() && !included.contains(info.paramIndex))
+            continue;
+        ParameterSnapshot snapshot;
+        snapshot.promptName = info.name;
+        snapshot.normalizedName = normalizeParamName(info.name);
+        snapshot.currentRealValue =
+            ParameterUtils::modelToRealValue(ParameterModelValue{info.currentValue}, info);
+        snapshot.described = std::move(info);
+        if (snapshot.normalizedName.isNotEmpty())
+            result.push_back(std::move(snapshot));
+    }
+
+    std::map<juce::String, int> nameCounts;
+    for (const auto& parameter : result)
+        ++nameCounts[parameter.normalizedName];
+    for (auto& parameter : result) {
+        if (nameCounts[parameter.normalizedName] <= 1)
+            continue;
+        parameter.promptName += " [#" + juce::String(parameter.described.paramIndex) + "]";
+        parameter.normalizedName = normalizeParamName(parameter.promptName);
+    }
+    return result;
+}
+
+std::vector<ParameterWrite> resolveParameterWrites(
+    const std::vector<ParameterSnapshot>& parameters,
+    const std::vector<std::pair<juce::String, juce::var>>& requested, int& skipped) {
+    std::map<juce::String, const ParameterSnapshot*> byName;
+    for (const auto& parameter : parameters)
+        byName[parameter.normalizedName] = &parameter;
+
+    std::vector<ParameterWrite> writes;
+    for (const auto& [rawName, value] : requested) {
+        const auto found = byName.find(normalizeParamName(rawName));
+        if (found == byName.end()) {
+            ++skipped;
+            continue;
+        }
+        const auto& snapshot = *found->second;
+        const auto& info = snapshot.described;
+        const float real =
+            info.scale == ParameterScale::Discrete && !info.choices.empty()
+                ? discreteRealValue(info, value)
+                : juce::jlimit(info.minValue, info.maxValue, static_cast<float>(value));
+        writes.emplace_back(info, ParameterUtils::realToModelValue(real, info));
+    }
+    return writes;
+}
+
+}  // namespace sound_design_detail
 
 // ===========================================================================
 
@@ -209,7 +266,7 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
         return "cancelled";
 
     // --- 1. Snapshot the device's parameters on the message thread ----------
-    std::vector<ParamSnapshot> params;
+    std::vector<ParameterSnapshot> params;
     juce::String deviceName = displayName_;
     bool deviceFound = false;
     const bool snapped = runOnMessageThreadBlocking(shouldStop_, [&]() {
@@ -219,43 +276,8 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
         deviceFound = true;
         if (device->name.isNotEmpty())
             deviceName = device->name;
-        const std::unordered_set<int> included(includedParameterIndices_.begin(),
-                                               includedParameterIndices_.end());
-        params.reserve(included.empty() ? device->parameters.size() : included.size());
-        for (size_t i = 0; i < device->parameters.size(); ++i) {
-            const auto& info = device->parameters[i];
-            const auto slot = info.paramIndex >= 0 ? info.paramIndex : static_cast<int>(i);
-
-            // The opt-in names slots (#2638).
-            if (!included.empty() && !included.contains(slot))
-                continue;
-
-            ParamSnapshot snap;
-            snap.index = slot;
-            snap.name = info.name;
-            snap.normalized = normalizeParamName(info.name);
-            snap.unit = info.unit;
-            snap.minValue = info.minValue;
-            snap.maxValue = info.maxValue;
-            snap.currentValue = info.currentValue;
-            snap.scale = info.scale;
-            snap.choices = info.choices;
-            if (snap.normalized.isNotEmpty())
-                params.push_back(std::move(snap));
-        }
-
-        // Third-party plugins occasionally expose the same display name for
-        // several automatable parameters. Give only those collisions a stable
-        // index suffix so every JSON key still resolves to exactly one target.
-        std::map<juce::String, int> nameCounts;
-        for (const auto& param : params)
-            ++nameCounts[param.normalized];
-        for (auto& param : params) {
-            if (nameCounts[param.normalized] <= 1)
-                continue;
-            param.name += " [#" + juce::String(param.index) + "]";
-            param.normalized = normalizeParamName(param.name);
-        }
+        params = sound_design_detail::snapshotParameters(deviceParameterList(*device, path),
+                                                         includedParameterIndices_);
     });
 
     if (!snapped)
@@ -315,27 +337,13 @@ juce::String GenericSoundDesignAgent::generateAndApply(const juce::String& promp
         return "error: preset contained no parameters";
 
     // --- 4. Apply on the message thread -------------------------------------
-    std::map<juce::String, const ParamSnapshot*> byName;
-    for (const auto& p : params)
-        byName[p.normalized] = &p;
-
     int applied = 0;
     int skipped = 0;
+    const auto writes = sound_design_detail::resolveParameterWrites(params, preset.params, skipped);
     const bool didApply = runOnMessageThreadBlocking(shouldStop_, [&]() {
         auto& tm = TrackManager::getInstance();
-        for (const auto& [rawName, value] : preset.params) {
-            auto it = byName.find(normalizeParamName(rawName));
-            if (it == byName.end()) {
-                ++skipped;
-                continue;
-            }
-            const ParamSnapshot& p = *it->second;
-            float real = NAN;
-            if (p.scale == ParameterScale::Discrete && !p.choices.empty())
-                real = discreteRealValue(p, value);
-            else
-                real = juce::jlimit(p.minValue, p.maxValue, static_cast<float>(value));
-            tm.setDeviceParameterValue(path, p.index, real);
+        for (const auto& [described, modelValue] : writes) {
+            tm.setDeviceParameterValue(path, described, modelValue);
             ++applied;
         }
 

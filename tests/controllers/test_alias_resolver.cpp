@@ -34,6 +34,24 @@ static ChainNodePath makePath(int trackId, int deviceId) {
     return ChainNodePath::topLevelDevice(trackId, deviceId);
 }
 
+class LiveCatalogChainContext : public FixedChainContext {
+  public:
+    void setLiveParameters(const ChainNodePath& path, std::vector<ParameterInfo> parameters) {
+        livePath_ = path;
+        liveParameters_ = std::move(parameters);
+    }
+
+    std::vector<ParameterInfo> parametersAt(const ChainNodePath& path) const override {
+        if (path == livePath_)
+            return liveParameters_;
+        return FixedChainContext::parametersAt(path);
+    }
+
+  private:
+    ChainNodePath livePath_;
+    std::vector<ParameterInfo> liveParameters_;
+};
+
 // ============================================================================
 // TargetResolver::resolve(ControlTarget)
 // ============================================================================
@@ -418,6 +436,54 @@ TEST_CASE("TargetResolver::resolveSigil - @focused.filter_cutoff", "[aliases][re
     REQUIRE(result.ok());
     REQUIRE(result.target.devicePath == path);
     REQUIRE(result.target.paramIndex == 0);
+}
+
+TEST_CASE("Live parameter catalog resolves focused and named aliases without filling model",
+          "[aliases][resolver][native-parameters]") {
+    DeviceInfo synth = makeDevice(10, "Synth", {"Mirrored Macro"});
+    synth.parameters.front().paramIndex = 4;
+    const auto path = makePath(1, 10);
+
+    auto cutoffEnvelope = ParameterInfo{};
+    cutoffEnvelope.paramIndex = 19;
+    cutoffEnvelope.name = "Cutoff Envelope";
+    auto cutoff = ParameterInfo{};
+    cutoff.paramIndex = 37;
+    cutoff.name = "Cutoff";
+
+    LiveCatalogChainContext ctx;
+    ctx.setFocusedDevice(path);
+    ctx.setSelectedTrack(1);
+    ctx.addDevice(path, synth);
+    // Put the prefix match first to prove exact names still win, and use
+    // non-contiguous slots to prove catalog position is never the target.
+    ctx.setLiveParameters(path, {cutoffEnvelope, cutoff});
+
+    auto& reg = AliasRegistry::getInstance();
+    reg.clearLayer(AliasLayer::UserProject);
+    reg.clearLayer(AliasLayer::UserGlobal);
+    reg.clearLayer(AliasLayer::Curated);
+    reg.clearLayer(AliasLayer::AutoGen);
+    auto& resolvers = ResolverRegistry::getInstance();
+    TargetResolver resolver{reg, resolvers, ctx};
+
+    const auto focused = tryParse("@focused.cutoff");
+    REQUIRE(focused.has_value());
+    const auto focusedResult = resolver.resolveSigil(*focused);
+    REQUIRE(focusedResult.ok());
+    CHECK(focusedResult.target.devicePath == path);
+    CHECK(focusedResult.target.paramIndex == 37);
+
+    const auto named = tryParse("@synth.cutoff");
+    REQUIRE(named.has_value());
+    const auto namedResult = resolver.resolveSigil(*named);
+    REQUIRE(namedResult.ok());
+    CHECK(namedResult.target.devicePath == path);
+    CHECK(namedResult.target.paramIndex == 37);
+
+    REQUIRE(synth.parameters.size() == 1);
+    CHECK(synth.parameters.front().name == "Mirrored Macro");
+    CHECK(synth.parameters.front().paramIndex == 4);
 }
 
 TEST_CASE("TargetResolver::resolveSigil - @focused no device focused fails",

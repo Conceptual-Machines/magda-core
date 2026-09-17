@@ -95,8 +95,11 @@ class TargetResolver {
     static const ChainContext::DeviceWithPath* findFirstMatchingDevice(
         const std::vector<ChainContext::DeviceWithPath>& devices, const juce::String& pluginKey);
 
-    // Given a device, find a param by name (case-insensitive normalised key).
-    static int findParamByKey(const DeviceInfo& device, const juce::String& paramKey);
+    // Given a parameter catalog, find a param by name (case-insensitive
+    // normalised key). The returned value is its addressable slot, not its
+    // position in the catalog.
+    static int findParamByKey(const std::vector<ParameterInfo>& parameters,
+                              const juce::String& paramKey);
 
     AliasRegistry& aliasRegistry_;
     ResolverRegistry& resolverRegistry_;

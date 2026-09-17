@@ -1,23 +1,15 @@
 #include "controllers/ControllerParamWriter.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 #include "../../core/AutomationInfo.hpp"
 #include "../../core/ModInfo.hpp"
 #include "../../core/ParameterUtils.hpp"
 #include "../../core/TrackManager.hpp"
-#include "AudioBridge.hpp"
-#include "plugin_manager/PluginManager.hpp"
+#include "../DeviceParameterList.hpp"
 
 namespace magda {
-
-namespace {
-
-const ParameterInfo* findDeviceParameterInfo(const DeviceInfo& device, int paramIndex) {
-    return device.findParameterByIndex(paramIndex);
-}
-
-}  // namespace
 
 void DefaultControllerParamWriter::write(const ResolveResult& resolved, float value) {
     if (!resolved.ok())
@@ -92,34 +84,36 @@ void DefaultControllerParamWriter::writeSendLevel(const ControlTarget& target, f
 
 void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target, float clamped) {
     auto& trackMgr = TrackManager::getInstance();
-    if (auto* device = trackMgr.getDeviceInChainByPath(target.devicePath)) {
-        const auto* info = findDeviceParameterInfo(*device, target.paramIndex);
-        const bool displayMapped = info != nullptr && device->format == PluginFormat::Internal &&
-                                   ParameterUtils::isDisplayMappedInternalValue(*info);
-        if (displayMapped) {
-            const auto displayValue = ParameterUtils::normalizedToModelValue(
-                ParameterNormalizedValue::clamped(clamped), *info);
-            trackMgr.setDeviceParameterValue(target.devicePath, target.paramIndex, displayValue);
-            return;
-        }
-    }
-
-    auto* param = bridge_.resolveControlTarget(target);
-    if (!param)
+    const auto* device = trackMgr.getDeviceInChainByPath(target.devicePath);
+    if (device == nullptr)
         return;
 
-    // 'clamped' is normalized 0..1 (what BindingTransform produces). Map to the
-    // parameter's actual value range before writing — te::AutomatableParameter::
-    // setParameter expects raw, not normalized.
-    const auto range = param->getValueRange();
-    const auto raw = static_cast<float>(range.getStart() + clamped * range.getLength());
-    param->setParameterFromHost(raw, juce::sendNotificationSync);
+    // An addressed slot is mirrored in DeviceInfo. That is the fast path for
+    // every subsequent controller event and, more importantly, names the
+    // document base that automation and modulation offset. The live catalog is
+    // only needed for a first/unmirrored edit. It can be sparse, so always find
+    // by slot identity rather than list position.
+    std::vector<ParameterInfo> described;
+    const ParameterInfo* parameter = device->findParameterByIndex(target.paramIndex);
+    const bool mirrored = parameter != nullptr;
+    if (parameter == nullptr) {
+        described = deviceParameterList(*device, target.devicePath);
+        const auto found =
+            std::ranges::find(described, target.paramIndex, &ParameterInfo::paramIndex);
+        if (found == described.end())
+            return;
+        parameter = &*found;
+    }
 
-    // Mirror the write into DeviceInfo and notify MAGDA listeners so param
-    // sliders / inspector UIs update. Same path the plugin's native UI uses
-    // when a knob is dragged on the plugin window.
-    TrackManager::getInstance().setDeviceParameterValueFromPlugin(target.devicePath,
-                                                                  target.paramIndex, raw);
+    // A hosted plugin's document convention is always normalized position.
+    // Mirrored descriptions intentionally carry no display-text provider, so
+    // a configured Hz/dB range must not make the generic converter mistake
+    // that position for an internal real value (#2623).
+    const auto modelValue = mirrored && device->format != PluginFormat::Internal
+                                ? ParameterModelValue{clamped}
+                                : ParameterUtils::normalizedToModelValue(
+                                      ParameterNormalizedValue::clamped(clamped), *parameter);
+    trackMgr.setDeviceParameterValue(target.devicePath, *parameter, modelValue);
 }
 
 void DefaultControllerParamWriter::writeMacro(const ControlTarget& target, float clamped) {

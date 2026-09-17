@@ -85,6 +85,16 @@ class ChainContext {
     virtual const DeviceInfo* deviceAt(const ChainNodePath& path) const = 0;
 
     /**
+     * @brief Describe the parameters addressable at the given device path.
+     *
+     * The default answer is the device's model-backed parameter list. Live
+     * contexts may override this to enumerate parameters held only by a hosted
+     * plugin instance. Each ParameterInfo::paramIndex remains the addressable
+     * slot; callers must not infer it from the vector position.
+     */
+    virtual std::vector<ParameterInfo> parametersAt(const ChainNodePath& path) const;
+
+    /**
      * @brief Get all devices in the focused chain, in chain order.
      *
      * Returns device infos for every device element in the first chain of
@@ -122,6 +132,7 @@ class DefaultChainContext : public ChainContext {
     ChainNodePath focusedDevice() const override;
     ChainNodePath focusedMacroOwner() const override;
     const DeviceInfo* deviceAt(const ChainNodePath& path) const override;
+    std::vector<ParameterInfo> parametersAt(const ChainNodePath& path) const override;
     std::vector<DeviceWithPath> devicesInFocusedChain() const override;
     std::vector<DeviceWithPath> devicesForTrack(TrackId trackId) const override;
 };

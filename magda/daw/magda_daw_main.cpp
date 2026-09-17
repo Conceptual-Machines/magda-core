@@ -400,18 +400,17 @@ class MagdaDAWApplication : public JUCEApplication {
         }
 
         // 4c. OSC control surfaces (#1757). Also off unless configuration says
-        // otherwise. Needs the AudioBridge for the parameter writer, which is
-        // what makes an OSC fader land exactly where a MIDI one does — so it is
-        // built here rather than earlier, once the engine has one.
-        if (auto* audioBridge = daw_engine_->getAudioBridge()) {
+        // otherwise. Parameter control goes through the engine-neutral model
+        // seam, so OSC is available under both audio engines.
+        {
             auto sink = std::make_unique<magda::OscCommandSinkLive>(
                 daw_engine_->getMagdaApi(),
-                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge));
+                std::make_unique<magda::DefaultControllerParamWriter>());
             auto router = std::make_unique<magda::osc::OscRouter>(std::move(sink));
             // Bound addresses go through the same writer, so a parameter driven
             // from an OSC fader lands exactly where a MIDI knob would.
             router->setBindingSink(std::make_unique<magda::OscBindingSinkLive>(
-                std::make_unique<magda::DefaultControllerParamWriter>(*audioBridge)));
+                std::make_unique<magda::DefaultControllerParamWriter>()));
             oscService_ = std::make_unique<magda::osc::OscService>(std::move(router));
             if (oscService_->applyConfig())
                 juce::Logger::writeToLog("OSC listening on " + oscService_->boundAddress() + ":" +
@@ -424,7 +423,7 @@ class MagdaDAWApplication : public JUCEApplication {
             // from MAGDA with the WebSocket transport switched off.
             oscFeedback_ = std::make_unique<magda::OscFeedbackProjector>(
                 daw_engine_->getMagdaApi(), remoteApi_->service().changes(), oscService_->router(),
-                std::make_unique<magda::DefaultControllerParamReader>(*audioBridge));
+                std::make_unique<magda::DefaultControllerParamReader>());
             if (oscFeedback_->applyConfig())
                 juce::Logger::writeToLog(
                     "OSC feedback will answer surfaces on port " +

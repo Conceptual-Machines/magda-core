@@ -30,6 +30,7 @@
 #include "../../core/OpenProjectAddressing.hpp"
 #include "../../core/TempoMap.hpp"
 #include "../../core/TrackManager.hpp"
+#include "../../core/controllers/BindingRegistry.hpp"
 #include "../../project/ProjectManager.hpp"
 #include "EngineOfflineRender.hpp"
 #include "EngineProject.hpp"
@@ -281,6 +282,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                 private AutomationManagerListener,
                                 private ClipManagerListener,
                                 private ProjectManagerListener,
+                                private BindingRegistryListener,
                                 public OfflineRenderHost,
                                 public LaunchHost {
     Impl()
@@ -510,6 +512,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         AutomationManager::getInstance().addListener(this);
         ClipManager::getInstance().addListener(this);
         ProjectManager::getInstance().addListener(this);
+        BindingRegistry::getInstance().addListener(this);
         devices_->addAudioCallback(this);
     }
 
@@ -521,6 +524,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // through, and removeAudioCallback returns only once the audio thread
         // is out of here.
         devices_->removeAudioCallback(this);
+        BindingRegistry::getInstance().removeListener(this);
         ProjectManager::getInstance().removeListener(this);
         ClipManager::getInstance().removeListener(this);
         AutomationManager::getInstance().removeListener(this);
@@ -798,6 +802,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
     void automationClipsChanged(AutomationLaneId) override {
         wantValues(Shape::Unchanged);
+    }
+    /// Bindings decide which hosted slots have model-owned base values.
+    void bindingRegistryChanged(BindingScope) override {
+        wantValues(Shape::MayHaveMoved);
     }
 
     void clipsChanged() override {

@@ -19,7 +19,6 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/FontManager.hpp"
 #include "Config.hpp"
-#include "audio/AudioBridge.hpp"
 #include "audio/TrackMeters.hpp"
 #include "audio/controllers/ControllerParamWriter.hpp"
 #include "audio/controllers/ControllerRouter.hpp"
@@ -127,9 +126,8 @@ MainView::MainView(AudioEngine* audioEngine) : horizontalZoom(10.0), audioEngine
     }
 
     ControllerRouter::getInstance().reconfigure();
-    if (auto* audioBridge = audioEngine_->getAudioBridge())
-        ControllerRouter::getInstance().setParamWriter(
-            std::make_unique<DefaultControllerParamWriter>(*audioBridge));
+    ControllerRouter::getInstance().setParamWriter(
+        std::make_unique<DefaultControllerParamWriter>());
     if (auto* midiBridge = audioEngine_->getMidiBridge())
         ControllerRouter::getInstance().setMidiBridge(midiBridge);
 
