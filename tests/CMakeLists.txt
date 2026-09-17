@@ -374,6 +374,10 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_parallel_executor.cpp)
     list(APPEND TEST_SOURCES engine/test_render_denormals.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_layout.cpp)
+    # Value-driven liveness: muted and unused pure audio work is omitted while
+    # sources, stateful ops and observable taps keep running (#2627).
+    list(APPEND TEST_SOURCES engine/test_plan_required_ops.cpp)
+    list(APPEND TEST_SOURCES engine/test_required_ops_benchmark.cpp)
     # The note-range gate a pad chain needs (#2200).
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
     # The panic flag beside a MIDI port (#2418).

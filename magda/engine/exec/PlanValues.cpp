@@ -565,6 +565,75 @@ void applyLinearPanLaw(float gain, float pan, float& left, float& right) {
     right = gain + panned;
 }
 
+void resolveRequiredOps(const RenderPlan& plan, PlanValues& values) {
+    for (auto& value : values.ops)
+        value.required = true;
+
+    if (values.planFingerprint != planFingerprint(plan) || values.ops.size() != plan.ops.size() ||
+        !validatePlan(plan).empty())
+        return;
+
+    const auto isPureCandidate = [](const PlanOp& op) {
+        switch (op.kind) {
+            case OpKind::Gain:
+            case OpKind::SendTap:
+            case OpKind::MixAudio:
+            case OpKind::Subtract:
+                return true;
+            case OpKind::Fader:
+                return std::ranges::none_of(op.outputs, [](const PortDesc& output) {
+                    return output.kind == SignalKind::Midi;
+                });
+            default:
+                return false;
+        }
+    };
+
+    for (std::size_t i = 0; i < plan.ops.size(); ++i)
+        values.ops[i].required = !isPureCandidate(plan.ops[i]);
+
+    // Walk backwards because a plan is dependency ordered. Stateful and
+    // externally observable ops are roots; pure ops become required only when
+    // an input the consumer actually reads reaches them.
+    for (std::size_t cursor = plan.ops.size(); cursor-- > 0;) {
+        if (!values.ops[cursor].required)
+            continue;
+
+        const auto& op = plan.ops[cursor];
+        const auto& value = values.ops[cursor];
+
+        auto readsInput = [&](std::size_t slot) {
+            if (value.silent) {
+                switch (op.kind) {
+                    case OpKind::MixAudio:
+                    case OpKind::MergeMidi:
+                    case OpKind::MidiNoteGate:
+                    case OpKind::Subtract:
+                    case OpKind::Device:
+                    case OpKind::Gain:
+                    case OpKind::Fader:
+                    case OpKind::SendTap:
+                    case OpKind::Meter:
+                    case OpKind::InsertSend:
+                    case OpKind::Output:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            if (op.kind == OpKind::Subtract && slot == 1)
+                return value.subtractsDry;
+            return true;
+        };
+
+        for (std::size_t slot = 0; slot < op.inputs.size(); ++slot) {
+            const auto input = op.inputs[slot];
+            if (input.valid() && readsInput(slot))
+                values.ops[static_cast<std::size_t>(input.op)].required = true;
+        }
+    }
+}
+
 std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const std::vector<TrackInfo>& tracks,
                                            const TrackInfo& master, PlanValues& values,
@@ -586,6 +655,7 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
     messages.insert(messages.end(), params->diagnostics.begin(), params->diagnostics.end());
 
     values.params = std::move(params);
+    resolveRequiredOps(plan, values);
     return messages;
 }
 
