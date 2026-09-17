@@ -320,7 +320,13 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         //
         // Before the takes as well, because a take following a slot starts on
         // the sample its launch fired on and that is decided here (#2464).
-        advanceLaunchHandles(handles_, requests_, segment.block, &runs_);
+        // The block's one acquisition of the clips, held while it renders
+        // (#2490): a track's two sources play one publish rather than each
+        // taking whichever was live when it happened to read. Pinned before
+        // the handles advance so a live edit changes a slot's cycle and its
+        // material together for this block.
+        const ClipSnapshotFeed::BlockScope clips(clips_);
+        advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live());
 
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.
@@ -341,11 +347,6 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // round to be given a reader.
         if (voices_ != nullptr)
             voices_->setPosition(segment.block.seconds.start);
-
-        // The block's one acquisition of the clips, held while it renders
-        // (#2490): a track's two sources play one publish rather than each
-        // taking whichever was live when it happened to read.
-        const ClipSnapshotFeed::BlockScope clips(clips_);
 
         // Beside the handles and for the same reason: what gates a track's
         // arrangement is resolved once, before either of its sources renders.

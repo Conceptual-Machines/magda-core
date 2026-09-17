@@ -614,8 +614,13 @@ class DrumGridClipGrid : public juce::Component,
             if (auto* controller = magda::TimelineController::getCurrent()) {
                 tempo = controller->getState().tempo.bpm;
             }
-            if (const auto contentBeat = magda::ClipOperations::contentBeatAtTimelineBeat(
-                    *playheadClip, playheadBeat_, tempo)) {
+            const auto contentBeat =
+                playheadClip->view == magda::ClipView::Session
+                    ? magda::ClipOperations::contentBeatAtSessionBeat(
+                          *playheadClip, playheadClip->sessionPlayheadPos * tempo / 60.0, tempo)
+                    : magda::ClipOperations::contentBeatAtTimelineBeat(*playheadClip, playheadBeat_,
+                                                                       tempo);
+            if (contentBeat) {
                 int playheadX = beatToPixel(clipBeatToDisplayBeat(*contentBeat));
                 if (playheadX >= 0 && playheadX <= bounds.getWidth()) {
                     g.setColour(DarkTheme::getColour(DarkTheme::TEXT_PRIMARY));

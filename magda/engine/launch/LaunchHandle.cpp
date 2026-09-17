@@ -135,6 +135,16 @@ void LaunchHandle::setLooping(std::optional<double> beats) {
     loopBeats_ = beats;
 }
 
+void LaunchHandle::adoptPublishedLooping(std::optional<double> beats) {
+    if (publishedLoopBeats_ && *publishedLoopBeats_ == beats)
+        return;
+
+    // emplace is deliberate for the non-looping case: the outer optional must
+    // become engaged while the value it contains is empty.
+    publishedLoopBeats_.emplace(beats);
+    setLooping(beats);
+}
+
 void LaunchHandle::nudge(double beats, SampleDuration samples) {
     // The origin moves, not the end: the played length is what a source reads
     // its position from, so shifting where the run began is what moves the

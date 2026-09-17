@@ -432,6 +432,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             SessionSlotPlayback slot;
             slot.sceneIndex = clip.sceneIndex;
             slot.lengthBeats = clip.sessionCycleBeats(tempoMap.bpmAt(0.0));
+            if (clip.loopEnabled)
+                slot.loopBeats = slot.lengthBeats;
             slot.follow = compileFollow(clip);
             slot.audio = std::move(compiled.tracks.front().audio);
             slot.midi = std::move(compiled.tracks.front().midi);

@@ -104,6 +104,29 @@ class ClipOperations {
         if (elapsed < 0.0 || elapsed > clip.placement.lengthBeats)
             return std::nullopt;
 
+        return contentBeatAtElapsedBeat(clip, elapsed, bpm);
+    }
+
+    /**
+     * @brief The content beat heard @p elapsedBeat beats into a Session run.
+     *
+     * Session positions are clip elapsed positions rather than timeline positions. A looping run
+     * can continue through any number of cycles; a non-looping run ends at its Session cycle,
+     * which is the placement fallback.
+     */
+    static inline std::optional<double> contentBeatAtSessionBeat(const ClipInfo& clip,
+                                                                 double elapsedBeat, double bpm) {
+        const double cycle = clip.sessionCycleBeats(bpm);
+        if (elapsedBeat < 0.0 || (!clip.loopEnabled && elapsedBeat > cycle))
+            return std::nullopt;
+
+        return contentBeatAtElapsedBeat(clip, elapsedBeat, bpm);
+    }
+
+  private:
+    /// Fold a validated clip-elapsed position through the clip's trim, phase and loop region.
+    static inline double contentBeatAtElapsedBeat(const ClipInfo& clip, double elapsed,
+                                                  double bpm) {
         const double offset = clip.isMidi() ? clip.midiOffset : 0.0;
         const double loopLength = clip.loopLengthInBeats(bpm);
         if (clip.loopEnabled && loopLength > 0.0)
@@ -111,6 +134,7 @@ class ClipOperations {
         return elapsed + offset + getMidiVisibleRange(clip).startBeat;
     }
 
+  public:
     /**
      * @brief The timeline beat that plays @p contentBeat; the inverse of contentBeatAtTimelineBeat.
      *

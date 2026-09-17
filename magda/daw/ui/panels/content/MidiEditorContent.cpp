@@ -107,6 +107,16 @@ std::optional<double> rulerSecondsForTimelineBeat(double timelineBeat, const mag
     return (rulerOriginBeats(clip, relativeMode) + *contentBeat) * 60.0 / bpm;
 }
 
+// Where the ruler draws the content heard at a Session clip-elapsed beat.
+std::optional<double> rulerSecondsForSessionBeat(double elapsedBeat, const magda::ClipInfo& clip,
+                                                 double bpm, bool relativeMode) {
+    const auto contentBeat =
+        magda::ClipOperations::contentBeatAtSessionBeat(clip, elapsedBeat, bpm);
+    if (!contentBeat)
+        return std::nullopt;
+    return (rulerOriginBeats(clip, relativeMode) + *contentBeat) * 60.0 / bpm;
+}
+
 double timelineBeatForRulerSeconds(double rulerSeconds, double nearTimelineBeat,
                                    const magda::ClipInfo& clip, double bpm, bool relativeMode) {
     const double contentBeat = rulerSeconds * bpm / 60.0 - rulerOriginBeats(clip, relativeMode);
@@ -846,22 +856,25 @@ void MidiEditorContent::timelineStateChanged(const magda::TimelineState& state,
         if (!isValidBpm(bpm))
             bpm = DEFAULT_BPM;
 
-        // A launched session clip reports how far into its pass it is; the rest follow the
-        // transport.
-        double playheadBeat = -1.0;
-        if (state.playhead.isPlaying) {
-            playheadBeat = state.playhead.playbackPositionBeats;
-            if (editClip && editClip->sessionPlayheadPos >= 0.0)
-                playheadBeat =
-                    editClip->placement.startBeat + editClip->sessionPlayheadPos * bpm / 60.0;
-        }
+        // Grids receive the real transport beat. Session grids map each selected clip's own
+        // elapsed playhead below; they never fabricate a timeline position from it.
+        const double playheadBeat =
+            state.playhead.isPlaying ? state.playhead.playbackPositionBeats : -1.0;
 
         setGridPlayheadBeat(playheadBeat);
         if (timeRuler_) {
-            const auto rulerSeconds =
-                editClip && playheadBeat >= 0.0
-                    ? rulerSecondsForTimelineBeat(playheadBeat, *editClip, bpm, relativeTimeMode_)
-                    : std::nullopt;
+            std::optional<double> rulerSeconds;
+            if (editClip && playheadBeat >= 0.0) {
+                if (editClip->view == magda::ClipView::Session) {
+                    if (editClip->sessionPlayheadPos >= 0.0)
+                        rulerSeconds =
+                            rulerSecondsForSessionBeat(editClip->sessionPlayheadPos * bpm / 60.0,
+                                                       *editClip, bpm, relativeTimeMode_);
+                } else {
+                    rulerSeconds = rulerSecondsForTimelineBeat(playheadBeat, *editClip, bpm,
+                                                               relativeTimeMode_);
+                }
+            }
             timeRuler_->setPlayheadPosition(rulerSeconds.value_or(-1.0));
             timeRuler_->setPlayheadHandlePosition(rulerHandleSeconds(
                 state.playhead.editPositionBeats, editClip, bpm, relativeTimeMode_));

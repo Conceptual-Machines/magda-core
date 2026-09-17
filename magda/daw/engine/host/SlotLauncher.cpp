@@ -74,14 +74,6 @@ void handOver(const SlotLauncher& launcher, engine::LaunchRequestQueue::Gesture&
     }
 }
 
-/// Whether anything is sounding, which decides whether the first launch of a
-/// set waits for a boundary or starts where it was asked.
-bool anythingActive() {
-    const auto& tracks = TrackManager::getInstance().getTracks();
-    return std::ranges::any_of(
-        tracks, [](const auto& track) { return track.activeSessionClipId != INVALID_CLIP_ID; });
-}
-
 }  // namespace
 
 void SlotLauncher::launch(ClipId clipId) {
@@ -139,10 +131,10 @@ void SlotLauncher::launch(ClipId clipId) {
     // The user's intent, which outlives any one run and is what a transport
     // stop and start re-launches from.
     track->activeSessionClipId = clipId;
-    syncPlaybackModes();
 
     // A launch supersedes a stop the same track was waiting out.
     stopping_.erase(clip->trackId);
+    syncPlaybackModes();
 
     if (!host_.launchTransportPlaying()) {
         host_.startLaunchTransport();
@@ -311,7 +303,7 @@ void SlotLauncher::stopTrack(TrackId trackId) {
     // Only when there is a wait to draw: an unquantized stop lands on the next
     // block and there is no window for the affordance to blink in.
     if (due) {
-        stopping_.insert(trackId);
+        stopping_[trackId] = PendingStop{clipId, clip->sceneIndex, *due};
         clips.notifyClipPlaybackStateChanged(clipId);
     }
 }
@@ -462,6 +454,42 @@ void SlotLauncher::processStateEvents() {
         return;
 
     auto modesChanged = false;
+    const auto* session = host_.launchSession();
+
+    // A stop is acknowledged by the exact slot it targeted. A stopped sibling
+    // cannot complete it, and a queued launch whose request has not reached the
+    // audio thread still has an untouched, stopped tap before its due beat.
+    for (auto pending = stopping_.begin(); pending != stopping_.end();) {
+        const auto trackId = pending->first;
+        const auto stopped = pending->second;
+        const auto* clip = clips.getClip(stopped.clipId);
+        const auto stillNamesSlot = clip != nullptr && clip->view == ClipView::Session &&
+                                    clip->trackId == trackId &&
+                                    clip->sceneIndex == stopped.sceneIndex;
+        const auto* tap = session != nullptr && stillNamesSlot
+                              ? session->launchTap(engine::SlotKey{trackId, stopped.sceneIndex})
+                              : nullptr;
+
+        auto acknowledged = !stillNamesSlot || tap == nullptr;
+        if (!acknowledged) {
+            const auto reading = tap->read();
+            const auto reachedDue = session != nullptr &&
+                                    session->syncPoint().monotonicBeat >= stopped.dueMonotonicBeat;
+            acknowledged = reachedDue && !reading.playing &&
+                           reading.queued == engine::LaunchTap::Queued::nothing;
+        }
+
+        if (!acknowledged) {
+            ++pending;
+            continue;
+        }
+
+        pending = stopping_.erase(pending);
+        modesChanged = true;
+
+        if (clip != nullptr)
+            clips.notifyClipPlaybackStateChanged(clip->id);
+    }
 
     // Every slot rather than the ones the model calls active: a follow action
     // ends one run and begins another inside the audio thread, and the slot it
@@ -475,11 +503,15 @@ void SlotLauncher::processStateEvents() {
 
         const auto sounding =
             state == SessionClipPlayState::Playing || state == SessionClipPlayState::Queued;
+        const auto currentIntent = track->activeSessionClipId;
+        const auto currentIntentStopped =
+            currentIntent == INVALID_CLIP_ID ||
+            (currentIntent != clip.id && playState(currentIntent) == SessionClipPlayState::Stopped);
 
-        if (sounding && track->activeSessionClipId != clip.id) {
+        if (sounding && !stopping_.contains(clip.trackId) && currentIntent != clip.id &&
+            currentIntentStopped) {
             track->activeSessionClipId = clip.id;
             playheadClip_ = clip.id;
-            stopping_.erase(clip.trackId);
             modesChanged = true;
         }
 
@@ -492,8 +524,6 @@ void SlotLauncher::processStateEvents() {
         }
 
         if (!sounding) {
-            stopping_.erase(clip.trackId);
-
             if (auto* mutableClip = clips.getClip(clip.id); mutableClip != nullptr)
                 mutableClip->sessionPlayheadPos = -1.0;
         }
@@ -590,9 +620,10 @@ void SlotLauncher::stopForTransport() {
             gesture.stop(keyOf(clip));
     }
 
-    // The intent stays: what each track was playing is what it plays again when
-    // the transport rolls. Only the runs end, so a slot starts its material
-    // from the top rather than from wherever the transport stopped.
+    // Ordinary active intent stays: what each track was playing is what it
+    // plays again when the transport rolls. A pending stop already cleared its
+    // intent, so clearing the acknowledgement below returns that track to the
+    // arrangement rather than resurrecting it on restart.
     for (const auto& clip : clips.getSessionClips()) {
         if (auto* mutableClip = clips.getClip(clip.id); mutableClip != nullptr)
             mutableClip->sessionPlayheadPos = -1.0;
@@ -604,6 +635,7 @@ void SlotLauncher::stopForTransport() {
     lastState_.clear();
     asked_.clear();
     stopping_.clear();
+    syncPlaybackModes();
 }
 
 void SlotLauncher::relaunchActive() {
@@ -648,11 +680,21 @@ void SlotLauncher::relaunchActive() {
     }
 }
 
+bool SlotLauncher::anythingActive() const {
+    if (!stopping_.empty())
+        return true;
+
+    const auto& tracks = TrackManager::getInstance().getTracks();
+    return std::ranges::any_of(
+        tracks, [](const auto& track) { return track.activeSessionClipId != INVALID_CLIP_ID; });
+}
+
 void SlotLauncher::syncPlaybackModes() {
     auto& tracks = TrackManager::getInstance();
 
     for (const auto& track : tracks.getTracks())
-        tracks.setTrackPlaybackMode(track.id, track.activeSessionClipId != INVALID_CLIP_ID
+        tracks.setTrackPlaybackMode(track.id, track.activeSessionClipId != INVALID_CLIP_ID ||
+                                                      stopping_.contains(track.id)
                                                   ? TrackPlaybackMode::Session
                                                   : TrackPlaybackMode::Arrangement);
 }

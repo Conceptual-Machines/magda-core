@@ -201,13 +201,6 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                     voices->fillNow();
                 }
 
-                // Before the plan and over every handle, which is where playback
-                // puts it (EngineSession.cpp): a handle sees each block exactly
-                // once, and a slot's audio and MIDI sources both read what this
-                // decided.
-                if (launcher.present())
-                    advanceLaunchHandles(*launcher.handles, *launcher.requests, segment.block);
-
                 // The block's one acquisition of the clips, which is where
                 // playback puts it too (#2490): a track's two sources play one
                 // publish, and what gates its arrangement is resolved once,
@@ -215,6 +208,15 @@ OfflineRenderResult renderOffline(PlanExecutor& executor, const PlanValues& valu
                 std::optional<ClipSnapshotFeed::BlockScope> pinned;
                 if (clips != nullptr) {
                     pinned.emplace(*clips);
+                }
+
+                // Before the plan and over every handle, against the same
+                // pinned material the sources render below.
+                if (launcher.present())
+                    advanceLaunchHandles(*launcher.handles, *launcher.requests, segment.block,
+                                         nullptr, clips != nullptr ? clips->live() : nullptr);
+
+                if (clips != nullptr) {
                     advanceTrackSections(clips->sections(), clips->live(), launcher.handles,
                                          segment.block);
                 }
