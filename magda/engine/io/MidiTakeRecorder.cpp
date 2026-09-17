@@ -33,6 +33,13 @@ RecordStreamSettings queueFor(const MidiTakeRecorderSettings& settings) {
     return queue;
 }
 
+LiveMidiInput inputFor(const LiveInputFeed& feed, const MidiTakeRecorderSettings& settings) {
+    if (settings.sources)
+        return LiveMidiInput(feed, *settings.sources, settings.latencySamples);
+
+    return LiveMidiInput(feed, settings.source, settings.latencySamples);
+}
+
 /// A note that has sounded and not yet stopped.
 struct HeldNote {
     std::int64_t start = -1;
@@ -193,9 +200,7 @@ bool MidiTakeSink::writeMidi(std::span<const RecordedMidiEvent> events) {
 MidiTakeRecorder::MidiTakeRecorder(const LiveInputFeed& feed, RecordTap& tap,
                                    const MidiTakeRecorderSettings& settings)
     : settings_(settings),
-      input_(settings_.sources.has_value()
-                 ? LiveMidiInput(feed, *settings_.sources, settings_.latencySamples)
-                 : LiveMidiInput(feed, settings_.source, settings_.latencySamples)),
+      input_(inputFor(feed, settings_)),
       stream_(sink_, queueFor(settings_)),
       tap_(tap) {
     // Sized once, so a block's events are copied into it and never allocate.
