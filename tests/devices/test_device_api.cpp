@@ -486,6 +486,7 @@ TEST_CASE("The AI opt-in gate names slots", "[device-api][mutation][2638]") {
     device.format = PluginFormat::VST3;
     for (int slot = 2; slot < 5; ++slot) {
         ParameterInfo info;
+        info.valueConvention = ParameterValueConvention::Normalized;
         info.paramIndex = slot;
         info.name = "P" + juce::String(slot);
         info.minValue = 0.0f;
@@ -559,6 +560,7 @@ TEST_CASE("External-plugin parameter writes require the user's opt-in", "[device
     device.format = PluginFormat::VST3;
     for (int i = 0; i < 2; ++i) {
         ParameterInfo param;
+        param.valueConvention = ParameterValueConvention::Normalized;
         param.paramIndex = i;
         param.name = "Param " + juce::String(i);
         param.minValue = 0.0f;

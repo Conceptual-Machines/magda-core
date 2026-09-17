@@ -70,6 +70,8 @@ magda::DeviceInfo makeExternalDevice() {
     device.parameters.emplace_back(1, "Resonance", "%", 0.0f, 100.0f, 10.0f);
     device.parameters.emplace_back(2, "Mode", "", 0.0f, 2.0f, 0.0f,
                                    magda::ParameterScale::Discrete);
+    for (auto& parameter : device.parameters)
+        parameter.valueConvention = magda::ParameterValueConvention::Normalized;
     device.parameters[2].choices = {"LP", "BP", "HP"};
 
     // The ids the plugin declares, which is what an entry is matched by.

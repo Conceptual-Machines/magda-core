@@ -155,6 +155,7 @@ TEST_CASE("A hosted plugin's stored value is seeded as its normalised position",
     // range is what it displays through. Serum 2's detected Main Vol starts at
     // minus infinity, which no read through the range survives.
     ParameterInfo info(2, "Main Vol", "dB", -std::numeric_limits<float>::infinity(), 3.0f, 0.0f);
+    info.valueConvention = ParameterValueConvention::Normalized;
     info.currentValue = 0.75f;
     device.parameters.push_back(info);
 

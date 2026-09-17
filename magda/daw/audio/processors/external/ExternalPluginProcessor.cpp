@@ -79,7 +79,7 @@ ParameterInfo ExternalPluginProcessor::getParameterInfo(int index) const {
         return {};
 
     auto* param = params[static_cast<size_t>(index)];
-    auto info = makeInfoFromTeParam(index, param);
+    auto info = makeInfoFromTeParam(index, param, ParameterValueConvention::Normalized);
 
     // Live display text provider: all display paths (param grid, automation
     // lane, curve tooltip) query the plugin's valueToString() at call time
@@ -113,9 +113,11 @@ void ExternalPluginProcessor::populateParametersFromEngine(DeviceInfo& info) con
                 continue;
             auto paramInfo = getParameterInfo(i);
             if (param == ext->dryGain.get()) {
+                paramInfo.valueConvention = ParameterValueConvention::Real;
                 paramInfo.wrapperRole = WrapperRole::DryGain;
                 info.wrapperParameters.push_back(std::move(paramInfo));
             } else if (param == ext->wetGain.get()) {
+                paramInfo.valueConvention = ParameterValueConvention::Real;
                 paramInfo.wrapperRole = WrapperRole::WetGain;
                 info.wrapperParameters.push_back(std::move(paramInfo));
             } else {

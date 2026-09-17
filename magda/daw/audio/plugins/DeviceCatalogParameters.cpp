@@ -71,6 +71,7 @@ bool seedDeclaredParameters(magda::DeviceInfo& device) {
     bool added = false;
     int slot = 0;
     for (auto info : declared->parameters()) {
+        info.valueConvention = magda::ParameterValueConvention::Real;
         // Declaration order for a device that left paramIndex unset, which is
         // the fallback both engine adapters address it by.
         const int index = info.paramIndex >= 0 ? info.paramIndex : slot;

@@ -4,6 +4,7 @@
 #include <map>
 
 #include "../Vst3Preset.hpp"
+#include "core/ParameterUtils.hpp"
 
 namespace magda {
 
@@ -91,26 +92,18 @@ void applyVst3Records(DeviceInfo& device, const Vst3PresetRead& read) {
 
 /// Where @p info's stored value sits in [0, 1], as the plugin takes it.
 ///
-/// A hosted plugin's parameters are stored in the plugin's own normalised
-/// domain whatever display range has been detected over them, and
-/// teMinValue/teMaxValue is the record of that domain. Deliberately not
-/// ParameterUtils::modelToNormalizedValue(), which tells a display-mapped
-/// internal device from a hosted plugin by whether a display-text provider is
-/// attached: no project serialises that provider, so the same device would
-/// answer one way on the load that opens a project and another once the host
-/// had attached one (#2601).
+/// The convention is explicit because display metadata can replace the range
+/// without changing the domain in which a hosted plugin's value is stored.
 float normalisedFrom(const ParameterInfo& info) {
-    const auto teSpan = info.teMaxValue - info.teMinValue;
-    const auto normalised =
-        teSpan > 0.0f ? (info.currentValue - info.teMinValue) / teSpan : info.currentValue;
-
-    return std::clamp(normalised, 0.0f, 1.0f);
+    return ParameterUtils::modelToNormalizedValue(ParameterModelValue{info.currentValue}, info)
+        .value;
 }
 
 /// The inverse: what the model stores for a plugin reporting @p normalised.
 float modelValueFrom(float normalised, const ParameterInfo& info) {
-    const auto teSpan = info.teMaxValue - info.teMinValue;
-    return teSpan > 0.0f ? info.teMinValue + normalised * teSpan : normalised;
+    return ParameterUtils::normalizedToModelValue(ParameterNormalizedValue::clamped(normalised),
+                                                  info)
+        .value;
 }
 
 /// The length the fork asks a plugin for its parameter names at.
@@ -127,6 +120,7 @@ ParameterInfo normalisedParameter(int index, const juce::String& name) {
     info.maxValue = 1.0f;
     info.teMinValue = 0.0f;
     info.teMaxValue = 1.0f;
+    info.valueConvention = ParameterValueConvention::Normalized;
     return info;
 }
 
@@ -169,6 +163,7 @@ juce::String hostParameterId(const juce::AudioProcessorParameter& parameter) {
 ParameterInfo wrapperParameter(const DeviceInfo& device, int index, const juce::String& id,
                                const juce::String& name, WrapperRole role, float defaultValue) {
     auto info = normalisedParameter(index, name);
+    info.valueConvention = ParameterValueConvention::Real;
     info.stableId = id;
     info.wrapperRole = role;
     info.defaultValue = defaultValue;

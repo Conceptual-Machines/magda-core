@@ -60,6 +60,11 @@ struct OpValue {
     /// listen to is silence, which is what a slot monitoring an unconnected key
     /// should sound like.
     bool listensToSidechain = false;
+
+    /// Whether this op contributes to an observable result or owns state that
+    /// must continue advancing. Resolved off the audio thread; true is the
+    /// conservative default for absent, stale and hand-built value tables.
+    bool required = true;
 };
 
 /**
@@ -133,6 +138,14 @@ std::vector<std::string> resolvePlanValues(const RenderPlan& plan,
                                            const TrackInfo& master, PlanValues& values,
                                            std::span<const magda::AutomationLaneInfo> lanes = {},
                                            std::span<const magda::AutomationClipInfo> clips = {});
+
+/**
+ * @brief Mark pure ops that no observable or stateful op needs.
+ *
+ * Runs off the audio thread. A malformed plan or a value table resolved for a
+ * different plan leaves every op required.
+ */
+void resolveRequiredOps(const RenderPlan& plan, PlanValues& values);
 
 /**
  * @brief Gain a volume fader applies, given a linear volume from the model.

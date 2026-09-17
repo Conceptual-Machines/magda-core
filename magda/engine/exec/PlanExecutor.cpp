@@ -1590,6 +1590,19 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
     const auto i = static_cast<std::size_t>(id);
     const auto& op = plan_->ops[i];
     const auto numSamples = block.numSamples;
+
+    if (!published.required) {
+        for (std::size_t port = 0; port < op.outputs.size(); ++port) {
+            if (op.outputs[port].kind == SignalKind::Audio) {
+                audioOut(id, static_cast<int>(port), numSamples).clear();
+            } else {
+                midiOut(id, static_cast<int>(port)).clear();
+                setMidiOutPanic(id, static_cast<int>(port), false);
+            }
+        }
+        return;
+    }
+
     const auto value = mixerValueFor(i, published);
 
     switch (op.kind) {

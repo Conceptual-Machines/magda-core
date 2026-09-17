@@ -26,8 +26,10 @@ DeviceInfo makeDevice(DeviceId id, int numParameters = 4) {
     device.macros = createDefaultMacros(2);
     device.mods = createDefaultMods(0);
 
-    for (int index = 0; index < numParameters; ++index)
+    for (int index = 0; index < numParameters; ++index) {
         device.parameters.emplace_back(index, "P" + juce::String(index), "", 0.0f, 1.0f, 0.0f);
+        device.parameters.back().valueConvention = ParameterValueConvention::Normalized;
+    }
 
     return device;
 }
@@ -251,6 +253,8 @@ TEST_CASE("Only the hosted values something addresses are kept for a save",
 
     auto internal = makeDevice(8);
     internal.format = PluginFormat::Internal;
+    for (auto& parameter : internal.parameters)
+        parameter.valueConvention = ParameterValueConvention::Real;
     track.chain.fxChainElements.push_back(makeDeviceElement(std::move(internal)));
 
     const std::vector<AutomationLaneInfo> lanes{
