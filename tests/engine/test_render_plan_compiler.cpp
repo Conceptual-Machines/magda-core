@@ -2662,6 +2662,11 @@ TEST_CASE("A routing loop is carried a block, not broken by dropping a connectio
     REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
     CHECK(inputOp(plan, send, 0) == sourceMute);
 
+    // And it waits on the return, which it does not read. Without that edge
+    // the two are unordered and a parallel schedule is free to overwrite the
+    // carry while the return is still reading it.
+    CHECK(inputOp(plan, send, 1) == ret);
+
     // And the sidechain, which the old breaker paid for this loop with, is
     // still connected to track 2.
     const auto device = deviceProcess(plan, 7);
@@ -2671,6 +2676,37 @@ TEST_CASE("A routing loop is carried a block, not broken by dropping a connectio
             sourceMeter = op;
     REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
     CHECK(inputOp(plan, device, 2) == sourceMeter);
+}
+
+TEST_CASE("A carry taken from a different track is a different op",
+          "[engine][plan][compiler][2418]") {
+    // Nothing else about a carry says where it came from: the destination reads
+    // the return, whose inputs are empty. Two sources compiling to one key would
+    // hand the new route the old one's carry and hide the change from the pass
+    // that panics a device whose MIDI source was taken away.
+    const auto keyOfReturn = [](TrackId sourceId) {
+        auto compressor = makeEffect(7);
+        compressor.sidechainPort = magda::monoAudioSidechain;
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
+
+        // Track 2 reads `sourceId`, and `sourceId` keys off track 2: a loop
+        // whichever of the two it is, so the route is cut either way.
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2), makeTrack(3)};
+        tracks[sourceId == 1 ? 0 : 2].chain.fxChainElements.push_back(
+            makeDeviceElement(compressor));
+        tracks[1].audioInputDevice = "track:" + juce::String(sourceId);
+        tracks[1].inputMonitor = InputMonitorMode::In;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto returns = opsWithRole(plan, OpRole::FeedbackReturn);
+        REQUIRE(returns.size() == 1);
+        return plan.ops[static_cast<std::size_t>(returns.front())].key;
+    };
+
+    CHECK_FALSE(keyOfReturn(1) == keyOfReturn(3));
 }
 
 TEST_CASE("A track routed from itself is carried rather than reported",

@@ -46,7 +46,10 @@ int arityOf(OpKind kind) {
         case OpKind::InsertReturn:
             return 0;  // what comes back is a source, like a live input
         case OpKind::FeedbackSend:
-            return 1;  // the one signal the carry holds
+            // The signal the carry holds, and the return that reads it: the
+            // second is ordering only, so every schedule reads last block's
+            // carry before this block overwrites it.
+            return 2;
         case OpKind::FeedbackReturn:
             return 0;  // last block's carry, which nothing in this block produced
     }
@@ -436,11 +439,12 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             // what its input has to agree with.
             // A feedback send carries one signal and its key says which, the
             // same number the return's own port declares.
-            const bool midiSlot = op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
-                                  (op.kind == OpKind::FeedbackSend && op.key.index == 1) ||
-                                  ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
-                                    op.kind == OpKind::ModSource) &&
-                                   slot == 1);
+            const bool midiSlot =
+                op.kind == OpKind::MergeMidi || op.kind == OpKind::MidiNoteGate ||
+                (op.kind == OpKind::FeedbackSend && feedbackSignal(op.key.index) == 1) ||
+                ((op.kind == OpKind::Device || op.kind == OpKind::Fader ||
+                  op.kind == OpKind::ModSource) &&
+                 slot == 1);
             const auto expected =
                 op.kind == OpKind::Delay
                     ? (op.outputs.empty() ? SignalKind::Audio : op.outputs.front().kind)

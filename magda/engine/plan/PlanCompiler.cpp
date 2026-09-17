@@ -220,7 +220,7 @@ class Compiler {
     PortRef emitInputRouteGate(TrackId trackId, int signal, PortRef source);
 
     /// The read half of a cut route: what the send left last block.
-    PortRef emitFeedbackReturn(TrackId trackId, int signal);
+    PortRef emitFeedbackReturn(TrackId trackId, int signal, TrackId source);
 
     /// The write half of every cut route, emitted once every track has.
     void emitFeedbackSends();
@@ -339,6 +339,10 @@ class Compiler {
     /// that reads them and the signal: 0 audio, 1 MIDI. These compile to a
     /// carry, so what the destination hears is the source's previous block.
     std::set<std::pair<TrackId, int>> cutRoutes_;
+
+    /// The return half of each cut route, so the send can take it as the edge
+    /// that orders the read before the write.
+    std::map<std::pair<TrackId, int>, PortRef> feedbackReturns_;
     /// Every point a modifier somewhere in the project reads (ModSources.hpp),
     /// and every track one of them reads for notes. One op each at the end.
     std::set<ModTap> modulationTaps_;
@@ -659,11 +663,13 @@ PortRef Compiler::emitInputRouteGate(TrackId trackId, int signal, PortRef source
     return PortRef{addOp(OpKind::Gain, key, {source}, {SignalKind::Audio}), 0};
 }
 
-PortRef Compiler::emitFeedbackReturn(TrackId trackId, int signal) {
+PortRef Compiler::emitFeedbackReturn(TrackId trackId, int signal, TrackId source) {
     const OpKey key{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
-                    INVALID_DEVICE_ID, OpRole::FeedbackReturn, signal};
+                    INVALID_DEVICE_ID, OpRole::FeedbackReturn, feedbackIndex(signal, source)};
     const auto kind = signal == 1 ? SignalKind::Midi : SignalKind::Audio;
-    return PortRef{addOp(OpKind::FeedbackReturn, key, {}, {kind}), 0};
+    const PortRef port{addOp(OpKind::FeedbackReturn, key, {}, {kind}), 0};
+    feedbackReturns_[{trackId, signal}] = port;
+    return port;
 }
 
 void Compiler::emitFeedbackSends() {
@@ -689,9 +695,14 @@ void Compiler::emitFeedbackSends() {
             continue;
         }
 
-        const OpKey key{trackId,           INVALID_RACK_ID,      INVALID_CHAIN_ID,
-                        INVALID_DEVICE_ID, OpRole::FeedbackSend, signal};
-        addOp(OpKind::FeedbackSend, key, {source->second}, {});
+        const auto ret = feedbackReturns_.find({trackId, signal});
+        if (ret == feedbackReturns_.end())
+            continue;
+
+        const OpKey key{
+            trackId,           INVALID_RACK_ID,      INVALID_CHAIN_ID,
+            INVALID_DEVICE_ID, OpRole::FeedbackSend, feedbackIndex(signal, route.trackId)};
+        addOp(OpKind::FeedbackSend, key, {source->second, ret->second}, {});
     }
 }
 
@@ -1473,8 +1484,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // Nothing about it is live, so liveness is left to propagate from
             // the source rather than asserted here.
             if (cutRoutes_.contains({track.id, 0})) {
-                audioSources.push_back(
-                    emitInputRouteGate(track.id, 0, emitFeedbackReturn(track.id, 0)));
+                audioSources.push_back(emitInputRouteGate(
+                    track.id, 0, emitFeedbackReturn(track.id, 0, route.trackId)));
             } else if (const auto source = trackRoutedOutput_.find(route.trackId);
                        source != trackRoutedOutput_.end()) {
                 audioSources.push_back(emitInputRouteGate(track.id, 0, source->second));
@@ -1555,8 +1566,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // An internal MIDI route delivers the source track's incoming MIDI,
             // not what its own chain made of it.
             if (cutRoutes_.contains({track.id, 1})) {
-                midiSources.push_back(
-                    emitInputRouteGate(track.id, 1, emitFeedbackReturn(track.id, 1)));
+                midiSources.push_back(emitInputRouteGate(
+                    track.id, 1, emitFeedbackReturn(track.id, 1, route.trackId)));
             } else if (const auto source = trackMidiInput_.find(route.trackId);
                        source != trackMidiInput_.end()) {
                 midiSources.push_back(emitInputRouteGate(track.id, 1, source->second));

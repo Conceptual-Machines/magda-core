@@ -76,27 +76,36 @@ class FeedbackCarry {
   public:
     void prepare(int numChannels, int maxBlockSize, int midiCapacityBytes);
 
-    /// What the send left last block, into @p block. Short blocks read what
-    /// they are given and leave the rest of the carry alone.
+    /// What the send left last block, into @p block.
     void read(juce::dsp::AudioBlock<float> block, int numSamples) const;
     void write(juce::dsp::AudioBlock<const float> block, int numSamples);
 
-    void read(juce::MidiBuffer& out) const {
-        out = midi_;
-    }
-    void write(const juce::MidiBuffer& in) {
-        midi_ = in;
+    /// Events are copied rather than the buffers assigned: assignment
+    /// replaces the storage prepare() reserved, which is an allocation on the
+    /// audio thread.
+    void read(juce::MidiBuffer& out) const;
+    void write(const juce::MidiBuffer& in, bool panic);
+
+    /// The all-notes-off the send was handed, delivered with the events it
+    /// belongs to rather than a block ahead of them.
+    bool panic() const {
+        return panic_;
     }
 
     void clear();
 
-    bool hasConfiguration(int numChannels, int maxBlockSize) const {
-        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize;
+    /// A carry whose MIDI reservation is smaller than this plan's ports need
+    /// would grow on the callback, so the capacity counts as configuration.
+    bool hasConfiguration(int numChannels, int maxBlockSize, int midiCapacityBytes) const {
+        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize &&
+               midiCapacity_ >= midiCapacityBytes;
     }
 
   private:
     juce::AudioBuffer<float> audio_;
     juce::MidiBuffer midi_;
+    int midiCapacity_ = 0;
+    bool panic_ = false;
 };
 
 /**
@@ -615,6 +624,12 @@ class PlanExecutor {
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
     const std::shared_ptr<FeedbackCarry>& feedbackCarryFor(OpId op) const;
 
+    /// Whether a note gate of this executor's plan passed anything last block,
+    /// for the executor replacing it to take over.
+    bool notePassedLastBlock(OpId op) const {
+        return notePassing_[static_cast<std::size_t>(op)] != 0;
+    }
+
     const RenderPlan* plan_ = nullptr;
 
     /// The unbound inputs reportUnboundInputs has already answered for, so a
@@ -684,6 +699,11 @@ class PlanExecutor {
     std::vector<int> feedbackForOp_;
     std::vector<std::shared_ptr<FeedbackCarry>> feedbackCarries_;
     int carriedFeedbackCarries_ = 0;
+
+    /// Per op: whether a note gate passed anything last block. A gate that
+    /// stops has to raise an all-notes-off, since the note-offs for what it
+    /// already let through will never arrive.
+    std::vector<char> notePassing_;
 
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.

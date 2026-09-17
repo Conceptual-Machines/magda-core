@@ -153,6 +153,7 @@ void FeedbackCarry::prepare(int numChannels, int maxBlockSize, int midiCapacityB
     audio_.clear();
     midi_.clear();
     midi_.ensureSize(static_cast<std::size_t>(midiCapacityBytes));
+    midiCapacity_ = midiCapacityBytes;
 }
 
 void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
@@ -181,18 +182,39 @@ void FeedbackCarry::write(juce::dsp::AudioBlock<const float> block, int numSampl
         std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
     const auto samples = std::min(numSamples, audio_.getNumSamples());
 
-    for (int channel = 0; channel < channels; ++channel)
+    // Everything this block did not fill is cleared rather than left behind.
+    // Callback sizes vary, and a short block over a long one would leave the
+    // tail of the longer to come back as the end of the next read.
+    for (int channel = 0; channel < channels; ++channel) {
         juce::FloatVectorOperations::copy(
             audio_.getWritePointer(channel),
             block.getChannelPointer(static_cast<std::size_t>(channel)), samples);
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel) + samples,
+                                           audio_.getNumSamples() - samples);
+    }
 
     for (int channel = channels; channel < audio_.getNumChannels(); ++channel)
-        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), samples);
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), audio_.getNumSamples());
+}
+
+void FeedbackCarry::read(juce::MidiBuffer& out) const {
+    for (const auto metadata : midi_)
+        out.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
+}
+
+void FeedbackCarry::write(const juce::MidiBuffer& in, bool panic) {
+    // clear() keeps the storage prepare() reserved. Assigning the buffer would
+    // replace it, which is an allocation on the audio thread.
+    midi_.clear();
+    for (const auto metadata : in)
+        midi_.addEvent(metadata.data, metadata.numBytes, metadata.samplePosition);
+    panic_ = panic;
 }
 
 void FeedbackCarry::clear() {
     audio_.clear();
     midi_.clear();
+    panic_ = false;
 }
 
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
@@ -333,6 +355,7 @@ void PlanExecutor::reset() {
     carriedFeedbackCarries_ = 0;
     feedbackForOp_.clear();
     feedbackCarries_.clear();
+    notePassing_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
     midiSlotPanic_.clear();
@@ -822,72 +845,108 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
-    for (std::size_t i = 0; i < numOps; ++i) {
-        const auto& op = plan.ops[i];
+    // A carry's return is a producer whose real budget is whatever its send is
+    // handed, and the send comes after it: one forward pass cannot see it. So
+    // the pass is a sweep, repeated while a return grows. Bounds only ever rise
+    // and every port is bounded by the plan's producers, so this settles; a
+    // sweep per carry is enough for carries feeding carries.
+    int carries = 0;
+    for (const auto& op : plan.ops)
+        carries += op.kind == OpKind::FeedbackSend ? 1 : 0;
 
-        if (op.kind == OpKind::Delay) {
-            if (op.outputs.front().kind != SignalKind::Midi)
+    const auto sweep = [&] {
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+
+            if (op.kind == OpKind::Delay) {
+                if (op.outputs.front().kind != SignalKind::Midi)
+                    continue;
+                // A delay's output block covers one block's worth of its input's
+                // time, and that stretch falls across two of the spans the budget
+                // is counted over unless the delay is a whole number of them. Zero
+                // is not a delay at all: the op does not run, and the port is its
+                // input's.
+                const auto carried = portMidiBytes[flatPort(op.inputs.front())];
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
+                    latency.delaySamples[i] == 0 ? carried : 2 * carried;
                 continue;
-            // A delay's output block covers one block's worth of its input's
-            // time, and that stretch falls across two of the spans the budget
-            // is counted over unless the delay is a whole number of them. Zero
-            // is not a delay at all: the op does not run, and the port is its
-            // input's.
-            const auto carried = portMidiBytes[flatPort(op.inputs.front())];
-            portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
-                latency.delaySamples[i] == 0 ? carried : 2 * carried;
-            continue;
+            }
+
+            // Everything that carries MIDI on from what reached it. A merge is the
+            // obvious one and a fader carries a rack chain's MIDI out beside its
+            // audio, but a conduit is a conduit: a note gate passes on whatever
+            // falls in its range.
+            //
+            // A Device is deliberately not one. Its MIDI output port carries what
+            // the device produced and nothing it was handed: MIDI thru is the
+            // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
+            // the only way a host can offer it over a plugin it does not write, and
+            // a device doing it as well made every note a pair (#2345). So a device
+            // is a producer like any other and its port stays at the budget every
+            // port starts on.
+            //
+            // Unless it says otherwise: a MIDI FX that consumes notes hands the
+            // rest of the channel on, since thru would bring the notes back with
+            // it (#2417). Its port holds what it makes and what reached it, and
+            // what reached it is a merge's sum rather than one producer's budget.
+            if (op.kind == OpKind::Device) {
+                const auto* device = deviceForOp_[i];
+                const auto hasMidiOut =
+                    op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+                if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
+                    continue;
+
+                const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
+                                          ? portMidiBytes[flatPort(op.inputs[1])]
+                                          : 0;
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
+                    kMaxMidiBytesPerPort + reaching;
+                continue;
+            }
+
+            if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
+                op.kind != OpKind::MidiNoteGate)
+                continue;
+
+            int carried = 0;
+            for (const auto& input : op.inputs) {
+                if (!input.valid())
+                    continue;
+                if (plan.ops[static_cast<std::size_t>(input.op)]
+                        .outputs[static_cast<std::size_t>(input.port)]
+                        .kind != SignalKind::Midi)
+                    continue;
+                carried += portMidiBytes[flatPort(input)];
+            }
+
+            for (std::size_t port = 0; port < op.outputs.size(); ++port)
+                if (op.outputs[port].kind == SignalKind::Midi)
+                    portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
+        }
+    };
+
+    sweep();
+    for (int pass = 0; pass < carries; ++pass) {
+        // A send's second input is its own return, so the port to raise is
+        // named by the op that knows what will be written into it.
+        bool grew = false;
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
+            if (op.kind != OpKind::FeedbackSend || feedbackSignal(op.key.index) != 1)
+                continue;
+            if (!op.inputs[0].valid() || !op.inputs[1].valid())
+                continue;
+
+            auto& bound = portMidiBytes[flatPort(op.inputs[1])];
+            if (const auto needed = portMidiBytes[flatPort(op.inputs[0])]; needed > bound) {
+                bound = needed;
+                grew = true;
+            }
         }
 
-        // Everything that carries MIDI on from what reached it. A merge is the
-        // obvious one and a fader carries a rack chain's MIDI out beside its
-        // audio, but a conduit is a conduit: a note gate passes on whatever
-        // falls in its range.
-        //
-        // A Device is deliberately not one. Its MIDI output port carries what
-        // the device produced and nothing it was handed: MIDI thru is the
-        // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
-        // the only way a host can offer it over a plugin it does not write, and
-        // a device doing it as well made every note a pair (#2345). So a device
-        // is a producer like any other and its port stays at the budget every
-        // port starts on.
-        //
-        // Unless it says otherwise: a MIDI FX that consumes notes hands the
-        // rest of the channel on, since thru would bring the notes back with
-        // it (#2417). Its port holds what it makes and what reached it, and
-        // what reached it is a merge's sum rather than one producer's budget.
-        if (op.kind == OpKind::Device) {
-            const auto* device = deviceForOp_[i];
-            const auto hasMidiOut = op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
-            if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
-                continue;
-
-            const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
-                                      ? portMidiBytes[flatPort(op.inputs[1])]
-                                      : 0;
-            portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
-                kMaxMidiBytesPerPort + reaching;
-            continue;
-        }
-
-        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
-            op.kind != OpKind::MidiNoteGate)
-            continue;
-
-        int carried = 0;
-        for (const auto& input : op.inputs) {
-            if (!input.valid())
-                continue;
-            if (plan.ops[static_cast<std::size_t>(input.op)]
-                    .outputs[static_cast<std::size_t>(input.port)]
-                    .kind != SignalKind::Midi)
-                continue;
-            carried += portMidiBytes[flatPort(input)];
-        }
-
-        for (std::size_t port = 0; port < op.outputs.size(); ++port)
-            if (op.outputs[port].kind == SignalKind::Midi)
-                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
+        if (!grew)
+            break;
+        sweep();
     }
 
     midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
@@ -1022,6 +1081,18 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto fadeSamples =
         std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * context_.sampleRate)));
 
+    // Carried from the executor this one replaces, so a gate that was passing
+    // still raises its all-notes-off when the same publish that changed the
+    // shape also turned the monitor off. Starting every gate closed would call
+    // that "already silent" and let the notes hang (#2612).
+    notePassing_.assign(numOps, 0);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::MidiNoteGate)
+            continue;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            notePassing_[i] = previous->notePassedLastBlock(from) ? 1 : 0;
+    }
+
     crossfadeForOp_.assign(numOps, -1);
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind != OpKind::Crossfade)
@@ -1070,18 +1141,28 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
             continue;
         }
 
+        // What the send will be handed, which for a route off another track is
+        // that track's whole MIDI merge rather than one producer's budget.
+        // Sizing from the constant is how the first busy block grows a buffer
+        // on the callback.
+        const auto midiPort =
+            op.kind == OpKind::FeedbackSend ? op.inputs[1] : PortRef{static_cast<OpId>(i), 0};
+        const auto midiBytes = feedbackSignal(op.key.index) == 1
+                                   ? midiByteBounds_[static_cast<std::size_t>(slotFor(midiPort))]
+                                   : 0;
+
         std::shared_ptr<FeedbackCarry> carry;
         if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
             if (const auto& adopted = previous->feedbackCarryFor(from);
                 adopted != nullptr &&
-                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize)) {
+                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize, midiBytes)) {
                 carry = adopted;
                 ++carriedFeedbackCarries_;
             }
 
         if (carry == nullptr) {
             carry = std::make_shared<FeedbackCarry>();
-            carry->prepare(context_.numChannels, context_.maxBlockSize, kMaxMidiBytesPerPort);
+            carry->prepare(context_.numChannels, context_.maxBlockSize, midiBytes);
         }
 
         feedbackForOp_[i] = static_cast<int>(feedbackCarries_.size());
@@ -1672,10 +1753,20 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // transposed, or it is not and this pad never sees it.
             auto& out = midiOut(id, 0);
             out.clear();
-            setMidiOutPanic(id, 0, !value.silent && midiInPanic(op.inputs[0]));
 
-            if (value.silent)
+            // Going silent is itself an all-notes-off. Nothing downstream will
+            // ever see the note-offs for what already went through, and the
+            // monitor switch over an input route no longer recompiles, so the
+            // reroute machinery is not there to cover it either (#2612).
+            const bool wasPassing = notePassing_[i] != 0;
+            notePassing_[i] = value.silent ? 0 : 1;
+
+            if (value.silent) {
+                setMidiOutPanic(id, 0, wasPassing);
                 break;
+            }
+
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
 
             const int low = op.noteGateLow;
             const int high = op.noteGateHigh;
@@ -1995,8 +2086,17 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             } else {
                 auto& out = midiOut(id, 0);
                 out.clear();
-                if (carry >= 0)
-                    feedbackCarries_[static_cast<std::size_t>(carry)]->read(out);
+
+                // The panic travels with the events it belongs to, a block
+                // behind like them: delivering it when the send took it would
+                // put the all-notes-off ahead of the notes it silences.
+                bool panic = false;
+                if (carry >= 0) {
+                    const auto& storage = *feedbackCarries_[static_cast<std::size_t>(carry)];
+                    storage.read(out);
+                    panic = storage.panic();
+                }
+                setMidiOutPanic(id, 0, panic);
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
             }
@@ -2014,8 +2114,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 break;
             }
 
-            if (op.key.index == 1)
-                storage.write(midiIn(op.inputs[0]));
+            if (feedbackSignal(op.key.index) == 1)
+                storage.write(midiIn(op.inputs[0]), midiInPanic(op.inputs[0]));
             else
                 storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
                               numSamples);

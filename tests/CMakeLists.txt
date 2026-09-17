@@ -378,6 +378,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_plan_note_gate.cpp)
     # The panic flag beside a MIDI port (#2418).
     list(APPEND TEST_SOURCES engine/test_plan_midi_panic.cpp)
+    # The one-block carry a cut routing loop is rejoined through (#2612).
+    list(APPEND TEST_SOURCES engine/test_plan_feedback_carry.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_pad_rack.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_insert.cpp)
     list(APPEND TEST_SOURCES engine/test_plan_diff.cpp)
