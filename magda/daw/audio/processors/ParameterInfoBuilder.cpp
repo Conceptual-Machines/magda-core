@@ -2,9 +2,11 @@
 
 namespace magda {
 
-ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param) {
+ParameterInfo makeInfoFromTeParam(int index, te::AutomatableParameter* param,
+                                  ParameterValueConvention valueConvention) {
     ParameterInfo info;
     info.paramIndex = index;
+    info.valueConvention = valueConvention;
     if (!param)
         return info;
 

@@ -18,6 +18,8 @@ TEST_CASE("ParameterInfo - Default construction", "[parameter]") {
     REQUIRE(info.minValue == Catch::Approx(0.0f));
     REQUIRE(info.maxValue == Catch::Approx(1.0f));
     REQUIRE(info.defaultValue == Catch::Approx(0.5f));
+    REQUIRE(info.currentValue == Catch::Approx(0.5f));
+    REQUIRE(info.valueConvention == ParameterValueConvention::Real);
     REQUIRE(info.scale == ParameterScale::Linear);
     REQUIRE(info.skewFactor == Catch::Approx(1.0f));
     REQUIRE(info.choices.empty());
@@ -873,7 +875,7 @@ TEST_CASE("ParameterUtils - model value conversion preserves external native ran
     info.maxValue = 48.0f;
     info.teMinValue = 0.0f;
     info.teMaxValue = 1.0f;
-    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    info.valueConvention = ParameterValueConvention::Normalized;
 
     auto model =
         ParameterUtils::normalizedToModelValue(ParameterNormalizedValue::clamped(0.75f), info);
@@ -912,6 +914,100 @@ TEST_CASE("ParameterUtils - model value passes through a matching TE range",
             Catch::Approx(440.0f));
 }
 
+TEST_CASE("ParameterUtils - equal ranges do not decide the model value convention",
+          "[parameter][conversion][model][2623]") {
+    ParameterInfo real;
+    real.minValue = 0.0f;
+    real.maxValue = 1.0f;
+    real.teMinValue = 0.0f;
+    real.teMaxValue = 1.0f;
+    real.scale = ParameterScale::Exponential;
+    real.skewFactor = 2.0f;
+
+    auto normalized = real;
+    normalized.valueConvention = ParameterValueConvention::Normalized;
+
+    REQUIRE(ParameterUtils::normalizedToModelValue(ParameterNormalizedValue{0.5f}, real).value ==
+            Catch::Approx(0.25f));
+    REQUIRE(
+        ParameterUtils::normalizedToModelValue(ParameterNormalizedValue{0.5f}, normalized).value ==
+        Catch::Approx(0.5f));
+}
+
+TEST_CASE("ParameterUtils - hosted configured range needs no display provider to stay normalized",
+          "[parameter][conversion][model][2623]") {
+    ParameterInfo info;
+    info.minValue = -48.0f;
+    info.maxValue = 48.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    info.valueConvention = ParameterValueConvention::Normalized;
+
+    REQUIRE(info.displayText == nullptr);
+    REQUIRE(ParameterUtils::normalizedToModelValue(ParameterNormalizedValue{0.75f}, info).value ==
+            Catch::Approx(0.75f));
+    REQUIRE(ParameterUtils::modelToRealValue(ParameterModelValue{0.75f}, info) ==
+            Catch::Approx(24.0f));
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{0.75f}, info) ==
+            Catch::Approx(0.75f));
+}
+
+TEST_CASE("ParameterUtils - TE boundary preserves a nonlinear real native value",
+          "[parameter][conversion][model][2623]") {
+    ParameterInfo info;
+    info.minValue = 20.0f;
+    info.maxValue = 20000.0f;
+    info.teMinValue = 20.0f;
+    info.teMaxValue = 20000.0f;
+    info.scale = ParameterScale::Logarithmic;
+    info.valueConvention = ParameterValueConvention::Real;
+
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{440.0f}, info) ==
+            Catch::Approx(440.0f));
+
+    info.valueConvention = ParameterValueConvention::Normalized;
+    REQUIRE(ParameterUtils::modelToTeValue(ParameterModelValue{0.5f}, info) ==
+            Catch::Approx(10010.0f));
+}
+
+TEST_CASE("ParameterUtils - display provider receives TE raw value for either convention",
+          "[parameter][conversion][format][2623]") {
+    ParameterInfo info;
+    info.minValue = 0.0f;
+    info.maxValue = 1.0f;
+    info.teMinValue = 0.0f;
+    info.teMaxValue = 1.0f;
+    info.scale = ParameterScale::Exponential;
+    info.skewFactor = 2.0f;
+    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
+    info.displayText->formatter = [](const ParameterInfo::DisplayTextProvider&, float teRaw) {
+        return juce::String(teRaw, 3);
+    };
+
+    info.valueConvention = ParameterValueConvention::Real;
+    REQUIRE(ParameterUtils::formatValue(0.25f, info) == "0.250");
+
+    info.valueConvention = ParameterValueConvention::Normalized;
+    REQUIRE(ParameterUtils::formatValue(0.25f, info) == "0.500");
+}
+
+TEST_CASE("ParameterInfo - copying preserves value metadata and defaults",
+          "[parameter][model][2623]") {
+    ParameterInfo source;
+    source.valueConvention = ParameterValueConvention::Normalized;
+    source.defaultValue = 0.125f;
+    source.currentValue = 0.75f;
+    source.minValue = 20.0f;
+    source.maxValue = 20000.0f;
+
+    const ParameterInfo copy = source;
+    REQUIRE(copy.valueConvention == ParameterValueConvention::Normalized);
+    REQUIRE(copy.defaultValue == Catch::Approx(0.125f));
+    REQUIRE(copy.currentValue == Catch::Approx(0.75f));
+    REQUIRE(copy.minValue == Catch::Approx(20.0f));
+    REQUIRE(copy.maxValue == Catch::Approx(20000.0f));
+}
+
 // ============================================================================
 // Choice index <-> model value (discrete widgets)
 // ============================================================================
@@ -927,7 +1023,6 @@ TEST_CASE("ParameterUtils - choice index is the model value for an internal disc
     info.teMinValue = 0.0f;
     info.teMaxValue = 2.0f;
 
-    REQUIRE_FALSE(ParameterUtils::modelHoldsTeNativeValue(info));
     REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{1.0f}, info) == 1);
     REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{2.4f}, info) == 2);
     REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{7.0f}, info) == 2);
@@ -951,9 +1046,7 @@ TEST_CASE("ParameterUtils - choice index spreads a TE-native model value over th
     info.maxValue = 48.0f;
     info.teMinValue = 0.0f;
     info.teMaxValue = 1.0f;
-    info.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();
-
-    REQUIRE(ParameterUtils::modelHoldsTeNativeValue(info));
+    info.valueConvention = ParameterValueConvention::Normalized;
 
     const float plusTwo = 26.0f / 48.0f;
     REQUIRE(ParameterUtils::choiceIndexForModelValue(ParameterModelValue{plusTwo}, info) == 26);
@@ -971,6 +1064,9 @@ TEST_CASE("ParameterUtils - choice index spreads a TE-native model value over th
         REQUIRE(model.value <= info.teMaxValue);
         REQUIRE(ParameterUtils::choiceIndexForModelValue(model, info) == index);
     }
+
+    REQUIRE(ParameterUtils::modelValueForChoiceIndex(0, info).value == Catch::Approx(0.0f));
+    REQUIRE(ParameterUtils::modelValueForChoiceIndex(48, info).value == Catch::Approx(1.0f));
 }
 
 TEST_CASE("ParameterUtils - choice index without choices", "[parameter][conversion][discrete]") {

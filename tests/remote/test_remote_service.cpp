@@ -874,6 +874,7 @@ TEST_CASE("devices.setParameter converts display units to the model domain",
     device.id = 5;
     device.format = PluginFormat::VST3;
     ParameterInfo gain(0, "Gain", "dB", -24.0f, 24.0f, 0.0f);
+    gain.valueConvention = ParameterValueConvention::Normalized;
     gain.teMinValue = 0.0f;
     gain.teMaxValue = 1.0f;
     gain.displayText = std::make_shared<ParameterInfo::DisplayTextProvider>();

@@ -227,43 +227,17 @@ float realToNormalized(float real, const ParameterDomain& domain) {
     }
 }
 
-bool infoMatchesTeRange(const ParameterInfo& info) {
-    return std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-           std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-}
-
-bool isDisplayMappedInternalValue(const ParameterInfo& info) {
-    return std::abs(info.teMinValue) < 1e-6f && std::abs(info.teMaxValue - 1.0f) < 1e-6f &&
-           !infoMatchesTeRange(info) && info.displayText == nullptr;
-}
-
 ParameterModelValue normalizedToModelValue(ParameterNormalizedValue normalized,
                                            const ParameterInfo& info) {
-    const float teSpan = info.teMaxValue - info.teMinValue;
-    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
-                                info.maxValue > info.minValue;
-
-    if (useScaledModel)
+    if (info.valueConvention == ParameterValueConvention::Real)
         return {normalizedToReal(normalized.value, info)};
-
-    if (teSpan > 0.0f)
-        return {info.teMinValue + normalized.value * teSpan};
-
     return {normalized.value};
 }
 
 ParameterNormalizedValue modelToNormalizedValue(ParameterModelValue model,
                                                 const ParameterInfo& info) {
-    const float teSpan = info.teMaxValue - info.teMinValue;
-    const bool useScaledModel = (infoMatchesTeRange(info) || isDisplayMappedInternalValue(info)) &&
-                                info.maxValue > info.minValue;
-
-    if (useScaledModel)
+    if (info.valueConvention == ParameterValueConvention::Real)
         return ParameterNormalizedValue::clamped(realToNormalized(model.value, info));
-
-    if (teSpan > 0.0f)
-        return ParameterNormalizedValue::clamped((model.value - info.teMinValue) / teSpan);
-
     return ParameterNormalizedValue::clamped(model.value);
 }
 
@@ -277,7 +251,9 @@ ParameterModelValue realToModelValue(float real, const ParameterInfo& info) {
 }
 
 float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
-    if (infoMatchesTeRange(info))
+    const bool teUsesDisplayRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
+                                    std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
+    if (info.valueConvention == ParameterValueConvention::Real && teUsesDisplayRange)
         return model.value;
 
     const float teSpan = info.teMaxValue - info.teMinValue;
@@ -288,19 +264,12 @@ float modelToTeValue(ParameterModelValue model, const ParameterInfo& info) {
     return info.teMinValue + normalized.value * teSpan;
 }
 
-bool modelHoldsTeNativeValue(const ParameterInfo& info) {
-    // The branch normalizedToModelValue() / modelToNormalizedValue() take when
-    // they leave the value in TE's domain, named so widgets can ask the same
-    // question instead of guessing at the value's meaning.
-    return !infoMatchesTeRange(info) && !isDisplayMappedInternalValue(info);
-}
-
 int choiceIndexForModelValue(ParameterModelValue model, const ParameterInfo& info) {
     const int count = static_cast<int>(info.choices.size());
     if (count <= 0)
         return -1;
 
-    if (modelHoldsTeNativeValue(info)) {
+    if (info.valueConvention == ParameterValueConvention::Normalized) {
         const float normalized = modelToNormalizedValue(model, info).value;
         return juce::jlimit(
             0, count - 1,
@@ -316,7 +285,7 @@ ParameterModelValue modelValueForChoiceIndex(int index, const ParameterInfo& inf
         return {0.0f};
     index = juce::jlimit(0, count - 1, index);
 
-    if (modelHoldsTeNativeValue(info)) {
+    if (info.valueConvention == ParameterValueConvention::Normalized) {
         const float normalized =
             count > 1 ? static_cast<float>(index) / static_cast<float>(count - 1) : 0.0f;
         return normalizedToModelValue(ParameterNormalizedValue::clamped(normalized), info);
@@ -513,29 +482,10 @@ juce::String formatValue(float realValue, const ParameterInfo& info, int decimal
     // Live plugin display text — exact, no quantization.
     //
     // DisplayTextProvider wraps TE's valueToString, which expects the
-    // plugin-native TE value. For internal plugins (and external VSTs
-    // without an AI-Detect display range) info.min/max match the TE
-    // range, so `realValue` IS the TE-native value and we must hand it
-    // to the provider unchanged. Projecting via realToNormalized → linear
-    // remap is only an identity when no skew is applied; with a
-    // scaleAnchor (e.g. 4OSC filterFreq anchored at note 69) the round
-    // trip collapses to the linear midpoint and mis-labels the knob
-    // (note 69 / 440 Hz round-tripped back to note 67.5 / 404 Hz).
-    //
-    // When the info range differs from the TE range (external VST with
-    // AI-Detect) realValue is in the display range and we project it to
-    // the TE range via normalized so the provider sees the native value.
+    // plugin-native TE value. Cross both explicit boundaries: display real
+    // value to the model convention, then model value to TE storage.
     if (info.displayText) {
-        const float teSpan = info.teMaxValue - info.teMinValue;
-        const bool infoMatchesTeRange = std::abs(info.minValue - info.teMinValue) < 1e-6f &&
-                                        std::abs(info.maxValue - info.teMaxValue) < 1e-6f;
-        float teRaw = NAN;
-        if (infoMatchesTeRange || teSpan <= 0.0f) {
-            teRaw = realValue;
-        } else {
-            float normalized = realToNormalized(realValue, info);
-            teRaw = info.teMinValue + normalized * teSpan;
-        }
+        const float teRaw = modelToTeValue(realToModelValue(realValue, info), info);
         auto text = info.displayText->format(teRaw);
         if (text.isNotEmpty())
             return text;

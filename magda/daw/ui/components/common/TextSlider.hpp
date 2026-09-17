@@ -98,7 +98,8 @@ class TextSlider : public juce::Component,
             interval = 0.001;
         }
         setRange(static_cast<double>(info.minValue), static_cast<double>(info.maxValue), interval);
-        setDefaultValue(static_cast<double>(info.defaultValue));
+        setDefaultValue(static_cast<double>(magda::ParameterUtils::modelToRealValue(
+            magda::ParameterModelValue{info.defaultValue}, info)));
 
         // Map scaleAnchor into TextSlider's drag-skew so the slider
         // matches ParameterUtils' anchor handling. The actual

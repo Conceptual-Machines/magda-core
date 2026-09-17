@@ -33,6 +33,7 @@ ParameterInfo CompiledFaustProcessor::getParameterInfo(int index) const {
 
     const auto& s = host->hostSlotInfo(index);
     ParameterInfo info;
+    info.valueConvention = ParameterValueConvention::Real;
     info.paramIndex = index;
     info.name = s.name;
     info.unit = s.unit;

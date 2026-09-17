@@ -493,15 +493,9 @@ void Builder::allocateDevice(const Node& node) {
         key.kind = ParamKey::Kind::DeviceParam;
         key.index = index;
 
-        // A hosted plugin's stored value is the normalised one, whatever range
-        // a config gave it to display through. Only an internal device's is
-        // read through the model's inverse, which guesses wrong for a
-        // configured external parameter.
-        const auto normalised = device.format == magda::PluginFormat::Internal
-                                    ? magda::ParameterUtils::modelToNormalizedValue(
-                                          magda::ParameterModelValue{info->currentValue}, *info)
-                                          .value
-                                    : std::clamp(info->currentValue, 0.0f, 1.0f);
+        const auto normalised = magda::ParameterUtils::modelToNormalizedValue(
+                                    magda::ParameterModelValue{info->currentValue}, *info)
+                                    .value;
         add(key, paramSpecFrom(*info), normalised);
     }
 

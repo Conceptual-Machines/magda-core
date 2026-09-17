@@ -8,21 +8,20 @@
 namespace {
 
 magda::ParameterInfo hosted(int slot, const juce::String& name, float current = 0.0f) {
-    magda::ParameterInfo info(slot, name, "Hz", 100.0f, 1100.0f, 100.0f);
+    magda::ParameterInfo info(slot, name, "Hz", 100.0f, 1100.0f, 0.0f);
+    info.valueConvention = magda::ParameterValueConvention::Normalized;
     info.teMinValue = 0.0f;
     info.teMaxValue = 1.0f;
     info.currentValue = current;
-    // Live hosted descriptions carry a text provider. Besides formatting, it
-    // distinguishes a configured display range from an internal normalized
-    // backing parameter in ParameterUtils.
-    info.displayText = std::make_shared<magda::ParameterInfo::DisplayTextProvider>();
+    // A configured display range remains normalized even without a live
+    // formatter, as happens for persisted or mirrored hosted metadata.
     return info;
 }
 
 }  // namespace
 
 TEST_CASE("Sound design sees selected unaddressed hosted parameters in plugin positions",
-          "[sound-design][parameters][2655]") {
+          "[sound-design][parameters][2655][2623]") {
     std::vector<magda::ParameterInfo> live;
     live.push_back(hosted(2, "Cutoff", 0.25f));
     live.push_back(hosted(7, "Cutoff", 0.75f));
@@ -47,7 +46,7 @@ TEST_CASE("Sound design sees selected unaddressed hosted parameters in plugin po
 }
 
 TEST_CASE("Sound design preserves sparse slots, configured ranges, and duplicate names",
-          "[sound-design][parameters][2655]") {
+          "[sound-design][parameters][2655][2623]") {
     std::vector<magda::ParameterInfo> live;
     live.push_back(hosted(3, "Rate", 0.1f));
     live.push_back(hosted(19, "Rate", 0.9f));

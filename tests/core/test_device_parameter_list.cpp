@@ -19,6 +19,7 @@ std::vector<ParameterInfo> reported(float value) {
     std::vector<ParameterInfo> described;
     for (int slot = 2; slot < 5; ++slot) {
         ParameterInfo info(slot, "P" + juce::String(slot), "", 0.0f, 1.0f, 0.0f);
+        info.valueConvention = ParameterValueConvention::Normalized;
         info.currentValue = value;
         described.push_back(info);
     }
@@ -42,6 +43,7 @@ TEST_CASE("The model's value wins for a slot it mirrors", "[device-parameters][2
     REQUIRE(shown.size() == 3);
     CHECK(shown[1].paramIndex == 3);
     CHECK(shown[1].currentValue == Catch::Approx(0.75f));
+    CHECK(shown[1].valueConvention == ParameterValueConvention::Normalized);
 
     // The slots the model does not carry keep what the instance reported.
     CHECK(shown[0].currentValue == Catch::Approx(0.25f));

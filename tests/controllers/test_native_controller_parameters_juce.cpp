@@ -223,6 +223,9 @@ class NativeControllerParametersTest final : public juce::UnitTest {
         ControllerRouter::getInstance().injectMessageForTest(
             "native-controller-port", juce::MidiMessage::controllerEvent(1, 21, 96));
         const auto* model = TrackManager::getInstance().getDeviceInChainByPath(rig.path);
+        expect(model->findParameterByIndex(3)->valueConvention ==
+                   ParameterValueConvention::Normalized,
+               "Hosted metadata keeps its value convention without a text provider");
         const auto modelValue = model->findParameterByIndex(3)->currentValue;
         expectWithinAbsoluteError(modelValue, 96.0f / 127.0f, 0.001f,
                                   "MIDI updates the model-owned base");

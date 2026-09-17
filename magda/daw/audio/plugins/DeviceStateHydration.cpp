@@ -88,6 +88,7 @@ bool modelCarries(const DeviceInfo& device, const ds::ParamValue& saved) {
 /// wide enough to hold the value. The processor fills in the rest at registration.
 ParameterInfo minimalEntry(const ds::ParamValue& saved) {
     ParameterInfo info;
+    info.valueConvention = ParameterValueConvention::Real;
     info.paramIndex = saved.index;
     info.stableId = saved.id;
     info.name = saved.id;
@@ -158,6 +159,7 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
         const bool haveSlot = metadata != nullptr && saved->index < metadata->parameterCount();
         if (haveSlot) {
             auto info = metadata->parameterInfo(saved->index);
+            info.valueConvention = ParameterValueConvention::Real;
             info.paramIndex = saved->index;
             if (info.stableId.isEmpty())
                 info.stableId = saved->id;
@@ -181,11 +183,13 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
                 continue;
             if (metadata != nullptr && seed.index < metadata->parameterCount()) {
                 auto info = metadata->parameterInfo(seed.index);
+                info.valueConvention = ParameterValueConvention::Real;
                 info.paramIndex = seed.index;
                 info.currentValue = seed.value;
                 device.parameters.push_back(std::move(info));
             } else {
                 ParameterInfo info;
+                info.valueConvention = ParameterValueConvention::Real;
                 info.paramIndex = seed.index;
                 info.name = seed.name != nullptr ? juce::String(seed.name) : juce::String();
                 info.minValue = std::min(0.0f, seed.value);

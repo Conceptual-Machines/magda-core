@@ -165,7 +165,8 @@ void AutomationPointInspector::updateFromSelection() {
         valueValue_->setSuffix(info_.unit.isNotEmpty() ? " " + info_.unit : "");
         valueValue_->setDecimalPlaces(2);
     }
-    valueValue_->setRange(info_.minValue, info_.maxValue, info_.defaultValue);
+    valueValue_->setRange(info_.minValue, info_.maxValue,
+                          ParameterUtils::modelToRealValue({info_.defaultValue}, info_));
     valueValue_->setDoubleClickResetsValue(false);
 
     // Position field is single-point only (a delta on many points is unclear).

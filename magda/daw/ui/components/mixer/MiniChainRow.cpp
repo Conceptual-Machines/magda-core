@@ -172,7 +172,8 @@ void MiniChainRow::resolveParams() {
         // the parameter's real value and formats/parses it from ParameterInfo.
         auto slider = std::make_unique<daw::ui::TextSlider>(daw::ui::TextSlider::Format::Decimal);
         slider->setParameterInfo(paramInfo);
-        slider->setValue(paramInfo.currentValue, juce::dontSendNotification);
+        slider->setValue(ParameterUtils::modelToRealValue({paramInfo.currentValue}, paramInfo),
+                         juce::dontSendNotification);
         slider->setFont(FontManager::getInstance().getUIFont(10.0f));
         slider->setTextColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
         // By value: this outlives the list it was described from, and a

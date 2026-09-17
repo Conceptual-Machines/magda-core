@@ -38,6 +38,7 @@ ParameterInfo MagdaDeviceProcessor::getParameterInfo(int index) const {
         return {};
 
     auto info = device->parameterInfo(index);
+    info.valueConvention = ParameterValueConvention::Real;
     info.paramIndex = index;
     info.currentValue = info.defaultValue;
 

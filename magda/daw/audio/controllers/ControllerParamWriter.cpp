@@ -95,7 +95,6 @@ void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target,
     // by slot identity rather than list position.
     std::vector<ParameterInfo> described;
     const ParameterInfo* parameter = device->findParameterByIndex(target.paramIndex);
-    const bool mirrored = parameter != nullptr;
     if (parameter == nullptr) {
         described = deviceParameterList(*device, target.devicePath);
         const auto found =
@@ -105,14 +104,8 @@ void DefaultControllerParamWriter::writePluginParam(const ControlTarget& target,
         parameter = &*found;
     }
 
-    // A hosted plugin's document convention is always normalized position.
-    // Mirrored descriptions intentionally carry no display-text provider, so
-    // a configured Hz/dB range must not make the generic converter mistake
-    // that position for an internal real value (#2623).
-    const auto modelValue = mirrored && device->format != PluginFormat::Internal
-                                ? ParameterModelValue{clamped}
-                                : ParameterUtils::normalizedToModelValue(
-                                      ParameterNormalizedValue::clamped(clamped), *parameter);
+    const auto modelValue = ParameterUtils::normalizedToModelValue(
+        ParameterNormalizedValue::clamped(clamped), *parameter);
     trackMgr.setDeviceParameterValue(target.devicePath, *parameter, modelValue);
 }
 
