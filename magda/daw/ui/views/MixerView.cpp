@@ -76,16 +76,21 @@ class AddSendButton : public juce::Button {
         constexpr int plusWidth = 16;  // matches send row's delete button width
         auto plusRect = bounds.removeFromRight(plusWidth);
 
+        // A track already at the aux limit cannot take another send. Faded
+        // rather than only inert, because a button that looks pressable and
+        // does nothing is worse than one that says why.
+        const auto opacity = isEnabled() ? 1.0f : 0.35f;
+
         auto textBg = DarkTheme::getColour(DarkTheme::BUTTON_NORMAL);
         if (isDown)
             textBg = textBg.darker(0.2f);
         else if (isHighlighted)
             textBg = textBg.brighter(0.1f);
-        g.setColour(textBg);
+        g.setColour(textBg.withMultipliedAlpha(opacity));
         g.fillRect(bounds);
 
         g.setFont(FontManager::getInstance().getUIFont(10.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY));
+        g.setColour(DarkTheme::getColour(DarkTheme::TEXT_SECONDARY).withMultipliedAlpha(opacity));
         g.drawText("Add Send", bounds.reduced(6, 0), juce::Justification::centredLeft);
 
         // Inverted from the Add Send row: text colour as background, button
@@ -95,11 +100,11 @@ class AddSendButton : public juce::Button {
             plusBg = plusBg.darker(0.2f);
         else if (isHighlighted)
             plusBg = plusBg.brighter(0.1f);
-        g.setColour(plusBg);
+        g.setColour(plusBg.withMultipliedAlpha(opacity));
         g.fillRect(plusRect);
 
         g.setFont(FontManager::getInstance().getUIFont(11.0f));
-        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL));
+        g.setColour(DarkTheme::getColour(DarkTheme::BUTTON_NORMAL).withMultipliedAlpha(opacity));
         g.drawText("+", plusRect, juce::Justification::centred);
     }
 };
@@ -1428,6 +1433,13 @@ void MixerView::ChannelStrip::resized() {
             if (addSendButton_) {
                 addSendButton_->setBounds(sendsRegion.removeFromTop(sendSlotHeight));
                 addSendButton_->setVisible(true);
+
+                // AddSendCommand would be refused past the aux limit, so the
+                // button stops offering it.
+                const auto* track = TrackManager::getInstance().getTrack(trackId_);
+                addSendButton_->setEnabled(track == nullptr ||
+                                           static_cast<int>(track->sends.size()) <
+                                               TrackManager::MAX_SENDS_PER_TRACK);
             }
             if (totalContentHeight > 0) {
                 sendsRegion.removeFromTop(1);  // 1px gap matching inter-slot spacing
