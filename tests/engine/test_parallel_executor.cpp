@@ -34,6 +34,7 @@
 
 using namespace magda;
 using magda::engine::BlockInfo;
+using magda::engine::CompileOptions;
 using magda::engine::DeviceBlock;
 using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
@@ -297,6 +298,8 @@ class RendezvousDevice final : public EngineDevice {
 struct Scene {
     std::vector<TrackInfo> tracks;
     TrackInfo master = makeMaster();
+    CompileOptions options;
+    int outputChannels = 2;
     PlanBindings bindings;
 
     std::vector<std::unique_ptr<EngineAudioSource>> audioSources;
@@ -336,7 +339,7 @@ void prepareBindings(PlanBindings& bindings, const RenderContext& context) {
 /// somewhere to render into.
 struct Rig {
     explicit Rig(Scene sceneIn) : scene(std::move(sceneIn)) {
-        plan = magda::engine::compileRenderPlan(scene.tracks, scene.master);
+        plan = magda::engine::compileRenderPlan(scene.tracks, scene.master, scene.options);
         valueMessages = magda::engine::resolvePlanValues(plan, scene.tracks, scene.master, values);
 
         for (const auto& op : plan.ops) {
@@ -348,7 +351,7 @@ struct Rig {
         }
 
         prepareBindings(scene.bindings, context);
-        output.setSize(context.numChannels, kBlockSize);
+        output.setSize(scene.outputChannels, kBlockSize);
     }
 
     /// Every tap, in key order, taken once. Order matters: a read is
@@ -463,6 +466,25 @@ Scene wideScene() {
         scene.bindings.devices[DeviceKey{100 + id}] =
             scene.own(std::make_unique<GainDevice>(0.9f - 0.05f * static_cast<float>(id)));
     }
+    return scene;
+}
+
+Scene hardwareOutputScene() {
+    Scene scene;
+    scene.outputChannels = 4;
+    scene.options.hardwareOutputs.emplace("stereo:Out 3 + 4",
+                                          magda::engine::HardwareOutputRoute{2, 3});
+    scene.options.hardwareOutputs.emplace("Out 3", magda::engine::HardwareOutputRoute{2, -1});
+
+    auto stereo = makeTrack(1);
+    stereo.audioOutputDevice = "stereo:Out 3 + 4";
+    scene.tracks.push_back(stereo);
+    scene.bindings.clipAudio[1] = scene.own(std::make_unique<RampSource>(7));
+
+    auto mono = makeTrack(2);
+    mono.audioOutputDevice = "Out 3";
+    scene.tracks.push_back(mono);
+    scene.bindings.clipAudio[2] = scene.own(std::make_unique<RampSource>(19));
     return scene;
 }
 
@@ -635,9 +657,15 @@ struct NamedScene {
 };
 
 const std::vector<NamedScene> kScenes = {
-    {"one chain", chainScene},      {"eight tracks", wideScene}, {"sends into an aux", sendScene},
-    {"a rack's chains", rackScene}, {"latency", latencyScene},   {"MIDI", midiScene},
-    {"a group track", groupScene},  {"delta solo", deltaScene},
+    {"one chain", chainScene},
+    {"eight tracks", wideScene},
+    {"sends into an aux", sendScene},
+    {"a rack's chains", rackScene},
+    {"latency", latencyScene},
+    {"MIDI", midiScene},
+    {"a group track", groupScene},
+    {"delta solo", deltaScene},
+    {"hardware outputs", hardwareOutputScene},
 };
 
 /// The thread counts every scene is rendered at. Zero workers is the parallel

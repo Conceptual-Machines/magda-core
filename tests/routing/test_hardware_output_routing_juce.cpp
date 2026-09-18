@@ -96,6 +96,7 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
     void runTest() override {
         magda::test::runWithCleanJuceState([this] {
             testOptionToDeviceMapping();
+            testOutputChannelMaskPresence();
             testSelectorRoundTrip();
             testControllerResolvesStereoMarker();
         });
@@ -147,6 +148,25 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         expectEquals(fallbackMapping[100], juce::String("Out 5"));
     }
 
+    void testOutputChannelMaskPresence() {
+        beginTest("An explicit empty output mask differs from an omitted mask");
+
+        StubAudioIODevice device(4);
+        RoutingSelector selector(RoutingSelector::Type::AudioOut);
+        std::map<int, TrackId> trackMapping;
+        std::map<int, juce::String> channelMapping;
+
+        RoutingSyncHelper::populateAudioOutputOptions(&selector, INVALID_TRACK_ID, &device,
+                                                      trackMapping, juce::BigInteger{},
+                                                      &channelMapping);
+        expect(channelMapping.empty(), "Explicitly disabled outputs are not selectable");
+
+        RoutingSyncHelper::populateAudioOutputOptions(&selector, INVALID_TRACK_ID, &device,
+                                                      trackMapping);
+        expectEquals(selector.getFirstChannelOptionId(), 10,
+                     "An omitted mask falls back to the device's active outputs");
+    }
+
     void testSelectorRoundTrip() {
         beginTest("syncSelectorsFromTrack re-selects a stored hardware destination");
 
@@ -171,7 +191,24 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
         // The dropdown must land on the second stereo pair, not snap back to Master
         expectEquals(selector.getSelectedId(), 11);
 
+        track.audioOutputDevice = "Out 3 + 4";  // legacy bare pair name
+        selector.setSelectedId(1);
+        RoutingSyncHelper::syncSelectorsFromTrack(
+            track, nullptr, nullptr, &selector, nullptr, nullptr, &device, INVALID_TRACK_ID,
+            outputTrackMapping, midiOutputTrackMapping, nullptr, {}, enabled, nullptr, {}, nullptr,
+            &channelMapping, teNames);
+        expectEquals(selector.getSelectedId(), 11);
+
+        track.audioOutputDevice = "stereo:Out 3";  // old native physical alias
+        selector.setSelectedId(1);
+        RoutingSyncHelper::syncSelectorsFromTrack(
+            track, nullptr, nullptr, &selector, nullptr, nullptr, &device, INVALID_TRACK_ID,
+            outputTrackMapping, midiOutputTrackMapping, nullptr, {}, enabled, nullptr, {}, nullptr,
+            &channelMapping, teNames);
+        expectEquals(selector.getSelectedId(), 11);
+
         track.audioOutputDevice = "Out 5";  // mono device selection
+        selector.setSelectedId(1);
         RoutingSyncHelper::syncSelectorsFromTrack(
             track, nullptr, nullptr, &selector, nullptr, nullptr, &device, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, {}, enabled, nullptr, {}, nullptr,

@@ -239,6 +239,9 @@ class EngineSession {
      * still while it does: the sample rate is only settled when a plan is
      * prepared, and a clock with no idea how long a sample lasts would be
      * inventing a position, not reporting one.
+     *
+     * @p output must include the context channels and every callback channel
+     * named by the published plan; a narrower buffer is cleared and refused.
      */
     void process(int numSamples, juce::AudioBuffer<float>& output,
                  const LiveInputBlock& input = {});
@@ -488,6 +491,10 @@ class EngineSession {
         PlanValues values;
         RenderContext context;
         std::shared_ptr<ClickGenerator> click;
+
+        /// Preallocated channel-pointer storage for a callback's timeline segments.
+        juce::AudioBuffer<float> segmentOutput;
+        int outputChannels = 0;
 
         /// The takes the model named when this plan was published, sorted
         /// (#2465). Here rather than beside the recording feed so that one

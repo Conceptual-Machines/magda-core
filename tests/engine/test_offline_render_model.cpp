@@ -107,6 +107,27 @@ TEST_CASE("An excluded track leaves every other route alone", "[engine][offline]
     CHECK(source->sends.empty());
 }
 
+TEST_CASE("Hardware outputs join the offline master while internal routes stay intact",
+          "[engine][offline][2272]") {
+    auto model = project();
+    model.tracks[1].audioOutputDevice = "stereo:Interface Output 1 + 2";
+    model.tracks[2].audioOutputDevice = "Interface Output 3";
+    model.master.audioOutputDevice = "stereo:Monitor 1 + 2";
+
+    const auto narrowed = narrowForRender(std::move(model), {});
+    const auto* source = find(narrowed, 1);
+    const auto* bus = find(narrowed, 2);
+    const auto* aux = find(narrowed, 3);
+    REQUIRE(source != nullptr);
+    REQUIRE(bus != nullptr);
+    REQUIRE(aux != nullptr);
+
+    CHECK(source->audioOutputDevice == "track:2");
+    CHECK(bus->audioOutputDevice == "master");
+    CHECK(aux->audioOutputDevice == "master");
+    CHECK(narrowed.master.audioOutputDevice.isEmpty());
+}
+
 TEST_CASE("A render plays the arrangement and none of the session", "[engine][offline][2555]") {
     const auto narrowed = narrowForRender(project(), {});
 

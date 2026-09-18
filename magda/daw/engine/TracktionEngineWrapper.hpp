@@ -3,6 +3,7 @@
 #include <tracktion_engine/tracktion_engine.h>
 
 #include <functional>
+#include <map>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -190,6 +191,8 @@ class TracktionEngineWrapper : public AudioEngine,
     // Device management
     juce::AudioDeviceManager* getDeviceManager() override;
     juce::BigInteger getEnabledWaveChannels(bool input) const override;
+    std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
+    void setWaveOutputsChangedCallback(std::function<void()> callback);
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override {
@@ -652,9 +655,13 @@ class TracktionEngineWrapper : public AudioEngine,
     void handleMidiDeviceChanges(tracktion::DeviceManager& dm);
     void handlePlaybackContextReallocation(tracktion::DeviceManager& dm);
     void notifyDeviceLoadingComplete(const juce::String& message);
+    void notifyWaveOutputsChanged();
 
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
+    std::function<void()> waveOutputsChanged_;
+    juce::BigInteger knownOutputChannels_;
+    std::map<int, juce::String> knownOutputNames_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
 
     // Position-aware beats<->seconds facade over currentEdit_->tempoSequence.

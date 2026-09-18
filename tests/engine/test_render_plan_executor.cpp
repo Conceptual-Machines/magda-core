@@ -18,6 +18,7 @@
 
 using namespace magda;
 using magda::engine::BlockInfo;
+using magda::engine::CompileOptions;
 using magda::engine::DeviceBlock;
 using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
@@ -422,10 +423,11 @@ void prepareBindings(PlanBindings& bindings, const RenderContext& context) {
 /// Compile, resolve, prepare and render, so a test says what it is about and
 /// nothing else.
 struct Harness {
-    Harness(std::vector<TrackInfo> tracksIn, TrackInfo masterIn)
+    Harness(std::vector<TrackInfo> tracksIn, TrackInfo masterIn, CompileOptions options = {},
+            int outputChannels = 2)
         : tracks(std::move(tracksIn)), master(std::move(masterIn)) {
-        plan = magda::engine::compileRenderPlan(tracks, master);
-        output.setSize(2, kBlockSize);
+        plan = magda::engine::compileRenderPlan(tracks, master, options);
+        output.setSize(outputChannels, kBlockSize);
     }
 
     std::vector<std::string> prepare() {
@@ -556,6 +558,69 @@ TEST_CASE("A source renders through a device into the master output", "[engine][
     CHECK(device.processedBlocks == 1);
     CHECK(harness.outputSample() == approx(0.25f));
     CHECK(harness.outputSample(1) == approx(0.25f));
+}
+
+TEST_CASE("A hardware output writes the selected callback channels", "[engine][exec][2272]") {
+    auto track = makeTrack(1);
+    track.audioOutputDevice = "stereo:Out 3 + 4";
+
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 3 + 4", magda::engine::HardwareOutputRoute{2, 3});
+    Harness harness({track}, makeMaster(), options, 4);
+    StereoSource source(0.25f, 0.75f);
+    harness.bindings.clipAudio[1] = &source;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample(0) == 0.0f);
+    CHECK(harness.outputSample(1) == 0.0f);
+    CHECK(harness.outputSample(2) == approx(0.25f));
+    CHECK(harness.outputSample(3) == approx(0.75f));
+}
+
+TEST_CASE("A mono hardware output takes the source's left channel", "[engine][exec][2272]") {
+    auto track = makeTrack(1);
+    track.audioOutputDevice = "Out 3";
+
+    CompileOptions options;
+    options.hardwareOutputs.emplace("Out 3", magda::engine::HardwareOutputRoute{2, -1});
+    Harness harness({track}, makeMaster(), options, 4);
+    StereoSource source(0.25f, 0.75f);
+    harness.bindings.clipAudio[1] = &source;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample(0) == 0.0f);
+    CHECK(harness.outputSample(1) == 0.0f);
+    CHECK(harness.outputSample(2) == approx(0.25f));
+    CHECK(harness.outputSample(3) == 0.0f);
+}
+
+TEST_CASE("Tracks sharing a hardware pair sum once outside the master", "[engine][exec][2272]") {
+    auto first = makeTrack(1);
+    first.audioOutputDevice = "stereo:Out 3 + 4";
+    auto second = makeTrack(2);
+    second.audioOutputDevice = "stereo:Out 3 + 4";
+    auto master = makeMaster();
+    master.muted = true;
+
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 3 + 4", magda::engine::HardwareOutputRoute{2, 3});
+    Harness harness({first, second}, master, options, 4);
+    StereoSource firstSource(0.1f, 0.2f);
+    StereoSource secondSource(0.3f, 0.4f);
+    harness.bindings.clipAudio[1] = &firstSource;
+    harness.bindings.clipAudio[2] = &secondSource;
+
+    harness.prepareCleanly();
+    harness.render();
+
+    CHECK(harness.outputSample(0) == 0.0f);
+    CHECK(harness.outputSample(1) == 0.0f);
+    CHECK(harness.outputSample(2) == approx(0.4f));
+    CHECK(harness.outputSample(3) == approx(0.6f));
 }
 
 TEST_CASE("The track fader applies volume through the linear pan law", "[engine][exec]") {

@@ -2060,11 +2060,18 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (value.silent || !op.inputs[0].valid())
                 break;
             auto in = audioIn(op.inputs[0], numSamples);
-            const auto numChannels =
-                std::min(static_cast<int>(in.getNumChannels()), output.getNumChannels());
-            for (int channel = 0; channel < numChannels; ++channel)
-                output.addFrom(channel, 0, in.getChannelPointer(static_cast<std::size_t>(channel)),
+            if (op.hardwareOutput.leftChannel >= 0 &&
+                op.hardwareOutput.leftChannel < output.getNumChannels() &&
+                in.getNumChannels() > 0) {
+                output.addFrom(op.hardwareOutput.leftChannel, 0, in.getChannelPointer(0),
                                numSamples);
+            }
+            if (op.hardwareOutput.rightChannel >= 0 &&
+                op.hardwareOutput.rightChannel < output.getNumChannels() &&
+                in.getNumChannels() > 1) {
+                output.addFrom(op.hardwareOutput.rightChannel, 0, in.getChannelPointer(1),
+                               numSamples);
+            }
             break;
         }
     }

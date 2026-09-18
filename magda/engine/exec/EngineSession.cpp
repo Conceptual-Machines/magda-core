@@ -86,6 +86,16 @@ EngineSession::Result EngineSession::publish(std::shared_ptr<const RenderPlan> p
         return {false, std::move(messages)};
     }
 
+    prepared->outputChannels = std::max(1, context.numChannels);
+    for (const auto output : prepared->plan->outputOps) {
+        if (output < 0 || output >= static_cast<OpId>(prepared->plan->ops.size()))
+            continue;
+        const auto& route = prepared->plan->ops[static_cast<std::size_t>(output)].hardwareOutput;
+        prepared->outputChannels =
+            std::max(prepared->outputChannels, std::max(route.leftChannel, route.rightChannel) + 1);
+    }
+    prepared->segmentOutput.setSize(prepared->outputChannels, 1);
+
     // The epoch's values become the ones in flight as well. Matching
     // fingerprints say two tables fit the same structure, which is not the same
     // as saying which of them is newer: republishing a plan whose structure did
@@ -276,6 +286,13 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         return;
     }
 
+    // The host prepares this width with the plan. Refuse a narrower callback
+    // rather than growing the segment view on the realtime thread.
+    if (output.getNumChannels() < (*render)->outputChannels) {
+        jassertfalse;
+        return;
+    }
+
     // A callback of no samples is not a block, so whatever has been asked is
     // still asked at the next real one.
     if (numSamples <= 0)
@@ -308,10 +325,9 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     const auto callbackEnd = clock_.syncPoint();
     for (std::size_t index = 0; index < segments.size(); ++index) {
         const auto& segment = segments[index];
-        // A view on the output, not a copy: same channels, same memory, offset
-        // to where this piece belongs.
-        juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
-                                       segment.startSample, segment.block.numSamples);
+        auto& piece = (*render)->segmentOutput;
+        piece.setDataToReferTo(output.getArrayOfWritePointers(), (*render)->outputChannels,
+                               segment.startSample, segment.block.numSamples);
 
         liveInputs_.beginSegment(segment.startSample, segment.block.numSamples);
 
@@ -367,9 +383,16 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // After the plan and outside it. The metronome is not in the graph: it
         // is never recorded, never routed, and not the master fader's to
         // attenuate.
-        if ((*render)->click != nullptr)
-            (*render)->click->render(transport->tempo, transport->click, segment.block,
-                                     segment.countingIn, output, segment.startSample);
+        if ((*render)->click != nullptr) {
+            const auto clickChannels =
+                std::min(output.getNumChannels(), (*render)->context.numChannels);
+            if (clickChannels > 0) {
+                juce::AudioBuffer<float> clickOutput(output.getArrayOfWritePointers(),
+                                                     clickChannels, 0, output.getNumSamples());
+                (*render)->click->render(transport->tempo, transport->click, segment.block,
+                                         segment.countingIn, clickOutput, segment.startSample);
+            }
+        }
     }
 }
 

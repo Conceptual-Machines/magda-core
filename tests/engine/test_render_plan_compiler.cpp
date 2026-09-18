@@ -1650,6 +1650,72 @@ TEST_CASE("A malformed output routing is reported", "[engine][plan][compiler]") 
     CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.size() == 1);
 }
 
+TEST_CASE("An explicit hardware output terminates at its mapped callback channels",
+          "[engine][plan][compiler][2272]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].audioOutputDevice = "stereo:Out 3 + 4";
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 3 + 4", magda::engine::HardwareOutputRoute{2, 3});
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+    requireWellFormed(plan);
+
+    REQUIRE(plan.outputOps.size() == 2);
+    const auto hardwareOutput = std::ranges::find_if(plan.outputOps, [&](const auto op) {
+        return plan.ops[static_cast<std::size_t>(op)].key.trackId == 1;
+    });
+    REQUIRE(hardwareOutput != plan.outputOps.end());
+    CHECK(plan.ops[static_cast<std::size_t>(*hardwareOutput)].hardwareOutput ==
+          magda::engine::HardwareOutputRoute{2, 3});
+
+    auto masterInput = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackAudioInput))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == MASTER_TRACK_ID)
+            masterInput = op;
+    REQUIRE(masterInput != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.empty());
+    CHECK(magda::engine::dumpPlan(plan).find("hardware=2,3") != std::string::npos);
+}
+
+TEST_CASE("An unavailable hardware output is silent and diagnosed",
+          "[engine][plan][compiler][2272]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].audioOutputDevice = "Out 3";
+
+    SECTION("the name is absent") {
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(plan.outputOps.size() == 1);
+        CHECK(std::ranges::any_of(plan.diagnostics, [](const auto& message) {
+            return message.find("is unavailable, output is silent") != std::string::npos;
+        }));
+        const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
+        REQUIRE_FALSE(inputs.empty());
+        const auto masterInput = inputs.back();
+        CHECK(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.empty());
+    }
+
+    SECTION("the mapped channels are invalid") {
+        CompileOptions options;
+        options.hardwareOutputs.emplace("Out 3", magda::engine::HardwareOutputRoute{2, 2});
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster(), options);
+        requireWellFormed(plan);
+
+        CHECK(plan.outputOps.size() == 1);
+        CHECK(std::ranges::any_of(plan.diagnostics, [](const auto& message) {
+            return message.find("has invalid callback channels, output is silent") !=
+                   std::string::npos;
+        }));
+        const auto inputs = opsWithRole(plan, OpRole::TrackAudioInput);
+        REQUIRE_FALSE(inputs.empty());
+        const auto masterInput = inputs.back();
+        CHECK(plan.ops[static_cast<std::size_t>(masterInput)].key.trackId == MASTER_TRACK_ID);
+        CHECK(plan.ops[static_cast<std::size_t>(masterInput)].inputs.empty());
+    }
+}
+
 TEST_CASE("A send to a track that no longer exists is reported as such",
           "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1)};

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <memory>
 
 #include "../audio/DeviceMeters.hpp"
@@ -124,6 +125,7 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     void processSessionStateEvents() override;
     juce::AudioDeviceManager* getDeviceManager() override;
     juce::BigInteger getEnabledWaveChannels(bool input) const override;
+    std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override;

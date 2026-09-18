@@ -81,10 +81,11 @@ juce::File writeSource(const juce::String& name, const Signal& signal) {
 }
 
 /** @brief A track whose one clip plays @p source from beat zero for the whole range. */
-void trackPlaying(const juce::File& source) {
+magda::TrackId trackPlaying(const juce::File& source) {
     const auto trackId = magda::TrackManager::getInstance().createTrack("Audio");
     magda::ClipManager::getInstance().createAudioClipBeats(trackId, 0.0, 4.0,
                                                            source.getFullPathName());
+    return trackId;
 }
 
 juce::AudioBuffer<float> readBack(const juce::File& file) {
@@ -239,6 +240,7 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
 
     void runTest() override {
         magda::test::runWithCleanJuceState([this] { testKnownSignalAtEachDepth(); });
+        magda::test::runWithCleanJuceState([this] { testHardwareOutputJoinsFile(); });
         magda::test::runWithCleanJuceState([this] { testDitherOnTheFile(); });
         magda::test::runWithCleanJuceState([this] { testNormaliseAndLeadIn(); });
         magda::test::runWithCleanJuceState([this] { testBorrowedDeviceStartsClean(); });
@@ -277,6 +279,33 @@ class EngineOfflineRenderTest final : public juce::UnitTest {
             expect(worst <= tolerance,
                    juce::String(bitDepth) + " bit is off by " + juce::String(worst) + " at worst");
         }
+    }
+
+    void testHardwareOutputJoinsFile() {
+        beginTest("A track sent to hardware is still present in an offline file");
+
+        const auto signal = sine(0.5f, 441.0);
+        const auto trackId = trackPlaying(writeSource("hardware_output", signal));
+        auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(track != nullptr, "The source track exists");
+        if (track == nullptr)
+            return;
+        track->audioOutputDevice = "stereo:Unavailable Output 1 + 2";
+
+        const auto file = scratchDirectory().getChildFile("hardware_output_render.wav");
+        const auto result = render(requestFor(file, 32, magda::OfflineRenderDither::None));
+        expect(result.success, "The render succeeds: " + result.error);
+
+        const auto stored = readBack(file);
+        expectEquals(stored.getNumSamples(), kRangeSamples, "The file is the range");
+        if (stored.getNumSamples() != kRangeSamples)
+            return;
+
+        auto worst = 0.0f;
+        for (auto sample = 0; sample < kRangeSamples; ++sample)
+            worst = std::max(worst, std::abs(stored.getSample(0, sample) - signal(sample)));
+        expect(worst <= 1.0e-4f,
+               "The hardware-routed track is in the file: off by " + juce::String(worst));
     }
 
     void testDitherOnTheFile() {

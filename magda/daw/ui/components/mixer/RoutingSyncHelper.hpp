@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -134,12 +135,12 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
     selector->setOptions(options);
 }
 
-inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId currentTrackId,
-                                       juce::AudioIODevice* device,
-                                       std::map<int, TrackId>& outTrackMapping,
-                                       const juce::BigInteger& enabledOutputChannels = {},
-                                       std::map<int, juce::String>* outChannelMapping = nullptr,
-                                       const std::map<int, juce::String>& teDeviceNames = {}) {
+inline void populateAudioOutputOptions(
+    RoutingSelector* selector, TrackId currentTrackId, juce::AudioIODevice* device,
+    std::map<int, TrackId>& outTrackMapping,
+    std::optional<juce::BigInteger> enabledOutputChannels = std::nullopt,
+    std::map<int, juce::String>* outChannelMapping = nullptr,
+    const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
         return;
 
@@ -225,9 +226,9 @@ inline void populateAudioOutputOptions(RoutingSelector* selector, TrackId curren
 
     // Hardware output channels
     if (device) {
-        auto activeOutputChannels = enabledOutputChannels.isZero()
-                                        ? device->getActiveOutputChannels()
-                                        : enabledOutputChannels;
+        // An engaged mask is authoritative even when empty; only omission uses the device mask.
+        auto activeOutputChannels =
+            enabledOutputChannels.value_or(device->getActiveOutputChannels());
         int numActiveChannels = activeOutputChannels.countNumberOfSetBits();
 
         if (numActiveChannels > 0) {
@@ -447,7 +448,7 @@ inline void syncSelectorsFromTrack(
     juce::AudioIODevice* device, TrackId currentTrackId, std::map<int, TrackId>& outputTrackMapping,
     std::map<int, TrackId>& midiOutputTrackMapping,
     std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
-    juce::BigInteger enabledOutputChannels = {},
+    std::optional<juce::BigInteger> enabledOutputChannels = std::nullopt,
     std::map<int, juce::String>* inputChannelMapping = nullptr,
     const std::map<int, juce::String>& teDeviceNames = {},
     std::map<int, TrackId>* midiInputTrackMapping = nullptr,
@@ -544,7 +545,7 @@ inline void syncSelectorsFromTrack(
     // Update Audio Output selector
     if (audioOutSelector) {
         populateAudioOutputOptions(audioOutSelector, currentTrackId, device, outputTrackMapping,
-                                   std::move(enabledOutputChannels), outputChannelMapping,
+                                   enabledOutputChannels, outputChannelMapping,
                                    teOutputDeviceNames);
         juce::String currentAudioOutput = track.audioOutputDevice;
         if (currentAudioOutput.isEmpty()) {
@@ -577,6 +578,53 @@ inline void syncSelectorsFromTrack(
                         optionId = oid;
                         break;
                     }
+                }
+
+                juce::String canonicalAlias;
+                if (optionId < 0) {
+                    const auto pairAlias = "stereo:" + currentAudioOutput;
+                    if (std::ranges::any_of(*outputChannelMapping, [&](const auto& entry) {
+                            return entry.second == pairAlias;
+                        })) {
+                        canonicalAlias = pairAlias;
+                    }
+                }
+
+                if (optionId < 0 && canonicalAlias.isEmpty() && device != nullptr &&
+                    !teOutputDeviceNames.empty()) {
+                    const auto active =
+                        enabledOutputChannels.value_or(device->getActiveOutputChannels());
+                    juce::Array<int> channels;
+                    for (auto channel = 0; channel <= active.getHighestBit(); ++channel)
+                        if (active[channel])
+                            channels.add(channel);
+
+                    for (auto index = 0; index + 1 < channels.size(); index += 2) {
+                        const auto first = channels[index];
+                        if (currentAudioOutput != "stereo:Out " + juce::String(first + 1))
+                            continue;
+
+                        const auto left = teOutputDeviceNames.find(first);
+                        const auto right = teOutputDeviceNames.find(channels[index + 1]);
+                        if (left != teOutputDeviceNames.end() &&
+                            right != teOutputDeviceNames.end() && left->second == right->second)
+                            canonicalAlias = "stereo:" + left->second;
+                        break;
+                    }
+                }
+
+                if (optionId < 0 && canonicalAlias.isNotEmpty()) {
+                    auto aliasOption = -1;
+                    for (const auto& [oid, name] : *outputChannelMapping) {
+                        if (name == canonicalAlias) {
+                            if (aliasOption > 0) {
+                                aliasOption = -1;
+                                break;
+                            }
+                            aliasOption = oid;
+                        }
+                    }
+                    optionId = aliasOption;
                 }
                 if (optionId > 0) {
                     audioOutSelector->setSelectedId(optionId);

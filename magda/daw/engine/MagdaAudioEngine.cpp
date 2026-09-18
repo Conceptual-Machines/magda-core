@@ -133,6 +133,12 @@ bool MagdaAudioEngine::initialize() {
     // channel lists and the driver choice are all still on that side, and two
     // device managers over one interface is the failure this class exists not
     // to have. What changes is who fills the buffer.
+    host_->setHardwareOutputProvider([this] {
+        return daw::engine_host::EngineHost::HardwareOutputCatalog{
+            .enabledChannels = fork_->getEnabledWaveChannels(false),
+            .namesByChannel = fork_->getOutputDeviceNamesByChannel()};
+    });
+    fork_->setWaveOutputsChangedCallback([this] { host_->refreshHardwareOutputs(); });
     if (auto* devices = tracktion_->getDeviceManager())
         host_->start(*devices);
 
@@ -161,6 +167,7 @@ void MagdaAudioEngine::shutdown() {
 
     // The bridge goes with the fork below, and the API outlives this call.
     api_->setMidiBridge(nullptr);
+    fork_->setWaveOutputsChangedCallback({});
 
     // Before the fork's, which closes the device this is rendering into.
     host_->stop();
@@ -313,11 +320,18 @@ juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
 juce::BigInteger MagdaAudioEngine::getEnabledWaveChannels(bool input) const {
     return tracktion_->getEnabledWaveChannels(input);
 }
+std::map<int, juce::String> MagdaAudioEngine::getOutputDeviceNamesByChannel() const {
+    return tracktion_->getOutputDeviceNamesByChannel();
+}
 void MagdaAudioEngine::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
     tracktion_->setEnabledWaveChannels(input, channels);
+    if (!input)
+        host_->refreshHardwareOutputs();
 }
 void MagdaAudioEngine::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
     tracktion_->rescanWaveDevices(enableInputs, enableOutputs);
+    if (enableOutputs)
+        host_->refreshHardwareOutputs();
 }
 bool MagdaAudioEngine::isDevicesLoading() const {
     return tracktion_->isDevicesLoading();
