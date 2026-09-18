@@ -12,8 +12,8 @@ Ownership indicators and mixed Session/Arrangement playback have focused
 [Session ownership checks](../issues/native-session-ownership.md).
 Capturing existing Session performances has focused
 [Session-to-Arrangement checks](../issues/native-session-arrangement-capture.md).
-The wider checklist below also covers audio, Session-to-Arrangement capture,
-count-in, and latency work that is not yet connected to the native app.
+The wider checklist below also covers audio and latency work that is not yet
+connected to the native app.
 
 This checklist covers only what needs a human and an interface. Everything
 that can be asserted offline already is, in `test_take_recorder`,
@@ -74,6 +74,12 @@ confirm once.
 - [ ] Disarm mid-pass: the take closes and what was recorded appears as a
       clip. Nothing is silently lost.
 - [ ] Stop mid-pass: same.
+- [ ] Set each count-in and press Record while stopped. The click counts in
+      that many bars or beats with the metronome off, nothing played during
+      it is recorded, and the take starts on the play position. Press Record
+      while rolling: no count-in.
+- [ ] Count in to an armed empty Session slot while stopped. It starts
+      recording where the count-in ends.
 
 ## 4. Loop recording
 

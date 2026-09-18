@@ -193,6 +193,8 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { reclickFinishesSessionTakeOnce(); });
         magda::test::runWithCleanJuceState([this] { queuedSessionCancellationRetiresTake(); });
         magda::test::runWithCleanJuceState([this] { timerHarvestsFinishedSessionTake(); });
+        magda::test::runWithCleanJuceState([this] { countInIsNotPartOfTheTake(); });
+        magda::test::runWithCleanJuceState([this] { sessionSlotCountsInWhileStopped(); });
     }
 
   private:
@@ -910,6 +912,91 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
 
         host.stopMidiRecording();
         expectEquals(static_cast<int>(sessionClipsOn(trackId).size()), 1);
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void countInIsNotPartOfTheTake() {
+        beginTest("Record while stopped counts in, and the take starts where the count-in ends");
+        PumpDeviceManager devices;
+        expect(open(devices), "fake device opens");
+        if (devices.device == nullptr)
+            return;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto trackId = tracks.createTrack("Counted in");
+        tracks.setTrackInputMonitor(trackId, magda::InputMonitorMode::Off);
+        tracks.setTrackMidiInput(trackId, "keyboard");
+        tracks.setTrackRecordArmed(trackId, true);
+        magda::daw::engine_host::EngineHost host;
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle();
+        host.setCountInMode(1);  // one bar, four beats in 4/4
+
+        expect(host.startMidiRecording(4.0), "eligible armed track starts recording");
+        devices.device->pump();
+        expectWithinAbsoluteError(host.positionBeats(), 4.02, 0.001,
+                                  "the cursor rolls in from a bar before beat eight");
+
+        // Played during the count-in: heard, never part of the take.
+        host.pushMidi("keyboard", juce::MidiMessage::noteOn(1, 60, (juce::uint8)100));
+        devices.device->pump();
+        host.pushMidi("keyboard", juce::MidiMessage::noteOff(1, 60));
+        for (int i = 0; i < 400 && host.positionBeats() < 8.0; ++i)
+            devices.device->pump();
+
+        host.pushMidi("keyboard", juce::MidiMessage::noteOn(1, 64, (juce::uint8)100));
+        for (int i = 0; i < 10; ++i)
+            devices.device->pump();
+        host.pushMidi("keyboard", juce::MidiMessage::noteOff(1, 64));
+        devices.device->pump();
+        host.stopMidiRecording();
+
+        const auto clips = clipsOn(trackId);
+        expectEquals(static_cast<int>(clips.size()), 1, "one take");
+        if (clips.size() == 1) {
+            expectWithinAbsoluteError(clips[0].placement.startBeat, 8.0, 0.001);
+            expectEquals(static_cast<int>(clips[0].midiNotes.size()), 1,
+                         "only what was played after the count-in");
+            if (clips[0].midiNotes.size() == 1)
+                expectEquals(clips[0].midiNotes[0].noteNumber, 64);
+        }
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void sessionSlotCountsInWhileStopped() {
+        beginTest("a Session slot armed while stopped starts recording where the count-in ends");
+        PumpDeviceManager devices;
+        expect(open(devices), "fake device opens");
+        if (devices.device == nullptr)
+            return;
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto trackId = tracks.createTrack("Counted in Session");
+        tracks.setTrackInputMonitor(trackId, magda::InputMonitorMode::Off);
+        tracks.setTrackMidiInput(trackId, "keyboard");
+        tracks.setTrackRecordArmed(trackId, true);
+        magda::daw::engine_host::EngineHost host;
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle();
+        host.setCountInMode(4);  // one beat
+
+        host.armSessionSlotRecording(trackId, 0);
+        host.beginArmedSessionSlotRecordings(1.0);
+        for (int i = 0; i < 40; ++i)
+            devices.device->pump();
+        expect(!host.isSessionSlotRecording(trackId, 0), "still counting in");
+        for (int i = 0; i < 20; ++i)
+            devices.device->pump();
+        expect(host.isSessionSlotRecording(trackId, 0), "recording once the count-in ends");
+        expectWithinAbsoluteError(host.recordingPreviews().at(trackId).startBeat, 2.0, 0.001,
+                                  "the take starts on the play position");
+
+        host.stopMidiRecording();
         host.stop();
         devices.closeAudioDevice();
     }

@@ -279,10 +279,10 @@ bool MagdaAudioEngine::isMetronomeEnabled() const {
     return host_->isMetronomeEnabled();
 }
 void MagdaAudioEngine::setCountInMode(int mode) {
-    countInMode_ = mode;
+    host_->setCountInMode(mode);
 }
 int MagdaAudioEngine::getCountInMode() const {
-    return countInMode_;
+    return host_->countInMode();
 }
 
 /// The play-start and loop edges the modulators retrigger on, once a frame.
