@@ -215,23 +215,19 @@ magda::engine::TransportSnapshot rolling(double fromBeat) {
 
 }  // namespace
 
-TEST_CASE("A hardware audio input is compiled for every track that names one",
+TEST_CASE("A hardware input is compiled for every track that names one",
           "[engine][live-input][2612]") {
     // monitorsInput(): armed, or monitoring set to In. Auto lights the activity
     // indicator (receivesLiveMidiInput) but is not audible until the track is
-    // armed, which is what ships. For the audio input that decides the gate's
-    // value rather than whether the op exists, so the op is there either way.
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::AudioInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::AudioInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::AudioInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::AudioInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, true, OpKind::AudioInput) == 1);
-
-    // Live MIDI still comes and goes with the switch. #2612 is the audio half.
-    CHECK(inputOpsFor(InputMonitorMode::Off, false, OpKind::MidiInput) == 0);
-    CHECK(inputOpsFor(InputMonitorMode::Auto, false, OpKind::MidiInput) == 0);
-    CHECK(inputOpsFor(InputMonitorMode::In, false, OpKind::MidiInput) == 1);
-    CHECK(inputOpsFor(InputMonitorMode::Off, true, OpKind::MidiInput) == 1);
+    // armed, which is what ships. That decides the audio gate's value and the
+    // MIDI routing snapshot's sources, not whether either op exists.
+    for (const auto kind : {OpKind::AudioInput, OpKind::MidiInput}) {
+        CHECK(inputOpsFor(InputMonitorMode::Off, false, kind) == 1);
+        CHECK(inputOpsFor(InputMonitorMode::Auto, false, kind) == 1);
+        CHECK(inputOpsFor(InputMonitorMode::In, false, kind) == 1);
+        CHECK(inputOpsFor(InputMonitorMode::Off, true, kind) == 1);
+        CHECK(inputOpsFor(InputMonitorMode::Auto, true, kind) == 1);
+    }
 }
 
 TEST_CASE("An input nobody is listening to is not a missing binding",

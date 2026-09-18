@@ -1779,9 +1779,9 @@ bool inputGateIsSilent(const std::vector<TrackInfo>& tracks, const RenderPlan& p
 TEST_CASE("Auto input monitoring only counts while the track is armed",
           "[engine][plan][compiler]") {
     // Automatic monitoring passes input only while armed. For the hardware
-    // audio input that is the gate's value, since the op and its meter are
-    // compiled either way (#2612). For live MIDI it still decides whether the
-    // op exists at all.
+    // audio input that is the gate's value, and for a MIDI device it is what
+    // the live routing snapshot hands the op: both ops compile either way
+    // (#2612).
     const auto trackWith = [](InputMonitorMode monitor, bool armed) {
         auto track = makeTrack(1);
         track.inputMonitor = monitor;
@@ -1798,7 +1798,7 @@ TEST_CASE("Auto input monitoring only counts while the track is armed",
 
         CHECK(countRole(plan, OpRole::LiveAudioInput) == 1);
         CHECK(inputGateIsSilent(tracks, plan));
-        CHECK(countRole(plan, OpRole::LiveMidiInput) == 0);
+        CHECK(countRole(plan, OpRole::LiveMidiInput) == 1);
     }
 
     SECTION("armed Auto hears both") {
@@ -1825,19 +1825,20 @@ TEST_CASE("Auto input monitoring only counts while the track is armed",
 TEST_CASE("The monitor switch does not move the plan's shape for a hardware input",
           "[engine][plan][compiler][2612]") {
     // The whole point of the gate: every switch position compiles one plan, so
-    // the host publishes values and prepares nothing. A hardware input only --
-    // a route from another track is an ordering dependency, and still comes and
-    // goes with the switch.
+    // the host publishes values and prepares nothing. The chain consumes no
+    // MIDI, so nothing but the named device puts a live MIDI op in the plan.
     const auto planFor = [](InputMonitorMode monitor, bool armed) {
         auto track = makeTrack(1);
         track.inputMonitor = monitor;
         track.recordArmed = armed;
         track.audioInputDevice = "Input 1";
+        track.midiInputDevice = "Keyboard";
         return magda::engine::compileRenderPlan({track}, makeMaster());
     };
 
     const auto idle = planFor(InputMonitorMode::Off, false);
     requireWellFormed(idle);
+    CHECK(countRole(idle, OpRole::LiveMidiInput) == 1);
     const auto shape = magda::engine::planFingerprint(idle);
 
     CHECK(magda::engine::planFingerprint(planFor(InputMonitorMode::Auto, false)) == shape);

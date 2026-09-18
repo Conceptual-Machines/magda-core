@@ -192,20 +192,14 @@ class Compiler {
      * @brief The routing each input field resolves to.
      *
      * Resolved whether or not the track is monitoring, so the switch never
-     * decides what exists: it lands on the gate the input arrives through, and
+     * decides what exists: it lands on the gate an input from another track
+     * arrives through, or on the live routing snapshot for a MIDI device, and
      * flipping it publishes values (#2612). A route from another track is still
      * an ordering dependency as well as a connection, and one that closes a
      * cycle is cut and carried instead (see carriedRoutes_).
-     *
-     * The single exception is a named MIDI device, which #2628 has to land
-     * before it can be compiled unconditionally.
      */
-    TrackRoute activeAudioInputRoute(const TrackInfo& track) const;
-    TrackRoute activeMidiInputRoute(const TrackInfo& track) const;
-
-    /// The MIDI route the track names, device gate and all. What decides
-    /// whether the source track compiles MIDI ops at all (#2612).
-    TrackRoute configuredMidiInputRoute(const TrackInfo& track) const;
+    TrackRoute audioInputRoute(const TrackInfo& track) const;
+    TrackRoute midiInputRoute(const TrackInfo& track) const;
 
     /**
      * @brief The op the live audio input reaches @p trackId's chain through.
@@ -439,27 +433,16 @@ bool Compiler::carriesClips(const TrackInfo& track) const {
            track.type != TrackType::Group && track.type != TrackType::MultiOut;
 }
 
-TrackRoute Compiler::activeAudioInputRoute(const TrackInfo& track) const {
+TrackRoute Compiler::audioInputRoute(const TrackInfo& track) const {
     if (!carriesClips(track) || track.audioInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.audioInputDevice);
 }
 
-TrackRoute Compiler::configuredMidiInputRoute(const TrackInfo& track) const {
+TrackRoute Compiler::midiInputRoute(const TrackInfo& track) const {
     if (!carriesClips(track) || track.midiInputDevice.isEmpty())
         return {RouteKind::None, INVALID_TRACK_ID};
     return parseTrackRoute(track.midiInputDevice);
-}
-
-TrackRoute Compiler::activeMidiInputRoute(const TrackInfo& track) const {
-    const auto route = configuredMidiInputRoute(track);
-
-    // A named MIDI device is the one gate the switch still compiles. Emitting
-    // it unconditionally would put a live input op on every track that names
-    // one, and an offline render would report each as unbound (#2628).
-    if (route.kind == RouteKind::External && !track.monitorsInput())
-        return {RouteKind::None, INVALID_TRACK_ID};
-    return route;
 }
 
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
@@ -575,8 +558,8 @@ std::vector<const TrackInfo*> Compiler::computeTrackOrder() {
 
             addEdge(static_cast<std::size_t>(source), i, signal);
         };
-        addRouteEdge(activeAudioInputRoute(track), 0);
-        addRouteEdge(activeMidiInputRoute(track), 1);
+        addRouteEdge(audioInputRoute(track), 0);
+        addRouteEdge(midiInputRoute(track), 1);
 
         // Deliberately not the modulation sources. A modifier listening to
         // another track needs that track's tap to exist, and it does: the taps
@@ -1641,12 +1624,10 @@ void Compiler::emitTrack(const TrackInfo& track) {
             PortRef{addOp(OpKind::SessionAudio, sessionKey, {}, {SignalKind::Audio}), 0});
     }
 
-    // A hardware input is compiled for every track that names one, and the
-    // monitor switch is a value on the gate below rather than a shape: flipping
-    // it publishes values and rebuilds nothing (#2612). A route from another
-    // track is still gated in activeAudioInputRoute, so ordering agrees with
-    // what is connected.
-    switch (const auto route = activeAudioInputRoute(track); route.kind) {
+    // Every input a track names is compiled, and the monitor switch is a value
+    // on the gate it arrives through rather than a shape: flipping it publishes
+    // values and rebuilds nothing (#2612).
+    switch (const auto route = audioInputRoute(track); route.kind) {
         case RouteKind::Track: {
             // An internal route carries the source track's post-mute output.
             // Nothing about it is live, so liveness is left to propagate from
@@ -1725,8 +1706,10 @@ void Compiler::emitTrack(const TrackInfo& track) {
     // One live input op per track, whatever else is routed to it: a preview is
     // queued under the track's own audition source, and the store keys live
     // inputs by TrackId, so a second op here would be a second binding to one
-    // object (CompileOptions::auditionMidi, #2579).
-    const auto route = activeMidiInputRoute(track);
+    // object (CompileOptions::auditionMidi, #2579). A named device compiles one
+    // whether or not the track monitors it; the live routing snapshot decides
+    // what it reads (#2612).
+    const auto route = midiInputRoute(track);
     if (route.kind == RouteKind::External || (options_.auditionMidi && readsMidi))
         midiSources.push_back(emitLiveMidiInput(track.id));
 
@@ -1952,7 +1935,7 @@ RenderPlan Compiler::run() {
         // Ungated on purpose: reading the monitor here would let one track's
         // switch decide whether another track compiles MIDI ops at all (#2612).
         // A MIDI sidechain and a note-triggered modifier already work this way.
-        if (const auto route = configuredMidiInputRoute(track); route.namesTrack())
+        if (const auto route = midiInputRoute(track); route.namesTrack())
             midiSourceTracks_.insert(route.trackId);
     }
     collectSidechainSources(master_, SidechainConfig::Type::MIDI, midiSourceTracks_);
