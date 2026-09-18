@@ -512,6 +512,22 @@ void FaustInstrumentPlugin::releasePolyVoicesForPitch(const std::shared_ptr<Faus
     }
 }
 
+void FaustInstrumentPlugin::releaseAllVoices(const std::shared_ptr<FaustState>& state) {
+    if (!state)
+        return;
+    if (state->poly) {
+        auto* impl = static_cast<mydsp_poly*>(state->poly.get());
+        for (auto* voice : impl->fVoiceTable)
+            // Only what is sounding: keyOff marks a free voice as releasing,
+            // and that moves which voice every later note-on is handed (#2440).
+            if (voice != nullptr && (voice->fCurNote >= 0 || voice->fCurNote == kLegatoVoice))
+                voice->keyOff(/*hard*/ false);
+    }
+    heldNotes_.clear();
+    if (state->monoGateZone)
+        *state->monoGateZone = 0.0f;
+}
+
 bool FaustInstrumentPlugin::handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note,
                                              int velocity, int mode) {
     const float g = static_cast<float>(velocity) / 127.0f;
@@ -879,6 +895,10 @@ void FaustInstrumentPlugin::process(DeviceProcessContext& context) {
     // an edge only exists if samples are rendered either side of it.
     int cursor = 0;
     if (context.midiIn != nullptr) {
+        // The host's panic travels beside the events rather than as CC 123 (#2418).
+        if (context.midiIn->isAllNotesOff())
+            releaseAllVoices(active);
+
         for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
             const auto& m = context.midiIn->message(eventIndex);
             int evSample = juce::roundToInt(m.getTimeStamp() * currentSampleRate_);

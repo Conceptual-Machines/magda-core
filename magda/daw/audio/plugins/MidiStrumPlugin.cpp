@@ -361,6 +361,16 @@ void MidiStrumPlugin::process(DeviceProcessContext& context) {
 
     const bool chordMode = static_cast<Trigger>(displayIndex(kTrigger)) == Trigger::Chord;
 
+    // The host's panic travels beside the events (#2418). It ends the chord the
+    // way the stop edge does, and is passed on to whatever sits behind.
+    if (in.isAllNotesOff()) {
+        scheduleReleaseAll();
+        heldCount_ = 0;
+        collectLeft_ = -1;
+        syncLeft_ = 0;
+        midi.setAllNotesOff(true);
+    }
+
     // --- 1. Latch the held chord from incoming MIDI.
     const bool wasEmpty = heldCount_ == 0;
     for (int eventIndex = 0; eventIndex < in.size(); ++eventIndex) {
