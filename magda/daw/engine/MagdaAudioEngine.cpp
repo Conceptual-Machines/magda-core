@@ -195,6 +195,7 @@ void MagdaAudioEngine::pause() {
     host_->stopPlaying();
 }
 void MagdaAudioEngine::record() {
+    host_->beginArmedSessionSlotRecordings(getCurrentPosition());
     host_->startMidiRecording(getCurrentPosition());
 }
 void MagdaAudioEngine::locate(double positionSeconds) {
@@ -619,6 +620,7 @@ void MagdaAudioEngine::onTransportPause() {
     pause();
 }
 void MagdaAudioEngine::onTransportRecord(double positionSeconds) {
+    host_->beginArmedSessionSlotRecordings(positionSeconds);
     host_->startMidiRecording(positionSeconds);
 }
 void MagdaAudioEngine::onTransportStopRecording() {
@@ -649,30 +651,23 @@ void MagdaAudioEngine::onLoopEnabledChanged(bool enabled) {
 
 // --- the bases' defaulted virtuals -------------------------------------------
 //
-// Slot recording and punch, which are #2553's. Overridden rather than inherited
-// because a default body answers no-op and false forever without saying so; the
-// fork's arm state was worse, since it lit the slot up from a map nothing
-// renders from.
+// Punch remains on the migration boundary below. Session MIDI slot recording
+// is owned by EngineHost beside Arrangement MIDI recording.
 
 void MagdaAudioEngine::armSessionSlotRecording(TrackId trackId, int sceneIndex) {
-    juce::ignoreUnused(trackId, sceneIndex);
-    reportUnwired("armSessionSlotRecording", "#2553");
+    host_->armSessionSlotRecording(trackId, sceneIndex);
 }
 
 void MagdaAudioEngine::beginArmedSessionSlotRecordings() {
-    reportUnwired("beginArmedSessionSlotRecordings", "#2553");
+    host_->beginArmedSessionSlotRecordings();
 }
 
 bool MagdaAudioEngine::isSessionSlotRecordArmed(TrackId trackId, int sceneIndex) const {
-    juce::ignoreUnused(trackId, sceneIndex);
-    reportUnwired("isSessionSlotRecordArmed", "#2553");
-    return false;
+    return host_->isSessionSlotRecordArmed(trackId, sceneIndex);
 }
 
 bool MagdaAudioEngine::isSessionSlotRecording(TrackId trackId, int sceneIndex) const {
-    juce::ignoreUnused(trackId, sceneIndex);
-    reportUnwired("isSessionSlotRecording", "#2553");
-    return false;
+    return host_->isSessionSlotRecording(trackId, sceneIndex);
 }
 
 const std::unordered_map<TrackId, RecordingPreview>& MagdaAudioEngine::getRecordingPreviews()

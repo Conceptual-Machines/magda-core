@@ -461,6 +461,13 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
     return table;
 }
 
+std::optional<std::uint64_t> RuntimeStateStore::launchIncarnation(const SlotKey& key) const {
+    const auto found = handles_.find(key);
+    if (found == handles_.end() || found->second.handle == nullptr)
+        return std::nullopt;
+    return found->second.incarnation;
+}
+
 LaunchHandle* RuntimeStateStore::findHandle(const SlotKey& key) const {
     const auto it = handles_.find(key);
     return it == handles_.end() ? nullptr : it->second.handle.get();

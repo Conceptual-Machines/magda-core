@@ -354,6 +354,9 @@ class RuntimeStateStore {
     /// @brief The handle for @p key, or null when no published snapshot names it.
     LaunchHandle* findHandle(const SlotKey& key) const;
 
+    /// @brief The lifetime identity of @p key's currently published handle.
+    std::optional<std::uint64_t> launchIncarnation(const SlotKey& key) const;
+
     /**
      * @brief The tap take @p key publishes its pass to, made if there is none.
      *

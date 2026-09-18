@@ -122,4 +122,53 @@ TEST_CASE("A recorded MIDI clip keeps its captured placement across an overlap",
     clips.clearAllClips();
 }
 
+TEST_CASE("A Session recording publishes its slot and MIDI together without changing Arrangement",
+          "[clips][recording][session][2553]") {
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    const auto arrangementId = clips.createMidiClipBeats(44, 0.0, 8.0, ClipView::Arrangement);
+
+    class SlotObserver final : public ClipManagerListener {
+      public:
+        void clipsChanged() override {
+            ++notifications;
+            auto& manager = ClipManager::getInstance();
+            const auto* clip = manager.getClip(manager.getClipInSlot(44, 3));
+            complete = clip != nullptr && clip->view == ClipView::Session &&
+                       clip->placement.startBeat == 0.0 && clip->placement.lengthBeats == 4.0 &&
+                       clip->loopEnabled && clip->loopLengthBeats == 4.0 &&
+                       clip->midiNotes.size() == 1 && clip->midiCCData.size() == 1 &&
+                       clip->midiPitchBendData.size() == 1;
+        }
+        void clipPropertyChanged(ClipId) override {}
+        void clipSelectionChanged(ClipId) override {}
+        void clipPlaybackStateChanged(ClipId) override {}
+
+        int notifications = 0;
+        bool complete = false;
+    } observer;
+
+    RecordedMidiClipData recording{.startBeat = 0.0, .lengthBeats = 4.0};
+    recording.active.notes.push_back(
+        {.noteNumber = 67, .velocity = 100, .startBeat = 0.5, .lengthBeats = 2.0});
+    recording.active.cc.push_back({.controller = 1, .value = 96, .beatPosition = 1.0});
+    recording.active.pitchBend.push_back({.value = 9000, .beatPosition = 1.5});
+
+    clips.addListener(&observer);
+    const auto recordedId = clips.createRecordedMidiClip(
+        44, std::move(recording), ClipOverlapPolicy::ResolveOverlaps, ClipView::Session, 3);
+    clips.removeListener(&observer);
+
+    REQUIRE(observer.notifications == 1);
+    REQUIRE(observer.complete);
+    REQUIRE(clips.getClipInSlot(44, 3) == recordedId);
+    REQUIRE(clips.getClipsOnTrack(44, ClipView::Arrangement).size() == 1);
+    const auto* arrangement = clips.getClip(arrangementId);
+    REQUIRE(arrangement != nullptr);
+    REQUIRE(arrangement->placement.startBeat == 0.0);
+    REQUIRE(arrangement->placement.lengthBeats == 8.0);
+
+    clips.clearAllClips();
+}
+
 }  // namespace

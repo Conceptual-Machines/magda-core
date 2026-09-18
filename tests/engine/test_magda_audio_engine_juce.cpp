@@ -101,9 +101,7 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
         expect(!engine.isRecording(), "No eligible input does not start recording");
         engine.onTransportStopRecording();
 
-        // Slot recording remains #2553 follow-up work. Arming has to answer
-        // false: a remembered target nothing renders would light the slot and
-        // invite another recording request that cannot succeed.
+        // A slot on a track the model does not hold is rejected.
         engine.armSessionSlotRecording(trackId, sceneIndex);
         expect(!engine.isSessionSlotRecordArmed(trackId, sceneIndex), "Arming a slot does not");
         expect(!engine.isSessionSlotRecording(trackId, sceneIndex), "and it is not recording");
@@ -123,13 +121,13 @@ class MagdaAudioEngineTest final : public juce::UnitTest {
 
         const auto named = magda::MagdaAudioEngine::unwiredMethods();
         for (const auto* wired :
-             {"record", "onTransportRecord", "onTransportStopRecording", "getRecordingPreviews"})
+             {"record", "onTransportRecord", "onTransportStopRecording", "getRecordingPreviews",
+              "armSessionSlotRecording", "isSessionSlotRecordArmed", "isSessionSlotRecording",
+              "beginArmedSessionSlotRecordings"})
             expect(!named.contains(wired), juce::String(wired) + " is wired through the host");
-        for (const auto* method :
-             {"armSessionSlotRecording", "isSessionSlotRecordArmed", "isSessionSlotRecording",
-              "beginArmedSessionSlotRecordings", "onPunchRegionChanged", "onPunchEnabledChanged",
-              "getPluginWindowManager", "getInsertRenderCaptureService",
-              "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
+        for (const auto* method : {"onPunchRegionChanged", "onPunchEnabledChanged",
+                                   "getPluginWindowManager", "getInsertRenderCaptureService",
+                                   "getSamplerMediaReferences", "createTempoSequenceRippleCommand"})
             expect(named.contains(method), juce::String(method) + " says it is not wired");
 
         engine.shutdown();

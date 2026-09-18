@@ -214,6 +214,14 @@ class EngineSession {
         return store_.findHandle(key);
     }
 
+    /** @brief The run identity a slot take can safely follow, if published. */
+    std::optional<SlotRunTarget> slotRunTarget(const SlotKey& key) {
+        const auto incarnation = store_.launchIncarnation(key);
+        if (!incarnation)
+            return std::nullopt;
+        return SlotRunTarget{.handles = &handles_, .key = key, .incarnation = *incarnation};
+    }
+
     /**
      * @brief Render @p numSamples. On the audio thread.
      *
