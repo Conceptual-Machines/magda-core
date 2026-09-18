@@ -200,11 +200,11 @@ std::optional<double> LaunchHandle::scheduleBeat() const {
     return run_->scheduleBeat;
 }
 
-void LaunchHandle::releaseSection() {
+void LaunchHandle::releaseSection(std::optional<double> monotonicBeat) {
     // A request, like every other way a slot stops: a run ended behind the
     // sources' backs is a step nobody can ramp. The stop and the hand-back are
     // one request, so a launch arriving before the next block replaces both.
-    stop(std::nullopt);
+    stop(monotonicBeat);
     pending_->releasesSection = true;
 }
 
@@ -357,8 +357,8 @@ SplitStatus LaunchHandle::advanceOver(const SyncRange& range) {
         }
 
         // Here because applyEvent consumes the request.
-        status.releasedSection =
-            fromPending && pending_->state == QueueState::stopQueued && pending_->releasesSection;
+        if (fromPending && pending_->state == QueueState::stopQueued && pending_->releasesSection)
+            status.releasedSectionAt = EdgeSample{range.eventAtMonotonicBeat(*eventBeat).sample};
     }
 
     if (!eventBeat && playState_ == PlayState::playing && loopBeats_ && run_) {

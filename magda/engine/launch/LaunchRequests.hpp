@@ -134,8 +134,9 @@ class LaunchRequestQueue {
         }
 
         /// @brief Stop @p key and give its track back to the arrangement (#2302).
-        void backToArrangement(const SlotKey& key) {
-            queue_.push(LaunchRequest{key, LaunchRequest::Kind::backToArrangement, {}, {}});
+        void backToArrangement(const SlotKey& key, std::optional<double> monotonicBeat = {}) {
+            queue_.push(
+                LaunchRequest{key, LaunchRequest::Kind::backToArrangement, monotonicBeat, {}});
         }
 
         /**

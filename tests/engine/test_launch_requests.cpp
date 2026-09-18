@@ -526,7 +526,32 @@ TEST_CASE("Back to arrangement travels the same lane", "[engine][session][launch
     rig.roll(1);
     CHECK_FALSE(playing(rig.slot(0)));
     CHECK_FALSE(rig.slot(0).holdsSection());
-    CHECK(rig.slot(0).blockStatus().releasedSection);
+    REQUIRE(rig.slot(0).blockStatus().releasedSectionAt);
+    CHECK(rig.slot(0).blockStatus().releasedSectionAt->value == 0);
+}
+
+TEST_CASE("Back to arrangement keeps its requested boundary", "[engine][session][launch]") {
+    Rig rig(1);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.play(Rig::key(0));
+    }
+    rig.roll(0);
+
+    {
+        LaunchRequestQueue::Gesture gesture(rig.requests);
+        gesture.backToArrangement(Rig::key(0), kBeatsPerBlock * 1.5);
+    }
+    rig.roll(1);
+
+    const auto& status = rig.slot(0).blockStatus();
+    REQUIRE(status.releasedSectionAt);
+    CHECK(status.releasedSectionAt->value == kBlockSize / 2);
+    CHECK(status.beforeEvent.playing());
+    REQUIRE(status.afterEvent);
+    CHECK_FALSE(status.afterEvent->playing());
+    CHECK_FALSE(rig.slot(0).holdsSection());
 }
 
 TEST_CASE("A stop leaves the track held until it is given back", "[engine][session][launch]") {

@@ -778,15 +778,15 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             });
     }
 
-    void materialize(engine::ClosedTake closed, bool createClip = true,
+    bool materialize(engine::ClosedTake closed, bool createClip = true,
                      std::optional<int> sessionScene = {}) {
         if (closed.take == nullptr)
-            return;
+            return false;
 
         recordThread_.remove(closed.take->stream());
         auto* recorder = dynamic_cast<engine::MidiTakeRecorder*>(closed.take.get());
         if (recorder == nullptr)
-            return;
+            return false;
 
         auto take = recorder->finish(map_);
         if (take.eventsLost > 0 || take.messagesDropped > 0 || take.passesLost > 0)
@@ -797,12 +797,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                      juce::String(take.passesLost) + " pass boundaries lost");
 
         if (take.empty() || !createClip)
-            return;
+            return false;
 
         if (TrackManager::getInstance().getTrack(closed.key.trackId) == nullptr) {
             juce::Logger::writeToLog("[engine] discarded MIDI take for deleted track " +
                                      juce::String(closed.key.trackId));
-            return;
+            return false;
         }
 
         RecordedMidiClipData data{.startBeat = take.startBeat,
@@ -821,11 +821,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             collisionFallback = true;
             data.startBeat = take.startBeat;
         }
-        clips.createRecordedMidiClip(closed.key.trackId, std::move(data),
-                                     collisionFallback ? ClipOverlapPolicy::PreserveExisting
-                                                       : ClipOverlapPolicy::ResolveOverlaps,
-                                     sessionScene ? ClipView::Session : ClipView::Arrangement,
-                                     sessionScene.value_or(-1));
+        return clips.createRecordedMidiClip(closed.key.trackId, std::move(data),
+                                            collisionFallback ? ClipOverlapPolicy::PreserveExisting
+                                                              : ClipOverlapPolicy::ResolveOverlaps,
+                                            sessionScene ? ClipView::Session
+                                                         : ClipView::Arrangement,
+                                            sessionScene.value_or(-1)) != INVALID_CLIP_ID &&
+               sessionScene.has_value();
     }
 
     void harvestClosedMidiTakes(bool createClips = true) {
@@ -833,24 +835,39 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         bool removedSessionTarget = false;
+        std::vector<engine::SlotKey> releases;
         for (auto& closed : session_->takeClosedTakes()) {
-            const auto route = recordingRoutes_.find(closed.key.trackId);
+            const auto trackId = closed.key.trackId;
+            const auto route = recordingRoutes_.find(trackId);
             const auto scene =
                 route == recordingRoutes_.end() ? std::optional<int>{} : route->second.sessionScene;
+            auto launchedScene = std::optional<int>{};
+            if (const auto target = sessionSlotTargets_.find(trackId);
+                target != sessionSlotTargets_.end() && target->second.launched)
+                launchedScene = target->second.scene;
             if (scene)
-                removedSessionTarget |= sessionSlotTargets_.erase(closed.key.trackId) > 0;
-            recordingRoutes_.erase(closed.key.trackId);
-            previewReadings_.erase(closed.key.trackId);
-            recordingPreviews_.erase(closed.key.trackId);
-            materialize(std::move(closed), createClips, scene);
+                removedSessionTarget |= sessionSlotTargets_.erase(trackId) > 0;
+            recordingRoutes_.erase(trackId);
+            previewReadings_.erase(trackId);
+            recordingPreviews_.erase(trackId);
+            const auto handedOver = materialize(std::move(closed), createClips, scene);
+            if (launchedScene && !handedOver)
+                releases.push_back({trackId, *launchedScene});
         }
-        if (removedSessionTarget)
+        if (!releases.empty()) {
+            engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
+            for (const auto& key : releases)
+                gesture.backToArrangement(key);
+        }
+        if (removedSessionTarget) {
+            launcher_.recordTargetsChanged();
             publishClips();
+        }
     }
 
-    void stopMidiTake(TrackId trackId, bool createClip = true) {
+    bool stopMidiTake(TrackId trackId, bool createClip = true) {
         if (session_ == nullptr)
-            return;
+            return false;
 
         const auto route = recordingRoutes_.find(trackId);
         const auto scene =
@@ -858,18 +875,30 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         recordingRoutes_.erase(trackId);
         previewReadings_.erase(trackId);
         recordingPreviews_.erase(trackId);
-        materialize(session_->stopTake({trackId, engine::RecordMaterial::midi}), createClip, scene);
+        return materialize(session_->stopTake({trackId, engine::RecordMaterial::midi}), createClip,
+                           scene);
     }
 
     void stopMidiRecording(bool createClips = true) {
         recording_ = false;
         arrangementRecording_ = false;
-        sessionSlotTargets_.clear();
         const auto active = recordingRoutes_;
+        std::vector<engine::SlotKey> releases;
         for (const auto& [trackId, unused] : active) {
             juce::ignoreUnused(unused);
-            stopMidiTake(trackId, createClips);
+            const auto target = sessionSlotTargets_.find(trackId);
+            const auto launched = target != sessionSlotTargets_.end() && target->second.launched;
+            const auto handedOver = stopMidiTake(trackId, createClips);
+            if (launched && !handedOver)
+                releases.push_back({trackId, target->second.scene});
         }
+        if (session_ != nullptr && !releases.empty()) {
+            engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
+            for (const auto& key : releases)
+                gesture.backToArrangement(key);
+        }
+        sessionSlotTargets_.clear();
+        launcher_.recordTargetsChanged();
         harvestClosedMidiTakes(createClips);
         publishClips();
     }
@@ -907,6 +936,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             sessionSlotTargets_[trackId] = {.scene = sceneIndex};
         }
         recording_ = arrangementRecording_ || !recordingRoutes_.empty();
+        launcher_.recordTargetsChanged();
         publishClips();
     }
 
@@ -936,6 +966,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return false;
         const auto target = found->second;
         sessionSlotTargets_.erase(found);
+        launcher_.recordTargetsChanged();
         if (session_ != nullptr) {
             engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
             gesture.backToArrangement({trackId, target.scene});
@@ -997,6 +1028,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 }
                 gesture.play(key, due);
                 target.launched = true;
+                launcher_.recordTargetLaunched(trackId);
                 launched.push_back(trackId);
                 recording_ = true;
             }
@@ -1131,10 +1163,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 finishedSlots.push_back(trackId);
         }
         for (const auto trackId : finishedSlots) {
-            sessionSlotTargets_.erase(trackId);
-            stopMidiTake(trackId);
+            const auto target = sessionSlotTargets_.find(trackId);
+            if (target == sessionSlotTargets_.end())
+                continue;
+            const engine::SlotKey key{trackId, target->second.scene};
+            sessionSlotTargets_.erase(target);
+            if (!stopMidiTake(trackId)) {
+                engine::LaunchRequestQueue::Gesture gesture(session_->launchRequests());
+                gesture.backToArrangement(key);
+            }
         }
         if (!finishedSlots.empty()) {
+            launcher_.recordTargetsChanged();
             recording_ = arrangementRecording_ || !recordingRoutes_.empty();
             publishClips();
         }
@@ -1213,10 +1253,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         const auto& tracks = TrackManager::getInstance().getTracks();
         auto lanes = lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
-        for (auto& lane : lanes)
+        for (auto& lane : lanes) {
+            // Live handles own sample-exact section boundaries; model mode only reports them
+            // (#2725).
+            lane.playbackMode = TrackPlaybackMode::Arrangement;
             if (const auto target = sessionSlotTargets_.find(lane.trackId);
                 target != sessionSlotTargets_.end())
                 lane.recordSlots.push_back(target->second.scene);
+        }
         auto snapshot = std::make_shared<const engine::ClipSnapshot>(
             engine::compileClipSnapshot(lanes, clipSources(), tempoMap()));
         report("clips", snapshot->diagnostics);
