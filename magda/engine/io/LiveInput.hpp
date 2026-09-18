@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 
 #include <atomic>
+#include <bitset>
 #include <cstdint>
 #include <farbot/RealtimeObject.hpp>
 #include <memory>
@@ -296,6 +297,17 @@ class TrackLiveMidiInput final : public EngineMidiSource {
 
     bool panicked_ = false;
     std::atomic<std::uint32_t> dropped_{0};
+
+    /// What this input has delivered and not yet taken back, by channel and
+    /// note number. A device that left the routing is not going to send the
+    /// note-offs it owes, so they are sent from here instead: an instrument
+    /// reading this input hears an ordinary note-off and needs to know nothing
+    /// about routing (#2612).
+    std::bitset<16 * 128> held_;
+
+    static std::size_t heldIndex(int channel, int note) {
+        return static_cast<std::size_t>((channel - 1) * 128 + note);
+    }
 };
 
 }  // namespace magda::engine

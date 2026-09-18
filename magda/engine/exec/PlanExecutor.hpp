@@ -65,6 +65,36 @@ class AudioDelayLine {
 };
 
 /**
+ * @brief One block of audio between the two halves of a cut routing loop.
+ *
+ * The return reads before the send writes, because a return has no
+ * dependencies and its send waits on the source track, so what comes out is
+ * always the block before (#2612).
+ *
+ * Audio only. A block of delay makes an audio loop renderable because whatever
+ * gain is in the loop scales what goes round, so it dies away; a note carries
+ * no gain, so a MIDI loop would send every event round again for ever and no
+ * reservation would be large enough. The compiler refuses those instead.
+ */
+class FeedbackCarry {
+  public:
+    void prepare(int numChannels, int maxBlockSize);
+
+    /// What the send left last block, into @p block.
+    void read(juce::dsp::AudioBlock<float> block, int numSamples) const;
+    void write(juce::dsp::AudioBlock<const float> block, int numSamples);
+
+    void clear();
+
+    bool hasConfiguration(int numChannels, int maxBlockSize) const {
+        return audio_.getNumChannels() == numChannels && audio_.getNumSamples() == maxBlockSize;
+    }
+
+  private:
+    juce::AudioBuffer<float> audio_;
+};
+
+/**
  * @brief The same delay for one MIDI port.
  *
  * Events move by sample position, and ones falling past the end of a block
@@ -446,6 +476,12 @@ class PlanExecutor {
         return carriedCrossfades_;
     }
 
+    /// Routing loops whose carry this executor took over from the one it
+    /// replaced, rather than restarting them from silence.
+    int carriedFeedbackCarries() const {
+        return carriedFeedbackCarries_;
+    }
+
     /// Modifiers this executor took over mid-cycle from the one it replaced
     /// -- an LFO that didn't restart because a device was inserted
     /// elsewhere in the project (#2119).
@@ -572,6 +608,13 @@ class PlanExecutor {
     const std::shared_ptr<AudioDelayLine>& audioDelayFor(OpId op) const;
     const std::shared_ptr<MidiDelayLine>& midiDelayFor(OpId op) const;
     const std::shared_ptr<CrossfadeRamp>& crossfadeFor(OpId op) const;
+    const std::shared_ptr<FeedbackCarry>& feedbackCarryFor(OpId op) const;
+
+    /// The flag a note gate of this executor's plan keeps, for the executor
+    /// replacing it to share. Null where the op is not a note gate.
+    const std::shared_ptr<std::atomic<char>>& notePassingFor(OpId op) const {
+        return notePassing_[static_cast<std::size_t>(op)];
+    }
 
     const RenderPlan* plan_ = nullptr;
 
@@ -634,6 +677,23 @@ class PlanExecutor {
     std::vector<int> crossfadeForOp_;
     std::vector<std::shared_ptr<CrossfadeRamp>> crossfades_;
     int carriedCrossfades_ = 0;
+
+    /// Per op: the carry a FeedbackSend fills or a FeedbackReturn reads, or
+    /// -1. Both halves of one cut route index the same carry. Shared with the
+    /// executor taking over for the reason the delay lines are: a loop that
+    /// survives a recompile should not restart from silence.
+    std::vector<int> feedbackForOp_;
+    std::vector<std::shared_ptr<FeedbackCarry>> feedbackCarries_;
+    int carriedFeedbackCarries_ = 0;
+
+    /// Per op: whether a note gate passed anything last block, or null for an
+    /// op that is not one. A gate that stops has to raise an all-notes-off,
+    /// since the note-offs for what it already let through will never arrive.
+    ///
+    /// Shared with the executor taking over rather than copied out of it, the
+    /// way a delay line is: prepare runs while the executor it replaces may
+    /// still be rendering, so reading its flag would be a race.
+    std::vector<std::shared_ptr<std::atomic<char>>> notePassing_;
 
     /// Identity of the prepared plan; values not carrying the same one were
     /// resolved against something else and are not applied.

@@ -1086,9 +1086,12 @@ TEST_CASE("An internal MIDI route reads the source track's MIDI", "[engine][plan
     REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
 
     // Own clips first, arrangement then session, and the routed source behind
-    // them.
+    // them, through the gate the monitor switch lands on (#2612).
     REQUIRE(plan.ops[static_cast<std::size_t>(destMidi)].inputs.size() == 3);
-    CHECK(inputOp(plan, destMidi, 2) == sourceMidi);
+    const auto gate = inputOp(plan, destMidi, 2);
+    REQUIRE(gate != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(gate)].key.role == OpRole::InputRouteGate);
+    CHECK(inputOp(plan, gate, 0) == sourceMidi);
 }
 
 TEST_CASE("An internal audio route reads the source track's post-mute output",
@@ -1115,7 +1118,10 @@ TEST_CASE("An internal audio route reads the source track's post-mute output",
     REQUIRE(destInput != magda::engine::INVALID_OP_ID);
 
     REQUIRE(plan.ops[static_cast<std::size_t>(destInput)].inputs.size() == 3);
-    CHECK(inputOp(plan, destInput, 2) == sourceMute);
+    const auto gate = inputOp(plan, destInput, 2);
+    REQUIRE(gate != magda::engine::INVALID_OP_ID);
+    CHECK(plan.ops[static_cast<std::size_t>(gate)].key.role == OpRole::InputRouteGate);
+    CHECK(inputOp(plan, gate, 0) == sourceMute);
 }
 
 TEST_CASE("Mute is applied after the meter and the sidechain tap", "[engine][plan][compiler]") {
@@ -1273,7 +1279,7 @@ TEST_CASE("An inactive internal route is not an ordering dependency", "[engine][
     CHECK(inputOp(plan, device, 2) == sourceMeter);
 }
 
-TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
+TEST_CASE("An unmonitored MIDI route still makes its source compile MIDI",
           "[engine][plan][compiler]") {
     std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
     tracks[1].midiInputDevice = "track:1";
@@ -1282,10 +1288,16 @@ TEST_CASE("An unmonitored MIDI route does not make its source compile MIDI",
     const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
     requireWellFormed(plan);
 
-    // Track 1 has no MIDI consumer of its own and nothing reads its MIDI, so
-    // compiling clip MIDI for it would leave ops no one consumes.
-    CHECK(countRole(plan, OpRole::ClipMidi) == 0);
-    CHECK(countRole(plan, OpRole::TrackMidiInput) == 0);
+    // Track 2's switch decides what track 2 hears, never what track 1 compiles
+    // (#2612). Track 1 is a MIDI source because someone routes from it, and
+    // track 2's route is compiled too, silenced at its gate rather than absent.
+    CHECK(countRole(plan, OpRole::ClipMidi) == 1);
+    CHECK(countRole(plan, OpRole::InputRouteGate) == 1);
+
+    std::set<TrackId> merging;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMidiInput))
+        merging.insert(plan.ops[static_cast<std::size_t>(op)].key.trackId);
+    CHECK(merging == std::set<TrackId>{1, 2});
 }
 
 TEST_CASE("A rack-level sidechain is an edge to the modulation system",
@@ -2610,6 +2622,296 @@ TEST_CASE("A multi-out pair that carries nothing is not an ordering dependency",
             readerMute = op;
     REQUIRE(readerMute != magda::engine::INVALID_OP_ID);
     CHECK(inputOp(plan, input, 2) == readerMute);
+}
+
+TEST_CASE("A routing loop is carried a block, not broken by dropping a connection",
+          "[engine][plan][compiler]") {
+    // Track 1's compressor keys off track 2, and track 2 takes track 1 as its
+    // input: a real loop, and the shape #2612 had to answer before a monitor
+    // switch could stop compiling. The input route is the edge that yields.
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[1].audioInputDevice = "track:1";
+    tracks[1].inputMonitor = InputMonitorMode::In;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // Nothing is forced ahead of its sources and nothing arrives too late.
+    CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK_FALSE(anyDiagnosticContains(plan, "arrived after it was compiled"));
+
+    // Both halves of the carry, on the track that reads the route.
+    REQUIRE(countRole(plan, OpRole::FeedbackReturn) == 1);
+    REQUIRE(countRole(plan, OpRole::FeedbackSend) == 1);
+    const auto ret = opsWithRole(plan, OpRole::FeedbackReturn).front();
+    const auto send = opsWithRole(plan, OpRole::FeedbackSend).front();
+    CHECK(plan.ops[static_cast<std::size_t>(ret)].key.trackId == 2);
+    CHECK(plan.ops[static_cast<std::size_t>(send)].key.trackId == 2);
+
+    // The send reads track 1's output, which is what the route names.
+    magda::engine::OpId sourceMute = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 1)
+            sourceMute = op;
+    REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, send, 0) == sourceMute);
+
+    // And it waits on the return, which it does not read. Without that edge
+    // the two are unordered and a parallel schedule is free to overwrite the
+    // carry while the return is still reading it.
+    CHECK(inputOp(plan, send, 1) == ret);
+
+    // And the sidechain, which the old breaker paid for this loop with, is
+    // still connected to track 2.
+    const auto device = deviceProcess(plan, 7);
+    magda::engine::OpId sourceMeter = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMeter))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 2)
+            sourceMeter = op;
+    REQUIRE(sourceMeter != magda::engine::INVALID_OP_ID);
+    CHECK(inputOp(plan, device, 2) == sourceMeter);
+}
+
+TEST_CASE("A carry taken from a different track is a different op",
+          "[engine][plan][compiler][2418]") {
+    // Nothing else about a carry says where it came from: the destination reads
+    // the return, whose inputs are empty. Two sources compiling to one key would
+    // hand the new route the old one's carry and hide the change from the pass
+    // that panics a device whose MIDI source was taken away.
+    const auto keyOfReturn = [](TrackId sourceId) {
+        auto compressor = makeEffect(7);
+        compressor.sidechainPort = magda::monoAudioSidechain;
+        compressor.sidechain.type = SidechainConfig::Type::Audio;
+        compressor.sidechain.sourceTrackId = 2;
+
+        // Track 2 reads `sourceId`, and `sourceId` keys off track 2: a loop
+        // whichever of the two it is, so the route is cut either way.
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2), makeTrack(3)};
+        tracks[sourceId == 1 ? 0 : 2].chain.fxChainElements.push_back(
+            makeDeviceElement(compressor));
+        tracks[1].audioInputDevice = "track:" + juce::String(sourceId);
+        tracks[1].inputMonitor = InputMonitorMode::In;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        const auto returns = opsWithRole(plan, OpRole::FeedbackReturn);
+        REQUIRE(returns.size() == 1);
+        return plan.ops[static_cast<std::size_t>(returns.front())].key;
+    };
+
+    CHECK_FALSE(keyOfReturn(1) == keyOfReturn(3));
+}
+
+TEST_CASE("A track routed from itself is carried rather than reported",
+          "[engine][plan][compiler]") {
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].audioInputDevice = "track:1";
+    tracks[0].inputMonitor = InputMonitorMode::In;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK(countRole(plan, OpRole::FeedbackReturn) == 1);
+    CHECK(countRole(plan, OpRole::FeedbackSend) == 1);
+}
+
+TEST_CASE("A carry passes on the liveness of what goes into it", "[engine][plan][compiler]") {
+    // Track 1 takes a hardware input and keys its compressor off track 2, whose
+    // own input is track 1: a loop with live audio in it. The return reads
+    // nothing, so its liveness cannot propagate along an input the way every
+    // other op's does, and the plan has to say where it came from.
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[0].audioInputDevice = "Input 1";
+    tracks[0].inputMonitor = InputMonitorMode::In;
+    tracks[1].audioInputDevice = "track:1";
+    tracks[1].inputMonitor = InputMonitorMode::In;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+
+    // The point of the test: a live carry is a well-formed plan, not one
+    // prepare() refuses.
+    requireWellFormed(plan);
+
+    const auto returns = opsWithRole(plan, OpRole::FeedbackReturn);
+    REQUIRE(returns.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(returns.front())].liveness ==
+          magda::engine::LivenessDomain::Live);
+}
+
+TEST_CASE("A carry of clips alone stays deterministic", "[engine][plan][compiler]") {
+    // The converse, which over-tagging would lose: nothing in this loop comes
+    // from outside, so an anticipative executor may still render it ahead.
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 2;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[0].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[1].audioInputDevice = "track:1";
+    tracks[1].inputMonitor = InputMonitorMode::In;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    const auto returns = opsWithRole(plan, OpRole::FeedbackReturn);
+    REQUIRE(returns.size() == 1);
+    CHECK(plan.ops[static_cast<std::size_t>(returns.front())].liveness ==
+          magda::engine::LivenessDomain::Deterministic);
+}
+
+TEST_CASE("A route merely downstream of a cycle is left alone", "[engine][plan][compiler]") {
+    // Tracks 1 and 2 feed each other's outputs, which is a cycle no input route
+    // can carry. Track 3 sits behind it and track 4 takes MIDI from track 3: a
+    // perfectly good route that is blocked by the cycle without being on it.
+    // Resolving by "withdraw the first route edge still waiting" would refuse
+    // it, because a stalled sort cannot tell the two apart.
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2), makeTrack(3), makeTrack(4)};
+    tracks[0].audioOutputDevice = "track:2";
+    tracks[1].audioOutputDevice = "track:1";
+
+    // Track 3 waits on the cycle rather than feeding it, so it is still
+    // unemitted when the sort stalls, and so is track 4 behind it. That is what
+    // puts track 4's route in front of a sorter that takes the first one it
+    // finds still waiting.
+    SendInfo send;
+    send.destTrackId = 3;
+    tracks[0].sends.push_back(send);
+
+    tracks[3].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(7)));
+    tracks[3].midiInputDevice = "track:3";
+    tracks[3].inputMonitor = InputMonitorMode::In;
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // The cycle is reported, and track 4's route is not what paid for it.
+    CHECK_FALSE(anyDiagnosticContains(plan, "a MIDI loop repeats every note it carries"));
+    CHECK(countRole(plan, OpRole::InputRouteGate) == 1);
+
+    // Track 4 still reads track 3's MIDI, through its gate.
+    magda::engine::OpId sourceMidi = magda::engine::INVALID_OP_ID;
+    magda::engine::OpId destMidi = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMidiInput)) {
+        const auto trackId = plan.ops[static_cast<std::size_t>(op)].key.trackId;
+        if (trackId == 3)
+            sourceMidi = op;
+        if (trackId == 4)
+            destMidi = op;
+    }
+    REQUIRE(sourceMidi != magda::engine::INVALID_OP_ID);
+    REQUIRE(destMidi != magda::engine::INVALID_OP_ID);
+
+    const auto gate = opsWithRole(plan, OpRole::InputRouteGate).front();
+    CHECK(inputOp(plan, gate, 0) == sourceMidi);
+}
+
+TEST_CASE("A cycle report does not claim a connection that survives it",
+          "[engine][plan][compiler]") {
+    // Tracks 1 and 2 feed each other, and track 2 also keys off track 1. The
+    // cycle is real and has to be broken, but withdrawing an edge is not the
+    // same as losing what it ordered: the sidechain still orders track 1 first,
+    // so track 1's output into track 2 is connected after all.
+    auto compressor = makeEffect(7);
+    compressor.sidechainPort = magda::monoAudioSidechain;
+    compressor.sidechain.type = SidechainConfig::Type::Audio;
+    compressor.sidechain.sourceTrackId = 1;
+
+    std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+    tracks[1].chain.fxChainElements.push_back(makeDeviceElement(compressor));
+    tracks[0].audioOutputDevice = "track:2";
+    tracks[1].audioOutputDevice = "track:1";
+
+    const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+    requireWellFormed(plan);
+
+    // The cycle is reported, and so is the one connection it really costs:
+    // track 2 compiles second, so its output into track 1 arrives too late.
+    CHECK(anyDiagnosticContains(plan, "routing cycle"));
+    CHECK(anyDiagnosticContains(plan, "arrived after it was compiled"));
+
+    // The other direction survives. Track 1 compiled first because the
+    // sidechain still says so, so its output did reach track 2 after all, and
+    // no cycle report may say otherwise.
+    CHECK_FALSE(anyDiagnosticContains(plan, "the connection is not made"));
+
+    magda::engine::OpId sourceMute = magda::engine::INVALID_OP_ID;
+    for (const auto op : opsWithRole(plan, OpRole::TrackMute))
+        if (plan.ops[static_cast<std::size_t>(op)].key.trackId == 1)
+            sourceMute = op;
+    REQUIRE(sourceMute != magda::engine::INVALID_OP_ID);
+
+    // Through whatever delay aligns it against track 2's own sections.
+    const auto behindDelay = [&plan](magda::engine::PortRef ref) {
+        const auto& producer = plan.ops[static_cast<std::size_t>(ref.op)];
+        return producer.kind == OpKind::Delay ? producer.inputs.front() : ref;
+    };
+
+    const auto input = trackInput(plan, 2);
+    REQUIRE(input != magda::engine::INVALID_OP_ID);
+    const auto& inputs = plan.ops[static_cast<std::size_t>(input)].inputs;
+    CHECK(std::ranges::any_of(inputs, [&](const magda::engine::PortRef& ref) {
+        return ref.valid() && behindDelay(ref).op == sourceMute;
+    }));
+}
+
+TEST_CASE("A MIDI loop is refused rather than carried", "[engine][plan][compiler]") {
+    // A block of delay works for audio because whatever gain is in the loop
+    // scales what goes round, so it dies away. A note has no gain: every event
+    // that came back would be sent round again, so the carry would grow for as
+    // long as the transport ran. The route is refused and said so instead.
+    const auto refuses = [](const RenderPlan& plan) {
+        return anyDiagnosticContains(plan, "a MIDI loop repeats every note it carries");
+    };
+
+    SECTION("a track taking MIDI from itself") {
+        std::vector<TrackInfo> tracks{makeTrack(1)};
+        tracks[0].chain.fxChainElements.push_back(makeDeviceElement(makeInstrument(3)));
+        tracks[0].midiInputDevice = "track:1";
+        tracks[0].inputMonitor = InputMonitorMode::In;
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(refuses(plan));
+        CHECK(countRole(plan, OpRole::FeedbackReturn) == 0);
+        CHECK(countRole(plan, OpRole::FeedbackSend) == 0);
+    }
+
+    SECTION("two tracks taking MIDI from each other") {
+        std::vector<TrackInfo> tracks{makeTrack(1), makeTrack(2)};
+        for (auto& track : tracks) {
+            track.chain.fxChainElements.push_back(
+                makeDeviceElement(makeInstrument(track.id == 1 ? 3 : 4)));
+            track.midiInputDevice = "track:" + juce::String(track.id == 1 ? 2 : 1);
+            track.inputMonitor = InputMonitorMode::In;
+        }
+
+        const auto plan = magda::engine::compileRenderPlan(tracks, makeMaster());
+        requireWellFormed(plan);
+
+        CHECK(refuses(plan));
+        CHECK(countRole(plan, OpRole::FeedbackSend) == 0);
+
+        // Only the one that closes the loop goes; the other still reads its
+        // source, and nothing is forced ahead of its sources.
+        CHECK_FALSE(anyDiagnosticContains(plan, "routing cycle"));
+        CHECK(countRole(plan, OpRole::InputRouteGate) == 1);
+    }
 }
 
 TEST_CASE("A device with more pairs than one op can carry says so", "[engine][plan][compiler]") {

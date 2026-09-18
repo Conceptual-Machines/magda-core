@@ -673,3 +673,135 @@ TEST_CASE("muting a track raises no panic on its devices", "[engine][exec][2418]
     renderWith(false);
     CHECK_FALSE(probe.lastHeard());
 }
+
+namespace {
+
+/// MidiInput -> note gate -> Device: a route arriving at an instrument through
+/// the switch that decides whether the track hears it (#2612).
+struct GateHarness {
+    RenderPlan plan;
+    PlanExecutor executor;
+    PlanBindings bindings;
+    HeldNote source;
+    PanicProbe device;
+    PlanValues values;
+    juce::AudioBuffer<float> output{2, kBlockSize};
+
+    GateHarness() {
+        magda::engine::PlanOp input;
+        input.kind = OpKind::MidiInput;
+        input.key.trackId = 1;
+        input.key.role = OpRole::LiveMidiInput;
+        input.outputs = {SignalKind::Midi};
+        plan.ops.push_back(input);
+
+        magda::engine::PlanOp gate;
+        gate.kind = OpKind::MidiNoteGate;
+        gate.key.trackId = 1;
+        gate.key.role = OpRole::InputRouteGate;
+        gate.key.index = 1;
+        gate.inputs = {PortRef{0, 0}};
+        gate.outputs = {SignalKind::Midi};
+        plan.ops.push_back(gate);
+
+        magda::engine::PlanOp reader;
+        reader.kind = OpKind::Device;
+        reader.key.trackId = 1;
+        reader.key.deviceId = 9;
+        reader.key.role = OpRole::DeviceProcess;
+        reader.inputs = {PortRef{}, PortRef{1, 0}, PortRef{}};
+        reader.outputs = {SignalKind::Audio};
+        plan.ops.push_back(reader);
+
+        magda::engine::PlanOp out;
+        out.kind = OpKind::Output;
+        out.key.trackId = 1;
+        out.key.role = OpRole::HardwareOutput;
+        out.inputs = {PortRef{2, 0}};
+        plan.ops.push_back(out);
+
+        plan.outputOps = {3};
+        magda::engine::bakeScheduling(plan);
+
+        bindings.midiInputs[1] = &source;
+        bindings.devices[DeviceKey{9}] = &device;
+
+        values.planFingerprint = magda::engine::planFingerprint(plan);
+        values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    }
+
+    void prepare() {
+        const auto messages =
+            executor.prepare(plan, bindings, RenderContext{44100.0, kBlockSize, 2});
+        for (const auto& message : messages)
+            UNSCOPED_INFO("prepare: " << message);
+        REQUIRE(messages.empty());
+    }
+
+    void render() {
+        output.clear();
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.playing = true;
+        block.continuous = true;
+        executor.process(values, block, output);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a note gate that stops passing raises the panic itself", "[engine][exec][2418][2612]") {
+    // The monitor switch over an input route is a value now, so nothing
+    // recompiles when it goes off and the reroute machinery never runs. The
+    // note already delivered would sound forever without this.
+    GateHarness harness;
+    harness.prepare();
+
+    harness.render();
+    CHECK(harness.device.notesSeen == 1);
+    CHECK_FALSE(harness.device.lastHeard());
+
+    harness.values.ops[1].silent = true;
+    harness.render();
+    CHECK(harness.device.lastHeard());
+
+    // Once, not every block it stays off for.
+    harness.render();
+    CHECK_FALSE(harness.device.lastHeard());
+
+    // And going back on is not a panic of its own.
+    harness.values.ops[1].silent = false;
+    harness.render();
+    CHECK_FALSE(harness.device.lastHeard());
+}
+
+TEST_CASE("a gate that was passing panics when the publish that silences it also rebuilds",
+          "[engine][exec][2418][2612]") {
+    // The switch is a value, so turning monitoring off usually publishes values
+    // and the gate sees its own transition. Do it in the same edit as a
+    // structural change and the gate is a fresh op in a fresh executor: without
+    // carrying what the old one was doing, it reads as "already silent" and the
+    // notes it let through hang.
+    GateHarness harness;
+    harness.prepare();
+    harness.render();
+    REQUIRE(harness.device.notesSeen == 1);
+    REQUIRE_FALSE(harness.device.lastHeard());
+
+    PlanExecutor next;
+    const auto messages = next.prepare(harness.plan, harness.bindings,
+                                       RenderContext{44100.0, kBlockSize, 2}, &harness.executor);
+    for (const auto& message : messages)
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(messages.empty());
+
+    harness.values.ops[1].silent = true;
+    harness.output.clear();
+    BlockInfo block;
+    block.numSamples = kBlockSize;
+    block.playing = true;
+    block.continuous = true;
+    next.process(harness.values, block, harness.output);
+
+    CHECK(harness.device.lastHeard());
+}

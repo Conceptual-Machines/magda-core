@@ -1131,21 +1131,31 @@ class EngineHostPublishTest final : public juce::UnitTest {
         expect(shapeNow() != compiledFrom, "Bypassing a device is");
         device.bypassed = false;
 
-        // Monitoring is what the compiler gates an input route on, so the
-        // switch and the route are one edit here.
-        track->inputMonitor = magda::InputMonitorMode::In;
         track->midiInputDevice = "track:" + juce::String(sourceId);
-        expect(shapeNow() != compiledFrom, "So is taking MIDI from another track");
+        const auto withMidiRoute = shapeNow();
+        expect(withMidiRoute != compiledFrom, "So is taking MIDI from another track");
+
+        // But not the switch over it. The route compiles either way and its
+        // gate carries the switch, so this is a values publish (#2612).
+        track->inputMonitor = magda::InputMonitorMode::In;
+        expect(shapeNow() == withMidiRoute, "Monitoring that route is not a shape change");
+        track->inputMonitor = magda::InputMonitorMode::Off;
         track->midiInputDevice = "";
 
         track->audioInputDevice = "Input 1";
         const auto withInput = shapeNow();
         expect(withInput != compiledFrom, "So is naming an audio input");
 
-        // But not the switch over it: that lands on the input's gate, which a
-        // values publish carries (#2612).
-        track->inputMonitor = magda::InputMonitorMode::Off;
+        track->inputMonitor = magda::InputMonitorMode::In;
         expect(shapeNow() == withInput, "Monitoring that input is not a shape change");
+        track->inputMonitor = magda::InputMonitorMode::Off;
+
+        // The same for a route from another track's audio, which is the half
+        // that used to be an ordering edge and nothing else.
+        track->audioInputDevice = "track:" + juce::String(sourceId);
+        const auto withAudioRoute = shapeNow();
+        track->inputMonitor = magda::InputMonitorMode::In;
+        expect(shapeNow() == withAudioRoute, "Nor is monitoring an internal audio route");
     }
 
     /// A macro's value and a lane's points are the table's, so the host has to

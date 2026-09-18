@@ -148,6 +148,56 @@ void AudioDelayLine::process(juce::dsp::AudioBlock<float> block, int numSamples)
     }
 }
 
+void FeedbackCarry::prepare(int numChannels, int maxBlockSize) {
+    audio_.setSize(numChannels, maxBlockSize, false, true, false);
+    audio_.clear();
+}
+
+void FeedbackCarry::read(juce::dsp::AudioBlock<float> block, int numSamples) const {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::copy(
+            block.getChannelPointer(static_cast<std::size_t>(channel)),
+            audio_.getReadPointer(channel), samples);
+
+    // A block longer than the carry, or wider, is one the carry was not
+    // prepared for; the rest is silence rather than whatever was there before.
+    for (int channel = 0; channel < channels; ++channel)
+        juce::FloatVectorOperations::clear(
+            block.getChannelPointer(static_cast<std::size_t>(channel)) + samples,
+            numSamples - samples);
+    for (auto channel = static_cast<std::size_t>(channels); channel < block.getNumChannels();
+         ++channel)
+        juce::FloatVectorOperations::clear(block.getChannelPointer(channel), numSamples);
+}
+
+void FeedbackCarry::write(juce::dsp::AudioBlock<const float> block, int numSamples) {
+    const auto channels =
+        std::min(static_cast<int>(block.getNumChannels()), audio_.getNumChannels());
+    const auto samples = std::min(numSamples, audio_.getNumSamples());
+
+    // Everything this block did not fill is cleared rather than left behind.
+    // Callback sizes vary, and a short block over a long one would leave the
+    // tail of the longer to come back as the end of the next read.
+    for (int channel = 0; channel < channels; ++channel) {
+        juce::FloatVectorOperations::copy(
+            audio_.getWritePointer(channel),
+            block.getChannelPointer(static_cast<std::size_t>(channel)), samples);
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel) + samples,
+                                           audio_.getNumSamples() - samples);
+    }
+
+    for (int channel = channels; channel < audio_.getNumChannels(); ++channel)
+        juce::FloatVectorOperations::clear(audio_.getWritePointer(channel), audio_.getNumSamples());
+}
+
+void FeedbackCarry::clear() {
+    audio_.clear();
+}
+
 void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     delay_ = delaySamples;
     capacity_ = capacityBytes;
@@ -252,6 +302,12 @@ const std::shared_ptr<CrossfadeRamp>& PlanExecutor::crossfadeFor(OpId op) const 
     return ramp < 0 ? none : crossfades_[static_cast<std::size_t>(ramp)];
 }
 
+const std::shared_ptr<FeedbackCarry>& PlanExecutor::feedbackCarryFor(OpId op) const {
+    static const std::shared_ptr<FeedbackCarry> none;
+    const auto carry = feedbackForOp_[static_cast<std::size_t>(op)];
+    return carry < 0 ? none : feedbackCarries_[static_cast<std::size_t>(carry)];
+}
+
 std::vector<char> PlanExecutor::unfinishedCrossfades() const {
     std::vector<char> running(plan_ == nullptr ? 0 : plan_->ops.size(), 0);
     for (std::size_t i = 0; i < running.size(); ++i) {
@@ -277,6 +333,10 @@ void PlanExecutor::reset() {
     carriedCrossfades_ = 0;
     crossfadeForOp_.clear();
     crossfades_.clear();
+    carriedFeedbackCarries_ = 0;
+    feedbackForOp_.clear();
+    feedbackCarries_.clear();
+    notePassing_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
     midiSlotPanic_.clear();
@@ -766,73 +826,78 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
         return static_cast<std::size_t>(portOffsets_[static_cast<std::size_t>(ref.op)]) + ref.port;
     };
 
-    for (std::size_t i = 0; i < numOps; ++i) {
-        const auto& op = plan.ops[i];
+    const auto sweep = [&] {
+        for (std::size_t i = 0; i < numOps; ++i) {
+            const auto& op = plan.ops[i];
 
-        if (op.kind == OpKind::Delay) {
-            if (op.outputs.front().kind != SignalKind::Midi)
+            if (op.kind == OpKind::Delay) {
+                if (op.outputs.front().kind != SignalKind::Midi)
+                    continue;
+                // A delay's output block covers one block's worth of its input's
+                // time, and that stretch falls across two of the spans the budget
+                // is counted over unless the delay is a whole number of them. Zero
+                // is not a delay at all: the op does not run, and the port is its
+                // input's.
+                const auto carried = portMidiBytes[flatPort(op.inputs.front())];
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
+                    latency.delaySamples[i] == 0 ? carried : 2 * carried;
                 continue;
-            // A delay's output block covers one block's worth of its input's
-            // time, and that stretch falls across two of the spans the budget
-            // is counted over unless the delay is a whole number of them. Zero
-            // is not a delay at all: the op does not run, and the port is its
-            // input's.
-            const auto carried = portMidiBytes[flatPort(op.inputs.front())];
-            portMidiBytes[static_cast<std::size_t>(portOffsets_[i])] =
-                latency.delaySamples[i] == 0 ? carried : 2 * carried;
-            continue;
+            }
+
+            // Everything that carries MIDI on from what reached it. A merge is the
+            // obvious one and a fader carries a rack chain's MIDI out beside its
+            // audio, but a conduit is a conduit: a note gate passes on whatever
+            // falls in its range.
+            //
+            // A Device is deliberately not one. Its MIDI output port carries what
+            // the device produced and nothing it was handed: MIDI thru is the
+            // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
+            // the only way a host can offer it over a plugin it does not write, and
+            // a device doing it as well made every note a pair (#2345). So a device
+            // is a producer like any other and its port stays at the budget every
+            // port starts on.
+            //
+            // Unless it says otherwise: a MIDI FX that consumes notes hands the
+            // rest of the channel on, since thru would bring the notes back with
+            // it (#2417). Its port holds what it makes and what reached it, and
+            // what reached it is a merge's sum rather than one producer's budget.
+            if (op.kind == OpKind::Device) {
+                const auto* device = deviceForOp_[i];
+                const auto hasMidiOut =
+                    op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
+                if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
+                    continue;
+
+                const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
+                                          ? portMidiBytes[flatPort(op.inputs[1])]
+                                          : 0;
+                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
+                    kMaxMidiBytesPerPort + reaching;
+                continue;
+            }
+
+            if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
+                op.kind != OpKind::MidiNoteGate)
+                continue;
+
+            int carried = 0;
+            for (const auto& input : op.inputs) {
+                if (!input.valid())
+                    continue;
+                if (plan.ops[static_cast<std::size_t>(input.op)]
+                        .outputs[static_cast<std::size_t>(input.port)]
+                        .kind != SignalKind::Midi)
+                    continue;
+                carried += portMidiBytes[flatPort(input)];
+            }
+
+            for (std::size_t port = 0; port < op.outputs.size(); ++port)
+                if (op.outputs[port].kind == SignalKind::Midi)
+                    portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
         }
+    };
 
-        // Everything that carries MIDI on from what reached it. A merge is the
-        // obvious one and a fader carries a rack chain's MIDI out beside its
-        // audio, but a conduit is a conduit: a note gate passes on whatever
-        // falls in its range.
-        //
-        // A Device is deliberately not one. Its MIDI output port carries what
-        // the device produced and nothing it was handed: MIDI thru is the
-        // compiler's merge behind the device (OpRole::ChainMidiMerge), which is
-        // the only way a host can offer it over a plugin it does not write, and
-        // a device doing it as well made every note a pair (#2345). So a device
-        // is a producer like any other and its port stays at the budget every
-        // port starts on.
-        //
-        // Unless it says otherwise: a MIDI FX that consumes notes hands the
-        // rest of the channel on, since thru would bring the notes back with
-        // it (#2417). Its port holds what it makes and what reached it, and
-        // what reached it is a merge's sum rather than one producer's budget.
-        if (op.kind == OpKind::Device) {
-            const auto* device = deviceForOp_[i];
-            const auto hasMidiOut = op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi;
-            if (device == nullptr || !device->forwardsMidiInput() || !hasMidiOut)
-                continue;
-
-            const auto reaching = op.inputs.size() > 1 && op.inputs[1].valid()
-                                      ? portMidiBytes[flatPort(op.inputs[1])]
-                                      : 0;
-            portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + 1] =
-                kMaxMidiBytesPerPort + reaching;
-            continue;
-        }
-
-        if (op.kind != OpKind::MergeMidi && op.kind != OpKind::Fader &&
-            op.kind != OpKind::MidiNoteGate)
-            continue;
-
-        int carried = 0;
-        for (const auto& input : op.inputs) {
-            if (!input.valid())
-                continue;
-            if (plan.ops[static_cast<std::size_t>(input.op)]
-                    .outputs[static_cast<std::size_t>(input.port)]
-                    .kind != SignalKind::Midi)
-                continue;
-            carried += portMidiBytes[flatPort(input)];
-        }
-
-        for (std::size_t port = 0; port < op.outputs.size(); ++port)
-            if (op.outputs[port].kind == SignalKind::Midi)
-                portMidiBytes[static_cast<std::size_t>(portOffsets_[i]) + port] = carried;
-    }
+    sweep();
 
     midiSlots_.resize(static_cast<std::size_t>(layout.numMidiSlots));
     midiSlotPanic_.assign(static_cast<std::size_t>(layout.numMidiSlots), 0);
@@ -966,6 +1031,21 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     const auto fadeSamples =
         std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * context_.sampleRate)));
 
+    // Shared with the executor this one replaces, so a gate that was passing
+    // still raises its all-notes-off when the same publish that changed the
+    // shape also turned the monitor off. Starting every gate closed would call
+    // that "already silent" and let the notes hang (#2612).
+    notePassing_.assign(numOps, nullptr);
+    for (std::size_t i = 0; i < numOps; ++i) {
+        if (plan.ops[i].kind != OpKind::MidiNoteGate)
+            continue;
+
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            notePassing_[i] = previous->notePassingFor(from);
+        if (notePassing_[i] == nullptr)
+            notePassing_[i] = std::make_shared<std::atomic<char>>(0);
+    }
+
     crossfadeForOp_.assign(numOps, -1);
     for (std::size_t i = 0; i < numOps; ++i) {
         if (plan.ops[i].kind != OpKind::Crossfade)
@@ -995,6 +1075,42 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
 
         crossfadeForOp_[i] = static_cast<int>(crossfades_.size());
         crossfades_.push_back(std::move(ramp));
+    }
+
+    // Both halves of one cut route share a carry, paired by the track that
+    // reads it and the signal its key names. Adopted across a recompile the way
+    // a delay line is: a loop that is still sounding should not restart from
+    // silence because something elsewhere in the project changed.
+    feedbackForOp_.assign(numOps, -1);
+    std::map<std::pair<TrackId, int>, int> carryForRoute;
+    for (std::size_t i = 0; i < numOps; ++i) {
+        const auto& op = plan.ops[i];
+        if (op.kind != OpKind::FeedbackSend && op.kind != OpKind::FeedbackReturn)
+            continue;
+
+        const std::pair route{op.key.trackId, op.key.index};
+        if (const auto found = carryForRoute.find(route); found != carryForRoute.end()) {
+            feedbackForOp_[i] = found->second;
+            continue;
+        }
+
+        std::shared_ptr<FeedbackCarry> carry;
+        if (const auto from = carriedFrom(i); from != INVALID_OP_ID)
+            if (const auto& adopted = previous->feedbackCarryFor(from);
+                adopted != nullptr &&
+                adopted->hasConfiguration(context_.numChannels, context_.maxBlockSize)) {
+                carry = adopted;
+                ++carriedFeedbackCarries_;
+            }
+
+        if (carry == nullptr) {
+            carry = std::make_shared<FeedbackCarry>();
+            carry->prepare(context_.numChannels, context_.maxBlockSize);
+        }
+
+        feedbackForOp_[i] = static_cast<int>(feedbackCarries_.size());
+        carryForRoute.emplace(route, feedbackForOp_[i]);
+        feedbackCarries_.push_back(std::move(carry));
     }
 
     silence_.setSize(context_.numChannels, context_.maxBlockSize, false, true, false);
@@ -1593,10 +1709,21 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // transposed, or it is not and this pad never sees it.
             auto& out = midiOut(id, 0);
             out.clear();
-            setMidiOutPanic(id, 0, !value.silent && midiInPanic(op.inputs[0]));
 
-            if (value.silent)
+            // Going silent is itself an all-notes-off. Nothing downstream will
+            // ever see the note-offs for what already went through, and the
+            // monitor switch over an input route no longer recompiles, so the
+            // reroute machinery is not there to cover it either (#2612).
+            auto& passing = *notePassing_[i];
+            const bool wasPassing =
+                passing.exchange(value.silent ? 0 : 1, std::memory_order_relaxed) != 0;
+
+            if (value.silent) {
+                setMidiOutPanic(id, 0, wasPassing);
                 break;
+            }
+
+            setMidiOutPanic(id, 0, midiInPanic(op.inputs[0]));
 
             const int low = op.noteGateLow;
             const int high = op.noteGateHigh;
@@ -1896,6 +2023,36 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
             }
+            break;
+        }
+
+        case OpKind::FeedbackReturn: {
+            // Read before this block's send fills it, which is the whole of the
+            // one-block carry: a return has no dependencies and its send waits
+            // on the source track, so the schedule cannot put them the other
+            // way round (#2612).
+            const auto carry = feedbackForOp_[i];
+            auto out = audioOut(id, 0, numSamples);
+            if (carry < 0)
+                out.clear();
+            else
+                feedbackCarries_[static_cast<std::size_t>(carry)]->read(out, numSamples);
+            break;
+        }
+
+        case OpKind::FeedbackSend: {
+            const auto carry = feedbackForOp_[i];
+            if (carry < 0)
+                break;
+
+            auto& storage = *feedbackCarries_[static_cast<std::size_t>(carry)];
+            if (!op.inputs[0].valid()) {
+                storage.clear();
+                break;
+            }
+
+            storage.write(juce::dsp::AudioBlock<const float>(audioIn(op.inputs[0], numSamples)),
+                          numSamples);
             break;
         }
 
