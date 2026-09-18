@@ -102,6 +102,11 @@ std::optional<std::size_t> inPlaceInputOf(const PlanOp& op) {
         // rather than what it was handed, so neither has an input to write over.
         case OpKind::InsertSend:
         case OpKind::InsertReturn:
+        // A feedback carry is the same shape, a block apart instead of a cable
+        // apart: the send writes into storage and the return reads what was
+        // there before this block started.
+        case OpKind::FeedbackSend:
+        case OpKind::FeedbackReturn:
             return std::nullopt;
     }
 

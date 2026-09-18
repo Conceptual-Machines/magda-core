@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <map>
 #include <ostream>
+#include <set>
 #include <tuple>
 
 namespace magda::engine {
@@ -45,6 +46,13 @@ int arityOf(OpKind kind) {
             return 2;  // what leaves the machine: audio, MIDI
         case OpKind::InsertReturn:
             return 0;  // what comes back is a source, like a live input
+        case OpKind::FeedbackSend:
+            // The signal the carry holds, and the return that reads it: the
+            // second is ordering only, so every schedule reads last block's
+            // carry before this block overwrites it.
+            return 2;
+        case OpKind::FeedbackReturn:
+            return 0;  // last block's carry, which nothing in this block produced
     }
     return -1;
 }
@@ -93,6 +101,10 @@ const char* toString(OpKind kind) {
             return "InsertSend";
         case OpKind::InsertReturn:
             return "InsertReturn";
+        case OpKind::FeedbackSend:
+            return "FeedbackSend";
+        case OpKind::FeedbackReturn:
+            return "FeedbackReturn";
     }
     return "?";
 }
@@ -161,6 +173,12 @@ const char* toString(OpRole role) {
             return "insertSend";
         case OpRole::InsertReturn:
             return "insertReturn";
+        case OpRole::FeedbackSend:
+            return "feedbackSend";
+        case OpRole::FeedbackReturn:
+            return "feedbackReturn";
+        case OpRole::InputRouteGate:
+            return "inputRouteGate";
         case OpRole::HardwareOutput:
             return "hardwareOutput";
         case OpRole::MixInputDelay:
@@ -370,6 +388,24 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
     // here rather than a convention the compiler happens to keep.
     std::map<OpKey, OpId> keyOwners;
 
+    // Which carries hold a live signal, by the key of the return that reads
+    // them. Collected up front because a send sits after the return it fills,
+    // so the liveness check below has nothing to look at by the time it runs.
+    std::set<OpKey> liveCarries;
+    for (const auto& op : plan.ops) {
+        if (op.kind != OpKind::FeedbackSend || op.inputs.empty() || !op.inputs.front().valid())
+            continue;
+
+        const auto filled = op.inputs.front().op;
+        if (filled < 0 || filled >= numOps ||
+            plan.ops[static_cast<std::size_t>(filled)].liveness != LivenessDomain::Live)
+            continue;
+
+        auto key = op.key;
+        key.role = OpRole::FeedbackReturn;
+        liveCarries.insert(key);
+    }
+
     for (OpId i = 0; i < numOps; ++i) {
         const auto& op = plan.ops[static_cast<std::size_t>(i)];
         const auto label =
@@ -384,11 +420,42 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         // An insert's send is a sink for the same reason the hardware output is:
         // what it writes leaves the machine, so nothing downstream reads it and
         // an op with no outputs is exactly what it is.
+        // A feedback send is a sink on the same terms: what it writes is read a
+        // block later, so nothing downstream of it reads it in this one.
         const bool sink = op.kind == OpKind::Output || op.kind == OpKind::ModSource ||
-                          op.kind == OpKind::InsertSend;
+                          op.kind == OpKind::InsertSend || op.kind == OpKind::FeedbackSend;
         if (op.outputs.empty() != sink)
             problems.push_back(label + (op.outputs.empty() ? "no output port"
                                                            : "is a sink and must have no ports"));
+
+        // A carry is audio, and the executor reads its ports as audio without
+        // asking. A MIDI one would index the audio arena with a MIDI slot, so
+        // the shape is enforced rather than assumed.
+        if (op.kind == OpKind::FeedbackReturn &&
+            (op.outputs.size() != 1 || op.outputs.front().kind != SignalKind::Audio))
+            problems.push_back(label + "a feedback return carries audio on one port");
+
+        if (op.kind == OpKind::FeedbackSend) {
+            if (op.key.role != OpRole::FeedbackSend)
+                problems.push_back(label + "a feedback send must carry the feedback send role");
+
+            // The second input pairs the send with its own return, which is
+            // what orders the read before the write. Bounds are checked here
+            // rather than left to the generic pass below, which runs after
+            // this and would be too late to stop the dereference.
+            const auto paired = op.inputs.size() > 1 ? op.inputs[1] : PortRef{};
+            if (paired.valid() && paired.op >= 0 && paired.op < i) {
+                auto expected = op.key;
+                expected.role = OpRole::FeedbackReturn;
+
+                const auto& returned = plan.ops[static_cast<std::size_t>(paired.op)];
+                if (returned.kind != OpKind::FeedbackReturn || !(returned.key == expected))
+                    problems.push_back(label +
+                                       "input 1 is not the feedback return this send pairs with");
+            } else if (!paired.valid()) {
+                problems.push_back(label + "a feedback send must name the return it pairs with");
+            }
+        }
 
         const auto arity = arityOf(op.kind);
         if (arity >= 0 && static_cast<int>(op.inputs.size()) != arity)
@@ -513,12 +580,28 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
             problems.push_back(label + "is deterministic but reads live op " +
                                std::to_string(liveInput->op));
 
+        // The same rule for the one op that reads nothing and still carries
+        // something: a return whose send fills it with live audio is live, and
+        // saying otherwise would let every deterministic op downstream of it
+        // claim it may be rendered ahead of a hardware input.
+        if (op.kind == OpKind::FeedbackReturn &&
+            liveCarries.contains(op.key) != (op.liveness == LivenessDomain::Live))
+            problems.push_back(label +
+                               (op.liveness == LivenessDomain::Live
+                                    ? "is live but its send fills it with deterministic audio"
+                                    : "is deterministic but its send fills it with live audio"));
+
         // The converse matters just as much and is harder to notice, because
         // over-tagging is semantically harmless: it only shrinks what the
         // anticipative executor is allowed to precompute. Liveness has to come
         // from somewhere, and only the input sources originate it.
+        // A carry originates liveness the same way, one block removed: the
+        // return reads nothing, so what justifies it is the send that fills it,
+        // which is emitted later and cannot be reached by the walk above.
+        const auto carriesLive = op.kind == OpKind::FeedbackReturn && liveCarries.contains(op.key);
+
         const auto isLiveSource = op.kind == OpKind::AudioInput || op.kind == OpKind::MidiInput;
-        if (op.liveness == LivenessDomain::Live && !isLiveSource && !readsLive)
+        if (op.liveness == LivenessDomain::Live && !isLiveSource && !readsLive && !carriesLive)
             problems.push_back(label + "is live but reads nothing live and is not an input source");
     }
 
