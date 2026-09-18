@@ -411,6 +411,10 @@ struct DeviceInfo {
 
     bool canReceiveMidi = false;  // true if TE plugin accepts MIDI input (for cross-track MIDI)
     bool producesMidi = false;    // true if the live plugin can output MIDI
+    /// A MAGDA device's DeviceProperties::forwardsMidiInput, copied from its
+    /// declaration whenever it enters the model. Such a device has no MIDI thru:
+    /// thru would bring back the notes it consumed (#2417).
+    bool forwardsMidiInput = false;
 
     // Audio channels the plugin reported (1 = mono, 2 = stereo), read from the
     // live plugin via getChannelNames. Stereo until it is asked. The chain
@@ -425,6 +429,7 @@ struct DeviceInfo {
     // plugin so downstream devices can receive both the original input and the
     // plugin's generated MIDI. Off means plugin MIDI output only; on means merge
     // raw input plus plugin output. Defaults on to preserve historic passthrough.
+    // Ignored on a device that forwardsMidiInput.
     bool midiInThru = true;
 
     // Multi-output configuration (for instruments with >2 output channels)

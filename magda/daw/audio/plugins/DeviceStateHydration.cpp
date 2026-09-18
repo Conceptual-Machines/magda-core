@@ -214,7 +214,7 @@ bool hydrateParametersFromDeviceState(DeviceInfo& device, const Provenance& prov
 
 void completeDeviceParameters(DeviceInfo& device, const Provenance& provenance) {
     hydrateParametersFromDeviceState(device, provenance);
-    seedDeclaredParameters(device);
+    applyDeviceDeclaration(device);
 }
 
 void hydrateChainElements(std::vector<ChainElement>& elements, const Provenance& provenance) {

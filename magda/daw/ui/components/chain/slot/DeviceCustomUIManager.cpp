@@ -816,7 +816,14 @@ void DeviceCustomUIManager::refreshParameterValues(const magda::DeviceInfo& devi
     if (arpeggiatorUI_ &&
         device.pluginId.equalsIgnoreCase(daw::audio::ArpeggiatorPlugin::xmlTypeName))
         arpeggiatorUI_->updateFromParameters(device.parameters);
-    refreshSequencerState(device);
+    // Parameters only. The slot's copy of the device is as old as the slot, so
+    // its pattern is stale after any edit; the faceplates poll the device for that.
+    if (stepSequencerUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::StepSequencerPlugin::xmlTypeName))
+        stepSequencerUI_->updateFromParameters(device.parameters);
+    if (polyStepSequencerUI_ &&
+        device.pluginId.equalsIgnoreCase(daw::audio::PolyStepSequencerPlugin::xmlTypeName))
+        polyStepSequencerUI_->updateFromParameters(device.parameters);
     if (impulseResponseUI_ && device.pluginId == daw::audio::MagdaConvolutionPlugin::xmlTypeName)
         impulseResponseUI_->updateFromParameters(device.parameters);
     if (fourOscUI_ && device.pluginId.containsIgnoreCase("4osc"))

@@ -94,7 +94,7 @@ DeviceMidiCapabilities fallbackCapabilitiesForDevice(const DeviceInfo& device) {
         device.deviceType == DeviceType::Effect || device.sidechainPort.takesAudio();
     capabilities.hasAudioOutput = device.isInstrument || device.deviceType == DeviceType::Effect;
     capabilities.supportsMidiInputThruToggle =
-        capabilities.hasMidiInput && capabilities.hasMidiOutput;
+        capabilities.hasMidiInput && capabilities.hasMidiOutput && !device.forwardsMidiInput;
     capabilities.supportsExternalMidiInputRouting = device.canReceiveMidi;
     return capabilities;
 }
@@ -107,7 +107,7 @@ DeviceMidiCapabilities mergeSnapshotWithDevice(const PluginCapabilitySnapshot& s
     capabilities.hasAudioInput = snapshot.hasAudioInput;
     capabilities.hasAudioOutput = snapshot.hasAudioOutput;
     capabilities.supportsMidiInputThruToggle =
-        capabilities.hasMidiInput && capabilities.hasMidiOutput;
+        capabilities.hasMidiInput && capabilities.hasMidiOutput && !device.forwardsMidiInput;
     capabilities.supportsExternalMidiInputRouting = !device.isInstrument && snapshot.hasMidiInput;
     return capabilities;
 }

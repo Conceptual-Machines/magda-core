@@ -8,9 +8,12 @@
 #include "magda/daw/audio/plugins/FaustInstrumentPlugin.hpp"
 #include "magda/daw/audio/plugins/FaustParamPool.hpp"
 #include "magda/daw/audio/plugins/FaustPlugin.hpp"
+#include "magda/daw/audio/plugins/StepSequencerPlugin.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
+#include "magda/daw/core/ChainRoutingModel.hpp"
 #include "magda/daw/core/ChainWalk.hpp"
 #include "magda/daw/core/DeviceState.hpp"
+#include "magda/daw/core/PluginCapabilities.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 
 using namespace magda;
@@ -26,7 +29,7 @@ namespace hydration = magda::daw::audio::device_state_hydration;
 
 namespace {
 
-using magda::daw::audio::seedDeclaredParameters;
+using magda::daw::audio::applyDeviceDeclaration;
 
 DeviceInfo internalDevice(const juce::String& pluginId) {
     DeviceInfo device;
@@ -44,7 +47,7 @@ TEST_CASE("Seeding gives the model every parameter a device declares", "[device-
     auto device = internalDevice(kPolySynth);
     REQUIRE(device.parameters.empty());
 
-    REQUIRE(seedDeclaredParameters(device));
+    REQUIRE(applyDeviceDeclaration(device));
     REQUIRE_FALSE(device.parameters.empty());
 
     // Addressed by the index the device declared, and carrying the metadata the
@@ -61,13 +64,13 @@ TEST_CASE("Seeding gives a Faust device the controls its patch has, not its empt
           "[device-catalog-params][2659]") {
     // A fresh effect runs the passthrough, which has no controls at all.
     auto effect = internalDevice(magda::daw::audio::FaustPlugin::xmlTypeName);
-    seedDeclaredParameters(effect);
+    applyDeviceDeclaration(effect);
     CHECK(effect.parameters.empty());
 
     // A fresh instrument runs its default synth: that patch's controls, then the host's voice
     // settings.
     auto instrument = internalDevice(magda::daw::audio::FaustInstrumentPlugin::xmlTypeName);
-    REQUIRE(seedDeclaredParameters(instrument));
+    REQUIRE(applyDeviceDeclaration(instrument));
     const auto poolSlots = std::ranges::count_if(instrument.parameters, [](const auto& param) {
         return param.paramIndex < magda::daw::audio::FaustParamPool::kSize;
     });
@@ -87,7 +90,7 @@ TEST_CASE("Seeding leaves a parameter the model already carries alone", "[device
     edited.currentValue = 2.0f;
     device.parameters.push_back(edited);
 
-    REQUIRE(seedDeclaredParameters(device));
+    REQUIRE(applyDeviceDeclaration(device));
 
     const auto* kept = device.findParameterByIndex(0);
     REQUIRE(kept != nullptr);
@@ -95,14 +98,14 @@ TEST_CASE("Seeding leaves a parameter the model already carries alone", "[device
     CHECK(device.parameters.size() > 1);
 
     // And a second pass finds nothing left to add.
-    CHECK_FALSE(seedDeclaredParameters(device));
+    CHECK_FALSE(applyDeviceDeclaration(device));
 }
 
 TEST_CASE("Seeding is not for a plugin somebody else shipped", "[device-catalog-params]") {
     auto device = internalDevice(kPolySynth);
     device.format = PluginFormat::VST3;
 
-    CHECK_FALSE(seedDeclaredParameters(device));
+    CHECK_FALSE(applyDeviceDeclaration(device));
     CHECK(device.parameters.empty());
 }
 
@@ -123,6 +126,31 @@ TEST_CASE("A saved value survives the seed that completes its array", "[device-c
     REQUIRE(gate != nullptr);
     CHECK(gate->currentValue == Catch::Approx(0.8f));
     CHECK(device.parameters.size() > 1);
+}
+
+TEST_CASE("The arpeggiator has no MIDI thru, whatever its thru flag says",
+          "[device-catalog-params][midi-thru]") {
+    // It hands on everything but the notes it consumed, so thru would only
+    // bring back the chord it is arpeggiating.
+    auto arp = internalDevice(daw::audio::ArpeggiatorPlugin::xmlTypeName);
+    arp.deviceType = DeviceType::MIDI;
+    REQUIRE(arp.midiInThru);
+
+    REQUIRE(applyDeviceDeclaration(arp));
+    CHECK(arp.forwardsMidiInput);
+    CHECK_FALSE(supportsMidiSourceToggle(arp));
+
+    const auto node = routing::makeRoutingNode(arp);
+    CHECK(node.outputsPluginMidi());
+    CHECK_FALSE(node.passesRawMidiInput());
+
+    // A step sequencer consumes nothing, and keeps the choice.
+    auto sequencer = internalDevice(daw::audio::StepSequencerPlugin::xmlTypeName);
+    sequencer.deviceType = DeviceType::MIDI;
+    applyDeviceDeclaration(sequencer);
+    CHECK_FALSE(sequencer.forwardsMidiInput);
+    CHECK(supportsMidiSourceToggle(sequencer));
+    CHECK(routing::makeRoutingNode(sequencer).passesRawMidiInput());
 }
 
 TEST_CASE("A device added to a track takes a parameter write",
