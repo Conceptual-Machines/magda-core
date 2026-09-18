@@ -2140,7 +2140,7 @@ DeviceInfo TrackManager::prepareNewDevice(TrackId trackId, const DeviceInfo& dev
     retargetPadLinks(newDevice, trackId, ids);
 
     applyCachedCapabilitiesToDevice(newDevice);
-    daw::audio::seedDeclaredParameters(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
     stampDefaultKitIfMissing(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;

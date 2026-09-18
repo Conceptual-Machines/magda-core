@@ -2182,7 +2182,7 @@ DeviceId TrackManager::addDeviceToPostFx(TrackId trackId, const DeviceInfo& devi
     DeviceInfo newDevice = device;
     newDevice.id = nextPostFxDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
-    daw::audio::seedDeclaredParameters(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
 
@@ -2254,7 +2254,7 @@ DeviceId TrackManager::addDeviceToMixerAnalysis(TrackId trackId, const DeviceInf
     DeviceInfo newDevice = device;
     newDevice.id = nextMixerAnalysisDeviceId_++;
     applyCachedCapabilitiesToDevice(newDevice);
-    daw::audio::seedDeclaredParameters(newDevice);
+    daw::audio::applyDeviceDeclaration(newDevice);
     if (daw::audio::isInternalAnalysisPlugin(newDevice.pluginId))
         newDevice.deviceType = DeviceType::Analysis;
     track->chain.mixerAnalysisElements.push_back(PostFxChainElement{newDevice});

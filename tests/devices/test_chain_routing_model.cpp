@@ -81,6 +81,19 @@ TEST_CASE("ChainRoutingModel models generic MIDI source and thru modes", "[chain
     CHECK_FALSE(plan.nodes[4].outputsPluginMidi());
 }
 
+TEST_CASE("ChainRoutingModel gives a device that forwards its input no thru",
+          "[chain][routing][midi-thru]") {
+    auto arp = makeDevice(15);
+    arp.deviceType = magda::DeviceType::MIDI;
+    arp.midiInThru = true;
+    arp.forwardsMidiInput = true;
+
+    const auto node = magda::routing::makeRoutingNode(arp);
+    CHECK(node.replacesChainMidi());
+    CHECK_FALSE(node.passesRawMidiInput());
+    CHECK(node.outputsPluginMidi());
+}
+
 TEST_CASE("ChainRoutingModel compiles the same MIDI policy for rack chains", "[chain][routing]") {
     magda::ChainInfo chain;
     chain.id = 200;

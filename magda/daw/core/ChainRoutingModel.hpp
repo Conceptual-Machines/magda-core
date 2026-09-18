@@ -94,8 +94,11 @@ inline ChainRoutingNode makeRoutingNode(const DeviceInfo& device) {
         // every one replaces the host's buffer with what the plugin declared --
         // so a host that offers thru offers the raw stream itself, and a device
         // that also passed its input on would make every note a pair (#2345).
-        node.midiOutput = device.midiInThru ? MidiOutputPolicy::MergeRawInputAndPluginOutput
-                                            : MidiOutputPolicy::PluginOutputOnly;
+        // A device that forwards its input has already passed on all but the
+        // notes it consumed, so thru would only bring those back.
+        node.midiOutput = device.midiInThru && !device.forwardsMidiInput
+                              ? MidiOutputPolicy::MergeRawInputAndPluginOutput
+                              : MidiOutputPolicy::PluginOutputOnly;
     } else {
         node.midiOutput = MidiOutputPolicy::RawInputOnly;
     }

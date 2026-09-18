@@ -31,11 +31,13 @@ std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
 juce::ValueTree deviceStateTree(const juce::String& savedState);
 
 /**
- * @brief Append the declared parameters `DeviceInfo::parameters` is missing (#2613).
+ * @brief Copy what a registered device declares onto its model record.
  *
- * Each at its own paramIndex and default value; existing entries keep their
- * values. Returns true when the device was changed.
+ * Appends the declared parameters `DeviceInfo::parameters` is missing (#2613),
+ * each at its own paramIndex and default value, and sets
+ * `DeviceInfo::forwardsMidiInput`. Existing parameters keep their values.
+ * Returns true when the device was changed.
  */
-bool seedDeclaredParameters(magda::DeviceInfo& device);
+bool applyDeviceDeclaration(magda::DeviceInfo& device);
 
 }  // namespace magda::daw::audio

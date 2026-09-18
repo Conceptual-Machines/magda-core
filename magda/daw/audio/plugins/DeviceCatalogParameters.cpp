@@ -60,13 +60,17 @@ std::unique_ptr<MagdaDevice> createDetachedDevice(const juce::String& pluginId,
     return device;
 }
 
-bool seedDeclaredParameters(magda::DeviceInfo& device) {
+bool applyDeviceDeclaration(magda::DeviceInfo& device) {
     if (device.format != magda::PluginFormat::Internal)
         return false;
 
     const auto declared = createDetachedDevice(device.pluginId, device.pluginState);
     if (declared == nullptr)
         return false;
+
+    const bool forwards = declared->properties().forwardsMidiInput;
+    const bool forwardingChanged = device.forwardsMidiInput != forwards;
+    device.forwardsMidiInput = forwards;
 
     bool added = false;
     int slot = 0;
@@ -93,7 +97,7 @@ bool seedDeclaredParameters(magda::DeviceInfo& device) {
                              return a.paramIndex < b.paramIndex;
                          });
 
-    return added;
+    return added || forwardingChanged;
 }
 
 }  // namespace magda::daw::audio
