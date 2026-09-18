@@ -38,9 +38,11 @@ struct CapturedRun {
     SlotKey key;
 
     /// Which handle of @ref key played it. The slot can be refilled before this
-    /// is collected, so this rather than the slot is what says which material
-    /// sounded; the host resolves it against what it published (#2464 review).
+    /// is collected, so the host pairs this with @ref source rather than looking
+    /// up whatever occupies the slot now.
     std::uint64_t incarnation = 0;
+
+    CaptureSource source;
 
     /// Where the run began on the timeline: the beat the launch fired on, which
     /// is where the clip goes.
@@ -50,8 +52,18 @@ struct CapturedRun {
     /// looped inside is one span rather than a negative one.
     double lengthBeats = 0.0;
 
+    /// Phase into the source run where this captured span begins.
+    double offsetBeats = 0.0;
+
     /// The sample it began on. Runs launched together share it.
     SamplePosition origin;
+};
+
+/** @brief Source material still sounding in the Session launcher. */
+struct CapturedSourceRef {
+    SlotKey key;
+    std::uint64_t incarnation = 0;
+    CaptureSource source;
 };
 
 class SessionCapture {
@@ -91,6 +103,9 @@ class SessionCapture {
      */
     void arm();
 
+    /** @brief Capture sounding runs from the lane's current audio boundary. */
+    void armFromCurrent();
+
     /// Stop, ending everything still being captured where the last drain said
     /// the lane had reached (SlotRunQueue::drain).
     void disarm();
@@ -98,7 +113,7 @@ class SessionCapture {
     /// The beat the last @ref update was told the lane had reached. What a
     /// disarm ends a run at, and what says how far this has been told.
     double reached() const {
-        return reached_;
+        return reached_.monotonicBeat;
     }
 
     bool armed() const {
@@ -107,6 +122,9 @@ class SessionCapture {
 
     /// The runs captured since the last call, and forget them.
     std::vector<CapturedRun> collect();
+
+    /// Source material which must remain resolvable for an in-flight run.
+    std::vector<CapturedSourceRef> activeSources() const;
 
     /// Runs sounding right now, whether or not they are being captured.
     std::size_t sounding() const {
@@ -128,9 +146,16 @@ class SessionCapture {
 
     /// A run in flight: where it began, and whether it is being captured.
     struct Run {
+        CaptureSource source;
         SamplePosition origin;
         double startBeat = 0.0;
         double startMonotonicBeat = 0.0;
+        double offsetBeats = 0.0;
+
+        SamplePosition captureOrigin;
+        double captureStartBeat = 0.0;
+        double captureStartMonotonicBeat = 0.0;
+        double captureOffsetBeats = 0.0;
         bool capturing = false;
     };
 
@@ -140,6 +165,12 @@ class SessionCapture {
     /// End @p run at @p monotonicBeat, keeping it if it was being captured.
     void finish(const RunKey& of, const Run& run, double monotonicBeat);
 
+    /// Start one span at the original launch, preserving @ref arm semantics.
+    static void captureFromOrigin(Run& run);
+
+    /// Start one span at the later of the run and the drained audio boundary.
+    static void captureFrom(Run& run, const SlotRunBoundary& boundary);
+
     SlotRunQueue& lane_;
 
     std::map<RunKey, Run> inFlight_;
@@ -147,7 +178,7 @@ class SessionCapture {
     std::vector<CapturedRun> captured_;
 
     /// The beat the last drain reported reaching.
-    double reached_ = 0.0;
+    SlotRunBoundary reached_;
 
     bool armed_ = false;
 };

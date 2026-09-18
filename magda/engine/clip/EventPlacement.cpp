@@ -320,14 +320,15 @@ double readingPositionAt(const AudioClipPlayback& clip, const AudioEventPlayback
     // Under warp this is what the markers measure rather than what is read: the
     // map turns the one into the other, and it is the only thing that can.
     double elapsed = 0.0;
+    const auto& envelope = clip.envelopeSpan();
 
     if (usesBeatFace(event)) {
-        const auto at = ramped(clip, beat, clip.span.beats.start, clip.span.beats.end,
+        const auto at = ramped(clip, beat, envelope.beats.start, envelope.beats.end,
                                clip.fadeInBeats, clip.fadeOutBeats);
 
         elapsed = (at - event.span.beats.start) * 60.0 / event.interpBpm;
     } else {
-        const auto at = ramped(clip, seconds, clip.span.seconds.start, clip.span.seconds.end,
+        const auto at = ramped(clip, seconds, envelope.seconds.start, envelope.seconds.end,
                                clip.fadeInSeconds, clip.fadeOutSeconds);
 
         elapsed = (at - event.span.seconds.start) * constantRate(event);

@@ -102,8 +102,10 @@ void dumpEvent(std::ostringstream& out, const AudioEventPlayback& event) {
 }
 
 void dumpAudioClip(std::ostringstream& out, const AudioClipPlayback& clip) {
-    out << "  audio clip=" << clip.clipId << " span=" << spanText(clip.span)
-        << " fade=" << fixed(clip.fadeInSeconds, 3) << "/" << fixed(clip.fadeOutSeconds, 3)
+    out << "  audio clip=" << clip.clipId << " span=" << spanText(clip.span);
+    if (clip.envelope)
+        out << " envelope=" << spanText(*clip.envelope);
+    out << " fade=" << fixed(clip.fadeInSeconds, 3) << "/" << fixed(clip.fadeOutSeconds, 3)
         << " curve=" << curveName(clip.fadeInCurve) << "/" << curveName(clip.fadeOutCurve)
         << " behaviour=" << clip.fadeInBehaviour << "/" << clip.fadeOutBehaviour
         << " gain=" << fixed(clip.gainDb, 1) << " pan=" << fixed(clip.pan, 2)

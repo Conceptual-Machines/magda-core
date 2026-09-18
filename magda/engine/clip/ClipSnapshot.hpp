@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +12,7 @@
 #include "core/TrackTypes.hpp"
 #include "core/TypeIds.hpp"
 #include "launch/FollowActions.hpp"
+#include "launch/SlotRuns.hpp"
 #include "transport/TimeDomains.hpp"
 
 /**
@@ -186,6 +188,14 @@ struct AudioClipPlayback {
     SnapshotSpan span;
     std::vector<SnapshotSpan> silenced;
 
+    /// The source clip's full envelope when @ref span is a captured window.
+    /// Empty for ordinary clips, whose audible span remains the envelope.
+    std::optional<SnapshotSpan> envelope;
+
+    const SnapshotSpan& envelopeSpan() const {
+        return envelope ? *envelope : span;
+    }
+
     /**
      * @brief Fades, already resolved.
      *
@@ -277,6 +287,8 @@ struct MidiClipPlayback {
  */
 struct SessionSlotPlayback {
     int sceneIndex = -1;
+
+    CaptureSource captureSource;
 
     /// Whether this slot is armed to record into (#2464). An armed empty slot
     /// is in the snapshot so that it gets a handle: its launch is quantized

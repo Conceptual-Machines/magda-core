@@ -178,6 +178,10 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.clipId = clip.id;
             audio.span = span;
             audio.silenced = std::move(silenced);
+            if (const auto& window = clip.audio().envelopeWindow) {
+                const auto start = clip.placement.startBeat + window->startBeat;
+                audio.envelope = spanFromBeats(start, start + window->lengthBeats, tempoMap);
+            }
 
             // The rule is the model's, the seconds are this map's. Which edge a
             // crossfade covers, and over which beats, comes from
@@ -201,8 +205,11 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             double fadeIn = fades.xfIn ? crossfadeSeconds(*fades.xfIn) : primary.fadeInSeconds;
             double fadeOut = fades.xfOut ? crossfadeSeconds(*fades.xfOut) : primary.fadeOutSeconds;
 
-            const double clipSeconds = tempoMap.beatToTime(clip.placement.endBeat()) -
-                                       tempoMap.beatToTime(clip.placement.startBeat);
+            const auto& envelope = audio.envelopeSpan();
+            const double clipSeconds = audio.envelope
+                                           ? envelope.seconds.length()
+                                           : tempoMap.beatToTime(clip.placement.endBeat()) -
+                                                 tempoMap.beatToTime(clip.placement.startBeat);
             if (const double total = fadeIn + fadeOut; clipSeconds > 0.0 && total > clipSeconds) {
                 const double scale = clipSeconds / total;
                 fadeIn *= scale;
@@ -213,11 +220,12 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
             audio.fadeOutSeconds = fadeOut;
 
             // Both faces of the same two lengths, converted here because the
-            // audio thread has no tempo map to convert them with. Off the ends
-            // of the audible span rather than of the placement, because that is
-            // what a fade shapes (ClipVoice.hpp).
-            audio.fadeInBeats = tempoMap.timeToBeat(span.seconds.start + fadeIn) - span.beats.start;
-            audio.fadeOutBeats = span.beats.end - tempoMap.timeToBeat(span.seconds.end - fadeOut);
+            // audio thread has no tempo map. A captured window retains the
+            // source envelope, while an ordinary clip uses its audible span.
+            audio.fadeInBeats =
+                tempoMap.timeToBeat(envelope.seconds.start + fadeIn) - envelope.beats.start;
+            audio.fadeOutBeats =
+                envelope.beats.end - tempoMap.timeToBeat(envelope.seconds.end - fadeOut);
 
             // The clip's edges are the primary event's edges, so they carry its
             // curves. A curve that is not one is reported once, below, where
@@ -431,6 +439,10 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
             SessionSlotPlayback slot;
             slot.sceneIndex = clip.sceneIndex;
+            slot.captureSource = {.clipId = clip.id,
+                                  .revision = lane.captureRevisions.contains(clip.id)
+                                                  ? lane.captureRevisions.at(clip.id)
+                                                  : 0};
             slot.lengthBeats = clip.sessionCycleBeats(tempoMap.bpmAt(0.0));
             if (clip.loopEnabled)
                 slot.loopBeats = slot.lengthBeats;

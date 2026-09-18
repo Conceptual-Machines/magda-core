@@ -404,6 +404,7 @@ std::shared_ptr<const LaunchHandleTable> RuntimeStateStore::publishHandles(
                                                               .handle = made.handle.get(),
                                                               .incarnation = made.incarnation,
                                                               .tap = made.tap.get(),
+                                                              .runSource = &made.runSource,
                                                               .follow = slot.follow});
         }
 

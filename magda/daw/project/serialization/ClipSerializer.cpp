@@ -1,3 +1,5 @@
+#include <cmath>
+
 #include "ProjectSerializer.hpp"
 #include "SerializationHelpers.hpp"
 
@@ -411,6 +413,13 @@ void migrateLegacyAudioClip(const LegacyAudioSource& v1, const LegacyAudioFields
 
 /// Takes and comp sections are unchanged by the event split.
 void readAudioTakesAndComp(const juce::DynamicObject& audioObj, ClipInfo& outClip) {
+    if (auto* window = audioObj.getProperty("envelopeWindow").getDynamicObject()) {
+        const double startBeat = window->getProperty("startBeat");
+        const double lengthBeats = window->getProperty("lengthBeats");
+        if (std::isfinite(startBeat) && std::isfinite(lengthBeats) && lengthBeats > 0.0)
+            outClip.audio().envelopeWindow = ClipPlacement{startBeat, lengthBeats};
+    }
+
     auto takesVar = audioObj.getProperty("takes");
     if (takesVar.isArray()) {
         for (const auto& takeVar : *takesVar.getArray()) {
@@ -561,6 +570,13 @@ juce::var ProjectSerializer::serializeClipInfo(const ClipInfo& clip) {
             eventsArray.add(serializeAudioEvent(event));
         audioObj->setProperty("events", eventsArray);
         audioObj->setProperty("nextEventId", clip.audio().nextEventId);
+
+        if (const auto& window = clip.audio().envelopeWindow) {
+            auto* windowObj = new juce::DynamicObject();
+            windowObj->setProperty("startBeat", window->startBeat);
+            windowObj->setProperty("lengthBeats", window->lengthBeats);
+            audioObj->setProperty("envelopeWindow", juce::var(windowObj));
+        }
 
         // Loop-record takes (one source file per pass). Persist so the take
         // alternates survive save/reload; the engine rebuilds them on sync.

@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "core/ClipTypes.hpp"
 #include "launch/LaunchHandle.hpp"
 
 /**
@@ -23,6 +24,22 @@
 
 namespace magda::engine {
 
+/// The model material a run rendered. Revision distinguishes edits which keep
+/// the same clip ID; the host owns the revision and its immutable model copy.
+struct CaptureSource {
+    ClipId clipId = INVALID_CLIP_ID;
+    std::uint64_t revision = 0;
+
+    bool operator==(const CaptureSource&) const = default;
+};
+
+/// The last complete block boundary the audio thread published with its edges.
+struct SlotRunBoundary {
+    SamplePosition at;
+    double timelineBeat = 0.0;
+    double monotonicBeat = 0.0;
+};
+
 /** @brief One edge of one slot's run. */
 struct SlotRunEvent {
     enum class Kind : std::uint8_t { began, ended };
@@ -33,6 +50,12 @@ struct SlotRunEvent {
     /// Which handle of @ref key it happened on, so a capture cannot join a run
     /// of the clip that replaced the one it was following.
     std::uint64_t incarnation = 0;
+
+    CaptureSource source;
+
+    /// Phase into @ref source at this run edge. Non-zero when a material edit
+    /// splits a handle without restarting its playback position.
+    double offsetBeats = 0.0;
 
     /// The transport sample it happened on. Two runs that began on this sample
     /// began together, whatever the timeline did in between.
@@ -54,6 +77,8 @@ struct SlotRunEvent {
 class SlotRunQueue {
     static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
                   "a run lane's cursors are written on the audio thread and must not take a lock");
+    static_assert(std::atomic<std::int64_t>::is_always_lock_free,
+                  "the lane's sample boundary is written on the audio thread as well");
     static_assert(std::atomic<double>::is_always_lock_free,
                   "the lane's watermark is written on the audio thread as well");
 
@@ -82,23 +107,20 @@ class SlotRunQueue {
      *
      * On the publishing thread. @p fn is called once per edge, in order.
      *
-     * The beat comes back from here rather than being read beside a drain,
-     * because a drain takes its cursor once: a beat read after that cursor can
-     * be a block newer than what was consumed, and a capture ending a run at it
-     * would run past an end still queued. Read before the cursor, every edge up
-     * to it is taken by this same drain, and anything this drain missed happened
-     * after it (#2464 review).
+     * The boundary carries the edge cursor published with it. An edge from the
+     * next block can therefore never be consumed against the previous block's
+     * position, even when the audio thread advances during this drain.
      */
-    template <typename Fn> double drain(const Fn& fn) {
-        const auto until = reached_.load(std::memory_order_acquire);
-        const auto end = written_.load(std::memory_order_acquire);
+    template <typename Fn> SlotRunBoundary drain(const Fn& fn) {
+        const auto until = boundary();
+        const auto end = until.written;
 
         for (auto at = read_; at != end; ++at)
             fn(ring_[static_cast<std::size_t>(at % kCapacity)]);
 
         read_ = end;
         consumed_.store(read_, std::memory_order_release);
-        return until;
+        return until.position;
     }
 
     /**
@@ -110,7 +132,18 @@ class SlotRunQueue {
      * accessor for it to be paired with anything else.
      */
     void reachedBeat(double monotonicBeat) {
-        reached_.store(monotonicBeat, std::memory_order_release);
+        reached({.timelineBeat = monotonicBeat, .monotonicBeat = monotonicBeat});
+    }
+
+    /// Publish all faces of one completed block boundary. Audio thread.
+    void reached(const SlotRunBoundary& boundary) {
+        boundarySequence_.fetch_add(1, std::memory_order_release);
+        std::atomic_thread_fence(std::memory_order_release);
+        boundarySample_.store(boundary.at.sample, std::memory_order_relaxed);
+        boundaryTimeline_.store(boundary.timelineBeat, std::memory_order_relaxed);
+        boundaryMonotonic_.store(boundary.monotonicBeat, std::memory_order_relaxed);
+        boundaryWritten_.store(written_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        boundarySequence_.fetch_add(1, std::memory_order_release);
     }
 
     /// Edges the ring had no room for. Above zero and a capture is missing a
@@ -132,8 +165,35 @@ class SlotRunQueue {
     /// The reader's own cursor.
     std::uint64_t read_ = 0;
 
-    /// How far the audio thread has reported, in monotonic beats.
-    std::atomic<double> reached_{0.0};
+    struct PublishedBoundary {
+        SlotRunBoundary position;
+        std::uint64_t written = 0;
+    };
+
+    /// A publishing-thread seqlock read. The audio writer never waits.
+    PublishedBoundary boundary() const {
+        for (;;) {
+            const auto before = boundarySequence_.load(std::memory_order_acquire);
+            if ((before & 1U) != 0U)
+                continue;
+
+            const PublishedBoundary result{
+                .position = {.at = SamplePosition{boundarySample_.load(std::memory_order_relaxed)},
+                             .timelineBeat = boundaryTimeline_.load(std::memory_order_relaxed),
+                             .monotonicBeat = boundaryMonotonic_.load(std::memory_order_relaxed)},
+                .written = boundaryWritten_.load(std::memory_order_relaxed)};
+            std::atomic_thread_fence(std::memory_order_acquire);
+            const auto after = boundarySequence_.load(std::memory_order_relaxed);
+            if (before == after)
+                return result;
+        }
+    }
+
+    std::atomic<std::uint64_t> boundarySequence_{0};
+    std::atomic<std::int64_t> boundarySample_{0};
+    std::atomic<double> boundaryTimeline_{0.0};
+    std::atomic<double> boundaryMonotonic_{0.0};
+    std::atomic<std::uint64_t> boundaryWritten_{0};
 
     std::atomic<int> overflows_{0};
 };

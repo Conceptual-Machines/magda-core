@@ -276,7 +276,12 @@ class ClipOperations {
         // be updated when the user explicitly changes it, not during tempo-driven resizes.
 
         auto* event = clip.primaryEvent();
-        if (event != nullptr && !event->sourceFilePath().isEmpty()) {
+        if (clip.isAudio() && clip.audio().envelopeWindow.has_value()) {
+            const double deltaBeat = actualDelta * bpm / 60.0;
+            for (auto& audioEvent : clip.audio().events)
+                audioEvent.startBeat -= deltaBeat;
+            clip.audio().envelopeWindow->startBeat -= deltaBeat;
+        } else if (event != nullptr && !event->sourceFilePath().isEmpty()) {
             const bool isAutoTempo = event->autoTempo && event->interpBpm > 0.0 && isValidBpm(bpm);
 
             // Beat mode and manual stretch differ only in how a timeline delta
@@ -930,11 +935,22 @@ class ClipOperations {
         newLengthBeats = juce::jmax(MIN_CLIP_LENGTH * bpm / 60.0, newLengthBeats);
 
         const double oldEndBeat = clip.placement.endBeat();
+        const double newStartBeat = juce::jmax(0.0, oldEndBeat - newLengthBeats);
+
+        if (clip.isAudio() && clip.audio().envelopeWindow.has_value()) {
+            const double deltaBeat = newStartBeat - clip.placement.startBeat;
+            for (auto& event : clip.audio().events)
+                event.startBeat -= deltaBeat;
+            clip.audio().envelopeWindow->startBeat -= deltaBeat;
+            clip.setPlacementBeats(newStartBeat, newLengthBeats);
+            clip.deriveTimesFromBeats(bpm);
+            return;
+        }
+
         clip.setPlacementBeats(clip.placement.startBeat, newLengthBeats);
         clip.deriveTimesFromBeats(bpm);
 
         // Adjust placement start to keep right edge fixed.
-        double newStartBeat = juce::jmax(0.0, oldEndBeat - newLengthBeats);
         clip.setPlacementBeats(newStartBeat, newLengthBeats);
         clip.deriveTimesFromBeats(bpm);
     }

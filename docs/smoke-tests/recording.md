@@ -10,6 +10,8 @@ The next slice has separate
 [Session MIDI slot recording checks](../issues/native-session-midi-recording.md).
 Ownership indicators and mixed Session/Arrangement playback have focused
 [Session ownership checks](../issues/native-session-ownership.md).
+Capturing existing Session performances has focused
+[Session-to-Arrangement checks](../issues/native-session-arrangement-capture.md).
 The wider checklist below also covers audio, Session-to-Arrangement capture,
 count-in, and latency work that is not yet connected to the native app.
 

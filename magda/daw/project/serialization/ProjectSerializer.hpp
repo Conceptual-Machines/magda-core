@@ -6,7 +6,7 @@
 #include "../../core/ClipInfo.hpp"
 #include "../../core/Source.hpp"
 #include "../../core/TrackInfo.hpp"
-#include "ProjectInfo.hpp"
+#include "../ProjectInfo.hpp"
 
 namespace magda {
 

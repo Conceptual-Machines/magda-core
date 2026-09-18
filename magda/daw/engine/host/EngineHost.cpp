@@ -43,6 +43,7 @@
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
 #include "LiveMidiSources.hpp"
+#include "SessionArrangementCapture.hpp"
 #include "SlotLauncher.hpp"
 #include "TrackFreeze.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
@@ -349,6 +350,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// The meters, and the audio thread's side of the trace.
     void timerCallback() override {
         reconcileFinishedSessionTakes();
+        if (sessionCapture_.update())
+            publishClips();
         publishMeters();
         publishDeviceMeters();
         publishRackMeters();
@@ -541,6 +544,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         devices_ = nullptr;
 
         cancelPendingUpdate();
+        sessionCapture_.reset();
         session_.reset();
         voiceThread_.reset();
         voices_.reset();
@@ -882,6 +886,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void stopMidiRecording(bool createClips = true) {
         recording_ = false;
         arrangementRecording_ = false;
+        sessionCapture_.disarm(createClips);
         const auto active = recordingRoutes_;
         std::vector<engine::SlotKey> releases;
         for (const auto& [trackId, unused] : active) {
@@ -935,7 +940,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             }
             sessionSlotTargets_[trackId] = {.scene = sceneIndex};
         }
-        recording_ = arrangementRecording_ || !recordingRoutes_.empty();
+        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
         launcher_.recordTargetsChanged();
         publishClips();
     }
@@ -973,7 +978,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (target.launched)
             stopMidiTake(trackId);
-        recording_ = arrangementRecording_ || !recordingRoutes_.empty();
+        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
         publishClips();
         return true;
     }
@@ -1076,7 +1081,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             stopSessionSlotRecording(trackId);
 
         if (!arrangementRecording_) {
-            recording_ = !recordingRoutes_.empty();
+            recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
             return;
         }
 
@@ -1107,8 +1112,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 stopMidiTake(trackId);
         }
 
-        if (recordingRoutes_.empty())
-            recording_ = false;
+        recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
     }
 
     bool startMidiRecording(double positionSeconds) {
@@ -1124,6 +1128,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         recording_ = true;
         arrangementRecording_ = true;
+        sessionCapture_.arm();
         reconcileMidiRecording();
         if (!recording_)
             arrangementRecording_ = false;
@@ -1175,7 +1180,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (!finishedSlots.empty()) {
             launcher_.recordTargetsChanged();
-            recording_ = arrangementRecording_ || !recordingRoutes_.empty();
+            recording_ = sessionCapture_.armed() || !recordingRoutes_.empty();
             publishClips();
         }
     }
@@ -1251,22 +1256,32 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        const auto& tracks = TrackManager::getInstance().getTracks();
-        auto lanes = lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
-        for (auto& lane : lanes) {
-            // Live handles own sample-exact section boundaries; model mode only reports them
-            // (#2725).
-            lane.playbackMode = TrackPlaybackMode::Arrangement;
-            if (const auto target = sessionSlotTargets_.find(lane.trackId);
-                target != sessionSlotTargets_.end())
-                lane.recordSlots.push_back(target->second.scene);
-        }
-        auto snapshot = std::make_shared<const engine::ClipSnapshot>(
-            engine::compileClipSnapshot(lanes, clipSources(), tempoMap()));
-        report("clips", snapshot->diagnostics);
+        // A publish can retire and complete a captured run. One extra pass puts
+        // the resulting Arrangement clip in the same live model transition.
+        for (auto pass = 0; pass < 2; ++pass) {
+            const auto& tracks = TrackManager::getInstance().getTracks();
+            auto lanes = lanesAsPlayed(clipLanesFor(tracks), tracks, frozen_, tempoMap());
+            for (auto& lane : lanes) {
+                // Live handles own sample-exact section boundaries; model mode only reports
+                // them (#2725).
+                lane.playbackMode = TrackPlaybackMode::Arrangement;
+                if (const auto target = sessionSlotTargets_.find(lane.trackId);
+                    target != sessionSlotTargets_.end())
+                    lane.recordSlots.push_back(target->second.scene);
+            }
+            sessionCapture_.prepare(lanes, tempoMap().bpmAt(0.0));
+            auto snapshot = std::make_shared<const engine::ClipSnapshot>(
+                engine::compileClipSnapshot(lanes, clipSources(), tempoMap()));
+            report("clips", snapshot->diagnostics);
 
-        traceEdit(EngineTrace::Kind::Publish);
-        session_->publishClips(std::move(snapshot));
+            traceEdit(EngineTrace::Kind::Publish);
+            session_->publishClips(std::move(snapshot));
+            const auto created = sessionCapture_.published();
+            if (arrangementRecording_ && !sessionCapture_.armed())
+                sessionCapture_.arm();
+            if (!created)
+                break;
+        }
     }
 
     void publishTransport() {
@@ -1317,6 +1332,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     void forgetProject() {
         stopMidiRecording(false);
+        if (session_ != nullptr) {
+            // Track and clip IDs restart in the next project. Retire every old
+            // handle before the capture forgets their incarnation and source.
+            session_->publishClips(nullptr);
+            sessionCapture_.published();
+            sessionCapture_.attach(*session_);
+        }
         factory_.forgetBuiltDevices();
         routing_.reset();
         devicePaths_.clear();
@@ -1616,6 +1638,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         const auto resumeRecording = arrangementRecording_;
         stopMidiRecording();
 
+        sessionCapture_.reset();
         session_.reset();
         voiceThread_.reset();
         voices_.reset();
@@ -1636,6 +1659,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // block across realtime workers is the next question this can be asked,
         // and not one to answer in the same change that first made a sound.
         session_ = std::make_unique<engine::EngineSession>(factory_, nullptr, voices_.get());
+        sessionCapture_.attach(*session_);
         factory_.attach(session_->clipFeed(), voices_->feed(), session_->launchHandleFeed(),
                         session_->liveInputs());
 
@@ -1659,6 +1683,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (resumeRecording) {
             recording_ = true;
             arrangementRecording_ = true;
+            sessionCapture_.arm();
             reconcileMidiRecording();
         }
 
@@ -2231,6 +2256,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     std::unique_ptr<engine::ClipVoicePool> voices_;
     std::unique_ptr<engine::ClipVoiceThread> voiceThread_;
     std::unique_ptr<engine::EngineSession> session_;
+    SessionArrangementCapture sessionCapture_;
 
     /// Arrangement MIDI takes owned by the live session. The resolved source
     /// set is part of the identity so a hot-plug or route edit closes one take
@@ -2527,6 +2553,7 @@ void EngineHost::setTempo(double bpm) {
     if (resumeRecording) {
         impl_->recording_ = true;
         impl_->arrangementRecording_ = true;
+        impl_->sessionCapture_.arm();
         impl_->reconcileMidiRecording();
     }
 }
@@ -2548,6 +2575,7 @@ void EngineHost::setTimeSignature(int numerator, int denominator) {
     if (resumeRecording) {
         impl_->recording_ = true;
         impl_->arrangementRecording_ = true;
+        impl_->sessionCapture_.arm();
         impl_->reconcileMidiRecording();
     }
 }
@@ -2569,6 +2597,7 @@ void EngineHost::setLoop(bool enabled, double startBeat, double endBeat) {
     if (resumeRecording) {
         impl_->recording_ = true;
         impl_->arrangementRecording_ = true;
+        impl_->sessionCapture_.arm();
         impl_->reconcileMidiRecording();
     }
 }
@@ -2668,6 +2697,8 @@ std::unordered_map<ClipId, double> EngineHost::sessionPlayheads() const {
 }
 
 void EngineHost::processSessionStateEvents() {
+    if (impl_->sessionCapture_.update())
+        impl_->publishClips();
     impl_->launcher_.processStateEvents();
 }
 

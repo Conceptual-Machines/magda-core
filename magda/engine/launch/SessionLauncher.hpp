@@ -45,6 +45,12 @@ struct ClipSnapshot;
 /// one: the arrangement's reads it to know when the session has taken the track.
 enum class Section : std::uint8_t { Arrangement, Session };
 
+/// Capture identity of the run a handle is currently rendering. Audio-thread
+/// state owned beside the handle so clip publishes do not restart playback.
+struct SlotRunSourceState {
+    std::optional<CaptureSource> active;
+};
+
 /// Every slot's handle, at one moment. Sorted by slot key, so a source finds
 /// its track's range without hashing. Not owned: the store keeps them alive for
 /// as long as a published table can name them.
@@ -61,6 +67,8 @@ struct LaunchHandleTable {
         /// Where this slot's state is published for the UI to read (#2303).
         /// Owned by the store, like the handle beside it.
         LaunchTap* tap = nullptr;
+
+        SlotRunSourceState* runSource = nullptr;
 
         /// What ends this slot's run, and what starts next (#2304). Here rather
         /// than looked up in the snapshot beside it, because the audio thread
@@ -184,9 +192,13 @@ inline SyncRange syncRangeFor(const BlockInfo& block) {
  * When present, its loop configuration is adopted before requests are drained,
  * so the handle and its material change cycle on the same block. Null keeps
  * the generic/manual handle API unchanged.
+ *
+ * @p completedBoundary overrides the block's continuous endpoint when the
+ * transport cursor jumps there, such as a callback segment ending at a loop.
  */
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
                           const BlockInfo& block, SlotRunQueue* runs = nullptr,
-                          const ClipSnapshot* clips = nullptr);
+                          const ClipSnapshot* clips = nullptr,
+                          const SlotRunBoundary* completedBoundary = nullptr);
 
 }  // namespace magda::engine
