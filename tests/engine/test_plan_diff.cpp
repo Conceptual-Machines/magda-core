@@ -187,3 +187,23 @@ TEST_CASE("A key that means something else does not carry into it", "[engine][pl
     CHECK(diff.carriedFrom[1] == magda::engine::INVALID_OP_ID);
     CHECK(diff.retired == std::vector<OpId>{1});
 }
+
+TEST_CASE("Changing hardware callback channels changes the plan", "[engine][plan][diff][2272]") {
+    auto track = makeTrack(1);
+    track.audioOutputDevice = "stereo:Out 3 + 4";
+
+    magda::engine::CompileOptions beforeOptions;
+    beforeOptions.hardwareOutputs.emplace("stereo:Out 3 + 4",
+                                          magda::engine::HardwareOutputRoute{2, 3});
+    magda::engine::CompileOptions afterOptions;
+    afterOptions.hardwareOutputs.emplace("stereo:Out 3 + 4",
+                                         magda::engine::HardwareOutputRoute{4, 5});
+
+    const auto before = magda::engine::compileRenderPlan({track}, makeMaster(), beforeOptions);
+    const auto after = magda::engine::compileRenderPlan({track}, makeMaster(), afterOptions);
+    const auto diff = magda::engine::diffPlans(before, after);
+
+    CHECK(magda::engine::planFingerprint(before) != magda::engine::planFingerprint(after));
+    CHECK_FALSE(carried(after, diff, OpRole::HardwareOutput, 1));
+    CHECK(carried(after, diff, OpRole::HardwareOutput, MASTER_TRACK_ID));
+}

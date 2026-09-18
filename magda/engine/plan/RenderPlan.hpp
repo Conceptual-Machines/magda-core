@@ -71,6 +71,18 @@ struct PortDesc {
     bool operator==(const PortDesc&) const = default;
 };
 
+/** Packed callback channels driven by one hardware Output op. */
+struct HardwareOutputRoute {
+    int leftChannel = 0;
+    int rightChannel = 1;
+
+    bool valid() const {
+        return leftChannel >= 0 &&
+               (rightChannel == -1 || (rightChannel >= 0 && rightChannel != leftChannel));
+    }
+    bool operator==(const HardwareOutputRoute&) const = default;
+};
+
 // Output ports of a Device op, in order. Port 0 is the device's audio output,
 // and it is the one the chain carries on from. A device that writes MIDI has it
 // at port 1. Anything after that is a multi-out instrument's further output
@@ -189,7 +201,7 @@ enum class OpRole : std::uint8_t {
     TrackMute,            ///< mute and solo, applied after the meter and sidechain tap
     SendTap,              ///< one send slot
     ModulationTap,        ///< one track's signal, read by the modifiers listening to it
-    HardwareOutput,       ///< the master's hardware output
+    HardwareOutput,       ///< one track or master hardware output
     InsertSend,           ///< one insert's send
     InsertReturn,         ///< one insert's return
 
@@ -420,6 +432,9 @@ struct PlanOp {
     LivenessDomain liveness = LivenessDomain::Deterministic;
     std::vector<PortRef> inputs;
     std::vector<PortDesc> outputs;
+
+    /// Callback channels for an Output op. Right channel -1 is mono.
+    HardwareOutputRoute hardwareOutput;
 
     /// Channels of audio a Device op reads from its first input port. The port
     /// belongs to the chain and stays stereo; a device declaring one input

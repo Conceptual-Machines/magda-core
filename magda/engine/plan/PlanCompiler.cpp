@@ -447,7 +447,13 @@ TrackRoute Compiler::midiInputRoute(const TrackInfo& track) const {
 
 TrackId Compiler::resolveAudioDestination(const TrackInfo& track) {
     const auto route = parseTrackRoute(track.audioOutputDevice);
-    return route.namesTrack() ? route.trackId : MASTER_TRACK_ID;
+    if (route.namesTrack())
+        return route.trackId;
+    if (route.kind == RouteKind::Malformed || track.audioOutputDevice.isEmpty() ||
+        track.audioOutputDevice == "master") {
+        return MASTER_TRACK_ID;
+    }
+    return INVALID_TRACK_ID;
 }
 
 TrackId Compiler::resolveSendDestination(const SendInfo& send) const {
@@ -1864,6 +1870,30 @@ void Compiler::emitTrack(const TrackInfo& track) {
                  track.audioOutputDevice.toStdString() +
                  "' does not name a track, summed into the master instead");
         pendingInputs_[master_.id].push_back(out);
+        return;
+    }
+
+    const auto outputRoute = parseTrackRoute(track.audioOutputDevice);
+    if (outputRoute.kind == RouteKind::External && track.audioOutputDevice.isNotEmpty() &&
+        track.audioOutputDevice != "master") {
+        const auto name = track.audioOutputDevice.toStdString();
+        const auto found = options_.hardwareOutputs.find(name);
+        if (found == options_.hardwareOutputs.end()) {
+            diagnose("track " + std::to_string(track.id) + ": hardware output '" + name +
+                     "' is unavailable, output is silent");
+            return;
+        }
+        if (!found->second.valid()) {
+            diagnose("track " + std::to_string(track.id) + ": hardware output '" + name +
+                     "' has invalid callback channels, output is silent");
+            return;
+        }
+
+        const OpKey outputKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                              INVALID_DEVICE_ID, OpRole::HardwareOutput, 0};
+        const auto output = addOp(OpKind::Output, outputKey, {out}, {});
+        plan_.ops[static_cast<std::size_t>(output)].hardwareOutput = found->second;
+        plan_.outputOps.push_back(output);
         return;
     }
 

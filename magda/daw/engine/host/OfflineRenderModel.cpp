@@ -20,6 +20,16 @@ bool rendersTrack(const OfflineRenderRequest& request, TrackId id) {
     return !listed(request.excludedTrackIds, id);
 }
 
+bool hasHardwareOutput(const juce::String& output) {
+    return output.isNotEmpty() && output != "master" &&
+           engine::parseTrackRoute(output).kind == engine::RouteKind::External;
+}
+
+void routeHardwareOutputToOfflineMaster(TrackInfo& track) {
+    if (hasHardwareOutput(track.audioOutputDevice))
+        track.audioOutputDevice = "master";
+}
+
 /** @brief The aux track @p send reaches, the way the plan compiler resolves it. */
 TrackId sendDestination(const SendInfo& send, const std::vector<TrackInfo>& tracks) {
     if (send.destTrackId != INVALID_TRACK_ID)
@@ -104,6 +114,7 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
 
     for (auto& track : model.tracks) {
         detachFromDropped(track, kept, original);
+        routeHardwareOutputToOfflineMaster(track);
 
         // Live input is monitoring, and a render has nobody to monitor.
         track.inputMonitor = InputMonitorMode::Off;
@@ -128,6 +139,9 @@ OfflineRenderModel narrowForRender(OfflineRenderModel model, const OfflineRender
             }
         }
     }
+
+    if (hasHardwareOutput(model.master.audioOutputDevice))
+        model.master.audioOutputDevice.clear();
 
     if (!request.useMasterPlugins) {
         removePlugins(model.master.chain);

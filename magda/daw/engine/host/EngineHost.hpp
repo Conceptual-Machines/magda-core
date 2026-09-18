@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -59,6 +60,12 @@ namespace magda::daw::engine_host {
 
 class EngineHost {
   public:
+    struct HardwareOutputCatalog {
+        juce::BigInteger enabledChannels;
+        std::map<int, juce::String> namesByChannel;
+    };
+    using HardwareOutputProvider = std::function<HardwareOutputCatalog()>;
+
     EngineHost();
     ~EngineHost();
 
@@ -85,6 +92,12 @@ class EngineHost {
      */
     void setPluginServices(juce::AudioPluginFormatManager& formats,
                            const juce::KnownPluginList& knownPlugins);
+
+    /// Supply the Tracktion wave-device names behind persisted output routes.
+    void setHardwareOutputProvider(HardwareOutputProvider provider);
+
+    /// Re-read output enablement and names after the device catalog changes.
+    void refreshHardwareOutputs();
 
     /**
      * @brief Where the levels this renders go (#2570).

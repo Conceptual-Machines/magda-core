@@ -862,6 +862,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+        engine/test_engine_host_hardware_outputs_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp
 

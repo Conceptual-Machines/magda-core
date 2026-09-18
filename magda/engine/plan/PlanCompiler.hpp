@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+#include <string>
 #include <vector>
 
 #include "plan/RenderPlan.hpp"
@@ -46,6 +48,9 @@ struct CompileOptions {
      * by the app; off for a bounce and for the corpus.
      */
     bool auditionMidi = false;
+
+    /// Exact persisted hardware route string to packed callback channels.
+    std::map<std::string, HardwareOutputRoute> hardwareOutputs;
 };
 
 /**

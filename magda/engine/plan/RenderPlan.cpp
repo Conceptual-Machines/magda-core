@@ -365,6 +365,8 @@ std::uint64_t planFingerprint(const RenderPlan& plan) {
             mix(static_cast<std::uint64_t>(output.channels));
         }
         mix(static_cast<std::uint64_t>(op.audioInputChannels));
+        mix(static_cast<std::uint64_t>(op.hardwareOutput.leftChannel));
+        mix(static_cast<std::uint64_t>(op.hardwareOutput.rightChannel));
     }
 
     return hash;
@@ -427,6 +429,9 @@ std::vector<std::string> validatePlan(const RenderPlan& plan) {
         if (op.outputs.empty() != sink)
             problems.push_back(label + (op.outputs.empty() ? "no output port"
                                                            : "is a sink and must have no ports"));
+
+        if (op.kind == OpKind::Output && !op.hardwareOutput.valid())
+            problems.push_back(label + "has invalid hardware output channels");
 
         // A carry is audio, and the executor reads its ports as audio without
         // asking. A MIDI one would index the audio arena with a MIDI slot, so

@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -293,6 +294,9 @@ class AudioEngine : public AudioEngineListener {
     // ===== Device Management =====
     virtual juce::AudioDeviceManager* getDeviceManager() = 0;
     virtual juce::BigInteger getEnabledWaveChannels(bool input) const = 0;
+    virtual std::map<int, juce::String> getOutputDeviceNamesByChannel() const {
+        return {};
+    }
     virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
     virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
     virtual bool isDevicesLoading() const = 0;

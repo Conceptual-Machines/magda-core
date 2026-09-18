@@ -127,6 +127,7 @@ void TracktionEngineWrapper::changeListenerCallback(juce::ChangeBroadcaster* sou
 
     // Reallocate playback context if devices were added
     handlePlaybackContextReallocation(dm);
+    notifyWaveOutputsChanged();
 
     // Build a description of currently enabled devices
     juce::StringArray deviceNames;
@@ -184,6 +185,38 @@ juce::BigInteger TracktionEngineWrapper::getEnabledWaveChannels(bool input) cons
     else
         addEnabledChannels(engine_->getDeviceManager().getWaveOutputDevices());
     return channels;
+}
+
+std::map<int, juce::String> TracktionEngineWrapper::getOutputDeviceNamesByChannel() const {
+    std::map<int, juce::String> names;
+    if (engine_ == nullptr)
+        return names;
+
+    for (auto* device : engine_->getDeviceManager().getWaveOutputDevices()) {
+        if (device == nullptr || !device->isEnabled())
+            continue;
+        for (const auto& channel : device->getChannels())
+            names[channel.indexInDevice] = device->getName();
+    }
+    return names;
+}
+
+void TracktionEngineWrapper::setWaveOutputsChangedCallback(std::function<void()> callback) {
+    waveOutputsChanged_ = std::move(callback);
+    knownOutputChannels_ = getEnabledWaveChannels(false);
+    knownOutputNames_ = getOutputDeviceNamesByChannel();
+}
+
+void TracktionEngineWrapper::notifyWaveOutputsChanged() {
+    auto channels = getEnabledWaveChannels(false);
+    auto names = getOutputDeviceNamesByChannel();
+    if (channels == knownOutputChannels_ && names == knownOutputNames_)
+        return;
+
+    knownOutputChannels_ = std::move(channels);
+    knownOutputNames_ = std::move(names);
+    if (waveOutputsChanged_)
+        waveOutputsChanged_();
 }
 
 void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {

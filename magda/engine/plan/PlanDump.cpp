@@ -62,6 +62,11 @@ std::string dumpPlan(const RenderPlan& plan) {
             << " out=" << padded(describeOutputs(op), 11);
         if (i < plan.dependencyCounts.size())
             out << " deps=" << plan.dependencyCounts[i];
+        if (op.kind == OpKind::Output && op.hardwareOutput != HardwareOutputRoute{0, 1}) {
+            out << " hardware=" << op.hardwareOutput.leftChannel;
+            if (op.hardwareOutput.rightChannel >= 0)
+                out << "," << op.hardwareOutput.rightChannel;
+        }
         out << "\n";
     }
 

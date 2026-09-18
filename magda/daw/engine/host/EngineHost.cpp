@@ -557,17 +557,19 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     /// under.
     /// The model as an engine plan. One call, so the compile options cannot
     /// differ between the publish and the comparison below.
-    static std::shared_ptr<const engine::RenderPlan> compilePlan(
-        const std::vector<TrackInfo>& tracks, const TrackInfo& master) {
+    std::shared_ptr<const engine::RenderPlan> compilePlan(const std::vector<TrackInfo>& tracks,
+                                                          const TrackInfo& master) const {
+        engine::CompileOptions options{.auditionMidi = true};
+        options.hardwareOutputs = hardwareOutputs_;
         return std::make_shared<const engine::RenderPlan>(
-            engine::compileRenderPlan(tracks, master, {.auditionMidi = true}));
+            engine::compileRenderPlan(tracks, master, options));
     }
 
-    void publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
+    bool publishPlan(std::shared_ptr<const engine::RenderPlan> plan = nullptr) {
         const auto& model = TrackManager::getInstance().getTracks();
         const auto* master = TrackManager::getInstance().getTrack(MASTER_TRACK_ID);
         if (session_ == nullptr || master == nullptr)
-            return;
+            return false;
 
         // Before the plan binds them, so an "all" route resolves to the inputs
         // this machine has now rather than to whichever of them has already
@@ -608,9 +610,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         report("publish", result.messages);
 
         if (!result.published)
-            return;
+            return false;
 
         livePlan_ = std::move(plan);
+        publishedHardwareOutputs_ = hardwareOutputs_;
         publishedTakeKeys_ = ids.takes;
         harvestClosedMidiTakes();
         traceEdit(EngineTrace::Kind::Swap);
@@ -618,6 +621,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         reportUnbuiltDevices();
         forgetPluginDriverState();
         markRenderedDevices();
+        return true;
     }
 
     /**
@@ -1475,6 +1479,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (offlineRenders_ > 0)
             return;
 
+        const auto outputGeneration = hardwareOutputGeneration_.load(std::memory_order_acquire);
+        if (hardwareOutputsStale_.exchange(false, std::memory_order_acq_rel) &&
+            refreshHardwareOutputMap())
+            plan_.store(true, std::memory_order_relaxed);
+
         // A physical device stop has no block in which a take can close. An
         // intentional remove/add during rebuild reaches this handler only
         // after the callback has been installed again.
@@ -1487,7 +1496,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (wanted.sampleRate <= 0.0 || wanted.maxBlockSize <= 0)
             return;
 
-        if (session_ == nullptr || wanted != context_) {
+        if (session_ == nullptr || wanted != context_ ||
+            scratch_.getNumChannels() != hardwareOutputChannels_) {
             rebuild(wanted);
             return;
         }
@@ -1519,6 +1529,14 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (renderedStale_.exchange(false, std::memory_order_acq_rel))
             markRenderedDevices();
+
+        if (hardwareOutputGeneration_.load(std::memory_order_acquire) == outputGeneration &&
+            livePlan_ != nullptr && publishedHardwareOutputs_ == hardwareOutputs_) {
+            hardwareOutputReadyGeneration_.store(outputGeneration, std::memory_order_release);
+        } else if (hardwareOutputGeneration_.load(std::memory_order_acquire) != outputGeneration) {
+            hardwareOutputsStale_.store(true, std::memory_order_release);
+            triggerAsyncUpdate();
+        }
     }
 
     /**
@@ -1643,9 +1661,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         voiceThread_.reset();
         voices_.reset();
         livePlan_.reset();
+        publishedHardwareOutputs_.clear();
 
         context_ = context;
-        scratch_.setSize(kChannels, context.maxBlockSize);
+        scratch_.setSize(hardwareOutputChannels_, context.maxBlockSize);
 
         // What a plugin is created at. Everything the store held has gone with
         // the session, so the publish below asks for each of them again.
@@ -1741,6 +1760,94 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     // ===== The device =====
 
+    bool refreshHardwareOutputMap() {
+        juce::BigInteger active;
+        if (devices_ != nullptr)
+            if (auto* device = devices_->getCurrentAudioDevice())
+                active = device->getActiveOutputChannels();
+
+        const auto hasProvider = static_cast<bool>(hardwareOutputProvider_);
+        auto catalog =
+            hasProvider ? hardwareOutputProvider_() : EngineHost::HardwareOutputCatalog{};
+        auto enabled = catalog.enabledChannels;
+        if (!hasProvider && enabled.isZero())
+            enabled = active;
+
+        std::vector<int> physicalChannels;
+        for (auto channel = 0; channel <= active.getHighestBit(); ++channel)
+            if (active[channel] && enabled[channel])
+                physicalChannels.push_back(channel);
+
+        const auto packed = [&active](int physical) {
+            auto index = 0;
+            for (auto channel = 0; channel < physical; ++channel)
+                if (active[channel])
+                    ++index;
+            return index;
+        };
+        const auto route = [&packed](const std::vector<int>& channels) {
+            return engine::HardwareOutputRoute{
+                .leftChannel = packed(channels.front()),
+                .rightChannel = channels.size() == 2 ? packed(channels.back()) : -1};
+        };
+
+        std::map<std::string, engine::HardwareOutputRoute> resolved;
+        for (std::size_t i = 0; i < physicalChannels.size();) {
+            const auto first = physicalChannels[i];
+            if (i + 1 < physicalChannels.size()) {
+                resolved["stereo:Out " + std::to_string(first + 1)] =
+                    route({first, physicalChannels[i + 1]});
+                i += 2;
+            } else {
+                resolved["Out " + std::to_string(first + 1)] = route({first});
+                ++i;
+            }
+        }
+
+        struct NamedOutput {
+            juce::String name;
+            std::vector<int> channels;
+        };
+        std::vector<NamedOutput> named;
+        if (!catalog.namesByChannel.empty()) {
+            for (const auto channel : physicalChannels) {
+                const auto found = catalog.namesByChannel.find(channel);
+                const auto name = found != catalog.namesByChannel.end()
+                                      ? found->second
+                                      : "Out " + juce::String(channel + 1);
+                if (!named.empty() && named.back().name == name &&
+                    named.back().channels.size() < 2) {
+                    named.back().channels.push_back(channel);
+                } else {
+                    named.push_back({name, {channel}});
+                }
+            }
+
+            std::set<std::string> exactNames;
+            for (const auto& output : named) {
+                const auto name = output.name.toStdString();
+                if (!exactNames.insert(name).second)
+                    continue;
+
+                const auto destination = route(output.channels);
+                resolved[name] = destination;
+                if (output.channels.size() == 2)
+                    resolved["stereo:" + name] = destination;
+            }
+        }
+
+        const auto changed = resolved != hardwareOutputs_;
+        hardwareOutputs_ = std::move(resolved);
+        hardwareOutputChannels_ = std::max(kChannels, active.countNumberOfSetBits());
+        return changed;
+    }
+
+    void requestHardwareOutputRefresh() {
+        hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
+        hardwareOutputsStale_.store(true, std::memory_order_release);
+        triggerAsyncUpdate();
+    }
+
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override {
         // Only what the device is. Building a session allocates and publishing
         // one waits, and both belong to the publishing thread.
@@ -1749,6 +1856,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         inputChannels_.store(device->getActiveInputChannels().countNumberOfSetBits());
         audioRunning_.store(true, std::memory_order_release);
         renderedStale_.store(true, std::memory_order_release);
+        hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
+        hardwareOutputsStale_.store(true, std::memory_order_release);
         triggerAsyncUpdate();
 
         if (EngineTrace::enabled())
@@ -1764,6 +1873,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     void audioDeviceStopped() override {
         audioRunning_.store(false, std::memory_order_release);
         renderedStale_.store(true, std::memory_order_release);
+        hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
         triggerAsyncUpdate();
     }
 
@@ -1771,7 +1881,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                                           int numOutputChannels, int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override {
         for (auto channel = 0; channel < numOutputChannels; ++channel)
-            juce::FloatVectorOperations::clear(output[channel], numSamples);
+            if (output[channel] != nullptr)
+                juce::FloatVectorOperations::clear(output[channel], numSamples);
+
+        const auto outputGeneration = hardwareOutputGeneration_.load(std::memory_order_acquire);
+        if (outputGeneration == 0 ||
+            hardwareOutputReadyGeneration_.load(std::memory_order_acquire) != outputGeneration)
+            return;
 
         const auto callback = rendered_.fetch_add(1, std::memory_order_relaxed) + 1;
 
@@ -1781,7 +1897,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr || numSamples <= 0)
             return;
 
-        const auto outputs = std::min(numOutputChannels, kChannels);
+        const auto outputs = std::min(numOutputChannels, scratch_.getNumChannels());
         const auto streams = collectLiveMidi();
 
         // In pieces no longer than the plan was prepared for. A driver handing
@@ -1789,18 +1905,18 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         // rendering it in one go is a buffer overrun rather than a wrong sound.
         for (auto done = 0; done < numSamples;) {
             const auto piece = std::min(numSamples - done, scratch_.getNumSamples());
-            juce::AudioBuffer<float> block(scratch_.getArrayOfWritePointers(), kChannels, piece);
 
             // The callback's live MIDI belongs to its first piece alone: every
             // event is stamped at offset 0, so handing the streams to a second
             // piece would sound each note again.
-            session_->process(piece, block,
+            session_->process(piece, scratch_,
                               done == 0 ? engine::LiveInputBlock{{}, streams}
                                         : engine::LiveInputBlock{});
 
             for (auto channel = 0; channel < outputs; ++channel)
-                juce::FloatVectorOperations::copy(output[channel] + done,
-                                                  scratch_.getReadPointer(channel), piece);
+                if (output[channel] != nullptr)
+                    juce::FloatVectorOperations::copy(output[channel] + done,
+                                                      scratch_.getReadPointer(channel), piece);
             done += piece;
         }
         completedCallbacks_.store(callback, std::memory_order_release);
@@ -2249,6 +2365,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     engine::RenderContext context_{};
     juce::AudioBuffer<float> scratch_;
+    EngineHost::HardwareOutputProvider hardwareOutputProvider_;
+    std::map<std::string, engine::HardwareOutputRoute> hardwareOutputs_;
+    std::map<std::string, engine::HardwareOutputRoute> publishedHardwareOutputs_;
+    int hardwareOutputChannels_ = kChannels;
+    std::atomic<bool> hardwareOutputsStale_{true};
+    std::atomic<std::uint64_t> hardwareOutputGeneration_{1};
+    std::atomic<std::uint64_t> hardwareOutputReadyGeneration_{0};
 
     // Declared so that destruction unwinds inwards: the session lets go of the
     // pool before the thread servicing it stops, and the thread stops before
@@ -2352,6 +2475,15 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
     impl_->loader_.setServices(&formats, &knownPlugins);
     impl_->formats_ = &formats;
     impl_->knownPlugins_ = &knownPlugins;
+}
+
+void EngineHost::setHardwareOutputProvider(HardwareOutputProvider provider) {
+    impl_->hardwareOutputProvider_ = std::move(provider);
+    impl_->requestHardwareOutputRefresh();
+}
+
+void EngineHost::refreshHardwareOutputs() {
+    impl_->requestHardwareOutputRefresh();
 }
 
 void EngineHost::meterInto(MeterSink sink) {

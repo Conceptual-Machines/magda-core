@@ -15,6 +15,7 @@
 
 using namespace magda;
 using magda::engine::BlockInfo;
+using magda::engine::CompileOptions;
 using magda::engine::DeviceBlock;
 using magda::engine::DeviceKey;
 using magda::engine::EngineAudioSource;
@@ -1006,6 +1007,37 @@ TEST_CASE("A callback the loop wraps inside renders as two blocks",
     CHECK(!after.continuous);
 }
 
+TEST_CASE("A loop segment renders to a prepared wide hardware output view",
+          "[engine][session][transport][2272]") {
+    Ledger ledger;
+    TestFactory factory(ledger);
+    EngineSession session(factory);
+
+    std::vector<TrackInfo> tracks{makeTrack(1)};
+    tracks[0].audioOutputDevice = "stereo:Out 63 + 64";
+    CompileOptions options;
+    options.hardwareOutputs.emplace("stereo:Out 63 + 64",
+                                    magda::engine::HardwareOutputRoute{62, 63});
+    const auto plan = std::make_shared<const RenderPlan>(
+        magda::engine::compileRenderPlan(tracks, makeMaster(), options));
+    PlanValues values;
+    magda::engine::resolvePlanValues(*plan, tracks, makeMaster(), values);
+    REQUIRE(session.publish(plan, context(), modelIds(tracks), std::move(values)).published);
+
+    auto transport = rolling(0.0);
+    transport.loop = {true, 0.0, 1.0};
+    session.publishTransport(transport);
+
+    juce::AudioBuffer<float> output(64, kBlockSize);
+    for (auto block = 0; block < 345; ++block)
+        session.process(kBlockSize, output);
+
+    CHECK(output.getMagnitude(0, 0, kBlockSize) == 0.0f);
+    CHECK(output.getMagnitude(1, 0, kBlockSize) == 0.0f);
+    CHECK(output.getMagnitude(62, 0, kBlockSize) == approx(1.0f));
+    CHECK(output.getMagnitude(63, 0, kBlockSize) == approx(1.0f));
+}
+
 TEST_CASE("The transport, not the caller, says where the timeline is",
           "[engine][session][transport]") {
     LoggingFactory factory;
@@ -1061,7 +1093,7 @@ TEST_CASE("The metronome is added after the plan, not through it",
             .publish(plan, context(), magda::engine::collectRuntimeStateIds(tracks, master), values)
             .published);
 
-    juce::AudioBuffer<float> output(2, kBlockSize);
+    juce::AudioBuffer<float> output(4, kBlockSize);
 
     SECTION("silent with the metronome off") {
         session.publishTransport(rolling(0.0));
@@ -1076,7 +1108,10 @@ TEST_CASE("The metronome is added after the plan, not through it",
         session.publishTransport(transport);
         session.process(kBlockSize, output);
 
-        CHECK(output.getMagnitude(0, kBlockSize) > 0.1f);
+        CHECK(output.getMagnitude(0, 0, kBlockSize) > 0.1f);
+        CHECK(output.getMagnitude(1, 0, kBlockSize) > 0.1f);
+        CHECK(output.getMagnitude(2, 0, kBlockSize) == 0.0f);
+        CHECK(output.getMagnitude(3, 0, kBlockSize) == 0.0f);
     }
 }
 
