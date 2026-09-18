@@ -115,9 +115,8 @@ constexpr int kSectionDeClickSamples = 32;
  * rather than endpoints a caller reconciles, so a zero-length one carries no
  * edges and cannot ramp a signal that was not playing.
  *
- * One span, always from the block's first sample: a session takes a track on
- * the sample its slot launches and gives one up at a block boundary, since a
- * release applies at sample zero.
+ * One contiguous span. A session can give the track up and another slot take
+ * it back later in the block, leaving the arrangement the stretch between.
  *
  * Resolved once per block and handed to both of a track's sources, so its audio
  * and its MIDI are gated by one answer with nothing of their own to keep in
@@ -126,13 +125,15 @@ constexpr int kSectionDeClickSamples = 32;
  * launched or not.
  */
 struct SectionHold {
+    /// The first sample the arrangement owns.
+    EdgeSample from{0};
+
     /// The edge past which the arrangement is silent. Zero for a block the
     /// session owns entirely.
     EdgeSample until{0};
 
-    /// Whether the arrangement takes the track at the block's first sample: a
-    /// resume, which owes a ramp out of silence and a chase. Never set for a
-    /// span with no samples, because nothing resumes.
+    /// Whether the arrangement takes the track at @ref from: a resume, which
+    /// owes a ramp out of silence and a chase.
     bool gained = false;
 
     /// Whether it loses the track at @ref until: the edge to carry down, which
@@ -140,23 +141,27 @@ struct SectionHold {
     /// the block before, which is a launch on a callback boundary.
     bool lost = false;
 
+    /// Whether Session owns the track after this block.
+    bool heldAtEnd = false;
+
     /// Whether the arrangement sounds any of this block.
     bool sounds() const {
-        return until.value > 0;
+        return until.value > from.value;
     }
 
     /// The whole of a block, with no edges. Named rather than defaulted,
     /// because the answer is the block's length and a default cannot know it.
     static SectionHold arrangement(int numSamples) {
-        return SectionHold{EdgeSample{numSamples}, false, false};
+        return SectionHold{EdgeSample{0}, EdgeSample{numSamples}, false, false, false};
     }
 };
 
-/// The track's mode this block and the block before (#2485). Carried by the
-/// caller, since a mode flip has no handle to remember the block before.
+/// The track's mode this block and whether Session owned the block before
+/// (#2485). Carried by the caller, since a retired handle cannot report its
+/// release edge.
 struct SectionMode {
     bool session = false;
-    bool sessionBefore = false;
+    bool heldBefore = false;
 };
 
 /// @copydoc SectionHold
@@ -170,11 +175,12 @@ inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId
     if (handles != nullptr)
         std::tie(first, last) = handles->rangeFor(trackId);
 
-    // Before anything in this block, at its first sample once releases have
-    // applied, and at its last.
-    auto sessionBefore = mode.sessionBefore;
-    auto sessionAtZero = mode.session;
+    // Before anything in this block and at its last sample.
+    auto sessionBefore = mode.heldBefore;
     auto sessionAtEnd = mode.session;
+    auto heldAtStart = false;
+    auto allInitialHoldersRelease = true;
+    auto releasedAt = 0;
     auto takenAt = mode.session ? 0 : std::numeric_limits<int>::max();
 
     for (const auto* entry = first; entry != last; ++entry) {
@@ -185,42 +191,47 @@ inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId
 
         sessionBefore = sessionBefore || status.heldSectionAtStart;
 
-        // A release applies on the first sample.
-        const auto heldThrough = status.heldSectionAtStart && !status.releasedSection;
-        sessionAtZero = sessionAtZero || heldThrough;
+        if (status.heldSectionAtStart) {
+            heldAtStart = true;
+            if (status.releasedSectionAt)
+                releasedAt = std::max(releasedAt, status.releasedSectionAt->value);
+            else
+                allInitialHoldersRelease = false;
+        }
 
         if (!entry->handle->holdsSection())
             continue;
 
         sessionAtEnd = true;
 
-        // One that already had it took it before this block; one that launched
-        // here took it on its own sample.
-        if (heldThrough || status.beforeEvent.playing())
-            takenAt = 0;
-        else if (status.afterEvent && status.afterEvent->playing())
-            takenAt = std::min(takenAt, status.event.sample);
+        if (!status.heldSectionAtStart)
+            takenAt = std::min(takenAt, status.afterEvent ? status.event.sample : 0);
     }
 
-    SectionHold hold;
+    auto from = 0;
+    if (mode.session || (heldAtStart && !allInitialHoldersRelease))
+        from = numSamples;
+    else if (heldAtStart)
+        from = releasedAt;
 
-    if (sessionAtZero)
-        hold.until = EdgeSample{0};
-    else if (sessionAtEnd && takenAt != std::numeric_limits<int>::max())
-        hold.until = EdgeSample{std::clamp(takenAt, 0, numSamples)};
-    else
-        hold.until = EdgeSample{numSamples};
+    auto until = std::min(takenAt, numSamples);
+    if (until <= from)
+        from = until = 0;
+
+    SectionHold hold{EdgeSample{std::clamp(from, 0, numSamples)},
+                     EdgeSample{std::clamp(until, 0, numSamples)}};
 
     // An edge is about a signal, so neither exists without one. Except a loss
     // on a block boundary, where the signal is the block before's.
-    hold.gained = sessionBefore && !sessionAtZero && hold.sounds();
+    hold.gained = sessionBefore && hold.sounds();
     hold.lost = sessionAtEnd && (hold.sounds() || !sessionBefore);
+    hold.heldAtEnd = sessionAtEnd;
 
     return hold;
 }
 
 /**
- * @brief One track's share of a block, and the mode the block before had.
+ * @brief One track's share of a block, and who owned the block before.
  *
  * Owned by the clip feed and named by the table it publishes
  * (ClipSnapshotFeed.hpp), so it outlives a republish the way a launch handle
@@ -231,10 +242,9 @@ inline SectionHold sectionHold(const LaunchHandleTable* handles, TrackId trackId
 struct TrackSectionState {
     SectionHold hold;
 
-    /// What the block before resolved to. Here rather than in a source because
-    /// a mode flip has no handle to say what came before, and one memory per
-    /// track is what keeps a track's two sources on the same block.
-    bool sessionBefore = false;
+    /// Whether Session owned the end of the block before. Here rather than in a
+    /// source so a retired handle and a mode flip share one remembered edge.
+    bool heldBefore = false;
 };
 
 /// Every track's state at one moment, sorted by track id. Published with the
@@ -289,8 +299,8 @@ inline void advanceTrackSections(const TrackSectionTable* sections, const ClipSn
         const auto session = track != nullptr && track->playbackMode == TrackPlaybackMode::Session;
 
         entry.state->hold = sectionHold(table, entry.trackId, block.numSamples,
-                                        SectionMode{session, entry.state->sessionBefore});
-        entry.state->sessionBefore = session;
+                                        SectionMode{session, entry.state->heldBefore});
+        entry.state->heldBefore = entry.state->hold.heldAtEnd;
     }
 }
 

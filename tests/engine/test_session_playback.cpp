@@ -1186,6 +1186,74 @@ TEST_CASE("Releasing the section gives the track back to its arrangement",
     }
 }
 
+TEST_CASE("A timed release gives the arrangement the suffix of its block",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+
+    rig.handle.releaseSection(kBeatsPerBlock * 2.5);
+    rig.render(2);
+
+    const auto release = kBlockSize / 2;
+
+    CHECK(rig.arrangementAt(release - 1) == Approx(0.0f));
+    CHECK(rig.arrangementAt(release) == Approx(0.0f).margin(1e-5));
+    CHECK(rig.arrangementAt(release + kSectionDeClickSamples) == Approx(1.0f));
+    CHECK(rig.sessionAt(release - 1) == Approx(0.5f));
+    CHECK(rig.sessionAt(release) == Approx(0.5f));
+    CHECK(rig.sessionAt(release + kSectionDeClickSamples) == Approx(0.0f).margin(1e-5));
+}
+
+TEST_CASE("Retiring a held handle ramps the arrangement back in",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.0f);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.arrangementPeak() == 0.0f);
+
+    rig.handles.publish(std::make_shared<const LaunchHandleTable>());
+    rig.lane.session.clear();
+    rig.publish();
+    rig.render(2);
+
+    CHECK(rig.arrangementAt(0) == Approx(0.0f).margin(1e-5));
+    CHECK(rig.arrangementAt(kSectionDeClickSamples) == Approx(1.0f));
+    CHECK(rig.arrangementAt(kBlockSize - 1) == Approx(1.0f));
+}
+
+TEST_CASE("A timed release and later launch leave the arrangement their middle span",
+          "[engine][clip][session][section]") {
+    SwitchRig rig;
+    rig.giveArrangement(1, 1.0f);
+    rig.giveSlot(2, 4.0, 0.5f, kScene);
+    rig.giveSlot(3, 4.0, 0.5f, kScene + 1);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+
+    rig.handle.releaseSection(kBeatsPerBlock * 2.25);
+    rig.second.play(kBeatsPerBlock * 2.75);
+    rig.render(2);
+
+    const auto release = kBlockSize / 4;
+    const auto relaunch = 3 * kBlockSize / 4;
+
+    CHECK(rig.arrangementAt(release - 1) == Approx(0.0f));
+    CHECK(rig.arrangementAt(release + kSectionDeClickSamples) == Approx(1.0f));
+    CHECK(rig.arrangementAt(relaunch - 1) == Approx(1.0f));
+    CHECK(rig.arrangementAt(relaunch + kSectionDeClickSamples) == Approx(0.0f));
+}
+
 TEST_CASE("A slot stopping mid-block carries its own last sample down",
           "[engine][clip][session][section]") {
     SwitchRig rig;
@@ -1601,10 +1669,8 @@ TEST_CASE("A slot swap on a boundary leaves no ghost of the arrangement",
           "[engine][clip][session][section]") {
     // The arrangement owns nothing in this block: one slot is released and
     // another launches on the same sample, so its span is zero samples long.
-    // Expressed as endpoints plus flags that reads as "handed back, then lost
-    // at zero", and the stop ramp decayed whatever the arrangement last
-    // pushed, which was from before the session ever took the track
-    // (#2344 review).
+    // It carries no edges, so the stop ramp cannot revive whatever the
+    // arrangement last pushed before the session took the track (#2344 review).
     SwitchRig rig;
     rig.giveArrangement(1, 1.0f);
     rig.giveSlot(2, 400.0, 0.5f, kScene);
@@ -1805,6 +1871,56 @@ TEST_CASE("Releasing the section brings the arrangement's MIDI back",
         REQUIRE(ons.size() == 1);
         CHECK(ons.front().message.getNoteNumber() == 64);
     }
+}
+
+TEST_CASE("A timed release switches MIDI sections on its sample",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    rig.publish({arrangementMidiClip(1, 0.0, 8.0, {MidiNote{64, 100, 0.0, 8.0, 0, {}}})},
+                {sessionMidiClip(2, 8.0, {MidiNote{67, 100, 0.0, 8.0, 0, {}}})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+
+    rig.handle.releaseSection(kBeatsPerBlock * 2.5);
+    rig.roll(2, 2);
+
+    const auto release = kBlockSize / 2;
+    const auto arrangementOns = rig.notesOn(rig.fromArrangement);
+    const auto sessionOffs = rig.notesOff(rig.fromSession);
+
+    REQUIRE(arrangementOns.size() == 1);
+    CHECK(arrangementOns.front().block == 2);
+    CHECK(arrangementOns.front().sample == release);
+    CHECK(arrangementOns.front().message.getNoteNumber() == 64);
+
+    REQUIRE(sessionOffs.size() == 1);
+    CHECK(sessionOffs.front().block == 2);
+    CHECK(sessionOffs.front().sample == release);
+    CHECK(sessionOffs.front().message.getNoteNumber() == 67);
+}
+
+TEST_CASE("Retiring a held handle re-chases the arrangement's MIDI",
+          "[engine][clip][session][section]") {
+    MidiSwitchRig rig;
+    const auto arrangement = arrangementMidiClip(1, 0.0, 8.0, {MidiNote{64, 100, 0.0, 8.0, 0, {}}});
+    rig.publish({arrangement}, {sessionMidiClip(2, 8.0, {})});
+
+    rig.handle.play(std::nullopt);
+    rig.roll(0, 1);
+    REQUIRE(rig.notesOn(rig.fromArrangement).empty());
+
+    rig.handles.publish(std::make_shared<const LaunchHandleTable>());
+    rig.publish({arrangement}, {});
+    rig.roll(2, 2);
+
+    const auto ons = rig.notesOn(rig.fromArrangement);
+    REQUIRE(ons.size() == 1);
+    CHECK(ons.front().block == 2);
+    CHECK(ons.front().sample == 0);
+    CHECK(ons.front().message.getNoteNumber() == 64);
+    REQUIRE(rig.arrangementPanics.size() == 3);
+    CHECK(rig.arrangementPanics.back());
 }
 
 TEST_CASE("A launched slot raises no panic", "[engine][clip][session][2418]") {

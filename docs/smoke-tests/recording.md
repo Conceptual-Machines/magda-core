@@ -8,6 +8,8 @@ For the first native app recording slice (#2553), use the focused
 [Arrangement MIDI recording checks](../issues/native-arrangement-midi-recording.md).
 The next slice has separate
 [Session MIDI slot recording checks](../issues/native-session-midi-recording.md).
+Ownership indicators and mixed Session/Arrangement playback have focused
+[Session ownership checks](../issues/native-session-ownership.md).
 The wider checklist below also covers audio, Session-to-Arrangement capture,
 count-in, and latency work that is not yet connected to the native app.
 

@@ -264,6 +264,8 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testMovedRememberedClipIsIgnored(); });
         magda::test::runWithCleanJuceState([this] { testExplicitStopClearsStoppedIntent(); });
         magda::test::runWithCleanJuceState([this] { testStoppedToggleClickRelaunches(); });
+        magda::test::runWithCleanJuceState([this] { testInactiveSiblingStopReleasesTrack(false); });
+        magda::test::runWithCleanJuceState([this] { testInactiveSiblingStopReleasesTrack(true); });
         magda::test::runWithCleanJuceState(
             [this] { testQuantizedStopWaitsForAcknowledgement(false); });
         magda::test::runWithCleanJuceState(
@@ -278,11 +280,148 @@ class SlotLauncherTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testFollowActionAdoptsNextSlot(); });
         magda::test::runWithCleanJuceState([this] { testExtendedCycleBeforeLaunch(); });
         magda::test::runWithCleanJuceState([this] { testExtendedCycleWhilePlaying(); });
+        magda::test::runWithCleanJuceState([this] { testRecordTargetOwnsAtLaunchBoundary(); });
+        magda::test::runWithCleanJuceState([this] { testRecordingTargetBecomesClipOwner(); });
+        magda::test::runWithCleanJuceState([this] { testGlobalReturnReleasesMixedTracks(); });
         magda::test::runWithCleanJuceState([this] { testRecordTargetHandsOverAtClipBoundary(); });
         magda::test::runWithCleanJuceState([this] { testEmptySceneStopsARecordTarget(); });
     }
 
   private:
+    void testInactiveSiblingStopReleasesTrack(bool queued) {
+        beginTest(queued ? "Stopping an inactive sibling cancels the track's queued slot"
+                         : "Stopping an inactive sibling releases the track's sounding slot");
+        Rig rig(queued ? 2 : 1);
+        const auto trackId = rig.trackIds.front();
+        const auto active = rig.slotClip(
+            trackId, 0, queued ? magda::LaunchQuantize::OneBar : magda::LaunchQuantize::None);
+        const auto inactive = rig.slotClip(trackId, 1);
+        expect(rig.publish());
+        rig.roll();
+        if (queued) {
+            const auto leader = rig.slotClip(rig.trackIds[1], 0);
+            expect(rig.publish());
+            rig.launcher.launch(leader);
+            rig.render(rig.blocksFor(0.5));
+        }
+        rig.launcher.launch(active);
+        if (!queued)
+            rig.render(1);
+
+        rig.launcher.stop(inactive);
+        rig.launcher.processStateEvents();
+        rig.render(queued ? rig.blocksFor(4.0) : 1);
+        rig.launcher.processStateEvents();
+
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(rig.launcher.playState(active) == magda::SessionClipPlayState::Stopped,
+               "The actual active slot cannot be re-adopted");
+        expect(!rig.reading(trackId, 0).holdsSection);
+        expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The whole track returns to Arrangement");
+    }
+
+    void testRecordTargetOwnsAtLaunchBoundary() {
+        beginTest("A recording target owns its track only when its queued launch starts");
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        rig.launchHost.recordTargets[trackId] = 0;
+        expect(rig.publish());
+        rig.roll();
+        {
+            engine::LaunchRequestQueue::Gesture gesture(rig.session.launchRequests());
+            gesture.play({trackId, 0}, rig.session.syncPoint().monotonicBeat + 4.0);
+        }
+        rig.launcher.recordTargetsChanged();
+
+        auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "Queued recording intent leaves Arrangement in control");
+        rig.render(rig.blocksFor(1.0));
+        rig.launcher.processStateEvents();
+        expect(!rig.reading(trackId, 0).holdsSection);
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "Arrangement remains active before the recording boundary");
+
+        rig.render(rig.blocksFor(4.0));
+        rig.launcher.processStateEvents();
+        expect(rig.reading(trackId, 0).playing && rig.reading(trackId, 0).holdsSection);
+        expect(track != nullptr && track->playbackMode == magda::TrackPlaybackMode::Session,
+               "The recording handle and reported ownership change together");
+    }
+
+    void testRecordingTargetBecomesClipOwner() {
+        beginTest("A completed recording hands its held slot to the resulting clip");
+        Rig rig(1);
+        const auto trackId = rig.trackIds.front();
+        rig.launchHost.recordTargets[trackId] = 0;
+        expect(rig.publish());
+        rig.roll();
+        {
+            engine::LaunchRequestQueue::Gesture gesture(rig.session.launchRequests());
+            gesture.play({trackId, 0});
+        }
+        rig.launcher.recordTargetsChanged();
+        rig.render(1);
+        rig.launcher.processStateEvents();
+
+        const auto clipId = rig.slotClip(trackId, 0);
+        rig.launchHost.recordTargets.erase(trackId);
+        rig.launcher.recordTargetsChanged();
+        expect(rig.publish(), "The completed take is published into its recording slot");
+        rig.render(1);
+        rig.launcher.processStateEvents();
+
+        const auto* track = magda::TrackManager::getInstance().getTrack(trackId);
+        expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
+               "The published clip keeps the recording slot's run");
+        expect(track != nullptr && track->activeSessionClipId == clipId &&
+                   track->playbackMode == magda::TrackPlaybackMode::Session,
+               "Clip intent adopts the same Session ownership");
+    }
+
+    void testGlobalReturnReleasesMixedTracks() {
+        beginTest("Global return releases clip and recording tracks without affecting others");
+        Rig rig(3);
+        const auto clipId = rig.slotClip(rig.trackIds[0], 0);
+        rig.launchHost.recordTargets[rig.trackIds[1]] = 0;
+        expect(rig.publish());
+        rig.roll();
+        rig.launcher.launch(clipId);
+        {
+            engine::LaunchRequestQueue::Gesture gesture(rig.session.launchRequests());
+            gesture.play({rig.trackIds[1], 0});
+        }
+        rig.launcher.recordTargetsChanged();
+        rig.render(1);
+        rig.launcher.processStateEvents();
+
+        const auto* clipTrack = magda::TrackManager::getInstance().getTrack(rig.trackIds[0]);
+        const auto* recordTrack = magda::TrackManager::getInstance().getTrack(rig.trackIds[1]);
+        const auto* arrangementTrack = magda::TrackManager::getInstance().getTrack(rig.trackIds[2]);
+        expect(clipTrack != nullptr &&
+               clipTrack->playbackMode == magda::TrackPlaybackMode::Session);
+        expect(recordTrack != nullptr &&
+               recordTrack->playbackMode == magda::TrackPlaybackMode::Session);
+        expect(arrangementTrack != nullptr &&
+               arrangementTrack->playbackMode == magda::TrackPlaybackMode::Arrangement);
+
+        rig.launcher.stopEverything();
+        rig.render(1);
+        rig.launcher.processStateEvents();
+        expect(!rig.reading(rig.trackIds[0], 0).holdsSection &&
+                   !rig.reading(rig.trackIds[1], 0).holdsSection,
+               "Both kinds of Session handle release their tracks");
+        expect(clipTrack != nullptr &&
+                   clipTrack->playbackMode == magda::TrackPlaybackMode::Arrangement &&
+                   recordTrack != nullptr &&
+                   recordTrack->playbackMode == magda::TrackPlaybackMode::Arrangement &&
+                   arrangementTrack != nullptr &&
+                   arrangementTrack->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "All track indicators agree after the global return");
+    }
+
     void testRecordTargetHandsOverAtClipBoundary() {
         beginTest("Launching a clip ends its track's recording on the same quantized boundary");
         Rig rig(1);
@@ -342,6 +481,7 @@ class SlotLauncherTest final : public juce::UnitTest {
 
         rig.launcher.launch(clipId);
         rig.render(1);
+        rig.launcher.processStateEvents();
 
         expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Playing,
                "and the first block after it is already sounding");
@@ -374,19 +514,31 @@ class SlotLauncherTest final : public juce::UnitTest {
         // state, and a slot button blinks on it or never does (#2674).
         expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Queued,
                "The launcher answers for a click the audio thread has not seen yet");
+        auto* queuedTrack = magda::TrackManager::getInstance().getTrack(rig.trackIds[1]);
+        expect(queuedTrack != nullptr &&
+                   queuedTrack->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "Queued intent does not take the track before its boundary");
 
         rig.render(1);
+        rig.launcher.processStateEvents();
 
         expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Queued,
                "Half a beat in, the second clip is waiting");
         expect(rig.launcher.playState(rolling) == magda::SessionClipPlayState::Playing,
                "and the first is still playing under it");
+        expect(queuedTrack != nullptr &&
+                   queuedTrack->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "The queued track continues reporting Arrangement ownership");
 
         // Past the bar line the queue was resolved against.
         rig.render(rig.blocksFor(4.0));
+        rig.launcher.processStateEvents();
 
         expect(rig.launcher.playState(queued) == magda::SessionClipPlayState::Playing,
                "and at the bar it starts");
+        expect(queuedTrack != nullptr &&
+                   queuedTrack->playbackMode == magda::TrackPlaybackMode::Session,
+               "Ownership changes when the handle starts sounding");
     }
 
     void testOneSlotPerTrack() {
@@ -463,6 +615,7 @@ class SlotLauncherTest final : public juce::UnitTest {
 
         rig.launcher.stop(clipId);
         rig.render(1);
+        rig.launcher.processStateEvents();
 
         expect(rig.launcher.playState(clipId) == magda::SessionClipPlayState::Stopped,
                "and the stop lands on the next block");
@@ -892,8 +1045,8 @@ class SlotLauncherTest final : public juce::UnitTest {
         expect(rig.launcher.stopPending(rig.trackIds[1]),
                "The old stopped tap cannot acknowledge a queued run's stop early");
         expect(track != nullptr && track->activeSessionClipId == magda::INVALID_CLIP_ID &&
-                   track->playbackMode == magda::TrackPlaybackMode::Session,
-               "The queued intent is cleared while Session retains the track");
+                   track->playbackMode == magda::TrackPlaybackMode::Arrangement,
+               "Cancelling queued intent leaves Arrangement sounding before the boundary");
 
         rig.render(rig.blocksFor(1.0));
         rig.launcher.processStateEvents();

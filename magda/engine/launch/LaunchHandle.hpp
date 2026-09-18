@@ -267,10 +267,8 @@ struct SplitStatus {
     /// in it applied (@ref LaunchHandle::holdsSection).
     bool heldSectionAtStart = false;
 
-    /// Whether it gave the track up here. Ownership of the first sample already
-    /// reflects it, so this is what tells a track just handed back from one
-    /// that was never taken.
-    bool releasedSection = false;
+    /// Where it gave the track up here. Ownership changes on this sample.
+    std::optional<EdgeSample> releasedSectionAt;
 
     /// Where a run began inside this block, if one did: a launch, a scene
     /// join, or a loop re-trigger. The sample a take of that run starts on
@@ -440,10 +438,9 @@ class LaunchHandle {
         return holdsSection_;
     }
 
-    /// Give the track back to its arrangement. A request, applied by the next
-    /// advance at that block's first sample: an edge nothing was told about is
-    /// an edge nothing can ramp.
-    void releaseSection();
+    /// Give the track back to its arrangement, at @p monotonicBeat or as soon
+    /// as possible.
+    void releaseSection(std::optional<double> monotonicBeat = {});
 
     /**
      * @brief Blocks in which a loop was too short to be re-triggered fully.

@@ -87,7 +87,7 @@ void apply(const LaunchRequest& request, const LaunchHandleTable& table) {
             return;
 
         case LaunchRequest::Kind::backToArrangement:
-            handle->releaseSection();
+            handle->releaseSection(request.position);
             return;
 
         case LaunchRequest::Kind::loop:

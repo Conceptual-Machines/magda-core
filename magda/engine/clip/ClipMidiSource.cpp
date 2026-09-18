@@ -614,7 +614,9 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // took, and none of it in Session mode (#2302, #2485). The same answer the
     // track's audio applies.
     auto lane = block;
+    auto from = 0;
     auto until = block.numSamples;
+    auto gained = false;
     auto lost = false;
 
     {
@@ -625,14 +627,16 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
         const auto hold =
             resolved != nullptr ? *resolved : SectionHold::arrangement(block.numSamples);
 
-        until = std::clamp(hold.until.value, 0, block.numSamples);
+        from = std::clamp(hold.from.value, 0, block.numSamples);
+        until = std::clamp(hold.until.value, from, block.numSamples);
+        gained = hold.gained;
         lost = hold.lost;
 
         // A discontinuity even though the transport never moved: its notes were
         // ended when it lost the track and the timeline ran on underneath.
         // Resuming without a chase leaves a sustained pad silent, which is the
         // case playLane already answers for a locate.
-        if (hold.gained) {
+        if (gained) {
             lane.continuous = false;
             raisedAllNotesOff_ = true;
         }
@@ -641,7 +645,7 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     // The session owns every sample. The arrangement owes note-offs on the
     // block it loses the track, even losing it on the first sample and sounding
     // none of that block, and nothing on the blocks after.
-    if (until == 0) {
+    if (until == from) {
         if (lost)
             endAll(out, EventSample{0});
 
@@ -650,16 +654,18 @@ void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {
     }
 
     const auto range = syncRangeFor(block);
+    const auto laneStart =
+        from == 0 ? block.beats.start : range.timelineBeatAt(range.atSample(from));
     const auto laneEnd =
         until == block.numSamples ? block.beats.end : range.timelineBeatAt(range.atSample(until));
 
     if (swapped) {
         NoteMask expected;
-        expectLane(out, lane, track->midi, lane.beats.start, laneEnd, expected);
+        expectLane(out, lane, track->midi, laneStart, laneEnd, expected);
         endUnexpected(out, expected);
     }
 
-    playLane(out, lane, track->midi, lane.beats.start, laneEnd);
+    playLane(out, lane, track->midi, laneStart, laneEnd);
 
     // It sounds up to the hand-over the way its audio renders up to it, and
     // owes note-offs there: a note left holding would sound under the session's

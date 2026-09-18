@@ -176,24 +176,40 @@ void ClipAudioSource::applySectionHold(juce::dsp::AudioBlock<float> out,
     // Resolved against the block the callback named, which the executor may
     // have capped to what the plan was prepared for (PlanExecutor::beginBlock),
     // so the span can outrun the buffer this call was handed.
-    const auto until = std::clamp(hold.until.value, 0, numSamples);
+    const auto from = std::clamp(hold.from.value, 0, numSamples);
+    const auto until = std::clamp(hold.until.value, from, numSamples);
+    const auto count = until - from;
 
     // What it rendered and keeps, before anything corrects it (StopDeClick::push).
-    if (until > 0)
-        handOver_.push(out.getSubBlock(0, static_cast<std::size_t>(until)));
+    if (count > 0)
+        handOver_.push(
+            out.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(count)));
 
     // The session's share is dropped, but rendering it advanced every voice,
     // stream and stretcher: that is what makes taking the track back land where
     // the timeline says rather than where the arrangement lost it.
+    if (from > 0)
+        out.getSubBlock(0, static_cast<std::size_t>(from)).clear();
     if (until < numSamples)
         out.getSubBlock(static_cast<std::size_t>(until)).clear();
 
     // Taking it back lands mid-material, the same step a voice starting
     // mid-file leaves.
-    if (hold.gained)
-        handBack_.begin(out, kSectionDeClickSamples);
-    else
-        handBack_.advance(out);
+    if (count > 0) {
+        auto span =
+            out.getSubBlock(static_cast<std::size_t>(from), static_cast<std::size_t>(count));
+        if (hold.gained)
+            handBack_.begin(span, kSectionDeClickSamples);
+        else
+            handBack_.advance(span);
+
+        // A gap shorter than the ramp hands over the level it actually reached.
+        if (hold.lost && handBack_.active())
+            handOver_.push(span);
+    }
+
+    if (hold.lost)
+        handBack_.reset();
 
     // Losing it leaves the other step. A ramp from an earlier block finishes
     // into whatever is here now rather than being cut off.

@@ -90,6 +90,12 @@ class SlotLauncher {
     /** @brief Re-launch the session state retained across a transport stop. */
     void transportStarted();
 
+    /** @brief Re-read recording launch targets after their host-owned lifecycle changes. */
+    void recordTargetsChanged();
+
+    /** @brief Replace retained clip intent when a recording slot launches on its track. */
+    void recordTargetLaunched(TrackId trackId);
+
     // ===== What the UI reads =====
 
     /** @brief What @p clipId's slot is doing, as the last block left it. */
@@ -153,8 +159,18 @@ class SlotLauncher {
     /// Whether a slot is active or still winding down on a quantized stop.
     bool anythingActive() const;
 
-    /// Session where a track has an active or winding-down clip, Arrangement
-    /// everywhere else.
+    enum class SessionOwnership { Arrangement, Queued, Held, Retained };
+
+    /// Intent waiting for a boundary is separate from a handle that owns the track.
+    SessionOwnership ownershipOf(TrackId trackId) const;
+
+    /// Every published Session slot which can still hold @p trackId.
+    std::vector<engine::SlotKey> slotsOnTrack(TrackId trackId) const;
+
+    /// Keep empty recording slots discoverable after their host target is removed.
+    void refreshRecordTargets();
+
+    /// Session while a handle holds the track or stopped transport retains intent.
     void syncPlaybackModes();
 
     LaunchHost& host_;
@@ -175,15 +191,16 @@ class SlotLauncher {
     mutable std::unordered_map<ClipId, Asked> asked_;
     void noteAsked(const ClipInfo& clip);
 
-    /// The exact slot each track is waiting to stop. The due beat distinguishes
-    /// an untouched tap from acknowledgement when a queued launch is stopped
-    /// before it ever sounds.
+    /// A track waiting for every held or queued slot to acknowledge its release.
     struct PendingStop {
         ClipId clipId = INVALID_CLIP_ID;
-        int sceneIndex = -1;
-        double dueMonotonicBeat = 0.0;
+        std::optional<engine::SlotKey> target;
+        std::optional<double> dueMonotonicBeat;
     };
     std::unordered_map<TrackId, PendingStop> stopping_;
+
+    /// Empty recording slots have no ClipId and can outlive their host-side target.
+    std::vector<engine::SlotKey> recordTargets_;
 
     /// The most recently launched clip, which is the one a clip editor draws.
     ClipId playheadClip_ = INVALID_CLIP_ID;
