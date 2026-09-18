@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -142,6 +143,8 @@ struct ClipPlacement {
     double endBeat() const {
         return startBeat + lengthBeats;
     }
+
+    bool operator==(const ClipPlacement&) const = default;
 };
 
 /**
@@ -656,6 +659,10 @@ struct AudioClipModel {
     std::vector<AudioEvent> events;
     int nextEventId = 1;
 
+    // The source clip edges used by fades and speed ramps. Captured material
+    // keeps this window while its placement crops the recorded interval.
+    std::optional<ClipPlacement> envelopeWindow;
+
     // Loop-record takes, one per pass. Empty for ordinary single-source clips.
     // When non-empty, the primary event's source mirrors
     // takes[currentTakeIndex].filePath (the active take that plays back).
@@ -1054,7 +1061,7 @@ struct ClipInfo {
         if (!isAudio())
             return;
         auto& list = audio().events;
-        if (list.size() != 1)
+        if (list.size() != 1 || audio().envelopeWindow.has_value())
             return;
         list.front().startBeat = 0.0;
         list.front().lengthBeats = placement.lengthBeats;

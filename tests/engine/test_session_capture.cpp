@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 
+#include "clip/ClipSnapshot.hpp"
 #include "launch/SessionCapture.hpp"
 #include "launch/SessionLauncher.hpp"
 #include "transport/TransportClock.hpp"
@@ -47,8 +48,9 @@ SlotKey key(int track, int scene = 0) {
 class Rig {
   public:
     explicit Rig(int tracks = 1, SlotFollow follow = {}) {
-        transport_.tempo = TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
+        transport_.tempo = magda::engine::TempoMap({{0.0, 120.0, 0.0f}}, {{0.0, 4, 4}});
         handles_.resize(static_cast<std::size_t>(tracks));
+        runSources_.resize(static_cast<std::size_t>(tracks));
 
         auto table = std::make_shared<LaunchHandleTable>();
         std::map<SlotKey, std::uint64_t> incarnations;
@@ -58,8 +60,16 @@ class Rig {
                 LaunchHandleTable::Entry{.key = key(track + 1),
                                          .handle = &handles_[static_cast<std::size_t>(track)],
                                          .incarnation = 1,
+                                         .runSource = &runSources_[static_cast<std::size_t>(track)],
                                          .follow = follow});
             incarnations[key(track + 1)] = 1;
+
+            TrackClipPlayback playback;
+            playback.trackId = static_cast<TrackId>(track + 1);
+            playback.session.push_back(SessionSlotPlayback{
+                .sceneIndex = 0,
+                .captureSource = {.clipId = static_cast<ClipId>(100 + track), .revision = 1}});
+            clips_.tracks.push_back(std::move(playback));
         }
 
         feed_.publish(std::move(table));
@@ -97,6 +107,14 @@ class Rig {
         gesture.stop(key(track), monotonicBeat);
     }
 
+    void source(int track, ClipId clipId, std::uint64_t revision) {
+        const auto lane = std::ranges::find(clips_.tracks, static_cast<TrackId>(track),
+                                            &TrackClipPlayback::trackId);
+        REQUIRE(lane != clips_.tracks.end());
+        REQUIRE(!lane->session.empty());
+        lane->session.front().captureSource = {.clipId = clipId, .revision = revision};
+    }
+
     /// Roll @p beats of transport, collecting what the launcher publishes.
     /// @p collecting false leaves the edges in the lane, which is a frame that
     /// has not run yet.
@@ -106,8 +124,21 @@ class Rig {
         for (auto left = samples; left > 0;) {
             const auto callback = std::min(kBlockSize, left);
 
-            for (const auto& segment : clock_.advance(transport_, kSampleRate, callback))
-                advanceLaunchHandles(feed_, requests_, segment.block, &runs_);
+            const auto segments = clock_.advance(transport_, kSampleRate, callback);
+            const auto callbackEnd = clock_.syncPoint();
+            for (std::size_t index = 0; index < segments.size(); ++index) {
+                const auto& segment = segments[index];
+                const auto boundary =
+                    index + 1 < segments.size()
+                        ? SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                          .timelineBeat = segments[index + 1].block.beats.start,
+                                          .monotonicBeat =
+                                              segments[index + 1].block.monotonicBeats.start}
+                        : SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                          .timelineBeat = callbackEnd.beat,
+                                          .monotonicBeat = callbackEnd.monotonicBeat};
+                advanceLaunchHandles(feed_, requests_, segment.block, &runs_, &clips_, &boundary);
+            }
 
             if (collecting)
                 capture_.update();
@@ -129,10 +160,12 @@ class Rig {
     TransportClock clock_;
 
     std::vector<LaunchHandle> handles_;
+    std::vector<SlotRunSourceState> runSources_;
     LaunchHandleFeed feed_;
     LaunchRequestQueue requests_;
     SlotRunQueue runs_;
     SessionCapture capture_{runs_};
+    ClipSnapshot clips_;
 };
 
 }  // namespace
@@ -254,6 +287,122 @@ TEST_CASE("arming after a launch keeps the beat the run began on", "[engine][cap
     REQUIRE(captured.size() == 1);
     CHECK(captured.front().startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
     CHECK(captured.front().lengthBeats == Approx(4.0).margin(2.0 / kBeatSamples));
+}
+
+TEST_CASE("arming from current captures only the sounding tail", "[engine][capture]") {
+    Rig rig;
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(3.0);
+
+    rig.capture().armFromCurrent();
+    rig.stopSlot(1, 5.0);
+    rig.roll(3.0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured.front().lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured.front().offsetBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured.front().origin.sample == static_cast<std::int64_t>(3.0 * kBeatSamples));
+}
+
+TEST_CASE("arm from current resumes a sounding run without duplicating it", "[engine][capture]") {
+    Rig rig;
+    rig.capture().armFromCurrent();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(3.0);
+    rig.capture().disarm();
+
+    rig.roll(1.0);
+    rig.capture().armFromCurrent();
+    rig.stopSlot(1, 6.0);
+    rig.roll(3.0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 2);
+    CHECK(captured[0].startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[0].lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured[0].offsetBeats == Approx(0.0));
+    CHECK(captured[1].startBeat == Approx(4.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured[1].offsetBeats == Approx(3.0).margin(2.0 / kBeatSamples));
+}
+
+TEST_CASE("arm from current uses the cursor after a transport loop wrap", "[engine][capture]") {
+    Rig rig;
+    rig.loop(0.0, 4.0);
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(7.0);
+
+    rig.capture().armFromCurrent();
+    rig.stopSlot(1, 9.0);
+    rig.roll(3.0);
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured.front().lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured.front().offsetBeats == Approx(6.0).margin(2.0 / kBeatSamples));
+}
+
+TEST_CASE("material edits split capture without restarting handle phase", "[engine][capture]") {
+    Rig rig;
+    rig.capture().armFromCurrent();
+    rig.play();
+    rig.launch(1, 1.0);
+    rig.roll(3.0);
+
+    auto active = rig.capture().activeSources();
+    REQUIRE(active.size() == 1);
+    CHECK((active.front().source == CaptureSource{.clipId = 100, .revision = 1}));
+
+    rig.source(1, 100, 2);
+    rig.roll(1.0);
+
+    active = rig.capture().activeSources();
+    REQUIRE(active.size() == 1);
+    CHECK((active.front().source == CaptureSource{.clipId = 100, .revision = 2}));
+
+    rig.stopSlot(1, 5.0);
+    rig.roll(2.0);
+    CHECK(rig.capture().activeSources().empty());
+
+    const auto captured = rig.capture().collect();
+    REQUIRE(captured.size() == 2);
+    CHECK((captured[0].source == CaptureSource{.clipId = 100, .revision = 1}));
+    CHECK(captured[0].startBeat == Approx(1.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[0].lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK((captured[1].source == CaptureSource{.clipId = 100, .revision = 2}));
+    CHECK(captured[1].startBeat == Approx(3.0).margin(1.0 / kBeatSamples));
+    CHECK(captured[1].lengthBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+    CHECK(captured[1].offsetBeats == Approx(2.0).margin(2.0 / kBeatSamples));
+}
+
+TEST_CASE("arm boundary never rewinds a newer delayed launch", "[engine][capture]") {
+    SlotRunQueue lane;
+    SessionCapture capture(lane);
+    lane.reachedBeat(1.0);
+    lane.push(SlotRunEvent{.key = key(1),
+                           .kind = SlotRunEvent::Kind::began,
+                           .incarnation = 1,
+                           .at = SamplePosition{static_cast<std::int64_t>(2.0 * kBeatSamples)},
+                           .timelineBeat = 2.0,
+                           .monotonicBeat = 2.0});
+
+    capture.armFromCurrent();
+    lane.push(SlotRunEvent{
+        .key = key(1), .kind = SlotRunEvent::Kind::ended, .incarnation = 1, .monotonicBeat = 4.0});
+    lane.reachedBeat(4.0);
+    capture.update();
+
+    const auto captured = capture.collect();
+    REQUIRE(captured.size() == 1);
+    CHECK(captured.front().startBeat == Approx(2.0));
+    CHECK(captured.front().lengthBeats == Approx(2.0));
+    CHECK(captured.front().offsetBeats == Approx(0.0));
 }
 
 TEST_CASE("an end that overtook its own launch still closes it", "[engine][capture]") {
@@ -546,4 +695,32 @@ TEST_CASE("A captured span never runs past the end its run had", "[engine][captu
     // A run sounded for kSpan and no longer, whether a span is the whole of it
     // or the part a disarm cut off.
     CHECK(longest <= kSpan);
+}
+
+TEST_CASE("the capture boundary exposes one coherent audio position", "[engine][capture]") {
+    constexpr std::int64_t kBoundaries = 100000;
+    SlotRunQueue lane;
+    std::atomic<bool> publishing{true};
+
+    std::thread audio([&] {
+        for (std::int64_t at = 1; at <= kBoundaries; ++at)
+            lane.reached({.at = SamplePosition{at},
+                          .timelineBeat = static_cast<double>(at * 2),
+                          .monotonicBeat = static_cast<double>(at)});
+        publishing.store(false);
+    });
+
+    auto coherent = true;
+    while (publishing.load()) {
+        const auto boundary = lane.drain([](const SlotRunEvent&) {});
+        coherent = coherent && boundary.timelineBeat == boundary.monotonicBeat * 2.0 &&
+                   boundary.at.sample == static_cast<std::int64_t>(boundary.monotonicBeat);
+    }
+    audio.join();
+
+    const auto boundary = lane.drain([](const SlotRunEvent&) {});
+    CHECK(coherent);
+    CHECK(boundary.at.sample == kBoundaries);
+    CHECK(boundary.timelineBeat == static_cast<double>(kBoundaries * 2));
+    CHECK(boundary.monotonicBeat == static_cast<double>(kBoundaries));
 }

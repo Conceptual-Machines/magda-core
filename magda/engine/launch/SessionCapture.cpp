@@ -33,19 +33,38 @@ void SessionCapture::fold(const SlotRunEvent& event) {
         inFlight_.erase(found);
     }
 
-    if (event.kind == SlotRunEvent::Kind::began)
-        inFlight_[of] = Run{.origin = event.at,
-                            .startBeat = event.timelineBeat,
-                            .startMonotonicBeat = event.monotonicBeat,
-                            .capturing = armed_};
+    if (event.kind == SlotRunEvent::Kind::began) {
+        auto run = Run{.source = event.source,
+                       .origin = event.at,
+                       .startBeat = event.timelineBeat,
+                       .startMonotonicBeat = event.monotonicBeat,
+                       .offsetBeats = event.offsetBeats,
+                       .capturing = armed_};
+        captureFromOrigin(run);
+        inFlight_[of] = run;
+    }
 }
 
 void SessionCapture::arm() {
     update();
     armed_ = true;
 
-    for (auto& [of, run] : inFlight_)
+    for (auto& [of, run] : inFlight_) {
+        captureFromOrigin(run);
         run.capturing = true;
+    }
+}
+
+void SessionCapture::armFromCurrent() {
+    update();
+    if (armed_)
+        return;
+
+    armed_ = true;
+    for (auto& [of, run] : inFlight_) {
+        captureFrom(run, reached_);
+        run.capturing = true;
+    }
 }
 
 void SessionCapture::disarm() {
@@ -59,7 +78,7 @@ void SessionCapture::disarm() {
         if (!run.capturing)
             continue;
 
-        finish(of, run, reached_);
+        finish(of, run, reached_.monotonicBeat);
 
         // Still sounding: what stops is the capture, not the slot.
         run.capturing = false;
@@ -70,7 +89,7 @@ void SessionCapture::finish(const RunKey& of, const Run& run, double monotonicBe
     if (!run.capturing)
         return;
 
-    const auto length = monotonicBeat - run.startMonotonicBeat;
+    const auto length = monotonicBeat - run.captureStartMonotonicBeat;
 
     // A run that ended on the sample it began on played nothing.
     if (length <= 0.0)
@@ -78,13 +97,42 @@ void SessionCapture::finish(const RunKey& of, const Run& run, double monotonicBe
 
     captured_.push_back(CapturedRun{.key = of.key,
                                     .incarnation = of.incarnation,
-                                    .startBeat = run.startBeat,
+                                    .source = run.source,
+                                    .startBeat = run.captureStartBeat,
                                     .lengthBeats = length,
-                                    .origin = run.origin});
+                                    .offsetBeats = run.captureOffsetBeats,
+                                    .origin = run.captureOrigin});
+}
+
+void SessionCapture::captureFromOrigin(Run& run) {
+    run.captureOrigin = run.origin;
+    run.captureStartBeat = run.startBeat;
+    run.captureStartMonotonicBeat = run.startMonotonicBeat;
+    run.captureOffsetBeats = run.offsetBeats;
+}
+
+void SessionCapture::captureFrom(Run& run, const SlotRunBoundary& boundary) {
+    if (boundary.monotonicBeat <= run.startMonotonicBeat) {
+        captureFromOrigin(run);
+        return;
+    }
+
+    run.captureOrigin = boundary.at;
+    run.captureStartBeat = boundary.timelineBeat;
+    run.captureStartMonotonicBeat = boundary.monotonicBeat;
+    run.captureOffsetBeats = run.offsetBeats + (boundary.monotonicBeat - run.startMonotonicBeat);
 }
 
 std::vector<CapturedRun> SessionCapture::collect() {
     return std::exchange(captured_, {});
+}
+
+std::vector<CapturedSourceRef> SessionCapture::activeSources() const {
+    std::vector<CapturedSourceRef> active;
+    active.reserve(inFlight_.size());
+    for (const auto& [of, run] : inFlight_)
+        active.push_back({.key = of.key, .incarnation = of.incarnation, .source = run.source});
+    return active;
 }
 
 }  // namespace magda::engine

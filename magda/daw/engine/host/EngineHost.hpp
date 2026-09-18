@@ -257,18 +257,18 @@ class EngineHost {
     bool isPlaying() const;
 
     /**
-     * @brief Begin an Arrangement MIDI take on every eligible armed track.
+     * @brief Begin Arrangement input takes and Session performance capture.
      *
      * Locates first when playback is stopped, then starts the transport. While
-     * rolling, begins at the current cursor. False means no eligible input was
-     * available and nothing changed.
+     * rolling, begins at the current cursor. Session clips need no armed input.
+     * False means neither an eligible input nor Session material was available.
      */
     bool startMidiRecording(double positionSeconds);
 
-    /// Finish every Arrangement MIDI take without stopping playback.
+    /// Finish Arrangement takes and Session capture without stopping playback.
     void stopMidiRecording();
 
-    /// Whether this host currently owns any live Arrangement MIDI take.
+    /// Whether this host currently owns any Arrangement recording work.
     bool isRecording() const;
 
     void armSessionSlotRecording(TrackId trackId, int sceneIndex);

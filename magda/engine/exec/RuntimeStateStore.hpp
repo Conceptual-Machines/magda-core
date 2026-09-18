@@ -469,6 +469,8 @@ class RuntimeStateStore {
         /// Beside the handle, so a host's pointer survives a publish that did
         /// not retire the slot.
         std::unique_ptr<LaunchTap> tap;
+
+        SlotRunSourceState runSource;
     };
 
     /// One per slot rather than per track: a slot's loop phase and played

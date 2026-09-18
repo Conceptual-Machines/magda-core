@@ -151,31 +151,69 @@ void applyDueFollowActions(const LaunchHandleTable& table, const SyncRange& rang
  * that cut the block, so the capture places a run where the audio actually
  * started rather than where a poll noticed it (#2464).
  */
+CaptureSource sourceFor(const ClipSnapshot* clips, const SlotKey& key) {
+    if (clips != nullptr)
+        if (const auto* track = clips->find(key.trackId); track != nullptr)
+            if (const auto* slot = track->slot(key.sceneIndex); slot != nullptr)
+                return slot->captureSource;
+    return {};
+}
+
 void publishRunEdges(SlotRunQueue& runs, const LaunchHandleTable::Entry& entry,
-                     const SyncRange& range, const SplitStatus& status) {
-    const auto edge = [&](SlotRunEvent::Kind kind, int sample) {
+                     const SyncRange& range, const SplitStatus& status,
+                     CaptureSource publishedSource, bool playingBefore, double elapsedBefore) {
+    auto active =
+        entry.runSource != nullptr ? entry.runSource->active : std::optional<CaptureSource>{};
+    const auto edge = [&](SlotRunEvent::Kind kind, int sample, CaptureSource source,
+                          double offsetBeats = 0.0) {
         const auto at = range.atSample(sample);
 
         runs.push(SlotRunEvent{.key = entry.key,
                                .kind = kind,
                                .incarnation = entry.incarnation,
+                               .source = source,
+                               .offsetBeats = offsetBeats,
                                .at = at.monotonic,
                                .timelineBeat = range.timelineBeatAt(at),
                                .monotonicBeat = range.monotonicBeatAt(at)});
     };
 
-    if (status.runEndedAt)
-        edge(SlotRunEvent::Kind::ended, status.runEndedAt->value);
+    const auto endedAtZero = status.runEndedAt && status.runEndedAt->value == 0;
+    if (playingBefore && active && *active != publishedSource && !endedAtZero) {
+        edge(SlotRunEvent::Kind::ended, 0, *active);
+        edge(SlotRunEvent::Kind::began, 0, publishedSource, elapsedBefore);
+        active = publishedSource;
+    }
 
-    if (status.runBeganAt)
-        edge(SlotRunEvent::Kind::began, status.runBeganAt->value);
+    if (status.runEndedAt) {
+        edge(SlotRunEvent::Kind::ended, status.runEndedAt->value, active.value_or(publishedSource));
+        active.reset();
+    }
+
+    if (status.runBeganAt) {
+        edge(SlotRunEvent::Kind::began, status.runBeganAt->value, publishedSource);
+        active = publishedSource;
+    }
+
+    if (entry.runSource != nullptr)
+        entry.runSource->active = active;
+}
+
+SlotRunBoundary boundaryAtEnd(const SyncRange& range) {
+    const auto at = range.atSample(range.numSamples);
+    return {.at = at.monotonic,
+            .timelineBeat = range.timelineBeatAt(at),
+            .monotonicBeat = range.monotonicBeatAt(at)};
 }
 
 }  // namespace
 
 void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& requests,
-                          const BlockInfo& block, SlotRunQueue* runs, const ClipSnapshot* clips) {
+                          const BlockInfo& block, SlotRunQueue* runs, const ClipSnapshot* clips,
+                          const SlotRunBoundary* completedBoundary) {
     const LaunchHandleFeed::Reader table(handles);
+    const auto range = syncRangeFor(block);
+    const auto boundary = completedBoundary != nullptr ? *completedBoundary : boundaryAtEnd(range);
 
     // Drained whether or not there is a table to apply it to: a queue left
     // filling would deliver a launch made minutes ago at whatever moment a
@@ -186,7 +224,7 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
         // Still reported: how far the lane has got is a property of the
         // transport, not of there being anything to launch.
         if (runs != nullptr)
-            runs->reachedBeat(block.monotonicBeats.end);
+            runs->reached(boundary);
 
         return;
     }
@@ -205,14 +243,15 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
     // on the same block.
     requests.drain([&table](const LaunchRequest& request) { apply(request, *table.get()); });
 
-    const auto range = syncRangeFor(block);
-
     // After the requests, so a launch made in this block beats the follow
     // action of the run it replaces.
     applyDueFollowActions(*table.get(), range);
 
     for (const auto& entry : table->entries)
         if (entry.handle != nullptr) {
+            const auto playingBefore =
+                entry.handle->playState() == LaunchHandle::PlayState::playing;
+            const auto playedBefore = entry.handle->playedMonotonicRange();
             const auto status = entry.handle->advance(range);
 
             // Published by the block that decided it, so the UI is never a
@@ -221,13 +260,14 @@ void advanceLaunchHandles(LaunchHandleFeed& handles, LaunchRequestQueue& request
                 entry.tap->write(*entry.handle);
 
             if (runs != nullptr)
-                publishRunEdges(*runs, entry, range, status);
+                publishRunEdges(*runs, entry, range, status, sourceFor(clips, entry.key),
+                                playingBefore, playedBefore ? playedBefore->length() : 0.0);
         }
 
     // After every edge this block reported, which is what lets a capture end a
     // run here without cutting one whose end it has not seen (SlotRuns.hpp).
     if (runs != nullptr)
-        runs->reachedBeat(range.monotonic.end);
+        runs->reached(boundary);
 }
 
 SlotRun slotRun(const SlotRunTarget& target) {

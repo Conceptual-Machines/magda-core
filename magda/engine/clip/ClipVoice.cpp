@@ -374,9 +374,8 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
                 region.getSingleChannelBlock(channel).copyFrom(region.getSingleChannelBlock(heard));
     }
 
-    // The span's edges, not the placement's. What the lane leaves audible is
-    // what a listener hears begin and end, and the fades the snapshot resolved
-    // are the ones that shape it.
+    // Captured material keeps the source envelope around its audible window,
+    // so punching into a fade resumes its gain instead of starting it again.
     //
     // The clip's pair only. An event carries its own (AudioEventPlayback), and
     // for the single event a clip has today they are the same fade before and
@@ -388,13 +387,14 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // the clip instead of rising into it (EventPlacement.hpp), and putting a
     // gain curve on top of that would fade an edge that was never meant to be
     // quiet.
+    const auto& envelope = clip.envelopeSpan();
     if (clip.fadeInBehaviour == 0)
-        applyFade(region, first, block, clip.span.seconds.start,
-                  clip.span.seconds.start + clip.fadeInSeconds, clip.fadeInCurve, true);
+        applyFade(region, first, block, envelope.seconds.start,
+                  envelope.seconds.start + clip.fadeInSeconds, clip.fadeInCurve, true);
 
     if (clip.fadeOutBehaviour == 0)
-        applyFade(region, first, block, clip.span.seconds.end - clip.fadeOutSeconds,
-                  clip.span.seconds.end, clip.fadeOutCurve, false);
+        applyFade(region, first, block, envelope.seconds.end - clip.fadeOutSeconds,
+                  envelope.seconds.end, clip.fadeOutCurve, false);
 
     // Volume and gain summed, panned the way the incumbent pans a clip: linear,
     // and hotter on one side rather than quieter on the other. Not a law with a

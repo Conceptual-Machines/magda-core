@@ -541,6 +541,71 @@ ClipId ClipManager::createRecordedMidiClip(TrackId trackId, RecordedMidiClipData
     return clipId;
 }
 
+ClipId ClipManager::createCapturedSessionClip(const ClipInfo& source, double startBeat,
+                                              double lengthBeats, double offsetBeats,
+                                              ClipOverlapPolicy overlapPolicy, double sourceTempo) {
+    if (!std::isfinite(startBeat) || !std::isfinite(lengthBeats) || !std::isfinite(offsetBeats) ||
+        startBeat < 0.0 || lengthBeats <= 0.0 || offsetBeats < 0.0 ||
+        source.trackId == INVALID_TRACK_ID) {
+        return INVALID_CLIP_ID;
+    }
+
+    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+        startBeat = findNonOverlappingStartBeats(source.trackId, startBeat, lengthBeats,
+                                                 ClipView::Arrangement);
+    }
+
+    const double bpm = isValidBpm(sourceTempo) ? sourceTempo : currentProjectTempoOrDefault();
+    ClipInfo normalisedSource = source;
+    normalisedSource.setPlacementBeats(0.0, source.sessionCycleBeats(bpm));
+
+    ClipInfo captured = normalisedSource;
+    captured.id = nextClipId_++;
+    captured.view = ClipView::Arrangement;
+    captured.linkGroupId = 0;
+    captured.stackOrder = 0;
+    captured.sceneIndex = -1;
+    captured.launchMode = LaunchMode::Trigger;
+    captured.launchQuantize = LaunchQuantize::OneBar;
+    captured.followAction = FollowAction::None;
+    captured.followActionDelayBeats = 0.0;
+    captured.followActionLoopCount = 1;
+    captured.sessionPlayheadPos = -1.0;
+
+    ClipOperations::setBeatPlacement(captured, startBeat, lengthBeats, bpm);
+    if (captured.isAudio()) {
+        captured.audio() = normalisedSource.audio();
+        for (auto& event : captured.audio().events)
+            event.startBeat -= offsetBeats;
+
+        const auto sourceWindow = captured.audio().envelopeWindow.value_or(
+            ClipPlacement{0.0, normalisedSource.placement.lengthBeats});
+        captured.audio().envelopeWindow =
+            ClipPlacement{sourceWindow.startBeat - offsetBeats, sourceWindow.lengthBeats};
+    } else {
+        if (captured.loopEnabled && captured.loopLengthBeats <= 0.0) {
+            captured.loopLengthBeats = normalisedSource.placement.lengthBeats;
+            captured.loopStartBeats = 0.0;
+        }
+
+        if (captured.loopEnabled && captured.loopLengthBeats > 0.0) {
+            captured.midiOffset =
+                wrapPhase(captured.midiOffset + offsetBeats, captured.loopLengthBeats);
+        } else {
+            captured.midiTrimOffset += offsetBeats;
+        }
+    }
+
+    const auto clipId = captured.id;
+    clips_[clipId] = std::move(captured);
+    indexClipGroup(clipId, 0);
+
+    if (overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
+        resolveOverlaps(clipId);
+    notifyClipsChanged();
+    return clipId;
+}
+
 ClipId ClipManager::createMidiClip(TrackId trackId, double startTime, double length, ClipView view,
                                    ClipOverlapPolicy overlapPolicy) {
     // Seconds → beats once, at the boundary, using project tempo. Then

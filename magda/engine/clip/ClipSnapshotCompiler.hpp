@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,10 @@ struct ClipLane {
     /// can carry an arrangement and a session at once, and which one sounds is
     /// decided at launch rather than at compile (#2301).
     std::vector<ClipInfo> session;
+
+    /// Content revisions for Session capture. A revision moves only when that
+    /// clip's model material changes, so unrelated publishes keep one identity.
+    std::map<ClipId, std::uint64_t> captureRevisions;
 
     /// Scene indices of the empty slots this track records into (#2464). A
     /// slot that already holds a clip is not a target and is left alone.

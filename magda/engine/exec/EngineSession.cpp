@@ -304,8 +304,10 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
     // separate blocks so that nothing downstream has to know a wrap can happen
     // in the middle of a buffer. Everything below the plan is block-size
     // independent already, which is what makes cutting a callback free.
-    for (const auto& segment :
-         clock_.advance(*transport, (*render)->context.sampleRate, numSamples)) {
+    const auto segments = clock_.advance(*transport, (*render)->context.sampleRate, numSamples);
+    const auto callbackEnd = clock_.syncPoint();
+    for (std::size_t index = 0; index < segments.size(); ++index) {
+        const auto& segment = segments[index];
         // A view on the output, not a copy: same channels, same memory, offset
         // to where this piece belongs.
         juce::AudioBuffer<float> piece(output.getArrayOfWritePointers(), output.getNumChannels(),
@@ -326,7 +328,15 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // the handles advance so a live edit changes a slot's cycle and its
         // material together for this block.
         const ClipSnapshotFeed::BlockScope clips(clips_);
-        advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live());
+        const auto boundary =
+            index + 1 < segments.size()
+                ? SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                  .timelineBeat = segments[index + 1].block.beats.start,
+                                  .monotonicBeat = segments[index + 1].block.monotonicBeats.start}
+                : SlotRunBoundary{.at = segment.block.monotonicSamples.end,
+                                  .timelineBeat = callbackEnd.beat,
+                                  .monotonicBeat = callbackEnd.monotonicBeat};
+        advanceLaunchHandles(handles_, requests_, segment.block, &runs_, clips_.live(), &boundary);
 
         // Before the plan and outside it: a take holds the input the device
         // captured, not what the track's chain went on to make of it.

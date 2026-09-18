@@ -370,6 +370,7 @@ set(TEST_SOURCES
 # no UI, but its compiler is exercised here: the model fixtures it compiles are
 # plain value types, so the plan tests are ordinary model-level Catch2 tests.
 if(MAGDA_BUILD_NATIVE_ENGINE)
+    list(APPEND TEST_SOURCES clips/test_session_arrangement_capture.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_compiler.cpp)
     list(APPEND TEST_SOURCES engine/test_render_plan_executor.cpp)
     list(APPEND TEST_SOURCES engine/test_parallel_executor.cpp)
@@ -862,6 +863,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
+        engine/test_engine_host_session_capture_juce.cpp
 
         # Export, bounce and analysis renders on the native engine, read off disk (#2555).
         engine/test_engine_offline_render_juce.cpp

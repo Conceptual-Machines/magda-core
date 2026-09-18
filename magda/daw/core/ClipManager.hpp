@@ -148,6 +148,19 @@ class ClipManager {
         ClipView view = ClipView::Arrangement, int sceneIndex = -1);
 
     /**
+     * @brief Materialise one captured Session run as an Arrangement clip (#2726).
+     *
+     * `source` is the immutable slot snapshot taken when the run began. The
+     * complete copy, placement and heard source phase are installed before the
+     * sole clipsChanged notification. `sourceTempo` is the tempo that snapshot
+     * played under; zero falls back to the current project tempo.
+     */
+    ClipId createCapturedSessionClip(
+        const ClipInfo& source, double startBeat, double lengthBeats, double offsetBeats = 0.0,
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        double sourceTempo = 0.0);
+
+    /**
      * @brief Create an empty MIDI clip from seconds.
      *
      * Thin shim around createMidiClipBeats — only legitimate when the

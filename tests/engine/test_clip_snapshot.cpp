@@ -157,6 +157,8 @@ TEST_CASE("A covered clip plays what the lane leaves it", "[engine][clip]") {
 
     SECTION("covered at an edge, the edge pulls in") {
         auto under = makeAudioClip(1, 0.0, 8.0);
+        eventOf(under).fadeInSeconds = 3.0;
+        eventOf(under).fadeOutSeconds = 1.0;
         auto over = makeAudioClip(2, 4.0, 8.0);
         over.stackOrder = 1;
 
@@ -167,6 +169,8 @@ TEST_CASE("A covered clip plays what the lane leaves it", "[engine][clip]") {
         CHECK(clip->span.beats.end == Approx(4.0));
         CHECK(clip->span.seconds.end == Approx(2.0));
         CHECK(clip->silenced.empty());
+        CHECK(clip->fadeInSeconds == Approx(3.0));
+        CHECK(clip->fadeOutSeconds == Approx(1.0));
     }
 
     SECTION("covered in the middle, an audio clip keeps a hole") {
@@ -356,6 +360,26 @@ TEST_CASE("A clip's own fade and its curve survive the compile", "[engine][clip]
     CHECK(compiled->fadeInCurve == FadeCurve::SCurve);
     CHECK(compiled->fadeOutCurve == FadeCurve::Convex);
     CHECK(compiled->fadeOutBehaviour == 1);
+}
+
+TEST_CASE("A captured audio window compiles its source envelope", "[engine][clip]") {
+    auto clip = makeAudioClip(1, 10.0, 2.0);
+    clip.audio().envelopeWindow = magda::ClipPlacement{-4.0, 8.0};
+    eventOf(clip).fadeInSeconds = 1.5;
+    eventOf(clip).fadeOutSeconds = 1.5;
+
+    const auto snapshot = compile({clip}, makeTempoMap());
+    const auto* compiled = audioClip(snapshot, 1);
+    REQUIRE(compiled != nullptr);
+    REQUIRE(compiled->envelope.has_value());
+    CHECK(compiled->span.beats.start == Approx(10.0));
+    CHECK(compiled->span.beats.end == Approx(12.0));
+    CHECK(compiled->envelope->beats.start == Approx(6.0));
+    CHECK(compiled->envelope->beats.end == Approx(14.0));
+    CHECK(compiled->fadeInSeconds == Approx(1.5));
+    CHECK(compiled->fadeOutSeconds == Approx(1.5));
+    CHECK(dumpClipSnapshot(snapshot).find("envelope=6.000..14.000b 3.000..7.000s") !=
+          std::string::npos);
 }
 
 TEST_CASE("Clip volume and gain reach the engine summed, as the incumbent applies them",

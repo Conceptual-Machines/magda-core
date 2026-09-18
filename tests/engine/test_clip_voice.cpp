@@ -519,6 +519,57 @@ TEST_CASE("The resolved fades shape the edges of the audible span", "[engine][cl
     }
 }
 
+TEST_CASE("A captured window resumes the source envelope", "[engine][clip][voice]") {
+    const auto sourceSpan = blocks(100, 2100);
+
+    auto sourceClip = clipOver(1, sourceSpan);
+    sourceClip.fadeInSeconds = blockTime(400);
+
+    Rig source;
+    source.lane.audio.push_back(sourceClip);
+    source.give(1, 1, std::make_unique<ConstantReader>(1.0f));
+    source.publish();
+    source.start(300, 100);
+
+    auto capturedClip = sourceClip;
+    capturedClip.span = blocks(300, 900);
+    capturedClip.envelope = sourceSpan;
+
+    Rig captured;
+    captured.lane.audio.push_back(capturedClip);
+    captured.give(1, 1, std::make_unique<ConstantReader>(1.0f));
+    captured.publish();
+    captured.start(300, 0);
+
+    // The first callback after a seek is the stream hand-off. Compare the next
+    // one, once both readers are delivering the same source instant.
+    source.advance();
+    captured.advance();
+
+    const auto expected = 201.0f / 400.0f;
+    REQUIRE(source.at(0) == approx(expected));
+    REQUIRE(captured.at(0) == approx(source.at(0)));
+}
+
+TEST_CASE("A captured window resumes a source speed ramp", "[engine][clip][voice]") {
+    auto source = clipOver(1, seconds(0.0, 4.0));
+    source.fadeInSeconds = 4.0;
+    source.fadeInBeats = 8.0;
+    source.fadeInBehaviour = 1;
+
+    auto captured = source;
+    captured.span = seconds(2.0, 4.0);
+    captured.envelope = source.span;
+
+    const auto sourcePosition =
+        magda::engine::readingPositionAt(source, source.events.front(), 2.0, 4.0, kSampleRate);
+    const auto capturedPosition =
+        magda::engine::readingPositionAt(captured, captured.events.front(), 2.0, 4.0, kSampleRate);
+
+    REQUIRE(capturedPosition == Catch::Approx(sourcePosition));
+    REQUIRE(capturedPosition > 0.0);
+}
+
 TEST_CASE("A clip plays at its own gain and pan", "[engine][clip][voice]") {
     Rig rig;
 
