@@ -346,6 +346,32 @@ class FaustInstrumentVoiceModeTest final : public juce::UnitTest {
             }
         }
 
+        beginTest("The host's panic lets go of what is sounding, in Poly and Mono (#2722)");
+        {
+            // It travels beside the events with no note-off among them (#2418),
+            // so nothing else closes the gate.
+            setHostParam(*plugin, glideIdx, 0.0f);
+
+            double t = 2.5;
+            for (const float mode : {0.0f, 0.5f}) {  // Poly, Mono
+                setHostParam(*plugin, voiceModeIdx, mode);
+                instrument->reset();
+
+                auto held = noteOn(60);
+                const float sounding = renderBlock(*plugin, t, held);
+                expect(sounding > 0.001f, "The note should sound before the panic");
+
+                te::MidiMessageArray panic;
+                panic.isAllNotesOff = true;
+                const float afterPanic = renderBlock(*plugin, t += 0.01, panic);
+                t += 0.01;
+
+                expectWithinAbsoluteError(afterPanic, 0.0f, 0.001f,
+                                          "the panic should have released the note, mode=" +
+                                              juce::String(mode));
+            }
+        }
+
         plugin->baseClassDeinitialise();
     }
 };

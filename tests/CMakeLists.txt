@@ -67,6 +67,8 @@ set(TEST_SOURCES
     # Engine-neutral internal device state schema v2 (issue #1887)
     devices/test_device_state_codec.cpp
     devices/test_chord_engine_device.cpp
+    # All-notes-off beside the events, which the instrument used to drop (#2418)
+    devices/test_instrument_panic.cpp
     devices/test_device_sdk_handles.cpp
     devices/test_external_insert_registry.cpp
     devices/test_external_insert_enablement.cpp

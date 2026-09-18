@@ -219,6 +219,10 @@ class FaustInstrumentPlugin : public MagdaDevice, public IFaustEditorModel {
     // - a freshly recorded clip playing back while the live input that fed it
     // is still monitored - so an unbalanced delivery must never strand a voice.
     static void releasePolyVoicesForPitch(const std::shared_ptr<FaustState>& state, int pitch);
+
+    /// Let go of everything sounding, in either voice mode: what the host's
+    /// all-notes-off asks for, since no note-offs follow it.
+    void releaseAllVoices(const std::shared_ptr<FaustState>& state);
     // Returns true when the caller must render one sample of gate-low before
     // raising the gate again, which is how Mono retriggers an envelope.
     bool handleMonoNoteOn(const std::shared_ptr<FaustState>& state, int note, int velocity,

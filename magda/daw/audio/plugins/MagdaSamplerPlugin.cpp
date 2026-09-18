@@ -596,6 +596,11 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     // Device MIDI timestamps are block-relative seconds — convert to a sample
     // offset within the block. Deduplicate on note AND sample position, because
     // several input devices can route the same message at the same instant.
+    // The host's panic travels beside the events (#2418). A tail-off stop is a
+    // no-op on an idle voice, so only what is sounding is let go.
+    if (context.midiIn != nullptr && context.midiIn->isAllNotesOff())
+        synthesiser.allNotesOff(0, true);
+
     juce::MidiBuffer midiBuffer;
     if (context.midiIn != nullptr) {
         struct SeenKey {

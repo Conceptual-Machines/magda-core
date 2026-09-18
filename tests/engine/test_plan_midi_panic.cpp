@@ -805,3 +805,112 @@ TEST_CASE("a gate that was passing panics when the publish that silences it also
 
     CHECK(harness.device.lastHeard());
 }
+
+namespace {
+
+/// MidiInput(T1) -> merge(T1) -> gate(T2) -> merge(T2) -> Device(T2): a track
+/// taking MIDI from another one, as the compiler lays it out (#2612).
+struct RoutedHarness {
+    RenderPlan plan;
+    PlanExecutor executor;
+    PlanBindings bindings;
+    LaunchingSource source;
+    PanicProbe device;
+    PlanValues values;
+    juce::AudioBuffer<float> output{2, kBlockSize};
+
+    RoutedHarness() {
+        magda::engine::PlanOp input;
+        input.kind = OpKind::MidiInput;
+        input.key.trackId = 1;
+        input.key.role = OpRole::LiveMidiInput;
+        input.outputs = {SignalKind::Midi};
+        plan.ops.push_back(input);
+
+        magda::engine::PlanOp sourceMerge;
+        sourceMerge.kind = OpKind::MergeMidi;
+        sourceMerge.key.trackId = 1;
+        sourceMerge.key.role = OpRole::TrackMidiInput;
+        sourceMerge.inputs = {PortRef{0, 0}};
+        sourceMerge.outputs = {SignalKind::Midi};
+        plan.ops.push_back(sourceMerge);
+
+        magda::engine::PlanOp gate;
+        gate.kind = OpKind::MidiNoteGate;
+        gate.key.trackId = 2;
+        gate.key.role = OpRole::InputRouteGate;
+        gate.key.index = 1;
+        gate.inputs = {PortRef{1, 0}};
+        gate.outputs = {SignalKind::Midi};
+        plan.ops.push_back(gate);
+
+        magda::engine::PlanOp destMerge;
+        destMerge.kind = OpKind::MergeMidi;
+        destMerge.key.trackId = 2;
+        destMerge.key.role = OpRole::TrackMidiInput;
+        destMerge.inputs = {PortRef{2, 0}};
+        destMerge.outputs = {SignalKind::Midi};
+        plan.ops.push_back(destMerge);
+
+        magda::engine::PlanOp reader;
+        reader.kind = OpKind::Device;
+        reader.key.trackId = 2;
+        reader.key.deviceId = 9;
+        reader.key.role = OpRole::DeviceProcess;
+        reader.inputs = {PortRef{}, PortRef{3, 0}, PortRef{}};
+        reader.outputs = {SignalKind::Audio};
+        plan.ops.push_back(reader);
+
+        magda::engine::PlanOp out;
+        out.kind = OpKind::Output;
+        out.key.trackId = 2;
+        out.key.role = OpRole::HardwareOutput;
+        out.inputs = {PortRef{4, 0}};
+        plan.ops.push_back(out);
+
+        plan.outputOps = {5};
+        magda::engine::bakeScheduling(plan);
+
+        bindings.midiInputs[1] = &source;
+        bindings.devices[DeviceKey{9}] = &device;
+
+        values.planFingerprint = magda::engine::planFingerprint(plan);
+        values.ops.assign(plan.ops.size(), magda::engine::kUnityValue);
+    }
+
+    void prepare() {
+        const auto messages =
+            executor.prepare(plan, bindings, RenderContext{44100.0, kBlockSize, 2});
+        for (const auto& message : messages)
+            UNSCOPED_INFO("prepare: " << message);
+        REQUIRE(messages.empty());
+    }
+
+    void render() {
+        output.clear();
+        BlockInfo block;
+        block.numSamples = kBlockSize;
+        block.playing = true;
+        block.continuous = true;
+        executor.process(values, block, output);
+    }
+};
+
+}  // namespace
+
+TEST_CASE("a source track losing its input panics the instrument reading it",
+          "[engine][exec][2418][2612]") {
+    // The source's live input raises all-notes-off when a device leaves its
+    // routing, which is what turning that track's monitor off does. The note it
+    // already delivered is being held on another track's instrument, so the
+    // panic has to cross the route and its gate to reach it.
+    RoutedHarness harness;
+    harness.prepare();
+
+    harness.render();
+    CHECK_FALSE(harness.device.lastHeard());
+
+    harness.source.launched = true;
+    harness.render();
+    CHECK(harness.device.lastHeard());
+}

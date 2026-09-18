@@ -344,6 +344,10 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
     };
 
     if (context.midiIn != nullptr) {
+        // The host's panic travels beside the events rather than as CC 123 (#2418).
+        if (context.midiIn->isAllNotesOff())
+            impl_->allNotesOff();
+
         for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
             const auto& m = context.midiIn->message(eventIndex);
             const bool isPanic = m.isController() &&

@@ -34,10 +34,15 @@ struct StrumRig {
             index, magda::ParameterUtils::realToNormalized(value, strum.parameterInfo(index)));
     }
 
-    void run(std::initializer_list<juce::MidiMessage> input = {}, bool playing = true) {
+    /// Whether the last block passed the host's panic on.
+    bool passedPanic = false;
+
+    void run(std::initializer_list<juce::MidiMessage> input = {}, bool playing = true,
+             bool panic = false) {
         magda::test::DeviceMidiBuffer in;
         for (const auto& message : input)
             in.events.push_back({message, source});
+        in.allNotesOff = panic;
         magda::test::DeviceMidiBuffer out;
         audio::DeviceProcessContext context;
         context.midiIn = &in;
@@ -45,6 +50,7 @@ struct StrumRig {
         context.numSamples = kBlock;
         context.isPlaying = playing;
         strum.process(context);
+        passedPanic = out.allNotesOff;
         for (const auto& event : out.events) {
             if (event.message.isNoteOn())
                 gates.push_back({event.message.getNoteNumber(), true});
@@ -131,6 +137,32 @@ TEST_CASE("Strum released mid-pass plays no note it had not reached", "[strum][m
         INFO("note " << note);
         CHECK(rig.hanging(note) == 0);
     }
+}
+
+TEST_CASE("Strum lets go of the chord on the host's panic and passes it on",
+          "[strum][midi][2722]") {
+    // The host raises it beside the events, with no note-offs for what it
+    // takes away (#2418), so a strum that ignored it held the chord for good.
+    StrumRig rig;
+    rig.setDisplay(Strum::kStrumLength, 400.0f);
+
+    rig.run({on(60), on(64), on(67)});
+    rig.runFor(60);
+    for (const int note : {60, 64, 67})
+        REQUIRE(rig.hanging(note) == 1);
+
+    rig.run({}, true, /*panic*/ true);
+    CHECK(rig.passedPanic);
+    for (const int note : {60, 64, 67}) {
+        INFO("note " << note);
+        CHECK(rig.hanging(note) == 0);
+    }
+
+    // Nothing is re-asserted, so nothing is strummed again.
+    const auto afterPanic = rig.gates.size();
+    rig.runFor(60);
+    CHECK(rig.gates.size() == afterPanic);
+    CHECK_FALSE(rig.passedPanic);
 }
 
 TEST_CASE("Strum re-strumming a changed chord releases what it retriggers", "[strum][midi]") {
