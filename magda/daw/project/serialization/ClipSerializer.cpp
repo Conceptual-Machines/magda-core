@@ -60,6 +60,10 @@ const char* toString(RegionExtent extent) {
     return "wholeSource";
 }
 
+const char* toString(LoopLengthIntent intent) {
+    return intent == LoopLengthIntent::Musical ? "musical" : "source";
+}
+
 const char* toString(PlaybackIntent intent) {
     switch (intent) {
         case PlaybackIntent::Beat:
@@ -89,6 +93,14 @@ RegionExtent regionExtentFromString(const juce::String& text, RegionExtent fallb
         return RegionExtent::Interpretation;
     if (text == "explicit")
         return RegionExtent::Explicit;
+    return fallback;
+}
+
+LoopLengthIntent loopLengthIntentFromString(const juce::String& text, LoopLengthIntent fallback) {
+    if (text == "source")
+        return LoopLengthIntent::Source;
+    if (text == "musical")
+        return LoopLengthIntent::Musical;
     return fallback;
 }
 
@@ -135,6 +147,8 @@ juce::var serializeAudioEvent(const AudioEvent& event) {
     obj->setProperty("loopStartSamples", juce::String(event.loopStartSamples));
     obj->setProperty("loopLengthSamples", juce::String(event.loopLengthSamples));
     obj->setProperty("loopExtent", toString(event.loopExtent));
+    obj->setProperty("loopLengthIntent", toString(event.loopLengthIntent));
+    obj->setProperty("musicalLoopLengthBeats", event.musicalLoopLengthBeats);
 
     obj->setProperty("interpBpm", event.interpBpm);
     obj->setProperty("bpmFrom", toString(event.bpmFrom));
@@ -212,9 +226,17 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
 
     event.sourceAnchorSamples = readSamples(*obj, "anchorSamples");
     event.loopStartSamples = readSamples(*obj, "loopStartSamples");
-    event.loopLengthSamples = readSamples(*obj, "loopLengthSamples");
-    event.loopExtent = regionExtentFromString(obj->getProperty("loopExtent").toString(),
-                                              legacyLoopExtent(event.loopLengthSamples));
+    const auto storedLoopLengthSamples = readSamples(*obj, "loopLengthSamples");
+    const LoopLengthState loopLength{
+        .samples = storedLoopLengthSamples,
+        .extent = regionExtentFromString(obj->getProperty("loopExtent").toString(),
+                                         legacyLoopExtent(storedLoopLengthSamples)),
+        .intent = loopLengthIntentFromString(obj->getProperty("loopLengthIntent").toString(),
+                                             LoopLengthIntent::Source),
+        .musicalBeats = obj->hasProperty("musicalLoopLengthBeats")
+                            ? static_cast<double>(obj->getProperty("musicalLoopLengthBeats"))
+                            : 0.0,
+    };
 
     event.interpBpm = obj->getProperty("interpBpm");
     event.interpTotalBeats = obj->getProperty("interpTotalBeats");
@@ -227,6 +249,7 @@ void deserializeAudioEvent(const juce::var& json, AudioEvent& event) {
                              legacyBeatsProvenance(event.interpTotalBeats, legacyLocked));
     event.keyRoot = obj->getProperty("keyRoot").toString().toStdString();
     event.keyScale = obj->getProperty("keyScale").toString().toStdString();
+    event.restoreLoopLength(loopLength);
 
     // autoTempo is restored as stored, not re-resolved: load must not move it.
     event.autoTempo = static_cast<bool>(obj->getProperty("autoTempo"));

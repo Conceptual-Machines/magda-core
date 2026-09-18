@@ -605,6 +605,8 @@ size_t ClipComponent::computeWaveformHash(const ClipInfo& clip) {
     combine(std::hash<double>{}(audioEventRef(clip).loopLengthSeconds()));
     combine(std::hash<double>{}(clip.loopLengthBeats));
     combine(std::hash<long long>{}(audioEventRef(clip).loopLengthSamples));
+    combine(static_cast<size_t>(audioEventRef(clip).loopLengthIntent));
+    combine(std::hash<double>{}(audioEventRef(clip).musicalLoopLengthBeats));
     combine(std::hash<double>{}(audioEventRef(clip).interpTotalBeats));
     combine(std::hash<bool>{}(audioEventRef(clip).warpEnabled));
     combine(std::hash<bool>{}(audioEventRef(clip).autoTempo));

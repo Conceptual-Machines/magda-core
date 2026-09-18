@@ -1484,11 +1484,12 @@ ClipId ClipManager::splitClipAtBeat(ClipId clipId, double splitBeat, double temp
             // Beat-mode events keep the ORIGINAL source loop region: the right
             // half's anchor carries the playback phase, and truncating the
             // region to the split point makes the right side render silence.
-            if (!leftEvent->autoTempo || leftEvent->interpBpm <= 0.0) {
+            if (!leftEvent->autoTempo && leftEvent->interpBpm > 0.0) {
                 if (leftEvent->loopLengthBeats() > leftLengthBeats)
-                    leftEvent->setLoopLengthBeats(leftLengthBeats);
+                    leftEvent->setLoopLengthSeconds(leftLengthBeats * 60.0 / leftEvent->interpBpm);
                 if (rightEvent->loopLengthBeats() > rightLengthBeats) {
-                    rightEvent->setLoopLengthBeats(rightLengthBeats);
+                    rightEvent->setLoopLengthSeconds(rightLengthBeats * 60.0 /
+                                                     rightEvent->interpBpm);
                     rightEvent->loopStartSamples = rightEvent->sourceAnchorSamples;
                 }
             }
@@ -1827,15 +1828,59 @@ void ClipManager::setLoopLength(ClipId clipId, double loopLength, double bpm) {
     }
 }
 
-void ClipManager::restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
-                                    double bpm) {
+void ClipManager::setAudioLoopLengthBeats(ClipId clipId, double loopLengthBeats) {
+    if (auto* clip = getClip(clipId)) {
+        auto* event = clip->primaryEvent();
+        if (event == nullptr)
+            return;
+        event->setLoopLengthBeats(loopLengthBeats);
+        sanitizeAudioClip(*clip);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::restoreLoopLength(ClipId clipId, const LoopLengthState& state, double bpm) {
     juce::ignoreUnused(bpm);
     if (auto* clip = getClip(clipId)) {
         auto* event = clip->primaryEvent();
         if (event == nullptr)
             return;
-        event->restoreLoopLength(loopLengthSamples, extent);
+        event->restoreLoopLength(state);
+        if (event->loopLengthIntent == LoopLengthIntent::Musical)
+            event->fitRegionToMusicalLength();
         sanitizeAudioClip(*clip);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
+                                    double bpm) {
+    restoreLoopLength(clipId, {loopLengthSamples, extent, LoopLengthIntent::Source, 0.0}, bpm);
+}
+
+void ClipManager::restoreAudioLoopRegion(ClipId clipId, int64_t loopStartSamples,
+                                         const LoopLengthState& lengthState,
+                                         int64_t sourceAnchorSamples, double snapshotSampleRate) {
+    if (auto* clip = getClip(clipId)) {
+        auto* event = clip->primaryEvent();
+        if (event == nullptr)
+            return;
+
+        const double currentRate = event->sourceSampleRate();
+        const double ratio =
+            snapshotSampleRate > 0.0 && currentRate > 0.0 ? currentRate / snapshotSampleRate : 1.0;
+        const auto atCurrentRate = [ratio](int64_t samples) {
+            return static_cast<int64_t>(std::llround(static_cast<double>(samples) * ratio));
+        };
+        auto restoredLength = lengthState;
+        if (restoredLength.intent == LoopLengthIntent::Source)
+            restoredLength.samples = atCurrentRate(restoredLength.samples);
+
+        event->loopStartSamples = juce::jmax<int64_t>(0, atCurrentRate(loopStartSamples));
+        event->restoreLoopLength(restoredLength);
+        if (event->loopLengthIntent == LoopLengthIntent::Musical)
+            event->fitRegionToMusicalLength();
+        event->sourceAnchorSamples = juce::jmax<int64_t>(0, atCurrentRate(sourceAnchorSamples));
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -1882,6 +1927,40 @@ void ClipManager::relocateLoopRegion(ClipId clipId, double loopStart, double loo
             clip->loopLengthBeats = (juce::jmax(0.0, loopLength) * projectBpm) / 60.0;
         }
 
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::relocateLoopStartPreservingLength(ClipId clipId, double loopStart) {
+    if (auto* clip = getClip(clipId)) {
+        auto* event = clip->primaryEvent();
+        if (event == nullptr)
+            return;
+
+        const auto lengthState = event->loopLengthState();
+        const double oldLoopStart = event->loopStartSeconds();
+        event->setLoopStartSeconds(loopStart);
+        if (std::abs(event->loopStartSeconds() - oldLoopStart) > 1e-9)
+            event->sourceAnchorSamples = event->loopStartSamples;
+        sanitizeAudioClip(*clip);
+        event->restoreLoopLength(lengthState);
+        notifyClipPropertyChanged(clipId);
+    }
+}
+
+void ClipManager::relocateMusicalLoopRegion(ClipId clipId, double loopStart,
+                                            double loopLengthBeats) {
+    if (auto* clip = getClip(clipId)) {
+        auto* event = clip->primaryEvent();
+        if (event == nullptr)
+            return;
+
+        const double oldLoopStart = event->loopStartSeconds();
+        event->setLoopStartSeconds(loopStart);
+        event->setLoopLengthBeats(loopLengthBeats);
+        if (std::abs(event->loopStartSeconds() - oldLoopStart) > 1e-9)
+            event->sourceAnchorSamples = event->loopStartSamples;
+        sanitizeAudioClip(*clip);
         notifyClipPropertyChanged(clipId);
     }
 }
@@ -2207,6 +2286,7 @@ void ClipManager::setSpeedRatio(ClipId clipId, double speedRatio) {
             // clip reads to the file end, and a region sized by the
             // interpretation follows its beat count instead.
             if (clip->loopEnabled && event->loopExtent == RegionExtent::Explicit &&
+                event->loopLengthIntent == LoopLengthIntent::Source &&
                 std::abs(event->loopLengthSeconds() - oldSourceExtent) < 0.001) {
                 event->setLoopLengthSeconds(newSourceExtent);
             }

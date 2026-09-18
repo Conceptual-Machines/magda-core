@@ -170,6 +170,19 @@ enum class Provenance { None, FileMetadata, Analysis, User };
 /// from the file and the interpretation; only Explicit is a range of its own.
 enum class RegionExtent { WholeSource, Interpretation, Explicit };
 
+/// Which unit remains authoritative when an explicit loop length is
+/// reinterpreted at another source tempo (#2675).
+enum class LoopLengthIntent { Source, Musical };
+
+struct LoopLengthState {
+    int64_t samples = 0;
+    RegionExtent extent = RegionExtent::WholeSource;
+    LoopLengthIntent intent = LoopLengthIntent::Source;
+    double musicalBeats = 0.0;
+
+    bool operator==(const LoopLengthState&) const = default;
+};
+
 /// What the user asked of beat mode. Whether it is active is autoTempo, which
 /// also needs a tempo (#2676).
 enum class PlaybackIntent { Free, Beat };
@@ -182,11 +195,9 @@ enum class PlaybackIntent { Free, Beat };
  * about the timeline: its geometry is relative to the owning clip's start, and
  * the clip's bounds are a window that crops it.
  *
- * Coordinate rule: everything geometric is beats; the only source-domain values
- * are the anchor and the loop region, which are samples at the source's own
- * rate. Storing those in samples (rather than seconds or beats) is what makes a
- * source-BPM reinterpretation leave the audible region untouched and simply
- * re-read its musical length.
+ * Coordinate rule: everything geometric is beats; source positions and
+ * source-authored loop lengths are samples at the source's own rate. A loop
+ * authored in beats keeps that beat length across source-BPM corrections.
  */
 struct AudioEvent {
     EventId id = INVALID_EVENT_ID;
@@ -210,6 +221,8 @@ struct AudioEvent {
     int64_t loopStartSamples = 0;
     int64_t loopLengthSamples = 0;  // 0 = whole source, until phase 4 of #2674
     RegionExtent loopExtent = RegionExtent::WholeSource;
+    LoopLengthIntent loopLengthIntent = LoopLengthIntent::Source;
+    double musicalLoopLengthBeats = 0.0;
 
     /// Source seconds mapped through the warp markers.
     ///
@@ -355,8 +368,8 @@ struct AudioEvent {
 
     // ---- Source-domain conversions ----------------------------------------
     //
-    // Samples are authoritative. Seconds and beats are views onto them, so a
-    // change to interpBpm moves the beat view and leaves the audio alone.
+    // Source-authored lengths use samples; musical lengths retain beats and
+    // materialize samples at the current interpretation tempo.
 
     /// Whether this event has been interpreted at a tempo. Every beat view
     /// below is zero without one, and beat mode is a claim nothing can honour
@@ -372,6 +385,9 @@ struct AudioEvent {
     void afterInterpretationChange() {
         if (loopExtent == RegionExtent::Interpretation)
             fitRegionToInterpretation();
+        else if (loopExtent == RegionExtent::Explicit &&
+                 loopLengthIntent == LoopLengthIntent::Musical)
+            fitRegionToMusicalLength();
         resolveBeatMode();
     }
 
@@ -439,8 +455,17 @@ struct AudioEvent {
             loopLengthSamples = secondsToSourceSamples(interpTotalBeats * 60.0 / interpBpm);
     }
 
+    void fitRegionToMusicalLength() {
+        if (hasInterpretedBpm() && musicalLoopLengthBeats >= 0.0)
+            loopLengthSamples = secondsToSourceSamples(musicalLoopLengthBeats * 60.0 / interpBpm);
+    }
+
     void setLoopExtent(RegionExtent extent) {
         loopExtent = extent;
+        if (extent != RegionExtent::Explicit) {
+            loopLengthIntent = LoopLengthIntent::Source;
+            musicalLoopLengthBeats = 0.0;
+        }
         if (extent == RegionExtent::WholeSource)
             loopLengthSamples = 0;
         else if (extent == RegionExtent::Interpretation)
@@ -456,21 +481,34 @@ struct AudioEvent {
             setLoopExtent(RegionExtent::Interpretation);
     }
 
-    /// Put an undo snapshot back without re-tagging the extent.
-    void restoreLoopLength(int64_t lengthSamples, RegionExtent extent) {
-        loopLengthSamples = juce::jmax<int64_t>(0, lengthSamples);
-        loopExtent = extent;
+    LoopLengthState loopLengthState() const {
+        return {loopLengthSamples, loopExtent, loopLengthIntent, musicalLoopLengthBeats};
     }
 
-    /// Keep the region inside the file. Only an explicit range is shortened:
-    /// a whole-source region has no length of its own, and one that follows
-    /// the interpretation may overrun the file by a few beats' rounding, which
-    /// the reader handles (#2674 phase 4 sizes the cycle warp-aware).
+    /// Put an undo or serialized snapshot back without changing its intent.
+    void restoreLoopLength(const LoopLengthState& state) {
+        loopLengthSamples = juce::jmax<int64_t>(0, state.samples);
+        loopExtent = state.extent;
+        loopLengthIntent = state.intent;
+        musicalLoopLengthBeats =
+            std::isfinite(state.musicalBeats) ? juce::jmax(0.0, state.musicalBeats) : 0.0;
+        if (loopExtent != RegionExtent::Explicit || loopLengthIntent == LoopLengthIntent::Source) {
+            loopLengthIntent = LoopLengthIntent::Source;
+            musicalLoopLengthBeats = 0.0;
+        }
+    }
+
+    void restoreLoopLength(int64_t lengthSamples, RegionExtent extent) {
+        restoreLoopLength({lengthSamples, extent, LoopLengthIntent::Source, 0.0});
+    }
+
+    /// Keep source-authored explicit ranges inside the file. Derived and
+    /// musical ranges may overrun it; the reader handles that (#2674).
     void clampLoopRegionToSource(double fileDurationSeconds) {
         if (fileDurationSeconds <= 0.0)
             return;
         setLoopStartSeconds(juce::jlimit(0.0, fileDurationSeconds, loopStartSeconds()));
-        if (loopExtent != RegionExtent::Explicit)
+        if (loopExtent != RegionExtent::Explicit || loopLengthIntent == LoopLengthIntent::Musical)
             return;
         const double available = fileDurationSeconds - loopStartSeconds();
         if (loopLengthSeconds() > available)
@@ -502,6 +540,8 @@ struct AudioEvent {
         return hasInterpretedBpm() ? loopStartSeconds() * interpBpm / 60.0 : 0.0;
     }
     double loopLengthBeats() const {
+        if (loopExtent == RegionExtent::Explicit && loopLengthIntent == LoopLengthIntent::Musical)
+            return musicalLoopLengthBeats;
         return hasInterpretedBpm() ? loopLengthSeconds() * interpBpm / 60.0 : 0.0;
     }
     void setLoopStartSeconds(double seconds) {
@@ -510,16 +550,30 @@ struct AudioEvent {
     /// A length set directly is a range of its own: the extent becomes
     /// Explicit and stops following the interpretation.
     void setLoopLengthSeconds(double seconds) {
-        loopLengthSamples = secondsToSourceSamples(seconds);
+        const double length = std::isfinite(seconds) ? juce::jmax(0.0, seconds) : 0.0;
+        loopLengthSamples = secondsToSourceSamples(length);
         loopExtent = RegionExtent::Explicit;
+        loopLengthIntent = LoopLengthIntent::Source;
+        musicalLoopLengthBeats = 0.0;
     }
     void setLoopStartBeats(double beats) {
         if (hasInterpretedBpm())
             setLoopStartSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
     }
     void setLoopLengthBeats(double beats) {
-        if (hasInterpretedBpm())
-            setLoopLengthSeconds(juce::jmax(0.0, beats) * 60.0 / interpBpm);
+        musicalLoopLengthBeats = std::isfinite(beats) ? juce::jmax(0.0, beats) : 0.0;
+        loopExtent = RegionExtent::Explicit;
+        loopLengthIntent = LoopLengthIntent::Musical;
+        fitRegionToMusicalLength();
+    }
+
+    int64_t resolvedLoopLengthSamples(double sampleRate) const {
+        if (loopExtent == RegionExtent::Explicit && loopLengthIntent == LoopLengthIntent::Musical &&
+            hasInterpretedBpm() && std::isfinite(sampleRate) && sampleRate > 0.0) {
+            return static_cast<int64_t>(
+                std::llround(musicalLoopLengthBeats * 60.0 / interpBpm * sampleRate));
+        }
+        return loopLengthSamples;
     }
 
     /// Phase of the read position within the loop region (source seconds).
@@ -560,7 +614,10 @@ struct AudioEvent {
     /// Source seconds consumed by the event: the loop region if one is set,
     /// otherwise whatever the event's own timeline extent asks for.
     double sourceLengthSeconds(double eventTimelineSeconds) const {
-        return loopLengthSamples > 0 ? loopLengthSeconds() : timelineToSource(eventTimelineSeconds);
+        const double sampleRate = sourceSampleRate();
+        const auto lengthSamples = resolvedLoopLengthSamples(sampleRate);
+        return lengthSamples > 0 ? static_cast<double>(lengthSamples) / sampleRate
+                                 : timelineToSource(eventTimelineSeconds);
     }
 
     /// Offset handed to the engine, in timeline seconds. Looped: the phase

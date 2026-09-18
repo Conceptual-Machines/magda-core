@@ -657,6 +657,8 @@ TEST_CASE("DawProjectArchive embeds and extracts referenced audio files",
     REQUIRE(imported.clips[0].loopEnabled);
     REQUIRE(importedEvent.loopStartSeconds() == Catch::Approx(0.5));
     REQUIRE(importedEvent.loopLengthSeconds() == Catch::Approx(0.25));
+    REQUIRE(importedEvent.loopLengthIntent == LoopLengthIntent::Source);
+    REQUIRE(importedEvent.musicalLoopLengthBeats == Catch::Approx(0.0));
 
     source.deleteFile();
     archive.deleteFile();
@@ -685,12 +687,20 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     magda::test::setSourceDuration(clip, 2.0);
     magda::test::audioEvent(clip).interpTotalBeats = 4.0;  // source is 4 beats long ...
     magda::test::audioEvent(clip).interpBpm = 120.0;       // ... at 120 bpm.
-    // The BPM is what makes the source loop expressible in beats at all: the
-    // region is stored in source samples and beats are a view on it (#1901).
+    // The BPM is what makes the source loop expressible in beat content time.
     magda::test::audioEvent(clip).autoTempo = true;
     clip.loopEnabled = true;
     magda::test::audioEvent(clip).setLoopStartBeats(0.0);
-    magda::test::audioEvent(clip).setLoopLengthBeats(4.0);
+
+    SECTION("A musical loop stays musical") {
+        magda::test::audioEvent(clip).setLoopLengthBeats(4.0);
+        REQUIRE(magda::test::audioEvent(clip).loopLengthIntent == LoopLengthIntent::Musical);
+    }
+
+    SECTION("A source loop becomes musical because DAWproject stores this clip in beats") {
+        magda::test::audioEvent(clip).setLoopLengthSeconds(2.0);
+        REQUIRE(magda::test::audioEvent(clip).loopLengthIntent == LoopLengthIntent::Source);
+    }
     document.clips.push_back(clip);
 
     auto xml = DawProjectXmlAdapter::toProjectXml(document);
@@ -716,6 +726,8 @@ TEST_CASE("DawProjectXmlAdapter warps beat-locked (autoTempo) audio clips",
     REQUIRE(ic.loopEnabled);
     REQUIRE(magda::audioEventRef(ic).loopStartBeats() == 0.0);
     REQUIRE(magda::audioEventRef(ic).loopLengthBeats() == 4.0);
+    REQUIRE(magda::audioEventRef(ic).loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(magda::audioEventRef(ic).musicalLoopLengthBeats == Catch::Approx(4.0));
     REQUIRE(magda::audioEventRef(ic).interpTotalBeats == 4.0);
     REQUIRE(magda::audioEventRef(ic).sourceDurationSeconds() == 2.0);
 }

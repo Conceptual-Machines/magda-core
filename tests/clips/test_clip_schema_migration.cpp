@@ -365,7 +365,8 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
     event.setLoopLengthSeconds(1.5);
     event.setAnchorSeconds(0.75);
 
-    const auto json = ProjectSerializer::serializeClipInfo(original);
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    const auto& eventJson = firstEventOf(json);
     const auto restored = load(json);
     const auto& restoredEvent = *restored.primaryEvent();
 
@@ -384,6 +385,11 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
         REQUIRE(restoredEvent.loopStartSamples == event.loopStartSamples);
         REQUIRE(restoredEvent.loopLengthSamples == event.loopLengthSamples);
         REQUIRE(restoredEvent.loopExtent == RegionExtent::Explicit);
+        REQUIRE(restoredEvent.loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(restoredEvent.musicalLoopLengthBeats == Approx(0.0));
+        REQUIRE(eventJson.getProperty("loopLengthIntent").toString() == "source");
+        REQUIRE(static_cast<double>(eventJson.getProperty("musicalLoopLengthBeats")) ==
+                Approx(0.0));
         REQUIRE(restored.loopEnabled);
     }
 
@@ -409,6 +415,55 @@ TEST_CASE("A v2 audio clip round-trips its events", "[clip][serialization]") {
         REQUIRE(restoredEvent.warpMarkers.size() == 1);
         REQUIRE(restoredEvent.warpMarkers[0].sourceTime == Approx(0.5));
         REQUIRE(restoredEvent.warpMarkers[0].warpTime == Approx(0.75));
+    }
+}
+
+TEST_CASE("A musical audio loop round-trips its authoritative beat length",
+          "[clip][serialization][loop]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/musical.wav", 12.0, kSourceRate);
+    original.setPlacementBeats(0.0, 16.0);
+    original.loopEnabled = true;
+    event.interpBpm = 120.0;
+    event.setLoopLengthBeats(16.0);
+
+    auto json = ProjectSerializer::serializeClipInfo(original);
+    const auto& eventJson = firstEventOf(json);
+    REQUIRE(eventJson.getProperty("loopLengthIntent").toString() == "musical");
+    REQUIRE(static_cast<double>(eventJson.getProperty("musicalLoopLengthBeats")) == Approx(16.0));
+
+    const auto restored = load(json);
+    const auto& restoredEvent = *restored.primaryEvent();
+    REQUIRE(restoredEvent.loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(restoredEvent.musicalLoopLengthBeats == Approx(16.0));
+    REQUIRE(restoredEvent.loopLengthSamples == event.loopLengthSamples);
+    REQUIRE(restoredEvent.loopLengthBeats() == Approx(16.0));
+}
+
+TEST_CASE("A staged musical loop keeps its serialized sample cache",
+          "[clip][serialization][loop][staging]") {
+    MigrationFixture fixture;
+
+    ClipInfo original;
+    auto& event = magda::test::giveAudioEvent(original, "/tmp/96k.wav", 12.0, 96000.0);
+    original.setPlacementBeats(0.0, 8.0);
+    event.interpBpm = 120.0;
+    event.setLoopLengthBeats(4.0);
+    const auto storedSamples = event.loopLengthSamples;
+    const auto json = ProjectSerializer::serializeClipInfo(original);
+
+    SECTION("An empty live pool cannot replace the stored rate") {
+        SourcePool::getInstance().clear();
+        REQUIRE(load(json).primaryEvent()->loopLengthSamples == storedSamples);
+    }
+
+    SECTION("A different live source under the same id cannot replace the stored rate") {
+        SourcePool::getInstance().clear();
+        SourcePool::getInstance().seedFactsForTesting("/tmp/conflict.wav", 12.0, 48000.0);
+        REQUIRE(SourcePool::getInstance().acquire("/tmp/conflict.wav") == event.sourceId);
+        REQUIRE(load(json).primaryEvent()->loopLengthSamples == storedSamples);
     }
 }
 
@@ -567,12 +622,15 @@ TEST_CASE("A v1 clip's loop region loads as explicit when it has a length",
         const auto clip = load(json);
         REQUIRE(clip.primaryEvent()->loopLengthSeconds() == Approx(2.0));
         REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::Explicit);
+        REQUIRE(clip.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(clip.primaryEvent()->musicalLoopLengthBeats == Approx(0.0));
     }
 
     SECTION("A zero length is the whole source") {
         const auto clip = load(json);
         REQUIRE(clip.primaryEvent()->loopLengthSamples == 0);
         REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::WholeSource);
+        REQUIRE(clip.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
     }
 
     SECTION("Under autoTempo the beat length decides") {
@@ -581,6 +639,8 @@ TEST_CASE("A v1 clip's loop region loads as explicit when it has a length",
         playbackOf(json).setProperty("loopLengthBeats", 4.0);
         const auto clip = load(json);
         REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::Explicit);
+        REQUIRE(clip.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(clip.primaryEvent()->musicalLoopLengthBeats == Approx(0.0));
     }
 }
 
@@ -615,7 +675,7 @@ TEST_CASE("A v1 clip's autoTempo loads as the Beat intent and is kept as stored"
     }
 }
 
-TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
+TEST_CASE("A v2 event saved without ownership or loop intent gets the legacy defaults",
           "[clip][serialization][ownership]") {
     MigrationFixture fixture;
 
@@ -632,7 +692,8 @@ TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
 
     auto json = ProjectSerializer::serializeClipInfo(original);
     auto& eventJson = firstEventOf(json);
-    for (const char* key : {"bpmFrom", "beatsFrom", "loopExtent", "playbackIntent"})
+    for (const char* key : {"bpmFrom", "beatsFrom", "loopExtent", "playbackIntent",
+                            "loopLengthIntent", "musicalLoopLengthBeats"})
         eventJson.removeProperty(key);
 
     SECTION("A stored tempo is Analysis; a locked beat count is User") {
@@ -648,9 +709,24 @@ TEST_CASE("A v2 event saved without ownership fields gets the legacy defaults",
     }
 
     SECTION("A stored region is Explicit; none is the whole source") {
-        REQUIRE(load(json).primaryEvent()->loopExtent == RegionExtent::Explicit);
+        const auto clip = load(json);
+        REQUIRE(clip.primaryEvent()->loopExtent == RegionExtent::Explicit);
+        REQUIRE(clip.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(clip.primaryEvent()->musicalLoopLengthBeats == Approx(0.0));
         eventJson.setProperty("loopLengthSamples", "0");
         REQUIRE(load(json).primaryEvent()->loopExtent == RegionExtent::WholeSource);
+    }
+
+    SECTION("A beat value without a recognized intent cannot make the loop musical") {
+        eventJson.setProperty("musicalLoopLengthBeats", 99.0);
+        const auto missing = load(json);
+        REQUIRE(missing.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(missing.primaryEvent()->musicalLoopLengthBeats == Approx(0.0));
+
+        eventJson.setProperty("loopLengthIntent", "futureValue");
+        const auto unknown = load(json);
+        REQUIRE(unknown.primaryEvent()->loopLengthIntent == LoopLengthIntent::Source);
+        REQUIRE(unknown.primaryEvent()->musicalLoopLengthBeats == Approx(0.0));
     }
 
     SECTION("autoTempo on is Beat, off is Free, and the flag is kept as stored") {

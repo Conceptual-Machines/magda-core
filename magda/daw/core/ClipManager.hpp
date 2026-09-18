@@ -394,11 +394,20 @@ class ClipManager {
      *         touch offset / phase / loop start. */
     void setLoopLength(ClipId clipId, double loopLength, double bpm = 120.0);
 
+    /** @brief Set an audio loop length in interpreted source beats. */
+    void setAudioLoopLengthBeats(ClipId clipId, double loopLengthBeats);
+
     /** @brief Undo of setLoopLength: put the region's samples and extent back
      *         as they were, so an interpretation-sized region does not come
      *         back as an explicit range. */
+    void restoreLoopLength(ClipId clipId, const LoopLengthState& state, double bpm = 120.0);
     void restoreLoopLength(ClipId clipId, int64_t loopLengthSamples, RegionExtent extent,
                            double bpm = 120.0);
+
+    /** @brief Restore an audio loop's complete sample-domain undo snapshot. */
+    void restoreAudioLoopRegion(ClipId clipId, int64_t loopStartSamples,
+                                const LoopLengthState& lengthState, int64_t sourceAnchorSamples,
+                                double snapshotSampleRate);
 
     /** @brief Set MIDI loop region start in beats. Does NOT touch offset / phase. */
     void setMidiLoopStartBeats(ClipId clipId, double loopStartBeats, double bpm = 120.0);
@@ -415,6 +424,12 @@ class ClipManager {
      *         narrower setLoopStart / setLoopLength setters for inspector
      *         spinner edits where phase must be preserved. */
     void relocateLoopRegion(ClipId clipId, double loopStart, double loopLength, double bpm = 120.0);
+
+    /** @brief Relocate an audio loop and author its length in source beats. */
+    void relocateMusicalLoopRegion(ClipId clipId, double loopStart, double loopLengthBeats);
+
+    /** @brief Move an audio loop region and its phase without changing its length intent. */
+    void relocateLoopStartPreservingLength(ClipId clipId, double loopStart);
     /** @brief Set the clip timeline length in beats (autoTempo mode only) */
     void setLengthBeats(ClipId clipId, double beats, double bpm);
 

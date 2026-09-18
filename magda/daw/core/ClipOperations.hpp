@@ -271,9 +271,7 @@ class ClipOperations {
         double newStartTime = juce::jmax(0.0, clipStart + lengthDelta);
         double actualDelta = newStartTime - clipStart;
 
-        // NOTE: In auto-tempo mode, do NOT update loopLengthBeats here.
-        // loopLengthBeats is the authoritative source of truth and should only
-        // be updated when the user explicitly changes it, not during tempo-driven resizes.
+        // Container resizing leaves the loop's own source or musical authority alone.
 
         auto* event = clip.primaryEvent();
         if (clip.isAudio() && clip.audio().envelopeWindow.has_value()) {
@@ -774,7 +772,7 @@ class ClipOperations {
         const double srcBpm = event->interpBpm > 0.0 ? event->interpBpm : bpm;
         if (srcBpm > 0.0) {
             const double regionBeats = loopLengthBeats > 0.0 ? loopLengthBeats : lengthBeats;
-            event->setLoopLengthSeconds(regionBeats * 60.0 / srcBpm);
+            event->setLoopLengthBeats(regionBeats);
             event->setLoopStartSeconds(loopStartBeats * 60.0 / srcBpm);
         }
 
@@ -892,7 +890,8 @@ class ClipOperations {
                 if (event->interpTotalBeats > 0.0)
                     event->setLoopExtent(RegionExtent::Interpretation);
                 else
-                    event->setLoopLengthBeats(clip.placement.lengthBeats);
+                    event->setLoopLengthSeconds(clip.placement.lengthBeats * 60.0 /
+                                                event->interpBpm);
             }
 
             // Force speedRatio to 1.0 (TE requirement for autoTempo)
@@ -972,8 +971,8 @@ class ClipOperations {
             return;
         seedPlacementFromTimelineCacheIfNeeded(clip, bpm);
         event->setLoopStartSeconds(newLoopStart);
-        // Clamp the loop region to the audio available from the new start
-        if (fileDuration > 0.0) {
+        // Clamp source-authored regions to the audio available from the new start.
+        if (fileDuration > 0.0 && event->loopLengthIntent == LoopLengthIntent::Source) {
             const double avail = fileDuration - event->loopStartSeconds();
             if (event->loopLengthSeconds() > avail)
                 event->setLoopLengthSeconds(juce::jmax(0.0, avail));
@@ -1028,7 +1027,8 @@ class ClipOperations {
         setTimelinePlacement(clip, currentStart, dragStartClipLength * clipLengthScaleFactor, bpm);
         // In loop mode, adjust the source region to keep the loop markers fixed
         // on the timeline
-        if (clip.loopEnabled && event->loopLengthSamples > 0)
+        if (clip.loopEnabled && event->loopLengthSamples > 0 &&
+            event->loopLengthIntent == LoopLengthIntent::Source)
             event->setLoopLengthSeconds(dragStartExtent / newSpeedRatio);
     }
 
@@ -1054,7 +1054,8 @@ class ClipOperations {
         setTimelinePlacement(clip, rightEdge - newLength, newLength, bpm);
         // In loop mode, adjust the source region to keep the loop markers fixed
         // on the timeline
-        if (clip.loopEnabled && event->loopLengthSamples > 0)
+        if (clip.loopEnabled && event->loopLengthSamples > 0 &&
+            event->loopLengthIntent == LoopLengthIntent::Source)
             event->setLoopLengthSeconds(dragStartExtent / newSpeedRatio);
     }
 

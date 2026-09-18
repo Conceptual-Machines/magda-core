@@ -964,6 +964,22 @@ TEST_CASE("ClipOperations::resizeContainerFromLeft - auto-tempo offset uses BPM 
     }
 }
 
+TEST_CASE("ClipOperations::moveLoopStart preserves musical loop length past the file end",
+          "[clip][resize][loop][issue-2675]") {
+    ClipInfo clip;
+    clip.setAudioContent();
+    auto& event = magda::test::giveAudioEvent(clip, "musical-loop.wav", 8.0);
+    event.interpBpm = 120.0;
+    event.setLoopLengthBeats(16.0);
+
+    ClipOperations::moveLoopStart(clip, 2.0, 8.0, 120.0);
+
+    REQUIRE(event.loopStartSeconds() == Catch::Approx(2.0));
+    REQUIRE(event.loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(event.loopLengthBeats() == Catch::Approx(16.0));
+    REQUIRE(event.loopLengthSeconds() == Catch::Approx(8.0));
+}
+
 // ============================================================================
 // Multi-clip left resize preview (#1950)
 // ============================================================================
