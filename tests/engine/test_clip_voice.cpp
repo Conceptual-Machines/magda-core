@@ -914,6 +914,64 @@ TEST_CASE("A looped clip tiles its region without a seek", "[engine][clip][voice
     }
 }
 
+TEST_CASE("Resolved source starts distinguish attacks from interior launches",
+          "[engine][clip][voice][2457]") {
+    auto event = clipOver(1, seconds(0.0, 1.0)).events.front();
+    event.sourceDurationSeconds = 1.0;
+
+    SECTION("the forward source boundary is its attack") {
+        REQUIRE_FALSE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a forward trim is inside material") {
+        event.anchorSamples = 1000;
+        REQUIRE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a full reversed source resolves to its mirrored boundary") {
+        event.reversed = true;
+        REQUIRE_FALSE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a shortened reversed source begins inside its mirrored reading") {
+        event.sourceDurationSeconds = 2.0;
+        event.reversed = true;
+        REQUIRE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a whole loop phase folds to the source boundary before rate conversion") {
+        event.sourceSampleRate = 48000.0;
+        event.sourceDurationSeconds = 2.0;
+        event.anchorSamples = 48000;
+        event.loopEnabled = true;
+        event.loopStartSamples = 0;
+        event.loopLengthSamples = 48000;
+        REQUIRE_FALSE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a loop whose region starts inside the source resolves there") {
+        event.sourceDurationSeconds = 2.0;
+        event.anchorSamples = 0;
+        event.loopEnabled = true;
+        event.loopStartSamples = 1000;
+        event.loopLengthSamples = 1000;
+        REQUIRE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("warp keeps a forward source boundary at its attack") {
+        event.warp.points = {{0.0, 0.0}, {1.0, 0.5}};
+        REQUIRE_FALSE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+
+    SECTION("a reversed warped extent resolves inside the mirrored reading") {
+        event.sourceDurationSeconds = 4.0;
+        event.anchorSamples = static_cast<std::int64_t>(kSampleRate);
+        event.reversed = true;
+        event.warp.points = {{0.0, 0.0}, {1.0, 1.0}, {3.0, 2.0}};
+        REQUIRE(magda::engine::startsInsideSourceMaterial(event, kSampleRate));
+    }
+}
+
 TEST_CASE("The launch ramp takes the step out of a voice that begins mid-material",
           "[engine][clip][voice]") {
     Rig rig;

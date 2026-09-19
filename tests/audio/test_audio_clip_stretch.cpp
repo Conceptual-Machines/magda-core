@@ -568,6 +568,54 @@ TEST_CASE("Session launch de-click preserves the leading transient",
                 Catch::Approx(originalTransient.getSample(0, sample)).margin(1.0e-6f));
 }
 
+TEST_CASE("Session launch de-click continues across callback blocks",
+          "[audio][clip][session][transient]") {
+    namespace te = tracktion::engine;
+
+    constexpr int numSamples = 12;
+    constexpr int fadeSamples = 8;
+    constexpr int blockSize = 2;
+    juce::AudioBuffer<float> oneBlock(2, numSamples);
+
+    for (int sample = 0; sample < numSamples; ++sample) {
+        const auto transient =
+            static_cast<float>(0.2 * std::sin(juce::MathConstants<double>::twoPi * sample / 7.0));
+        oneBlock.setSample(0, sample, 0.5f + transient);
+        oneBlock.setSample(1, sample, -0.25f - transient * 0.5f);
+    }
+
+    juce::AudioBuffer<float> chunked(oneBlock);
+    auto oneBlockView = te::toBufferView(oneBlock);
+    te::applyAudioStartDeClick(oneBlockView, fadeSamples);
+
+    te::AudioStartDeClick deClick;
+    deClick.prepare(2);
+    auto chunkedView = te::toBufferView(chunked);
+
+    for (int start = 0; start < numSamples; start += blockSize) {
+        const auto end = std::min(start + blockSize, numSamples);
+        auto block = chunkedView.getFrameRange({static_cast<choc::buffer::FrameCount>(start),
+                                                static_cast<choc::buffer::FrameCount>(end)});
+
+        if (start == 0)
+            deClick.begin(block, fadeSamples);
+        else
+            deClick.process(block);
+    }
+
+    for (int channel = 0; channel < chunked.getNumChannels(); ++channel)
+        for (int sample = 0; sample < numSamples; ++sample)
+            REQUIRE(chunked.getSample(channel, sample) ==
+                    Catch::Approx(oneBlock.getSample(channel, sample)).margin(1.0e-6f));
+
+    const juce::AudioBuffer<float> unchanged(chunked);
+    deClick.begin(chunkedView, 0);
+
+    for (int channel = 0; channel < chunked.getNumChannels(); ++channel)
+        for (int sample = 0; sample < numSamples; ++sample)
+            REQUIRE(chunked.getSample(channel, sample) == unchanged.getSample(channel, sample));
+}
+
 TEST_CASE("Signalsmith preserves a transient at the start of a stream",
           "[audio][clip][stretch][signalsmith][transient]") {
     namespace te = tracktion::engine;

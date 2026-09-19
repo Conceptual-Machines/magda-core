@@ -177,6 +177,24 @@ double warpedReadingSample(const AudioEventPlayback& event, double elapsedWarp, 
     return inReading * (sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0);
 }
 
+double resolvedStartSample(const AudioEventPlayback& event, double sourceRate) {
+    if (!event.warp.empty())
+        return warpedReadingSample(event, 0.0, sourceRate, sourceRate);
+
+    const auto how = sourceReadFor(event, sourceRate);
+    auto anchor = event.anchorSamples;
+
+    if (event.reversed) {
+        const auto last = event.anchorSamples + regionOf(event, sourceRate) - 1;
+        anchor = how.loopLengthSamples > 0
+                     ? how.loopStartSamples + how.loopLengthSamples - 1 -
+                           floorMod(last - event.loopStartSamples, how.loopLengthSamples)
+                     : how.lengthInSamples - 1 - last;
+    }
+
+    return static_cast<double>(anchor);
+}
+
 }  // namespace
 
 SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRate) {
@@ -215,44 +233,31 @@ SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRat
 
 ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleRate) {
     const auto sourceRate = sourceRateOf(event, deviceSampleRate);
-    const auto how = sourceReadFor(event, deviceSampleRate);
-
-    // A warped event's start is its map evaluated at no elapsed, which is the
-    // same function a block reads through. Derived rather than mirrored here,
-    // because the map already answers reverse and looping and a second
-    // derivation of either could disagree with it.
-    if (!event.warp.empty())
-        return ClipPlacement{event.span.seconds,
-                             static_cast<std::int64_t>(std::llround(
-                                 warpedReadingSample(event, 0.0, sourceRate, deviceSampleRate)))};
-
-    auto anchor = event.anchorSamples;
-
-    if (event.reversed) {
-        // What plays first is what played last: the sample at the far end of
-        // what this event reads, in the mirrored file's own coordinates. Looped
-        // or not is the same question asked of a different stretch, the loop's
-        // rather than the event's, because a looped event reads the region
-        // round and round and its last sample is wherever the phase had got to.
-        //
-        // The incumbent works the same value out and writes it back over the
-        // clip's offset when the flag is set. Here the model keeps its own
-        // coordinates, which is what lets an editor go on showing the region
-        // the user chose, and the conversion happens on the way to the reader.
-        const auto last = event.anchorSamples + regionOf(event, sourceRate) - 1;
-
-        anchor = how.loopLengthSamples > 0
-                     ? how.loopStartSamples + how.loopLengthSamples - 1 -
-                           floorMod(last - event.loopStartSamples, how.loopLengthSamples)
-                     : how.lengthInSamples - 1 - last;
-    }
+    const auto anchor = resolvedStartSample(event, sourceRate);
 
     // Into the device's samples, which is what the reading is counted in and
     // what the callback consumes one of per output sample.
     const auto scale = sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0;
 
-    return ClipPlacement{event.span.seconds, static_cast<std::int64_t>(std::llround(
-                                                 static_cast<double>(anchor) * scale))};
+    return ClipPlacement{event.span.seconds,
+                         static_cast<std::int64_t>(std::llround(anchor * scale))};
+}
+
+bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSampleRate) {
+    const auto sourceRate = sourceRateOf(event, deviceSampleRate);
+    auto start = resolvedStartSample(event, sourceRate);
+    const auto how = sourceReadFor(event, deviceSampleRate);
+
+    if (how.loopLengthSamples > 0)
+        start = static_cast<double>(how.loopStartSamples) +
+                floorMod(start - static_cast<double>(how.loopStartSamples),
+                         static_cast<double>(how.loopLengthSamples));
+
+    const auto scale = sourceRate > 0.0 ? deviceSampleRate / sourceRate : 1.0;
+    start = static_cast<double>(std::llround(start * scale));
+    const auto length =
+        static_cast<double>(samplesIn(event.sourceDurationSeconds, deviceSampleRate));
+    return start > 0 && start < length;
 }
 
 double readingRateOf(const AudioEventPlayback& event) {

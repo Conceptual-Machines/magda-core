@@ -671,21 +671,31 @@ void installGrooves(te::Engine& engine, const Case& value) {
 bool proxiesReady(te::Engine& engine, te::Edit& edit, int& waitedFor) {
     waitedFor = 0;
 
-    for (auto* track : te::getAudioTracks(edit)) {
-        for (auto* clip : track->getClips()) {
-            auto* audio = dynamic_cast<te::AudioClipBase*>(clip);
-            if (audio == nullptr)
-                continue;
+    const auto ready = [&](te::Clip* clip) {
+        auto* audio = dynamic_cast<te::AudioClipBase*>(clip);
+        if (audio == nullptr)
+            return true;
 
-            const auto playbackFile = audio->getPlaybackFile();
-            if (!playbackFile.isValid())
-                return false;
+        const auto playbackFile = audio->getPlaybackFile();
+        if (!playbackFile.isValid())
+            return false;
 
-            if (engine.getRenderManager().isProxyBeingGenerated(playbackFile)) {
-                ++waitedFor;
-                return false;
-            }
+        if (engine.getRenderManager().isProxyBeingGenerated(playbackFile)) {
+            ++waitedFor;
+            return false;
         }
+
+        return true;
+    };
+
+    for (auto* track : te::getAudioTracks(edit)) {
+        for (auto* clip : track->getClips())
+            if (!ready(clip))
+                return false;
+
+        for (auto* slot : track->getClipSlotList().getClipSlots())
+            if (!ready(slot->getClip()))
+                return false;
     }
 
     return true;

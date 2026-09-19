@@ -843,6 +843,86 @@ TEST_CASE("A launched slot plays its material from the origin", "[engine][clip][
     CHECK(rig.at(0) == Approx(kBlockSize));
 }
 
+TEST_CASE("A trimmed session launch is corrected at its clip boundary",
+          "[engine][clip][session][2457]") {
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<LevelReader>(0.5f));
+
+    auto& clip = rig.lane.session.front().audio.front();
+    clip.launchFadeSamples = 32;
+    clip.events.front().anchorSamples = 1000;
+    rig.streamTable.entries.front().stream->startAt(1000);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.render(0, false);
+
+    CHECK(rig.at(0) == Approx(0.0f));
+    CHECK(rig.at(31) == Approx(0.5f));
+    CHECK(rig.at(32) == Approx(0.5f));
+}
+
+TEST_CASE("A session launch preserves an untrimmed source attack",
+          "[engine][clip][session][2457]") {
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<OnsetReader>(1));
+    rig.lane.session.front().audio.front().launchFadeSamples = 32;
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.render(0, false);
+
+    CHECK(rig.at(0) == Approx(0.8f));
+    CHECK(rig.at(1) == Approx(0.25f));
+}
+
+TEST_CASE("A zero launch correction leaves a trimmed session edge unchanged",
+          "[engine][clip][session][2457]") {
+    AudioRig rig;
+    rig.give(1, 4.0, std::make_unique<LevelReader>(0.5f));
+    rig.lane.session.front().audio.front().events.front().anchorSamples = 1000;
+    rig.streamTable.entries.front().stream->startAt(1000);
+    rig.publish();
+
+    rig.handle.play(std::nullopt);
+    rig.render(0, false);
+
+    CHECK(rig.at(0) == Approx(0.5f));
+}
+
+TEST_CASE("A trimmed session correction is independent of callback size",
+          "[engine][clip][session][2457]") {
+    const auto render = [](int blockSize) {
+        AudioRig rig;
+        rig.give(1, 4.0, std::make_unique<LevelReader>(0.5f));
+
+        auto& clip = rig.lane.session.front().audio.front();
+        clip.launchFadeSamples = 32;
+        clip.events.front().anchorSamples = 1000;
+        rig.streamTable.entries.front().stream->startAt(1000);
+        rig.publish();
+        rig.handle.play(std::nullopt);
+
+        std::vector<float> result;
+        for (auto start = 0; start < 64; start += blockSize) {
+            const auto count = std::min(blockSize, 64 - start);
+            rig.renderBlock(smallBlockAt(start, count, start != 0));
+            for (auto sample = 0; sample < count; ++sample)
+                result.push_back(rig.at(sample));
+        }
+        return result;
+    };
+
+    const auto whole = render(64);
+    const auto chopped = render(8);
+    REQUIRE(chopped.size() == whole.size());
+
+    for (auto sample = std::size_t{0}; sample < whole.size(); ++sample) {
+        INFO("sample " << sample);
+        CHECK(chopped[sample] == Approx(whole[sample]).margin(1.0e-6));
+    }
+}
+
 TEST_CASE("A launch quantized inside a block starts on its beat, not the boundary",
           "[engine][clip][session]") {
     AudioRig rig;

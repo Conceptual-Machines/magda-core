@@ -111,8 +111,8 @@ class ClipVoice {
      */
     bool render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                 const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
-                int preRoll, juce::dsp::AudioBlock<float> scratch,
-                juce::dsp::AudioBlock<float> out);
+                int preRoll, juce::dsp::AudioBlock<float> scratch, juce::dsp::AudioBlock<float> out,
+                bool correctTrimmedStart = false);
 
   private:
     /**

@@ -393,7 +393,8 @@ void ClipAudioSource::renderMaterial(const BlockInfo& block, juce::dsp::AudioBlo
         voice->render(*entry.clip, *entry.event, entry.block, *entry.stream, entry.stretcher,
                       entry.preRoll, scratch,
                       out.getSubBlock(static_cast<std::size_t>(entry.outOffset),
-                                      static_cast<std::size_t>(entry.block.numSamples)));
+                                      static_cast<std::size_t>(entry.block.numSamples)),
+                      section_ == Section::Session);
     }
 
     // After rendering: a slot that stops half way through a block still sounds

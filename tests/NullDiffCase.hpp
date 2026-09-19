@@ -369,6 +369,18 @@ struct Case {
  */
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory);
 
+/// The focused #2457 reproducer: a Session slot begins one second into a
+/// steady source, so its launch edge is a full-scale step unless corrected.
+Case buildTrimmedSessionLaunchCase(const juce::File& scratchDirectory);
+
+/// The corresponding source-boundary attack, which #2444 requires launch
+/// correction to preserve exactly.
+Case buildUntrimmedSessionAttackCase(const juce::File& scratchDirectory);
+
+/// A trimmed arrangement clip is ordinary timeline playback, not a Session
+/// launch transition, and remains unshaped.
+Case buildTrimmedArrangementCase(const juce::File& scratchDirectory);
+
 /**
  * @brief The corpus, built once per process.
  *

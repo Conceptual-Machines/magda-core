@@ -1033,6 +1033,8 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
              COMMAND magda_juce_tests "Null Diff Maps")
     add_test(NAME null_diff_corpus_juce
              COMMAND magda_juce_tests "Null Diff Corpus")
+    add_test(NAME trimmed_session_launch_juce
+             COMMAND magda_juce_tests "Trimmed Session Launch")
 endif()
 
 add_test(NAME tempo_lane_bridge_juce

@@ -767,6 +767,50 @@ voice = (freq / 20000.0) * gain * gate;
 process = voice <: _, _;
 )FAUST";
 
+Case buildTrimmedSessionLaunchCase(const juce::File& scratchDirectory) {
+    auto value =
+        newCase("session.launch.trimmed", "a trimmed audio slot launch", launching(plainTrack()));
+    value.endBeat = 2.0;
+
+    auto steady = steps();
+    steady.intervalSeconds = steady.durationSeconds;
+    const auto source = writeSource(scratchDirectory, "session_trimmed", steady);
+    value.sources.push_back(source);
+
+    auto clip = inSlot(audioClip(402, 0.0, 4.0, source), 0);
+    eventOf(clip).sourceAnchorSamples = static_cast<std::int64_t>(source.sampleRate);
+    value.clips.push_back(std::move(clip));
+    value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+    return value;
+}
+
+Case buildUntrimmedSessionAttackCase(const juce::File& scratchDirectory) {
+    auto value =
+        newCase("session.launch.attack", "an untrimmed Session attack", launching(plainTrack()));
+    value.endBeat = 2.0;
+
+    const auto source = writeSource(scratchDirectory, "session_attack", impulses());
+    value.sources.push_back(source);
+    value.clips.push_back(inSlot(audioClip(403, 0.0, 4.0, source), 0));
+    value.launches.push_back(LaunchInfo{kTrack, 0, 0.0});
+    return value;
+}
+
+Case buildTrimmedArrangementCase(const juce::File& scratchDirectory) {
+    auto value = newCase("arrangement.trimmed.steady", "a trimmed arrangement clip", plainTrack());
+    value.endBeat = 2.0;
+
+    auto steady = steps();
+    steady.intervalSeconds = steady.durationSeconds;
+    const auto source = writeSource(scratchDirectory, "arrangement_trimmed", steady);
+    value.sources.push_back(source);
+
+    auto clip = audioClip(404, 0.0, 4.0, source);
+    eventOf(clip).sourceAnchorSamples = static_cast<std::int64_t>(source.sampleRate);
+    value.clips.push_back(std::move(clip));
+    return value;
+}
+
 std::vector<Case> buildCorpus(const juce::File& scratchDirectory) {
     scratchDirectory.createDirectory();
 
