@@ -293,6 +293,7 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
         midiInScratch_.clear();
         midiOutScratch_.clear();
 
+        magda::engine::NoteOccurrences occurrences;
         if (block.midiIn != nullptr)
             for (const auto metadata : *block.midiIn) {
                 if (static_cast<int>(midiInScratch_.size()) >= midiInCapacity_) {
@@ -309,7 +310,10 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                 const auto fraction =
                     block.midiInFractions != nullptr && message.isNoteOn()
                         ? block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
-                                                    message.getNoteNumber())
+                                                    message.getNoteNumber(),
+                                                    occurrences.next(metadata.samplePosition,
+                                                                     message.getChannel(),
+                                                                     message.getNoteNumber()))
                         : 0.0f;
                 message.setTimeStamp((metadata.samplePosition + static_cast<double>(fraction)) /
                                      sampleRate_);
@@ -385,11 +389,13 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
             magda::engine::sampleAt(position), 0, std::max(0, numSamples - 1)));
         block.midiOut->addEvent(event.message, sample);
 
-        if (block.midiOutFractions != nullptr && event.message.isNoteOn() &&
-            sample == magda::engine::sampleAt(position))
-            block.midiOutFractions->add(sample, event.message.getChannel(),
-                                        event.message.getNoteNumber(),
-                                        static_cast<float>(magda::engine::fractionAt(position)));
+        // One entry per note-on, a stamp the clamp moved sounding on its sample.
+        if (block.midiOutFractions != nullptr && event.message.isNoteOn())
+            block.midiOutFractions->add(
+                sample, event.message.getChannel(), event.message.getNoteNumber(),
+                sample == magda::engine::sampleAt(position)
+                    ? static_cast<float>(magda::engine::fractionAt(position))
+                    : 0.0f);
     }
 }
 

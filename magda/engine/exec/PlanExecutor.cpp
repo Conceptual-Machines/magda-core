@@ -2074,9 +2074,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             } else {
                 auto& out = midiOut(id, 0);
                 out.clear();
-                fractionsOut(id, 0).clear();
+                auto& fractions = fractionsOut(id, 0);
+                fractions.clear();
                 if (insert != nullptr && !value.silent)
                     insert->receive(block, {}, out);
+                fractions.addWhole(out);
 
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
             }

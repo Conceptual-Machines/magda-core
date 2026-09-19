@@ -610,8 +610,9 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
     const float levelLinear = juce::Decibels::decibelsToGain(displayValue(kLevel));
 
     // Device MIDI timestamps are block-relative seconds — convert to a sample
-    // offset within the block. Deduplicate on note AND sample position, because
-    // several input devices can route the same message at the same instant.
+    // offset within the block. Deduplicate on note AND instant, fraction included,
+    // because several input devices can route the same message at the same
+    // instant, and two of one pitch inside one sample are two notes (#2741).
     // The host's panic travels beside the events (#2418). A tail-off stop is a
     // no-op on an idle voice, so only what is sounding is let go.
     if (context.midiIn != nullptr && context.midiIn->isAllNotesOff())
@@ -623,9 +624,11 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
         struct SeenKey {
             int note;
             int samplePos;
+            float fraction;
             bool isNoteOn;
             bool operator==(const SeenKey& o) const {
-                return note == o.note && samplePos == o.samplePos && isNoteOn == o.isNoteOn;
+                return note == o.note && samplePos == o.samplePos && fraction == o.fraction &&
+                       isNoteOn == o.isNoteOn;
             }
         };
         juce::Array<SeenKey> seen;
@@ -636,7 +639,8 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
             const int midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), at.sample);
 
             if (m.isNoteOn() || m.isNoteOff()) {
-                const SeenKey key{m.getNoteNumber(), midiPos, m.isNoteOn()};
+                const SeenKey key{m.getNoteNumber(), midiPos,
+                                  midiPos == at.sample ? at.fraction : 0.0f, m.isNoteOn()};
                 if (seen.contains(key))
                     continue;
                 seen.add(key);

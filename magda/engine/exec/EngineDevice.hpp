@@ -247,11 +247,11 @@ class EngineMidiSource {
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
 
     /// As render(), and where in their samples the note-ons fall (#2741). A
-    /// source that cannot say leaves @p fractions empty.
+    /// source that cannot say puts each one on its sample.
     virtual void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
                                      NoteFractions& fractions) {
-        juce::ignoreUnused(fractions);
         render(block, out);
+        fractions.addWhole(out);
     }
 
     /// Whether the block just rendered was a discontinuity of the source's own

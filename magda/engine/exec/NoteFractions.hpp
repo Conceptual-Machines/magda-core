@@ -1,5 +1,8 @@
 #pragma once
 
+#include <juce_audio_basics/juce_audio_basics.h>
+
+#include <array>
 #include <cstddef>
 #include <span>
 #include <vector>
@@ -10,9 +13,11 @@ namespace magda::engine {
  * @brief How far into their samples a port's note-ons fall (#2741).
  *
  * Beside the juce::MidiBuffer that carries them, which counts whole samples.
- * Keyed by sample, channel and note rather than by position in the buffer, so
- * a merge is a concatenation and a transpose re-keys. Only fractions above zero
- * are kept: a note-on with none here falls on its sample exactly.
+ * One entry per note-on, and at any one sample in the order the buffer holds
+ * them, which every writer keeps by adding an entry as it adds the event. Keyed
+ * by sample, channel and note rather than by position in the buffer, so a
+ * merge is a concatenation and a transpose re-keys; the nth note-on of a pitch
+ * at a sample is its nth entry.
  */
 class NoteFractions {
   public:
@@ -39,8 +44,16 @@ class NoteFractions {
     }
 
     void add(int sample, int channel, int note, float fraction) {
-        if (fraction > 0.0f && entries_.size() < entries_.capacity())
+        if (entries_.size() < entries_.capacity())
             entries_.push_back({sample, channel, note, fraction});
+    }
+
+    /// An entry at no fraction for every note-on in @p events, for a writer
+    /// whose events fall on their samples.
+    void addWhole(const juce::MidiBuffer& events) {
+        for (const auto metadata : events)
+            if (const auto message = metadata.getMessage(); message.isNoteOn())
+                add(metadata.samplePosition, message.getChannel(), message.getNoteNumber(), 0.0f);
     }
 
     /// Everything in @p other, @p shift samples later.
@@ -49,10 +62,12 @@ class NoteFractions {
             add(entry.sample + shift, entry.channel, entry.note, entry.fraction);
     }
 
-    /// The fraction of the note-on at @p sample, or zero.
-    float at(int sample, int channel, int note) const {
+    /// The fraction of the @p occurrence th note-on of this pitch at @p sample,
+    /// counting from zero, or zero where there is none.
+    float at(int sample, int channel, int note, int occurrence = 0) const {
         for (const auto& entry : entries_)
-            if (entry.sample == sample && entry.channel == channel && entry.note == note)
+            if (entry.sample == sample && entry.channel == channel && entry.note == note &&
+                occurrence-- == 0)
                 return entry.fraction;
         return 0.0f;
     }
@@ -67,6 +82,37 @@ class NoteFractions {
 
   private:
     std::vector<Entry> entries_;
+};
+
+/**
+ * @brief Which occurrence of its pitch a note-on is, walking a buffer in order.
+ *
+ * What NoteFractions::at() asks for. Only the current sample is remembered,
+ * since that is all an occurrence counts within.
+ */
+class NoteOccurrences {
+  public:
+    int next(int sample, int channel, int note) {
+        if (sample != sample_) {
+            sample_ = sample;
+            count_ = 0;
+        }
+
+        const auto key = channel * 128 + note;
+        int seen = 0;
+        for (std::size_t at = 0; at < count_; ++at)
+            if (keys_[at] == key)
+                ++seen;
+
+        if (count_ < keys_.size())
+            keys_[count_++] = key;
+        return seen;
+    }
+
+  private:
+    int sample_ = -1;
+    std::size_t count_ = 0;
+    std::array<int, 256> keys_{};
 };
 
 }  // namespace magda::engine

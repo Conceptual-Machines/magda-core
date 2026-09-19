@@ -877,6 +877,35 @@ TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
     CHECK(outFractions.at(200, 1, 72) == Catch::Approx(0.3f).margin(1e-4));
 }
 
+TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions",
+          "[engine][devices][2741]") {
+    const auto context = contextFor();
+    auto stamping = std::make_unique<StampingDevice>(0.0);
+    auto* device = stamping.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
+    hosted.prepare(context);
+
+    // 100.2 and 100.8, with a note of another pitch between them.
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    magda::engine::NoteFractions in(4);
+    in.add(100, 1, 60, 0.2f);
+    in.add(100, 1, 64, 0.5f);
+    in.add(100, 1, 60, 0.8f);
+
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiInFractions = &in;
+    hosted.process(deviceBlock);
+
+    REQUIRE(device->stamps.size() == 3);
+    CHECK(device->stamps[0] * context.sampleRate == Catch::Approx(100.2).margin(1e-4));
+    CHECK(device->stamps[1] * context.sampleRate == Catch::Approx(100.5).margin(1e-4));
+    CHECK(device->stamps[2] * context.sampleRate == Catch::Approx(100.8).margin(1e-4));
+}
+
 TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {
     // The plan may still give the op a MIDI output port (the model's view of the
     // device, not the device's own). What an undeclared emitter writes is
