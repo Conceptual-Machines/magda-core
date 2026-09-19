@@ -20,6 +20,43 @@ namespace {
 juce::String toJuceString(const std::string& s) {
     return juce::String::fromUTF8(s.c_str(), static_cast<int>(s.size()));
 }
+
+juce::var channelList(const std::vector<int>& channels) {
+    juce::Array<juce::var> list;
+    for (const auto channel : channels)
+        list.add(channel);
+    return list;
+}
+
+std::vector<int> channelsFrom(const juce::var& list) {
+    std::vector<int> channels;
+    if (const auto* array = list.getArray())
+        for (const auto& channel : *array)
+            channels.push_back(static_cast<int>(channel));
+    return channels;
+}
+
+juce::var audioIOObject(const magda::AudioIOSettings& settings) {
+    auto* obj = new juce::DynamicObject();
+    obj->setProperty("backend", toJuceString(settings.backend));
+    obj->setProperty("inputInterface", toJuceString(settings.inputInterface));
+    obj->setProperty("outputInterface", toJuceString(settings.outputInterface));
+    obj->setProperty("sampleRate", settings.sampleRate);
+    obj->setProperty("bufferSize", settings.bufferSize);
+    obj->setProperty("inputChannels", channelList(settings.inputChannels));
+    obj->setProperty("outputChannels", channelList(settings.outputChannels));
+    return juce::var(obj);
+}
+
+magda::AudioIOSettings audioIOFrom(const juce::DynamicObject& obj) {
+    return {.backend = obj.getProperty("backend").toString().toStdString(),
+            .inputInterface = obj.getProperty("inputInterface").toString().toStdString(),
+            .outputInterface = obj.getProperty("outputInterface").toString().toStdString(),
+            .sampleRate = static_cast<double>(obj.getProperty("sampleRate")),
+            .bufferSize = static_cast<int>(obj.getProperty("bufferSize")),
+            .inputChannels = channelsFrom(obj.getProperty("inputChannels")),
+            .outputChannels = channelsFrom(obj.getProperty("outputChannels"))};
+}
 }  // namespace
 
 namespace magda {
@@ -183,6 +220,8 @@ void Config::save() {
     root->setProperty("audioEngine", toJuceString(audioEngine));
     root->setProperty("preferredInputChannels", preferredInputChannels);
     root->setProperty("preferredOutputChannels", preferredOutputChannels);
+    if (audioIO)
+        root->setProperty("audioIO", audioIOObject(*audioIO));
 
     // AI — nested "ai" object with per-agent inference profiles.
     {
@@ -578,6 +617,8 @@ void Config::load() {
     audioEngine = getString("audioEngine", audioEngine);
     preferredInputChannels = getInt("preferredInputChannels", preferredInputChannels);
     preferredOutputChannels = getInt("preferredOutputChannels", preferredOutputChannels);
+    if (auto* audioIOObj = obj->getProperty("audioIO").getDynamicObject())
+        audioIO = audioIOFrom(*audioIOObj);
 
     // AI — load nested "ai" object, or migrate from legacy flat fields
     if (obj->hasProperty("ai")) {

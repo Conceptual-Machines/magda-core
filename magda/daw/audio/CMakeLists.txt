@@ -477,6 +477,11 @@ target_sources(magda_daw PRIVATE
     AudioBridgeMixer.hpp
     CompService.cpp
     CompService.hpp
+    # The one owner of hardware audio I/O (#2746)
+    io/AudioIOService.cpp
+    io/AudioIOService.hpp
+    io/TracktionAudioSettings.cpp
+    io/TracktionAudioSettings.hpp
     AudioThumbnailManager.cpp
     WaveformPeakCache.cpp
     DeviceMeteringManager.cpp
