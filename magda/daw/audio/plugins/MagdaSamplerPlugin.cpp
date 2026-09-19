@@ -285,7 +285,6 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
     if (sound == nullptr || !sound->hasData())
         return;
 
-    sourceSamplePosition = sampleStartOffset;
     velocityGain = 1.0f - velAmount * (1.0f - velocity);
 
     targetPitchRatio = pitchRatioForNote(midiNoteNumber, *sound);
@@ -296,6 +295,11 @@ void SamplerVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesis
         glideSamplesRemaining = 0;
     }
     glidePrimed = true;
+
+    // A note a fraction into its sample reads that far before the first frame
+    // on it, so the sample begins at the note's own instant (#2741).
+    const auto fraction = synth_ != nullptr ? synth_->eventFraction() : 0.0f;
+    sourceSamplePosition = sampleStartOffset - fraction * pitchRatio;
 
     adsr.setSampleRate(getSampleRate());
     adsr.setParameters(adsrParams);
@@ -342,8 +346,9 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
             }
         }
 
-        int pos0 = static_cast<int>(sourceSamplePosition);
-        auto frac = static_cast<float>(sourceSamplePosition - pos0);
+        const auto whole = std::floor(sourceSamplePosition);
+        int pos0 = static_cast<int>(whole);
+        auto frac = static_cast<float>(sourceSamplePosition - whole);
 
         // Stop at sample end (if set) or end of file — skip when looping
         if (!loopEnabled || loopEndSample <= loopStartSample) {
@@ -355,15 +360,17 @@ void SamplerVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int s
             }
         }
 
-        // Bounds safety
-        pos0 = juce::jlimit(0, totalSamples - 1, pos0);
+        // Bounds safety. Behind the first frame is silence rather than trimmed
+        // material, and a note that falls part way into its sample starts there.
+        pos0 = juce::jmin(totalSamples - 1, pos0);
+        const int firstFrame = juce::jmax(0, static_cast<int>(sampleStartOffset));
 
         float gain = envLevel * velocityGain;
 
         for (int ch = 0; ch < numChannels; ++ch) {
             const float* data = src[ch];
-            float s0 = data[pos0];
-            float s1 = (pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
+            float s0 = pos0 >= firstFrame ? data[pos0] : 0.0f;
+            float s1 = (pos0 + 1 >= firstFrame && pos0 + 1 < totalSamples) ? data[pos0 + 1] : 0.0f;
             float sample = (s0 + frac * (s1 - s0)) * gain;
             out[ch][startSample + i] += sample;
 
@@ -396,6 +403,13 @@ SamplerVoice* SamplerSynth::monoVoice() {
         if (auto* v = dynamic_cast<SamplerVoice*>(getVoice(i)))
             return v;
     return nullptr;
+}
+
+void SamplerSynth::handleMidiEvent(const juce::MidiMessage& message) {
+    // Called in buffer order, which is the order beginBlock() was given.
+    currentFraction_ = nextEvent_ < fractions_.size() ? fractions_[nextEvent_] : 0.0f;
+    ++nextEvent_;
+    juce::Synthesiser::handleMidiEvent(message);
 }
 
 SamplerSynth::SamplerSynth() {
@@ -467,6 +481,8 @@ void SamplerSynth::allNotesOff(int midiChannel, bool allowTailOff) {
 //==============================================================================
 
 MagdaSamplerPlugin::MagdaSamplerPlugin() {
+    eventFractions_.reserve(1024);
+
     for (int index = 0; index < kNumParams; ++index) {
         const auto info = slotInfo(index);
         domains_[static_cast<size_t>(index)] = ParameterUtils::domainOf(info);
@@ -484,7 +500,7 @@ MagdaSamplerPlugin::MagdaSamplerPlugin() {
     publishSoundFacts();
 
     for (int i = 0; i < numVoices; ++i)
-        synthesiser.addVoice(new SamplerVoice());
+        synthesiser.addVoice(new SamplerVoice(synthesiser));
 }
 
 MagdaSamplerPlugin::~MagdaSamplerPlugin() = default;
@@ -602,6 +618,7 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
         synthesiser.allNotesOff(0, true);
 
     juce::MidiBuffer midiBuffer;
+    eventFractions_.clear();
     if (context.midiIn != nullptr) {
         struct SeenKey {
             int note;
@@ -615,8 +632,8 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
 
         for (int i = 0; i < context.midiIn->size(); ++i) {
             const auto& m = context.midiIn->message(i);
-            int midiPos = juce::roundToInt(m.getTimeStamp() * sampleRate);
-            midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), midiPos);
+            const auto at = midiEventPosition(m.getTimeStamp(), sampleRate);
+            const int midiPos = juce::jlimit(0, juce::jmax(0, context.numSamples - 1), at.sample);
 
             if (m.isNoteOn() || m.isNoteOff()) {
                 const SeenKey key{m.getNoteNumber(), midiPos, m.isNoteOn()};
@@ -626,9 +643,16 @@ void MagdaSamplerPlugin::process(DeviceProcessContext& context) {
             }
 
             midiBuffer.addEvent(m, midiPos + context.startSample);
+
+            // One per event, in the order added, which is the order the
+            // synthesiser handles them in. Past the reservation the rest fall
+            // on their samples.
+            if (eventFractions_.size() < eventFractions_.capacity())
+                eventFractions_.push_back(midiPos == at.sample ? at.fraction : 0.0f);
         }
     }
 
+    synthesiser.beginBlock(eventFractions_);
     synthesiser.renderNextBlock(*context.audio, midiBuffer, context.startSample,
                                 context.numSamples);
 

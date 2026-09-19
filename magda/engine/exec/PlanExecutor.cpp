@@ -209,10 +209,30 @@ void MidiDelayLine::prepare(int delaySamples, int capacityBytes) {
     // the callback the first time it came round.
     pending_.ensureSize(static_cast<std::size_t>(capacityBytes));
     scratch_.ensureSize(static_cast<std::size_t>(capacityBytes));
+
+    const auto notes = static_cast<std::size_t>(capacityBytes / kMidiShortMessageBytes + 1);
+    pendingFractions_ = NoteFractions(notes);
+    scratchFractions_ = NoteFractions(notes);
 }
 
-void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples) {
+void MidiDelayLine::process(const juce::MidiBuffer& in, const NoteFractions& inFractions,
+                            juce::MidiBuffer& out, NoteFractions& outFractions, int numSamples) {
     scratch_.clear();
+    scratchFractions_.clear();
+
+    // The fractions travel with their notes, by the same rule.
+    const auto carry = [&](const NoteFractions& from, int shift) {
+        for (const auto& entry : from.entries()) {
+            const auto position = entry.sample + shift;
+            if (position < numSamples)
+                outFractions.add(position, entry.channel, entry.note, entry.fraction);
+            else
+                scratchFractions_.add(position - numSamples, entry.channel, entry.note,
+                                      entry.fraction);
+        }
+    };
+    carry(pendingFractions_, 0);
+    carry(inFractions, delay_);
 
     // Positions are relative to the start of the block, so what is still in the
     // future stays here and moves one block closer.
@@ -233,6 +253,7 @@ void MidiDelayLine::process(const juce::MidiBuffer& in, juce::MidiBuffer& out, i
     }
 
     pending_.swapWith(scratch_);
+    std::swap(pendingFractions_, scratchFractions_);
 
     // The reservation covers what a port may carry over one block's worth of
     // samples, times the spans the delay holds in flight. Past it the buffer
@@ -339,6 +360,7 @@ void PlanExecutor::reset() {
     notePassing_.clear();
     audioSlots_.clear();
     midiSlots_.clear();
+    midiFractions_.clear();
     midiSlotPanic_.clear();
     slotChannels_.clear();
     midiByteBounds_.clear();
@@ -915,6 +937,10 @@ std::vector<std::string> PlanExecutor::prepare(const RenderPlan& plan, const Pla
     for (std::size_t slot = 0; slot < midiSlots_.size(); ++slot)
         midiSlots_[slot].ensureSize(static_cast<std::size_t>(midiByteBounds_[slot]));
 
+    midiFractions_.clear();
+    for (const auto bound : midiByteBounds_)
+        midiFractions_.emplace_back(static_cast<std::size_t>(bound / kMidiShortMessageBytes + 1));
+
     // Tell every bound device how much MIDI can reach it and how much it may
     // write, now that the sums are known and while there is still a thread that
     // may allocate.
@@ -1182,6 +1208,14 @@ const juce::MidiBuffer& PlanExecutor::midiIn(const PortRef& ref) const {
 
 juce::MidiBuffer& PlanExecutor::midiOut(OpId op, int port) {
     return midiSlots_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
+}
+
+const NoteFractions& PlanExecutor::fractionsIn(const PortRef& ref) const {
+    return ref.valid() ? midiFractions_[static_cast<std::size_t>(slotFor(ref))] : noFractions_;
+}
+
+NoteFractions& PlanExecutor::fractionsOut(OpId op, int port) {
+    return midiFractions_[static_cast<std::size_t>(slotFor(PortRef{op, port}))];
 }
 
 void PlanExecutor::commitReroutes(std::uint64_t epoch) {
@@ -1540,6 +1574,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 audioOut(id, static_cast<int>(port), numSamples).clear();
             } else {
                 midiOut(id, static_cast<int>(port)).clear();
+                fractionsOut(id, static_cast<int>(port)).clear();
                 setMidiOutPanic(id, static_cast<int>(port), false);
             }
         }
@@ -1565,9 +1600,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::SessionMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
             bool panic = false;
             if (!value.silent && midiSourceForOp_[i] != nullptr) {
-                midiSourceForOp_[i]->render(block, out);
+                midiSourceForOp_[i]->renderWithFractions(block, out, fractions);
                 // Bytes, not events: one SysEx dump outweighs a thousand
                 // notes, and an event count would wave it through.
                 jassert(out.data.size() <= kMaxMidiBytesPerPort);
@@ -1647,8 +1684,10 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 break;
             auto& out = midiOut(id, 0);
             out.clear();
-            midiDelays_[static_cast<std::size_t>(line)]->process(midiIn(op.inputs[0]), out,
-                                                                 numSamples);
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
+            midiDelays_[static_cast<std::size_t>(line)]->process(
+                midiIn(op.inputs[0]), fractionsIn(op.inputs[0]), out, fractions, numSamples);
             // Undelayed. The line holds events, not the discontinuity that
             // produced them, and a device is owed its panic on the block that
             // caused it rather than a latency later (#2418).
@@ -1683,11 +1722,14 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
         case OpKind::MergeMidi: {
             auto& out = midiOut(id, 0);
             out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
             bool panic = false;
             if (!value.silent)
                 for (const auto& input : op.inputs)
                     if (input.valid()) {
                         out.addEvents(midiIn(input), 0, numSamples, 0);
+                        fractions.addFrom(fractionsIn(input));
                         panic = panic || midiInPanic(input);
                     }
             setMidiOutPanic(id, 0, panic);
@@ -1709,6 +1751,8 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // transposed, or it is not and this pad never sees it.
             auto& out = midiOut(id, 0);
             out.clear();
+            auto& fractions = fractionsOut(id, 0);
+            fractions.clear();
 
             // Going silent is itself an all-notes-off. Nothing downstream will
             // ever see the note-offs for what already went through, and the
@@ -1754,6 +1798,11 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
                 out.addEvent(message, metadata.samplePosition);
             }
 
+            for (const auto& entry : fractionsIn(op.inputs[0]).entries())
+                if (entry.note >= low && entry.note <= high)
+                    fractions.add(entry.sample, entry.channel,
+                                  std::clamp(entry.note + transpose, 0, 127), entry.fraction);
+
             if (auto* tap = midiTapForOp_[i]; tap != nullptr)
                 tap->write(out, block);
             break;
@@ -1767,6 +1816,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (producesMidi) {
                 deviceMidiOut = &midiOut(id, 1);
                 deviceMidiOut->clear();
+                fractionsOut(id, 1).clear();
                 // Cleared with the buffer and beside it, so every early return
                 // below leaves the port saying the same thing the buffer does.
                 setMidiOutPanic(id, 1, false);
@@ -1828,26 +1878,28 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // operand of an || it would be skipped on a block that already
             // carried a panic, and fire again on a later one (#2418).
             const auto rerouted = takeOwedPanic(midiPanicForOp_[static_cast<std::size_t>(i)]);
-            DeviceBlock deviceBlock{.audio = audio.getSubsetChannelBlock(0, blockWidth),
-                                    .midiIn = &midiIn(op.inputs[1]),
-                                    // What reached the port, plus the block's
-                                    // own playhead jump, which both hosts raise
-                                    // per device rather than passing it along a
-                                    // chain.
-                                    //
-                                    // Deliberately not this track going quiet. A
-                                    // panic says the host is about to re-assert
-                                    // what should sound, and only a jump does
-                                    // (playLane chases on !continuous); mute here
-                                    // is a gain with the track still rendering, so
-                                    // nothing is withheld and nothing would come
-                                    // back (#2418).
-                                    .midiInAllNotesOff =
-                                        !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
-                                    .midiOut = deviceMidiOut,
-                                    .sidechain = {},
-                                    .params = deviceParams(window),
-                                    .block = block};
+            DeviceBlock deviceBlock{
+                .audio = audio.getSubsetChannelBlock(0, blockWidth),
+                .midiIn = &midiIn(op.inputs[1]),
+                .midiInFractions = &fractionsIn(op.inputs[1]),
+                // What reached the port, plus the block's
+                // own playhead jump, which both hosts raise
+                // per device rather than passing it along a
+                // chain.
+                //
+                // Deliberately not this track going quiet. A
+                // panic says the host is about to re-assert
+                // what should sound, and only a jump does
+                // (playLane chases on !continuous); mute here
+                // is a gain with the track still rendering, so
+                // nothing is withheld and nothing would come
+                // back (#2418).
+                .midiInAllNotesOff = !block.continuous || midiInPanic(op.inputs[1]) || rerouted,
+                .midiOut = deviceMidiOut,
+                .midiOutFractions = producesMidi ? &fractionsOut(id, 1) : nullptr,
+                .sidechain = {},
+                .params = deviceParams(window),
+                .block = block};
             if (op.inputs[2].valid())
                 deviceBlock.sidechain = audioIn(op.inputs[2], numSamples);
 
@@ -1945,9 +1997,13 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             if (op.outputs.size() > 1 && op.outputs[1].kind == SignalKind::Midi) {
                 auto& outMidiBuffer = midiOut(id, 1);
                 outMidiBuffer.clear();
+                auto& fractions = fractionsOut(id, 1);
+                fractions.clear();
                 const bool carries = !value.silent && op.inputs[1].valid();
-                if (carries)
+                if (carries) {
                     outMidiBuffer.addEvents(midiIn(op.inputs[1]), 0, numSamples, 0);
+                    fractions.addFrom(fractionsIn(op.inputs[1]));
+                }
                 setMidiOutPanic(id, 1, carries && midiInPanic(op.inputs[1]));
             }
             break;
@@ -2018,6 +2074,7 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             } else {
                 auto& out = midiOut(id, 0);
                 out.clear();
+                fractionsOut(id, 0).clear();
                 if (insert != nullptr && !value.silent)
                     insert->receive(block, {}, out);
 

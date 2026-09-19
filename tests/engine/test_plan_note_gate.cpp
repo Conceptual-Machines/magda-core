@@ -30,18 +30,29 @@ namespace {
 
 constexpr int kBlockSize = 64;
 
-/// Emits one message per note it is given, all at sample zero.
+/// Emits one message per note it is given, all at sample zero, each note-on
+/// @p fractions of the way into it where given.
 class NoteSource final : public EngineMidiSource {
   public:
-    explicit NoteSource(std::vector<juce::MidiMessage> messages) : messages_(std::move(messages)) {}
+    explicit NoteSource(std::vector<juce::MidiMessage> messages, std::vector<float> fractions = {})
+        : messages_(std::move(messages)), fractions_(std::move(fractions)) {}
 
     void render(const BlockInfo&, juce::MidiBuffer& out) override {
         for (const auto& message : messages_)
             out.addEvent(message, 0);
     }
 
+    void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                             magda::engine::NoteFractions& fractions) override {
+        render(block, out);
+        for (std::size_t at = 0; at < fractions_.size() && at < messages_.size(); ++at)
+            fractions.add(0, messages_[at].getChannel(), messages_[at].getNoteNumber(),
+                          fractions_[at]);
+    }
+
   private:
     std::vector<juce::MidiMessage> messages_;
+    std::vector<float> fractions_;
 };
 
 /// Records every message that reaches it.
@@ -53,6 +64,8 @@ class MidiCapture final : public EngineDevice {
             return;
         for (const auto metadata : *block.midiIn)
             seen.push_back(metadata.getMessage());
+        if (block.midiInFractions != nullptr)
+            fractions = *block.midiInFractions;
     }
 
     std::vector<int> noteOnNumbers() const {
@@ -64,6 +77,7 @@ class MidiCapture final : public EngineDevice {
     }
 
     std::vector<juce::MidiMessage> seen;
+    magda::engine::NoteFractions fractions{16};
 };
 
 /// MidiInput -> MidiNoteGate -> Device, which is the shape a pad chain has.
@@ -74,8 +88,9 @@ struct GateHarness {
     NoteSource source;
     MidiCapture capture;
 
-    GateHarness(std::vector<juce::MidiMessage> messages, int low, int high, int transpose)
-        : source(std::move(messages)) {
+    GateHarness(std::vector<juce::MidiMessage> messages, int low, int high, int transpose,
+                std::vector<float> fractions = {})
+        : source(std::move(messages), std::move(fractions)) {
         magda::engine::PlanOp input;
         input.kind = OpKind::MidiInput;
         input.key.trackId = 1;
@@ -315,4 +330,18 @@ TEST_CASE("A note gate carries its input's MIDI bound to what it feeds",
     REQUIRE(executor.isPrepared());
 
     CHECK(probe.bound == 2 * magda::engine::kMaxMidiBytesPerPort);
+}
+
+TEST_CASE("A note gate carries each note's fraction onto the note it plays",
+          "[engine][exec][notegate][2741]") {
+    // The pad's notes, a quarter and three quarters into their sample, and one
+    // outside the pad's range that must not bring its fraction along.
+    GateHarness harness({noteOn(38), noteOn(39), noteOn(41)}, 38, 40, 60 - 38,
+                        {0.25f, 0.75f, 0.5f});
+    harness.render();
+
+    CHECK(harness.capture.noteOnNumbers() == std::vector<int>{60, 61});
+    CHECK(harness.capture.fractions.at(0, 1, 60) == 0.25f);
+    CHECK(harness.capture.fractions.at(0, 1, 61) == 0.75f);
+    CHECK(harness.capture.fractions.entries().size() == 2);
 }

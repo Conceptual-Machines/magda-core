@@ -579,7 +579,7 @@ void MagdaCompiledPolyInstrument::process(DeviceProcessContext& context) {
 
         for (int eventIndex = 0; eventIndex < context.midiIn->size(); ++eventIndex) {
             const auto& m = context.midiIn->message(eventIndex);
-            int evSample = juce::roundToInt(m.getTimeStamp() * sampleRate_);
+            int evSample = midiEventPosition(m.getTimeStamp(), sampleRate_).sample;
             evSample = juce::jlimit(cursor, n, evSample);  // clamp + keep monotonic
             renderSegment(cursor, evSample - cursor);
             cursor = evSample;

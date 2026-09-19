@@ -384,12 +384,17 @@ class MidiPositionProbe final : public EngineDevice {
             if (const auto message = metadata.getMessage(); message.isNoteOn())
                 notes.push_back(
                     {message.getNoteNumber(),
-                     static_cast<int>(timelineSampleOf(block.block)) + metadata.samplePosition});
+                     static_cast<int>(timelineSampleOf(block.block)) + metadata.samplePosition,
+                     block.midiInFractions == nullptr
+                         ? 0.0f
+                         : block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
+                                                     message.getNoteNumber())});
     }
 
     struct Note {
         int number = 0;
         int position = 0;
+        float fraction = 0.0f;
     };
     std::vector<Note> notes;
 
@@ -1898,6 +1903,54 @@ TEST_CASE("Block size does not change where delayed MIDI lands", "[engine][exec]
         // reservation counted in callbacks rather than samples gets wrong.
         CHECK(harness.executor.midiDelayOverflows() == 0);
     }
+}
+
+TEST_CASE("A note's fraction is held with it through a MIDI delay", "[engine][exec][pdc][2741]") {
+    // One note 30.4 samples in, held 80 samples to meet the audio it travels
+    // with: into the next block, where it has to arrive with its fraction.
+    class FractionalNote final : public EngineMidiSource {
+      public:
+        void render(const BlockInfo& block, juce::MidiBuffer& out) override {
+            if (const auto at = noteSample_ - timelineSampleOf(block);
+                at >= 0 && at < block.numSamples)
+                out.addEvent(juce::MidiMessage::noteOn(1, 48, 1.0f), static_cast<int>(at));
+        }
+
+        void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                                 magda::engine::NoteFractions& fractions) override {
+            render(block, out);
+            if (const auto at = noteSample_ - timelineSampleOf(block);
+                at >= 0 && at < block.numSamples)
+                fractions.add(static_cast<int>(at), 1, 48, 0.4f);
+        }
+
+      private:
+        std::int64_t noteSample_ = 30;
+    };
+
+    auto track = makeTrack(1);
+    track.chain.fxChainElements.push_back(makeDeviceElement(makeEffect(7)));
+    auto reader = makeEffect(8);
+    reader.canReceiveMidi = true;
+    track.chain.fxChainElements.push_back(makeDeviceElement(reader));
+
+    Harness harness({track}, makeMaster());
+    ConstantSource audio(0.0f);
+    FractionalNote notes;
+    LatentDevice latent(80);
+    MidiPositionProbe probe;
+    harness.bindings.clipAudio[1] = &audio;
+    harness.bindings.clipMidi[1] = &notes;
+    harness.bindings.devices[DeviceKey{7}] = &latent;
+    harness.bindings.devices[DeviceKey{8}] = &probe;
+    harness.prepareCleanly();
+
+    for (int block = 0; block < 3; ++block)
+        harness.render(kBlockSize, static_cast<std::int64_t>(block) * kBlockSize);
+
+    REQUIRE(probe.notes.size() == 1);
+    CHECK(probe.notes.front().position == 110);
+    CHECK(probe.notes.front().fraction == 0.4f);
 }
 
 TEST_CASE("What is in flight survives the plan being replaced", "[engine][exec][diff]") {

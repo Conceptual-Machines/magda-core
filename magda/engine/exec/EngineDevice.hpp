@@ -5,6 +5,7 @@
 
 #include <span>
 
+#include "exec/NoteFractions.hpp"
 #include "exec/RenderContext.hpp"
 #include "param/ParamBlock.hpp"
 
@@ -62,6 +63,9 @@ struct DeviceBlock {
     /// MIDI reaching the device. Empty when the plan left the slot unconnected.
     const juce::MidiBuffer* midiIn = nullptr;
 
+    /// How far into their samples @ref midiIn's note-ons fall (#2741).
+    const NoteFractions* midiInFractions = nullptr;
+
     /**
      * @brief Panic reaching the device: release what you are holding (#2418).
      *
@@ -84,6 +88,9 @@ struct DeviceBlock {
      * device that also echoed its input would double every note (#2345).
      */
     juce::MidiBuffer* midiOut = nullptr;
+
+    /// Where the note-ons written to @ref midiOut fall inside their samples.
+    NoteFractions* midiOutFractions = nullptr;
 
     /**
      * @brief The panic the device leaves on @ref midiOut, read back after
@@ -238,6 +245,14 @@ class EngineMidiSource {
     /// Add this block's events to @p out; it arrives cleared. At most
     /// kMaxMidiBytesPerPort of encoded MIDI, SysEx included.
     virtual void render(const BlockInfo&, juce::MidiBuffer& out) = 0;
+
+    /// As render(), and where in their samples the note-ons fall (#2741). A
+    /// source that cannot say leaves @p fractions empty.
+    virtual void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                                     NoteFractions& fractions) {
+        juce::ignoreUnused(fractions);
+        render(block, out);
+    }
 
     /// Whether the block just rendered was a discontinuity of the source's own
     /// -- a section hand-over the transport never moved for (#2418). Raises the

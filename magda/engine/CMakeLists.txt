@@ -72,6 +72,7 @@ add_library(magda_engine STATIC
     exec/PlanValues.hpp
     exec/PlanBindings.hpp
     exec/EngineDevice.hpp
+    exec/NoteFractions.hpp
     exec/RenderContext.hpp
     exec/RuntimeStateStore.hpp
     exec/EngineSession.hpp

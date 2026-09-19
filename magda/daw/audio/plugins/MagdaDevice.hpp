@@ -4,6 +4,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <ranges>
 #include <string_view>
@@ -98,6 +99,28 @@ class DeviceMidiInput {
     /// The host signalled panic without a CC event (a playhead jump, a stop).
     virtual bool isAllNotesOff() const = 0;
 };
+
+/// Where a message stamped some seconds into the block lands, in samples.
+struct MidiEventPosition {
+    int sample = 0;
+
+    /// How far into @ref sample the message falls, in [0, 1).
+    float fraction = 0.0f;
+};
+
+/**
+ * @brief The sample a message stamped @p seconds into the block falls in, at
+ *        @p sampleRate, and how far into it (#2741).
+ *
+ * Floor with a hundredth of a sample of slack, the rule the engine places every
+ * instant by (TimeDomains::sampleAt): a note 0.6 into a sample plays on that
+ * sample, not the next.
+ */
+inline MidiEventPosition midiEventPosition(double seconds, double sampleRate) {
+    const auto position = seconds * sampleRate;
+    const auto sample = std::floor(position + 0.01);
+    return {static_cast<int>(sample), static_cast<float>(std::max(0.0, position - sample))};
+}
 
 /**
  * Where a device writes the MIDI it emits. Empty on entry; on exit it is the

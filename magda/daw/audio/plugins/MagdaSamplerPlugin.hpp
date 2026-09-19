@@ -4,6 +4,7 @@
 
 #include <array>
 #include <atomic>
+#include <span>
 #include <vector>
 
 #include "core/ParameterUtils.hpp"
@@ -83,12 +84,19 @@ class SamplerPlayback {
 };
 
 //==============================================================================
+class SamplerSynth;
+
 /**
  * @brief Voice for sample playback with ADSR envelope and pitch control
  */
 class SamplerVoice : public juce::SynthesiserVoice {
   public:
     SamplerVoice();
+
+    /// The synthesiser that says how far into its sample a note falls.
+    explicit SamplerVoice(const SamplerSynth& synth) : SamplerVoice() {
+        synth_ = &synth;
+    }
 
     void setADSR(float attack, float decay, float sustain, float release);
     void setPitchOffset(float semitones, float cents);
@@ -152,6 +160,7 @@ class SamplerVoice : public juce::SynthesiserVoice {
 
     double sampleStartOffset = 0.0;
     double sampleEndSample = 0.0;  // 0 = play to end of file
+    const SamplerSynth* synth_ = nullptr;
     bool loopEnabled = false;
     double loopStartSample = 0.0;
     double loopEndSample = 0.0;
@@ -183,8 +192,28 @@ class SamplerSynth : public juce::Synthesiser {
     void noteOff(int midiChannel, int midiNoteNumber, float velocity, bool allowTailOff) override;
     void allNotesOff(int midiChannel, bool allowTailOff) override;
 
+    /// How far into their samples the events of the next rendered buffer fall,
+    /// in the order they were added to it (#2741). Audio thread.
+    void beginBlock(std::span<const float> fractions) {
+        fractions_ = fractions;
+        nextEvent_ = 0;
+        currentFraction_ = 0.0f;
+    }
+
+    /// How far into its sample the event being handled falls.
+    float eventFraction() const {
+        return currentFraction_;
+    }
+
+  protected:
+    void handleMidiEvent(const juce::MidiMessage& message) override;
+
   private:
     SamplerVoice* monoVoice();
+
+    std::span<const float> fractions_;
+    std::size_t nextEvent_ = 0;
+    float currentFraction_ = 0.0f;
 
     int voiceMode = Poly;
     double glideSeconds = 0.0;
@@ -197,7 +226,7 @@ class SamplerSynth : public juce::Synthesiser {
  * @brief Sample-based instrument device with ADSR, pitch/fine, and level controls.
  *
  * A MagdaDevice since #2271: one DSP hosted by whichever engine is running it.
- * Every Drum Grid pad holds one, so until it crossed, a drum kit built the
+ * A Drum Grid pad can hold one, so until it crossed, a drum kit built the
  * ordinary way rendered as passthrough under the native engine.
  *
  * The slot ids, order and display ranges are the ones the retired host-native
@@ -352,6 +381,10 @@ class MagdaSamplerPlugin : public MagdaDevice {
     bool holdsAudioFrom(const juce::String& path) const;
 
     SamplerSynth synthesiser;
+
+    /// Where each event handed to the synthesiser falls inside its sample
+    /// (#2741). Reserved once, never grown on the audio thread.
+    std::vector<float> eventFractions_;
 
     /// Owned by the synthesiser, and only ever read on the message thread. The
     /// audio thread reads @ref soundSourceRate_ and @ref soundLengthSeconds_
