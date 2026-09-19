@@ -7,6 +7,8 @@
 #include <utility>
 #include <vector>
 
+#include "transport/TimeDomains.hpp"
+
 /**
  * @file InsertCapture.hpp
  * @brief What the hardware said during a live pass, kept for a bounce (#2279).
@@ -31,6 +33,15 @@ struct CaptureWindow {
 
     double lengthSeconds() const {
         return std::max(0.0, endSeconds - startSeconds);
+    }
+
+    /// The samples the window holds at @p rate: from the one its start falls in
+    /// to the one its end falls in (TimeDomains::sampleAt, #2741).
+    std::int64_t samplesAt(double rate) const {
+        if (!(rate > 0.0))
+            return 0;
+        return std::max<std::int64_t>(0,
+                                      sampleAt(endSeconds * rate) - sampleAt(startSeconds * rate));
     }
 
     bool covers(const CaptureWindow& other) const {

@@ -311,6 +311,34 @@ TEST_CASE("A capture taken at another rate is resampled, not refused", "[engine]
     }
 }
 
+TEST_CASE("A window on fractional samples holds every sample between its ends",
+          "[engine][insert][2741]") {
+    // 100.8 to 1110.2 falls in samples 100 to 1109: one more than rounding the
+    // window's length gives.
+    HardwareStub hardware;
+    const CaptureWindow window{100.8 / kRate, 1110.2 / kRate};
+    InsertCaptureSession session(hardware, window, kRate, kChannels);
+    runPass(session, everyBlock(10));
+
+    const auto capture = session.take();
+    REQUIRE(capture.complete());
+    REQUIRE(capture.lengthInSamples() == 1010);
+    CHECK(capture.audio().getSample(0, 0) == valueAt(100, 0));
+    CHECK(capture.audio().getSample(0, 1009) == valueAt(1109, 0));
+
+    SECTION("and a playback at another rate holds what the window does there") {
+        // 201.6 to 2220.4 at twice the rate: samples 201 to 2219.
+        auto playback = InsertCapturePlayback::create(capture, window, contextAt(2.0 * kRate));
+        REQUIRE(playback != nullptr);
+
+        const auto replayed = replay(*playback, 256, 2.0 * kRate, 2304);
+        CHECK(replayed.getSample(0, 200) == 0.0f);
+        CHECK(replayed.getSample(0, 201) != 0.0f);
+        CHECK(replayed.getSample(0, 2219) != 0.0f);
+        CHECK(replayed.getSample(0, 2220) == 0.0f);
+    }
+}
+
 TEST_CASE("A capture that does not cover the render is refused", "[engine][insert][2279]") {
     HardwareStub hardware;
     InsertCaptureSession session(hardware, windowOf(kBlock), kRate, kChannels);

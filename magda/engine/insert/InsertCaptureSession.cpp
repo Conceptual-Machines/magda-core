@@ -23,8 +23,7 @@ int InsertCaptureSession::defaultMidiCapacity(const CaptureWindow& window) {
 InsertCaptureSession::InsertCaptureSession(EngineInsert& live, const CaptureWindow& window,
                                            double sampleRate, int numChannels, int midiCapacity)
     : live_(live), window_(window), sampleRate_(sampleRate) {
-    const auto samples =
-        static_cast<int>(std::llround(window_.lengthSeconds() * std::max(0.0, sampleRate)));
+    const auto samples = static_cast<int>(window_.samplesAt(sampleRate));
 
     audio_.setSize(std::max(0, numChannels), std::max(0, samples));
     audio_.clear();

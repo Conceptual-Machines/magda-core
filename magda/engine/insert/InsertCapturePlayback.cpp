@@ -105,14 +105,14 @@ juce::AudioBuffer<float> bandLimited(const juce::AudioBuffer<float>& source, dou
 }
 
 /**
- * @brief @p source at @p rate, through the curve io/SourceReaders.hpp reads a
- *        file at another rate through.
+ * @brief @p source at @p rate, @p length samples long, through the curve
+ *        io/SourceReaders.hpp reads a file at another rate through.
  *
  * A copy when the rates already agree. Band-limited first when the rate is
  * going down, since the curve interpolates and does not filter.
  */
 juce::AudioBuffer<float> atRate(const juce::AudioBuffer<float>& source, double sourceRate,
-                                double rate) {
+                                double rate, int length) {
     if (sourceRate <= 0.0 || rate <= 0.0 || std::abs(sourceRate - rate) < 1e-9) {
         juce::AudioBuffer<float> copy;
         copy.makeCopyOf(source);
@@ -120,7 +120,6 @@ juce::AudioBuffer<float> atRate(const juce::AudioBuffer<float>& source, double s
     }
 
     const auto ratio = sourceRate / rate;
-    const auto length = static_cast<int>(std::llround(source.getNumSamples() / ratio));
 
     // Below the target's Nyquist with room for the filter to come down in.
     const auto limited =
@@ -167,7 +166,10 @@ std::unique_ptr<InsertCapturePlayback> InsertCapturePlayback::create(const Inser
     if (capture.numChannels() < context.numChannels)
         return nullptr;
 
-    auto audio = atRate(capture.audio(), capture.sampleRate(), context.sampleRate);
+    // As many samples as the window holds at the render's rate, which rounding
+    // the capture's own count across the ratio can miss by one.
+    auto audio = atRate(capture.audio(), capture.sampleRate(), context.sampleRate,
+                        static_cast<int>(capture.window().samplesAt(context.sampleRate)));
 
     std::vector<CapturedMidiEvent> midi;
     midi.reserve(capture.midi().size());
