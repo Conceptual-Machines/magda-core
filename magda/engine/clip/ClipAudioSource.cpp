@@ -238,8 +238,8 @@ void ClipAudioSource::prepareForPlay(const TrackClipPlayback& track, const Block
                     // Match the voice's fixed cell grid, including a stopped
                     // cursor inside a cell. Cueing the cursor itself would
                     // still force a backwards seek on the first callback.
-                    const auto start = std::llround(event.span.seconds.start * sampleRate_);
-                    const auto sample = std::llround(at * sampleRate_);
+                    const auto start = sampleAt(event.span.seconds.start * sampleRate_);
+                    const auto sample = sampleAt(at * sampleRate_);
                     const auto cell = static_cast<std::int64_t>(
                         std::floor(static_cast<double>(sample - start) / kStretchCellSamples));
                     at = static_cast<double>(start + cell * kStretchCellSamples) / sampleRate_;
@@ -248,8 +248,14 @@ void ClipAudioSource::prepareForPlay(const TrackClipPlayback& track, const Block
                 const auto position = readingPositionAt(clip, event, at, beat, sampleRate_);
                 const auto ahead =
                     entry->stretcher != nullptr ? entry->stretcher->readAheadSamples() : 0;
-                entry->stream->prepareRead(static_cast<std::int64_t>(std::llround(position)) +
-                                           ahead - entry->preRollSamples);
+
+                // Where the voice's plain path reads from: a trimmed start sits a
+                // fraction into the sample it begins on (ClipVoice::render).
+                const auto into = entry->stretcher == nullptr && !session
+                                      ? fractionAt(block.offsetForTime(at))
+                                      : 0.0;
+                entry->stream->prepareRead(firstSampleFrom(position - into) + ahead -
+                                           entry->preRollSamples);
             }
         }
     };

@@ -440,6 +440,9 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     # The two meanings of a sample offset inside a block (#2336): an event on a
     # sample the block plays, an edge that may be the boundary past its last.
     list(APPEND TEST_SOURCES engine/test_block_samples.cpp)
+    # One rule for every instant (#2741): a note and an audio clip on one beat
+    # start on one sample, at any block size.
+    list(APPEND TEST_SOURCES engine/test_sample_rule.cpp)
     # The launcher's state machine (#2300): quantized launch and stop against
     # monotonic beats, and the split a block straddling one reports.
     list(APPEND TEST_SOURCES engine/test_launch_handle.cpp)

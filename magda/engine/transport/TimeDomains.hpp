@@ -182,6 +182,10 @@ struct SampleRange {
 struct EventSample {
     int value = 0;
 
+    /// How far into @ref value the instant is, in [0, 1) (#2741). Only a
+    /// consumer that can place between samples reads it.
+    double fraction = 0.0;
+
     bool operator==(const EventSample&) const = default;
     auto operator<=>(const EventSample&) const = default;
 };
@@ -222,47 +226,66 @@ inline EdgeSample operator+(EdgeSample edge, int count) {
 }
 
 /**
- * @brief The sample of an @p numSamples block that something @p offset samples
- * in happens on.
+ * @brief The sample an instant @p position samples along a count falls in.
  *
- * Floor rather than nearest, which is what makes the answer total. A block
- * covers the half-open stretch its samples run over, so a position inside it is
- * somewhere in `[0, N)` and the sample it is inside is `0..N-1`, always, with
- * no case to clamp away. Nearest has one: a position in the block's last half
- * sample rounds to N, which is not a sample this block has, and the clamp that
- * used to hide that is the defect the epic names (#2336).
+ * The one rule for turning an instant into a sample: events, edges, the sample
+ * an audio clip starts on (#2741). Floor rather than nearest, which is what
+ * makes it total: a block covers the half-open stretch its samples run over, so
+ * a position inside it lands on `0..N-1` with no case to clamp away (#2336).
+ */
+inline std::int64_t sampleAt(double position) {
+    return static_cast<std::int64_t>(std::floor(position + kSampleEpsilon));
+}
+
+/// How far into its sample (@ref sampleAt) @p position is, in [0, 1).
+inline double fractionAt(double position) {
+    return std::max(0.0, position - static_cast<double>(sampleAt(position)));
+}
+
+/**
+ * @brief The first sample at or after @p position.
+ *
+ * @ref sampleAt seen from a source: an output sample plays the first source
+ * sample at or after the reading position its own start maps to, since each
+ * source sample sounds in the output sample its instant falls in (#2741).
+ */
+inline std::int64_t firstSampleFrom(double position) {
+    return static_cast<std::int64_t>(std::ceil(position - kSampleEpsilon));
+}
+
+/**
+ * @brief The sample of an @p numSamples block that something @p offset samples
+ * in happens on (@ref sampleAt), with its fraction.
  *
  * A position on the boundary belongs to the next block, where it is sample
- * zero, and it gets there without anything being carried: the next block's
- * stretch begins there.
- *
- * The epsilon is why this is not plain truncation, and the clamp is a guard
- * rather than the rule: every caller resolves a position its own bounds have
- * already put inside the block.
+ * zero. The clamp is a guard rather than the rule: every caller resolves a
+ * position its own bounds have already put inside the block.
  */
 inline EventSample eventAt(double offset, int numSamples) {
     if (numSamples <= 0)
         return EventSample{0};
 
-    const auto sample = static_cast<int>(std::floor(offset + kSampleEpsilon));
-    return EventSample{std::clamp(sample, 0, numSamples - 1)};
+    const auto sample = sampleAt(offset);
+    if (sample < 0)
+        return EventSample{0};
+    if (sample >= numSamples)
+        return EventSample{numSamples - 1};
+
+    return EventSample{static_cast<int>(sample), fractionAt(offset)};
 }
 
 /**
  * @brief Where a stretch of an @p numSamples block that begins or ends
- * @p offset samples in has its edge.
+ * @p offset samples in has its edge (@ref sampleAt).
  *
- * Nearest, and N is a legal answer: a region that runs to the end of the block
- * ends at the sample after the last one, the way every half-open range does. An
- * edge is a bound rather than a moment something happens at, so it is not
- * floored to the sample it is inside; a fade that begins a hair before a sample
- * begins on it.
+ * N is a legal answer: a region that runs to the end of the block ends at the
+ * sample after the last one, the way every half-open range does.
  */
 inline EdgeSample edgeAt(double offset, int numSamples) {
     if (numSamples <= 0)
         return EdgeSample{0};
 
-    return EdgeSample{std::clamp(static_cast<int>(std::lround(offset)), 0, numSamples)};
+    return EdgeSample{static_cast<int>(std::clamp<std::int64_t>(sampleAt(offset), 0, numSamples))};
 }
 
 /**

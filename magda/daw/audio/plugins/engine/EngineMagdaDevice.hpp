@@ -128,6 +128,10 @@ class EngineMagdaDevice final : public magda::engine::EngineDevice {
     /// reserved to its own port's bound and never grown past it (#2347).
     std::vector<DeviceMidiEvent> midiInScratch_;
     std::vector<DeviceMidiEvent> midiOutScratch_;
+
+    /// Which of its pitch each input note-on is, for its fraction (#2741).
+    magda::engine::NoteOccurrences occurrences_;
+
     int midiInCapacity_ = 0;
     int midiOutCapacity_ = 0;
 

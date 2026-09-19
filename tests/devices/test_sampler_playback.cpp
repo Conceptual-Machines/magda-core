@@ -1,5 +1,9 @@
+#include <array>
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
+#include <vector>
 
+#include "TestDeviceMidiBuffer.hpp"
 #include "plugins/MagdaSamplerPlugin.hpp"
 
 /**
@@ -95,4 +99,101 @@ TEST_CASE("Short sampler notes render between their MIDI edges",
                 CHECK(output.getMagnitude(0, 0, onset) == 0.0f);
         }
     }
+}
+
+TEST_CASE("A note a fraction into its sample starts the sample that fraction late",
+          "[devices][sampler][2741]") {
+    using namespace magda::daw::audio;
+
+    // Frame n reads back as n + 1, and the envelope is open from the first
+    // sample, so what the voice read is readable off the output.
+    const auto render = [](float fraction) {
+        SamplerSynth synth;
+        synth.setCurrentPlaybackSampleRate(44100.0);
+        auto* sound = new SamplerSound();
+        sound->audioData.setSize(1, 1024);
+        for (int i = 0; i < 1024; ++i)
+            sound->audioData.setSample(0, i, static_cast<float>(i + 1));
+        synth.addSound(sound);
+        auto* voice = new SamplerVoice(synth);
+        voice->setRootNote(60);
+        voice->setADSR(0.0f, 0.1f, 1.0f, 0.1f);
+        synth.addVoice(voice);
+
+        juce::AudioBuffer<float> output(1, 256);
+        output.clear();
+        juce::MidiBuffer midi;
+        midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 64);
+        const std::array<float, 1> fractions{fraction};
+        synth.beginBlock(fractions);
+        synth.renderNextBlock(output, midi, 0, 256);
+        return output;
+    };
+
+    const auto onTheSample = render(0.0f);
+    CHECK(onTheSample.getSample(0, 63) == 0.0f);
+    CHECK(onTheSample.getSample(0, 64) == 1.0f);
+    CHECK(onTheSample.getSample(0, 70) == 7.0f);
+
+    // Half a sample late: the first output sample is half way from silence to
+    // the first frame, and every one after sits half way between two frames.
+    const auto halfLate = render(0.5f);
+    CHECK(halfLate.getSample(0, 63) == 0.0f);
+    CHECK(halfLate.getSample(0, 64) == 0.5f);
+    CHECK(halfLate.getSample(0, 65) == 1.5f);
+    CHECK(halfLate.getSample(0, 70) == 6.5f);
+}
+
+TEST_CASE("Two note-ons of one pitch inside one sample are two notes", "[devices][sampler][2741]") {
+    using namespace magda::daw::audio;
+    constexpr double kRate = 44100.0;
+    constexpr int kBlock = 512;
+
+    // A steady level, so where a note starts reads off the first samples.
+    juce::TemporaryFile wav(".wav");
+    {
+        juce::AudioBuffer<float> level(1, static_cast<int>(kRate));
+        for (int i = 0; i < level.getNumSamples(); ++i)
+            level.setSample(0, i, 0.25f);
+        juce::WavAudioFormat format;
+        std::unique_ptr<juce::AudioFormatWriter> writer(
+            format.createWriterFor(new juce::FileOutputStream(wav.getFile()), kRate, 1, 16, {}, 0));
+        REQUIRE(writer != nullptr);
+        REQUIRE(writer->writeFromAudioSampleBuffer(level, 0, level.getNumSamples()));
+    }
+
+    // Note-ons of middle C at each stamp, in samples, and what they render.
+    const auto render = [&wav](std::vector<double> stamps) {
+        MagdaSamplerPlugin sampler;
+        sampler.loadSample(wav.getFile());
+        sampler.prepare({.sampleRate = kRate, .maximumBlockSize = kBlock});
+
+        magda::test::DeviceMidiBuffer midi;
+        for (const auto stamp : stamps)
+            midi.events.push_back(
+                {juce::MidiMessage::noteOn(1, 60, 0.9f).withTimeStamp(stamp / kRate), 0});
+
+        juce::AudioBuffer<float> audio(2, kBlock);
+        audio.clear();
+        magda::test::DeviceMidiBuffer out;
+        DeviceProcessContext context;
+        context.audio = &audio;
+        context.midiIn = &midi;
+        context.midiOut = &out;
+        context.numSamples = kBlock;
+        context.isPlaying = true;
+        sampler.process(context);
+
+        const auto* left = audio.getReadPointer(0);
+        return std::vector<float>(left, left + kBlock);
+    };
+
+    REQUIRE(render({100.2}) != render({100.8}));
+
+    // The second retriggers the pitch before the first has sounded, so what is
+    // heard is the second, at its own fraction, rather than the first.
+    CHECK(render({100.2, 100.8}) == render({100.8}));
+
+    // The same instant twice is one note routed two ways.
+    CHECK(render({100.2, 100.2}) == render({100.2}));
 }

@@ -352,7 +352,7 @@ void MutableRingsPlugin::process(DeviceProcessContext& context) {
             if (!m.isNoteOn() || m.getVelocity() == 0)
                 continue;  // Rings has no note-off gate; resonators decay via Damping
             const int evPos = juce::jlimit(0, context.numSamples - 1,
-                                           juce::roundToInt(m.getTimeStamp() * sampleRate_));
+                                           midiEventPosition(m.getTimeStamp(), sampleRate_).sample);
             renderTo(evPos);
             impl_->noteOn(m.getNoteNumber());
         }

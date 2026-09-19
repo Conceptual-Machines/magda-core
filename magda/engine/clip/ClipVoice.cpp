@@ -62,10 +62,8 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
     // renders that cut the timeline into different blocks still divide it into
     // the same cells, so the stretcher is handed the same input in the same
     // order both times and gives back the same samples.
-    const auto eventStartSample =
-        static_cast<std::int64_t>(std::llround(event.span.seconds.start * sampleRate_));
-    const auto windowStartSample =
-        static_cast<std::int64_t>(std::llround(windowStart * sampleRate_));
+    const auto eventStartSample = sampleAt(event.span.seconds.start * sampleRate_);
+    const auto windowStartSample = sampleAt(windowStart * sampleRate_);
 
     // Beginning rather than carrying on: the first block of a voice, the first
     // after the timeline jumped, and one whose stretcher the pool has replaced.
@@ -126,8 +124,11 @@ bool ClipVoice::renderThroughCells(const AudioClipPlayback& clip, const AudioEve
         const auto step = (closes - opens) / kCellSamples;
 
         const auto ahead = stretcher.readAheadSamples();
-        const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
-        const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;
+        const auto readFrom = firstSampleFrom(opens) + ahead;
+        const auto readTo = firstSampleFrom(closes) + ahead;
+
+        // The ceiling every buffer downstream was sized against. Auto tempo alone
+        // can ask past it, and such a cell reads short and seeks after.
         const auto wanted = static_cast<int>(
             std::clamp<std::int64_t>(readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
 
@@ -286,61 +287,23 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
                    .c = static_cast<double>(event.loopStartSamples),
                    .d = static_cast<double>(event.loopLengthSamples)});
 
-    // How much of the reading one output sample of this block costs. Not the
-    // event's nominal rate: under a tempo curve or through a speed ramp the two
-    // differ, and what a block actually plays is the distance between its own
-    // two ends.
-    const auto step = (closes - opens) / count;
-
-    // The input lead needed for interpolation or the stretcher's latency.
-    const auto ahead = stretcher != nullptr ? stretcher->readAheadSamples() : 0;
-    const auto readFrom = static_cast<std::int64_t>(std::llround(opens)) + ahead;
-    const auto readTo = static_cast<std::int64_t>(std::llround(closes)) + ahead;
-
-    // Rounded at both ends rather than counted forward, so one block's reading
-    // ends exactly where the next one's begins and nothing accumulates. What is
-    // left over lands in the ratio the stretcher is handed, which is where a
-    // fraction of a sample belongs.
-    //
-    // A clip with no stretcher consumes one sample per sample by definition, and
-    // asking for the difference would let a rounding of a hair shorten a block
-    // that is not stretched at all.
-    //
-    // The ceiling is the contract every buffer downstream was sized against
-    // (maxReadingSamples), and it is enforced here because it cannot be enforced
-    // in the position map: clamping a position would break the rounded ends that
-    // make one block's reading continue the last one's. A rate past the ceiling
-    // is reachable through auto tempo alone, where the ratio is the project's
-    // tempo over a file's own analysed bpm and nothing bounds their quotient.
-    // Such a clip reads short and seeks after it, which is wrong the way a
-    // clamped ratio is wrong, rather than wrong the way a buffer overrun is.
-    const auto wanted = stretcher == nullptr
-                            ? count
-                            : static_cast<int>(std::clamp<std::int64_t>(
-                                  readTo - readFrom, 0, maxReadingSamples(maxBlockSamples_)));
-
-    // The reading sits behind what the block renders, in the same scratch: they
-    // are different lengths whenever the clip is not at its file's own speed.
-    auto reading = stretcher != nullptr
-                       ? scratch.getSubBlock(static_cast<std::size_t>(maxBlockSamples_),
-                                             static_cast<std::size_t>(wanted))
-                       : region;
-
     // A clip that consumes its reading at a rate is fed on a grid of its own
     // rather than a block at a time, so that what the stretcher is handed is a
     // function of where the timeline is and never of how the callback was cut
-    // up (renderThroughCells). Everything else here is the plain path: one
-    // sample of reading per sample of output, where a block boundary already
-    // changes nothing.
+    // up (renderThroughCells). Everything else is the plain path: one sample of
+    // reading per sample of output, starting with the first source sample at or
+    // after where the region's first output sample reads. windowStart sits a
+    // fraction into that sample (#2741).
     //
-    // Both answer the same question, which is whether this voice got everything
-    // it asked for. What "everything" counts in differs: the plain path asks
-    // the reader for a block's worth of samples, and the grid asks it for
-    // whatever a cell consumes and then measures what it produced.
-    const auto full = stretcher != nullptr
-                          ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll,
-                                               scratch, region, windowStart, count)
-                          : stream.read(readFrom, reading, wanted) == wanted;
+    // Both answer whether this voice got everything it asked for. The plain
+    // path asks the reader for a block's worth of samples, and the grid asks it
+    // for whatever a cell consumes and then measures what it produced.
+    const auto full =
+        stretcher != nullptr
+            ? renderThroughCells(clip, event, block, stream, *stretcher, preRoll, scratch, region,
+                                 windowStart, count)
+            : stream.read(firstSampleFrom(opens - fractionAt(block.offsetForTime(windowStart))),
+                          region, count) == count;
 
     // The holes, cleared out of what was read rather than skipped over.
     for (const auto& hole : clip.silenced) {

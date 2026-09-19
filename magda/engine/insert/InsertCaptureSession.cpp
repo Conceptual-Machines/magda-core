@@ -23,8 +23,7 @@ int InsertCaptureSession::defaultMidiCapacity(const CaptureWindow& window) {
 InsertCaptureSession::InsertCaptureSession(EngineInsert& live, const CaptureWindow& window,
                                            double sampleRate, int numChannels, int midiCapacity)
     : live_(live), window_(window), sampleRate_(sampleRate) {
-    const auto samples =
-        static_cast<int>(std::llround(window_.lengthSeconds() * std::max(0.0, sampleRate)));
+    const auto samples = static_cast<int>(window_.samplesAt(sampleRate));
 
     audio_.setSize(std::max(0, numChannels), std::max(0, samples));
     audio_.clear();
@@ -63,7 +62,7 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
 
     const auto windowSamples = static_cast<std::int64_t>(writtenBy_.size());
     const auto blockStart =
-        std::llround((block.seconds.start - window_.startSeconds) * sampleRate_);
+        firstSampleFrom((block.seconds.start - window_.startSeconds) * sampleRate_);
 
     // The part of the block the window holds.
     const auto from = std::max<std::int64_t>(blockStart, 0);

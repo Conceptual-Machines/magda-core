@@ -293,6 +293,7 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
         midiInScratch_.clear();
         midiOutScratch_.clear();
 
+        occurrences_.restart();
         if (block.midiIn != nullptr)
             for (const auto metadata : *block.midiIn) {
                 if (static_cast<int>(midiInScratch_.size()) >= midiInCapacity_) {
@@ -304,8 +305,18 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
                 // Seconds from the start of the block, which is what a device
                 // reads on both sides: the fork stamps its events that way and
-                // the engine's ports count samples.
-                message.setTimeStamp(static_cast<double>(metadata.samplePosition) / sampleRate_);
+                // the engine's ports count samples. A note-on also carries how
+                // far into its sample it falls (#2741).
+                const auto fraction =
+                    block.midiInFractions != nullptr && message.isNoteOn()
+                        ? block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
+                                                    message.getNoteNumber(),
+                                                    occurrences_.next(metadata.samplePosition,
+                                                                      message.getChannel(),
+                                                                      message.getNoteNumber()))
+                        : 0.0f;
+                message.setTimeStamp((metadata.samplePosition + static_cast<double>(fraction)) /
+                                     sampleRate_);
                 midiInScratch_.push_back({std::move(message), 0});
             }
 
@@ -372,9 +383,19 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
 
         bytesWritten += cost;
 
-        const auto sample =
-            static_cast<int>(std::llround(event.message.getTimeStamp() * sampleRate_));
-        block.midiOut->addEvent(event.message, std::clamp(sample, 0, std::max(0, numSamples - 1)));
+        // The sample the stamp falls in, the rule every instant follows (#2741).
+        const auto position = event.message.getTimeStamp() * sampleRate_;
+        const auto sample = static_cast<int>(std::clamp<std::int64_t>(
+            magda::engine::sampleAt(position), 0, std::max(0, numSamples - 1)));
+        block.midiOut->addEvent(event.message, sample);
+
+        // One entry per note-on, a stamp the clamp moved sounding on its sample.
+        if (block.midiOutFractions != nullptr && event.message.isNoteOn())
+            block.midiOutFractions->add(
+                sample, event.message.getChannel(), event.message.getNoteNumber(),
+                sample == magda::engine::sampleAt(position)
+                    ? static_cast<float>(magda::engine::fractionAt(position))
+                    : 0.0f);
     }
 }
 

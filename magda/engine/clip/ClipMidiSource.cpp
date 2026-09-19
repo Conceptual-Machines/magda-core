@@ -57,6 +57,10 @@ void ClipMidiSource::emit(juce::MidiBuffer& out, EventSample sample, const MidiC
 
     out.addEvent(message, sample.value);
 
+    if (fractions_ != nullptr && message.isNoteOn())
+        fractions_->add(sample.value, message.getChannel(), message.getNoteNumber(),
+                        static_cast<float>(sample.fraction));
+
     // Charged as a short message either way. The budget is a ceiling, and one
     // byte of slack per two-byte message spends it slightly early rather than
     // slightly late, which is the direction a ceiling should err in.
@@ -525,6 +529,13 @@ bool ClipMidiSource::renderSession(juce::MidiBuffer& out, const BlockInfo& block
         });
 
     return true;
+}
+
+void ClipMidiSource::renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                                         NoteFractions& fractions) {
+    fractions_ = &fractions;
+    render(block, out);
+    fractions_ = nullptr;
 }
 
 void ClipMidiSource::render(const BlockInfo& block, juce::MidiBuffer& out) {

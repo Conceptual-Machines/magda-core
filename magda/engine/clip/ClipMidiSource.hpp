@@ -98,6 +98,9 @@ class ClipMidiSource final : public EngineMidiSource {
     /// On the audio thread. @p out arrives cleared.
     void render(const BlockInfo& block, juce::MidiBuffer& out) override;
 
+    void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                             NoteFractions& fractions) override;
+
     /// True for a block where the session handed this track back to its
     /// arrangement: a discontinuity the transport never moved for. Raised only
     /// because this block also chases -- a device that drops what it holds gets
@@ -254,6 +257,10 @@ class ClipMidiSource final : public EngineMidiSource {
     const ClipSnapshot* lastSnapshot_ = nullptr;
 
     int bytesUsed_ = 0;
+
+    /// Where emit() records note-on fractions, for the length of one
+    /// renderWithFractions() call; null otherwise.
+    NoteFractions* fractions_ = nullptr;
 
     /// Reserved off the audio thread, never grown on it.
     std::vector<OwedNote> owed_;

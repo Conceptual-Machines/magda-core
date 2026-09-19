@@ -105,7 +105,8 @@ class FeedbackCarry {
 class MidiDelayLine {
   public:
     void prepare(int delaySamples, int capacityBytes);
-    void process(const juce::MidiBuffer& in, juce::MidiBuffer& out, int numSamples);
+    void process(const juce::MidiBuffer& in, const NoteFractions& inFractions,
+                 juce::MidiBuffer& out, NoteFractions& outFractions, int numSamples);
 
     /// Whether more has ever been in flight than prepare() reserved room for.
     /// Reported rather than only asserted: past the reservation the buffer
@@ -126,6 +127,7 @@ class MidiDelayLine {
 
   private:
     juce::MidiBuffer pending_, scratch_;
+    NoteFractions pendingFractions_, scratchFractions_;
     int delay_ = 0;
     /// What prepare() reserved, kept so process() can tell when the
     /// reservation's budget has been exceeded.
@@ -574,6 +576,11 @@ class PlanExecutor {
     const juce::MidiBuffer& midiIn(const PortRef& ref) const;
     juce::MidiBuffer& midiOut(OpId op, int port);
 
+    /// Beside midiIn() and midiOut(): where the note-ons fall inside their
+    /// samples (#2741). A writer clears its port's with the buffer.
+    const NoteFractions& fractionsIn(const PortRef& ref) const;
+    NoteFractions& fractionsOut(OpId op, int port);
+
     /// Where each device's owed all-notes-off lives, which is the store's
     /// (PlanBindings::deviceMidiPanicEpoch), not this executor's: a debt is
     /// about a retained instrument and outlives every plan the instrument
@@ -632,6 +639,7 @@ class PlanExecutor {
     /// once, worked out in assignBuffers rather than here.
     std::vector<juce::AudioBuffer<float>> audioSlots_;
     std::vector<juce::MidiBuffer> midiSlots_;
+    std::vector<NoteFractions> midiFractions_;
 
     /// All-notes-off beside each MIDI slot, one byte per slot (#2418). Written
     /// by the op that owns the slot, every block, the way its buffer is: there
@@ -713,6 +721,7 @@ class PlanExecutor {
     /// zeroed: nothing writes to it.
     juce::AudioBuffer<float> silence_;
     juce::MidiBuffer noMidi_;
+    NoteFractions noFractions_;
 
     /// Per op: where a Meter op publishes, or null for one nobody reads.
     /// Bound once here so the audio thread never looks a key up.

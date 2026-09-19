@@ -17,6 +17,7 @@
 #include "NullDiffNativeLeg.hpp"
 #include "NullDiffTeLeg.hpp"
 #include "SharedTestEngine.hpp"
+#include "transport/TimeDomains.hpp"
 
 namespace magda::nulldiff {
 namespace {
@@ -314,9 +315,8 @@ std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case
     if (!value.audioChangesAtNoteEnds)
         return {};
 
-    const auto nudge = static_cast<std::int64_t>(
-        std::llround(value.incumbentNoteEndEarlySeconds * value.sampleRate));
-    if (nudge <= 0)
+    const auto nudge = value.incumbentNoteEndEarlySeconds * value.sampleRate;
+    if (!(nudge > 0.0))
         return {};
 
     const auto samplesPerBeat = 60.0 / value.startBpm() * value.sampleRate;
@@ -335,8 +335,12 @@ std::vector<std::pair<std::int64_t, std::int64_t>> noteEndNudgeRanges(const Case
             const auto endBeat =
                 std::min(clip.placement.startBeat + note.startBeat + note.lengthBeats,
                          clip.placement.endBeat());
-            const auto end = static_cast<std::int64_t>(std::llround(endBeat * samplesPerBeat));
-            ranges.emplace_back(std::max<std::int64_t>(0, end - nudge), end + release);
+            // Both offs land on the sample their instant falls in, which is the
+            // rule the devices place a stamp by in either host (#2741).
+            const auto exactEnd = endBeat * samplesPerBeat;
+            const auto end = magda::engine::sampleAt(exactEnd);
+            const auto incumbentEnd = magda::engine::sampleAt(exactEnd - nudge);
+            ranges.emplace_back(std::max<std::int64_t>(0, incumbentEnd), end + release);
         }
     }
 

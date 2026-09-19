@@ -138,6 +138,38 @@ class EmittingDevice final : public magda::daw::audio::MagdaDevice {
     std::vector<std::uint8_t> payload_;
 };
 
+/// Keeps each note-on's stamp, and plays one note of its own at the stamp it
+/// was given.
+class StampingDevice final : public magda::daw::audio::MagdaDevice {
+  public:
+    explicit StampingDevice(double outStamp) : outStamp_(outStamp) {}
+
+    magda::daw::audio::DeviceProperties properties() const override {
+        magda::daw::audio::DeviceProperties properties;
+        properties.pluginId = "stamping";
+        properties.name = "Stamping";
+        properties.takesMidiInput = true;
+        properties.producesMidi = true;
+        return properties;
+    }
+
+    void process(magda::daw::audio::DeviceProcessContext& context) override {
+        if (context.midiIn != nullptr)
+            for (int at = 0; at < context.midiIn->size(); ++at)
+                if (context.midiIn->message(at).isNoteOn())
+                    stamps.push_back(context.midiIn->message(at).getTimeStamp());
+
+        if (context.midiOut != nullptr)
+            context.midiOut->addEvent(
+                {juce::MidiMessage::noteOn(1, 72, 1.0f).withTimeStamp(outStamp_), 0});
+    }
+
+    std::vector<double> stamps;
+
+  private:
+    double outStamp_;
+};
+
 /// Records what the executor told it about either port, and renders nothing.
 class BoundProbe final : public magda::engine::EngineDevice {
   public:
@@ -806,6 +838,72 @@ TEST_CASE("a device's input never reaches its MIDI output port", "[engine][devic
     CHECK(device->received == 4);
     CHECK(out.getNumEvents() == 0);
     CHECK(budgetCostOf(out) == 0);
+}
+
+TEST_CASE("a note-on reaches a device at its fraction, and leaves at its own",
+          "[engine][devices][2741]") {
+    const auto context = contextFor();
+    auto stamping = std::make_unique<StampingDevice>(200.3 / context.sampleRate);
+    auto* device = stamping.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
+    hosted.prepare(context);
+    hosted.setMidiOutputBoundBytes(magda::engine::kMaxMidiBytesPerPort);
+
+    // 100.6 samples in, beside a controller on the same sample that has none.
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::controllerEvent(1, 1, 64), 100);
+    magda::engine::NoteFractions in(4);
+    in.add(100, 1, 60, 0.6f);
+
+    juce::MidiBuffer out;
+    magda::engine::NoteFractions outFractions(4);
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiInFractions = &in;
+    deviceBlock.midiOut = &out;
+    deviceBlock.midiOutFractions = &outFractions;
+    hosted.process(deviceBlock);
+
+    REQUIRE(device->stamps.size() == 1);
+    const auto arrived =
+        magda::daw::audio::midiEventPosition(device->stamps.front(), context.sampleRate);
+    CHECK(arrived.sample == 100);
+    CHECK(arrived.fraction == Catch::Approx(0.6f).margin(1e-4));
+
+    // What the device stamped 200.3 in lands on sample 200, and keeps the rest.
+    REQUIRE(out.getNumEvents() == 1);
+    CHECK((*out.cbegin()).samplePosition == 200);
+    CHECK(outFractions.at(200, 1, 72) == Catch::Approx(0.3f).margin(1e-4));
+}
+
+TEST_CASE("two note-ons of one pitch inside one sample keep their own fractions",
+          "[engine][devices][2741]") {
+    const auto context = contextFor();
+    auto stamping = std::make_unique<StampingDevice>(0.0);
+    auto* device = stamping.get();
+
+    adapter::EngineMagdaDevice hosted(std::move(stamping), /*offlineRender=*/false);
+    hosted.prepare(context);
+
+    // 100.2 and 100.8, with a note of another pitch between them.
+    Block block(context);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 64, 1.0f), 100);
+    block.midi.addEvent(juce::MidiMessage::noteOn(1, 60, 1.0f), 100);
+    magda::engine::NoteFractions in(4);
+    in.add(100, 1, 60, 0.2f);
+    in.add(100, 1, 64, 0.5f);
+    in.add(100, 1, 60, 0.8f);
+
+    auto deviceBlock = block.deviceBlock();
+    deviceBlock.midiInFractions = &in;
+    hosted.process(deviceBlock);
+
+    REQUIRE(device->stamps.size() == 3);
+    CHECK(device->stamps[0] * context.sampleRate == Catch::Approx(100.2).margin(1e-4));
+    CHECK(device->stamps[1] * context.sampleRate == Catch::Approx(100.5).margin(1e-4));
+    CHECK(device->stamps[2] * context.sampleRate == Catch::Approx(100.8).margin(1e-4));
 }
 
 TEST_CASE("a device that declares no MIDI output cannot emit any", "[engine][devices][2347]") {

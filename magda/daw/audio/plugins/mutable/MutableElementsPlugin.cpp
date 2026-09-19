@@ -355,7 +355,7 @@ void MutableElementsPlugin::process(DeviceProcessContext& context) {
             if (!m.isNoteOn() && !m.isNoteOff() && !isPanic)
                 continue;
             const int evPos = juce::jlimit(0, context.numSamples - 1,
-                                           juce::roundToInt(m.getTimeStamp() * sampleRate_));
+                                           midiEventPosition(m.getTimeStamp(), sampleRate_).sample);
             renderTo(evPos);
             if (isPanic)
                 impl_->allNotesOff();  // CC120/123: release any stuck gate
