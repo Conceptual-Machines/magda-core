@@ -132,6 +132,14 @@ class MidiTakeRecorder final : public TakeCapture {
 
     void capture(const BlockInfo& block, bool countingIn, const LoopRange& loop) override;
 
+    bool followsArrangement() const override {
+        return !settings_.slot.has_value();
+    }
+    void punchOut() override {
+        if (state_ != State::stopped)
+            stop();
+    }
+
     /// Where the pass in flight is published (#2463).
     const RecordTap& tap() const override {
         return tap_;

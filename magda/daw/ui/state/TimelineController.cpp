@@ -269,18 +269,23 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
     if (punchArmed_ && newBeats >= state.punch.startBeats) {
         punchArmed_ = false;
         DBG("SetPlaybackPositionEvent: punch-in triggered at " << state.punch.startTime);
-        for (auto* listener : audioEngineListeners) {
-            listener->onTransportRecord(state.punch.startTime);
-        }
+        for (auto* listener : audioEngineListeners)
+            if (!listener->hasSampleAccuratePunch())
+                listener->onTransportRecord(state.punch.startTime);
     }
 
     // === Punch Out: stop recording when playhead reaches punch-out point ===
     if (state.playhead.isRecording && !punchArmed_ && state.punch.punchOutEnabled &&
         state.punch.isValid() && newBeats >= state.punch.endBeats) {
-        DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
-        state.playhead.isRecording = false;
-        for (auto* listener : audioEngineListeners) {
-            listener->onTransportStopRecording();
+        const auto nativePunch =
+            std::ranges::any_of(audioEngineListeners, [](const auto* listener) {
+                return listener->hasSampleAccuratePunch();
+            });
+        if (!nativePunch) {
+            DBG("SetPlaybackPositionEvent: punch-out triggered at " << state.punch.endTime);
+            state.playhead.isRecording = false;
+            for (auto* listener : audioEngineListeners)
+                listener->onTransportStopRecording();
         }
     }
 
@@ -315,6 +320,9 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
         DBG("StartRecordEvent: cancelling punch-armed state");
         punchArmed_ = false;
         state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners)
+            if (listener->hasSampleAccuratePunch())
+                listener->onTransportStopRecording();
         return ChangeFlags::Playhead;
     }
 
@@ -340,11 +348,28 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const StartRecor
                                                      : state.playhead.editPositionBeats;
 
         if (startBeats < state.punch.startBeats) {
+            const auto recordPosition = state.playhead.isPlaying ? state.playhead.playbackPosition
+                                                                 : state.playhead.editPosition;
             // Playhead is before punch-in point — arm and start playback, defer recording
             DBG("StartRecordEvent: punch-in armed, waiting for position "
                 << state.punch.startTime << " (current beats: " << startBeats << ")");
             punchArmed_ = true;
             state.playhead.isRecording = true;  // UI shows recording state
+
+            const auto nativePunch =
+                std::ranges::any_of(audioEngineListeners, [](const auto* listener) {
+                    return listener->hasSampleAccuratePunch();
+                });
+            if (nativePunch) {
+                if (!state.playhead.isPlaying) {
+                    state.playhead.isPlaying = true;
+                    state.playhead.playbackPosition = state.playhead.editPosition;
+                    state.playhead.playbackPositionBeats = state.playhead.editPositionBeats;
+                }
+                for (auto* listener : audioEngineListeners)
+                    listener->onTransportRecord(recordPosition);
+                return ChangeFlags::Playhead;
+            }
 
             if (!state.playhead.isPlaying) {
                 state.playhead.isPlaying = true;
@@ -433,7 +458,7 @@ TimelineController::ChangeFlags TimelineController::handleEvent(const SetPlaybac
     // This event reports the engine's authoritative state. A stopped engine
     // cannot still be waiting to punch in; the optimistic armed state is only
     // preserved while playback itself remains in flight or active.
-    if (!e.isPlaying)
+    if (!e.isPlaying || !e.isRecording)
         punchArmed_ = false;
 
     if (state.playhead.isPlaying != e.isPlaying) {
@@ -686,7 +711,14 @@ TimelineController::ChangeFlags TimelineController::handleEvent(
         return ChangeFlags::None;
     }
 
+    const auto cancelledArm = punchArmed_;
     punchArmed_ = false;
+    if (cancelledArm) {
+        state.playhead.isRecording = false;
+        for (auto* listener : audioEngineListeners)
+            if (listener->hasSampleAccuratePunch())
+                listener->onTransportStopRecording();
+    }
     state.punch.clear();
 
     // Notify audio engine

@@ -55,6 +55,7 @@ class SessionArrangementCapture {
 
     /// End captured spans at the last engine watermark and optionally create clips.
     bool disarm(bool createClips = true);
+    void invalidateRecordingGeneration(std::uint64_t generation);
 
     /// Forget all state after @ref disarm has settled the live session.
     void reset();

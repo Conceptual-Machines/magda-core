@@ -9,11 +9,22 @@ namespace {
 
 class TestAudioEngineListener : public magda::AudioEngineListener {
   public:
-    void onTransportPlay(double) override {}
+    explicit TestAudioEngineListener(bool sampleAccuratePunch = false)
+        : sampleAccuratePunch(sampleAccuratePunch) {}
+
+    void onTransportPlay(double position) override {
+        ++transportPlayCount;
+        lastPlayPosition = position;
+    }
     void onTransportStop(double) override {}
     void onTransportPause() override {}
-    void onTransportRecord(double) override {}
-    void onTransportStopRecording() override {}
+    void onTransportRecord(double position) override {
+        ++transportRecordCount;
+        lastRecordPosition = position;
+    }
+    void onTransportStopRecording() override {
+        ++transportStopRecordingCount;
+    }
     void onEditPositionChanged(double) override {}
     void onTempoChanged(double) override {}
     void onTimeSignatureChanged(int, int) override {}
@@ -30,6 +41,16 @@ class TestAudioEngineListener : public magda::AudioEngineListener {
         lastLoopEnabled = enabled;
     }
 
+    bool hasSampleAccuratePunch() const override {
+        return sampleAccuratePunch;
+    }
+
+    bool sampleAccuratePunch = false;
+    int transportPlayCount = 0;
+    int transportRecordCount = 0;
+    int transportStopRecordingCount = 0;
+    double lastPlayPosition = -1.0;
+    double lastRecordPosition = -1.0;
     int loopRegionChangedCount = 0;
     int loopEnabledChangedCount = 0;
     double lastLoopStart = -1.0;
@@ -38,6 +59,143 @@ class TestAudioEngineListener : public magda::AudioEngineListener {
 };
 
 }  // namespace
+
+TEST_CASE("Native punch schedules Record before the punch marker", "[timeline][punch][native]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{4.0});
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+
+    controller.dispatch(magda::StartRecordEvent{});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.lastRecordPosition == Catch::Approx(2.0));
+    REQUIRE(listener.transportPlayCount == 0);
+    REQUIRE(controller.getState().playhead.isPlaying);
+    REQUIRE(controller.getState().playhead.isRecording);
+
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+    REQUIRE(listener.transportRecordCount == 1);
+}
+
+TEST_CASE("Legacy punch defers Record until the punch marker", "[timeline][punch][legacy]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{4.0});
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+
+    controller.dispatch(magda::StartRecordEvent{});
+
+    REQUIRE(listener.transportPlayCount == 1);
+    REQUIRE(listener.transportRecordCount == 0);
+    REQUIRE(controller.isPunchArmed());
+
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.lastRecordPosition == Catch::Approx(4.0));
+}
+
+TEST_CASE("Record cancels native punch scheduled before its marker",
+          "[timeline][punch][native][cancel]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+
+    controller.dispatch(magda::StartRecordEvent{});
+    controller.dispatch(magda::StartRecordEvent{});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.transportStopRecordingCount == 1);
+    REQUIRE_FALSE(controller.getState().playhead.isRecording);
+
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+    REQUIRE(listener.transportRecordCount == 1);
+}
+
+TEST_CASE("Native punch preserves the live playback cursor", "[timeline][punch][native]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetEditPositionBeatsEvent{2.0});
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+    controller.dispatch(magda::StartPlaybackEvent{});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{6.0});
+
+    controller.dispatch(magda::StartRecordEvent{});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.lastRecordPosition == Catch::Approx(3.0));
+    REQUIRE(listener.transportPlayCount == 1);
+    REQUIRE(controller.getState().playhead.playbackPositionBeats == Catch::Approx(6.0));
+}
+
+TEST_CASE("Native punch out waits for authoritative engine state", "[timeline][punch][native]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+    controller.dispatch(magda::StartRecordEvent{});
+
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{16.0});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.transportStopRecordingCount == 0);
+    REQUIRE(controller.getState().playhead.isRecording);
+
+    controller.dispatch(magda::SetPlaybackStateEvent{true, false});
+    REQUIRE_FALSE(controller.getState().playhead.isRecording);
+}
+
+TEST_CASE("Legacy punch out remains position driven", "[timeline][punch][legacy]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener;
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+    controller.dispatch(magda::StartRecordEvent{});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{16.0});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE(listener.transportStopRecordingCount == 1);
+    REQUIRE_FALSE(controller.getState().playhead.isRecording);
+}
+
+TEST_CASE("Rejected native punch clears its pending marker trigger",
+          "[timeline][punch][native][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+    controller.dispatch(magda::StartRecordEvent{});
+
+    controller.dispatch(magda::SetPlaybackStateEvent{false, false});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE_FALSE(controller.isPunchArmed());
+    REQUIRE_FALSE(controller.getState().playhead.isRecording);
+}
+
+TEST_CASE("Rejected native punch clears pending capture while playback continues",
+          "[timeline][punch][native][regression]") {
+    magda::TimelineController controller;
+    TestAudioEngineListener listener{true};
+    controller.addAudioEngineListener(&listener);
+    controller.dispatch(magda::SetPunchRegionBeatsEvent{8.0, 16.0});
+    controller.dispatch(magda::StartRecordEvent{});
+
+    controller.dispatch(magda::SetPlaybackStateEvent{true, false});
+    controller.dispatch(magda::SetPlaybackPositionBeatsEvent{8.0});
+
+    REQUIRE(listener.transportRecordCount == 1);
+    REQUIRE_FALSE(controller.isPunchArmed());
+    REQUIRE(controller.getState().playhead.isPlaying);
+    REQUIRE_FALSE(controller.getState().playhead.isRecording);
+}
 
 TEST_CASE("Enabling loop with no region seeds a 1-bar region at the playhead",
           "[timeline][loop][regression]") {

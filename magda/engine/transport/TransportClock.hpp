@@ -43,6 +43,9 @@ class TransportClock {
         /// metronome sounds through a count-in whether or not it is switched
         /// on, which is the only thing that reads this.
         bool countingIn = false;
+
+        /// Whether Arrangement takes may consume this segment.
+        bool insidePunch = true;
     };
 
     /**
@@ -142,6 +145,9 @@ class TransportClock {
     /// cut at the answer lands on or before the beat, never past it. Negative
     /// when it is already behind.
     std::int64_t samplesUntil(const TempoMap& tempo, double beat) const;
+
+    /// Samples through a boundary, so the next segment opens on its far side.
+    std::int64_t samplesThrough(const TempoMap& tempo, double beat) const;
 
     /// @brief Publish @p beat beside the monotonic count as one reading.
     ///        Audio thread, wherever the cursor is stored.

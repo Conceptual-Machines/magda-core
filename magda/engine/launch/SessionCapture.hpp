@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -110,6 +111,11 @@ class SessionCapture {
     /// the lane had reached (SlotRunQueue::drain).
     void disarm();
 
+    /// Reject recording-window markers from an older transport intent.
+    void invalidateRecordingGeneration(std::uint64_t generation) {
+        recordingGeneration_ = std::max(recordingGeneration_, generation);
+    }
+
     /// The beat the last @ref update was told the lane had reached. What a
     /// disarm ends a run at, and what says how far this has been told.
     double reached() const {
@@ -181,6 +187,7 @@ class SessionCapture {
     SlotRunBoundary reached_;
 
     bool armed_ = false;
+    std::uint64_t recordingGeneration_ = 0;
 };
 
 }  // namespace magda::engine

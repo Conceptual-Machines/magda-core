@@ -50,6 +50,22 @@ struct ClickSettings {
     bool operator==(const ClickSettings&) const = default;
 };
 
+/** The Arrangement recording window, in beats. */
+struct PunchRange {
+    double startBeat = 0.0;
+    double endBeat = 0.0;
+    bool punchInEnabled = false;
+    bool punchOutEnabled = false;
+    bool recordingRequested = false;
+    std::uint64_t recordingGeneration = 0;
+
+    bool valid() const {
+        return endBeat > startBeat;
+    }
+
+    bool operator==(const PunchRange&) const = default;
+};
+
 /**
  * @brief Where the transport has been asked to be.
  *
@@ -101,6 +117,7 @@ struct TransportRequest {
 struct TransportSnapshot {
     TempoMap tempo;
     LoopRange loop;
+    PunchRange punch;
     ClickSettings click;
     TransportRequest request;
 };

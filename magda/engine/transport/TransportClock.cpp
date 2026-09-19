@@ -38,6 +38,12 @@ std::int64_t TransportClock::samplesUntil(const TempoMap& tempo, double beat) co
     return static_cast<std::int64_t>(std::floor((target - now) * sampleRate_ + kSampleEpsilon));
 }
 
+std::int64_t TransportClock::samplesThrough(const TempoMap& tempo, double beat) const {
+    const auto now = secondsAfter(samplesSinceAnchor_);
+    const auto target = tempo.beatToTime(beat);
+    return static_cast<std::int64_t>(std::ceil((target - now) * sampleRate_ - kSampleEpsilon));
+}
+
 // A seqlock: the reader retries, so the audio thread's side is two stores and
 // never a wait. The fences are what stop the pair being published before it is
 // written, and what stop the reader's loads being hoisted over the count.
@@ -162,6 +168,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.tempo = &tempo;
         segment.startSample = 0;
         segment.countingIn = false;
+        segment.insidePunch = true;
 
         segmentCount_ = 1;
         continuous_ = true;
@@ -223,6 +230,20 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         if (insideLoop)
             samples = std::min(samples, untilLoopEnd);
 
+        const auto punchValid = snapshot.punch.valid();
+        const auto untilPunchIn = punchValid && snapshot.punch.punchInEnabled
+                                      ? samplesThrough(tempo, snapshot.punch.startBeat)
+                                      : std::int64_t{0};
+        const auto untilPunchOut = punchValid && snapshot.punch.punchOutEnabled
+                                       ? samplesThrough(tempo, snapshot.punch.endBeat)
+                                       : std::int64_t{1};
+        const auto beforePunch = punchValid && snapshot.punch.punchInEnabled && untilPunchIn > 0;
+        const auto afterPunch = punchValid && snapshot.punch.punchOutEnabled && untilPunchOut <= 0;
+        if (beforePunch)
+            samples = std::min(samples, untilPunchIn);
+        else if (!afterPunch && punchValid && snapshot.punch.punchOutEnabled)
+            samples = std::min(samples, untilPunchOut);
+
         // Both boundaries were just moved past if they were behind, so a whole
         // segment is left. What is not left is room to keep cutting: past the
         // last slot, and for a loop too short to have a sample in it, the rest
@@ -271,6 +292,7 @@ std::span<const TransportClock::Segment> TransportClock::advance(const Transport
         segment.block.tempo = &tempo;
         segment.startSample = offset;
         segment.countingIn = countingIn_;
+        segment.insidePunch = !beforePunch && !afterPunch;
 
         samplesSinceAnchor_ += samples;
         offset += static_cast<int>(samples);

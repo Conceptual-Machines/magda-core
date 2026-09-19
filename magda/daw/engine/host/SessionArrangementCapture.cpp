@@ -115,6 +115,11 @@ bool SessionArrangementCapture::disarm(bool createClips) {
     return collect(createClips);
 }
 
+void SessionArrangementCapture::invalidateRecordingGeneration(std::uint64_t generation) {
+    if (capture_ != nullptr)
+        capture_->invalidateRecordingGeneration(generation);
+}
+
 void SessionArrangementCapture::reset() {
     capture_.reset();
     session_ = nullptr;

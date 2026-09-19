@@ -287,6 +287,7 @@ class EngineHost {
      * False means neither an eligible input nor Session material was available.
      */
     bool startMidiRecording(double positionSeconds);
+    bool startPunchRecording(double positionSeconds, std::optional<double> punchInBeat);
 
     /// Finish Arrangement takes and Session capture without stopping playback.
     void stopMidiRecording();
@@ -315,6 +316,14 @@ class EngineHost {
     void setTimeSignature(int numerator, int denominator);
     void getTimeSignature(int& numerator, int& denominator) const;
     void setLoop(bool enabled, double startBeat, double endBeat);
+    void setPunch(double startBeat, double endBeat, bool punchInEnabled, bool punchOutEnabled);
+    struct PunchState {
+        double startBeat = 0.0;
+        double endBeat = 0.0;
+        bool punchInEnabled = false;
+        bool punchOutEnabled = false;
+    };
+    PunchState punch() const;
     void setMetronomeEnabled(bool enabled);
     bool isMetronomeEnabled() const;
 

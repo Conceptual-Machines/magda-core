@@ -246,6 +246,9 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     void onPunchRegionChanged(double startSeconds, double endSeconds, bool punchInEnabled,
                               bool punchOutEnabled) override;
     void onPunchEnabledChanged(bool punchInEnabled, bool punchOutEnabled) override;
+    bool hasSampleAccuratePunch() const override {
+        return true;
+    }
 
   private:
     /** @brief Wire the host's levels into @ref meters_. Once, in initialize(). */

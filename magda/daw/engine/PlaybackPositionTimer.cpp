@@ -58,7 +58,7 @@ void PlaybackPositionTimer::timerCallback() {
     const auto& timelinePlayhead = timeline_.getState().playhead;
     const bool modelWasPlaying = timelinePlayhead.isPlaying;
     const bool modelWasRecording = timelinePlayhead.isRecording;
-    const bool punchArmed = timeline_.isPunchArmed();
+    const bool punchArmed = timeline_.isPunchArmed() && !engine_.hasSampleAccuratePunch();
 
     // Record requests update the timeline optimistically. The native host may
     // reject one synchronously when no armed MIDI input can record, leaving the

@@ -42,7 +42,7 @@ struct SlotRunBoundary {
 
 /** @brief One edge of one slot's run. */
 struct SlotRunEvent {
-    enum class Kind : std::uint8_t { began, ended };
+    enum class Kind : std::uint8_t { began, ended, captureBegan, captureEnded };
 
     SlotKey key;
     Kind kind = Kind::began;
@@ -65,6 +65,8 @@ struct SlotRunEvent {
     /// back. A run is placed by the first and measured by the second.
     double timelineBeat = 0.0;
     double monotonicBeat = 0.0;
+
+    std::uint64_t recordingGeneration = 0;
 };
 
 /**

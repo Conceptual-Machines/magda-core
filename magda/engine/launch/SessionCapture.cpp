@@ -24,6 +24,29 @@ void SessionCapture::apply(const SlotRunEvent& event) {
 }
 
 void SessionCapture::fold(const SlotRunEvent& event) {
+    if (event.kind == SlotRunEvent::Kind::captureBegan) {
+        if (event.recordingGeneration < recordingGeneration_)
+            return;
+        recordingGeneration_ = event.recordingGeneration;
+        armed_ = true;
+        const SlotRunBoundary boundary{event.at, event.timelineBeat, event.monotonicBeat};
+        for (auto& [of, run] : inFlight_) {
+            captureFrom(run, boundary);
+            run.capturing = true;
+        }
+        return;
+    }
+    if (event.kind == SlotRunEvent::Kind::captureEnded) {
+        if (event.recordingGeneration != recordingGeneration_)
+            return;
+        armed_ = false;
+        for (auto& [of, run] : inFlight_) {
+            finish(of, run, event.monotonicBeat);
+            run.capturing = false;
+        }
+        return;
+    }
+
     const RunKey of{event.key, event.incarnation};
 
     // Held under the handle that played it, so a run whose end arrives after

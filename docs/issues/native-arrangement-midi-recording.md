@@ -74,9 +74,9 @@ store for deleted-track MIDI recordings.
 
 Audio recording, audio input delivery, audio recording overlays, Session slot
 recording, Session-to-Arrangement capture, count-in, and hardware latency
-calibration remain separate parts of #2553. The existing punch-region UI uses
-message-thread playhead updates; this slice does not establish sample-accurate
-scheduled punch boundaries. MIDI from the app's live queue currently arrives at
+calibration remain separate parts of #2553. Sample-accurate scheduled punch
+boundaries are covered by the [native punch follow-up](native-punch-recording.md).
+MIDI from the app's live queue currently arrives at
 callback offset zero, so this does not claim sub-buffer input timestamps.
 
 ## Application verification
