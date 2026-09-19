@@ -960,8 +960,8 @@ class SessionView::MiniIOStrip : public juce::Component {
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
             midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
             midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, nullptr, teInputDeviceNames, &midiInputTrackMapping_,
-            &outputChannelMapping_, teOutputDeviceNames);
+            enabledOutputChannels, &inputChannelMapping_, teInputDeviceNames,
+            &midiInputTrackMapping_, &outputChannelMapping_, teOutputDeviceNames);
     }
 
     TrackId getTrackId() const {
@@ -976,6 +976,7 @@ class SessionView::MiniIOStrip : public juce::Component {
     std::unique_ptr<RoutingSelector> midiInSelector_;
     std::unique_ptr<RoutingSelector> midiOutSelector_;
     std::map<int, TrackId> inputTrackMapping_;
+    std::map<int, juce::String> inputChannelMapping_;
     std::map<int, TrackId> midiInputTrackMapping_;
     std::map<int, TrackId> outputTrackMapping_;
     std::map<int, TrackId> midiOutputTrackMapping_;
@@ -999,7 +1000,7 @@ class SessionView::MiniIOStrip : public juce::Component {
         audioInSelector_->meterInputsFrom(deviceManager);
         RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
                                                      &inputTrackMapping_, enabledInputChannels,
-                                                     nullptr, teInputDeviceNames);
+                                                     &inputChannelMapping_, teInputDeviceNames);
         RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
                                                       outputTrackMapping_, enabledOutputChannels,
                                                       &outputChannelMapping_, teOutputDeviceNames);
@@ -1039,7 +1040,10 @@ class SessionView::MiniIOStrip : public juce::Component {
                     TrackManager::getInstance().setTrackAudioInput(
                         trackId_, "track:" + juce::String(it->second));
             } else if (selectedId >= 10) {
-                TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+                const auto it = inputChannelMapping_.find(selectedId);
+                TrackManager::getInstance().setTrackAudioInput(
+                    trackId_,
+                    it != inputChannelMapping_.end() ? it->second : juce::String("default"));
             }
         };
 

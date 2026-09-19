@@ -2,10 +2,10 @@
 
 namespace magda::daw::engine_host {
 
-HardwareInputMap resolveHardwareInputs(const juce::BigInteger& enabled,
+HardwareInputMap resolveHardwareInputs(const std::optional<juce::BigInteger>& enabled,
                                        const std::map<int, juce::String>& namesByChannel,
                                        const juce::BigInteger& active) {
-    const auto& usable = enabled.isZero() ? active : enabled;
+    const auto usable = enabled.value_or(active);
 
     std::vector<int> physical;
     for (auto channel = 0; channel <= active.getHighestBit(); ++channel)
@@ -55,6 +55,11 @@ HardwareInputMap resolveHardwareInputs(const juce::BigInteger& enabled,
 
     for (const auto channel : physical)
         resolved.emplace(fallbackName(channel), indices({channel}));
+
+    if (physical.size() >= 2)
+        resolved.emplace("default", indices({physical[0], physical[1]}));
+    else if (physical.size() == 1)
+        resolved.emplace("default", indices({physical[0]}));
 
     return resolved;
 }

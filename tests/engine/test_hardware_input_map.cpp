@@ -69,6 +69,21 @@ TEST_CASE("Only enabled channels resolve, and names saved as numbers still do",
     CHECK_FALSE(map.contains("In 1"));
 }
 
+TEST_CASE("Every input disabled resolves nothing, not every channel",
+          "[engine-host][hardware-inputs]") {
+    const auto map =
+        host::resolveHardwareInputs(juce::BigInteger{}, {{0, "In 1"}}, channels({0, 1}));
+
+    CHECK(map.empty());
+}
+
+TEST_CASE("default reads the menu's first channel option", "[engine-host][hardware-inputs]") {
+    CHECK(lookup(host::resolveHardwareInputs(channels({2, 3, 4}), {}, channels({0, 1, 2, 3, 4})),
+                 "default") == std::vector<int>{2, 3});
+    CHECK(lookup(host::resolveHardwareInputs(channels({3}), {}, channels({0, 1, 2, 3})),
+                 "default") == std::vector<int>{3});
+}
+
 TEST_CASE("No device resolves nothing", "[engine-host][hardware-inputs]") {
     CHECK(host::resolveHardwareInputs(channels({0, 1}), {{0, "In 1"}}, {}).empty());
 }

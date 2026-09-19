@@ -8,9 +8,11 @@ Saved names stay project data. The host resolves them against the current
 interface: a channel's wave-in name, `stereo:` plus the name of a pair's first
 channel, or the `In N` / `stereo:In N` fallback the input menus store when the
 device layer has no name. A wave-in that covers two channels reads both under
-its bare name. Physical channels map to packed callback indices, so a pair
+its bare name, and `default`, which switching a track's audio input on stores,
+reads the menu's first channel option. Physical channels map to packed callback indices, so a pair
 still reads the right channels when only some inputs are open. A name the
-interface does not have renders silence and is logged once.
+interface does not have, or an input disabled in Audio Settings, renders silence
+and is logged once.
 
 The mapping travels in the live routing snapshot rather than the plan, so a
 device restart or an input change reaches the track without a recompile. A

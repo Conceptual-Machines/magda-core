@@ -295,7 +295,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
     }
 
     void restartRepacksAndMissingIsSilent() {
-        beginTest("a restart repacks the input's channels, and a missing name is silence");
+        beginTest("a restart repacks channels; missing names and disabled inputs are silent");
 
         InputPumpManager devices;
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
@@ -328,6 +328,22 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         const auto missing = steady(*devices.device);
         expectEquals(missing.left, 0.0f);
         expectEquals(missing.right, 0.0f);
+
+        // What enabling a track's audio input stores: the first pair open.
+        tracks.setTrackAudioInput(track, "default");
+        settle(host);
+        const auto fallback = steady(*devices.device);
+        expect(fallback.left > 0.001f, "default sounds");
+        expectWithinAbsoluteError(fallback.right / fallback.left, levelOf(3) / levelOf(2), 0.001f,
+                                  "from the first open pair");
+
+        // Disabling every input in the device layer leaves nothing to read.
+        catalog.enabledChannels = {};
+        host.refreshHardwareInputs();
+        settle(host);
+        const auto disabled = steady(*devices.device);
+        expectEquals(disabled.left, 0.0f);
+        expectEquals(disabled.right, 0.0f);
 
         host.stop();
         devices.closeAudioDevice();

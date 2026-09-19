@@ -429,9 +429,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
-                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut, nullptr,
-                teInputDeviceNames, &midiInputTrackMapping_, &outputChannelMapping_,
-                teOutputDeviceNames);
+                midiOutputTrackMapping_, &inputTrackMapping_, enabledIn, enabledOut,
+                &inputChannelMapping_, teInputDeviceNames, &midiInputTrackMapping_,
+                &outputChannelMapping_, teOutputDeviceNames);
         }
     }
 
@@ -816,7 +816,7 @@ void MixerView::ChannelStrip::setupControls() {
             audioInSelector->meterInputsFrom(deviceManager);
             RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
                                                          &inputTrackMapping_, enabledInputChannels,
-                                                         nullptr, teInputDeviceNames);
+                                                         &inputChannelMapping_, teInputDeviceNames);
             RoutingSyncHelper::populateAudioOutputOptions(
                 audioOutSelector.get(), trackId_, device, outputTrackMapping_,
                 enabledOutputChannels, &outputChannelMapping_, teOutputDeviceNames);
@@ -870,7 +870,9 @@ void MixerView::ChannelStrip::setupRoutingCallbacks() {
                                                                "track:" + juce::String(it->second));
             }
         } else if (selectedId >= 10) {
-            TrackManager::getInstance().setTrackAudioInput(trackId_, "default");
+            const auto it = inputChannelMapping_.find(selectedId);
+            TrackManager::getInstance().setTrackAudioInput(
+                trackId_, it != inputChannelMapping_.end() ? it->second : juce::String("default"));
         }
     };
 
