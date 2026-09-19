@@ -628,6 +628,7 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
     }
     const auto enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
     const auto teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
+    selector->meterInputsFrom(deviceManager);
     RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
                                                  trackId, &inputTrackMapping_, enabledInputChannels,
                                                  &inputChannelMapping_, teInputDeviceNames);

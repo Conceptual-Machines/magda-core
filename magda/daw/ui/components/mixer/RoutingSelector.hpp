@@ -6,7 +6,13 @@
 #include <memory>
 #include <vector>
 
+namespace juce {
+class AudioDeviceManager;
+}
+
 namespace magda {
+
+class HardwareInputLevels;
 
 /**
  * @brief A hybrid toggle button + dropdown selector for routing
@@ -25,6 +31,9 @@ class RoutingSelector : public juce::Component {
         int id;
         juce::String name;
         bool isSeparator = false;
+
+        /// Physical input channels the option reads, metered in the menu.
+        std::vector<int> inputChannels = {};
     };
 
     RoutingSelector(Type type);
@@ -66,6 +75,12 @@ class RoutingSelector : public juce::Component {
     /** Returns the ID of the first channel option (skipping "None"/separators), or -1. */
     int getFirstChannelOptionId() const;
 
+    /// Where the menu reads the levels of options naming input channels. Null
+    /// shows no meters.
+    void meterInputsFrom(juce::AudioDeviceManager* devices) {
+        inputDevices_ = devices;
+    }
+
     // Callbacks
     std::function<void(bool enabled)> onEnabledChanged;
     std::function<void(int selectedId)> onSelectionChanged;
@@ -78,6 +93,11 @@ class RoutingSelector : public juce::Component {
     juce::String readOnlyDisplay_;
     int selectedId_ = -1;
     std::vector<RoutingOption> options_;
+
+    juce::AudioDeviceManager* inputDevices_ = nullptr;
+
+    /// Held while the menu is open, and released with this if the menu outlives it.
+    std::shared_ptr<HardwareInputLevels> inputLevels_;
 
     // Layout
     static constexpr int DROPDOWN_ARROW_WIDTH = 10;

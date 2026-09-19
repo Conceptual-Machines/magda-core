@@ -952,8 +952,6 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (audioEngine_) {
             enabledOutputChannels = audioEngine_->getEnabledWaveChannels(false);
             teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-        }
-        if (audioEngine_) {
             enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
             teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
         }
@@ -998,6 +996,7 @@ class SessionView::MiniIOStrip : public juce::Component {
         enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
         teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
 
+        audioInSelector_->meterInputsFrom(deviceManager);
         RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
                                                      &inputTrackMapping_, enabledInputChannels,
                                                      nullptr, teInputDeviceNames);

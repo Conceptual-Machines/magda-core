@@ -1896,6 +1896,7 @@ void TrackInspector::populateAudioInputOptions() {
         return;
     const auto enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
     const auto teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
+    audioInputSelector_->meterInputsFrom(deviceManager);
     magda::RoutingSyncHelper::populateAudioInputOptions(
         audioInputSelector_.get(), deviceManager->getCurrentAudioDevice(), selectedTrackId_,
         &inputTrackMapping_, enabledInputChannels, &inputChannelMapping_, teInputDeviceNames);

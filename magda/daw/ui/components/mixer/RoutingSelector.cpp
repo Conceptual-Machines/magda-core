@@ -2,11 +2,93 @@
 
 #include <algorithm>
 #include <functional>
+#include <utility>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "HardwareInputLevels.hpp"
+#include "LevelMeterBallistics.hpp"
+#include "LevelMeterScale.hpp"
 
 namespace magda {
+
+namespace {
+
+/// A menu row with a small level bar per input channel it reads.
+class MeteredInputItem final : public juce::PopupMenu::CustomComponent, private juce::Timer {
+  public:
+    MeteredInputItem(juce::String text, std::vector<int> channels, bool ticked,
+                     std::weak_ptr<const HardwareInputLevels> levels)
+        : text_(std::move(text)),
+          channels_(std::move(channels)),
+          display_(channels_.size(), 0.0f),
+          ticked_(ticked),
+          levels_(std::move(levels)) {
+        startTimerHz(30);
+    }
+
+    void getIdealSize(int& width, int& height) override {
+        getLookAndFeel().getIdealPopupMenuItemSize(text_, false, -1, width, height);
+        width += kMeterWidth + kMeterPadding;
+    }
+
+    void paint(juce::Graphics& g) override {
+        getLookAndFeel().drawPopupMenuItem(g, getLocalBounds(), false, true, isItemHighlighted(),
+                                           ticked_, false, text_, {}, nullptr, nullptr);
+
+        const auto height = static_cast<int>(channels_.size()) * (kBarHeight + kBarGap) - kBarGap;
+        auto area = meterArea().withSizeKeepingCentre(kMeterWidth, height).toFloat();
+
+        for (const auto level : display_) {
+            const auto bar = area.removeFromTop(static_cast<float>(kBarHeight));
+            area.removeFromTop(static_cast<float>(kBarGap));
+
+            g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+            g.fillRect(bar);
+
+            const auto db = level_meter_scale::gainToDb(level);
+            g.setColour(DarkTheme::getColour(db >= 0.0f     ? DarkTheme::LEVEL_METER_RED
+                                             : db >= -12.0f ? DarkTheme::LEVEL_METER_YELLOW
+                                                            : DarkTheme::LEVEL_METER_GREEN));
+            g.fillRect(bar.withWidth(bar.getWidth() * level_meter_scale::dbToMeterPos(db)));
+        }
+    }
+
+  private:
+    static constexpr int kMeterWidth = 28;
+    static constexpr int kMeterPadding = 8;
+    static constexpr int kBarHeight = 3;
+    static constexpr int kBarGap = 1;
+
+    juce::Rectangle<int> meterArea() const {
+        return getLocalBounds()
+            .removeFromRight(kMeterWidth + kMeterPadding)
+            .withTrimmedRight(kMeterPadding);
+    }
+
+    void timerCallback() override {
+        const auto levels = levels_.lock();
+        const auto elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
+
+        bool changed = false;
+        for (std::size_t i = 0; i < channels_.size(); ++i) {
+            const auto target = levels != nullptr ? levels->level(channels_[i]) : 0.0f;
+            changed |= level_meter_ballistics::updateLevel(display_[i], target, elapsedMs);
+        }
+
+        if (changed)
+            repaint(meterArea());
+    }
+
+    juce::String text_;
+    std::vector<int> channels_;
+    std::vector<float> display_;
+    bool ticked_ = false;
+    std::weak_ptr<const HardwareInputLevels> levels_;
+    double lastUpdateMs_ = 0.0;
+};
+
+}  // namespace
 
 RoutingSelector::RoutingSelector(Type type) : type_(type) {
     setRepaintsOnMouseActivity(true);
@@ -158,6 +240,13 @@ juce::Rectangle<int> RoutingSelector::getDropdownArea() const {
 void RoutingSelector::showPopupMenu() {
     juce::PopupMenu menu;
 
+    const auto metered =
+        inputDevices_ != nullptr && std::ranges::any_of(options_, [](const RoutingOption& option) {
+            return !option.inputChannels.empty();
+        });
+    if (metered)
+        inputLevels_ = HardwareInputLevels::acquire(*inputDevices_);
+
     // Add routing options
     if (options_.empty()) {
         menu.addItem(-1, "(No options available)", false);
@@ -165,6 +254,14 @@ void RoutingSelector::showPopupMenu() {
         for (const auto& opt : options_) {
             if (opt.isSeparator) {
                 menu.addSeparator();
+            } else if (metered && !opt.inputChannels.empty()) {
+                juce::PopupMenu::Item item(opt.name);
+                item.itemID = opt.id;
+                item.isTicked = opt.id == selectedId_;
+                item.customComponent =
+                    new MeteredInputItem(opt.name, opt.inputChannels, item.isTicked,
+                                         std::weak_ptr<const HardwareInputLevels>(inputLevels_));
+                menu.addItem(std::move(item));
             } else {
                 menu.addItem(opt.id, opt.name, true, opt.id == selectedId_);
             }
@@ -174,6 +271,8 @@ void RoutingSelector::showPopupMenu() {
     juce::Component::SafePointer<RoutingSelector> safeThis(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMinimumWidth(100),
                        [safeThis](int result) {
+                           if (safeThis != nullptr)
+                               safeThis->inputLevels_.reset();
                            if (safeThis == nullptr || result == 0) {
                                return;  // Dismissed or component destroyed
                            }

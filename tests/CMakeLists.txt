@@ -187,6 +187,9 @@ set(TEST_SOURCES
     ../magda/daw/ui/panels/TransportLayout.cpp
     # Hardware channels labelled by the interface's own names (#2734)
     ui/test_channel_labels.cpp
+    # The input levels behind the input menu's meters
+    ui/test_hardware_input_levels.cpp
+    ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
     # Panel tab layout survives a restart (#2103). The panel sources live in
     # magda_daw_app rather than the magda_daw library, so pull them in directly.
     ui/test_panel_tab_persistence.cpp
@@ -709,6 +712,7 @@ target_sources(magda_juce_tests PRIVATE
     # Hardware output selections must reach the TE wave output devices (#2264)
     routing/test_hardware_output_routing_juce.cpp
     ../magda/daw/ui/components/mixer/RoutingSelector.cpp
+    ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
     controllers/test_controller_track_level_write_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp

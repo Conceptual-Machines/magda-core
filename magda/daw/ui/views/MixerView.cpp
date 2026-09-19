@@ -813,6 +813,7 @@ void MixerView::ChannelStrip::setupControls() {
             enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
             teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
 
+            audioInSelector->meterInputsFrom(deviceManager);
             RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
                                                          &inputTrackMapping_, enabledInputChannels,
                                                          nullptr, teInputDeviceNames);
