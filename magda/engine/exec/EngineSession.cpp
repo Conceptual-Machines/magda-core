@@ -170,6 +170,7 @@ void EngineSession::startTake(const TakeKey& key, const RecordTapSettings& setti
 }
 
 ClosedTake EngineSession::stopTake(const TakeKey& key) {
+    deferredTakes_.erase(key);
     auto released = store_.releaseTake(key);
     if (released.take == nullptr)
         return {};
@@ -180,21 +181,70 @@ ClosedTake EngineSession::stopTake(const TakeKey& key) {
     return ClosedTake{key, std::move(released.take), std::move(released.tap)};
 }
 
+EngineSession::StopTakeResult EngineSession::stopTakeAfterPostRoll(const TakeKey& key) {
+    auto* take = store_.take(key);
+    if (take == nullptr)
+        return {};
+
+    if (take->requestPostRoll()) {
+        deferredTakes_.insert(key);
+        return {.deferred = true};
+    }
+
+    return {.closed = stopTake(key)};
+}
+
+void EngineSession::closeCompletedTakes() {
+    std::vector<TakeKey> completed;
+    for (const auto& key : deferredTakes_)
+        if (const auto* take = store_.take(key); take == nullptr || take->readyToClose())
+            completed.push_back(key);
+
+    if (completed.empty())
+        return;
+
+    std::vector<ClosedTake> closed;
+    closed.reserve(completed.size());
+    for (const auto& key : completed) {
+        deferredTakes_.erase(key);
+        auto released = store_.releaseTake(key);
+        if (released.take != nullptr)
+            closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
+    }
+
+    publishTakes();
+    for (auto& take : closed)
+        closed_.push_back(std::move(take));
+}
+
+std::vector<ClosedTake> EngineSession::takeClosedTakes() {
+    takeCompletionPending_.store(false, std::memory_order_release);
+    closeCompletedTakes();
+    return std::exchange(closed_, {});
+}
+
 void EngineSession::closeUnnamedTakes(const RuntimeStateIds& modelIds) {
     const auto unnamed = store_.unnamedTakes(modelIds);
     if (unnamed.empty())
         return;
 
-    // All of them out of the store, then one publish: a scene of armed tracks
-    // deleted together costs one wait rather than one each.
+    // All immediate closes out of the store, then one publish: a scene of
+    // armed tracks deleted together costs one wait rather than one each.
     std::vector<ClosedTake> closed;
     closed.reserve(unnamed.size());
     for (const auto& key : unnamed) {
+        if (deferredTakes_.contains(key))
+            continue;
+        if (auto* take = store_.take(key); take != nullptr && take->requestPostRoll()) {
+            deferredTakes_.insert(key);
+            continue;
+        }
         auto released = store_.releaseTake(key);
         closed.push_back(ClosedTake{key, std::move(released.take), std::move(released.tap)});
     }
 
-    publishTakes();
+    if (!closed.empty())
+        publishTakes();
 
     for (auto& take : closed)
         closed_.push_back(std::move(take));
@@ -394,13 +444,19 @@ void EngineSession::process(int numSamples, juce::AudioBuffer<float>& output,
         // plan, rather than on whichever later block the publishing thread got
         // the reduced set out by (#2465).
         if (takes)
-            for (const auto& entry : *takes.get())
-                if (std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key))
+            for (const auto& entry : *takes.get()) {
+                const auto named =
+                    std::binary_search((*render)->takes.begin(), (*render)->takes.end(), entry.key);
+                if (named || entry.take->capturesPostRoll()) {
                     entry.take->capture(segment.block,
                                         segment.countingIn ||
                                             (entry.take->followsArrangement() &&
                                              transport->punch.recordingRequested && !captureWanted),
                                         transport->loop);
+                    if (entry.take->readyToClose())
+                        takeCompletionPending_.store(true, std::memory_order_release);
+                }
+            }
 
         const auto reachesPunchOut = transport->punch.recordingRequested &&
                                      transport->punch.valid() && transport->punch.punchOutEnabled &&

@@ -69,6 +69,27 @@ class TakeCapture {
 
     virtual bool followsArrangement() const = 0;
     virtual void punchOut() = 0;
+
+    /**
+     * @brief Ask a take to close after any input it still owes its timeline.
+     *
+     * Called on the publishing thread. Audio takes with a positive recording
+     * adjustment return true and finish from later callbacks; other takes
+     * return false and may be removed immediately.
+     */
+    virtual bool requestPostRoll() {
+        return false;
+    }
+
+    /// Whether a take must still see callbacks after its plan stopped naming it.
+    virtual bool capturesPostRoll() const {
+        return false;
+    }
+
+    /// Whether a deferred close has received all of its post-roll.
+    virtual bool readyToClose() const {
+        return false;
+    }
 };
 
 /// One take in the callback's set, beside the key that says whether the epoch

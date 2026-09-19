@@ -76,8 +76,8 @@ struct MidiTakeRecorderSettings {
     /// "all devices" route that excludes track audition streams.
     std::optional<std::vector<LiveMidiSourceId>> sources;
 
-    /// The input's declared latency, in samples (#2459). An event's place on
-    /// the timeline is `arrival - latency`.
+    /// The recording adjustment, in samples (#2459, #2751). An event's place
+    /// on the timeline is `arrival - latency`.
     int latencySamples = 0;
 
     /// How much the queue holds. Its channel count is always zero.

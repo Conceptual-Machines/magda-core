@@ -42,7 +42,7 @@ confirm once.
 
 | Convention | Rule |
 |---|---|
-| Automatic audio correction | Native and Tracktion both use the active interface's **input + output latency**. What arrives has already happened: a **positive** correction drops that many samples from the head of the take; a **negative** correction pads the head with that much silence. |
+| Automatic audio correction | Native and Tracktion use the active interface's **input + output latency**, plus live-plan output latency. What arrives has already happened: a **positive** correction drops that many samples from the head and captures the same-sized tail after stop; a **negative** correction pads the head with that much silence. |
 | Count-in | Never part of the take. The take starts where the count-in ends. |
 | Loop record | One file per pass, loop-aligned. The active take is the last **whole** pass. |
 | Lead-in | A first pass that did not start on the loop is a lead-in, not a take — unless there is no whole pass, and then it stays where it was recorded. |

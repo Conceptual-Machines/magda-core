@@ -106,12 +106,13 @@ struct TakeRecorderSettings {
     std::vector<int> channels;
 
     /**
-     * @brief The input's declared latency, in samples (#2459).
+     * @brief The automatic recording adjustment, in samples (#2459, #2751).
      *
      * What arrives has already happened, so the sample under the playhead at
      * record start arrives this much later: a positive latency drops that many
-     * from the head of the take. A negative one is an adjustment pulling the
-     * other way, and pads the head with that much silence instead.
+     * from the head and captures the same amount past the take's timeline end.
+     * A negative adjustment pulls the other way and pads the head with that
+     * much silence instead.
      */
     int latencySamples = 0;
 
@@ -169,9 +170,13 @@ class TakeRecorder final : public TakeCapture {
     bool followsArrangement() const override {
         return !settings_.slot.has_value();
     }
-    void punchOut() override {
-        if (state_ != State::stopped)
-            stop();
+    void punchOut() override;
+    bool requestPostRoll() override;
+    bool capturesPostRoll() const override {
+        return capturesPostRoll_.load(std::memory_order_acquire);
+    }
+    bool readyToClose() const override {
+        return readyToClose_.load(std::memory_order_acquire);
     }
 
     /// Where the pass in flight is published (#2463).
@@ -200,7 +205,7 @@ class TakeRecorder final : public TakeCapture {
     RecordedTake finish();
 
   private:
-    enum class State : std::uint8_t { waiting, rolling, stopped };
+    enum class State : std::uint8_t { waiting, rolling, postRoll, stopped };
 
     /// A block of a take that follows a slot's run rather than the transport
     /// (#2464). A stopped block holds no samples but still reports the run's
@@ -217,6 +222,12 @@ class TakeRecorder final : public TakeCapture {
     void openPass(const BlockInfo& block, const LoopRange& loop);
 
     void stop();
+
+    /// End the timeline window and keep the delayed input that belongs to it.
+    void beginPostRoll();
+
+    /// Keep at most the outstanding post-roll from [@p from, @p to).
+    void capturePostRoll(const BlockInfo& block, int from, int to);
 
     /// This block's input over `[from, to)`, into the queue. Where a pass ends
     /// inside it is the sink's to act on, since only the sink knows what
@@ -247,6 +258,14 @@ class TakeRecorder final : public TakeCapture {
 
     /// Arrivals still to drop before the take's first sample.
     int headDrop_ = 0;
+
+    /// Input after the timeline end still owed by a positive adjustment.
+    int postRollRemaining_ = 0;
+
+    /// A publishing-thread close request, consumed by the callback.
+    std::atomic<bool> postRollRequested_{false};
+    std::atomic<bool> capturesPostRoll_{false};
+    std::atomic<bool> readyToClose_{false};
 
     /// Samples written to the queue, and the timeline the take has covered.
     /// The second is the first read a latency earlier, which is why a pass

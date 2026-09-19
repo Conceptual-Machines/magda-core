@@ -1,8 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <farbot/RealtimeObject.hpp>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -305,6 +307,14 @@ class EngineSession {
      */
     ClosedTake stopTake(const TakeKey& key);
 
+    struct StopTakeResult {
+        ClosedTake closed;
+        bool deferred = false;
+    };
+
+    /** @brief Close after an audio take's positive-adjustment post-roll. */
+    StopTakeResult stopTakeAfterPostRoll(const TakeKey& key);
+
     /**
      * @brief Takes an edit closed, and forget them (#2465).
      *
@@ -316,8 +326,16 @@ class EngineSession {
      * Kept until asked for rather than dropped, like @ref takeRetiredRuns:
      * one per edit that ended a recording.
      */
-    std::vector<ClosedTake> takeClosedTakes() {
-        return std::exchange(closed_, {});
+    std::vector<ClosedTake> takeClosedTakes();
+
+    /// Whether the callback has a deferred take ready to collect.
+    bool takeCompletionPending() const {
+        return takeCompletionPending_.load(std::memory_order_acquire);
+    }
+
+    /// Current output graph latency, on the publishing thread.
+    int latencySamples() const {
+        return live_ == nullptr ? 0 : live_->executor.latencySamples();
     }
 
     /// Where the transport is, in beats. Readable from any thread; what a
@@ -471,6 +489,9 @@ class EngineSession {
     /// @ref takeClosedTakes.
     void closeUnnamedTakes(const RuntimeStateIds& modelIds);
 
+    /// Move completed deferred takes out of the callback feed.
+    void closeCompletedTakes();
+
     /**
      * @brief One epoch: a plan, the executor prepared for it, and the
      * values it was published with.
@@ -573,6 +594,8 @@ class EngineSession {
 
     /// Takes an edit ended, until someone collects them (@ref takeClosedTakes).
     std::vector<ClosedTake> closed_;
+    std::set<TakeKey> deferredTakes_;
+    std::atomic<bool> takeCompletionPending_{false};
 
     /// What the model held at the last publish. Kept so a values publish
     /// escalated into a structural one has a set to publish with; retention

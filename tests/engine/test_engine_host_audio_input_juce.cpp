@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <limits>
 #include <map>
 #include <memory>
 
@@ -20,7 +21,6 @@ constexpr int kInputs = 4;
 constexpr int kBlockSize = 480;
 constexpr int kInputLatency = 120;
 constexpr int kOutputLatency = 240;
-constexpr int kRecordingAdjustment = kInputLatency + kOutputLatency;
 
 juce::BigInteger channels(std::initializer_list<int> set) {
     juce::BigInteger result;
@@ -214,6 +214,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { recordsInputWithPreviewAndLatency(); });
         magda::test::runWithCleanJuceState([this] { disarmFinalizesRecording(); });
         magda::test::runWithCleanJuceState([this] { deviceStopFinalizesRecording(); });
+        magda::test::runWithCleanJuceState([this] { reportedLatencyIsBounded(); });
         magda::test::runWithCleanJuceState([this] { deviceRestartSplitsRecording(); });
         magda::test::runWithCleanJuceState([this] { recordsIntoAnArmedSessionSlot(); });
         magda::test::runWithCleanJuceState([this] { filledSessionSlotPreservesTake(); });
@@ -238,6 +239,12 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         for (auto block = 0; block < 4; ++block)
             out = device.pump();
         return out;
+    }
+
+    static double beatsForSamples(const Host& host, InputPumpDevice& device, int samples) {
+        const auto seconds = static_cast<double>(samples) / device.getCurrentSampleRate();
+        const auto* tempo = host.tempoMap();
+        return tempo->timeToBeat(seconds) - tempo->timeToBeat(0.0);
     }
 
     /// The track meter's next reading after @p device has rendered.
@@ -468,6 +475,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                "closing the parallel MIDI take keeps the waveform visible");
 
         host.stopMidiRecording();
+        devices.device->pump();
+        settle(host);
         expect(host.recordingPreviews().empty(), "the transient preview clears at stop");
         const auto* clip = onlyAudioClip(track);
         expect(clip != nullptr, "stop publishes the completed audio clip");
@@ -476,9 +485,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(reader != nullptr, "the recorded WAV can be read");
             if (reader != nullptr) {
                 expectEquals(static_cast<int>(reader->numChannels), 2);
-                expectEquals(static_cast<int>(reader->lengthInSamples),
-                             4 * kBlockSize - kRecordingAdjustment,
-                             "device input and output latency are removed from the head");
+                expectEquals(static_cast<int>(reader->lengthInSamples), 4 * kBlockSize,
+                             "post-roll replaces the round-trip correction removed at the head");
                 juce::AudioBuffer<float> captured(2, 1);
                 reader->read(&captured, 0, 1, 0, true, true);
                 expectWithinAbsoluteError(captured.getSample(0, 0), levelOf(2), 0.0001f);
@@ -487,8 +495,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expectWithinAbsoluteError(clip->placement.startBeat, 0.0, 0.0000001,
                                       "correction keeps the take on its record-start beat");
             expectWithinAbsoluteError(clip->placement.lengthBeats,
-                                      static_cast<double>(4 * kBlockSize - kRecordingAdjustment) /
-                                          48000.0 * 2.0,
+                                      beatsForSamples(host, *devices.device, 4 * kBlockSize),
                                       0.0000001, "timeline length matches the corrected file");
         }
 
@@ -513,6 +520,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
         if (devices.device == nullptr)
             return;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
         auto& tracks = magda::TrackManager::getInstance();
         const auto track = tracks.createTrack("Disarmed take");
         tracks.setTrackAudioInput(track, "Loopback 1");
@@ -527,6 +536,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.device->pump();
 
         tracks.setTrackRecordArmed(track, false);
+        settle(host);
+        devices.device->pump();
         settle(host);
         expect(onlyAudioClip(track) != nullptr);
         expect(host.recordingPreviews().empty());
@@ -565,6 +576,47 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         expect(!host.isRecording());
         expect(onlyAudioClip(track) != nullptr);
         expect(host.recordingPreviews().empty());
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void reportedLatencyIsBounded() {
+        beginTest("reported latency is summed without overflow and bounded to three seconds");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        devices.device->inputLatencySamples = std::numeric_limits<int>::max();
+        devices.device->outputLatencySamples = std::numeric_limits<int>::max();
+
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Bounded latency");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        expect(host.startMidiRecording(0.0));
+
+        // At 48 kHz, 300 blocks are exactly the three-second bound. The next
+        // block must reach the file; an unbounded or overflowed sum will not.
+        for (auto block = 0; block < 301; ++block)
+            devices.device->pump();
+
+        devices.device->stop();
+        settle(host);
+        const auto* clip = onlyAudioClip(track);
+        expect(clip != nullptr);
+        if (clip != nullptr) {
+            auto reader = readerFor(*clip);
+            expect(reader != nullptr);
+            if (reader != nullptr)
+                expectEquals(static_cast<int>(reader->lengthInSamples), kBlockSize);
+        }
 
         host.stop();
         devices.closeAudioDevice();
@@ -609,6 +661,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         }
 
         host.armSessionSlotRecording(track, 0);
+        devices.device->pump();
+        settle(host);
         expect(!host.isSessionSlotRecordArmed(track, 0));
         expect(!host.isSessionSlotRecording(track, 0));
         expect(onlyAudioClip(track) == nullptr, "Session recording creates no Arrangement clip");
@@ -623,18 +677,21 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(reader != nullptr);
             if (reader != nullptr) {
                 expectEquals(static_cast<int>(reader->numChannels), 1);
-                expectEquals(static_cast<int>(reader->lengthInSamples),
-                             4 * kBlockSize - kRecordingAdjustment,
-                             "Session uses the same round-trip correction as Arrangement");
+                expectEquals(static_cast<int>(reader->lengthInSamples), 4 * kBlockSize,
+                             "Session captures the correction-sized post-roll too");
             }
             expectWithinAbsoluteError(clip->placement.startBeat, 0.0, 0.0000001);
             expectWithinAbsoluteError(
-                clip->placement.lengthBeats,
-                static_cast<double>(4 * kBlockSize - kRecordingAdjustment) / 48000.0 * 2.0,
+                clip->placement.lengthBeats, beatsForSamples(host, *devices.device, 4 * kBlockSize),
                 0.0000001, "Session timeline length matches the corrected file");
         }
 
+        devices.device->pump();
         host.processSessionStateEvents();
+        if (clip != nullptr)
+            expectEquals(static_cast<int>(host.sessionClipPlayState(clip->id)),
+                         static_cast<int>(magda::SessionClipPlayState::Playing),
+                         "the materialized slot continues the recording handle");
         expect(tracks.getTrack(track)->playbackMode == magda::TrackPlaybackMode::Session,
                "the materialized clip takes over the recording run");
 
@@ -701,7 +758,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.device->inputLatencySamples = kInputLatency;
         devices.device->outputLatencySamples = kOutputLatency;
         devices.device->pumpAfterFutureLatencyReads(2);
-        devices.device->restart(channels({0, 1, 2, 3}));
+        devices.device->restart(channels({0, 1, 2, 3}), 96000.0);
         settle(host);
         expect(host.isRecording());
         auto& clips = magda::ClipManager::getInstance();
@@ -721,6 +778,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.device->pump();
         devices.device->pump();
         host.stopMidiRecording();
+        devices.device->pump();
+        settle(host);
         const auto afterRestart = clips.getClipsOnTrack(track, magda::ClipView::Arrangement);
         expectEquals(static_cast<int>(afterRestart.size()), 2,
                      "the changed correction records into a second clip");
@@ -734,9 +793,9 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             auto reader = readerFor(*newClip);
             expect(reader != nullptr);
             if (reader != nullptr)
-                expectEquals(static_cast<int>(reader->lengthInSamples),
-                             2 * kBlockSize - kRecordingAdjustment,
-                             "the new file uses one correction throughout");
+                expectEquals(static_cast<int>(reader->lengthInSamples), 3 * kBlockSize,
+                             "the rebuilt take keeps the callback installed during rebuild and "
+                             "both explicit blocks");
         }
 
         host.stop();

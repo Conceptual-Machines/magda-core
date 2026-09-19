@@ -192,8 +192,8 @@ class LiveAudioInput final : public EngineAudioSource {
     /**
      * @brief Reads @p channels of @p feed.
      *
-     * @p latencySamples is what the device reports for its input: see
-     * @ref latencySamples for what it is and is not for.
+     * @p latencySamples is the recording adjustment supplied by the owner:
+     * see @ref latencySamples for what it is and is not for.
      */
     LiveAudioInput(const LiveInputFeed& feed, std::span<const int> channels,
                    int latencySamples = 0);
@@ -201,13 +201,13 @@ class LiveAudioInput final : public EngineAudioSource {
     void render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<float> out) override;
 
     /**
-     * @brief The input's own latency, in samples.
+     * @brief The source's recording adjustment, in samples.
      *
-     * Not a plan latency and deliberately not declared to the compensation
-     * pass: what arrives has already happened, so delaying the rest of the
-     * graph to match it would push playback and the click behind the live
-     * signal rather than align anything. It is the number a recorded take is
-     * placed by (#2461), which is the only thing that can act on it.
+     * Deliberately not declared to the compensation pass: what arrives has
+     * already happened, so delaying the rest of the graph to match it would
+     * push playback and the click behind the live signal rather than align
+     * anything. It is the number a recorded take is corrected by (#2461,
+     * #2751), which is the only thing that can act on it.
      */
     int latencySamples() const {
         return latencySamples_;
