@@ -24,6 +24,22 @@
  */
 namespace magda::RoutingSyncHelper {
 
+/// The entry for a saved hardware route that no open channel carries, past every other id.
+constexpr int kMissingRouteId = 100000;
+
+/**
+ * @brief Offer @p route as missing and return its id, so the menu shows where the track
+ * still points rather than a channel it does not use (#2748).
+ */
+inline int addMissingRoute(RoutingSelector& selector, const juce::String& route,
+                           std::map<int, juce::String>& channelMapping) {
+    const auto name = route.startsWith("stereo:") ? route.substring(7) : route;
+    selector.addOption({0, "", true});
+    selector.addOption({kMissingRouteId, name + " (missing)"});
+    channelMapping[kMissingRouteId] = route;
+    return kMissingRouteId;
+}
+
 /** @brief One direction of @p hardware, or nothing when no interface is open. */
 inline std::optional<HardwareChannels::Direction> openDirection(const HardwareChannels* hardware,
                                                                 bool inputs) {
@@ -495,8 +511,11 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
                 }
                 if (optionId > 0) {
                     audioInSelector->setSelectedId(optionId);
+                } else if (track.audioInputDevice != "default") {
+                    audioInSelector->setSelectedId(addMissingRoute(
+                        *audioInSelector, track.audioInputDevice, *inputChannelMapping));
                 } else {
-                    // Fallback to first channel option
+                    // "default" reads the first channel, which is what the host plays
                     int firstChannel = audioInSelector->getFirstChannelOptionId();
                     audioInSelector->setSelectedId(firstChannel > 0 ? firstChannel : 1);
                 }
@@ -630,9 +649,10 @@ inline void syncSelectorsFromTrack(const TrackInfo& track, RoutingSelector* audi
                     }
                     optionId = aliasOption;
                 }
-                if (optionId > 0) {
-                    audioOutSelector->setSelectedId(optionId);
-                }
+                if (optionId < 0)
+                    optionId = addMissingRoute(*audioOutSelector, currentAudioOutput,
+                                               *outputChannelMapping);
+                audioOutSelector->setSelectedId(optionId);
             }
             audioOutSelector->setEnabled(true);
         }

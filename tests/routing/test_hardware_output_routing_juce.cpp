@@ -33,13 +33,14 @@ HardwareChannels::Direction outputsOf(int count, juce::BigInteger open,
 /** @brief An interface whose outputs are fixed, standing in for either engine's. */
 class FixedHardware final : public HardwareChannels {
   public:
-    explicit FixedHardware(Direction outputs) : outputs_(std::move(outputs)) {}
+    explicit FixedHardware(Direction outputs, Direction inputs = {})
+        : outputs_(std::move(outputs)), inputs_(std::move(inputs)) {}
 
     bool isOpen() const override {
         return true;
     }
     Direction inputs() const override {
-        return {};
+        return inputs_;
     }
     Direction outputs() const override {
         return outputs_;
@@ -47,6 +48,7 @@ class FixedHardware final : public HardwareChannels {
 
   private:
     Direction outputs_;
+    Direction inputs_;
 };
 
 }  // namespace
@@ -60,6 +62,7 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
             testOptionToDeviceMapping();
             testOutputChannelMaskPresence();
             testSelectorRoundTrip();
+            testMissingRoutes();
             testControllerResolvesStereoMarker();
         });
     }
@@ -181,6 +184,50 @@ class HardwareOutputRoutingTest final : public juce::UnitTest {
             track, nullptr, nullptr, &selector, nullptr, nullptr, &hardware, INVALID_TRACK_ID,
             outputTrackMapping, midiOutputTrackMapping, nullptr, nullptr, nullptr, &channelMapping);
         expectEquals(selector.getSelectedId(), 100);
+    }
+
+    void testMissingRoutes() {
+        beginTest("A saved route no open channel carries shows as missing");
+
+        juce::BigInteger firstPair;
+        firstPair.setRange(0, 2, true);
+        HardwareChannels::Direction inputs{.open = firstPair,
+                                           .channelNames = {"In 1", "In 2"},
+                                           .routeNames = {{0, "In 1"}, {1, "In 2"}}};
+        const FixedHardware hardware(outputsOf(4, firstPair, {{0, "Out 1 + 2"}, {1, "Out 1 + 2"}}),
+                                     inputs);
+
+        RoutingSelector output(RoutingSelector::Type::AudioOut);
+        RoutingSelector input(RoutingSelector::Type::AudioIn);
+        std::map<int, TrackId> outputTracks, midiOutputTracks, inputTracks;
+        std::map<int, juce::String> outputChannels, inputChannels;
+        const auto sync = [&](const TrackInfo& track) {
+            RoutingSyncHelper::syncSelectorsFromTrack(track, &input, nullptr, &output, nullptr,
+                                                      nullptr, &hardware, INVALID_TRACK_ID,
+                                                      outputTracks, midiOutputTracks, &inputTracks,
+                                                      &inputChannels, nullptr, &outputChannels);
+        };
+
+        TrackInfo track;
+        track.audioOutputDevice = "stereo:Out 3 + 4";
+        track.audioInputDevice = "In 3";
+        sync(track);
+
+        expectEquals(output.getSelectedId(), RoutingSyncHelper::kMissingRouteId);
+        expectEquals(output.getSelectedName(), juce::String("Out 3 + 4 (missing)"));
+        expectEquals(outputChannels[RoutingSyncHelper::kMissingRouteId],
+                     juce::String("stereo:Out 3 + 4"));
+        expectEquals(input.getSelectedId(), RoutingSyncHelper::kMissingRouteId);
+        expectEquals(input.getSelectedName(), juce::String("In 3 (missing)"));
+
+        // "default" is the first channel wherever the interface is, never missing.
+        track.audioInputDevice = "default";
+        sync(track);
+        expectEquals(input.getSelectedId(), input.getFirstChannelOptionId());
+
+        track.audioOutputDevice = "stereo:Out 1 + 2";
+        sync(track);
+        expectEquals(output.getSelectedId(), 10);
     }
 
     void testControllerResolvesStereoMarker() {
