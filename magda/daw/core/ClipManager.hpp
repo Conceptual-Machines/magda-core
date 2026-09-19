@@ -119,14 +119,15 @@ class ClipManager {
         ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::PreserveExisting);
 
     /**
-     * @brief Insert a completed Arrangement audio recording atomically (#2553).
+     * @brief Insert a completed audio recording atomically (#2553).
      *
-     * The active source and every loop pass are installed before the sole
-     * clipsChanged notification.
+     * The active source, placement, Session slot and every loop pass are
+     * installed before the sole clipsChanged notification.
      */
     ClipId createRecordedAudioClip(
         TrackId trackId, RecordedAudioClipData recording,
-        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps);
+        ClipOverlapPolicy overlapPolicy = ClipOverlapPolicy::ResolveOverlaps,
+        ClipView view = ClipView::Arrangement, int sceneIndex = -1);
 
     /**
      * @brief Create an audio clip from timeline seconds.

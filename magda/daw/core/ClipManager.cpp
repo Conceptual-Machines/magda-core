@@ -441,8 +441,9 @@ ClipId ClipManager::createAudioClip(TrackId trackId, double startTime, double le
 }
 
 ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipData recording,
-                                            ClipOverlapPolicy overlapPolicy) {
-    if (overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
+                                            ClipOverlapPolicy overlapPolicy, ClipView view,
+                                            int sceneIndex) {
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::PreserveExisting) {
         recording.startBeat = findNonOverlappingStartBeats(
             trackId, recording.startBeat, recording.lengthBeats, ClipView::Arrangement);
     }
@@ -451,7 +452,8 @@ ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipDa
     clip.id = nextClipId_++;
     clip.trackId = trackId;
     clip.setAudioContent();
-    clip.view = ClipView::Arrangement;
+    clip.view = view;
+    clip.sceneIndex = sceneIndex;
     clip.name = recording.filePath.isNotEmpty()
                     ? juce::File(recording.filePath).getFileNameWithoutExtension()
                     : generateClipName(ClipType::Audio);
@@ -479,10 +481,17 @@ ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipDa
     active.setLoopExtent(RegionExtent::WholeSource);
     active.adoptBpm(projectBpm, Provenance::User);
     active.adoptTotalBeats(recording.lengthBeats, Provenance::User);
+    if (view == ClipView::Session) {
+        clip.loopEnabled = true;
+        clip.loopLengthBeats = recording.lengthBeats;
+        active.setPlaybackIntent(PlaybackIntent::Beat);
+        active.setLoopLengthBeats(recording.lengthBeats);
+    }
 
     const auto clipId = clip.id;
     clips_[clipId] = std::move(clip);
-    if (overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
+    addToSessionSlotIndex(clips_[clipId]);
+    if (view == ClipView::Arrangement && overlapPolicy == ClipOverlapPolicy::ResolveOverlaps)
         resolveOverlaps(clipId);
     notifyClipsChanged();
     return clipId;

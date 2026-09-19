@@ -53,11 +53,13 @@ hardware audio channel or stereo pair, including live previews, loop passes,
 count-in/punch boundaries already supplied by the native transport, lifecycle
 edits, and device-reported input-latency correction.
 
-Session audio-slot recording remains separate. Opening and owning only the
-selected hardware channels remains #2588; this implementation records from the
-channels the application already opened and mapped. It does not implement or
-change #2741 semantics. Manual latency calibration and recovery UI for files
-from deleted/project-replaced tracks also remain outside this slice.
+Session audio-slot recording is documented separately in
+[`native-session-audio-recording.md`](native-session-audio-recording.md).
+Opening and owning only the selected hardware channels remains #2588; this
+implementation records from the channels the application already opened and
+mapped. It does not implement or change #2741 semantics. Manual latency
+calibration and recovery UI for files from deleted/project-replaced tracks also
+remain outside this slice.
 
 ## Manual verification
 
@@ -85,8 +87,7 @@ from deleted/project-replaced tracks also remain outside this slice.
 - The recorded-clip and audio-recorder filters passed 757 assertions across
   17 cases.
 - `Engine Host Audio Input` passed eight callback cases, including device
-  restart continuity and the guard that an unsupported Session audio target
-  cannot become an Arrangement take.
+  restart continuity and Session audio target isolation from Arrangement.
 - `Engine Host MIDI Recording` passed its 35 existing cases, `Engine Host
   Session Arrangement Capture` passed its ten cases, and `Magda Audio Engine
   Tests` passed its three cases.

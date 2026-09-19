@@ -211,7 +211,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { disarmFinalizesRecording(); });
         magda::test::runWithCleanJuceState([this] { deviceStopFinalizesRecording(); });
         magda::test::runWithCleanJuceState([this] { deviceRestartSplitsRecording(); });
-        magda::test::runWithCleanJuceState([this] { sessionTargetDoesNotRecordArrangement(); });
+        magda::test::runWithCleanJuceState([this] { recordsIntoAnArmedSessionSlot(); });
+        magda::test::runWithCleanJuceState([this] { filledSessionSlotPreservesTake(); });
     }
 
   private:
@@ -259,6 +260,15 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             result = clip;
         }
         return result;
+    }
+
+    static const magda::ClipInfo* onlySessionAudioClip(magda::TrackId trackId) {
+        auto& clips = magda::ClipManager::getInstance();
+        const auto ids = clips.getClipsOnTrack(trackId, magda::ClipView::Session);
+        if (ids.size() != 1)
+            return nullptr;
+        const auto* clip = clips.getClip(ids.front());
+        return clip != nullptr && clip->isAudio() ? clip : nullptr;
     }
 
     static std::unique_ptr<juce::AudioFormatReader> readerFor(const magda::ClipInfo& clip) {
@@ -532,8 +542,8 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         devices.closeAudioDevice();
     }
 
-    void sessionTargetDoesNotRecordArrangement() {
-        beginTest("an unsupported audio Session target does not become an Arrangement take");
+    void recordsIntoAnArmedSessionSlot() {
+        beginTest("an armed Session slot records its selected audio input");
 
         InputPumpManager devices;
         expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
@@ -543,17 +553,89 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         const auto track = tracks.createTrack("Audio Session target");
         tracks.setTrackAudioInput(track, "Loopback 1");
         tracks.setTrackRecordArmed(track, true);
+        tracks.getTrack(track)->midiInputDevice = "all";
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.registerVirtualMidiSource("keyboard");
+        host.start(devices);
+        settle(host);
+        host.armSessionSlotRecording(track, 0);
+        host.beginArmedSessionSlotRecordings(0.0);
+        devices.device->pump();
+        expect(host.isSessionSlotRecording(track, 0));
+        for (auto block = 0; block < 3; ++block)
+            devices.device->pump();
+
+        const auto& previews = host.recordingPreviews();
+        const auto preview = previews.find(track);
+        expect(preview != previews.end());
+        if (preview != previews.end()) {
+            expect(preview->second.isAudioRecording,
+                   "the selected audio input wins over the default MIDI-all route");
+            expect(preview->second.target == magda::RecordingTargetKind::SessionSlot);
+            expectEquals(preview->second.sceneIndex, 0);
+            expect(!preview->second.audioPeaks.empty());
+        }
+
+        host.stopMidiRecording();
+        expect(!host.isSessionSlotRecordArmed(track, 0));
+        expect(!host.isSessionSlotRecording(track, 0));
+        expect(onlyAudioClip(track) == nullptr, "Session recording creates no Arrangement clip");
+        const auto* clip = onlySessionAudioClip(track);
+        expect(clip != nullptr, "the completed file is published into the selected slot");
+        if (clip != nullptr) {
+            expectEquals(clip->sceneIndex, 0);
+            expect(clip->loopEnabled);
+            expect(clip->primaryEvent() != nullptr && clip->primaryEvent()->autoTempo,
+                   "recorded Session audio follows project tempo");
+            auto reader = readerFor(*clip);
+            expect(reader != nullptr);
+            if (reader != nullptr) {
+                expectEquals(static_cast<int>(reader->numChannels), 1);
+                expectEquals(static_cast<int>(reader->lengthInSamples), 4 * kBlockSize);
+            }
+        }
+
+        host.processSessionStateEvents();
+        expect(tracks.getTrack(track)->playbackMode == magda::TrackPlaybackMode::Session,
+               "the materialized clip takes over the recording run");
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void filledSessionSlotPreservesTake() {
+        beginTest("an audio Session take falls back to Arrangement if its slot was filled");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Filled audio Session target");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
 
         Host host;
         host.setHardwareInputProvider([] { return loopbackCatalog(); });
         host.start(devices);
         settle(host);
-        host.armSessionSlotRecording(track, 0);
-        expect(!host.startPunchRecording(0.0, {}),
-               "the unsupported target cannot start an Arrangement recording");
+        host.armSessionSlotRecording(track, 1);
+        host.beginArmedSessionSlotRecordings(0.0);
         devices.device->pump();
-        expect(onlyAudioClip(track) == nullptr);
-        expect(host.recordingPreviews().empty());
+        devices.device->pump();
+
+        auto& clips = magda::ClipManager::getInstance();
+        const auto occupant = clips.createMidiClipBeats(track, 0.0, 4.0, magda::ClipView::Session);
+        clips.setClipSceneIndex(occupant, 1);
+        host.stopMidiRecording();
+
+        expectEquals(clips.getClipInSlot(track, 1), occupant);
+        expect(onlyAudioClip(track) != nullptr,
+               "the recorded file survives outside the occupied slot");
+        expect(onlySessionAudioClip(track) == nullptr);
+        expect(!host.isSessionSlotRecordArmed(track, 1));
 
         host.stop();
         devices.closeAudioDevice();

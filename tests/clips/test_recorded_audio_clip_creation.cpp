@@ -65,4 +65,34 @@ TEST_CASE("A recorded audio clip is published as one complete model change",
     clips.clearAllClips();
 }
 
+TEST_CASE("A recorded audio clip can be published directly into a Session slot",
+          "[clips][recording][audio][session][2553]") {
+    auto& clips = ClipManager::getInstance();
+    clips.clearAllClips();
+    const auto arrangement = clips.createMidiClipBeats(52, 0.0, 8.0, ClipView::Arrangement);
+
+    const auto recorded = clips.createRecordedAudioClip(
+        52,
+        RecordedAudioClipData{
+            .startBeat = 0.0, .lengthBeats = 4.0, .filePath = "/tmp/session_recording.wav"},
+        ClipOverlapPolicy::ResolveOverlaps, ClipView::Session, 3);
+
+    REQUIRE(recorded != INVALID_CLIP_ID);
+    REQUIRE(clips.getClipInSlot(52, 3) == recorded);
+    const auto* clip = clips.getClip(recorded);
+    REQUIRE(clip != nullptr);
+    REQUIRE(clip->view == ClipView::Session);
+    REQUIRE(clip->sceneIndex == 3);
+    REQUIRE(clip->placement.startBeat == 0.0);
+    REQUIRE(clip->placement.lengthBeats == 4.0);
+    REQUIRE(clip->loopEnabled);
+    REQUIRE(clip->loopLengthBeats == 4.0);
+    REQUIRE(clip->primaryEvent() != nullptr);
+    REQUIRE(clip->primaryEvent()->autoTempo);
+    REQUIRE(clip->primaryEvent()->loopLengthBeats() == 4.0);
+    REQUIRE(clips.getClip(arrangement) != nullptr);
+
+    clips.clearAllClips();
+}
+
 }  // namespace
