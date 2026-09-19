@@ -132,6 +132,7 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         testTransientSensitivityChangesAreDebounced();
         testSingleWarpMarkerMapIsIgnored();
         testLoopEnableDisable();
+        testLoopLengthIntentSurvivesTempoCorrection();
         testBeatModeRoundTripPreservesTrimmedLength();
         testLoopTimeBased();
         testLoopTimeBasedWarpEnabled();
@@ -276,7 +277,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         magda::test::audioEvent(clip).setLoopLengthBeats(loopLengthBeats);
         magda::test::audioEvent(clip).setAnchorBeats(loopStartBeats);
         magda::test::audioEvent(clip).setLoopStartSeconds(loopStartBeats * 60.0 / sourceBpm);
-        magda::test::audioEvent(clip).setLoopLengthSeconds(loopLengthBeats * 60.0 / sourceBpm);
         magda::test::audioEvent(clip).setAnchorSeconds(magda::test::audioEvent(clip).anchorBeats() *
                                                        60.0 / sourceBpm);
         clip.setPlacementBeats(0.0, placementLengthBeats);
@@ -1326,8 +1326,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         primaryEventOf(clip)->setLoopLengthBeats(2.0);
         primaryEventOf(clip)->setLoopStartSeconds(primaryEventOf(clip)->loopStartBeats() * 60.0 /
                                                   primaryEventOf(clip)->interpBpm);
-        primaryEventOf(clip)->setLoopLengthSeconds(primaryEventOf(clip)->loopLengthBeats() * 60.0 /
-                                                   primaryEventOf(clip)->interpBpm);
         f.clipSync->syncClipToEngine(clipId);
 
         expect(teClip->isLooping(), "TE clip should be looping");
@@ -1340,6 +1338,54 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         f.clipSync->syncClipToEngine(clipId);
 
         expect(!teClip->isLooping(), "TE clip should not be looping after disable");
+    }
+
+    void testLoopLengthIntentSurvivesTempoCorrection() {
+        beginTest("Loop length intent survives source tempo correction in Tracktion");
+
+        Fixture f;
+        auto& clips = ClipManager::getInstance();
+        const auto clipId =
+            clips.createAudioClip(f.trackId, 0.0, 5.0, f.audioPath(), ClipView::Arrangement, 60.0);
+        auto* clip = clips.getClip(clipId);
+        expect(clip != nullptr, "Audio clip should exist");
+        if (clip == nullptr)
+            return;
+
+        clip->loopEnabled = true;
+        clips.setSourceTempo(clipId, 120.0);
+        clips.setPlaybackIntent(clipId, PlaybackIntent::Beat, 60.0);
+        clips.setAudioLoopLengthBeats(clipId, 4.0);
+        f.clipSync->syncClipToEngine(clipId);
+
+        auto* teClip = f.getTeAudioClip(clipId);
+        expect(teClip != nullptr, "TE clip should exist");
+        if (teClip == nullptr)
+            return;
+        expectWithinAbsoluteError(teClip->getLoopRangeBeats().getLength().inBeats(), 4.0, 0.001,
+                                  "Musical loop should initially be four source beats");
+
+        clips.setSourceTempo(clipId, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+        clip = clips.getClip(clipId);
+        expectWithinAbsoluteError(primaryEventOf(clip)->loopLengthSeconds(), 4.0, 0.001,
+                                  "Four musical beats should refit to four source seconds");
+        expectWithinAbsoluteError(teClip->getLoopRangeBeats().getLength().inBeats(), 4.0, 0.001,
+                                  "TE should retain the authored musical length");
+
+        primaryEventOf(clip)->setLoopExtent(RegionExtent::WholeSource);
+        clips.setSourceTempo(clipId, 120.0);
+        f.clipSync->syncClipToEngine(clipId);
+        const auto wholeSourceSamples = primaryEventOf(clip)->loopLengthSamples;
+        expectWithinAbsoluteError(teClip->getLoopRangeBeats().getLength().inBeats(), 10.0, 0.001,
+                                  "Five source seconds should span ten beats at 120 BPM");
+
+        clips.setSourceTempo(clipId, 60.0);
+        f.clipSync->syncClipToEngine(clipId);
+        expect(primaryEventOf(clip)->loopLengthSamples == wholeSourceSamples,
+               "Whole-source loop should keep its sample length");
+        expectWithinAbsoluteError(teClip->getLoopRangeBeats().getLength().inBeats(), 5.0, 0.001,
+                                  "TE beat range should follow the corrected source tempo");
     }
 
     void testBeatModeRoundTripPreservesTrimmedLength() {
@@ -1432,7 +1478,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         primaryEventOf(clip)->setLoopStartBeats(0.0);
         primaryEventOf(clip)->setLoopLengthBeats(2.0);
         primaryEventOf(clip)->setLoopStartSeconds(0.0);
-        primaryEventOf(clip)->setLoopLengthSeconds(2.0);
         clip->setPlacementBeats(0.0, 3.0);
         clip->deriveTimesFromBeats(60.0);
 
@@ -1733,7 +1778,6 @@ class ClipSyncIntegrationTest final : public juce::UnitTest {
         primaryEventOf(clip)->setLoopStartBeats(0.0);
         primaryEventOf(clip)->setLoopLengthBeats(primaryEventOf(clip)->interpTotalBeats);
         primaryEventOf(clip)->setLoopStartSeconds(0.0);
-        primaryEventOf(clip)->setLoopLengthSeconds(5.0);
         clip->setPlacementBeats(0.0, primaryEventOf(clip)->interpTotalBeats);
         clip->deriveTimesFromBeats(60.0);
 

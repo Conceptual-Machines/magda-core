@@ -366,8 +366,7 @@ class SetClipLoopLengthCommand : public UndoableCommand {
         : clipId_(clipId), newLoopLength_(newLoopLength), bpm_(bpm) {
         if (auto* clip = ClipManager::getInstance().getClip(clipId)) {
             if (const auto* ev = clip->primaryEvent()) {
-                oldLoopLengthSamples_ = ev->loopLengthSamples;
-                oldExtent_ = ev->loopExtent;
+                oldLoopLengthState_ = ev->loopLengthState();
                 isAudio_ = true;
             } else if (clip->isMidi()) {
                 oldMidiLoopLengthBeats_ = clip->loopLengthBeats;
@@ -380,8 +379,7 @@ class SetClipLoopLengthCommand : public UndoableCommand {
     }
     void undo() override {
         if (isAudio_)
-            ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_,
-                                                         bpm_);
+            ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthState_, bpm_);
         else
             ClipManager::getInstance().setMidiLoopLengthBeats(clipId_, oldMidiLoopLengthBeats_,
                                                               bpm_);
@@ -403,12 +401,46 @@ class SetClipLoopLengthCommand : public UndoableCommand {
 
   private:
     ClipId clipId_;
-    int64_t oldLoopLengthSamples_ = 0;
-    RegionExtent oldExtent_ = RegionExtent::WholeSource;
+    LoopLengthState oldLoopLengthState_;
     bool isAudio_ = false;
     double oldMidiLoopLengthBeats_ = 0.0;
     double newLoopLength_;
     double bpm_;
+};
+
+class SetAudioClipLoopLengthBeatsCommand : public UndoableCommand {
+  public:
+    SetAudioClipLoopLengthBeatsCommand(ClipId clipId, double newLoopLengthBeats)
+        : clipId_(clipId), newLoopLengthBeats_(newLoopLengthBeats) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipId))
+            if (const auto* event = clip->primaryEvent())
+                oldLoopLengthState_ = event->loopLengthState();
+    }
+
+    void execute() override {
+        ClipManager::getInstance().setAudioLoopLengthBeats(clipId_, newLoopLengthBeats_);
+    }
+    void undo() override {
+        ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthState_);
+    }
+    juce::String getDescription() const override {
+        return "Set Audio Clip Loop Length";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (const auto* o = dynamic_cast<const SetAudioClipLoopLengthBeatsCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newLoopLengthBeats_ =
+            static_cast<const SetAudioClipLoopLengthBeatsCommand*>(other)->newLoopLengthBeats_;
+    }
+
+  private:
+    ClipId clipId_;
+    LoopLengthState oldLoopLengthState_;
+    double newLoopLengthBeats_;
 };
 
 class SetMidiClipLoopStartBeatsCommand : public UndoableCommand {
@@ -500,8 +532,10 @@ class SetClipLoopRangeCommand : public UndoableCommand {
             if (ev != nullptr) {
                 oldLoopStart_ = ev->loopStartSeconds();
                 oldLoopLength_ = ev->loopLengthSeconds();
-                oldLoopLengthSamples_ = ev->loopLengthSamples;
-                oldExtent_ = ev->loopExtent;
+                oldLoopStartSamples_ = ev->loopStartSamples;
+                oldLoopLengthState_ = ev->loopLengthState();
+                oldAnchorSamples_ = ev->sourceAnchorSamples;
+                oldSourceSampleRate_ = ev->sourceSampleRate();
                 isAudio_ = true;
             }
             oldOffset_ =
@@ -513,15 +547,15 @@ class SetClipLoopRangeCommand : public UndoableCommand {
         ClipManager::getInstance().relocateLoopRegion(clipId_, newLoopStart_, newLoopLength_, bpm_);
     }
     void undo() override {
-        ClipManager::getInstance().relocateLoopRegion(clipId_, oldLoopStart_, oldLoopLength_, bpm_);
-        // relocateLoopRegion snaps offset to the (new) loopStart for
-        // audio clips when loopStart moves; restore the captured pre-drag
-        // offset on top so undo is a true round-trip.
-        ClipManager::getInstance().setOffset(clipId_, oldOffset_);
-        // It also tags the length Explicit; put the captured extent back.
-        if (isAudio_)
-            ClipManager::getInstance().restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_,
-                                                         bpm_);
+        if (isAudio_) {
+            ClipManager::getInstance().restoreAudioLoopRegion(
+                clipId_, oldLoopStartSamples_, oldLoopLengthState_, oldAnchorSamples_,
+                oldSourceSampleRate_);
+        } else {
+            ClipManager::getInstance().relocateLoopRegion(clipId_, oldLoopStart_, oldLoopLength_,
+                                                          bpm_);
+            ClipManager::getInstance().setOffset(clipId_, oldOffset_);
+        }
     }
     juce::String getDescription() const override {
         return "Set Clip Loop Range";
@@ -543,11 +577,105 @@ class SetClipLoopRangeCommand : public UndoableCommand {
     ClipId clipId_;
     double oldLoopStart_ = 0.0, newLoopStart_;
     double oldLoopLength_ = 0.0, newLoopLength_;
-    int64_t oldLoopLengthSamples_ = 0;
-    RegionExtent oldExtent_ = RegionExtent::WholeSource;
+    int64_t oldLoopStartSamples_ = 0;
+    LoopLengthState oldLoopLengthState_;
+    int64_t oldAnchorSamples_ = 0;
+    double oldSourceSampleRate_ = 0.0;
     bool isAudio_ = false;
     double oldOffset_ = 0.0;
     double bpm_;
+};
+
+class SetMusicalClipLoopRangeCommand : public UndoableCommand {
+  public:
+    SetMusicalClipLoopRangeCommand(ClipId clipId, double newLoopStart, double newLoopLengthBeats)
+        : clipId_(clipId), newLoopStart_(newLoopStart), newLoopLengthBeats_(newLoopLengthBeats) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            if (const auto* event = clip->primaryEvent()) {
+                oldLoopStartSamples_ = event->loopStartSamples;
+                oldLoopLengthState_ = event->loopLengthState();
+                oldAnchorSamples_ = event->sourceAnchorSamples;
+                oldSourceSampleRate_ = event->sourceSampleRate();
+            }
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().relocateMusicalLoopRegion(clipId_, newLoopStart_,
+                                                             newLoopLengthBeats_);
+    }
+    void undo() override {
+        ClipManager::getInstance().restoreAudioLoopRegion(clipId_, oldLoopStartSamples_,
+                                                          oldLoopLengthState_, oldAnchorSamples_,
+                                                          oldSourceSampleRate_);
+    }
+    juce::String getDescription() const override {
+        return "Set Musical Clip Loop Range";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (const auto* o = dynamic_cast<const SetMusicalClipLoopRangeCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        const auto* o = static_cast<const SetMusicalClipLoopRangeCommand*>(other);
+        newLoopStart_ = o->newLoopStart_;
+        newLoopLengthBeats_ = o->newLoopLengthBeats_;
+    }
+
+  private:
+    ClipId clipId_;
+    int64_t oldLoopStartSamples_ = 0;
+    LoopLengthState oldLoopLengthState_;
+    int64_t oldAnchorSamples_ = 0;
+    double oldSourceSampleRate_ = 0.0;
+    double newLoopStart_;
+    double newLoopLengthBeats_;
+};
+
+class MoveClipLoopRegionCommand : public UndoableCommand {
+  public:
+    MoveClipLoopRegionCommand(ClipId clipId, double newLoopStart)
+        : clipId_(clipId), newLoopStart_(newLoopStart) {
+        if (const auto* clip = ClipManager::getInstance().getClip(clipId)) {
+            if (const auto* event = clip->primaryEvent()) {
+                oldLoopStartSamples_ = event->loopStartSamples;
+                oldLoopLengthState_ = event->loopLengthState();
+                oldAnchorSamples_ = event->sourceAnchorSamples;
+                oldSourceSampleRate_ = event->sourceSampleRate();
+            }
+        }
+    }
+
+    void execute() override {
+        ClipManager::getInstance().relocateLoopStartPreservingLength(clipId_, newLoopStart_);
+    }
+    void undo() override {
+        ClipManager::getInstance().restoreAudioLoopRegion(clipId_, oldLoopStartSamples_,
+                                                          oldLoopLengthState_, oldAnchorSamples_,
+                                                          oldSourceSampleRate_);
+    }
+    juce::String getDescription() const override {
+        return "Move Clip Loop Region";
+    }
+
+    bool canMergeWith(const UndoableCommand* other) const override {
+        if (const auto* o = dynamic_cast<const MoveClipLoopRegionCommand*>(other))
+            return o->clipId_ == clipId_;
+        return false;
+    }
+    void mergeWith(const UndoableCommand* other) override {
+        newLoopStart_ = static_cast<const MoveClipLoopRegionCommand*>(other)->newLoopStart_;
+    }
+
+  private:
+    ClipId clipId_;
+    int64_t oldLoopStartSamples_ = 0;
+    LoopLengthState oldLoopLengthState_;
+    int64_t oldAnchorSamples_ = 0;
+    double oldSourceSampleRate_ = 0.0;
+    double newLoopStart_;
 };
 
 /**
@@ -597,8 +725,7 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
         if (clip)
             if (const auto* ev = clip->primaryEvent()) {
                 oldRatio_ = ev->speedRatio;
-                oldLoopLengthSamples_ = ev->loopLengthSamples;
-                oldExtent_ = ev->loopExtent;
+                oldLoopLengthState_ = ev->loopLengthState();
             }
     }
 
@@ -610,7 +737,7 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
         cm.setSpeedRatio(clipId_, oldRatio_);
         // The speed write can rewrite an explicit region to the new extent;
         // put the captured samples/extent back on top of the ratio.
-        cm.restoreLoopLength(clipId_, oldLoopLengthSamples_, oldExtent_, 120.0);
+        cm.restoreLoopLength(clipId_, oldLoopLengthState_, 120.0);
     }
     juce::String getDescription() const override {
         return "Set Clip Speed Ratio";
@@ -628,8 +755,7 @@ class SetClipSpeedRatioCommand : public UndoableCommand {
   private:
     ClipId clipId_;
     double oldRatio_ = 1.0, newRatio_;
-    int64_t oldLoopLengthSamples_ = 0;
-    RegionExtent oldExtent_ = RegionExtent::WholeSource;
+    LoopLengthState oldLoopLengthState_;
 };
 
 /**

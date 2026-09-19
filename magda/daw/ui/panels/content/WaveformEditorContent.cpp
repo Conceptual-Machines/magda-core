@@ -321,11 +321,29 @@ WaveformEditorContent::WaveformEditorContent() {
         };
 
         double newLoopStart = timelineToSrc(displayStart);
-        double newLoopLength = timelineToSrc(displayEnd - displayStart);
+        const double displayLength = displayEnd - displayStart;
+        const double newLoopLength = timelineToSrc(displayLength);
+        const bool movedWithoutResizing =
+            std::abs(displayLength - cachedDisplayInfo_.loopLengthSeconds) <= 1.0e-6;
 
-        magda::UndoManager::getInstance().executeCommand(
-            std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
-                                                             newLoopLength, bpm));
+        if (movedWithoutResizing) {
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::MoveClipLoopRegionCommand>(editingClipId_, newLoopStart));
+        } else if (magda::audioEventRef(*clip).autoTempo &&
+                   magda::audioEventRef(*clip).hasInterpretedBpm()) {
+            const double newLoopLengthBeats =
+                newLoopLength * magda::audioEventRef(*clip).interpBpm / 60.0;
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetMusicalClipLoopRangeCommand>(
+                    editingClipId_, newLoopStart, newLoopLengthBeats));
+        } else {
+            // Free playback edits a source region. Tagging its ruler beats as
+            // musical would change the selected audio immediately when source and project BPM
+            // differ.
+            magda::UndoManager::getInstance().executeCommand(
+                std::make_unique<magda::SetClipLoopRangeCommand>(editingClipId_, newLoopStart,
+                                                                 newLoopLength, bpm));
+        }
     };
 
     // Push every drag tick through to ClipManager so the looped audio reflects the new region
@@ -333,7 +351,6 @@ WaveformEditorContent::WaveformEditorContent() {
     // switchover, so even a fast drag produces smooth audio (the previous "flickering rebuild"
     // concern was masking TE #8 — the bleed made each rebuild sound different).
     timeRuler_->onLoopRegionChanged = commitLoopFromDisplay;
-    timeRuler_->onLoopDragEnded = commitLoopFromDisplay;
 
     addAndMakeVisible(timeRuler_.get());
 

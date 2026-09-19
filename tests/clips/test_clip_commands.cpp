@@ -1296,6 +1296,98 @@ TEST_CASE("SetClipLoopRangeCommand - undo keeps the region following the interpr
     REQUIRE(ev->loopLengthSamples == snapshotSamples);
 }
 
+TEST_CASE("Musical loop commands preserve intent and undo exact source positions",
+          "[clip][command][loop][undo][issue-2675]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& clips = ClipManager::getInstance();
+    auto* event = primaryEventOf(clips.getClip(clipId));
+    REQUIRE(event != nullptr);
+    magda::test::setSourceDuration(*clips.getClip(clipId), 4.0, 44100.0);
+    REQUIRE(event->adoptBpm(120.0, Provenance::User));
+    event->setLoopStartSeconds(0.5);
+    event->setAnchorSeconds(1.0);
+    event->setLoopLengthBeats(6.0);
+    const auto originalStart = event->loopStartSamples;
+    const auto originalLength = event->loopLengthState();
+    const auto originalAnchor = event->sourceAnchorSamples;
+
+    SECTION("A beat-length edit restores source intent on undo") {
+        event->setLoopLengthSeconds(1.25);
+        const auto sourceLength = event->loopLengthState();
+        SetAudioClipLoopLengthBeatsCommand cmd(clipId, 8.0);
+        cmd.execute();
+
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopLengthIntent == LoopLengthIntent::Musical);
+        REQUIRE(event->loopLengthBeats() == Catch::Approx(8.0));
+
+        cmd.undo();
+        REQUIRE(primaryEventOf(clips.getClip(clipId))->loopLengthState() == sourceLength);
+    }
+
+    SECTION("Musical undo rematerializes its cache after source rate resolution") {
+        SetAudioClipLoopLengthBeatsCommand cmd(clipId, 8.0);
+        cmd.execute();
+        magda::test::setSourceDuration(*clips.getClip(clipId), 4.0, 96000.0);
+
+        cmd.undo();
+
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopLengthIntent == LoopLengthIntent::Musical);
+        REQUIRE(event->loopLengthBeats() == Catch::Approx(6.0));
+        REQUIRE(event->loopLengthSamples == 288000);
+    }
+
+    SECTION("A musical range edit is atomic and undo restores the snapshot") {
+        SetMusicalClipLoopRangeCommand cmd(clipId, 1.5, 10.0);
+        cmd.execute();
+
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopStartSeconds() == Catch::Approx(1.5));
+        REQUIRE(event->sourceAnchorSamples == event->loopStartSamples);
+        REQUIRE(event->loopLengthIntent == LoopLengthIntent::Musical);
+        REQUIRE(event->loopLengthBeats() == Catch::Approx(10.0));
+
+        cmd.undo();
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopStartSamples == originalStart);
+        REQUIRE(event->loopLengthState() == originalLength);
+        REQUIRE(event->sourceAnchorSamples == originalAnchor);
+    }
+
+    SECTION("Moving the whole region leaves its musical length untouched") {
+        MoveClipLoopRegionCommand cmd(clipId, 2.0);
+        cmd.execute();
+
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopStartSeconds() == Catch::Approx(2.0));
+        REQUIRE(event->loopLengthState() == originalLength);
+
+        cmd.undo();
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopStartSamples == originalStart);
+        REQUIRE(event->loopLengthState() == originalLength);
+        REQUIRE(event->sourceAnchorSamples == originalAnchor);
+    }
+
+    SECTION("Whole-region undo rescales source positions and source length") {
+        event->setLoopLengthSeconds(1.25);
+        MoveClipLoopRegionCommand cmd(clipId, 2.0);
+        cmd.execute();
+        magda::test::setSourceDuration(*clips.getClip(clipId), 4.0, 96000.0);
+
+        cmd.undo();
+
+        event = primaryEventOf(clips.getClip(clipId));
+        REQUIRE(event->loopStartSeconds() == Catch::Approx(0.5));
+        REQUIRE(event->anchorSeconds() == Catch::Approx(1.0));
+        REQUIRE(event->loopLengthSeconds() == Catch::Approx(1.25));
+        REQUIRE(event->loopLengthIntent == LoopLengthIntent::Source);
+    }
+}
+
 // ============================================================================
 // Interpretation commands (#2674 phase 3): tempo/beat-count ownership and
 // beat-mode intent.
@@ -1447,6 +1539,31 @@ TEST_CASE("SetClipSpeedRatioCommand - undo restores an explicit region matching 
     REQUIRE(ev->loopExtent == RegionExtent::Explicit);
     REQUIRE(ev->loopLengthSamples == oldSamples);
     REQUIRE(ev->speedRatio == Catch::Approx(1.0));
+}
+
+TEST_CASE("SetClipSpeedRatioCommand leaves a musical loop authoritative",
+          "[clip][command][speed][loop][undo][issue-2675]") {
+    resetState();
+    TrackId track = createTrack("Audio", TrackType::Media);
+    ClipId clipId = createAudio(track, 0.0, 4.0);
+    auto& clips = ClipManager::getInstance();
+    auto* event = primaryEventOf(clips.getClip(clipId));
+    REQUIRE(event != nullptr);
+    REQUIRE(event->adoptBpm(120.0, Provenance::User));
+    event->setLoopLengthBeats(8.0);
+    const auto musicalLength = event->loopLengthState();
+
+    SetClipSpeedRatioCommand cmd(clipId, 2.0);
+    cmd.execute();
+
+    event = primaryEventOf(clips.getClip(clipId));
+    REQUIRE(event->loopLengthState() == musicalLength);
+    REQUIRE(event->speedRatio == Catch::Approx(2.0));
+
+    cmd.undo();
+    event = primaryEventOf(clips.getClip(clipId));
+    REQUIRE(event->loopLengthState() == musicalLength);
+    REQUIRE(event->speedRatio == Catch::Approx(1.0));
 }
 
 TEST_CASE("DeleteTimeSelectionCommand - trim keeps beat placement in sync",

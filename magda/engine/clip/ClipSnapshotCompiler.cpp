@@ -280,7 +280,8 @@ ClipSnapshot compileClipSnapshot(const std::vector<ClipLane>& lanes,
 
                 playback.anchorSamples = event.sourceAnchorSamples;
                 playback.loopStartSamples = event.loopStartSamples;
-                playback.loopLengthSamples = event.loopLengthSamples;
+                playback.loopLengthSamples =
+                    event.resolvedLoopLengthSamples(source->second->sampleRate);
                 playback.loopEnabled = clip.loopEnabled;
 
                 playback.interpBpm = event.interpBpm;

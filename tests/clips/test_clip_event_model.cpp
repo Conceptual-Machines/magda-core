@@ -75,8 +75,76 @@ TEST_CASE("A single-event clip's event spans it", "[clip][event]") {
 }
 
 // =============================================================================
-// The source domain is samples, and beats are a view on it
+// Loop length authority
 // =============================================================================
+
+TEST_CASE("Loop length setters retain their authored unit", "[clip][event][loop][issue-2675]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();
+    auto& event = *clip.primaryEvent();
+
+    event.setLoopLengthBeats(6.0);
+    REQUIRE(event.loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(event.musicalLoopLengthBeats == Approx(6.0));
+    REQUIRE(event.loopLengthSeconds() == Approx(3.0));
+    REQUIRE(event.resolvedLoopLengthSamples(96000.0) == 288000);
+
+    event.setLoopLengthSeconds(1.25);
+    REQUIRE(event.loopLengthIntent == LoopLengthIntent::Source);
+    REQUIRE(event.musicalLoopLengthBeats == Approx(0.0));
+    REQUIRE(event.loopLengthSeconds() == Approx(1.25));
+}
+
+TEST_CASE("A pending musical loop resolves when source tempo arrives",
+          "[clip][event][loop][issue-2675]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();
+    auto& event = *clip.primaryEvent();
+    event.interpBpm = 0.0;
+    event.loopLengthSamples = 0;
+
+    event.setLoopLengthBeats(3.0);
+    REQUIRE(event.loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(event.loopLengthBeats() == Approx(3.0));
+    REQUIRE(event.loopLengthSamples == 0);
+
+    REQUIRE(event.adoptBpm(90.0, Provenance::Analysis));
+    REQUIRE(event.loopLengthBeats() == Approx(3.0));
+    REQUIRE(event.loopLengthSeconds() == Approx(2.0));
+}
+
+TEST_CASE("Musical loop lengths may extend beyond the source", "[clip][event][loop][issue-2675]") {
+    EventModelFixture fixture;
+    auto clip = makeAudioClip();
+    auto& event = *clip.primaryEvent();
+    event.setLoopStartSeconds(1.0);
+    event.setLoopLengthBeats(10.0);
+
+    event.clampLoopRegionToSource(4.0);
+
+    REQUIRE(event.loopStartSeconds() == Approx(1.0));
+    REQUIRE(event.loopLengthBeats() == Approx(10.0));
+    REQUIRE(event.loopLengthSeconds() == Approx(5.0));
+}
+
+TEST_CASE("Ghost interpretation updates refit each musical loop independently",
+          "[clip][event][ghost][loop][issue-2675]") {
+    EventModelFixture fixture;
+    auto source = makeAudioClip();
+    auto threeBeatGhost = makeAudioClip();
+    auto fiveBeatGhost = makeAudioClip();
+    threeBeatGhost.primaryEvent()->setLoopLengthBeats(3.0);
+    fiveBeatGhost.primaryEvent()->setLoopLengthBeats(5.0);
+    source.primaryEvent()->interpBpm = 240.0;
+
+    ClipInfo::copySharedEventFieldsFrom(*threeBeatGhost.primaryEvent(), *source.primaryEvent());
+    ClipInfo::copySharedEventFieldsFrom(*fiveBeatGhost.primaryEvent(), *source.primaryEvent());
+
+    REQUIRE(threeBeatGhost.primaryEvent()->loopLengthBeats() == Approx(3.0));
+    REQUIRE(threeBeatGhost.primaryEvent()->loopLengthSeconds() == Approx(0.75));
+    REQUIRE(fiveBeatGhost.primaryEvent()->loopLengthBeats() == Approx(5.0));
+    REQUIRE(fiveBeatGhost.primaryEvent()->loopLengthSeconds() == Approx(1.25));
+}
 
 TEST_CASE("Reinterpreting the source BPM moves no audio", "[clip][event][interpretation]") {
     EventModelFixture fixture;

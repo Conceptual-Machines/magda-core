@@ -1068,10 +1068,13 @@ void ClipInspector::initClipPropertiesSection() {
 
         double newLoopLengthSeconds = NAN;
         if (clip->isAudio()) {
+            const auto info =
+                magda::ClipDisplayInfo::from(*clip, bpm, getAudioFileDurationForInspector(*clip));
             const double newLoopEndSeconds =
-                displayBeatsToAudioSourceSeconds(*clip, newLoopEndBeats, bpm);
-            newLoopLengthSeconds =
-                juce::jmax(0.0, newLoopEndSeconds - magda::audioEventRef(*clip).loopStartSeconds());
+                magda::TimelineUtils::beatsToSeconds(newLoopEndBeats, bpm);
+            const double newDisplayLength =
+                juce::jmax(0.0, newLoopEndSeconds - info.loopStartPositionSeconds);
+            newLoopLengthSeconds = info.timelineToSource(newDisplayLength);
         } else {
             double loopStartBeats = clip->loopStartBeats;
             double newLoopLengthBeats = newLoopEndBeats - loopStartBeats;
@@ -1089,19 +1092,20 @@ void ClipInspector::initClipPropertiesSection() {
 
         if (clip->view == magda::ClipView::Session) {
             double clipEndSeconds = timelineLengthSeconds(*clip, bpm);
-            const double sourceLoopStart = magda::audioEventRef(*clip).loopStartSeconds();
-            const double sourceLoopLength = magda::audioEventRef(*clip).loopLengthSeconds();
-            double currentSourceEnd = sourceLoopStart + sourceLoopLength;
-            bool sourceEndMatchedClipEnd = std::abs(currentSourceEnd - clipEndSeconds) < 0.001;
-            double newSourceEnd = sourceLoopStart + newLoopLengthSeconds;
+            const auto info =
+                magda::ClipDisplayInfo::from(*clip, bpm, getAudioFileDurationForInspector(*clip));
+            const double newDisplayEnd =
+                info.loopStartPositionSeconds + info.sourceToTimeline(newLoopLengthSeconds);
+            const bool displayEndMatchedClipEnd =
+                std::abs(info.loopEndPositionSeconds - clipEndSeconds) < 0.001;
 
-            if (sourceEndMatchedClipEnd && newSourceEnd > clipEndSeconds) {
+            if (displayEndMatchedClipEnd && newDisplayEnd > clipEndSeconds) {
                 shouldResizeClip = true;
-                resizeLengthSeconds = newSourceEnd;
-            } else {
-                if (newSourceEnd > clipEndSeconds) {
-                    newLoopLengthSeconds = clipEndSeconds - sourceLoopStart;
-                }
+                resizeLengthSeconds = newDisplayEnd;
+            } else if (newDisplayEnd > clipEndSeconds) {
+                const double clampedDisplayLength =
+                    juce::jmax(0.0, clipEndSeconds - info.loopStartPositionSeconds);
+                newLoopLengthSeconds = info.timelineToSource(clampedDisplayLength);
             }
         }
 
@@ -1112,8 +1116,15 @@ void ClipInspector::initClipPropertiesSection() {
                 bpm));
         }
 
-        batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(primaryClipId(),
-                                                                        newLoopLengthSeconds, bpm));
+        const auto& event = magda::audioEventRef(*clip);
+        if (event.hasInterpretedBpm()) {
+            const double sourceBeats = newLoopLengthSeconds * event.interpBpm / 60.0;
+            batch.execute(std::make_unique<magda::SetAudioClipLoopLengthBeatsCommand>(
+                primaryClipId(), sourceBeats));
+        } else {
+            batch.execute(std::make_unique<magda::SetClipLoopLengthCommand>(
+                primaryClipId(), newLoopLengthSeconds, bpm));
+        }
     };
     clipPropsContainer_.addChildComponent(*clipLoopEndValue_);
 

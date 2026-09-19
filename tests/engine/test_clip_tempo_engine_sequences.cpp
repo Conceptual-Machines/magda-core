@@ -337,3 +337,46 @@ TEST_CASE("A loop whose region runs past the file's end reads silence there, not
         CHECK(out[3] == Approx(2.0f));
     }
 }
+
+TEST_CASE("The native compiler resolves loop length in its authoritative unit",
+          "[engine][clip][tempo][sequence][2675]") {
+    constexpr double kRate = 48000.0;
+
+    auto musical = makeAudioClip(1, 0.0, 8.0);
+    musical.loopEnabled = true;
+    auto& musicalEvent = eventOf(musical);
+    musicalEvent.interpBpm = 120.0;
+    musicalEvent.setLoopLengthBeats(4.0);
+    REQUIRE(musicalEvent.adoptBpm(60.0, magda::Provenance::User));
+    musicalEvent.loopLengthSamples = 123;
+
+    auto source = makeAudioClip(2, 8.0, 8.0);
+    source.loopEnabled = true;
+    auto& sourceEvent = eventOf(source);
+    sourceEvent.interpBpm = 120.0;
+    sourceEvent.loopExtent = magda::RegionExtent::Explicit;
+    sourceEvent.loopLengthIntent = magda::LoopLengthIntent::Source;
+    sourceEvent.loopLengthSamples = static_cast<std::int64_t>(2.0 * kRate);
+    REQUIRE(sourceEvent.adoptBpm(60.0, magda::Provenance::User));
+
+    const auto snapshot = compile({musical, source}, makeTempoMap(), makeSources(kRate, 8.0));
+    const auto* compiledMusical = audioClip(snapshot, musical.id);
+    const auto* compiledSource = audioClip(snapshot, source.id);
+    REQUIRE(compiledMusical != nullptr);
+    REQUIRE(compiledSource != nullptr);
+    REQUIRE(compiledMusical->events.size() == 1);
+    REQUIRE(compiledSource->events.size() == 1);
+
+    CHECK(compiledMusical->events.front().loopLengthSamples ==
+          static_cast<std::int64_t>(4.0 * kRate));
+    CHECK(compiledSource->events.front().loopLengthSamples ==
+          static_cast<std::int64_t>(2.0 * kRate));
+
+    const auto musicalRead = sourceReadFor(compiledMusical->events.front(), kRate);
+    const auto sourceRead = sourceReadFor(compiledSource->events.front(), kRate);
+    CHECK(musicalRead.loopLengthSamples == static_cast<std::int64_t>(4.0 * kRate));
+    CHECK(sourceRead.loopLengthSamples == static_cast<std::int64_t>(2.0 * kRate));
+    // At the corrected 60 BPM, source seconds and interpreted beats are equal.
+    CHECK(static_cast<double>(musicalRead.loopLengthSamples) / kRate == Approx(4.0));
+    CHECK(static_cast<double>(sourceRead.loopLengthSamples) / kRate == Approx(2.0));
+}

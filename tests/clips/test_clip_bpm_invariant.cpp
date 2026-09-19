@@ -264,8 +264,8 @@ TEST_CASE("source beats edits update inspector loop end readout",
     seed.length = 16.0 * 60.0 / PROJECT_BPM;
     magda::test::audioEvent(seed).setLoopStartSeconds(0.0);
     magda::test::audioEvent(seed).setLoopStartBeats(0.0);
-    magda::test::audioEvent(seed).setLoopLengthSeconds(sourceDuration);
     magda::test::audioEvent(seed).setLoopLengthBeats(sourceBeats);
+    magda::test::audioEvent(seed).setLoopLengthSeconds(sourceDuration);
     ClipManager::getInstance().restoreClip(seed);
 
     auto applySourceBeats = [&](double beats) {
@@ -296,6 +296,55 @@ TEST_CASE("source beats edits update inspector loop end readout",
         REQUIRE(primaryEventOf(c)->loopLengthBeats() == Approx(8.0));
         REQUIRE(inspectorLoopEndReadoutBeats(*c, PROJECT_BPM) == Approx(8.0));
     }
+}
+
+TEST_CASE("musical loop edits keep their beat length across source tempo corrections",
+          "[clip][bpm][loop][issue-2675]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    ClipManager::getInstance().restoreClip(seed);
+    ClipManager::getInstance().setAudioLoopLengthBeats(seed.id, 4.0);
+
+    ClipManager::getInstance().setSourceTempo(seed.id, 240.0);
+    const auto* event = primaryEventOf(ClipManager::getInstance().getClip(seed.id));
+    REQUIRE(event != nullptr);
+    REQUIRE(event->loopExtent == RegionExtent::Explicit);
+    REQUIRE(event->loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(event->loopLengthBeats() == Approx(4.0));
+    REQUIRE(event->loopLengthSeconds() == Approx(1.0));
+
+    ClipManager::getInstance().setSourceTempo(seed.id, 60.0);
+    event = primaryEventOf(ClipManager::getInstance().getClip(seed.id));
+    REQUIRE(event->loopLengthBeats() == Approx(4.0));
+    REQUIRE(event->loopLengthSeconds() == Approx(4.0));
+    REQUIRE(event->loopLengthSeconds() > event->sourceDurationSeconds());
+}
+
+TEST_CASE("a four-bar region inside a longer file survives a BPM correction",
+          "[clip][bpm][loop][issue-2675]") {
+    ClipManager::getInstance().shutdown();
+
+    auto seed = makeSessionAutoTempoClip();
+    magda::test::setSourceDuration(seed, 20.0);
+    auto& seedEvent = magda::test::audioEvent(seed);
+    seedEvent.interpBpm = 100.0;
+    seedEvent.interpTotalBeats = 100.0 / 3.0;
+    seedEvent.setLoopStartSeconds(2.0);
+    seedEvent.setLoopLengthBeats(16.0);
+    const auto placement = seed.placement;
+    ClipManager::getInstance().restoreClip(seed);
+
+    ClipManager::getInstance().setSourceTempo(seed.id, 120.0);
+
+    const auto* clip = ClipManager::getInstance().getClip(seed.id);
+    const auto* event = primaryEventOf(clip);
+    REQUIRE(event != nullptr);
+    REQUIRE(clip->placement == placement);
+    REQUIRE(event->loopStartSeconds() == Approx(2.0));
+    REQUIRE(event->loopLengthIntent == LoopLengthIntent::Musical);
+    REQUIRE(event->loopLengthBeats() == Approx(16.0));
+    REQUIRE(event->loopLengthSeconds() == Approx(8.0));
 }
 
 TEST_CASE("setLengthBeats extends placement without growing source loop or interpretation",
