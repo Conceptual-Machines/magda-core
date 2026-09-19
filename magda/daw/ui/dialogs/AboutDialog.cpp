@@ -263,6 +263,8 @@ class AboutDialog::ContentComponent : public juce::Component {
 // AboutDialog
 // =============================================================================
 
+juce::Component::SafePointer<AboutDialog> AboutDialog::currentInstance_;
+
 AboutDialog::AboutDialog(juce::String engineName)
     : DialogWindow(tr("dialogs.about")
                        .replace("{0}", magda::technicalText(magda::TechnicalTextToken::Magda)),
@@ -279,9 +281,15 @@ void AboutDialog::closeButtonPressed() {
 }
 
 void AboutDialog::show(juce::String engineName) {
+    if (currentInstance_ != nullptr) {
+        currentInstance_->toFront(true);
+        return;
+    }
+
     auto* dialog = new AboutDialog(std::move(engineName));
     dialog->setVisible(true);
     dialog->toFront(true);
+    currentInstance_ = dialog;
 }
 
 }  // namespace magda

@@ -16,6 +16,10 @@ class AboutDialog : public juce::DialogWindow {
   private:
     class ContentComponent;
 
+    /// The open window, so asking again brings it forward rather than opening
+    /// another (#2724).
+    static juce::Component::SafePointer<AboutDialog> currentInstance_;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AboutDialog)
 };
 
