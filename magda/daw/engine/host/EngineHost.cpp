@@ -2204,8 +2204,10 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         const auto catalog = hardwareInputProvider_ ? hardwareInputProvider_()
                                                     : EngineHost::HardwareChannelCatalog{};
-        auto resolved =
-            resolveHardwareInputs(catalog.enabledChannels, catalog.namesByChannel, active);
+        const auto enabled = hardwareInputProvider_
+                                 ? std::optional<juce::BigInteger>(catalog.enabledChannels)
+                                 : std::nullopt;
+        auto resolved = resolveHardwareInputs(enabled, catalog.namesByChannel, active);
 
         const auto changed = resolved != hardwareInputs_;
         hardwareInputs_ = std::move(resolved);

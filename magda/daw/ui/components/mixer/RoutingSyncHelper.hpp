@@ -23,22 +23,21 @@
  */
 namespace magda::RoutingSyncHelper {
 
-inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODevice* device,
-                                      TrackId currentTrackId = INVALID_TRACK_ID,
-                                      std::map<int, TrackId>* outInputTrackMapping = nullptr,
-                                      const juce::BigInteger& enabledInputChannels = {},
-                                      std::map<int, juce::String>* outChannelMapping = nullptr,
-                                      const std::map<int, juce::String>& teDeviceNames = {}) {
+inline void populateAudioInputOptions(
+    RoutingSelector* selector, juce::AudioIODevice* device,
+    TrackId currentTrackId = INVALID_TRACK_ID,
+    std::map<int, TrackId>* outInputTrackMapping = nullptr,
+    std::optional<juce::BigInteger> enabledInputChannels = std::nullopt,
+    std::map<int, juce::String>* outChannelMapping = nullptr,
+    const std::map<int, juce::String>& teDeviceNames = {}) {
     if (!selector)
         return;
 
     std::vector<RoutingSelector::RoutingOption> options;
 
     if (device) {
-        // Use enabled channels if provided (from TE WaveDevices), otherwise fall back
-        // to JUCE active channels (which may show all channels)
-        auto activeInputChannels =
-            enabledInputChannels.isZero() ? device->getActiveInputChannels() : enabledInputChannels;
+        // An engaged mask is authoritative even when empty; only omission uses the device mask.
+        auto activeInputChannels = enabledInputChannels.value_or(device->getActiveInputChannels());
         options.push_back({1, "None"});
 
         int numActiveChannels = activeInputChannels.countNumberOfSetBits();
@@ -452,7 +451,8 @@ inline void syncSelectorsFromTrack(
     RoutingSelector* audioOutSelector, RoutingSelector* midiOutSelector, MidiBridge* midiBridge,
     juce::AudioIODevice* device, TrackId currentTrackId, std::map<int, TrackId>& outputTrackMapping,
     std::map<int, TrackId>& midiOutputTrackMapping,
-    std::map<int, TrackId>* inputTrackMapping = nullptr, juce::BigInteger enabledInputChannels = {},
+    std::map<int, TrackId>* inputTrackMapping = nullptr,
+    std::optional<juce::BigInteger> enabledInputChannels = std::nullopt,
     std::optional<juce::BigInteger> enabledOutputChannels = std::nullopt,
     std::map<int, juce::String>* inputChannelMapping = nullptr,
     const std::map<int, juce::String>& teDeviceNames = {},
@@ -468,8 +468,7 @@ inline void syncSelectorsFromTrack(
         // options are available before any track input is selected — otherwise
         // the first "track:" selection could never be made.
         populateAudioInputOptions(audioInSelector, device, currentTrackId, inputTrackMapping,
-                                  std::move(enabledInputChannels), inputChannelMapping,
-                                  teDeviceNames);
+                                  enabledInputChannels, inputChannelMapping, teDeviceNames);
         if (hasAudioInput) {
             if (track.audioInputDevice.startsWith("track:") && inputTrackMapping) {
                 // Track-as-input: find the matching option ID
