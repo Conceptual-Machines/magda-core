@@ -13,7 +13,7 @@
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "audio/MidiBridge.hpp"
-#include "audio/io/HardwareChannels.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
 

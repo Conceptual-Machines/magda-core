@@ -323,23 +323,8 @@ void MagdaAudioEngine::processSessionStateEvents() {
 juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
     return &audioIO_->getDeviceManager();
 }
-HardwareChannels* MagdaAudioEngine::getHardwareChannels() {
+AudioIOControl* MagdaAudioEngine::getAudioIO() {
     return audioIO_.get();
-}
-void MagdaAudioEngine::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
-    // Audio Settings' channel toggles: exactly these open, and are saved (#2747).
-    auto settings = audioIO_->openSettings();
-    auto& selected = input ? settings.inputChannels : settings.outputChannels;
-    selected.clear();
-    for (auto bit = channels.findNextSetBit(0); bit >= 0; bit = channels.findNextSetBit(bit + 1))
-        selected.push_back(bit);
-    audioIO_->apply(settings);
-}
-void MagdaAudioEngine::rescanWaveDevices(bool, bool) {
-    // Audio Settings has just opened an interface on the manager itself; what it
-    // opened is saved as the choice, as Tracktion saved its own (#2747).
-    if (audioIO_->getActiveConfiguration().backend.isNotEmpty())
-        audioIO_->apply(audioIO_->openSettings());
 }
 void MagdaAudioEngine::hardwareChannelsChanged() {
     host_->refreshHardwareOutputs();

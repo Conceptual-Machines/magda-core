@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "audio/MidiBridge.hpp"
-#include "audio/io/HardwareChannels.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"

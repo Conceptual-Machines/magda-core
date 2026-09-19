@@ -855,6 +855,8 @@ target_sources(magda_juce_tests PRIVATE
     audio/test_active_midi_inputs_juce.cpp
     # Tracktion keeping MIDI and opening no audio interface under native (#2747)
     engine/test_tracktion_without_audio_juce.cpp
+    # Audio Settings driving Tracktion's interface through its wave devices (#2749)
+    engine/test_tracktion_audio_io_juce.cpp
     automation/test_tempo_sequence_ripple_juce.cpp
     ../magda/daw/ui/components/chain/slot/StepSequencerClipExport.cpp
 )

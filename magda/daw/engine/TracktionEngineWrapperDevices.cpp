@@ -166,39 +166,8 @@ juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
     return nullptr;
 }
 
-HardwareChannels* TracktionEngineWrapper::getHardwareChannels() {
-    return hardwareChannels_.get();
-}
-
-void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
-    if (engine_ == nullptr)
-        return;
-
-    const auto isSelected = [&channels](int index) { return channels[index]; };
-    auto& deviceManager = engine_->getDeviceManager();
-    if (input)
-        enableDevicesForChannels(deviceManager.getWaveInputDevices(), isSelected);
-    else
-        enableDevicesForChannels(deviceManager.getWaveOutputDevices(), isSelected);
-}
-
-void TracktionEngineWrapper::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
-    if (engine_ == nullptr)
-        return;
-
-    auto& deviceManager = engine_->getDeviceManager();
-    deviceManager.rescanWaveDeviceList();
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(0);
-    if (enableInputs) {
-        for (auto* device : deviceManager.getWaveInputDevices())
-            if (device != nullptr && !device->isEnabled())
-                device->setEnabled(true);
-    }
-    if (enableOutputs) {
-        for (auto* device : deviceManager.getWaveOutputDevices())
-            if (device != nullptr && !device->isEnabled())
-                device->setEnabled(true);
-    }
+AudioIOControl* TracktionEngineWrapper::getAudioIO() {
+    return audioIO_.get();
 }
 
 }  // namespace magda

@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "../../core/Config.hpp"
-#include "HardwareChannels.hpp"
+#include "AudioIOControl.hpp"
 
 namespace magda {
 
@@ -22,7 +22,7 @@ namespace magda {
  * No mask is derived from the channels an interface advertises: a virtual endpoint offering
  * 128 stays a stereo stream unless 128 were chosen (#2528).
  */
-class AudioIOService : public HardwareChannels, private juce::ChangeListener {
+class AudioIOService : public AudioIOControl, private juce::ChangeListener {
   public:
     /** @brief What is open, as the interface reports it. Empty when nothing is. */
     struct ActiveConfiguration {
@@ -59,7 +59,15 @@ class AudioIOService : public HardwareChannels, private juce::ChangeListener {
     void open();
 
     /** @brief Open @p settings and save them as the user's choice; returns the open error. */
-    juce::String apply(const AudioIOSettings& settings);
+    juce::String apply(const AudioIOSettings& settings) override;
+
+    /** @brief What was saved, or what is open when nothing was. */
+    AudioIOSettings chosen() const override;
+
+    juce::StringArray channelNames(const juce::String& backend, const juce::String& interfaceName,
+                                   bool inputs) override {
+        return getChannelNames(backend, interfaceName, inputs);
+    }
 
     juce::StringArray getBackendNames();
     juce::StringArray getInterfaceNames(const juce::String& backend, bool inputs);

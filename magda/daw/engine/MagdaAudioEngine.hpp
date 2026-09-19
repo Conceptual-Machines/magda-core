@@ -128,9 +128,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void updateTriggerState() override;
     void processSessionStateEvents() override;
     juce::AudioDeviceManager* getDeviceManager() override;
-    HardwareChannels* getHardwareChannels() override;
-    void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
-    void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
+    AudioIOControl* getAudioIO() override;
     bool isDevicesLoading() const override;
     void setDevicesLoadingCallback(
         std::function<void(bool, const juce::String&)> callback) override;

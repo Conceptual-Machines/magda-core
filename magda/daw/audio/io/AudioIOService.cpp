@@ -159,6 +159,11 @@ AudioIOSettings AudioIOService::openSettings() const {
             .outputChannels = channelsOf(active.outputChannels)};
 }
 
+AudioIOSettings AudioIOService::chosen() const {
+    const auto& saved = Config::getInstance().getAudioIO();
+    return saved.has_value() ? *saved : openSettings();
+}
+
 bool AudioIOService::isOpen() const {
     return getActiveConfiguration().backend.isNotEmpty();
 }

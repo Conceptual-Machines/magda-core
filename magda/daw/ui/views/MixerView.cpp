@@ -419,10 +419,9 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             midiOutSelector) {
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
-                midiOutSelector.get(), audioEngine_->getMidiBridge(),
-                audioEngine_->getHardwareChannels(), trackId_, outputTrackMapping_,
-                midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
-                &midiInputTrackMapping_, &outputChannelMapping_);
+                midiOutSelector.get(), audioEngine_->getMidiBridge(), audioEngine_->getAudioIO(),
+                trackId_, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
+                &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
         }
     }
 
@@ -794,7 +793,7 @@ void MixerView::ChannelStrip::setupControls() {
         // Populate routing options from real data and wire callbacks
         if (audioEngine_) {
             auto* midiBridge = audioEngine_->getMidiBridge();
-            const auto* hardware = audioEngine_->getHardwareChannels();
+            const auto* hardware = audioEngine_->getAudioIO();
 
             audioInSelector->meterInputsFrom(audioEngine_->getDeviceManager());
             RoutingSyncHelper::populateAudioInputOptions(
@@ -1919,7 +1918,7 @@ MixerView::MixerView(AudioEngine* audioEngine) : audioEngine_(audioEngine) {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->addMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->addListener(this);
     }
 
@@ -1939,7 +1938,7 @@ MixerView::~MixerView() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     stopTimer();

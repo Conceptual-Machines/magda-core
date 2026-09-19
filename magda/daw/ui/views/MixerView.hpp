@@ -24,7 +24,7 @@
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
-#include "audio/io/HardwareChannels.hpp"
+#include "audio/io/AudioIOControl.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"

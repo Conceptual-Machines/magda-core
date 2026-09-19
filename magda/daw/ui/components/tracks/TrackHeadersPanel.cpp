@@ -497,7 +497,7 @@ TrackHeadersPanel::TrackHeadersPanel(AudioEngine* audioEngine) : audioEngine_(au
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->addMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->addListener(this);
     }
 }
@@ -517,7 +517,7 @@ TrackHeadersPanel::~TrackHeadersPanel() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     stopTimer();
@@ -639,8 +639,8 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
     }
     selector->meterInputsFrom(deviceManager);
     RoutingSyncHelper::populateAudioInputOptions(
-        selector, RoutingSyncHelper::openDirection(audioEngine_->getHardwareChannels(), true),
-        trackId, &inputTrackMapping_, &inputChannelMapping_);
+        selector, RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), trackId,
+        &inputTrackMapping_, &inputChannelMapping_);
 }
 
 void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
@@ -649,8 +649,8 @@ void TrackHeadersPanel::populateAudioOutputOptions(RoutingSelector* selector,
         return;
     RoutingSyncHelper::populateAudioOutputOptions(
         selector, currentTrackId,
-        RoutingSyncHelper::openDirection(audioEngine_->getHardwareChannels(), false),
-        outputTrackMapping_, &outputChannelMapping_);
+        RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), false), outputTrackMapping_,
+        &outputChannelMapping_);
 }
 
 void TrackHeadersPanel::populateMidiInputOptions(RoutingSelector* selector, TrackId trackId) {
@@ -1167,9 +1167,9 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),
-        audioEngine_->getHardwareChannels(), header.trackId, outputTrackMapping_,
-        midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
-        &midiInputTrackMapping_, &outputChannelMapping_);
+        audioEngine_->getAudioIO(), header.trackId, outputTrackMapping_, midiOutputTrackMapping_,
+        &inputTrackMapping_, &inputChannelMapping_, &midiInputTrackMapping_,
+        &outputChannelMapping_);
 }
 
 void TrackHeadersPanel::paint(juce::Graphics& g) {

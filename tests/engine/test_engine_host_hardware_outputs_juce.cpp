@@ -48,7 +48,8 @@ juce::BigInteger channels(std::initializer_list<int> set) {
 
 class OutputPumpDevice final : public juce::AudioIODevice {
   public:
-    OutputPumpDevice() : juce::AudioIODevice("Output Pump", "Output Pump") {}
+    explicit OutputPumpDevice(const juce::String& name = "Output Pump")
+        : juce::AudioIODevice(name, "Output Pump") {}
 
     juce::StringArray getOutputChannelNames() override {
         juce::StringArray names;
@@ -165,21 +166,21 @@ class OutputPumpType final : public juce::AudioIODeviceType {
 
     void scanForDevices() override {}
     juce::StringArray getDeviceNames(bool input) const override {
-        return input ? juce::StringArray{} : juce::StringArray{"Output Pump"};
+        return input ? juce::StringArray{} : juce::StringArray{"Output Pump", "Output Pump B"};
     }
     int getDefaultDeviceIndex(bool) const override {
         return 0;
     }
-    int getIndexOfDevice(juce::AudioIODevice* device, bool) const override {
-        return device == device_ ? 0 : -1;
+    int getIndexOfDevice(juce::AudioIODevice* device, bool input) const override {
+        return device != nullptr ? getDeviceNames(input).indexOf(device->getName()) : -1;
     }
     bool hasSeparateInputsAndOutputs() const override {
         return true;
     }
     juce::AudioIODevice* createDevice(const juce::String& output, const juce::String&) override {
-        if (output != "Output Pump")
+        if (!getDeviceNames(false).contains(output))
             return nullptr;
-        auto device = std::make_unique<OutputPumpDevice>();
+        auto device = std::make_unique<OutputPumpDevice>(output);
         device_ = device.get();
         return device.release();
     }
@@ -330,10 +331,11 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         magda::daw::engine_host::EngineHost& host;
     };
 
-    static magda::AudioIOSettings pumpOutputs(std::vector<int> outputs) {
+    static magda::AudioIOSettings pumpOutputs(std::vector<int> outputs,
+                                              std::string interfaceName = "Output Pump") {
         return {.backend = "Output Pump",
                 .inputInterface = {},
-                .outputInterface = "Output Pump",
+                .outputInterface = std::move(interfaceName),
                 .sampleRate = 48000.0,
                 .bufferSize = kBlockSize,
                 .inputChannels = {},
@@ -341,7 +343,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
     }
 
     void followsTheAudioInterface() {
-        beginTest("native outputs follow what AudioIOService opens, across a reopen");
+        beginTest("native outputs follow what AudioIOService opens, across a reopen and a switch");
 
         OutputPumpDevice* device = nullptr;
         std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
@@ -376,6 +378,13 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         tracks.setTrackAudioOutput(track, "stereo:Output 5 + 6");
         settle(host);
         expectOnly(sound(host, *device, track, 62), {4, 5});
+
+        // Another interface altogether: the host renders into the device that replaced it.
+        expect(audioIO.apply(pumpOutputs({0, 1}, "Output Pump B")).isEmpty());
+        expectEquals(device->getName(), juce::String("Output Pump B"));
+        tracks.setTrackAudioOutput(track, "stereo:Output 1 + 2");
+        settle(host);
+        expectOnly(sound(host, *device, track, 64), {0, 1});
 
         audioIO.removeListener(&refresh);
         host.stop();

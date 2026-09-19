@@ -579,7 +579,7 @@ TrackInspector::~TrackInspector() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     stopTimer();
@@ -1695,7 +1695,7 @@ void TrackInspector::populateRoutingSelectors() {
     // Register for device list changes (QWERTY keyboard toggle, etc.)
     if (auto* mb = audioEngine_->getMidiBridge())
         mb->addMidiDeviceListListener(this);
-    if (auto* hardware = audioEngine_->getHardwareChannels())
+    if (auto* hardware = audioEngine_->getAudioIO())
         hardware->addListener(this);
 
     // Populate all routing selectors
@@ -1905,8 +1905,8 @@ void TrackInspector::populateAudioInputOptions() {
     audioInputSelector_->meterInputsFrom(deviceManager);
     magda::RoutingSyncHelper::populateAudioInputOptions(
         audioInputSelector_.get(),
-        magda::RoutingSyncHelper::openDirection(audioEngine_->getHardwareChannels(), true),
-        selectedTrackId_, &inputTrackMapping_, &inputChannelMapping_);
+        magda::RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), true), selectedTrackId_,
+        &inputTrackMapping_, &inputChannelMapping_);
 }
 
 void TrackInspector::populateAudioOutputOptions() {
@@ -1914,7 +1914,7 @@ void TrackInspector::populateAudioOutputOptions() {
         return;
     magda::RoutingSyncHelper::populateAudioOutputOptions(
         outputSelector_.get(), selectedTrackId_,
-        magda::RoutingSyncHelper::openDirection(audioEngine_->getHardwareChannels(), false),
+        magda::RoutingSyncHelper::openDirection(audioEngine_->getAudioIO(), false),
         outputTrackMapping_, &outputChannelMapping_);
 }
 
@@ -1947,10 +1947,9 @@ void TrackInspector::updateRoutingSelectorsFromTrack() {
 
     magda::RoutingSyncHelper::syncSelectorsFromTrack(
         *track, audioInputSelector_.get(), inputSelector_.get(), outputSelector_.get(),
-        midiOutputSelector_.get(), audioEngine_->getMidiBridge(),
-        audioEngine_->getHardwareChannels(), selectedTrackId_, outputTrackMapping_,
-        midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
-        &midiInputTrackMapping_, &outputChannelMapping_);
+        midiOutputSelector_.get(), audioEngine_->getMidiBridge(), audioEngine_->getAudioIO(),
+        selectedTrackId_, outputTrackMapping_, midiOutputTrackMapping_, &inputTrackMapping_,
+        &inputChannelMapping_, &midiInputTrackMapping_, &outputChannelMapping_);
 }
 
 }  // namespace magda::daw::ui

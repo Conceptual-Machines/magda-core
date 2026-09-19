@@ -310,6 +310,24 @@ class AudioIOServiceTest final : public juce::UnitTest {
                          juce::String("Fake Exclusive"));
         }
 
+        beginTest("two of 128 outputs chosen are the two that reopen after a restart");
+        {
+            Rig before(std::nullopt);
+            before.service->open();
+            expect(before.service->apply(savedOn("Virtual", {}, {6, 7})).isEmpty());
+            expect(before.request->outputs == channels({6, 7}));
+
+            // A second service over the same settings, as the next launch builds one.
+            std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
+            backends.push_back(std::make_unique<FakeBackend>("Fake", before.request));
+            magda::AudioIOService after(std::move(backends), juce::File());
+            before.service.reset();
+            after.open();
+            expect(before.request->outputs == channels({6, 7}));
+            expect(before.request->inputs.isZero());
+            expect(after.chosen() == savedOn("Virtual", {}, {6, 7}));
+        }
+
         beginTest("the active configuration reports what the interface opened");
         {
             Rig rig(savedOn("Virtual", {6, 7}, {0, 1}));

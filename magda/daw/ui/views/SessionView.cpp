@@ -944,7 +944,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             return;
 
         auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
-        const auto* hardware = audioEngine_ ? audioEngine_->getHardwareChannels() : nullptr;
+        const auto* hardware = audioEngine_ ? audioEngine_->getAudioIO() : nullptr;
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
@@ -976,7 +976,7 @@ class SessionView::MiniIOStrip : public juce::Component {
             return;
 
         auto* midiBridge = audioEngine_->getMidiBridge();
-        const auto* hardware = audioEngine_->getHardwareChannels();
+        const auto* hardware = audioEngine_->getAudioIO();
 
         audioInSelector_->meterInputsFrom(audioEngine_->getDeviceManager());
         RoutingSyncHelper::populateAudioInputOptions(
@@ -1706,7 +1706,7 @@ SessionView::~SessionView() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     stopTimer();
@@ -3588,14 +3588,14 @@ void SessionView::setAudioEngine(AudioEngine* engine) {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->removeListener(this);
     }
     audioEngine_ = engine;
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->addMidiDeviceListListener(this);
-        if (auto* hardware = audioEngine_->getHardwareChannels())
+        if (auto* hardware = audioEngine_->getAudioIO())
             hardware->addListener(this);
         startTimerHz(30);  // 30Hz meter refresh
     } else {
