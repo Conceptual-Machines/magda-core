@@ -43,6 +43,11 @@ SourceRead sourceReadFor(const AudioEventPlayback& event, double deviceSampleRat
 /// reading delivers and what the callback consumes one of per output sample.
 ClipPlacement placementFor(const AudioEventPlayback& event, double deviceSampleRate);
 
+/// Whether the event begins between the two boundaries of its resolved reading.
+/// Reverse, loop phase and warp are included by resolving the same placement
+/// playback uses rather than inspecting the model's forward-file anchor.
+bool startsInsideSourceMaterial(const AudioEventPlayback& event, double deviceSampleRate);
+
 /**
  * @brief Reading samples consumed per output sample, at @p event's usual rate.
  *

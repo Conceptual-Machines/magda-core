@@ -62,10 +62,9 @@ double fadeRampPosition(FadeCurve curve, double alpha, bool rising);
  * intact. A gain fade would flatten the transient along with the step.
  *
  * What it is for is the discontinuity of starting mid-material: a locate into
- * the middle of a clip, a loop wrap into one, a voice that begins where the
- * file happens to be at full swing. A clip starting at its own edge has no
- * offset to remove and this costs it nothing, which is why it can be applied
- * wherever a voice begins rather than only where somebody decided it clicks.
+ * the middle of a clip, a loop wrap into one, or a trimmed clip edge. The
+ * caller bypasses it at a resolved source boundary so the source's own attack
+ * remains intact (#2040, #2457).
  *
  * It carries across blocks, which is why it is a small object rather than a
  * function. A ramp that stopped at the end of the block it started in would

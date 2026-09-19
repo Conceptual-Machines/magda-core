@@ -226,7 +226,7 @@ void ClipVoice::applyFade(juce::dsp::AudioBlock<float> region, EdgeSample region
 bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& event,
                        const BlockInfo& block, PrefetchStream& stream, ClipStretcher* stretcher,
                        int preRoll, juce::dsp::AudioBlock<float> scratch,
-                       juce::dsp::AudioBlock<float> out) {
+                       juce::dsp::AudioBlock<float> out, bool correctTrimmedStart) {
     // A voice handed a different entry is a new voice: whatever it played
     // before has nothing to do with where this one begins.
     if (!playing(clip.clipId, event.eventId)) {
@@ -419,14 +419,10 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     // after the timeline jumped, and the first after the reader came back from
     // an underrun. All three start the material wherever it happens to be.
     //
-    // Except one, and it is the whole reason this is a condition rather than a
-    // call. A voice starting at the beginning of what it plays is not starting
-    // mid-material: there is nothing before it to be discontinuous with, and
-    // what looks like a step is the material's own attack. De-clicking there
-    // subtracts the attack and decays the correction over the ramp, so a clip
-    // whose first sample is a transient loses it and gains 256 samples of tail.
-    // The corpus found exactly that on an impulse sitting on a clip edge
-    // (#2040), and the incumbent does not do it.
+    // Except at the source boundary. What looks like a step there is the
+    // material's own attack, and correcting it loses that transient (#2040).
+    // A clip edge can begin inside its source after trim, reverse, loop phase
+    // or warp resolution; that edge still needs the correction (#2457).
     //
     // A ramp longer than the block it starts in goes on into the next one. It
     // has to: clamping it to the block would make the same clip come out
@@ -435,7 +431,11 @@ bool ClipVoice::render(const AudioClipPlayback& clip, const AudioEventPlayback& 
     const auto beginsAtItsOwnStart = windowStart <= event.span.seconds.start + (0.5 / sampleRate_);
 
     if (!sounded_ || !block.continuous) {
-        if (beginsAtItsOwnStart)
+        const auto preservesSourceAttack =
+            beginsAtItsOwnStart &&
+            (!correctTrimmedStart || !startsInsideSourceMaterial(event, sampleRate_));
+
+        if (preservesSourceAttack)
             deClick_.reset();
         else
             deClick_.begin(region, clip.launchFadeSamples);
