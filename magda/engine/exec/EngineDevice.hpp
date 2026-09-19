@@ -89,7 +89,9 @@ struct DeviceBlock {
      */
     juce::MidiBuffer* midiOut = nullptr;
 
-    /// Where the note-ons written to @ref midiOut fall inside their samples.
+    /// Where the note-ons written to @ref midiOut fall inside their samples,
+    /// one entry per note-on in the order written. Left empty, each note-on
+    /// falls on its sample.
     NoteFractions* midiOutFractions = nullptr;
 
     /**

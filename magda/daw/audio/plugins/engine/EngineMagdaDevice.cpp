@@ -293,7 +293,7 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
         midiInScratch_.clear();
         midiOutScratch_.clear();
 
-        magda::engine::NoteOccurrences occurrences;
+        occurrences_.restart();
         if (block.midiIn != nullptr)
             for (const auto metadata : *block.midiIn) {
                 if (static_cast<int>(midiInScratch_.size()) >= midiInCapacity_) {
@@ -311,9 +311,9 @@ void EngineMagdaDevice::process(magda::engine::DeviceBlock& block) {
                     block.midiInFractions != nullptr && message.isNoteOn()
                         ? block.midiInFractions->at(metadata.samplePosition, message.getChannel(),
                                                     message.getNoteNumber(),
-                                                    occurrences.next(metadata.samplePosition,
-                                                                     message.getChannel(),
-                                                                     message.getNoteNumber()))
+                                                    occurrences_.next(metadata.samplePosition,
+                                                                      message.getChannel(),
+                                                                      message.getNoteNumber()))
                         : 0.0f;
                 message.setTimeStamp((metadata.samplePosition + static_cast<double>(fraction)) /
                                      sampleRate_);

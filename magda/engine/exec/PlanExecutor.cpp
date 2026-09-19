@@ -1942,8 +1942,14 @@ void PlanExecutor::renderOp(OpId id, const OpValue& published, const BlockInfo& 
             // What the device left on its output, for whatever the port feeds.
             // A device that produces MIDI and says nothing drops the panic,
             // which is what the fork does with its fresh output buffer.
-            if (producesMidi)
+            if (producesMidi) {
                 setMidiOutPanic(id, 1, deviceBlock.midiOutAllNotesOff);
+
+                // A device that said nothing about fractions, a hosted plugin
+                // among them, put every note on its sample (#2741).
+                if (auto& fractions = fractionsOut(id, 1); fractions.empty())
+                    fractions.addWhole(midiOut(id, 1));
+            }
 
             // Everything downstream reads slots at full width, so each port
             // has to fill one. A mono port's channel is copied to both sides,

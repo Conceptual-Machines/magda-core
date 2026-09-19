@@ -12,7 +12,10 @@
 #include "clip/ClipMidiSource.hpp"
 #include "clip/ClipSnapshotCompiler.hpp"
 #include "clip/EventPlacement.hpp"
+#include "exec/PlanExecutor.hpp"
+#include "exec/PlanValues.hpp"
 #include "io/SourceReaders.hpp"
+#include "plan/RenderPlan.hpp"
 
 /**
  * @file test_sample_rule.cpp
@@ -272,4 +275,132 @@ TEST_CASE("An audio clip on fractional positions renders the same at every block
         for (const auto blockSize : {64, 96, 4096})
             CHECK(render(blockSize) == reference);
     }
+}
+
+namespace {
+
+using magda::engine::DeviceBlock;
+using magda::engine::NoteFractions;
+using magda::engine::OpKind;
+using magda::engine::OpRole;
+using magda::engine::PlanOp;
+using magda::engine::PortRef;
+using magda::engine::SignalKind;
+
+/// Middle C at sample 5, 0.7 into it, loud.
+class FractionalNote final : public magda::engine::EngineMidiSource {
+  public:
+    void render(const BlockInfo&, juce::MidiBuffer& out) override {
+        out.addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(100)), 5);
+    }
+
+    void renderWithFractions(const BlockInfo& block, juce::MidiBuffer& out,
+                             NoteFractions& fractions) override {
+        render(block, out);
+        fractions.add(5, 1, 60, 0.7f);
+    }
+};
+
+/// Middle C at sample 5, quiet, and nothing said about where in the sample,
+/// which is what a hosted plugin's output is.
+class PlainNoteDevice final : public magda::engine::EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        block.audio.clear();
+        if (block.midiOut != nullptr)
+            block.midiOut->addEvent(juce::MidiMessage::noteOn(1, 60, static_cast<juce::uint8>(20)),
+                                    5);
+    }
+};
+
+/// Each note-on's velocity and the fraction it arrived with.
+class FractionProbe final : public magda::engine::EngineDevice {
+  public:
+    void process(DeviceBlock& block) override {
+        block.audio.clear();
+        magda::engine::NoteOccurrences occurrences;
+        for (const auto metadata : *block.midiIn)
+            if (const auto message = metadata.getMessage(); message.isNoteOn())
+                arrived.push_back(
+                    {message.getVelocity(),
+                     block.midiInFractions->at(
+                         metadata.samplePosition, message.getChannel(), message.getNoteNumber(),
+                         occurrences.next(metadata.samplePosition, message.getChannel(),
+                                          message.getNoteNumber()))});
+    }
+
+    std::vector<std::pair<int, float>> arrived;
+};
+
+PlanOp opOf(OpKind kind, OpRole role, magda::DeviceId device, std::vector<PortRef> inputs,
+            std::vector<magda::engine::PortDesc> outputs) {
+    PlanOp op;
+    op.kind = kind;
+    op.key.trackId = 1;
+    op.key.deviceId = device;
+    op.key.role = role;
+    op.inputs = std::move(inputs);
+    op.outputs = std::move(outputs);
+    return op;
+}
+
+}  // namespace
+
+TEST_CASE("A device that says nothing about fractions puts its notes on their samples",
+          "[engine][samples][2741]") {
+    // Its note-on merged ahead of a clip's on the same pitch and sample: without
+    // an entry of its own, it would take the clip's fraction and leave the
+    // clip's note none.
+    magda::engine::RenderPlan plan;
+    plan.ops.push_back(opOf(OpKind::ClipMidi, OpRole::ClipMidi, 0, {}, {SignalKind::Midi}));
+    plan.ops.push_back(opOf(OpKind::Device, OpRole::DeviceProcess, 8,
+                            {PortRef{}, PortRef{}, PortRef{}},
+                            {SignalKind::Audio, SignalKind::Midi}));
+    plan.ops.push_back(opOf(OpKind::MergeMidi, OpRole::ChainMidiMerge, 8,
+                            {PortRef{1, 1}, PortRef{0, 0}}, {SignalKind::Midi}));
+    plan.ops.push_back(opOf(OpKind::Device, OpRole::DeviceProcess, 9,
+                            {PortRef{1, 0}, PortRef{2, 0}, PortRef{}}, {SignalKind::Audio}));
+    plan.ops.push_back(opOf(OpKind::Output, OpRole::HardwareOutput, 0, {PortRef{3, 0}}, {}));
+    plan.outputOps = {4};
+    magda::engine::bakeScheduling(plan);
+
+    FractionalNote clip;
+    PlainNoteDevice plugin;
+    FractionProbe probe;
+    magda::engine::PlanBindings bindings;
+    bindings.clipMidi[1] = &clip;
+    bindings.devices[magda::engine::DeviceKey{8}] = &plugin;
+    bindings.devices[magda::engine::DeviceKey{9}] = &probe;
+
+    magda::engine::PlanExecutor executor;
+    const auto messages = executor.prepare(plan, bindings, RenderContext{kSampleRate, 64, 2});
+    for (const auto& message : messages)
+        UNSCOPED_INFO("prepare: " << message);
+    REQUIRE(messages.empty());
+
+    juce::AudioBuffer<float> output(2, 64);
+    executor.process(magda::engine::PlanValues{}, blockFrom(0, 64), output);
+
+    using Arrival = std::pair<int, float>;
+    CHECK(probe.arrived == std::vector<Arrival>{{20, 0.0f}, {100, 0.7f}});
+}
+
+TEST_CASE("A note-on's occurrence is counted however many share its sample",
+          "[engine][samples][2741]") {
+    // Past any fixed table: every pitch on every channel, then one pitch
+    // struck again and again, all on one sample.
+    magda::engine::NoteOccurrences occurrences;
+    occurrences.restart();
+
+    for (int channel = 1; channel <= 16; ++channel)
+        for (int note = 0; note < 128; ++note)
+            REQUIRE(occurrences.next(7, channel, note) == 0);
+
+    for (int again = 1; again < 600; ++again)
+        REQUIRE(occurrences.next(7, 1, 60) == again);
+
+    // A new sample, and a new walk, each start afresh.
+    CHECK(occurrences.next(8, 1, 60) == 0);
+    occurrences.restart();
+    CHECK(occurrences.next(8, 1, 60) == 0);
 }

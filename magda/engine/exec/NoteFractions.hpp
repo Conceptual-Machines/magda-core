@@ -2,8 +2,10 @@
 
 #include <juce_audio_basics/juce_audio_basics.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -87,32 +89,37 @@ class NoteFractions {
 /**
  * @brief Which occurrence of its pitch a note-on is, walking a buffer in order.
  *
- * What NoteFractions::at() asks for. Only the current sample is remembered,
- * since that is all an occurrence counts within.
+ * What NoteFractions::at() asks for, counted within the current sample. A
+ * counter per channel and note, emptied by moving to a new generation rather
+ * than by clearing, so neither the count of events nor of pitches is bounded.
  */
 class NoteOccurrences {
   public:
+    /// Before a buffer is walked: its first sample starts afresh.
+    void restart() {
+        sample_ = -1;
+    }
+
     int next(int sample, int channel, int note) {
         if (sample != sample_) {
             sample_ = sample;
-            count_ = 0;
+            ++generation_;
         }
 
-        const auto key = channel * 128 + note;
-        int seen = 0;
-        for (std::size_t at = 0; at < count_; ++at)
-            if (keys_[at] == key)
-                ++seen;
-
-        if (count_ < keys_.size())
-            keys_[count_++] = key;
-        return seen;
+        const auto key = static_cast<std::size_t>(std::clamp(channel - 1, 0, 15) * 128 +
+                                                  std::clamp(note, 0, 127));
+        if (generation_of_[key] != generation_) {
+            generation_of_[key] = generation_;
+            count_[key] = 0;
+        }
+        return count_[key]++;
     }
 
   private:
     int sample_ = -1;
-    std::size_t count_ = 0;
-    std::array<int, 256> keys_{};
+    std::uint64_t generation_ = 0;
+    std::array<std::uint64_t, 16 * 128> generation_of_{};
+    std::array<int, 16 * 128> count_{};
 };
 
 }  // namespace magda::engine
