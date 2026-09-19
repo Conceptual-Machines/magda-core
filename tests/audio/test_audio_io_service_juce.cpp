@@ -28,6 +28,7 @@ juce::StringArray numbered(const juce::String& prefix, int count) {
 
 /** @brief What the fake interfaces were last asked to open, which is what the driver sees. */
 struct OpenRequest {
+    juce::String backend;
     juce::String interfaceName;
     juce::BigInteger inputs;
     juce::BigInteger outputs;
@@ -38,8 +39,9 @@ struct OpenRequest {
 
 class FakeInterface final : public juce::AudioIODevice {
   public:
-    FakeInterface(const juce::String& name, int channelCount, std::shared_ptr<OpenRequest> request)
-        : juce::AudioIODevice(name, "Fake"),
+    FakeInterface(const juce::String& name, const juce::String& backend, int channelCount,
+                  std::shared_ptr<OpenRequest> request)
+        : juce::AudioIODevice(name, backend),
           channelCount_(channelCount),
           request_(std::move(request)) {}
 
@@ -63,7 +65,13 @@ class FakeInterface final : public juce::AudioIODevice {
         if (getName() == "Broken")
             return "The interface refused to open";
 
-        *request_ = {getName(), inputs, outputs, sampleRate, bufferSize, request_->opens + 1};
+        *request_ = {.backend = getTypeName(),
+                     .interfaceName = getName(),
+                     .inputs = inputs,
+                     .outputs = outputs,
+                     .sampleRate = sampleRate,
+                     .bufferSize = bufferSize,
+                     .opens = request_->opens + 1};
         inputs_ = inputs;
         outputs_ = outputs;
         sampleRate_ = sampleRate;
@@ -126,12 +134,11 @@ class FakeInterface final : public juce::AudioIODevice {
     bool open_ = false;
 };
 
-/** @brief "Virtual" advertises 128 channels each way and is the default, like #2528's ALSA
- * endpoint. */
+/** @brief Its default, "Virtual", has 128 channels each way, like #2528's ALSA endpoint. */
 class FakeBackend final : public juce::AudioIODeviceType {
   public:
-    explicit FakeBackend(std::shared_ptr<OpenRequest> request)
-        : juce::AudioIODeviceType("Fake"), request_(std::move(request)) {}
+    FakeBackend(const juce::String& name, std::shared_ptr<OpenRequest> request)
+        : juce::AudioIODeviceType(name), request_(std::move(request)) {}
 
     void scanForDevices() override {}
     juce::StringArray getDeviceNames(bool = false) const override {
@@ -151,7 +158,8 @@ class FakeBackend final : public juce::AudioIODeviceType {
         const auto name = output.isNotEmpty() ? output : input;
         if (!getDeviceNames().contains(name))
             return nullptr;
-        return new FakeInterface(name, name == "Virtual" ? kVirtualChannels : 2, request_);
+        return new FakeInterface(name, getTypeName(), name == "Virtual" ? kVirtualChannels : 2,
+                                 request_);
     }
 
   private:
@@ -164,7 +172,9 @@ struct Rig {
         magda::Config::getInstance().setAudioIO(std::move(saved));
 
         std::vector<std::unique_ptr<juce::AudioIODeviceType>> backends;
-        backends.push_back(std::make_unique<FakeBackend>(request));
+        // The same interfaces on both, as Windows Audio's shared and exclusive modes have.
+        backends.push_back(std::make_unique<FakeBackend>("Fake", request));
+        backends.push_back(std::make_unique<FakeBackend>("Fake Exclusive", request));
         service = std::make_unique<magda::AudioIOService>(std::move(backends),
                                                           tracktionSettings.getFile());
     }
@@ -284,6 +294,22 @@ class AudioIOServiceTest final : public juce::UnitTest {
             expect(magda::Config::getInstance().getAudioIO() == chosen);
         }
 
+        beginTest("switching backend reopens an interface of the same name on the new one");
+        {
+            Rig rig(savedOn("Stereo", {}, {0, 1}));
+            rig.service->open();
+            expectEquals(rig.request->backend, juce::String("Fake"));
+
+            auto exclusive = savedOn("Stereo", {}, {0, 1});
+            exclusive.backend = "Fake Exclusive";
+            expect(rig.service->apply(exclusive).isEmpty());
+
+            expectEquals(rig.request->backend, juce::String("Fake Exclusive"));
+            expectEquals(rig.request->opens, 2);
+            expectEquals(rig.service->getActiveConfiguration().backend,
+                         juce::String("Fake Exclusive"));
+        }
+
         beginTest("the active configuration reports what the interface opened");
         {
             Rig rig(savedOn("Virtual", {6, 7}, {0, 1}));
@@ -306,7 +332,7 @@ class AudioIOServiceTest final : public juce::UnitTest {
         {
             Rig rig(std::nullopt);
 
-            expect(rig.service->getBackendNames() == juce::StringArray{"Fake"});
+            expect(rig.service->getBackendNames() == juce::StringArray{"Fake", "Fake Exclusive"});
             expect(rig.service->getInterfaceNames("Fake", false) ==
                    juce::StringArray{"Virtual", "Stereo", "Broken"});
             expectEquals(rig.service->getChannelNames("Fake", "Stereo", true).size(), 2);

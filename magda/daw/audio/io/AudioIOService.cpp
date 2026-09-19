@@ -229,6 +229,12 @@ juce::String AudioIOService::openFitted(const AudioIOSettings& fitted) {
     xml->setAttribute("audioDeviceInChans", inputs.toString(2));
     xml->setAttribute("audioDeviceOutChans", outputs.toString(2));
 
+    // JUCE compares setups without the backend, so a same-named interface on another backend
+    // (Windows Audio's shared and exclusive modes) would keep the old device running.
+    if (auto* device = manager_.getCurrentAudioDevice();
+        device != nullptr && device->getTypeName() != juce::String(fitted.backend))
+        manager_.closeAudioDevice();
+
     auto error = manager_.initialise(0, 0, xml.get(), false);
     if (const auto active = getActiveConfiguration(); active.backend.isEmpty()) {
         log("no interface open");
