@@ -102,6 +102,7 @@ set(TEST_SOURCES
     # ChainNodePathDrag builds into magda_daw_app, so magda_tests needs it directly.
     ../magda/daw/ui/components/chain/ChainNodePathDrag.cpp
     ui/test_momentary_param_button.cpp
+    ui/test_clip_slot_button.cpp
     audio/test_delta_solo.cpp
     utilities/test_hash_combine.cpp
     clips/test_waveform_editor_absolute_mode.cpp

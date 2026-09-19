@@ -16,6 +16,8 @@ Hardware audio input reaching a track has focused
 [native audio input checks](../issues/native-audio-input.md).
 Native Arrangement audio capture and its live waveform have focused
 [Arrangement audio recording checks](../issues/native-arrangement-audio-recording.md).
+Native recording into audio Session slots has focused
+[Session audio recording checks](../issues/native-session-audio-recording.md).
 Scheduled punch recording has focused
 [native punch checks](../issues/native-punch-recording.md).
 The wider checklist below also covers hardware-dependent audio and latency
@@ -111,6 +113,9 @@ confirm once.
 
 - [ ] Arm an empty slot and launch it. Recording starts on the beat the
       launch fired, at each quantization setting — including None.
+- [ ] On a track with an audio input and MIDI `all`, the slot records audio,
+      draws its waveform, and becomes a looping audio clip with no Arrangement
+      clip created.
 - [ ] Re-launch mid-run: the take closes and a second one begins. The first
       is not extended.
 - [ ] A scene launch across several armed tracks: every take starts on the
