@@ -578,7 +578,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             expect(!preview->second.audioPeaks.empty());
         }
 
-        host.stopMidiRecording();
+        host.armSessionSlotRecording(track, 0);
         expect(!host.isSessionSlotRecordArmed(track, 0));
         expect(!host.isSessionSlotRecording(track, 0));
         expect(onlyAudioClip(track) == nullptr, "Session recording creates no Arrangement clip");

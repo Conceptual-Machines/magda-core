@@ -137,6 +137,12 @@ class ClipSlotButton : public juce::TextButton {
             return;
         }
 
+        if (!hasClip && slotIsRecording) {
+            if (onEmptySlotRecordClick)
+                onEmptySlotRecordClick();
+            return;
+        }
+
         const bool inStripArea = event.getPosition().getX() < PLAY_BUTTON_WIDTH;
 
         if (clicks >= 2) {
