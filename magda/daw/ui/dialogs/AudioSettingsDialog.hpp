@@ -3,6 +3,8 @@
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "../../audio/midi/ActiveMidiInputs.hpp"
+
 namespace magda {
 
 class AudioEngine;
@@ -98,6 +100,8 @@ class AudioSettingsDialog : public juce::Component,
     void savePreferencesIfNeeded();
     void onAudioEngineSelected();
 
+    /// Before the selector, which reads the ticks it sets.
+    std::unique_ptr<ActiveMidiInputs> activeMidiInputs_;
     std::unique_ptr<juce::AudioDeviceSelectorComponent> deviceSelector_;
     std::unique_ptr<CustomChannelSelector> inputChannelSelector_;
     std::unique_ptr<CustomChannelSelector> outputChannelSelector_;

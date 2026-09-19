@@ -3,6 +3,7 @@
 #include <functional>
 #include <unordered_set>
 
+#include "../../core/Config.hpp"
 #include "../../core/RackInfo.hpp"
 #include "../../core/TrackManager.hpp"
 #include "../MidiBridge.hpp"
@@ -271,7 +272,18 @@ bool MidiInputRouter::isSurfaceOnlyMidiInput(const juce::String& liveIdentifier,
     return std::ranges::any_of(keys, matchesLive);
 }
 
-void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
+bool MidiInputRouter::isUnheardMidiInput(const juce::String& liveIdentifier,
+                                         const juce::String& liveName) const {
+    return isSurfaceOnlyMidiInput(liveIdentifier, liveName) ||
+           !Config::getInstance().isMidiInputActive(liveName);
+}
+
+void MidiInputRouter::refreshActiveMidiInputs() {
+    removeUnheardMidiInputTargets();
+    updateMidiInputRouting();
+}
+
+void MidiInputRouter::removeUnheardMidiInputTargets() {
     auto* playbackContext = edit_.getCurrentPlaybackContext();
     if (!playbackContext)
         return;
@@ -281,7 +293,7 @@ void MidiInputRouter::removeSurfaceOnlyMidiInputTargets() {
 
     for (auto* inputDeviceInstance : playbackContext->getAllInputs()) {
         if (auto* midiDevice = getLiveMidiInputDevice(engine_, inputDeviceInstance)) {
-            if (!isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
+            if (!isUnheardMidiInput(midiDevice->getDeviceID(), midiDevice->getName()))
                 continue;
 
             for (const auto& trackInfo : tm.getTracks()) {
@@ -407,7 +419,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
                 if (midiDevice->getName() == "All MIDI Ins")
                     continue;
 
-                if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName()) ||
+                if (isUnheardMidiInput(midiDevice->getDeviceID(), midiDevice->getName()) ||
                     isExternalInstrumentSendbackInput(trackId, midiDevice->getName())) {
                     auto result = inputDeviceInstance->removeTarget(track->itemID, nullptr);
                     if (result)
@@ -462,7 +474,7 @@ void MidiInputRouter::setTrackMidiInput(TrackId trackId, const juce::String& mid
             // The sendback guard does NOT apply here: explicitly picking the
             // synth's own port is the record-its-keyboard workflow (Local
             // Control off on the synth); only "All Inputs" filters it out.
-            if (isSurfaceOnlyMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
+            if (isUnheardMidiInput(midiDevice->getDeviceID(), midiDevice->getName())) {
                 bool removedAnyRouting = false;
                 const auto matchesOwner = [midiDevice](auto* inputDeviceInstance) {
                     return &inputDeviceInstance->owner == midiDevice;
@@ -530,7 +542,7 @@ bool MidiInputRouter::setSessionSlotMidiRecordingTarget(TrackId trackId, int sce
             return false;
         if (midiDevice.getName() == "All MIDI Ins")
             return false;
-        if (isSurfaceOnlyMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
+        if (isUnheardMidiInput(midiDevice.getDeviceID(), midiDevice.getName()))
             return false;
         // No sendback guard here: arming a session slot is an explicit
         // capture intent, so the synth's own ports stay recordable.
@@ -627,7 +639,7 @@ void MidiInputRouter::setSurfaceOnlyMidiInputPort(const juce::String& midiDevice
         }
     }
 
-    removeSurfaceOnlyMidiInputTargets();
+    removeUnheardMidiInputTargets();
     updateMidiInputRouting();
 }
 

@@ -851,6 +851,8 @@ target_sources(magda_juce_tests PRIVATE
     ui/test_audio_driver_type_selection_juce.cpp
     # AudioIOService opening only the channels asked for (#2746)
     audio/test_audio_io_service_juce.cpp
+    # Audio Settings' Active MIDI inputs, saved in Config
+    audio/test_active_midi_inputs_juce.cpp
     # Tracktion keeping MIDI and opening no audio interface under native (#2747)
     engine/test_tracktion_without_audio_juce.cpp
     automation/test_tempo_sequence_ripple_juce.cpp

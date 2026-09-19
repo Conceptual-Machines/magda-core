@@ -530,6 +530,8 @@ bool TracktionEngineWrapper::initialisePlayback() {
     // Create AudioBridge for TrackManager synchronization
     audioBridge_ = std::make_unique<AudioBridge>(*engine_, *currentEdit_, meters_, deviceMeters_);
     audioBridge_->syncAll();
+    if (midiBridge_)
+        midiBridge_->onActiveInputsChanged = [this] { audioBridge_->refreshActiveMidiInputs(); };
 
 #ifndef MAGDA_NO_AUTO_TEMPO_LANE_SYNC
     // Keep the edit-scoped Tempo automation lane and tempoSequence in sync.
@@ -663,8 +665,10 @@ void TracktionEngineWrapper::shutdown() {
     ProjectManager::getInstance().onAfterLoad = std::move(previousAfterLoad_);
 
     // Clear MidiBridge's reference to AudioBridge before destroying it
-    if (midiBridge_)
+    if (midiBridge_) {
         midiBridge_->clearAudioBridge();
+        midiBridge_->onActiveInputsChanged = nullptr;
+    }
 
     // Destroy AudioBridge first (it references Edit and Engine)
     if (audioBridge_) {

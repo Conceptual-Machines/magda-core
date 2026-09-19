@@ -490,6 +490,8 @@ target_sources(magda_daw PRIVATE
     analysis/MixAnalysisInput.cpp
     analysis/OfflineMixAnalysis.cpp
     MidiBridge.cpp
+    midi/ActiveMidiInputs.cpp
+    midi/ActiveMidiInputs.hpp
     midi/MidiDeviceMatch.cpp
     midi/MidiInputRouter.cpp
     midi/MidiInputRouter.hpp

@@ -160,6 +160,7 @@ bool MagdaAudioEngine::initialize() {
     if (midi != nullptr) {
         midi->setMeters(&meters_);
         midi->setLiveSink(this);
+        midi->onActiveInputsChanged = [this] { host_->refreshMidiInputs(); };
     }
 
     initialised_ = true;
@@ -170,6 +171,7 @@ void MagdaAudioEngine::shutdown() {
     // be gone before the queue behind it is. setLiveSink(nullptr) returns only
     // once any in-flight MIDI callback has left.
     if (auto* midi = fork_->getMidiBridge()) {
+        midi->onActiveInputsChanged = nullptr;
         midi->setLiveSink(nullptr);
         midi->setMeters(nullptr);
     }

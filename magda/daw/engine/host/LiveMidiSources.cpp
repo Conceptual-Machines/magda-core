@@ -2,10 +2,16 @@
 
 #include <algorithm>
 
+#include "core/Config.hpp"
+
 namespace magda::daw::engine_host {
 
 void LiveMidiSources::registerAvailableDevices() {
-    registerAvailableDevices(juce::MidiInput::getAvailableDevices());
+    juce::Array<juce::MidiDeviceInfo> active;
+    for (const auto& device : juce::MidiInput::getAvailableDevices())
+        if (Config::getInstance().isMidiInputActive(device.name))
+            active.add(device);
+    registerAvailableDevices(std::move(active));
 }
 
 void LiveMidiSources::registerAvailableDevices(juce::Array<juce::MidiDeviceInfo> available) {

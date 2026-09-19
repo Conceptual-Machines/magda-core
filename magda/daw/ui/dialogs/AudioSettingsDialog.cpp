@@ -3,6 +3,7 @@
 #include <cstdlib>
 
 #include "../../audio/AudioDriverUtils.hpp"
+#include "../../audio/MidiBridge.hpp"
 #include "../../core/Config.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/AudioEngineChoice.hpp"
@@ -471,6 +472,8 @@ AudioSettingsDialog::AudioSettingsDialog(AudioEngine* audioEngine)
     engineRestartLabel_.setColour(juce::Label::textColourId, juce::Colours::white.withAlpha(0.72f));
     addAndMakeVisible(engineRestartLabel_);
 
+    activeMidiInputs_ = std::make_unique<ActiveMidiInputs>(*deviceManager_);
+
     // Create the device selector component (MIDI only, no audio device selection)
     deviceSelector_ = std::make_unique<juce::AudioDeviceSelectorComponent>(
         *deviceManager_,
@@ -540,6 +543,10 @@ void AudioSettingsDialog::comboBoxChanged(juce::ComboBox* comboBoxThatHasChanged
 void AudioSettingsDialog::changeListenerCallback(juce::ChangeBroadcaster* source) {
     if (source != deviceManager_)
         return;
+
+    if (activeMidiInputs_->saveChanges() && audioEngine_ != nullptr)
+        if (auto* midi = audioEngine_->getMidiBridge())
+            midi->activeInputsChanged();
 
     // The active driver / device may have changed (e.g. user switched to ASIO in
     // the selector). Re-list the combos against the now-current driver type.
