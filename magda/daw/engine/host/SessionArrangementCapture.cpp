@@ -89,6 +89,7 @@ bool SessionArrangementCapture::arm() {
         return false;
 
     capture_->armFromCurrent();
+    participating_ = true;
     reportOverflows();
     return true;
 }
@@ -100,6 +101,8 @@ bool SessionArrangementCapture::update(bool createClips) {
     for (const auto& retired : session_->takeRetiredRuns())
         capture_->apply(retired);
     capture_->update();
+    if (capture_->armed() && hasMaterial())
+        participating_ = true;
     reportOverflows();
     return collect(createClips);
 }
@@ -111,6 +114,7 @@ bool SessionArrangementCapture::disarm(bool createClips) {
     for (const auto& retired : session_->takeRetiredRuns())
         capture_->apply(retired);
     capture_->disarm();
+    participating_ = false;
     reportOverflows();
     return collect(createClips);
 }
@@ -130,10 +134,15 @@ void SessionArrangementCapture::reset() {
     revisionTempos_.clear();
     nextRevision_ = 0;
     reportedOverflows_ = 0;
+    participating_ = false;
 }
 
 bool SessionArrangementCapture::armed() const {
     return capture_ != nullptr && capture_->armed();
+}
+
+bool SessionArrangementCapture::ownsRecording() const {
+    return armed() && participating_;
 }
 
 bool SessionArrangementCapture::collect(bool createClips) {

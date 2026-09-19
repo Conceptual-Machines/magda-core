@@ -997,7 +997,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             }
             sessionSlotTargets_[trackId] = {.scene = sceneIndex};
         }
-        recording_ = sessionCapture_.armed() ||
+        recording_ = sessionCapture_.ownsRecording() ||
                      sessionPunchPending_.load(std::memory_order_acquire) ||
                      !recordingRoutes_.empty();
         launcher_.recordTargetsChanged();
@@ -1037,7 +1037,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (target.launched)
             stopMidiTake(trackId);
-        recording_ = sessionCapture_.armed() ||
+        recording_ = sessionCapture_.ownsRecording() ||
                      sessionPunchPending_.load(std::memory_order_acquire) ||
                      !recordingRoutes_.empty();
         publishClips();
@@ -1155,7 +1155,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             stopSessionSlotRecording(trackId);
 
         if (!arrangementRecording_) {
-            recording_ = sessionCapture_.armed() ||
+            recording_ = sessionCapture_.ownsRecording() ||
                          sessionPunchPending_.load(std::memory_order_acquire) ||
                          !recordingRoutes_.empty();
             return;
@@ -1188,7 +1188,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
                 stopMidiTake(trackId);
         }
 
-        recording_ = sessionCapture_.armed() ||
+        recording_ = sessionCapture_.ownsRecording() ||
                      sessionPunchPending_.load(std::memory_order_acquire) ||
                      !recordingRoutes_.empty();
     }
@@ -1317,7 +1317,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         }
         if (!finishedSlots.empty()) {
             launcher_.recordTargetsChanged();
-            recording_ = sessionCapture_.armed() ||
+            recording_ = sessionCapture_.ownsRecording() ||
                          sessionPunchPending_.load(std::memory_order_acquire) ||
                          !recordingRoutes_.empty();
             publishClips();

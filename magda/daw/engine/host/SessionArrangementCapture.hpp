@@ -62,6 +62,9 @@ class SessionArrangementCapture {
 
     bool armed() const;
 
+    /// Whether this capture has Session material and therefore keeps global recording alive.
+    bool ownsRecording() const;
+
   private:
     struct SourceKey {
         engine::SlotKey slot;
@@ -89,6 +92,9 @@ class SessionArrangementCapture {
     std::unordered_map<ClipId, double> revisionTempos_;
     std::uint64_t nextRevision_ = 0;
     std::uint64_t reportedOverflows_ = 0;
+
+    /// This recording window has had Session material whose intent must survive edits.
+    bool participating_ = false;
 };
 
 }  // namespace magda::daw::engine_host

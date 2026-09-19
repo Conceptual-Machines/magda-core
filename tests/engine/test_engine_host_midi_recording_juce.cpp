@@ -1089,9 +1089,11 @@ class EngineHostMidiRecordingTest final : public juce::UnitTest {
         devices.device->pump();
         expectEquals(host.recordingPreviews().at(trackId).notes[0].noteNumber, 62);
 
+        host.processSessionStateEvents();
         tracks.setTrackRecordArmed(trackId, false);
         settle();
         expect(host.recordingPreviews().empty(), "disarm clears the preview");
+        expect(!host.isRecording(), "an empty Session capture cannot retain recording");
         tracks.setTrackRecordArmed(trackId, true);
         expect(host.startMidiRecording(0.0));
         devices.device->pump();
