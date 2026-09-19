@@ -203,7 +203,7 @@ class EngineHostPublishTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { testRouteRemovalPanicsTheInput(); });
         magda::test::runWithCleanJuceState([this] { testDeviceConnectedAfterAPublishResolves(); });
         magda::test::runWithCleanJuceState([this] { testShapeChangesAreAPlanChange(); });
-        magda::test::runWithCleanJuceState([this] { testOnlyTrackMetersAreTapped(); });
+        magda::test::runWithCleanJuceState([this] { testReadMetersAreTapped(); });
         magda::test::runWithCleanJuceState([this] { testDevicePathsAreTheAddressesTheUIDraws(); });
         magda::test::runWithCleanJuceState([this] { testRackMeterReadsWhatTheRackRendered(); });
         magda::test::runWithCleanJuceState([this] { testModelParameterEditReachesTheDevice(); });
@@ -1215,8 +1215,8 @@ class EngineHostPublishTest final : public juce::UnitTest {
         engine.stop();
     }
 
-    void testOnlyTrackMetersAreTapped() {
-        beginTest("A meter nobody collects is declined");
+    void testReadMetersAreTapped() {
+        beginTest("Every meter the host reads is tapped");
 
         host::EngineRuntimeFactory factory;
 
@@ -1225,16 +1225,12 @@ class EngineHostPublishTest final : public juce::UnitTest {
         deviceMeter.deviceId = 1;
         deviceMeter.role = magda::engine::OpRole::DeviceMeter;
 
-        magda::engine::OpKey inputMeter;
-        inputMeter.trackId = 1;
-        inputMeter.role = magda::engine::OpRole::LiveInputMeter;
-
         expect(factory.createMeter(magda::engine::trackMeterKey(1)) != nullptr,
                "A track's output level is read");
         expect(factory.createMeter(deviceMeter) != nullptr,
                "So is a device slot's, which the chain UI draws (#2570)");
-        expect(factory.createMeter(inputMeter) == nullptr,
-               "A monitored input's is still nobody's (#1895)");
+        expect(factory.createMeter(magda::engine::liveInputMeterKey(1)) != nullptr,
+               "And a live input's, which a monitoring track shows (#2553)");
     }
 
     /// The write half of #2613: a control moved on one of MAGDA's own devices

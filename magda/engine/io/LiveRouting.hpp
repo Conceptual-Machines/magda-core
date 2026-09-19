@@ -8,10 +8,11 @@
 
 /**
  * @file LiveRouting.hpp
- * @brief Which live MIDI a track hears, as one published snapshot (#2592).
+ * @brief Which live input a track hears, as one published snapshot (#2592).
  *
- * The engine knows opaque source ids. Turning a device name, a monitor mode and
- * an arm into these is the host's (LiveMidiRouting.hpp).
+ * The engine knows opaque source ids and callback channel indices. Turning a
+ * device name, a monitor mode and an arm into these is the host's
+ * (LiveMidiRouting.hpp, HardwareInputMap.hpp).
  */
 
 namespace magda::engine {
@@ -46,6 +47,16 @@ struct TrackLiveMidi {
     bool operator==(const TrackLiveMidi&) const = default;
 };
 
+/** @brief The hardware input channels one track reads (#2553). */
+struct TrackLiveAudio {
+    TrackId trackId = INVALID_TRACK_ID;
+
+    /// Indices into the callback's input channels. Empty reads silence.
+    std::vector<int> channels;
+
+    bool operator==(const TrackLiveAudio&) const = default;
+};
+
 /**
  * @brief Every track's routing for one reading of the model.
  *
@@ -55,11 +66,25 @@ struct LiveRouting {
     /// Sorted by trackId, which @ref find binary-searches.
     std::vector<TrackLiveMidi> tracks;
 
-    /** @brief @p trackId's entry, or null. */
+    /// Sorted by trackId. Only tracks whose input names a hardware channel.
+    std::vector<TrackLiveAudio> audio;
+
+    /** @brief @p trackId's MIDI entry, or null. */
     const TrackLiveMidi* find(TrackId trackId) const {
-        const auto byId = [](const TrackLiveMidi& entry, TrackId id) { return entry.trackId < id; };
-        const auto found = std::lower_bound(tracks.begin(), tracks.end(), trackId, byId);
-        return found != tracks.end() && found->trackId == trackId ? &*found : nullptr;
+        return findIn(tracks, trackId);
+    }
+
+    /** @brief @p trackId's audio entry, or null. */
+    const TrackLiveAudio* findAudio(TrackId trackId) const {
+        return findIn(audio, trackId);
+    }
+
+  private:
+    template <typename Entry>
+    static const Entry* findIn(const std::vector<Entry>& entries, TrackId trackId) {
+        const auto byId = [](const Entry& entry, TrackId id) { return entry.trackId < id; };
+        const auto found = std::lower_bound(entries.begin(), entries.end(), trackId, byId);
+        return found != entries.end() && found->trackId == trackId ? &*found : nullptr;
     }
 };
 

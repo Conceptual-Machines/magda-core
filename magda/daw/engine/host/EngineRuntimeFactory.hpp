@@ -125,7 +125,7 @@ class EngineRuntimeFactory final : public engine::RuntimeStateFactory {
     std::unique_ptr<engine::EngineMidiSource> createSessionMidiSource(TrackId trackId) override;
 
     /// The published routing supplies what the track hears (LiveRouting.hpp).
-    /// createAudioInput stays unoverridden; live audio is #2553's.
+    std::unique_ptr<engine::EngineAudioSource> createAudioInput(TrackId trackId) override;
     std::unique_ptr<engine::EngineMidiSource> createMidiInput(TrackId trackId) override;
 
   private:

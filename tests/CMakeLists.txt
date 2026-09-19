@@ -410,6 +410,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_engine_session.cpp)
     list(APPEND TEST_SOURCES engine/test_live_midi_collector.cpp)
     list(APPEND TEST_SOURCES engine/test_live_midi_routing.cpp)
+    list(APPEND TEST_SOURCES engine/test_hardware_input_map.cpp)
     # The parameter lane (#2116). The lanes are fed by hand, so the precedence
     # rules are testable before anything writes them.
     list(APPEND TEST_SOURCES engine/test_param_lane.cpp)
@@ -866,6 +867,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+        engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp

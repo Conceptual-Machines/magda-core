@@ -297,6 +297,9 @@ class AudioEngine : public AudioEngineListener {
     virtual std::map<int, juce::String> getOutputDeviceNamesByChannel() const {
         return {};
     }
+    virtual std::map<int, juce::String> getInputDeviceNamesByChannel() const {
+        return {};
+    }
     virtual void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) = 0;
     virtual void rescanWaveDevices(bool enableInputs, bool enableOutputs) = 0;
     virtual bool isDevicesLoading() const = 0;
