@@ -474,6 +474,7 @@ ClipId ClipManager::createRecordedAudioClip(TrackId trackId, RecordedAudioClipDa
     event.speedRatio = 1.0;
     event.seedInterpretationFromSource();
     auto& active = clip.audio().addEvent(event);
+    clip.syncSingleEventToClipBounds();
     active.loopStartSamples = 0;
     active.setLoopExtent(RegionExtent::WholeSource);
     active.adoptBpm(projectBpm, Provenance::User);

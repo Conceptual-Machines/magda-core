@@ -454,6 +454,16 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
             }
         }
 
+        host.stopPlaying();
+        host.locateSeconds(0.0);
+        host.play();
+        settle(host);
+        const auto playback = devices.device->pump();
+        expectWithinAbsoluteError(playback.left, levelOf(2), 0.0001f,
+                                  "the recorded clip plays through the track");
+        expectWithinAbsoluteError(playback.right, levelOf(3), 0.0001f,
+                                  "recorded stereo reaches both outputs");
+
         host.stop();
         devices.closeAudioDevice();
     }

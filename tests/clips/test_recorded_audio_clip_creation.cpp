@@ -58,6 +58,8 @@ TEST_CASE("A recorded audio clip is published as one complete model change",
     REQUIRE(clip != nullptr);
     REQUIRE(clip->audio().takes == takeModel.takes);
     REQUIRE(clip->audio().currentTakeIndex == 1);
+    REQUIRE(clip->primaryEvent()->startBeat == 0.0);
+    REQUIRE(clip->primaryEvent()->lengthBeats == 2.0);
     REQUIRE(clip->primaryEvent()->interpTotalBeats == 2.0);
 
     clips.clearAllClips();

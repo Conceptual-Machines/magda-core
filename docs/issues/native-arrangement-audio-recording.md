@@ -93,8 +93,8 @@ from deleted/project-replaced tracks also remain outside this slice.
 - A Release build was not run.
 
 The callback fixture covers Monitor Off capture, packed stereo content, the
-live peak preview, device input-latency head correction, disarm finalization,
-and device-stop cleanup. The recorder unit suite remains the focused evidence
-for count-in and loop-pass file boundaries. Hardware listening and latency feel
-still require the checks above and the broader
+live peak preview, device input-latency head correction, playback of the
+materialized clip, disarm finalization, and device-stop cleanup. The recorder
+unit suite remains the focused evidence for count-in and loop-pass file
+boundaries. Hardware listening and latency feel still require the checks above and the broader
 [recording smoke tests](../smoke-tests/recording.md).
