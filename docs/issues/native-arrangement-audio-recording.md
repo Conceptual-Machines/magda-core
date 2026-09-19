@@ -94,10 +94,10 @@ remain outside this slice.
 - The Debug `magda_tests`, `magda_juce_tests`, and `magda_daw_app` targets
   built.
 - The recording and plan-swap filters passed 1,232 assertions across 78 cases.
-- `Engine Host Audio Input` passed thirteen callback cases, including post-roll,
+- `Engine Host Audio Input` passed fourteen callback cases, including post-roll,
   three-second correction bounds, device-rebuild continuity, and Session audio
   target isolation from Arrangement.
-- `Engine Host MIDI Recording` passed its 36 cases, including non-zero
+- `Engine Host MIDI Recording` passed its 37 cases, including non-zero
   output-latency post-roll; `Engine Host
   Session Arrangement Capture` passed its ten cases, and `Magda Audio Engine
   Tests` passed its three cases.

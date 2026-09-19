@@ -220,6 +220,7 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
         magda::test::runWithCleanJuceState([this] { inputChangeContinuesAfterPostRoll(); });
         magda::test::runWithCleanJuceState([this] { deviceRestartSplitsRecording(); });
         magda::test::runWithCleanJuceState([this] { recordsIntoAnArmedSessionSlot(); });
+        magda::test::runWithCleanJuceState([this] { globalStopKeepsSessionClipPlaying(); });
         magda::test::runWithCleanJuceState([this] { filledSessionSlotPreservesTake(); });
     }
 
@@ -766,6 +767,45 @@ class EngineHostAudioInputTest final : public juce::UnitTest {
                "the recorded file survives outside the occupied slot");
         expect(onlySessionAudioClip(track) == nullptr);
         expect(!host.isSessionSlotRecordArmed(track, 1));
+
+        host.stop();
+        devices.closeAudioDevice();
+    }
+
+    void globalStopKeepsSessionClipPlaying() {
+        beginTest("Record-off lets a deferred audio Session clip keep playing");
+
+        InputPumpManager devices;
+        expect(devices.initialise(kInputs, 2, nullptr, true).isEmpty());
+        if (devices.device == nullptr)
+            return;
+        devices.device->inputLatencySamples = kInputLatency;
+        devices.device->outputLatencySamples = kOutputLatency;
+        auto& tracks = magda::TrackManager::getInstance();
+        const auto track = tracks.createTrack("Continuing audio Session take");
+        tracks.setTrackAudioInput(track, "Loopback 1");
+        tracks.setTrackRecordArmed(track, true);
+
+        Host host;
+        host.setHardwareInputProvider([] { return loopbackCatalog(); });
+        host.start(devices);
+        settle(host);
+        host.armSessionSlotRecording(track, 0);
+        host.beginArmedSessionSlotRecordings(0.0);
+        for (auto block = 0; block < 3; ++block)
+            devices.device->pump();
+
+        host.stopMidiRecording();
+        devices.device->pump();
+        settle(host);
+        const auto* clip = onlySessionAudioClip(track);
+        expect(clip != nullptr);
+        devices.device->pump();
+        host.processSessionStateEvents();
+        if (clip != nullptr)
+            expect(host.sessionClipPlayState(clip->id) == magda::SessionClipPlayState::Playing,
+                   "global Record-off preserves a successful Session handover");
+        expect(tracks.getTrack(track)->playbackMode == magda::TrackPlaybackMode::Session);
 
         host.stop();
         devices.closeAudioDevice();
