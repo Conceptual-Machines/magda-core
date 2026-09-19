@@ -493,6 +493,15 @@ void AudioSettingsDialog::changeListenerCallback(juce::ChangeBroadcaster* source
     // The JUCE selector changes the backend, rate and block size on the manager itself.
     keepSelectorChanges();
 
+    // A channel toggle reopens the interface too, and its lists are already right.
+    const auto chosen = audio_->chosen();
+    if (chosen.backend == listed_.backend && chosen.inputInterface == listed_.inputInterface &&
+        chosen.outputInterface == listed_.outputInterface) {
+        showOpenInterface();
+        hideDeviceRefreshIndicator();
+        return;
+    }
+
     showDeviceRefreshIndicator(true);
     refreshChosenInterface();
     hideDeviceRefreshIndicator();
@@ -672,6 +681,8 @@ void AudioSettingsDialog::showDeviceRefreshIndicator(bool flushRepaint) {
 }
 
 void AudioSettingsDialog::hideDeviceRefreshIndicator() {
+    if (!deviceRefreshSpinner_.isVisible())
+        return;
     deviceRefreshSpinner_.setVisible(false);
     deviceRefreshLabel_.setVisible(false);
     resized();
@@ -766,10 +777,15 @@ void AudioSettingsDialog::keepSelectorChanges() {
 }
 
 void AudioSettingsDialog::refreshChosenInterface() {
+    listed_ = audio_->chosen();
     populateDeviceLists();
     inputChannelSelector_->refresh();
     outputChannelSelector_->refresh();
+    showOpenInterface();
+    resized();
+}
 
+void AudioSettingsDialog::showOpenInterface() {
     if (auto* device = deviceManager_->getCurrentAudioDevice()) {
         deviceNameLabel_.setText("Current Interface: " + device->getName() + " (" +
                                      juce::String(device->getInputChannelNames().size()) + " in, " +
@@ -778,7 +794,6 @@ void AudioSettingsDialog::refreshChosenInterface() {
     } else {
         deviceNameLabel_.setText("No audio interface open", juce::dontSendNotification);
     }
-    resized();
 }
 
 void AudioSettingsDialog::savePreferencesIfNeeded() {

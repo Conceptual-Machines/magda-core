@@ -108,7 +108,9 @@ class AudioSettingsDialog : public juce::Component,
     /** @brief Keep the backend, rate and block size the JUCE selector changed on the manager. */
     void keepSelectorChanges();
 
+    /** @brief Relist the interfaces and their channels, after the backend or an interface moved. */
     void refreshChosenInterface();
+    void showOpenInterface();
     void savePreferencesIfNeeded();
     void onAudioEngineSelected();
 
@@ -138,6 +140,9 @@ class AudioSettingsDialog : public juce::Component,
     juce::AudioDeviceManager* deviceManager_;
     AudioEngine* audioEngine_;
     AudioIOControl* audio_;
+
+    /// The backend and interfaces the lists show, so a channel toggle does not rebuild them.
+    AudioIOSettings listed_;
     juce::ComboBox* driverTypeComboBox_ = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioSettingsDialog)
