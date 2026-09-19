@@ -53,13 +53,35 @@ BlockInfo blockFrom(std::int64_t fromSample, const TempoMap* tempo = nullptr) {
 TEST_CASE("An event lands on a sample the block plays", "[engine][block][samples]") {
     const auto block = blockFrom(0);
 
-    CHECK(block.eventForTime(block.seconds.start) == EventSample{0});
-    CHECK(block.eventForBeat(block.beats.start) == EventSample{0});
+    CHECK(block.eventForTime(block.seconds.start).value == 0);
+    CHECK(block.eventForBeat(block.beats.start).value == 0);
 
     // Inside a sample rather than nearest to it: what plays at a moment is the
     // sample that moment is within.
     const auto halfWay = block.seconds.start + (100.6 / kSampleRate);
-    CHECK(block.eventForTime(halfWay) == EventSample{100});
+    CHECK(block.eventForTime(halfWay).value == 100);
+}
+
+TEST_CASE("An instant keeps how far into its sample it falls", "[engine][block][samples][2741]") {
+    const auto block = blockFrom(0);
+
+    // Mid-block and on the last sample, where nearest would have reached 512.
+    for (const auto sample : {100, kBlockSize - 1}) {
+        for (const auto fraction : {0.4, 0.9}) {
+            const auto moment = block.seconds.start + ((sample + fraction) / kSampleRate);
+            const auto event = block.eventForTime(moment);
+
+            CHECK(event.value == sample);
+            CHECK(event.fraction == Catch::Approx(fraction).margin(1e-6));
+
+            // An edge at the same instant is on the same sample: one rule.
+            CHECK(block.edgeForTime(moment) == EdgeSample{sample});
+        }
+    }
+
+    // Within the epsilon of the next sample is that sample, at no fraction.
+    const auto nearlyNext = block.seconds.start + ((200.0 - 1.0e-4) / kSampleRate);
+    CHECK(block.eventForTime(nearlyNext) == EventSample{200});
 }
 
 TEST_CASE("No event is ever placed past the block's last sample",
@@ -72,8 +94,8 @@ TEST_CASE("No event is ever placed past the block's last sample",
     // started there starts nothing.
     const auto lastSample = block.seconds.end - (0.25 / kSampleRate);
 
-    CHECK(block.eventForTime(lastSample) == EventSample{kBlockSize - 1});
-    CHECK(block.eventForBeat(block.beats.end - 1e-9) == EventSample{kBlockSize - 1});
+    CHECK(block.eventForTime(lastSample).value == kBlockSize - 1);
+    CHECK(block.eventForBeat(block.beats.end - 1e-9).value == kBlockSize - 1);
 }
 
 TEST_CASE("A moment on the boundary is the next block's first sample",
@@ -86,8 +108,8 @@ TEST_CASE("A moment on the boundary is the next block's first sample",
     const auto boundary = first.seconds.end;
     REQUIRE(boundary == Catch::Approx(second.seconds.start));
 
-    CHECK(second.eventForTime(boundary) == EventSample{0});
-    CHECK(second.eventForBeat(second.beats.start) == EventSample{0});
+    CHECK(second.eventForTime(boundary).value == 0);
+    CHECK(second.eventForBeat(second.beats.start).value == 0);
 }
 
 TEST_CASE("An edge may be the boundary past the last sample", "[engine][block][samples]") {

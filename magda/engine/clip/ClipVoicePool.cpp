@@ -262,7 +262,7 @@ std::int64_t ClipVoicePool::cueFor(const AudioClipPlayback& clip, const AudioEve
 
     const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
 
-    return static_cast<std::int64_t>(std::llround(position)) + ahead - reader.preRoll;
+    return firstSampleFrom(position) + ahead - reader.preRoll;
 }
 
 ClipVoicePool::Reader ClipVoicePool::open(const AudioClipPlayback& clip,
@@ -333,10 +333,8 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
     if (reader.stream == nullptr)
         return;
 
-    const auto eventStart =
-        static_cast<std::int64_t>(std::llround(event.span.seconds.start * context_.sampleRate));
-    const auto loopSample =
-        static_cast<std::int64_t>(std::llround(loopSeconds * context_.sampleRate));
+    const auto eventStart = sampleAt(event.span.seconds.start * context_.sampleRate);
+    const auto loopSample = sampleAt(loopSeconds * context_.sampleRate);
     const auto cueSeconds =
         reader.stretcher != nullptr
             ? static_cast<double>(eventStart + static_cast<std::int64_t>(std::floor(
@@ -350,8 +348,7 @@ void ClipVoicePool::prepareLoopDestination(Reader& reader, const AudioClipPlayba
                                  context_.sampleRate);
     };
     const auto ahead = reader.stretcher != nullptr ? reader.stretcher->readAheadSamples() : 0;
-    const auto start =
-        static_cast<std::int64_t>(std::llround(readingAt(cueSeconds))) + ahead - reader.preRoll;
+    const auto start = firstSampleFrom(readingAt(cueSeconds)) + ahead - reader.preRoll;
     const auto maxRetainedReading = maxReadingSamples(
         static_cast<int>(std::ceil(context_.sampleRate * kReadAheadBridgeSeconds)));
     const auto retainedReading = static_cast<int>(

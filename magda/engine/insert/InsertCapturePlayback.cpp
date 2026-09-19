@@ -173,8 +173,8 @@ std::unique_ptr<InsertCapturePlayback> InsertCapturePlayback::create(const Inser
     midi.reserve(capture.midi().size());
     for (const auto& event : capture.midi()) {
         auto moved = event;
-        moved.sample = std::llround(static_cast<double>(event.sample) / capture.sampleRate() *
-                                    context.sampleRate);
+        moved.sample =
+            sampleAt(static_cast<double>(event.sample) / capture.sampleRate() * context.sampleRate);
         midi.push_back(moved);
     }
 
@@ -204,7 +204,7 @@ void InsertCapturePlayback::receive(const BlockInfo& block, juce::dsp::AudioBloc
         return;
 
     const auto blockStart =
-        std::llround((block.seconds.start - window_.startSeconds) * sampleRate_);
+        firstSampleFrom((block.seconds.start - window_.startSeconds) * sampleRate_);
     const auto length = static_cast<std::int64_t>(audio_.getNumSamples());
 
     const auto from = std::max<std::int64_t>(blockStart, 0);

@@ -63,7 +63,7 @@ void InsertCaptureSession::receive(const BlockInfo& block, juce::dsp::AudioBlock
 
     const auto windowSamples = static_cast<std::int64_t>(writtenBy_.size());
     const auto blockStart =
-        std::llround((block.seconds.start - window_.startSeconds) * sampleRate_);
+        firstSampleFrom((block.seconds.start - window_.startSeconds) * sampleRate_);
 
     // The part of the block the window holds.
     const auto from = std::max<std::int64_t>(blockStart, 0);

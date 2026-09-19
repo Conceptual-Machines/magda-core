@@ -193,9 +193,8 @@ class EngineExternalDevice::PlayHead final : public juce::AudioPlayHead {
     void setBlock(const magda::engine::BlockInfo& block, double sampleRate) {
         playing_.store(block.playing, std::memory_order_relaxed);
         timeSeconds_.store(block.seconds.start, std::memory_order_relaxed);
-        timeSamples_.store(
-            static_cast<std::int64_t>(std::llround(block.seconds.start * sampleRate)),
-            std::memory_order_relaxed);
+        timeSamples_.store(magda::engine::sampleAt(block.seconds.start * sampleRate),
+                           std::memory_order_relaxed);
         ppqPosition_.store(block.beats.start, std::memory_order_relaxed);
 
         if (block.tempo == nullptr) {

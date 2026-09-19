@@ -42,7 +42,8 @@ struct ClipPlacement {
 };
 
 /**
- * @brief The sample that plays at @p seconds on the timeline.
+ * @brief The sample that an output sample starting at @p seconds plays: the
+ * first of the reading at or after where it reads (TimeDomains::firstSampleFrom).
  *
  * At @p sampleRate, the device's rate, not the file's, and that is not a slip.
  * One sample of the reading is consumed per output sample, so a position
@@ -59,7 +60,7 @@ struct ClipPlacement {
 inline std::int64_t sourceSampleAt(const ClipPlacement& placement, double seconds,
                                    double sampleRate) {
     const auto into = (seconds - placement.seconds.start) * sampleRate;
-    return placement.sourceOffsetSamples + static_cast<std::int64_t>(std::llround(into));
+    return placement.sourceOffsetSamples + firstSampleFrom(into);
 }
 
 }  // namespace magda::engine
