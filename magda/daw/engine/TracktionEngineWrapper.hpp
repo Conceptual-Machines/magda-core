@@ -17,6 +17,7 @@
 #include "../interfaces/track_interface.hpp"
 #include "../interfaces/transport_interface.hpp"
 #include "AudioEngine.hpp"
+#include "TracktionHardwareChannels.hpp"
 
 namespace magda {
 
@@ -200,9 +201,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Device management
     juce::AudioDeviceManager* getDeviceManager() override;
-    juce::BigInteger getEnabledWaveChannels(bool input) const override;
-    std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
-    std::map<int, juce::String> getInputDeviceNamesByChannel() const override;
+    HardwareChannels* getHardwareChannels() override;
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override {
@@ -668,6 +667,7 @@ class TracktionEngineWrapper : public AudioEngine,
 
     // Tracktion Engine components
     std::unique_ptr<tracktion::Engine> engine_;
+    std::unique_ptr<TracktionHardwareChannels> hardwareChannels_;
     std::unique_ptr<tracktion::Edit> currentEdit_;
 
     // Position-aware beats<->seconds facade over currentEdit_->tempoSequence.

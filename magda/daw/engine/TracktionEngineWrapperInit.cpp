@@ -345,6 +345,7 @@ bool TracktionEngineWrapper::initialiseServices() {
         std::make_unique<MagdaPropertyStorage>("MAGDA", opensAudioInterface_),
         std::make_unique<MagdaUIBehaviour>(),
         std::make_unique<MagdaEngineBehaviour>(opensAudioInterface_));
+    hardwareChannels_ = std::make_unique<TracktionHardwareChannels>(engine_->getDeviceManager());
 
     // Here rather than in the AudioBridge's constructor, which is the fork's
     // and is never built under the native engine (#2600). The provider asks
@@ -632,6 +633,7 @@ void TracktionEngineWrapper::shutdown() {
     if (engine_) {
         engine_->getDeviceManager().removeChangeListener(this);
     }
+    hardwareChannels_.reset();
 
     // CRITICAL: Close all plugin windows FIRST (before plugins are destroyed)
     // This prevents malloc errors from windows trying to access destroyed plugins

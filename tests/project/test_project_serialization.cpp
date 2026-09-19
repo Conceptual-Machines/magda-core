@@ -216,8 +216,8 @@ class ProjectBoundaryResetEngine : public AudioEngine {
         return nullptr;
     }
 
-    juce::BigInteger getEnabledWaveChannels(bool) const override {
-        return {};
+    HardwareChannels* getHardwareChannels() override {
+        return nullptr;
     }
 
     void setEnabledWaveChannels(bool, const juce::BigInteger&) override {}

@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "../api/magda_api_live.hpp"
-#include "../audio/io/HardwareRouteNames.hpp"
 #include "../core/TrackManager.hpp"
 #include "../core/UndoManager.hpp"  // complete type for the unique_ptr this forwards
 #include "RenderProgressWindow.hpp"
@@ -30,11 +29,9 @@ std::vector<std::string_view>& unwiredSoFar() {
 /** @brief The channels @p audioIO has open one way, under the names saved routes use. */
 magda::daw::engine_host::EngineHost::HardwareChannelCatalog hardwareCatalog(
     const magda::AudioIOService& audioIO, bool inputs) {
-    const auto active = audioIO.getActiveConfiguration();
-    const auto& open = inputs ? active.inputChannels : active.outputChannels;
-    return {.enabledChannels = open,
-            .namesByChannel = magda::routeNamesByChannel(
-                inputs ? active.inputChannelNames : active.outputChannelNames, open, inputs)};
+    auto direction = inputs ? audioIO.inputs() : audioIO.outputs();
+    return {.enabledChannels = std::move(direction.open),
+            .namesByChannel = std::move(direction.routeNames)};
 }
 }  // namespace
 
@@ -326,14 +323,8 @@ void MagdaAudioEngine::processSessionStateEvents() {
 juce::AudioDeviceManager* MagdaAudioEngine::getDeviceManager() {
     return &audioIO_->getDeviceManager();
 }
-juce::BigInteger MagdaAudioEngine::getEnabledWaveChannels(bool input) const {
-    return hardwareCatalog(*audioIO_, input).enabledChannels;
-}
-std::map<int, juce::String> MagdaAudioEngine::getOutputDeviceNamesByChannel() const {
-    return hardwareCatalog(*audioIO_, false).namesByChannel;
-}
-std::map<int, juce::String> MagdaAudioEngine::getInputDeviceNamesByChannel() const {
-    return hardwareCatalog(*audioIO_, true).namesByChannel;
+HardwareChannels* MagdaAudioEngine::getHardwareChannels() {
+    return audioIO_.get();
 }
 void MagdaAudioEngine::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
     // Audio Settings' channel toggles: exactly these open, and are saved (#2747).
@@ -350,7 +341,7 @@ void MagdaAudioEngine::rescanWaveDevices(bool, bool) {
     if (audioIO_->getActiveConfiguration().backend.isNotEmpty())
         audioIO_->apply(audioIO_->openSettings());
 }
-void MagdaAudioEngine::audioIOChanged() {
+void MagdaAudioEngine::hardwareChannelsChanged() {
     host_->refreshHardwareOutputs();
     host_->refreshHardwareInputs();
 }

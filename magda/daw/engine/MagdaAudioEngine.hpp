@@ -81,7 +81,7 @@ namespace magda {
 
 class MagdaAudioEngine final : public AudioEngine,
                                public LiveMidiSink,
-                               private AudioIOService::Listener {
+                               private HardwareChannels::Listener {
   public:
     explicit MagdaAudioEngine(AudioEngineOptions options);
     ~MagdaAudioEngine() override;
@@ -128,9 +128,7 @@ class MagdaAudioEngine final : public AudioEngine,
     void updateTriggerState() override;
     void processSessionStateEvents() override;
     juce::AudioDeviceManager* getDeviceManager() override;
-    juce::BigInteger getEnabledWaveChannels(bool input) const override;
-    std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
-    std::map<int, juce::String> getInputDeviceNamesByChannel() const override;
+    HardwareChannels* getHardwareChannels() override;
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override;
@@ -261,7 +259,7 @@ class MagdaAudioEngine final : public AudioEngine,
     /** @brief Say once that @p method has not moved to magda::engine yet. */
     void reportUnwired(const char* method, const char* issue) const;
 
-    void audioIOChanged() override;
+    void hardwareChannelsChanged() override;
 
     /// Track and master meters, fed by the host (#2579).
     TrackMeters meters_;

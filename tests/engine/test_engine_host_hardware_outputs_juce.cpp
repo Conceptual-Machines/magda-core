@@ -8,7 +8,6 @@
 
 #include "JuceTestStateGuard.hpp"
 #include "magda/daw/audio/io/AudioIOService.hpp"
-#include "magda/daw/audio/io/HardwareRouteNames.hpp"
 #include "magda/daw/audio/plugins/compiled/MagdaPolySynthCompiledPlugin.hpp"
 #include "magda/daw/core/TrackManager.hpp"
 #include "magda/daw/engine/host/EngineHost.hpp"
@@ -323,9 +322,9 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
     }
 
     /** @brief The native engine's wiring: routes named as saved, masks from what is open. */
-    struct AudioIORefresh final : magda::AudioIOService::Listener {
+    struct AudioIORefresh final : magda::HardwareChannels::Listener {
         explicit AudioIORefresh(magda::daw::engine_host::EngineHost& host) : host(host) {}
-        void audioIOChanged() override {
+        void hardwareChannelsChanged() override {
             host.refreshHardwareOutputs();
         }
         magda::daw::engine_host::EngineHost& host;
@@ -361,11 +360,10 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
 
         magda::daw::engine_host::EngineHost host;
         host.setHardwareOutputProvider([&audioIO] {
-            const auto active = audioIO.getActiveConfiguration();
+            auto outputs = audioIO.outputs();
             return magda::daw::engine_host::EngineHost::HardwareChannelCatalog{
-                .enabledChannels = active.outputChannels,
-                .namesByChannel = magda::routeNamesByChannel(active.outputChannelNames,
-                                                             active.outputChannels, false)};
+                .enabledChannels = std::move(outputs.open),
+                .namesByChannel = std::move(outputs.routeNames)};
         });
         AudioIORefresh refresh(host);
         audioIO.addListener(&refresh);

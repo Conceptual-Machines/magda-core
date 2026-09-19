@@ -4,6 +4,7 @@
 
 #include "../../audio/AudioDriverUtils.hpp"
 #include "../../audio/MidiBridge.hpp"
+#include "../../audio/io/HardwareChannels.hpp"
 #include "../../core/Config.hpp"
 #include "../../engine/AudioEngine.hpp"
 #include "../../engine/AudioEngineChoice.hpp"
@@ -113,11 +114,12 @@ void CustomChannelSelector::updateFromDevice() {
     // Get channel names from hardware device
     auto channelNames = isInput_ ? device->getInputChannelNames() : device->getOutputChannelNames();
 
-    // Build active channels from the engine's wave-device state (JUCE bits are always all-on).
-    juce::BigInteger activeChannels = audioEngine_ != nullptr
-                                          ? audioEngine_->getEnabledWaveChannels(isInput_)
-                                          : juce::BigInteger{};
-    if (audioEngine_ == nullptr) {
+    // What the engine has open, which under Tracktion is narrower than the JUCE setup.
+    auto* hardware = audioEngine_ != nullptr ? audioEngine_->getHardwareChannels() : nullptr;
+    juce::BigInteger activeChannels;
+    if (hardware != nullptr) {
+        activeChannels = isInput_ ? hardware->inputs().open : hardware->outputs().open;
+    } else {
         // Fallback: read from JUCE setup
         auto setup = deviceManager_->getAudioDeviceSetup();
         activeChannels = isInput_ ? setup.inputChannels : setup.outputChannels;
@@ -911,9 +913,9 @@ void AudioSettingsDialog::savePreferencesIfNeeded() {
     // Count enabled channels from the engine's wave-device state.
     int inputChannelCount = 0;
     int outputChannelCount = 0;
-    if (audioEngine_ != nullptr) {
-        inputChannelCount = audioEngine_->getEnabledWaveChannels(true).getHighestBit() + 1;
-        outputChannelCount = audioEngine_->getEnabledWaveChannels(false).getHighestBit() + 1;
+    if (auto* hardware = audioEngine_ != nullptr ? audioEngine_->getHardwareChannels() : nullptr) {
+        inputChannelCount = hardware->inputs().open.getHighestBit() + 1;
+        outputChannelCount = hardware->outputs().open.getHighestBit() + 1;
     } else {
         // Fallback: count from JUCE setup
         for (int i = 0; i < setup.inputChannels.getHighestBit() + 1; ++i) {

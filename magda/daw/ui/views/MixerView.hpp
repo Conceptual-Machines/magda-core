@@ -24,6 +24,7 @@
 #include "../themes/MixerLookAndFeel.hpp"
 #include "../themes/MixerMetrics.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/HardwareChannels.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
 #include "core/ViewModeController.hpp"
@@ -52,7 +53,8 @@ class MixerView : public juce::Component,
                   public TrackManagerListener,
                   public SelectionManagerListener,
                   public ViewModeListener,
-                  public MidiBridge::Listener {
+                  public MidiBridge::Listener,
+                  private HardwareChannels::Listener {
   public:
     explicit MixerView(AudioEngine* audioEngine = nullptr);
     ~MixerView() override;
@@ -76,6 +78,9 @@ class MixerView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the strips' routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void devicePropertyChanged(const ChainNodePath& devicePath) override;

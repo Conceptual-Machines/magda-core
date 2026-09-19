@@ -13,6 +13,7 @@
 #include "../../mixer/RoutingSelector.hpp"
 #include "BaseInspector.hpp"
 #include "audio/MidiBridge.hpp"
+#include "audio/io/HardwareChannels.hpp"
 #include "core/AutomationManager.hpp"
 #include "core/TrackManager.hpp"
 
@@ -33,6 +34,7 @@ class TrackInspector : public BaseInspector,
                        public magda::TrackManagerListener,
                        public magda::AutomationManagerListener,
                        public magda::MidiBridge::Listener,
+                       private magda::HardwareChannels::Listener,
                        public juce::Timer {
   public:
     TrackInspector();
@@ -162,6 +164,9 @@ class TrackInspector : public BaseInspector,
 
     // MidiBridge::Listener
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void populateMidiOutputOptions();
     void updateRoutingSelectorsFromTrack();
 

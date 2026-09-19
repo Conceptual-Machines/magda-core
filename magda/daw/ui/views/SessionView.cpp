@@ -943,25 +943,14 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (!track)
             return;
 
-        auto* deviceManager = audioEngine_ ? audioEngine_->getDeviceManager() : nullptr;
-        auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
         auto* midiBridge = audioEngine_ ? audioEngine_->getMidiBridge() : nullptr;
-
-        juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
-        if (audioEngine_) {
-            enabledOutputChannels = audioEngine_->getEnabledWaveChannels(false);
-            teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-            enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
-            teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
-        }
+        const auto* hardware = audioEngine_ ? audioEngine_->getHardwareChannels() : nullptr;
 
         RoutingSyncHelper::syncSelectorsFromTrack(
             *track, audioInSelector_.get(), midiInSelector_.get(), audioOutSelector_.get(),
-            midiOutSelector_.get(), midiBridge, device, trackId_, outputTrackMapping_,
-            midiOutputTrackMapping_, &inputTrackMapping_, enabledInputChannels,
-            enabledOutputChannels, &inputChannelMapping_, teInputDeviceNames,
-            &midiInputTrackMapping_, &outputChannelMapping_, teOutputDeviceNames);
+            midiOutSelector_.get(), midiBridge, hardware, trackId_, outputTrackMapping_,
+            midiOutputTrackMapping_, &inputTrackMapping_, &inputChannelMapping_,
+            &midiInputTrackMapping_, &outputChannelMapping_);
     }
 
     TrackId getTrackId() const {
@@ -986,24 +975,16 @@ class SessionView::MiniIOStrip : public juce::Component {
         if (!audioEngine_)
             return;
 
-        auto* deviceManager = audioEngine_->getDeviceManager();
-        auto* device = deviceManager ? deviceManager->getCurrentAudioDevice() : nullptr;
         auto* midiBridge = audioEngine_->getMidiBridge();
+        const auto* hardware = audioEngine_->getHardwareChannels();
 
-        juce::BigInteger enabledInputChannels, enabledOutputChannels;
-        std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
-        enabledOutputChannels = audioEngine_->getEnabledWaveChannels(false);
-        teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-        enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
-        teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
-
-        audioInSelector_->meterInputsFrom(deviceManager);
-        RoutingSyncHelper::populateAudioInputOptions(audioInSelector_.get(), device, trackId_,
-                                                     &inputTrackMapping_, enabledInputChannels,
-                                                     &inputChannelMapping_, teInputDeviceNames);
-        RoutingSyncHelper::populateAudioOutputOptions(audioOutSelector_.get(), trackId_, device,
-                                                      outputTrackMapping_, enabledOutputChannels,
-                                                      &outputChannelMapping_, teOutputDeviceNames);
+        audioInSelector_->meterInputsFrom(audioEngine_->getDeviceManager());
+        RoutingSyncHelper::populateAudioInputOptions(
+            audioInSelector_.get(), RoutingSyncHelper::openDirection(hardware, true), trackId_,
+            &inputTrackMapping_, &inputChannelMapping_);
+        RoutingSyncHelper::populateAudioOutputOptions(
+            audioOutSelector_.get(), trackId_, RoutingSyncHelper::openDirection(hardware, false),
+            outputTrackMapping_, &outputChannelMapping_);
         RoutingSyncHelper::populateMidiInputOptions(midiInSelector_.get(), midiBridge, trackId_,
                                                     &midiInputTrackMapping_);
         RoutingSyncHelper::populateMidiOutputOptions(midiOutSelector_.get(), midiBridge,
@@ -1725,6 +1706,8 @@ SessionView::~SessionView() {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getHardwareChannels())
+            hardware->removeListener(this);
     }
     stopTimer();
     TrackManager::getInstance().removeListener(this);
@@ -3605,15 +3588,23 @@ void SessionView::setAudioEngine(AudioEngine* engine) {
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->removeMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getHardwareChannels())
+            hardware->removeListener(this);
     }
     audioEngine_ = engine;
     if (audioEngine_) {
         if (auto* mb = audioEngine_->getMidiBridge())
             mb->addMidiDeviceListListener(this);
+        if (auto* hardware = audioEngine_->getHardwareChannels())
+            hardware->addListener(this);
         startTimerHz(30);  // 30Hz meter refresh
     } else {
         stopTimer();
     }
+}
+
+void SessionView::hardwareChannelsChanged() {
+    tracksChanged();
 }
 
 void SessionView::midiDeviceListChanged() {

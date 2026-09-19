@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "../../core/Config.hpp"
+#include "HardwareChannels.hpp"
 
 namespace magda {
 
@@ -21,7 +22,7 @@ namespace magda {
  * No mask is derived from the channels an interface advertises: a virtual endpoint offering
  * 128 stays a stereo stream unless 128 were chosen (#2528).
  */
-class AudioIOService : private juce::ChangeListener {
+class AudioIOService : public HardwareChannels, private juce::ChangeListener {
   public:
     /** @brief What is open, as the interface reports it. Empty when nothing is. */
     struct ActiveConfiguration {
@@ -36,13 +37,6 @@ class AudioIOService : private juce::ChangeListener {
         juce::StringArray inputChannelNames;
         juce::StringArray outputChannelNames;
         int inputLatencySamples = 0;
-    };
-
-    /** @brief Told when the interface opens, closes or changes what it has open. */
-    class Listener {
-      public:
-        virtual ~Listener() = default;
-        virtual void audioIOChanged() = 0;
     };
 
     /** @brief On the platform's backends, migrating from MAGDA's Tracktion Settings.xml. */
@@ -79,13 +73,14 @@ class AudioIOService : private juce::ChangeListener {
     /** @brief What is open, in the form apply() takes. */
     AudioIOSettings openSettings() const;
 
+    bool isOpen() const override;
+    Direction inputs() const override;
+    Direction outputs() const override;
+
     /** @brief Where an audio callback attaches. Configuration goes through open() and apply(). */
     juce::AudioDeviceManager& getDeviceManager() {
         return manager_;
     }
-
-    void addListener(Listener* listener);
-    void removeListener(Listener* listener);
 
   private:
     juce::AudioIODeviceType* backendNamed(const juce::String& name);
@@ -99,7 +94,6 @@ class AudioIOService : private juce::ChangeListener {
 
     juce::AudioDeviceManager manager_;
     juce::File tracktionSettings_;
-    juce::ListenerList<Listener> listeners_;
 };
 
 }  // namespace magda

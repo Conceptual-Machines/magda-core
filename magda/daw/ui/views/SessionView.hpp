@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "audio/MidiBridge.hpp"
+#include "audio/io/HardwareChannels.hpp"
 #include "core/ClipManager.hpp"
 #include "core/SelectionManager.hpp"
 #include "core/TrackManager.hpp"
@@ -40,7 +41,8 @@ class SessionView : public juce::Component,
                     public ClipManagerListener,
                     public SelectionManagerListener,
                     public ViewModeListener,
-                    public MidiBridge::Listener {
+                    public MidiBridge::Listener,
+                    private HardwareChannels::Listener {
   public:
     SessionView();
     ~SessionView() override;
@@ -56,6 +58,9 @@ class SessionView : public juce::Component,
     // TrackManagerListener
     void tracksChanged() override;
     void midiDeviceListChanged() override;
+
+    /** @brief Rebuild the strips' routing menus against what is open now (#2748). */
+    void hardwareChannelsChanged() override;
     void trackPropertyChanged(int trackId) override;
     void trackDevicesChanged(TrackId trackId) override;
     void masterChannelChanged() override;

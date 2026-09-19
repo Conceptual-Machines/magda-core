@@ -369,8 +369,8 @@ class AudioIOServiceTest final : public juce::UnitTest {
 
         beginTest("listeners hear the interface change");
         {
-            struct Heard final : magda::AudioIOService::Listener {
-                void audioIOChanged() override {
+            struct Heard final : magda::HardwareChannels::Listener {
+                void hardwareChannelsChanged() override {
                     ++changes;
                 }
                 int changes = 0;

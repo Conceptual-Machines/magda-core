@@ -166,52 +166,8 @@ juce::AudioDeviceManager* TracktionEngineWrapper::getDeviceManager() {
     return nullptr;
 }
 
-juce::BigInteger TracktionEngineWrapper::getEnabledWaveChannels(bool input) const {
-    juce::BigInteger channels;
-    if (engine_ == nullptr)
-        return channels;
-
-    const auto addEnabledChannels = [&channels](const auto& devices) {
-        for (auto* device : devices) {
-            if (device == nullptr || !device->isEnabled())
-                continue;
-            for (const auto& channel : device->getChannels())
-                channels.setBit(channel.indexInDevice);
-        }
-    };
-    if (input)
-        addEnabledChannels(engine_->getDeviceManager().getWaveInputDevices());
-    else
-        addEnabledChannels(engine_->getDeviceManager().getWaveOutputDevices());
-    return channels;
-}
-
-namespace {
-
-template <typename Devices>
-std::map<int, juce::String> enabledNamesByChannel(const Devices& devices) {
-    std::map<int, juce::String> names;
-    for (auto* device : devices) {
-        if (device == nullptr || !device->isEnabled())
-            continue;
-        for (const auto& channel : device->getChannels())
-            names[channel.indexInDevice] = device->getName();
-    }
-    return names;
-}
-
-}  // namespace
-
-std::map<int, juce::String> TracktionEngineWrapper::getOutputDeviceNamesByChannel() const {
-    if (engine_ == nullptr)
-        return {};
-    return enabledNamesByChannel(engine_->getDeviceManager().getWaveOutputDevices());
-}
-
-std::map<int, juce::String> TracktionEngineWrapper::getInputDeviceNamesByChannel() const {
-    if (engine_ == nullptr)
-        return {};
-    return enabledNamesByChannel(engine_->getDeviceManager().getWaveInputDevices());
+HardwareChannels* TracktionEngineWrapper::getHardwareChannels() {
+    return hardwareChannels_.get();
 }
 
 void TracktionEngineWrapper::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {

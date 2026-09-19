@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iterator>
 
+#include "HardwareRouteNames.hpp"
 #include "TracktionAudioSettings.hpp"
 
 namespace magda {
@@ -158,12 +159,24 @@ AudioIOSettings AudioIOService::openSettings() const {
             .outputChannels = channelsOf(active.outputChannels)};
 }
 
-void AudioIOService::addListener(Listener* listener) {
-    listeners_.add(listener);
+bool AudioIOService::isOpen() const {
+    return getActiveConfiguration().backend.isNotEmpty();
 }
 
-void AudioIOService::removeListener(Listener* listener) {
-    listeners_.remove(listener);
+HardwareChannels::Direction AudioIOService::inputs() const {
+    const auto active = getActiveConfiguration();
+    return {.open = active.inputChannels,
+            .channelNames = active.inputChannelNames,
+            .routeNames =
+                routeNamesByChannel(active.inputChannelNames, active.inputChannels, true)};
+}
+
+HardwareChannels::Direction AudioIOService::outputs() const {
+    const auto active = getActiveConfiguration();
+    return {.open = active.outputChannels,
+            .channelNames = active.outputChannelNames,
+            .routeNames =
+                routeNamesByChannel(active.outputChannelNames, active.outputChannels, false)};
 }
 
 juce::AudioIODeviceType* AudioIOService::backendNamed(const juce::String& name) {
@@ -266,7 +279,7 @@ juce::String AudioIOService::openFitted(const AudioIOSettings& fitted) {
 }
 
 void AudioIOService::changeListenerCallback(juce::ChangeBroadcaster*) {
-    listeners_.call([](Listener& listener) { listener.audioIOChanged(); });
+    notifyChanged();
 }
 
 }  // namespace magda
