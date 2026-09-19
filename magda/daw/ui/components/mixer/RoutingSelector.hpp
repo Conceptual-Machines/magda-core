@@ -14,6 +14,27 @@ namespace magda {
 
 class HardwareInputLevels;
 
+/** @brief Small level bars for a set of physical input channels, with meter ballistics. */
+class InputLevelBars {
+  public:
+    void setChannels(std::vector<int> channels);
+
+    bool meters() const {
+        return !channels_.empty();
+    }
+
+    /// Move the bars toward what @p levels reads now. Whether they moved.
+    bool follow(const HardwareInputLevels* levels);
+
+    /// One bar per channel, stacked and centred in @p area.
+    void paint(juce::Graphics& g, juce::Rectangle<int> area, int barHeight) const;
+
+  private:
+    std::vector<int> channels_;
+    std::vector<float> display_;
+    double lastUpdateMs_ = 0.0;
+};
+
 /**
  * @brief A hybrid toggle button + dropdown selector for routing
  *
@@ -23,7 +44,7 @@ class HardwareInputLevels;
  * - Right-click anywhere opens the selection menu
  * - Color-coded based on routing type and enabled state
  */
-class RoutingSelector : public juce::Component {
+class RoutingSelector : public juce::Component, private juce::Timer {
   public:
     enum class Type { AudioIn, AudioOut, MidiIn, MidiOut };
 
@@ -75,11 +96,9 @@ class RoutingSelector : public juce::Component {
     /** Returns the ID of the first channel option (skipping "None"/separators), or -1. */
     int getFirstChannelOptionId() const;
 
-    /// Where the menu reads the levels of options naming input channels. Null
-    /// shows no meters.
-    void meterInputsFrom(juce::AudioDeviceManager* devices) {
-        inputDevices_ = devices;
-    }
+    /// Where the label and the menu read the levels of options naming input
+    /// channels. Null shows no meters.
+    void meterInputsFrom(juce::AudioDeviceManager* devices);
 
     // Callbacks
     std::function<void(bool enabled)> onEnabledChanged;
@@ -96,14 +115,22 @@ class RoutingSelector : public juce::Component {
 
     juce::AudioDeviceManager* inputDevices_ = nullptr;
 
-    /// Held while the menu is open, and released with this if the menu outlives it.
+    /// Held while any option names an input channel. The menu's rows hold it weakly.
     std::shared_ptr<HardwareInputLevels> inputLevels_;
+
+    /// The selected input's level, while its route is active.
+    InputLevelBars labelBars_;
 
     // Layout
     static constexpr int DROPDOWN_ARROW_WIDTH = 10;
+    static constexpr int LABEL_METER_WIDTH = 12;
 
     juce::Rectangle<int> getMainButtonArea() const;
     juce::Rectangle<int> getDropdownArea() const;
+    juce::Rectangle<int> getLabelMeterArea() const;
+
+    void updateMetering();
+    void timerCallback() override;
 
     void showPopupMenu();
 

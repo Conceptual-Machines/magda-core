@@ -35,10 +35,11 @@ class InputChannelLevels {
 };
 
 /**
- * @brief The open device's input levels, measured only while someone holds this.
+ * @brief The open device's input levels, measured while anything holds this.
  *
  * A second callback on the device manager, so it reads the interface under
- * either engine and costs nothing with no input menu open. Message thread.
+ * either engine. Input selectors hold it while they list hardware channels.
+ * Message thread.
  */
 class HardwareInputLevels final : private juce::AudioIODeviceCallback {
   public:
