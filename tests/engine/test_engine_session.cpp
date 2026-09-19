@@ -413,6 +413,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
 
     REQUIRE(publish(session, plan, tracks).published);
     session.publishValues(resolve(*plan, tracks));
+    CHECK(session.latencySamples() == 0);
 
     juce::AudioBuffer<float> output(2, kBlockSize);
     session.process(kBlockSize, output);
@@ -424,6 +425,7 @@ TEST_CASE("A latency change re-prepares the plan rather than recompiling it",
     device->latency = 16;
 
     REQUIRE(publish(session, plan, tracks).published);
+    CHECK(session.latencySamples() == 16);
 
     CHECK(session.livePlan() == plan);
     CHECK(ledger.devicesCreated.load() == devicesCreated);

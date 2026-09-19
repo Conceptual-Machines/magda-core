@@ -20,8 +20,9 @@ Arrangement.
 
 Re-click, per-track or global Back to Arrangement, disarm, input changes,
 device stop and project teardown use the existing Session target lifecycle.
-Input latency is removed from the recorded head just as it is for Arrangement
-audio.
+The same interface and live-plan adjustment used by Arrangement is removed
+from the recorded head, and the take stays attached for an equal post-roll so
+the slot keeps the run's full musical length.
 
 ## Publication
 

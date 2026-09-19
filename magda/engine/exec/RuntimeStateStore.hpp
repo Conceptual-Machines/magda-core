@@ -380,6 +380,9 @@ class RuntimeStateStore {
     ///        built from, on the publishing thread.
     RecordingTakes liveTakes() const;
 
+    /// @brief The take currently owned for @p key, or null.
+    TakeCapture* take(const TakeKey& key) const;
+
     /// @brief Takes @p modelIds has stopped naming: the arm switched off, the
     ///        input taken away, the track deleted (#2465).
     ///

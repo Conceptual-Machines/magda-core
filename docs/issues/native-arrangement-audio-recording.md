@@ -9,8 +9,10 @@ audio clip and a growing waveform preview.
 ## Ownership and lifecycle
 
 `EngineHost` owns audio takes beside MIDI takes, outside the render plan. The
-resolved callback-channel list, device generation, and reported latency form
-the audio route identity. Record flushes
+resolved callback-channel list and device generation form the audio route
+identity. Each take snapshots the active interface's reported input plus output
+latency and the live plan's output latency, matching Tracktion's automatic
+record path. Record flushes
 pending arm/input changes, creates the take, registers its stream with
 `RecordThread`, and publishes it through the existing `RecordingFeed`. The live
 epoch still decides whether the take may capture, so plan replacement cannot
@@ -19,13 +21,20 @@ feed a take under stale arm state.
 Monitor state affects audibility only. An armed track records its selected
 input with Monitor Off, and the take reads the hardware callback before the
 track chain. Mono recordings remain one-channel files; stereo inputs preserve
-their two packed callback channels. The device-reported input latency is handed
-to `TakeRecorder`, which removes it from the head of the captured material.
+their two packed callback channels. `TakeRecorder` removes a positive
+adjustment from the head, then remains on the callback for the same number of
+samples past the timeline stop. The file therefore starts on the corrected
+sample without losing its tail or shortening its musical length.
+MIDI takes snapshot the output-interface and live-plan portions of the same
+adjustment and retain their adjusted events through the same deferred
+post-roll. Adding round-trip correction to audio therefore neither introduces
+an output-latency skew nor shortens simultaneously recorded MIDI material.
 
-Disarm, input rerouting, track deletion, transport stop, device stop, project
-replacement, tempo/signature changes, and loop changes use the same close path.
-The callback first receives a take set that no longer names the recorder, then
-the record thread releases its stream, and only then is the file finalized.
+Disarm, input rerouting, track deletion, transport stop, project replacement,
+tempo/signature changes, and loop changes request the same deferred close path.
+The callback captures any owed post-roll before the record thread releases its
+stream and the file is finalized. A physical device stop or rebuild force-closes
+instead because no callback from the old device remains to supply a tail.
 
 The finished active file, placement, and loop-take model are installed through
 `ClipManager::createRecordedAudioClip` before its sole notification. A listener
@@ -35,8 +44,8 @@ Existing overlap resolution remains the Arrangement publication policy.
 ## Live preview
 
 The waveform overlay reads the audio take's existing `RecordTap`. Peaks are
-computed from the exact samples offered to the recording queue, after input
-latency correction, and the pass length comes from the callback transport. A
+computed from the exact samples offered to the recording queue, after automatic
+recording correction, and the pass length comes from the callback transport. A
 loop wrap replaces the displayed pass at the same accepted boundary that splits
 the files. Stop or disarm removes the transient overlay as the completed clip
 appears. Preview peaks are presentation data and never determine clip placement
@@ -51,7 +60,7 @@ the waveform preview stops gaining detail after that bound.
 This slice covers native Arrangement recording from the currently selected
 hardware audio channel or stereo pair, including live previews, loop passes,
 count-in/punch boundaries already supplied by the native transport, lifecycle
-edits, and device-reported input-latency correction.
+edits, device-reported round-trip latency correction, and live-plan latency.
 
 Session audio-slot recording is documented separately in
 [`native-session-audio-recording.md`](native-session-audio-recording.md).
@@ -84,17 +93,18 @@ remain outside this slice.
 
 - The Debug `magda_tests`, `magda_juce_tests`, and `magda_daw_app` targets
   built.
-- The recorded-clip and audio-recorder filters passed 757 assertions across
-  17 cases.
-- `Engine Host Audio Input` passed eight callback cases, including device
-  restart continuity and Session audio target isolation from Arrangement.
-- `Engine Host MIDI Recording` passed its 35 existing cases, `Engine Host
+- The recording and plan-swap filters passed 1,232 assertions across 78 cases.
+- `Engine Host Audio Input` passed fourteen callback cases, including post-roll,
+  three-second correction bounds, device-rebuild continuity, and Session audio
+  target isolation from Arrangement.
+- `Engine Host MIDI Recording` passed its 37 cases, including non-zero
+  output-latency post-roll; `Engine Host
   Session Arrangement Capture` passed its ten cases, and `Magda Audio Engine
   Tests` passed its three cases.
 - A Release build was not run.
 
 The callback fixture covers Monitor Off capture, packed stereo content, the
-live peak preview, device input-latency head correction, playback of the
+live peak preview, round-trip correction with a matching tail, playback of the
 materialized clip, disarm finalization, and device-stop cleanup. The recorder
 unit suite remains the focused evidence for count-in and loop-pass file
 boundaries. Hardware listening and latency feel still require the checks above and the broader

@@ -505,6 +505,11 @@ RecordingTakes RuntimeStateStore::liveTakes() const {
     return live;
 }
 
+TakeCapture* RuntimeStateStore::take(const TakeKey& key) const {
+    const auto found = takes_.find(key);
+    return found == takes_.end() ? nullptr : found->second.get();
+}
+
 std::vector<TakeKey> RuntimeStateStore::unnamedTakes(const RuntimeStateIds& modelIds) const {
     std::vector<TakeKey> unnamed;
     for (const auto& [key, take] : takes_)
