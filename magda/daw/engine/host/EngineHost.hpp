@@ -60,11 +60,11 @@ namespace magda::daw::engine_host {
 
 class EngineHost {
   public:
-    struct HardwareOutputCatalog {
+    struct HardwareChannelCatalog {
         juce::BigInteger enabledChannels;
         std::map<int, juce::String> namesByChannel;
     };
-    using HardwareOutputProvider = std::function<HardwareOutputCatalog()>;
+    using HardwareChannelProvider = std::function<HardwareChannelCatalog()>;
 
     EngineHost();
     ~EngineHost();
@@ -94,10 +94,16 @@ class EngineHost {
                            const juce::KnownPluginList& knownPlugins);
 
     /// Supply the Tracktion wave-device names behind persisted output routes.
-    void setHardwareOutputProvider(HardwareOutputProvider provider);
+    void setHardwareOutputProvider(HardwareChannelProvider provider);
 
     /// Re-read output enablement and names after the device catalog changes.
     void refreshHardwareOutputs();
+
+    /// Supply the Tracktion wave-device names behind persisted input routes (#2553).
+    void setHardwareInputProvider(HardwareChannelProvider provider);
+
+    /// Re-read input enablement and names after the device catalog changes.
+    void refreshHardwareInputs();
 
     /**
      * @brief Where the levels this renders go (#2570).
@@ -145,6 +151,10 @@ class EngineHost {
     /// How many times the model has asked this to republish. A count that
     /// stops moving under an edit is one nothing here is listening for.
     std::uint64_t publishRequests() const;
+
+    /// Whether every change asked for is published and the callback renders it.
+    /// What a test waits on after an edit or a device restart.
+    bool isSettled() const;
 
     // ===== Live MIDI (#2579) =====
     //

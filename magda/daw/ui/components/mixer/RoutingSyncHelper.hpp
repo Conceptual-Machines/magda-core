@@ -70,8 +70,11 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             int id = 10;
             for (int i = 0; i < activeIndices.size(); i += 2) {
                 if (i + 1 < activeIndices.size()) {
-                    options.push_back({id, ChannelLabels::pair(channelNames, activeIndices[i],
-                                                               activeIndices[i + 1])});
+                    options.push_back(
+                        {id,
+                         ChannelLabels::pair(channelNames, activeIndices[i], activeIndices[i + 1]),
+                         false,
+                         {activeIndices[i], activeIndices[i + 1]}});
                     // Use actual TE device name for routing
                     if (outChannelMapping)
                         (*outChannelMapping)[id] = "stereo:" + getDeviceName(activeIndices[i]);
@@ -86,7 +89,8 @@ inline void populateAudioInputOptions(RoutingSelector* selector, juce::AudioIODe
             // Mono channels (ID 100+)
             id = 100;
             for (int activeIndice : activeIndices) {
-                options.push_back({id, ChannelLabels::mono(channelNames, activeIndice)});
+                options.push_back(
+                    {id, ChannelLabels::mono(channelNames, activeIndice), false, {activeIndice}});
                 if (outChannelMapping)
                     (*outChannelMapping)[id] = getDeviceName(activeIndice);
                 ++id;

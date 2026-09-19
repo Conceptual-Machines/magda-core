@@ -121,6 +121,11 @@ class LiveInputFeed {
         return routing_ != nullptr ? routing_->find(trackId) : nullptr;
     }
 
+    /** @brief @p trackId's hardware input channels for this callback, or null. */
+    const TrackLiveAudio* audioRoutingFor(TrackId trackId) const {
+        return routing_ != nullptr ? routing_->findAudio(trackId) : nullptr;
+    }
+
     /// The current block's input audio, empty when the host supplied none.
     juce::dsp::AudioBlock<const float> audio() const {
         return audio_;
@@ -218,6 +223,30 @@ class LiveAudioInput final : public EngineAudioSource {
     const LiveInputFeed& feed_;
     std::vector<int> channels_;
     int latencySamples_ = 0;
+    std::atomic<std::uint32_t> missingChannels_{0};
+};
+
+/**
+ * @brief A track's live audio input, on the channels the published routing names.
+ *
+ * Read fresh each block, like TrackLiveMidiInput, so a device or route change
+ * reaches an input built for an earlier plan (#2553).
+ */
+class TrackLiveAudioInput final : public EngineAudioSource {
+  public:
+    TrackLiveAudioInput(const LiveInputFeed& feed, TrackId trackId)
+        : feed_(feed), trackId_(trackId) {}
+
+    void render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<float> out) override;
+
+    /// As LiveAudioInput::missingChannelBlocks.
+    std::uint32_t missingChannelBlocks() const {
+        return missingChannels_.load(std::memory_order_relaxed);
+    }
+
+  private:
+    const LiveInputFeed& feed_;
+    TrackId trackId_ = INVALID_TRACK_ID;
     std::atomic<std::uint32_t> missingChannels_{0};
 };
 

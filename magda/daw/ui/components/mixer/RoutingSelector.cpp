@@ -2,11 +2,101 @@
 
 #include <algorithm>
 #include <functional>
+#include <utility>
 
 #include "../../themes/DarkTheme.hpp"
 #include "../../themes/FontManager.hpp"
+#include "HardwareInputLevels.hpp"
+#include "LevelMeterBallistics.hpp"
+#include "LevelMeterScale.hpp"
 
 namespace magda {
+
+namespace {
+
+/// A menu row with a small level bar per input channel it reads.
+class MeteredInputItem final : public juce::PopupMenu::CustomComponent, private juce::Timer {
+  public:
+    MeteredInputItem(juce::String text, std::vector<int> channels, bool ticked,
+                     std::weak_ptr<const HardwareInputLevels> levels)
+        : text_(std::move(text)), ticked_(ticked), levels_(std::move(levels)) {
+        bars_.setChannels(std::move(channels));
+        startTimerHz(30);
+    }
+
+    void getIdealSize(int& width, int& height) override {
+        getLookAndFeel().getIdealPopupMenuItemSize(text_, false, -1, width, height);
+        width += kMeterWidth + kMeterPadding;
+    }
+
+    void paint(juce::Graphics& g) override {
+        getLookAndFeel().drawPopupMenuItem(g, getLocalBounds(), false, true, isItemHighlighted(),
+                                           ticked_, false, text_, {}, nullptr, nullptr);
+        bars_.paint(g, meterArea(), 3);
+    }
+
+  private:
+    static constexpr int kMeterWidth = 28;
+    static constexpr int kMeterPadding = 8;
+
+    juce::Rectangle<int> meterArea() const {
+        return getLocalBounds()
+            .removeFromRight(kMeterWidth + kMeterPadding)
+            .withTrimmedRight(kMeterPadding);
+    }
+
+    void timerCallback() override {
+        if (bars_.follow(levels_.lock().get()))
+            repaint(meterArea());
+    }
+
+    juce::String text_;
+    bool ticked_ = false;
+    std::weak_ptr<const HardwareInputLevels> levels_;
+    InputLevelBars bars_;
+};
+
+}  // namespace
+
+void InputLevelBars::setChannels(std::vector<int> channels) {
+    if (channels == channels_)
+        return;
+
+    channels_ = std::move(channels);
+    display_.assign(channels_.size(), 0.0f);
+    lastUpdateMs_ = 0.0;
+}
+
+bool InputLevelBars::follow(const HardwareInputLevels* levels) {
+    const auto elapsedMs = level_meter_ballistics::getElapsedMs(lastUpdateMs_);
+
+    bool changed = false;
+    for (std::size_t i = 0; i < channels_.size(); ++i) {
+        const auto target = levels != nullptr ? levels->level(channels_[i]) : 0.0f;
+        changed |= level_meter_ballistics::updateLevel(display_[i], target, elapsedMs);
+    }
+    return changed;
+}
+
+void InputLevelBars::paint(juce::Graphics& g, juce::Rectangle<int> area, int barHeight) const {
+    constexpr int kGap = 1;
+    const auto height = static_cast<int>(display_.size()) * (barHeight + kGap) - kGap;
+    auto bars = area.withSizeKeepingCentre(area.getWidth(), height).toFloat();
+
+    for (const auto level : display_) {
+        const auto bar = bars.removeFromTop(static_cast<float>(barHeight));
+        bars.removeFromTop(static_cast<float>(kGap));
+
+        g.setColour(DarkTheme::getColour(DarkTheme::SURFACE));
+        g.fillRect(bar);
+
+        const auto db = level_meter_scale::gainToDb(level);
+        g.setColour(DarkTheme::getColour(db >= 0.0f     ? DarkTheme::LEVEL_METER_RED
+                                         : db >= -12.0f ? DarkTheme::LEVEL_METER_YELLOW
+                                                        : DarkTheme::LEVEL_METER_GREEN));
+        g.fillRect(bar.withWidth(bar.getWidth() * level_meter_scale::dbToMeterPos(db)));
+    }
+}
 
 RoutingSelector::RoutingSelector(Type type) : type_(type) {
     setRepaintsOnMouseActivity(true);
@@ -40,9 +130,15 @@ void RoutingSelector::paint(juce::Graphics& g) {
     g.drawLine(dropdownArea.getX(), dropdownArea.getY() + 2, dropdownArea.getX(),
                dropdownArea.getBottom() - 2, 1.0f);
 
+    // The selected input's level, at the right of the label.
+    if (labelBars_.meters())
+        labelBars_.paint(g, getLabelMeterArea(), 2);
+
     // Draw selected name as text in main area. Read-only controls mirror their
     // owner's selection (readOnlyDisplay_) in a dimmed colour.
     auto textBounds = mainArea.reduced(2.0f, 1.0f);
+    if (labelBars_.meters())
+        textBounds.removeFromRight(static_cast<float>(LABEL_METER_WIDTH + 2));
     g.setColour(
         DarkTheme::getColour(readOnly_ ? DarkTheme::TEXT_SECONDARY : DarkTheme::TEXT_PRIMARY)
             .withAlpha(readOnly_ ? 0.6f : 1.0f));
@@ -102,12 +198,14 @@ void RoutingSelector::setReadOnly(bool readOnly, const juce::String& displayText
     readOnlyDisplay_ = displayText;
     if (readOnly_)
         isHovering_ = false;
+    updateMetering();
     repaint();
 }
 
 void RoutingSelector::setEnabled(bool shouldBeEnabled) {
     if (enabled_ != shouldBeEnabled) {
         enabled_ = shouldBeEnabled;
+        updateMetering();
         repaint();
     }
 }
@@ -115,8 +213,47 @@ void RoutingSelector::setEnabled(bool shouldBeEnabled) {
 void RoutingSelector::setSelectedId(int id) {
     if (selectedId_ != id) {
         selectedId_ = id;
+        updateMetering();
         repaint();
     }
+}
+
+void RoutingSelector::meterInputsFrom(juce::AudioDeviceManager* devices) {
+    inputDevices_ = devices;
+    updateMetering();
+}
+
+void RoutingSelector::updateMetering() {
+    const auto hasInputs =
+        inputDevices_ != nullptr && std::ranges::any_of(options_, [](const RoutingOption& option) {
+            return !option.inputChannels.empty();
+        });
+    if (!hasInputs)
+        inputLevels_.reset();
+    else if (inputLevels_ == nullptr)
+        inputLevels_ = HardwareInputLevels::acquire(*inputDevices_);
+
+    const auto selected = std::ranges::find(options_, selectedId_, &RoutingOption::id);
+    const auto metered =
+        inputLevels_ != nullptr && enabled_ && !readOnly_ && selected != options_.end();
+    labelBars_.setChannels(metered ? selected->inputChannels : std::vector<int>{});
+
+    if (!labelBars_.meters())
+        stopTimer();
+    else if (!isTimerRunning())
+        startTimerHz(30);
+}
+
+void RoutingSelector::timerCallback() {
+    if (isShowing() && labelBars_.follow(inputLevels_.get()))
+        repaint(getLabelMeterArea());
+}
+
+juce::Rectangle<int> RoutingSelector::getLabelMeterArea() const {
+    return getMainButtonArea()
+        .reduced(0, 3)
+        .removeFromRight(LABEL_METER_WIDTH + 3)
+        .withTrimmedRight(3);
 }
 
 juce::String RoutingSelector::getSelectedName() const {
@@ -132,11 +269,13 @@ void RoutingSelector::setOptions(const std::vector<RoutingOption>& options) {
         if (opt != options_.end())
             selectedId_ = opt->id;
     }
+    updateMetering();
 }
 
 void RoutingSelector::clearOptions() {
     options_.clear();
     selectedId_ = -1;
+    updateMetering();
 }
 
 int RoutingSelector::getFirstChannelOptionId() const {
@@ -158,6 +297,8 @@ juce::Rectangle<int> RoutingSelector::getDropdownArea() const {
 void RoutingSelector::showPopupMenu() {
     juce::PopupMenu menu;
 
+    const auto metered = inputLevels_ != nullptr;
+
     // Add routing options
     if (options_.empty()) {
         menu.addItem(-1, "(No options available)", false);
@@ -165,6 +306,14 @@ void RoutingSelector::showPopupMenu() {
         for (const auto& opt : options_) {
             if (opt.isSeparator) {
                 menu.addSeparator();
+            } else if (metered && !opt.inputChannels.empty()) {
+                juce::PopupMenu::Item item(opt.name);
+                item.itemID = opt.id;
+                item.isTicked = opt.id == selectedId_;
+                item.customComponent =
+                    new MeteredInputItem(opt.name, opt.inputChannels, item.isTicked,
+                                         std::weak_ptr<const HardwareInputLevels>(inputLevels_));
+                menu.addItem(std::move(item));
             } else {
                 menu.addItem(opt.id, opt.name, true, opt.id == selectedId_);
             }

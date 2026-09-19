@@ -11,6 +11,37 @@ namespace {
 /// sample position and a length in front of the message itself.
 constexpr int kEventOverheadBytes = 6;
 
+/// Copies @p channels of @p in into @p out, and whether any of them was missing.
+bool readChannels(const juce::dsp::AudioBlock<const float>& in, std::span<const int> channels,
+                  juce::dsp::AudioBlock<float> out) {
+    const auto numSamples = out.getNumSamples();
+    const auto available = in.getNumChannels();
+
+    if (channels.empty() || available == 0 || in.getNumSamples() < numSamples) {
+        out.clear();
+        return !channels.empty();
+    }
+
+    bool missing = false;
+
+    for (std::size_t c = 0; c < out.getNumChannels(); ++c) {
+        // A destination wider than the map repeats the map's last channel, so
+        // a mono input fills both ears.
+        const auto index = channels[std::min(c, channels.size() - 1)];
+
+        if (index < 0 || static_cast<std::size_t>(index) >= available) {
+            out.getSingleChannelBlock(c).clear();
+            missing = true;
+            continue;
+        }
+
+        out.getSingleChannelBlock(c).copyFrom(
+            in.getSingleChannelBlock(static_cast<std::size_t>(index)).getSubBlock(0, numSamples));
+    }
+
+    return missing;
+}
+
 }  // namespace
 
 LiveInputFeed::~LiveInputFeed() {
@@ -137,35 +168,18 @@ LiveAudioInput::LiveAudioInput(const LiveInputFeed& feed, std::span<const int> c
     : feed_(feed), channels_(channels.begin(), channels.end()), latencySamples_(latencySamples) {}
 
 void LiveAudioInput::render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<float> out) {
-    const auto in = feed_.audio();
-    const auto numSamples = out.getNumSamples();
-    const auto available = in.getNumChannels();
+    if (readChannels(feed_.audio(), channels_, out))
+        missingChannels_.fetch_add(1, std::memory_order_relaxed);
+}
 
-    if (channels_.empty() || available == 0 || in.getNumSamples() < numSamples) {
+void TrackLiveAudioInput::render(const BlockInfo& /*block*/, juce::dsp::AudioBlock<float> out) {
+    const auto* routing = feed_.audioRoutingFor(trackId_);
+    if (routing == nullptr) {
         out.clear();
-        if (!channels_.empty())
-            missingChannels_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
 
-    bool missing = false;
-
-    for (std::size_t c = 0; c < out.getNumChannels(); ++c) {
-        // A destination wider than the map repeats the map's last channel, so
-        // a mono input fills both ears.
-        const auto index = channels_[std::min(c, channels_.size() - 1)];
-
-        if (index < 0 || static_cast<std::size_t>(index) >= available) {
-            out.getSingleChannelBlock(c).clear();
-            missing = true;
-            continue;
-        }
-
-        out.getSingleChannelBlock(c).copyFrom(
-            in.getSingleChannelBlock(static_cast<std::size_t>(index)).getSubBlock(0, numSamples));
-    }
-
-    if (missing)
+    if (readChannels(feed_.audio(), routing->channels, out))
         missingChannels_.fetch_add(1, std::memory_order_relaxed);
 }
 

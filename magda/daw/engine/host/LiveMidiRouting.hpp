@@ -25,10 +25,12 @@ class LiveMidiRouting {
     /**
      * @brief Resolve @p tracks into the routing the engine renders.
      *
-     * Every track gets an entry, so each one carries its own sources. Returns
-     * null when the result equals the last snapshot.
+     * Every track gets an entry, so each one carries its own sources. @p audio
+     * is the hardware channels the host resolved, sorted by track, and travels
+     * in the same snapshot. Returns null when the result equals the last one.
      */
-    std::shared_ptr<const engine::LiveRouting> resolve(const std::vector<TrackInfo>& tracks);
+    std::shared_ptr<const engine::LiveRouting> resolve(
+        const std::vector<TrackInfo>& tracks, std::vector<engine::TrackLiveAudio> audio = {});
 
     /**
      * @brief Forget the last snapshot, so the next resolve returns a full one.

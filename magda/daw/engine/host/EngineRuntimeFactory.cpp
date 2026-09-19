@@ -146,11 +146,12 @@ std::unique_ptr<engine::EngineDevice> EngineRuntimeFactory::handOver(
     return std::make_unique<TracingDevice>(std::move(device), *trace_);
 }
 
-/// A track's output level, a device slot's (#2570) and a rack's (#2649). A
-/// monitored input's meter is #1895's: nothing feeds the op yet.
+/// A track's output level, its live input's (#2553), a device slot's (#2570)
+/// and a rack's (#2649).
 std::unique_ptr<engine::LevelTap> EngineRuntimeFactory::createMeter(const engine::OpKey& key) {
     switch (key.role) {
         case engine::OpRole::TrackMeter:
+        case engine::OpRole::LiveInputMeter:
         case engine::OpRole::DeviceMeter:
         case engine::OpRole::RackMeter:
             return std::make_unique<engine::LevelTap>();
@@ -183,6 +184,13 @@ std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createSessionAu
 std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createSessionMidiSource(
     TrackId trackId) {
     return midiSource(trackId, engine::Section::Session);
+}
+
+std::unique_ptr<engine::EngineAudioSource> EngineRuntimeFactory::createAudioInput(TrackId trackId) {
+    if (liveInputs_ == nullptr)
+        return nullptr;
+
+    return std::make_unique<engine::TrackLiveAudioInput>(*liveInputs_, trackId);
 }
 
 std::unique_ptr<engine::EngineMidiSource> EngineRuntimeFactory::createMidiInput(TrackId trackId) {

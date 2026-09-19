@@ -39,6 +39,7 @@
 #include "EngineRuntimeFactory.hpp"
 #include "EngineTrace.hpp"
 #include "ExternalPluginLoader.hpp"
+#include "HardwareInputMap.hpp"
 #include "LiveMidiCollector.hpp"
 #include "LiveMidiQueue.hpp"
 #include "LiveMidiRouting.hpp"
@@ -384,17 +385,28 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             return;
 
         for (const auto& track : TrackManager::getInstance().getTracks())
-            publishMeter(track.id);
+            publishMeter(track.id, track.monitorsInput());
 
-        publishMeter(MASTER_TRACK_ID);
+        publishMeter(MASTER_TRACK_ID, false);
     }
 
-    void publishMeter(TrackId trackId) {
+    void publishMeter(TrackId trackId, bool monitorsInput) {
         auto* tap = session_->meterTap(engine::trackMeterKey(trackId));
-        if (tap == nullptr)
+        auto* inputTap = session_->meterTap(engine::liveInputMeterKey(trackId));
+        if (tap == nullptr && inputTap == nullptr)
             return;
 
-        const auto levels = tap->read();
+        auto levels = tap != nullptr ? tap->read() : engine::LevelTap::Levels{};
+
+        // A monitored input shows at its own level, ahead of the fader (#2553).
+        // Drained either way, so switching monitoring on shows now rather than
+        // the loudest input since.
+        if (inputTap != nullptr) {
+            const auto input = inputTap->read();
+            if (monitorsInput)
+                for (std::size_t channel = 0; channel < levels.peak.size(); ++channel)
+                    levels.peak[channel] = std::max(levels.peak[channel], input.peak[channel]);
+        }
 
         // A meter reading nothing and a meter nothing reads look identical from
         // a still mixer, so the trace says which (#2570).
@@ -699,7 +711,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
     }
 
     /**
-     * @brief Publish what every track hears of the live MIDI (#2592).
+     * @brief Publish what every track hears of the live input (#2592, #2553).
      *
      * One snapshot per reading of the model. The store keeps its inputs across
      * a recompile, and they read this.
@@ -708,8 +720,37 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (session_ == nullptr)
             return;
 
-        if (auto routing = routing_.resolve(tracks))
+        if (auto routing = routing_.resolve(tracks, liveAudioFor(tracks)))
             session_->liveInputs().publishRouting(std::move(routing));
+    }
+
+    /// The callback channels each track's hardware audio input names. A name
+    /// this interface does not have reads silence, and is reported once.
+    std::vector<engine::TrackLiveAudio> liveAudioFor(const std::vector<TrackInfo>& tracks) {
+        std::vector<engine::TrackLiveAudio> audio;
+        std::set<juce::String> unresolved;
+
+        for (const auto& track : tracks) {
+            const auto& input = track.audioInputDevice;
+            if (input.isEmpty() || input.startsWith("track:"))
+                continue;
+
+            const auto found = hardwareInputs_.find(input);
+            if (found != hardwareInputs_.end()) {
+                audio.push_back({.trackId = track.id, .channels = found->second});
+                continue;
+            }
+
+            if (!unresolvedInputs_.contains(input))
+                juce::Logger::writeToLog("[engine] audio input \"" + input + "\" on track " +
+                                         juce::String(track.id) +
+                                         " is not on this interface, it renders silence");
+            unresolved.insert(input);
+        }
+
+        unresolvedInputs_ = std::move(unresolved);
+        std::ranges::sort(audio, {}, &engine::TrackLiveAudio::trackId);
+        return audio;
     }
 
     /// A device plugged in or unplugged since the last structural publish.
@@ -1490,6 +1531,12 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return requests_.load(std::memory_order_relaxed);
     }
 
+    bool isSettled() const {
+        return session_ != nullptr && !isUpdatePending() &&
+               hardwareOutputReadyGeneration_.load(std::memory_order_acquire) ==
+                   hardwareOutputGeneration_.load(std::memory_order_acquire);
+    }
+
     void wantClips() {
         clips_.store(true, std::memory_order_relaxed);
         triggerAsyncUpdate();
@@ -1507,6 +1554,8 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (hardwareOutputsStale_.exchange(false, std::memory_order_acq_rel) &&
             refreshHardwareOutputMap())
             plan_.store(true, std::memory_order_relaxed);
+        const auto inputsMoved = hardwareInputsStale_.exchange(false, std::memory_order_acq_rel) &&
+                                 refreshHardwareInputMap();
 
         // A physical device stop has no block in which a take can close. An
         // intentional remove/add during rebuild reaches this handler only
@@ -1520,8 +1569,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         if (wanted.sampleRate <= 0.0 || wanted.maxBlockSize <= 0)
             return;
 
+        // The feed only grows while no callback runs, so more inputs is a rebuild.
         if (session_ == nullptr || wanted != context_ ||
-            scratch_.getNumChannels() != hardwareOutputChannels_) {
+            scratch_.getNumChannels() != hardwareOutputChannels_ ||
+            session_->liveInputs().preparedChannels() <
+                inputChannels_.load(std::memory_order_relaxed)) {
             rebuild(wanted);
             return;
         }
@@ -1550,6 +1602,11 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         if (clips)
             publishClips();
+
+        // Before the output gate opens below, so a restarted device's first
+        // block reads its inputs where they are now.
+        if (inputsMoved)
+            publishRouting(playedTracks());
 
         if (renderedStale_.exchange(false, std::memory_order_acq_rel))
             markRenderedDevices();
@@ -1792,7 +1849,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         const auto hasProvider = static_cast<bool>(hardwareOutputProvider_);
         auto catalog =
-            hasProvider ? hardwareOutputProvider_() : EngineHost::HardwareOutputCatalog{};
+            hasProvider ? hardwareOutputProvider_() : EngineHost::HardwareChannelCatalog{};
         auto enabled = catalog.enabledChannels;
         if (!hasProvider && enabled.isZero())
             enabled = active;
@@ -1866,6 +1923,29 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         return changed;
     }
 
+    /// Whether the input map moved. Channels are packed by the device's active
+    /// mask, so a restart can move them without any name changing.
+    bool refreshHardwareInputMap() {
+        juce::BigInteger active;
+        if (devices_ != nullptr)
+            if (auto* device = devices_->getCurrentAudioDevice())
+                active = device->getActiveInputChannels();
+
+        const auto catalog = hardwareInputProvider_ ? hardwareInputProvider_()
+                                                    : EngineHost::HardwareChannelCatalog{};
+        auto resolved =
+            resolveHardwareInputs(catalog.enabledChannels, catalog.namesByChannel, active);
+
+        const auto changed = resolved != hardwareInputs_;
+        hardwareInputs_ = std::move(resolved);
+        return changed;
+    }
+
+    void requestHardwareInputRefresh() {
+        hardwareInputsStale_.store(true, std::memory_order_release);
+        triggerAsyncUpdate();
+    }
+
     void requestHardwareOutputRefresh() {
         hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
         hardwareOutputsStale_.store(true, std::memory_order_release);
@@ -1882,6 +1962,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         renderedStale_.store(true, std::memory_order_release);
         hardwareOutputGeneration_.fetch_add(1, std::memory_order_acq_rel);
         hardwareOutputsStale_.store(true, std::memory_order_release);
+        hardwareInputsStale_.store(true, std::memory_order_release);
         triggerAsyncUpdate();
 
         if (EngineTrace::enabled())
@@ -1901,8 +1982,9 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
         triggerAsyncUpdate();
     }
 
-    void audioDeviceIOCallbackWithContext(const float* const*, int, float* const* output,
-                                          int numOutputChannels, int numSamples,
+    void audioDeviceIOCallbackWithContext(const float* const* input, int numInputChannels,
+                                          float* const* output, int numOutputChannels,
+                                          int numSamples,
                                           const juce::AudioIODeviceCallbackContext&) override {
         for (auto channel = 0; channel < numOutputChannels; ++channel)
             if (output[channel] != nullptr)
@@ -1923,6 +2005,7 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
         const auto outputs = std::min(numOutputChannels, scratch_.getNumChannels());
         const auto streams = collectLiveMidi();
+        const auto audioIn = liveAudioIn(input, numInputChannels, numSamples);
 
         // In pieces no longer than the plan was prepared for. A driver handing
         // over more than the block size it declared is rare and legal, and
@@ -1933,9 +2016,13 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             // The callback's live MIDI belongs to its first piece alone: every
             // event is stamped at offset 0, so handing the streams to a second
             // piece would sound each note again.
+            const auto pieceIn = audioIn.getNumChannels() > 0
+                                     ? audioIn.getSubBlock(static_cast<std::size_t>(done),
+                                                           static_cast<std::size_t>(piece))
+                                     : juce::dsp::AudioBlock<const float>{};
             session_->process(piece, scratch_,
-                              done == 0 ? engine::LiveInputBlock{{}, streams}
-                                        : engine::LiveInputBlock{});
+                              done == 0 ? engine::LiveInputBlock{pieceIn, streams}
+                                        : engine::LiveInputBlock{pieceIn, {}});
 
             for (auto channel = 0; channel < outputs; ++channel)
                 if (output[channel] != nullptr)
@@ -1944,6 +2031,16 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
             done += piece;
         }
         completedCallbacks_.store(callback, std::memory_order_release);
+    }
+
+    /// The device's input for this callback, or none when a channel is missing.
+    static juce::dsp::AudioBlock<const float> liveAudioIn(const float* const* input, int channels,
+                                                          int numSamples) {
+        if (input == nullptr || channels <= 0 ||
+            std::any_of(input, input + channels, [](const float* c) { return c == nullptr; }))
+            return {};
+
+        return {input, static_cast<std::size_t>(channels), static_cast<std::size_t>(numSamples)};
     }
 
     /// Room for every source the callback may see. Off the device, from
@@ -2389,13 +2486,20 @@ struct EngineHost::Impl final : private juce::AudioIODeviceCallback,
 
     engine::RenderContext context_{};
     juce::AudioBuffer<float> scratch_;
-    EngineHost::HardwareOutputProvider hardwareOutputProvider_;
+    EngineHost::HardwareChannelProvider hardwareOutputProvider_;
     std::map<std::string, engine::HardwareOutputRoute> hardwareOutputs_;
     std::map<std::string, engine::HardwareOutputRoute> publishedHardwareOutputs_;
     int hardwareOutputChannels_ = kChannels;
     std::atomic<bool> hardwareOutputsStale_{true};
     std::atomic<std::uint64_t> hardwareOutputGeneration_{1};
     std::atomic<std::uint64_t> hardwareOutputReadyGeneration_{0};
+
+    /// Input names resolved against the open device, and the ones reported
+    /// unresolvable since they last resolved (#2553).
+    EngineHost::HardwareChannelProvider hardwareInputProvider_;
+    HardwareInputMap hardwareInputs_;
+    std::set<juce::String> unresolvedInputs_;
+    std::atomic<bool> hardwareInputsStale_{true};
 
     // Declared so that destruction unwinds inwards: the session lets go of the
     // pool before the thread servicing it stops, and the thread stops before
@@ -2502,13 +2606,22 @@ void EngineHost::setPluginServices(juce::AudioPluginFormatManager& formats,
     impl_->knownPlugins_ = &knownPlugins;
 }
 
-void EngineHost::setHardwareOutputProvider(HardwareOutputProvider provider) {
+void EngineHost::setHardwareOutputProvider(HardwareChannelProvider provider) {
     impl_->hardwareOutputProvider_ = std::move(provider);
     impl_->requestHardwareOutputRefresh();
 }
 
 void EngineHost::refreshHardwareOutputs() {
     impl_->requestHardwareOutputRefresh();
+}
+
+void EngineHost::setHardwareInputProvider(HardwareChannelProvider provider) {
+    impl_->hardwareInputProvider_ = std::move(provider);
+    impl_->requestHardwareInputRefresh();
+}
+
+void EngineHost::refreshHardwareInputs() {
+    impl_->requestHardwareInputRefresh();
 }
 
 void EngineHost::meterInto(MeterSink sink) {
@@ -2525,6 +2638,10 @@ void EngineHost::forgetProject() {
 
 std::uint64_t EngineHost::publishRequests() const {
     return impl_->publishRequests();
+}
+
+bool EngineHost::isSettled() const {
+    return impl_->isSettled();
 }
 
 void EngineHost::stop() {

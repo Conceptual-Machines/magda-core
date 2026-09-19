@@ -45,6 +45,7 @@ using magda::engine::PlanValues;
 using magda::engine::RenderContext;
 using magda::engine::RenderPlan;
 using magda::engine::RuntimeStateFactory;
+using magda::engine::TrackLiveAudioInput;
 using magda::engine::TrackLiveMidiInput;
 
 namespace {
@@ -455,6 +456,55 @@ TEST_CASE("A live MIDI input keeps the offsets the host stamped", "[engine][live
         REQUIRE(out.getNumEvents() == 1);
         for (const auto metadata : out)
             CHECK(metadata.samplePosition == 1);
+    }
+}
+
+TEST_CASE("A track's live audio reads the channels the published routing names",
+          "[engine][live-input][2553]") {
+    const auto captured = rampBuffer(4, kBlockSize);
+    LiveInputFeed feed;
+    feed.prepare(4, kBlockSize);
+
+    const auto routing = [](std::vector<int> channels) {
+        auto snapshot = std::make_shared<LiveRouting>();
+        snapshot->audio.push_back({.trackId = 1, .channels = std::move(channels)});
+        return snapshot;
+    };
+
+    TrackLiveAudioInput input(feed, 1);
+    juce::AudioBuffer<float> out(2, kBlockSize);
+
+    const auto renderBlock = [&] {
+        out.clear();
+        feed.beginCallback({blockOf(captured), {}}, kBlockSize);
+        feed.beginSegment(0, kBlockSize);
+        input.render(blockInfo(kBlockSize), juce::dsp::AudioBlock<float>(out));
+        feed.endCallback();
+    };
+
+    SECTION("A session published to with no routing hears nothing") {
+        renderBlock();
+        CHECK(out.getMagnitude(0, kBlockSize) == 0.0f);
+    }
+
+    SECTION("A route change reaches an input the store built for an earlier plan") {
+        feed.publishRouting(routing({2, 3}));
+        renderBlock();
+        CHECK(out.getSample(0, 5) == captured.getSample(2, 5));
+        CHECK(out.getSample(1, 5) == captured.getSample(3, 5));
+
+        feed.publishRouting(routing({1}));
+        renderBlock();
+        CHECK(out.getSample(0, 5) == captured.getSample(1, 5));
+        CHECK(out.getSample(1, 5) == captured.getSample(1, 5));
+        CHECK(input.missingChannelBlocks() == 0);
+    }
+
+    SECTION("An unresolved name is silence, not a missing channel") {
+        feed.publishRouting(routing({}));
+        renderBlock();
+        CHECK(out.getMagnitude(0, kBlockSize) == 0.0f);
+        CHECK(input.missingChannelBlocks() == 0);
     }
 }
 

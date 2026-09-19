@@ -126,6 +126,7 @@ class MagdaAudioEngine final : public AudioEngine, public LiveMidiSink {
     juce::AudioDeviceManager* getDeviceManager() override;
     juce::BigInteger getEnabledWaveChannels(bool input) const override;
     std::map<int, juce::String> getOutputDeviceNamesByChannel() const override;
+    std::map<int, juce::String> getInputDeviceNamesByChannel() const override;
     void setEnabledWaveChannels(bool input, const juce::BigInteger& channels) override;
     void rescanWaveDevices(bool enableInputs, bool enableOutputs) override;
     bool isDevicesLoading() const override;

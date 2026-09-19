@@ -130,6 +130,24 @@ TEST_CASE("A routing that has not moved is not republished", "[live-routing]") {
     CHECK(routing.resolve(muted) != nullptr);
 }
 
+TEST_CASE("Hardware audio channels travel in the same snapshot", "[live-routing][2553]") {
+    host::LiveMidiSources sources;
+    host::LiveMidiRouting routing(sources);
+
+    const std::vector<magda::TrackInfo> tracks{monitoring(1, "")};
+    const auto first = routing.resolve(tracks, {{.trackId = 1, .channels = {4, 5}}});
+    REQUIRE(first != nullptr);
+    REQUIRE(first->findAudio(1) != nullptr);
+    CHECK(first->findAudio(1)->channels == std::vector<int>{4, 5});
+
+    CHECK(routing.resolve(tracks, {{.trackId = 1, .channels = {4, 5}}}) == nullptr);
+
+    // A device restart that moves the channels republishes with nothing else changed.
+    const auto moved = routing.resolve(tracks, {{.trackId = 1, .channels = {0, 1}}});
+    REQUIRE(moved != nullptr);
+    CHECK(moved->findAudio(1)->channels == std::vector<int>{0, 1});
+}
+
 TEST_CASE("A source a track loses is counted, so the input can panic for it", "[live-routing]") {
     host::LiveMidiSources sources;
     sources.registerAvailableDevices({kKeystep});

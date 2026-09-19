@@ -1666,10 +1666,8 @@ void Compiler::emitTrack(const TrackInfo& track) {
             // input device rather than off the signal (#2463). Here it is the
             // input op's own output, ahead of the gate, so a track that is
             // recording without monitoring still meters what it records.
-            const OpKey meterKey{track.id,          INVALID_RACK_ID,        INVALID_CHAIN_ID,
-                                 INVALID_DEVICE_ID, OpRole::LiveInputMeter, 0};
-            const auto meter =
-                addOp(OpKind::Meter, meterKey, {PortRef{op, 0}}, {SignalKind::Audio});
+            const auto meter = addOp(OpKind::Meter, liveInputMeterKey(track.id), {PortRef{op, 0}},
+                                     {SignalKind::Audio});
             plan_.ops[static_cast<std::size_t>(meter)].liveness = LivenessDomain::Live;
 
             audioSources.push_back(emitLiveInputGate(track.id, PortRef{meter, 0}));

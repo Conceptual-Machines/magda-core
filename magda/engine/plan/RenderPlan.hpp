@@ -391,6 +391,12 @@ inline OpKey trackMeterKey(TrackId trackId) {
                  INVALID_DEVICE_ID, OpRole::TrackMeter, 0};
 }
 
+/// The key of @p trackId's live audio input meter, ahead of its monitor gate.
+inline OpKey liveInputMeterKey(TrackId trackId) {
+    return OpKey{trackId,           INVALID_RACK_ID,        INVALID_CHAIN_ID,
+                 INVALID_DEVICE_ID, OpRole::LiveInputMeter, 0};
+}
+
 /// The key of the Meter op at @p rackId's output, for the same reason (#2649).
 /// A rack id is the project's, so the segment is what the rack stands in
 /// rather than part of its identity -- one rack, one meter.

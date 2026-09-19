@@ -626,12 +626,9 @@ void TrackHeadersPanel::populateAudioInputOptions(RoutingSelector* selector, Tra
             }
         }
     }
-    juce::BigInteger enabledInputChannels;
-    std::map<int, juce::String> teInputDeviceNames;
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledInputChannels = bridge->getEnabledInputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
+    const auto enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
+    const auto teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
+    selector->meterInputsFrom(deviceManager);
     RoutingSyncHelper::populateAudioInputOptions(selector, deviceManager->getCurrentAudioDevice(),
                                                  trackId, &inputTrackMapping_, enabledInputChannels,
                                                  &inputChannelMapping_, teInputDeviceNames);
@@ -1168,10 +1165,8 @@ void TrackHeadersPanel::updateRoutingSelectorFromTrack(TrackHeader& header,
     std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
     enabledOut = audioEngine_->getEnabledWaveChannels(false);
     teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-    if (auto* bridge = audioEngine_->getAudioBridge()) {
-        enabledIn = bridge->getEnabledInputChannels();
-        teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-    }
+    enabledIn = audioEngine_->getEnabledWaveChannels(true);
+    teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
     RoutingSyncHelper::syncSelectorsFromTrack(
         *track, header.audioInputSelector.get(), header.inputSelector.get(),
         header.outputSelector.get(), header.midiOutputSelector.get(), audioEngine_->getMidiBridge(),

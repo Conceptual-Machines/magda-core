@@ -424,10 +424,8 @@ void MixerView::ChannelStrip::updateFromTrack(const TrackInfo& track, bool syncM
             std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
             enabledOut = audioEngine_->getEnabledWaveChannels(false);
             teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                enabledIn = bridge->getEnabledInputChannels();
-                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-            }
+            enabledIn = audioEngine_->getEnabledWaveChannels(true);
+            teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
             RoutingSyncHelper::syncSelectorsFromTrack(
                 track, audioInSelector.get(), midiInSelector.get(), audioOutSelector.get(),
                 midiOutSelector.get(), midiBridge, device, trackId_, outputTrackMapping_,
@@ -812,11 +810,10 @@ void MixerView::ChannelStrip::setupControls() {
             std::map<int, juce::String> teInputDeviceNames, teOutputDeviceNames;
             enabledOutputChannels = audioEngine_->getEnabledWaveChannels(false);
             teOutputDeviceNames = audioEngine_->getOutputDeviceNamesByChannel();
-            if (auto* bridge = audioEngine_->getAudioBridge()) {
-                enabledInputChannels = bridge->getEnabledInputChannels();
-                teInputDeviceNames = bridge->getInputDeviceNamesByChannel();
-            }
+            enabledInputChannels = audioEngine_->getEnabledWaveChannels(true);
+            teInputDeviceNames = audioEngine_->getInputDeviceNamesByChannel();
 
+            audioInSelector->meterInputsFrom(deviceManager);
             RoutingSyncHelper::populateAudioInputOptions(audioInSelector.get(), device, trackId_,
                                                          &inputTrackMapping_, enabledInputChannels,
                                                          nullptr, teInputDeviceNames);

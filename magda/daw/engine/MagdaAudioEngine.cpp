@@ -134,11 +134,19 @@ bool MagdaAudioEngine::initialize() {
     // device managers over one interface is the failure this class exists not
     // to have. What changes is who fills the buffer.
     host_->setHardwareOutputProvider([this] {
-        return daw::engine_host::EngineHost::HardwareOutputCatalog{
+        return daw::engine_host::EngineHost::HardwareChannelCatalog{
             .enabledChannels = fork_->getEnabledWaveChannels(false),
             .namesByChannel = fork_->getOutputDeviceNamesByChannel()};
     });
-    fork_->setWaveOutputsChangedCallback([this] { host_->refreshHardwareOutputs(); });
+    host_->setHardwareInputProvider([this] {
+        return daw::engine_host::EngineHost::HardwareChannelCatalog{
+            .enabledChannels = fork_->getEnabledWaveChannels(true),
+            .namesByChannel = fork_->getInputDeviceNamesByChannel()};
+    });
+    fork_->setWaveDevicesChangedCallback([this] {
+        host_->refreshHardwareOutputs();
+        host_->refreshHardwareInputs();
+    });
     if (auto* devices = tracktion_->getDeviceManager())
         host_->start(*devices);
 
@@ -167,7 +175,7 @@ void MagdaAudioEngine::shutdown() {
 
     // The bridge goes with the fork below, and the API outlives this call.
     api_->setMidiBridge(nullptr);
-    fork_->setWaveOutputsChangedCallback({});
+    fork_->setWaveDevicesChangedCallback({});
 
     // Before the fork's, which closes the device this is rendering into.
     host_->stop();
@@ -323,13 +331,20 @@ juce::BigInteger MagdaAudioEngine::getEnabledWaveChannels(bool input) const {
 std::map<int, juce::String> MagdaAudioEngine::getOutputDeviceNamesByChannel() const {
     return tracktion_->getOutputDeviceNamesByChannel();
 }
+std::map<int, juce::String> MagdaAudioEngine::getInputDeviceNamesByChannel() const {
+    return tracktion_->getInputDeviceNamesByChannel();
+}
 void MagdaAudioEngine::setEnabledWaveChannels(bool input, const juce::BigInteger& channels) {
     tracktion_->setEnabledWaveChannels(input, channels);
-    if (!input)
+    if (input)
+        host_->refreshHardwareInputs();
+    else
         host_->refreshHardwareOutputs();
 }
 void MagdaAudioEngine::rescanWaveDevices(bool enableInputs, bool enableOutputs) {
     tracktion_->rescanWaveDevices(enableInputs, enableOutputs);
+    if (enableInputs)
+        host_->refreshHardwareInputs();
     if (enableOutputs)
         host_->refreshHardwareOutputs();
 }

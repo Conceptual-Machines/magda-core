@@ -203,8 +203,9 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
     }
 
   private:
-    static void settle() {
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(30);
+    static void settle(magda::daw::engine_host::EngineHost& host) {
+        for (auto tick = 0; tick < 400 && !host.isSettled(); ++tick)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(5);
     }
 
     static std::array<float, kPhysicalOutputs> sound(magda::daw::engine_host::EngineHost& host,
@@ -244,7 +245,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         if (devices.device == nullptr)
             return;
 
-        auto catalog = magda::daw::engine_host::EngineHost::HardwareOutputCatalog{
+        auto catalog = magda::daw::engine_host::EngineHost::HardwareChannelCatalog{
             .enabledChannels = channels({0, 1, 2, 3}),
             .namesByChannel = {{0, "Main"}, {1, "Main"}, {2, "Cue"}, {3, "Cue"}}};
 
@@ -256,49 +257,49 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         magda::daw::engine_host::EngineHost host;
         host.setHardwareOutputProvider([&catalog] { return catalog; });
         host.start(devices);
-        settle();
+        settle(host);
 
         expectOnly(sound(host, *devices.device, track), {2, 3});
 
         tracks.setTrackAudioOutput(track, "Cue");
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 62), {2, 3});
 
         catalog = {.enabledChannels = channels({2, 3, 4, 5}),
                    .namesByChannel = {{2, "Cue"}, {3, "Cue"}, {4, "Aux 5"}, {5, "Mono 6"}}};
         devices.device->restart(catalog.enabledChannels);
         expectOnly(devices.device->pump(), {});
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 64), {2, 3});
 
         tracks.setTrackAudioOutput(track, "stereo:Out 3");
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 65), {2, 3});
 
         tracks.setTrackAudioOutput(track, "Mono 6");
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 67), {5});
         devices.device->pump(5);
 
         catalog.enabledChannels = channels({2, 3});
         host.refreshHardwareOutputs();
         expectOnly(devices.device->pump(), {});
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 68), {});
 
         catalog.enabledChannels = {};
         host.refreshHardwareOutputs();
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 68), {});
 
         catalog.enabledChannels = channels({2, 3, 4, 5});
         host.refreshHardwareOutputs();
         expectOnly(devices.device->pump(), {});
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 68), {5});
 
         tracks.setTrackAudioOutput(track, "stereo:Unavailable");
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 69), {});
 
         juce::BigInteger wideChannels;
@@ -308,7 +309,7 @@ class EngineHostHardwareOutputTest final : public juce::UnitTest {
         tracks.setTrackAudioOutput(track, "stereo:Out 63 + 64");
         devices.device->restart(wideChannels);
         expectOnly(devices.device->pump(), {});
-        settle();
+        settle(host);
         expectOnly(sound(host, *devices.device, track, 71), {62, 63});
 
         host.stop();

@@ -625,20 +625,6 @@ class AudioBridge : public TrackManagerListener,
     // =========================================================================
 
     /**
-     * @brief Get a bitmask of user-enabled input channels from TE WaveInputDevices
-     *
-     * JUCE device->getActiveInputChannels() always returns all channels (because
-     * the engine enables all at JUCE level). User preferences are applied
-     * at the TE WaveInputDevice level. This method reads those TE-level enabled states.
-     *
-     * @return BigInteger with bits set for each enabled input channel
-     */
-    juce::BigInteger getEnabledInputChannels() const;
-
-    /** Map from hardware channel index to TE WaveInputDevice name (e.g. "Input 1"). */
-    std::map<int, juce::String> getInputDeviceNamesByChannel() const;
-
-    /**
      * @brief Get a bitmask of user-enabled output channels from TE WaveOutputDevices
      * @return BigInteger with bits set for each enabled output channel
      */

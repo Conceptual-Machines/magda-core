@@ -1473,30 +1473,6 @@ float AudioBridge::getMasterPan() const {
 // Audio Routing
 // =============================================================================
 
-juce::BigInteger AudioBridge::getEnabledInputChannels() const {
-    juce::BigInteger enabled;
-    auto& dm = engine_.getDeviceManager();
-    for (auto* dev : dm.getWaveInputDevices()) {
-        if (dev->isEnabled()) {
-            for (const auto& ch : dev->getChannels())
-                enabled.setBit(ch.indexInDevice, true);
-        }
-    }
-    return enabled;
-}
-
-std::map<int, juce::String> AudioBridge::getInputDeviceNamesByChannel() const {
-    std::map<int, juce::String> result;
-    auto& dm = engine_.getDeviceManager();
-    for (auto* dev : dm.getWaveInputDevices()) {
-        if (dev->isEnabled()) {
-            for (const auto& ch : dev->getChannels())
-                result[ch.indexInDevice] = dev->getName();
-        }
-    }
-    return result;
-}
-
 juce::BigInteger AudioBridge::getEnabledOutputChannels() const {
     juce::BigInteger enabled;
     auto& dm = engine_.getDeviceManager();

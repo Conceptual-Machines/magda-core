@@ -12,6 +12,8 @@ Ownership indicators and mixed Session/Arrangement playback have focused
 [Session ownership checks](../issues/native-session-ownership.md).
 Capturing existing Session performances has focused
 [Session-to-Arrangement checks](../issues/native-session-arrangement-capture.md).
+Hardware audio input reaching a track has focused
+[native audio input checks](../issues/native-audio-input.md).
 The wider checklist below also covers audio and latency work that is not yet
 connected to the native app.
 

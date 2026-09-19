@@ -187,6 +187,9 @@ set(TEST_SOURCES
     ../magda/daw/ui/panels/TransportLayout.cpp
     # Hardware channels labelled by the interface's own names (#2734)
     ui/test_channel_labels.cpp
+    # The input levels behind the input menu's meters
+    ui/test_hardware_input_levels.cpp
+    ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
     # Panel tab layout survives a restart (#2103). The panel sources live in
     # magda_daw_app rather than the magda_daw library, so pull them in directly.
     ui/test_panel_tab_persistence.cpp
@@ -410,6 +413,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
     list(APPEND TEST_SOURCES engine/test_engine_session.cpp)
     list(APPEND TEST_SOURCES engine/test_live_midi_collector.cpp)
     list(APPEND TEST_SOURCES engine/test_live_midi_routing.cpp)
+    list(APPEND TEST_SOURCES engine/test_hardware_input_map.cpp)
     # The parameter lane (#2116). The lanes are fed by hand, so the precedence
     # rules are testable before anything writes them.
     list(APPEND TEST_SOURCES engine/test_param_lane.cpp)
@@ -708,6 +712,7 @@ target_sources(magda_juce_tests PRIVATE
     # Hardware output selections must reach the TE wave output devices (#2264)
     routing/test_hardware_output_routing_juce.cpp
     ../magda/daw/ui/components/mixer/RoutingSelector.cpp
+    ../magda/daw/ui/components/mixer/HardwareInputLevels.cpp
     controllers/test_controller_track_level_write_juce.cpp
     # OSC control surfaces (issue #1757): a live receive thread and real packets
     controllers/test_osc_service_juce.cpp
@@ -866,6 +871,7 @@ if(MAGDA_BUILD_NATIVE_ENGINE)
         # magda_tests because it reads TrackManager and ClipManager, and those
         # are the singletons a running MAGDA keeps its model in.
         engine/test_engine_host_publish_juce.cpp
+        engine/test_engine_host_audio_input_juce.cpp
         engine/test_engine_host_hardware_outputs_juce.cpp
         engine/test_engine_host_midi_recording_juce.cpp
         engine/test_engine_host_session_capture_juce.cpp
