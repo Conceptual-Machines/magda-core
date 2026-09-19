@@ -9,6 +9,7 @@
 #include "../themes/DarkTheme.hpp"
 #include "../themes/DialogLookAndFeel.hpp"
 #include "../themes/FontManager.hpp"
+#include "../utils/ChannelLabels.hpp"
 
 namespace magda {
 
@@ -138,8 +139,9 @@ void CustomChannelSelector::updateFromDevice() {
     for (int i = 0; i < numChannels; i += 2) {
         if (i + 1 < numChannels) {
             ChannelToggle toggle;
-            toggle.button = std::make_unique<juce::ToggleButton>(juce::String(i + 1) + "-" +
-                                                                 juce::String(i + 2));
+            toggle.button =
+                std::make_unique<juce::ToggleButton>(ChannelLabels::pair(channelNames, i, i + 1));
+            toggle.button->setTooltip(toggle.button->getButtonText());
             toggle.startChannel = i;
             toggle.isStereo = true;
 
@@ -174,7 +176,8 @@ void CustomChannelSelector::updateFromDevice() {
     // Create individual mono channel toggles
     for (int i = 0; i < numChannels; ++i) {
         ChannelToggle toggle;
-        toggle.button = std::make_unique<juce::ToggleButton>(juce::String(i + 1) + " (mono)");
+        toggle.button = std::make_unique<juce::ToggleButton>(ChannelLabels::mono(channelNames, i));
+        toggle.button->setTooltip(toggle.button->getButtonText());
         toggle.startChannel = i;
         toggle.isStereo = false;
 
